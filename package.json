@@ -1,0 +1,17 @@
+{
+  "name": "flower-studio",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "backend",
+    "apps/florist",
+    "apps/delivery",
+    "apps/dashboard"
+  ],
+  "scripts": {
+    "backend": "npm run dev --workspace=backend",
+    "florist": "npm run dev --workspace=apps/florist",
+    "delivery": "npm run dev --workspace=apps/delivery",
+    "dashboard": "npm run dev --workspace=apps/dashboard"
+  }
+}
