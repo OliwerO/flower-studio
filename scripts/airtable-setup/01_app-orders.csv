@@ -1,2 +1,9 @@
 Customer Request,Order Date,Required By,Source,Delivery Type,Delivery Fee,Price Override,Payment Status,Payment Method,Notes Original,Notes Translated,Greeting Card Text,Status,Wix Order ID,Created By
-25 pink roses for birthday,2026-03-01,2026-03-01,Instagram,Delivery,35,,Paid,Cash,,,Happy birthday!,New,,Florist
+Sample order 1,2026-03-01,2026-03-01,Instagram,Delivery,35,,Paid,Mbank,,,Happy birthday!,New,,Florist
+Sample order 2,2026-03-01,2026-03-01,WhatsApp,Pickup,0,,Unpaid,Monobank,,,,Accepted,,Owner
+Sample order 3,2026-03-01,2026-03-01,Telegram,Delivery,35,,Partial,Revolut,,,,In Preparation,,Wix Webhook
+Sample order 4,2026-03-01,2026-03-01,Wix,Pickup,0,,Paid,PayPal,,,,Ready,,Florist
+Sample order 5,2026-03-01,2026-03-01,Flowwow,Delivery,35,,Unpaid,Cash,,,,Out for Delivery,,Owner
+Sample order 6,2026-03-01,2026-03-01,In-store,Pickup,0,,Paid,Card,,,,Delivered,,Florist
+Sample order 7,2026-03-01,2026-03-01,Other,Delivery,35,,Unpaid,Wix Online,,,,Picked Up,,Owner
+Sample order 8,2026-03-01,2026-03-01,Instagram,Pickup,0,,Partial,Other,,,,Cancelled,,Florist

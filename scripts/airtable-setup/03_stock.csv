@@ -1,2 +1,10 @@
 Display Name,Purchase Name,Category,Current Quantity,Unit,Current Cost Price,Current Sell Price,Supplier,Reorder Threshold,Last Restocked,Dead/Unsold Stems,Supplier Notes,Active
-Rose Pink,Rosa Pink Garden,Roses,50,Stems,2.50,5.00,Stojek,10,2026-03-01,0,,true
+Sample Rose,Sample Rose,Roses,0,Stems,0,0,Stojek,0,2026-03-01,0,,true
+Sample Hydrangea,Sample Hydrangea,Hydrangeas,0,Bunches,0,0,4f,0,2026-03-01,0,,true
+Sample Tulip,Sample Tulip,Tulips,0,Pots,0,0,Stefan,0,2026-03-01,0,,true
+Sample Peony,Sample Peony,Peonies,0,Pieces,0,0,Mateusz,0,2026-03-01,0,,true
+Sample Ranunculus,Sample Ranunculus,Ranunculus,0,Stems,0,0,Other,0,2026-03-01,0,,true
+Sample Greenery,Sample Greenery,Greenery,0,Bunches,0,0,Stojek,0,2026-03-01,0,,true
+Sample Filler,Sample Filler,Fillers,0,Stems,0,0,4f,0,2026-03-01,0,,true
+Sample Supply,Sample Supply,Supplies,0,Pieces,0,0,Stefan,0,2026-03-01,0,,true
+Sample Other,Sample Other,Other,0,Stems,0,0,Mateusz,0,2026-03-01,0,,true

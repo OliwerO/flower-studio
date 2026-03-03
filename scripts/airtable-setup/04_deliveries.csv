@@ -1,2 +1,5 @@
 Delivery Address,Recipient Name,Recipient Phone,Delivery Date,Delivery Time,Assigned Driver,Status,Delivery Fee,Driver Payment Status,Driver Notes,Delivered At
-ul. Florianska 12 Krakow,Anna Kowalska,+48123456789,2026-03-01,after 17:00,Timur,Pending,35,Unpaid,,
+Sample address 1,Sample Recipient,+48000000000,2026-03-01,after 17:00,Timur,Pending,35,Unpaid,,
+Sample address 2,Sample Recipient,+48000000000,2026-03-01,10 to 12,Nikita,Out for Delivery,35,Paid,,
+Sample address 3,Sample Recipient,+48000000000,2026-03-01,anytime,Dmitri,Delivered,35,Unpaid,,
+Sample address 4,Sample Recipient,+48000000000,2026-03-01,after 18:00,Backup Driver,Pending,35,Paid,,
