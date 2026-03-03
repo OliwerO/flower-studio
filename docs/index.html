@@ -9,21 +9,21 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #faf9f7;
-      --card:      #ffffff;
-      --border:    #ede9e3;
-      --text:      #1a1a1a;
-      --muted:     #6b7280;
-      --accent:    #b5634a;
-      --green:     #3d7a5e;
-      --yellow:    #b58a2e;
-      --gray:      #9ca3af;
-      --done-bg:   #edf7f2;
-      --done-bd:   #a7d4bc;
-      --active-bg: #fef9ec;
-      --active-bd: #f0d08a;
-      --wait-bg:   #f5f4f2;
-      --wait-bd:   #d1cdc7;
+      --bg:        #111110;
+      --card:      #1a1a18;
+      --border:    #2a2a27;
+      --text:      #e8e6e1;
+      --muted:     #6b6b63;
+      --accent:    #d4836a;
+      --green:     #5aab84;
+      --yellow:    #d4a843;
+      --gray:      #55554e;
+      --done-bg:   #152318;
+      --done-bd:   #2a5438;
+      --active-bg: #221c0e;
+      --active-bd: #5a420e;
+      --wait-bg:   #1a1a18;
+      --wait-bd:   #2a2a27;
     }
 
     body {
@@ -120,7 +120,7 @@
       user-select: none;
     }
 
-    .phase-header:hover { background: #faf9f7; }
+    .phase-header:hover { background: #202020; }
 
     .phase-num {
       width: 32px;
@@ -206,7 +206,7 @@
 
     .phase-body p {
       font-size: 14px;
-      color: #374151;
+      color: #a8a89e;
       margin-bottom: 10px;
     }
 
@@ -218,9 +218,9 @@
       align-items: flex-start;
       gap: 10px;
       font-size: 14px;
-      color: #374151;
+      color: #a8a89e;
       padding: 5px 0;
-      border-bottom: 1px solid #f3f2f0;
+      border-bottom: 1px solid #222220;
     }
 
     .checklist li:last-child { border-bottom: none; }
@@ -243,14 +243,14 @@
 
     /* ── File tree ── */
     .file-tree {
-      background: #f8f7f5;
+      background: #141413;
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 14px 16px;
       font-family: 'SF Mono', 'Fira Code', monospace;
       font-size: 12.5px;
       line-height: 1.9;
-      color: #374151;
+      color: #a8a89e;
       margin-top: 4px;
     }
 
@@ -259,7 +259,7 @@
 
     /* ── Key decisions ── */
     .decision {
-      background: #f8f7f5;
+      background: #141413;
       border-left: 3px solid var(--accent);
       border-radius: 0 8px 8px 0;
       padding: 12px 16px;
@@ -268,7 +268,7 @@
     }
 
     .decision strong { display: block; margin-bottom: 4px; color: var(--text); }
-    .decision p { color: #4b5563; margin: 0; }
+    .decision p { color: #8a8a80; margin: 0; }
 
     /* ── Stack table ── */
     .stack-table {
@@ -291,8 +291,8 @@
 
     .stack-table td {
       padding: 9px 12px;
-      border-bottom: 1px solid #f3f2f0;
-      color: #374151;
+      border-bottom: 1px solid #222220;
+      color: #a8a89e;
     }
 
     .stack-table tr:last-child td { border-bottom: none; }
@@ -300,7 +300,7 @@
     .stack-table td:first-child { font-weight: 500; color: var(--text); }
 
     code {
-      background: #f0ede9;
+      background: #252522;
       padding: 1px 6px;
       border-radius: 4px;
       font-family: 'SF Mono', 'Fira Code', monospace;
