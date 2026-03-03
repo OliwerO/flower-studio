@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Blossom Studio — Build Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #faf9f7;
+      --card:      #ffffff;
+      --border:    #ede9e3;
+      --text:      #1a1a1a;
+      --muted:     #6b7280;
+      --accent:    #b5634a;
+      --green:     #3d7a5e;
+      --yellow:    #b58a2e;
+      --gray:      #9ca3af;
+      --done-bg:   #edf7f2;
+      --done-bd:   #a7d4bc;
+      --active-bg: #fef9ec;
+      --active-bd: #f0d08a;
+      --wait-bg:   #f5f4f2;
+      --wait-bd:   #d1cdc7;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 0 16px 80px;
+    }
+
+    /* ── Header ── */
+    header {
+      max-width: 780px;
+      margin: 0 auto;
+      padding: 48px 0 32px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .logo span { color: var(--text); }
+
+    header p {
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    /* ── Progress bar ── */
+    .progress-wrap {
+      max-width: 780px;
+      margin: 32px auto 0;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .progress-meta strong {
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .bar-track {
+      height: 8px;
+      background: var(--border);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #d4856e);
+      border-radius: 99px;
+      transition: width 0.6s ease;
+    }
+
+    /* ── Section title ── */
+    .section-title {
+      max-width: 780px;
+      margin: 48px auto 20px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1.2px;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    /* ── Phase card ── */
+    .phase {
+      max-width: 780px;
+      margin: 0 auto 16px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .phase-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      padding: 20px 24px;
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .phase-header:hover { background: #faf9f7; }
+
+    .phase-num {
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .phase.done   .phase-num { background: var(--done-bg); color: var(--green); }
+    .phase.active .phase-num { background: var(--active-bg); color: var(--yellow); }
+    .phase.wait   .phase-num { background: var(--wait-bg); color: var(--gray); }
+
+    .phase-meta { flex: 1; }
+
+    .phase-title {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 3px;
+    }
+
+    .phase-subtitle {
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px;
+      border-radius: 99px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      flex-shrink: 0;
+      margin-top: 3px;
+    }
+
+    .badge::before {
+      content: '';
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+    }
+
+    .badge.done   { background: var(--done-bg);   color: var(--green);  border: 1px solid var(--done-bd); }
+    .badge.done::before   { background: var(--green); }
+    .badge.active { background: var(--active-bg); color: var(--yellow); border: 1px solid var(--active-bd); }
+    .badge.active::before { background: var(--yellow); }
+    .badge.wait   { background: var(--wait-bg);   color: var(--gray);   border: 1px solid var(--wait-bd); }
+    .badge.wait::before   { background: var(--gray); }
+
+    .chevron {
+      color: var(--muted);
+      font-size: 12px;
+      margin-top: 8px;
+      transition: transform 0.2s;
+    }
+
+    /* ── Phase body (expandable) ── */
+    .phase-body {
+      display: none;
+      padding: 0 24px 24px;
+      border-top: 1px solid var(--border);
+    }
+
+    .phase-body.open { display: block; }
+
+    .phase-body h4 {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 20px 0 10px;
+    }
+
+    .phase-body p {
+      font-size: 14px;
+      color: #374151;
+      margin-bottom: 10px;
+    }
+
+    /* ── Checklist ── */
+    .checklist { list-style: none; }
+
+    .checklist li {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      font-size: 14px;
+      color: #374151;
+      padding: 5px 0;
+      border-bottom: 1px solid #f3f2f0;
+    }
+
+    .checklist li:last-child { border-bottom: none; }
+
+    .check {
+      width: 18px;
+      height: 18px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+      font-size: 11px;
+    }
+
+    .check.done   { background: var(--done-bg); color: var(--green); border: 1px solid var(--done-bd); }
+    .check.wait   { background: var(--wait-bg); border: 1px solid var(--wait-bd); }
+    .check.active { background: var(--active-bg); color: var(--yellow); border: 1px solid var(--active-bd); }
+
+    /* ── File tree ── */
+    .file-tree {
+      background: #f8f7f5;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px 16px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12.5px;
+      line-height: 1.9;
+      color: #374151;
+      margin-top: 4px;
+    }
+
+    .file-tree .dir  { color: var(--accent); font-weight: 600; }
+    .file-tree .note { color: var(--muted); }
+
+    /* ── Key decisions ── */
+    .decision {
+      background: #f8f7f5;
+      border-left: 3px solid var(--accent);
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      margin-bottom: 10px;
+      font-size: 14px;
+    }
+
+    .decision strong { display: block; margin-bottom: 4px; color: var(--text); }
+    .decision p { color: #4b5563; margin: 0; }
+
+    /* ── Stack table ── */
+    .stack-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13.5px;
+      margin-top: 4px;
+    }
+
+    .stack-table th {
+      text-align: left;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      color: var(--muted);
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .stack-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid #f3f2f0;
+      color: #374151;
+    }
+
+    .stack-table tr:last-child td { border-bottom: none; }
+
+    .stack-table td:first-child { font-weight: 500; color: var(--text); }
+
+    code {
+      background: #f0ede9;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      font-size: 12px;
+      color: var(--accent);
+    }
+
+    /* ── Footer ── */
+    footer {
+      max-width: 780px;
+      margin: 48px auto 0;
+      padding-top: 24px;
+      border-top: 1px solid var(--border);
+      font-size: 13px;
+      color: var(--muted);
+      display: flex;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    footer a { color: var(--accent); text-decoration: none; }
+    footer a:hover { text-decoration: underline; }
+
+    /* ── Responsive ── */
+    @media (max-width: 600px) {
+      .phase-header { flex-wrap: wrap; }
+      .badge { margin-top: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">🌸 Blossom <span>Studio — Build Tracker</span></div>
+  <p>Flower studio management app · Krakow, Poland · Built with Node.js + React + Airtable</p>
+</header>
+
+<!-- Overall progress -->
+<div class="progress-wrap">
+  <div class="progress-meta">
+    <span><strong>Phase 1 of 10 complete</strong></span>
+    <span>10% overall</span>
+  </div>
+  <div class="bar-track">
+    <div class="bar-fill" style="width: 10%"></div>
+  </div>
+</div>
+
+<!-- Stack overview -->
+<p class="section-title">Tech Stack</p>
+<div class="phase" style="border-radius: 12px; overflow: hidden;">
+  <table class="stack-table">
+    <thead>
+      <tr>
+        <th>Layer</th>
+        <th>Technology</th>
+        <th>Why</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr><td>Database</td><td>Airtable</td><td>Existing CRM already lives there — no migration needed</td></tr>
+      <tr><td>Backend</td><td>Node.js + Express</td><td>Lightweight, fast to build, large ecosystem</td></tr>
+      <tr><td>Frontend</td><td>React + Vite + Tailwind</td><td>3 separate apps (florist, driver, owner)</td></tr>
+      <tr><td>Translation</td><td>Claude Haiku API</td><td>Auto-translate customer notes to Russian</td></tr>
+      <tr><td>Hosting (frontend)</td><td>Vercel</td><td>Free tier, deploys automatically from GitHub</td></tr>
+      <tr><td>Hosting (backend)</td><td>Railway</td><td>~$5/month, simple Node.js deployment</td></tr>
+      <tr><td>Auth</td><td>PIN per role</td><td>Simple — florists just type 4 digits, no accounts</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Phases -->
+<p class="section-title">Build Phases</p>
+
+<!-- Phase 1 — DONE -->
+<div class="phase done">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">1</div>
+    <div class="phase-meta">
+      <div class="phase-title">Project Scaffold + Backend API</div>
+      <div class="phase-subtitle">Monorepo structure, Express server, Airtable connection, PIN auth, all REST routes</div>
+    </div>
+    <div class="badge done">Complete</div>
+    <div class="chevron">▼</div>
+  </div>
+  <div class="phase-body open">
+
+    <h4>What was built</h4>
+    <ul class="checklist">
+      <li><span class="check done">✓</span>npm workspace monorepo — one repo, 4 packages (backend + 3 future apps)</li>
+      <li><span class="check done">✓</span>Express server with CORS, JSON parsing, structured error handling</li>
+      <li><span class="check done">✓</span>Airtable client config — reads all table IDs from environment variables</li>
+      <li><span class="check done">✓</span>Generic CRUD service with 5 req/sec rate-limit queue (prevents API bans)</li>
+      <li><span class="check done">✓</span>PIN auth middleware — Owner / Florist / Driver roles with route-level access control</li>
+      <li><span class="check done">✓</span>REST routes: customers (search), orders (atomic create), stock (+/- adjust), deliveries, dashboard, analytics, stock purchases</li>
+      <li><span class="check done">✓</span>Wix webhook placeholder (Phase 4 implementation)</li>
+      <li><span class="check done">✓</span><code>.env.example</code> with all variables documented</li>
+      <li><span class="check done">✓</span>Pushed to GitHub</li>
+    </ul>
+
+    <h4>File structure</h4>
+    <div class="file-tree">
+<span class="dir">backend/src/</span>
+├── index.js                <span class="note">← Express server entry point</span>
+├── <span class="dir">config/</span>
+│   └── airtable.js         <span class="note">← Airtable client + table IDs</span>
+├── <span class="dir">services/</span>
+│   └── airtable.js         <span class="note">← Generic CRUD with rate-limit queue</span>
+├── <span class="dir">middleware/</span>
+│   ├── auth.js             <span class="note">← PIN validation + role access</span>
+│   └── errorHandler.js     <span class="note">← Central error gate</span>
+└── <span class="dir">routes/</span>
+    ├── auth.js             <span class="note">← POST /api/auth/verify</span>
+    ├── customers.js        <span class="note">← Search, CRUD</span>
+    ├── orders.js           <span class="note">← Atomic create (order + lines + delivery + stock)</span>
+    ├── stock.js            <span class="note">← Inventory + +/- adjust</span>
+    ├── deliveries.js       <span class="note">← Driver routes, auto-timestamp</span>
+    ├── dashboard.js        <span class="note">← Today's operational summary</span>
+    ├── analytics.js        <span class="note">← Monthly financial KPIs</span>
+    ├── stockPurchases.js   <span class="note">← Supplier delivery intake</span>
+    └── webhook.js          <span class="note">← Wix receiver (placeholder)</span>
+    </div>
+
+    <h4>Key decisions made</h4>
+    <div class="decision">
+      <strong>Price snapshotting on Order Lines</strong>
+      <p>When a florist builds a bouquet, the cost and sell price of each flower is <em>copied</em> into the order line record — not looked up live. This means if a rose costs 2 zł today and 3 zł next month, last month's orders still show the correct margin. Historical KPIs stay accurate forever.</p>
+    </div>
+    <div class="decision">
+      <strong>Sequential order creation (no transactions)</strong>
+      <p>Creating an order requires 5–8 separate Airtable API calls (order → lines → stock decrements → delivery). They run one after another. If one fails mid-way, the order is partially created and the owner can fix it in the dashboard. Accepted trade-off: Airtable has no transaction support.</p>
+    </div>
+    <div class="decision">
+      <strong>Rate-limit queue (p-queue)</strong>
+      <p>Airtable blocks requests above 5/second. All Airtable calls flow through a queue that enforces this limit automatically. Without it, bulk operations (like order creation) would get HTTP 429 errors.</p>
+    </div>
+
+    <h4>Verification result</h4>
+    <p>✅ <code>GET /api/health</code> returns <code>{"status":"ok"}</code><br>
+       ✅ Valid PIN → 200, invalid PIN → 401, no PIN → 401<br>
+       ✅ Protected routes with valid PIN → 500 (expected — Airtable not configured yet)<br>
+       ✅ All files committed and pushed to GitHub</p>
+
+    <h4>Awaiting before next phase</h4>
+    <p>🔲 Owner to create new Airtable tables (App Orders, Order Lines, Stock, Deliveries, Stock Purchases) and add new fields to Clients table<br>
+       🔲 Copy <code>.env.example</code> → <code>.env</code> and fill in Airtable credentials + table IDs</p>
+
+  </div>
+</div>
+
+<!-- Phase 2 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">2</div>
+    <div class="phase-meta">
+      <div class="phase-title">Florist App — Bouquet Builder + Order Form</div>
+      <div class="phase-subtitle">React tablet app: PIN login, order list, bouquet builder, stock panel</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Vite + React + Tailwind app in <code>apps/florist/</code></li>
+      <li><span class="check wait"></span>PIN login screen</li>
+      <li><span class="check wait"></span>Order list — today's orders with status badges, date picker</li>
+      <li><span class="check wait"></span>New order form: 4-step (Customer → Bouquet Builder → Details → Review)</li>
+      <li><span class="check wait"></span>Bouquet builder — flower search, quantity picker, running cost/sell totals, price override</li>
+      <li><span class="check wait"></span>Customer search-first flow with "DO NOT CONTACT" warning</li>
+      <li><span class="check wait"></span>Delivery form — recipient, address, time, card text, driver assignment</li>
+      <li><span class="check wait"></span>Stock panel — quantity adjustments, "Receive Stock" form</li>
+      <li><span class="check wait"></span>All UI text in Russian</li>
+    </ul>
+    <h4>Prerequisite</h4>
+    <p>Phase 1 backend must be connected to live Airtable (credentials filled in).</p>
+  </div>
+</div>
+
+<!-- Phase 3 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">3</div>
+    <div class="phase-meta">
+      <div class="phase-title">Delivery App</div>
+      <div class="phase-subtitle">React phone app for drivers — delivery list, maps, mark delivered</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Vite + React + Tailwind app in <code>apps/delivery/</code></li>
+      <li><span class="check wait"></span>Today's deliveries sorted by time</li>
+      <li><span class="check wait"></span>Delivery card: recipient name, address (tap → Google Maps), phone (tap → dialer)</li>
+      <li><span class="check wait"></span>Payment status badge (Paid/Unpaid — driver needs to collect)</li>
+      <li><span class="check wait"></span>"Mark Delivered" button — updates Airtable, stamps timestamp</li>
+      <li><span class="check wait"></span>Filter by driver name (all share one PIN)</li>
+      <li><span class="check wait"></span>All UI text in Russian</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 4 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">4</div>
+    <div class="phase-meta">
+      <div class="phase-title">Wix Webhook Integration</div>
+      <div class="phase-subtitle">Wix online orders arrive automatically and create records in the system</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Full Wix webhook handler — parse payload, respond 200 immediately</li>
+      <li><span class="check wait"></span>Deduplication by Wix Order ID</li>
+      <li><span class="check wait"></span>Customer matching (by phone/email) or auto-create</li>
+      <li><span class="check wait"></span>Auto-create App Order + Order Lines + Delivery record</li>
+      <li><span class="check wait"></span>Best-effort stock matching from Wix product names</li>
+      <li><span class="check wait"></span>SSE notification push to florist app</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 5 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">5</div>
+    <div class="phase-meta">
+      <div class="phase-title">Auto-Translation</div>
+      <div class="phase-subtitle">Claude Haiku translates customer notes to Russian automatically</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Translation service using Claude Haiku API</li>
+      <li><span class="check wait"></span>Hook into order creation — async, non-blocking</li>
+      <li><span class="check wait"></span>Saves translated text to <code>Notes Translated</code> field in Airtable</li>
+      <li><span class="check wait"></span>Graceful failure — if translation fails, copies original, logs error, doesn't block order</li>
+      <li><span class="check wait"></span>Manual re-translate button in dashboard</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 6 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">6</div>
+    <div class="phase-meta">
+      <div class="phase-title">Owner Dashboard — Day-to-Day Operations</div>
+      <div class="phase-subtitle">Desktop React app: full order management, CRM, stock, live operational view</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Vite + React + Tailwind app in <code>apps/dashboard/</code></li>
+      <li><span class="check wait"></span>Tab 1: Orders — full list, all filters, full edit, status changes</li>
+      <li><span class="check wait"></span>Tab 2: Stock — inventory table, inline edit, waste recording</li>
+      <li><span class="check wait"></span>Tab 3: Customers / CRM — full profiles, order history, legacy order reference</li>
+      <li><span class="check wait"></span>Tab 4: Day-to-Day Dashboard — today summary, orders by source chart, low-stock alerts, live notifications</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 7 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">7</div>
+    <div class="phase-meta">
+      <div class="phase-title">Owner Dashboard — Financial KPIs</div>
+      <div class="phase-subtitle">Monthly analytics: revenue, margins, waste %, YoY growth — replaces the Blossom Audit spreadsheet</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Tab 5 in dashboard app</li>
+      <li><span class="check wait"></span>Date range selector (this month / last month / last 3 months / custom)</li>
+      <li><span class="check wait"></span>Revenue section: total, flower vs delivery split, avg order value, by source (bar chart)</li>
+      <li><span class="check wait"></span>Cost & margins: flower purchase cost, 2.2× markup estimate, actual vs estimated gap, gross margin % (line chart)</li>
+      <li><span class="check wait"></span>Waste section: dead/unsold stems, unrealised revenue in PLN, waste % (KEY metric)</li>
+      <li><span class="check wait"></span>Delivery profitability: revenue vs cost, pickup vs delivery ratio</li>
+      <li><span class="check wait"></span>Customer metrics: new vs returning, top 10 by spend, segment distribution</li>
+      <li><span class="check wait"></span>All charts built with Recharts</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 8 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">8</div>
+    <div class="phase-meta">
+      <div class="phase-title">Real-Time Notifications (SSE)</div>
+      <div class="phase-subtitle">Florists see a live alert + sound when a Wix order arrives</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>SSE endpoint <code>GET /api/events</code> — long-lived connection</li>
+      <li><span class="check wait"></span>Push event to all connected clients on new Wix order</li>
+      <li><span class="check wait"></span>Florist app notification banner + chime sound</li>
+      <li><span class="check wait"></span>Tap notification → navigate to new order</li>
+      <li><span class="check wait"></span>Fallback: poll every 30s if SSE connection drops</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 9 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">9</div>
+    <div class="phase-meta">
+      <div class="phase-title">Polish + Deployment</div>
+      <div class="phase-subtitle">Production-ready: error handling, loading states, mobile testing, Vercel + Railway deploy</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Toast notifications for errors (Russian language)</li>
+      <li><span class="check wait"></span>Loading skeletons and spinners</li>
+      <li><span class="check wait"></span>Empty state screens</li>
+      <li><span class="check wait"></span>Form validation (required fields, price > 0, quantity > 0)</li>
+      <li><span class="check wait"></span>Mobile/tablet testing on real devices</li>
+      <li><span class="check wait"></span>Vercel deploy config for all 3 frontend apps</li>
+      <li><span class="check wait"></span>Railway deploy config for backend</li>
+      <li><span class="check wait"></span>End-to-end test: 5 full order lifecycle runs</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Phase 10 -->
+<div class="phase wait">
+  <div class="phase-header" onclick="toggle(this)">
+    <div class="phase-num">10</div>
+    <div class="phase-meta">
+      <div class="phase-title">Excel Migration Script</div>
+      <div class="phase-subtitle">Optional: import historical 2025 order data from SharePoint Excel into Airtable</div>
+    </div>
+    <div class="badge wait">Pending</div>
+    <div class="chevron">▶</div>
+  </div>
+  <div class="phase-body">
+    <h4>What will be built</h4>
+    <ul class="checklist">
+      <li><span class="check wait"></span>Node.js script using <code>xlsx</code> package to parse the multi-row order blocks</li>
+      <li><span class="check wait"></span>Customer matching against existing Airtable CRM</li>
+      <li><span class="check wait"></span>Creates App Order + Order Lines + Delivery records for each historical order</li>
+      <li><span class="check wait"></span>Dry-run mode by default (logs everything, writes nothing)</li>
+      <li><span class="check wait"></span>Migration report CSV: matched, created, errors</li>
+      <li><span class="check wait"></span>Idempotent — safe to re-run</li>
+    </ul>
+  </div>
+</div>
+
+<footer>
+  <span>🌸 Blossom Studio · Krakow, Poland</span>
+  <span>
+    <a href="https://github.com/OliwerO/flower-studio" target="_blank">GitHub Repository</a>
+    &nbsp;·&nbsp;
+    Last updated: March 2026
+  </span>
+</footer>
+
+<script>
+  function toggle(header) {
+    const body = header.nextElementSibling;
+    const chevron = header.querySelector('.chevron');
+    const isOpen = body.classList.contains('open');
+    body.classList.toggle('open', !isOpen);
+    chevron.textContent = isOpen ? '▶' : '▼';
+  }
+</script>
+
+</body>
+</html>
