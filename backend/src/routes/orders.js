@@ -16,8 +16,8 @@ router.get('/', async (req, res, next) => {
     if (source)        filters.push(`{Source} = '${source}'`);
     if (deliveryType)  filters.push(`{Delivery Type} = '${deliveryType}'`);
     if (paymentStatus) filters.push(`{Payment Status} = '${paymentStatus}'`);
-    if (dateFrom)      filters.push(`IS_AFTER({Order Date}, '${dateFrom}')`);
-    if (dateTo)        filters.push(`IS_BEFORE({Order Date}, '${dateTo}')`);
+    if (dateFrom)      filters.push(`NOT(IS_BEFORE({Order Date}, '${dateFrom}'))`);
+    if (dateTo)        filters.push(`NOT(IS_AFTER({Order Date}, '${dateTo}'))`);
 
     const filterByFormula = filters.length
       ? `AND(${filters.join(', ')})`
@@ -28,6 +28,20 @@ router.get('/', async (req, res, next) => {
       sort: [{ field: 'Order Date', direction: 'desc' }],
       maxRecords: 200,
     });
+
+    // Fetch linked customer name for each order
+    for (const order of orders) {
+      if (order.Customer?.length) {
+        try {
+          const customer = await db.getById(TABLES.CUSTOMERS, order.Customer[0]);
+          order['Customer Name'] = customer.Name || customer.Nickname || '';
+        } catch {
+          order['Customer Name'] = '';
+        }
+      } else {
+        order['Customer Name'] = '';
+      }
+    }
 
     res.json(orders);
   } catch (err) {
@@ -91,12 +105,13 @@ router.post('/', async (req, res, next) => {
       'Delivery Type':  deliveryType,
       'Order Date':     new Date().toISOString().split('T')[0],
       'Required By':    requiredBy || null,
-      'Notes Original': notes || '',
-      'Payment Status': paymentStatus || 'Unpaid',
-      'Payment Method': paymentMethod || null,
-      'Price Override': priceOverride || null,
-      Status:           'New',
-      'Created By':     req.role === 'owner' ? 'Owner' : 'Florist',
+      'Notes Original':     notes || '',
+      'Greeting Card Text': delivery?.cardText || '',
+      'Payment Status':     paymentStatus || 'Unpaid',
+      'Payment Method':     paymentMethod || null,
+      'Price Override':     priceOverride || null,
+      Status:               'New',
+      'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
     });
 
     // 2. Create order line records (one per flower) — prices are snapshotted here
@@ -104,7 +119,7 @@ router.post('/', async (req, res, next) => {
     for (const line of orderLines) {
       const created = await db.create(TABLES.ORDER_LINES, {
         Order:                  [order.id],
-        'Stock Item':           line.stockItemId ? [line.stockItemId] : [],
+        ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
         'Flower Name':          line.flowerName,
         Quantity:               line.quantity,
         'Cost Price Per Unit':  line.costPricePerUnit || 0,
@@ -130,18 +145,13 @@ router.post('/', async (req, res, next) => {
         'Delivery Address':  delivery.address || '',
         'Recipient Name':    delivery.recipientName || '',
         'Recipient Phone':   delivery.recipientPhone || '',
-        'Delivery Date':     delivery.date || null,
-        'Delivery Time':     delivery.time || '',
-        'Greeting Card Text': delivery.cardText || '',
-        'Assigned Driver':   delivery.driver || null,
+        'Delivery Date':   delivery.date || null,
+        'Delivery Time':   delivery.time || '',
+        'Assigned Driver': delivery.driver || null,
         'Delivery Fee':      delivery.fee || 35,
         Status:              'Pending',
       });
 
-      // Link delivery back to order
-      await db.update(TABLES.ORDERS, order.id, {
-        'Assigned Delivery': [createdDelivery.id],
-      });
     }
 
     res.status(201).json({

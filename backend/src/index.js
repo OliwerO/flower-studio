@@ -1,4 +1,5 @@
-import 'dotenv/config';
+// Environment loaded via --env-file flag in package.json scripts
+// (NOT via import 'dotenv/config' — that caused hoisting bugs, see CHANGELOG.md)
 import express from 'express';
 import cors from 'cors';
 

@@ -10,13 +10,12 @@ router.use(authorize('stock-purchases'));
 // Body: { stockItemId, supplierName, quantityPurchased, pricePerUnit, notes }
 router.post('/', async (req, res, next) => {
   try {
-    const { stockItemId, supplierName, quantityPurchased, pricePerUnit, notes } = req.body;
+    const { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes } = req.body;
 
     // Create the purchase record
     const purchase = await db.create(TABLES.STOCK_PURCHASES, {
       'Purchase Date':      new Date().toISOString().split('T')[0],
-      Supplier:             supplierName,
-      Flower:               stockItemId ? [stockItemId] : [],
+      Supplier:             supplierName || '',
       'Quantity Purchased': quantityPurchased,
       'Price Per Unit':     pricePerUnit,
       Notes:                notes || '',
@@ -27,11 +26,13 @@ router.post('/', async (req, res, next) => {
       const stockItem = await db.getById(TABLES.STOCK, stockItemId);
       const newQty = (stockItem['Current Quantity'] || 0) + quantityPurchased;
 
-      await db.update(TABLES.STOCK, stockItemId, {
+      const stockUpdate = {
         'Current Quantity':   newQty,
         'Current Cost Price': pricePerUnit,
         'Last Restocked':     new Date().toISOString().split('T')[0],
-      });
+      };
+      if (sellPricePerUnit) stockUpdate['Current Sell Price'] = sellPricePerUnit;
+      await db.update(TABLES.STOCK, stockItemId, stockUpdate);
     }
 
     res.status(201).json(purchase);

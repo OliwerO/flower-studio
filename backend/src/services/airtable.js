@@ -30,14 +30,16 @@ export async function list(tableId, options = {}) {
   return enqueue(() =>
     new Promise((resolve, reject) => {
       const records = [];
+      // Only pass options that have real values — Airtable SDK rejects empty strings/arrays
+      const selectOptions = {};
+      if (options.filterByFormula)   selectOptions.filterByFormula = options.filterByFormula;
+      if (options.sort?.length)      selectOptions.sort            = options.sort;
+      if (options.pageSize)          selectOptions.pageSize        = options.pageSize;
+      if (options.maxRecords)        selectOptions.maxRecords      = options.maxRecords;
+      if (options.fields?.length)    selectOptions.fields          = options.fields;
+
       base(tableId)
-        .select({
-          filterByFormula: options.filterByFormula || '',
-          sort: options.sort || [],
-          maxRecords: options.maxRecords,
-          pageSize: options.pageSize || 100,
-          fields: options.fields,
-        })
+        .select(selectOptions)
         .eachPage(
           (page, fetchNext) => {
             page.forEach((r) => records.push(toPlain(r)));
@@ -67,7 +69,7 @@ export async function getById(tableId, recordId) {
  */
 export async function create(tableId, fields) {
   return enqueue(async () => {
-    const record = await base(tableId).create(fields);
+    const record = await base(tableId).create(fields, { typecast: true });
     return toPlain(record);
   });
 }
@@ -77,7 +79,7 @@ export async function create(tableId, fields) {
  */
 export async function update(tableId, recordId, fields) {
   return enqueue(async () => {
-    const record = await base(tableId).update(recordId, fields);
+    const record = await base(tableId).update(recordId, fields, { typecast: true });
     return toPlain(record);
   });
 }

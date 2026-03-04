@@ -28,6 +28,27 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// POST /api/stock — create a new stock item (florist quick-add during spontaneous delivery)
+// Body: { displayName, category, quantity, costPrice }
+router.post('/', async (req, res, next) => {
+  try {
+    const { displayName, category, quantity, costPrice } = req.body;
+    if (!displayName) return res.status(400).json({ error: 'displayName is required' });
+
+    const item = await db.create(TABLES.STOCK, {
+      'Display Name':       displayName,
+      'Purchase Name':      displayName,
+      Category:             category || 'Other',
+      'Current Quantity':   Number(quantity) || 0,
+      'Current Cost Price': Number(costPrice) || 0,
+      Active:               true,
+    });
+    res.status(201).json(item);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/stock/:id — update prices, threshold, etc.
 router.patch('/:id', async (req, res, next) => {
   try {
