@@ -66,10 +66,10 @@ router.get('/:id', async (req, res, next) => {
     }
 
     // Fetch linked delivery if exists
-    if (order['Assigned Delivery']?.length) {
+    if (order['Deliveries']?.length) {
       order.delivery = await db.getById(
         TABLES.DELIVERIES,
-        order['Assigned Delivery'][0]
+        order['Deliveries'][0]
       );
     }
 
@@ -164,10 +164,56 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// Allowed status transitions — like a production routing sheet.
+// Each status lists which statuses it can move to next.
+const ALLOWED_TRANSITIONS = {
+  'New':         ['In Progress', 'Cancelled'],
+  'In Progress': ['Ready', 'Cancelled'],
+  'Ready':       ['Delivered', 'Picked Up', 'In Progress', 'Cancelled'],
+  'Delivered':   [],          // terminal — no changes
+  'Picked Up':   [],          // terminal — no changes
+  'Cancelled':   ['New'],     // allow un-cancel (reopen) back to New
+};
+
 // PATCH /api/orders/:id — update status, prices, assignment, etc.
 router.patch('/:id', async (req, res, next) => {
   try {
-    const order = await db.update(TABLES.ORDERS, req.params.id, req.body);
+    const { Status: newStatus, ...otherFields } = req.body;
+
+    // If status is being changed, validate the transition
+    if (newStatus) {
+      const current = await db.getById(TABLES.ORDERS, req.params.id);
+      const currentStatus = current.Status || 'New';
+      const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
+
+      if (newStatus !== currentStatus && !allowed.includes(newStatus)) {
+        return res.status(400).json({
+          error: `Cannot move from "${currentStatus}" to "${newStatus}". Allowed: ${allowed.join(', ') || 'none (terminal)'}`,
+        });
+      }
+
+      // Stock rollback on cancellation — return flowers to inventory
+      if (newStatus === 'Cancelled' && currentStatus !== 'Cancelled') {
+        const lineIds = current['Order Lines'] || [];
+        for (const lineId of lineIds) {
+          try {
+            const line = await db.getById(TABLES.ORDER_LINES, lineId);
+            const stockItemIds = line['Stock Item'];
+            if (stockItemIds?.length && line.Quantity) {
+              const stockItem = await db.getById(TABLES.STOCK, stockItemIds[0]);
+              await db.update(TABLES.STOCK, stockItemIds[0], {
+                'Current Quantity': (stockItem['Current Quantity'] || 0) + line.Quantity,
+              });
+            }
+          } catch { /* line or stock item may have been deleted — skip */ }
+        }
+      }
+    }
+
+    const order = await db.update(TABLES.ORDERS, req.params.id, {
+      ...otherFields,
+      ...(newStatus ? { Status: newStatus } : {}),
+    });
     res.json(order);
   } catch (err) {
     next(err);

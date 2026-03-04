@@ -5,8 +5,18 @@ import { useState, useEffect } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 
-const STATUSES     = ['New', 'In Progress', 'Ready', 'Delivered', 'Cancelled'];
+const STATUSES     = ['New', 'In Progress', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 const PAY_METHODS  = ['Cash', 'Card', 'Transfer'];
+
+// Must match backend ALLOWED_TRANSITIONS
+const ALLOWED_TRANSITIONS = {
+  'New':         ['In Progress', 'Cancelled'],
+  'In Progress': ['Ready', 'Cancelled'],
+  'Ready':       ['Delivered', 'Picked Up', 'In Progress', 'Cancelled'],
+  'Delivered':   [],
+  'Picked Up':   [],
+  'Cancelled':   ['New'],
+};
 
 const STATUS_COLORS = {
   'New':         'bg-blue-50 text-blue-600 border-blue-200',
@@ -69,8 +79,9 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
       setOrder(prev => ({ ...prev, ...res.data }));
       onOrderUpdated?.(orderId, res.data);
       showToast('Updated!', 'success');
-    } catch {
-      showToast('Failed to update order.', 'error');
+    } catch (err) {
+      const msg = err.response?.data?.error || 'Failed to update order.';
+      showToast(msg, 'error');
     } finally {
       setSaving(false);
     }
@@ -182,12 +193,20 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
               <div>
                 <p className="ios-label">Status</p>
                 <div className="ios-card p-4">
-                  <Pills
-                    value={order['Status'] || 'New'}
-                    onChange={val => patch({ 'Status': val })}
-                    disabled={saving}
-                    options={STATUSES.map(s => ({ value: s, label: s }))}
-                  />
+                  {(() => {
+                    const current = order['Status'] || 'New';
+                    const allowed = ALLOWED_TRANSITIONS[current] || [];
+                    // Show current status + allowed next statuses
+                    const visible = [current, ...allowed];
+                    return (
+                      <Pills
+                        value={current}
+                        onChange={val => patch({ 'Status': val })}
+                        disabled={saving}
+                        options={visible.map(s => ({ value: s, label: s }))}
+                      />
+                    );
+                  })()}
                 </div>
               </div>
 

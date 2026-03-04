@@ -11,7 +11,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 | Date | Table | Change | Applied to Prod? |
 |------|-------|--------|:-:|
-| *(none yet)* | | | |
+| 2026-03-05 | App Orders | Renamed `Deliveries` → `_Deliveries OLD`, `Deliveries 2` → `Deliveries` (duplicate link field fix) | ⚠️ Production field is already correct — no action needed |
+| 2026-03-05 | App Orders | Renamed `Order Lines` → `_Order Lines OLD`, `Order Lines 2` → `Order Lines` (duplicate link field fix) | ⚠️ Production field is already correct — no action needed |
 
 ---
 
@@ -37,6 +38,9 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-04 | `apps/florist/src/components/steps/Step3Details.jsx` | Payment method hidden when Unpaid | Keep |
 | 2026-03-04 | `apps/florist/src/components/OrderDetailSheet.jsx` | New: order detail bottom sheet | Keep |
 | 2026-03-04 | `apps/florist/src/pages/OrderListPage.jsx` | Orders clickable → detail sheet | Keep |
+| 2026-03-05 | `backend/src/routes/orders.js` | Status transition validation + stock rollback on cancel | Keep |
+| 2026-03-05 | `apps/florist/src/components/OrderDetailSheet.jsx` | Only show allowed next statuses, added "Picked Up" | Keep |
+| 2026-03-05 | `backend/src/routes/orders.js` | Fixed field name `Assigned Delivery` → `Deliveries` (matches actual Airtable field) | Keep — same field name in production |
 
 ---
 
