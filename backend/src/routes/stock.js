@@ -82,4 +82,33 @@ router.post('/:id/adjust', async (req, res, next) => {
   }
 });
 
+// POST /api/stock/:id/write-off — record spoiled/dead stems
+// Decrements Current Quantity and adds to Dead/Unsold Stems counter.
+// Body: { quantity: 5, reason?: "wilted" }
+router.post('/:id/write-off', async (req, res, next) => {
+  try {
+    const { quantity, reason } = req.body;
+
+    if (typeof quantity !== 'number' || quantity <= 0) {
+      return res.status(400).json({ error: 'quantity must be a positive number.' });
+    }
+
+    const item = await db.getById(TABLES.STOCK, req.params.id);
+    const currentQty = item['Current Quantity'] || 0;
+    const currentDead = item['Dead/Unsold Stems'] || 0;
+
+    // Can't write off more than available
+    const actualWriteOff = Math.min(quantity, currentQty);
+
+    const updated = await db.update(TABLES.STOCK, req.params.id, {
+      'Current Quantity':   currentQty - actualWriteOff,
+      'Dead/Unsold Stems':  currentDead + actualWriteOff,
+    });
+
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

@@ -143,8 +143,6 @@ export default function NewOrderPage() {
             orderLines={form.orderLines}
             priceOverride={form.priceOverride}
             stock={stock}
-            costTotal={costTotal}
-            sellTotal={sellTotal}
             onStockRefresh={() => client.get('/stock').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}

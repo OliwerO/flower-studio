@@ -136,6 +136,12 @@ const t = {
   newItemName:      'Flower name',
   newItemCategory:  'Category',
 
+  // Stock write-off
+  writeOff:         'Write off',
+  deadStems:        'dead',
+  confirm:          'Confirm',
+  writeOffError:    'Failed to write off stock.',
+
   // Toast
   success:          'Done!',
   error:            'Error',

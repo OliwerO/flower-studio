@@ -83,34 +83,35 @@ router.get('/', async (req, res, next) => {
 // GET /api/orders/:id — includes linked order lines
 router.get('/:id', async (req, res, next) => {
   try {
+    // 1. Fetch the order record (1 API call)
     const order = await db.getById(TABLES.ORDERS, req.params.id);
 
-    // Resolve customer name
-    if (order.Customer?.length) {
-      try {
-        const customer = await db.getById(TABLES.CUSTOMERS, order.Customer[0]);
-        order['Customer Name'] = customer.Name || customer.Nickname || '';
-      } catch { order['Customer Name'] = ''; }
-    }
+    // 2. Bulk-fetch order lines + customer + delivery in parallel (2-3 API calls, not N+2)
+    //    Same pattern as the list endpoint — one truck for all packages.
+    const lineIds = order['Order Lines'] || [];
+    const custId = order.Customer?.[0];
+    const deliveryId = order['Deliveries']?.[0];
 
-    // Fetch linked order lines if any exist
-    if (order['Order Lines']?.length) {
-      const lineIds = order['Order Lines'];
-      const lines = await Promise.all(
-        lineIds.map((id) => db.getById(TABLES.ORDER_LINES, id))
-      );
-      order.orderLines = lines;
-    } else {
-      order.orderLines = [];
-    }
+    const [orderLines, customer, delivery] = await Promise.all([
+      // Bulk-fetch all order lines with OR formula (1 call instead of N)
+      lineIds.length > 0
+        ? db.list(TABLES.ORDER_LINES, {
+            filterByFormula: `OR(${lineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+          })
+        : Promise.resolve([]),
+      // Fetch customer (1 call)
+      custId
+        ? db.getById(TABLES.CUSTOMERS, custId).catch(() => null)
+        : Promise.resolve(null),
+      // Fetch delivery if exists (1 call)
+      deliveryId
+        ? db.getById(TABLES.DELIVERIES, deliveryId)
+        : Promise.resolve(undefined),
+    ]);
 
-    // Fetch linked delivery if exists
-    if (order['Deliveries']?.length) {
-      order.delivery = await db.getById(
-        TABLES.DELIVERIES,
-        order['Deliveries'][0]
-      );
-    }
+    order['Customer Name'] = customer?.Name || customer?.Nickname || '';
+    order.orderLines = orderLines;
+    if (delivery) order.delivery = delivery;
 
     res.json(order);
   } catch (err) {

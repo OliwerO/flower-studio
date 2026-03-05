@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
+import DatePicker from '../components/DatePicker.jsx';
 import t from '../translations.js';
 
 const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
@@ -62,12 +63,13 @@ export default function OrderListPage() {
 
       {/* Filters */}
       <div className="px-4 py-3 max-w-2xl mx-auto flex gap-2 items-center flex-wrap">
-        <input
-          type="date"
-          value={date}
-          onChange={e => setDate(e.target.value)}
-          className="h-9 px-3 rounded-full bg-white border border-ios-separator text-sm shadow-sm"
-        />
+        <div className="bg-white rounded-full border border-ios-separator shadow-sm px-3 h-9 flex items-center">
+          <DatePicker
+            value={date}
+            onChange={setDate}
+            placeholder="Date"
+          />
+        </div>
         <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1 overflow-x-auto">
           {STATUSES.map(s => (
             <button

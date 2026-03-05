@@ -5,9 +5,21 @@ import t from '../../translations.js';
 
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
-  onChange, onLinesChange, costTotal, sellTotal,
+  onChange, onLinesChange,
 }) {
   const [flowerQuery, setFlowerQuery] = useState('');
+
+  // Compute totals locally from orderLines — guarantees they always match the displayed lines.
+  // Previously these came as props from the parent, but a React rendering quirk
+  // caused the prop-based totals to lag behind when items were added via the catalog.
+  const costTotal = useMemo(
+    () => orderLines.reduce((s, l) => s + Number(l.costPricePerUnit) * Number(l.quantity), 0),
+    [orderLines]
+  );
+  const sellTotal = useMemo(
+    () => orderLines.reduce((s, l) => s + Number(l.sellPricePerUnit) * Number(l.quantity), 0),
+    [orderLines]
+  );
 
   const filteredStock = useMemo(() => {
     const q = flowerQuery.toLowerCase().trim();
@@ -160,11 +172,11 @@ export default function Step2Bouquet({
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
               return (
-              <div key={l.stockItemId} className="flex items-center gap-3 px-4 py-3">
+              <div key={`${l.stockItemId}-${l.quantity}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
                   <div className="text-xs text-ios-tertiary">
-                    {l.sellPricePerUnit} zł × {l.quantity} = <strong className="text-ios-label">{(l.sellPricePerUnit * l.quantity).toFixed(0)} zł</strong>
+                    {Number(l.sellPricePerUnit).toFixed(1)} zł × {l.quantity} = <strong className="text-ios-label">{(Number(l.sellPricePerUnit) * Number(l.quantity)).toFixed(0)} zł</strong>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -202,8 +214,8 @@ export default function Step2Bouquet({
             })}
           </div>
 
-          {/* Totals — passed from parent (authoritative state) */}
-          <div className="mt-2 ios-card px-4 py-3 flex justify-between text-sm">
+          {/* Totals — computed locally from orderLines via useMemo */}
+          <div key={`totals-${costTotal}-${sellTotal}`} className="mt-2 ios-card px-4 py-3 flex justify-between text-sm">
             <span className="text-ios-tertiary">{t.costTotal}: <strong className="text-ios-label">{costTotal.toFixed(0)} zł</strong></span>
             <span className="text-brand-600 font-semibold">{t.sellTotal}: <strong>{sellTotal.toFixed(0)} zł</strong></span>
           </div>

@@ -1,6 +1,8 @@
 // Step3Details — consistent pill-button selectors throughout, matching Order Source style.
 
 import t from '../../translations.js';
+import DatePicker from '../DatePicker.jsx';
+import TimePicker from '../TimePicker.jsx';
 
 const SOURCES       = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
 const SOURCE_LABELS = { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
@@ -100,21 +102,23 @@ export default function Step3Details({ form, onChange }) {
         <div className="ios-card overflow-hidden divide-y divide-white/40">
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate}</span>
-            <input
-              type="date"
-              value={form.deliveryDate}
-              onChange={e => onChange({ deliveryDate: e.target.value })}
-              className="flex-1 text-base text-ios-label bg-transparent outline-none text-right"
-            />
+            <div className="flex-1">
+              <DatePicker
+                value={form.deliveryDate}
+                onChange={val => onChange({ deliveryDate: val })}
+                placeholder={t.deliveryDate}
+              />
+            </div>
           </div>
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryTime}</span>
-            <input
-              type="time"
-              value={form.deliveryTime}
-              onChange={e => onChange({ deliveryTime: e.target.value })}
-              className="flex-1 text-base text-ios-label bg-transparent outline-none text-right"
-            />
+            <div className="flex-1">
+              <TimePicker
+                value={form.deliveryTime}
+                onChange={val => onChange({ deliveryTime: val })}
+                placeholder={t.deliveryTime}
+              />
+            </div>
           </div>
         </div>
       </div>

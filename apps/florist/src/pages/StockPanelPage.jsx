@@ -31,6 +31,14 @@ export default function StockPanelPage() {
     } catch { showToast(t.adjustError, 'error'); }
   }
 
+  async function handleWriteOff(id, quantity) {
+    try {
+      const res = await client.post(`/stock/${id}/write-off`, { quantity });
+      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
+      showToast(`${quantity} stems written off`, 'success');
+    } catch { showToast(t.writeOffError, 'error'); }
+  }
+
   async function handleReceive(data) {
     try {
       await client.post('/stock-purchases', data);
@@ -91,7 +99,7 @@ export default function StockPanelPage() {
               <p className="ios-label">{category}</p>
               <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
                 {items.map(item => (
-                  <StockItem key={item.id} item={item} onAdjust={delta => handleAdjust(item.id, delta)} />
+                  <StockItem key={item.id} item={item} onAdjust={delta => handleAdjust(item.id, delta)} onWriteOff={qty => handleWriteOff(item.id, qty)} />
                 ))}
               </div>
             </div>
