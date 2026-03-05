@@ -1,4 +1,5 @@
 // Creates demo orders covering all status/payment/delivery variations
+// Simplified flow: New → Ready → Delivered/Picked Up (no In Progress)
 // Run: node --env-file=backend/.env.dev scripts/create-demo-orders.js
 const BASE = 'http://localhost:3001/api';
 const PIN = '5678';
@@ -70,9 +71,9 @@ async function run() {
       notes: 'Premium wrapping, gold ribbon',
     },
 
-    // ── IN PROGRESS STATUS ──────────────────────────
+    // ── READY STATUS ────────────────────────────────
     {
-      label: '4. IN PROGRESS — Delivery, Unpaid, Instagram',
+      label: '4. READY — Delivery, Unpaid, Instagram',
       customer: anna.id,
       customerRequest: 'Colorful spring mix — tulips & freesia',
       source: 'Instagram',
@@ -80,10 +81,10 @@ async function run() {
       orderLines: [line(s('Pink tulips'), 5), line(s('Yellow tulips'), 5), line(s('Freesia'), 4), line(s('Fern'), 3)],
       delivery: { address: 'ul. Nowy Świat 22, Warszawa', recipientName: 'Ewa Kowalska', recipientPhone: '+48 602 555 666', date: '2026-03-05', time: '14:00-16:00', fee: 35 },
       paymentStatus: 'Unpaid',
-      targetStatus: 'In Progress',
+      targetStatus: 'Ready',
     },
     {
-      label: '5. IN PROGRESS — Pickup, Paid (Cash), Walk-in',
+      label: '5. READY — Pickup, Paid (Cash), Walk-in',
       customer: maria.id,
       customerRequest: 'Red roses, classic dozen',
       source: 'Walk-in',
@@ -91,10 +92,8 @@ async function run() {
       orderLines: [line(s('Red roses'), 12), line(s('Kraft paper'), 1)],
       paymentStatus: 'Paid',
       paymentMethod: 'Cash',
-      targetStatus: 'In Progress',
+      targetStatus: 'Ready',
     },
-
-    // ── READY STATUS ────────────────────────────────
     {
       label: '6. READY — Delivery, Unpaid, Phone',
       customer: kasia.id,
@@ -196,23 +195,17 @@ async function run() {
       continue;
     }
 
-    // Transition to target status step by step
+    // Transition to target status step by step (simplified flow, no In Progress)
     const id = created.order.id;
-    if (targetStatus === 'In Progress') {
-      await patch(id, { Status: 'In Progress' });
-    } else if (targetStatus === 'Ready') {
-      await patch(id, { Status: 'In Progress' });
+    if (targetStatus === 'Ready') {
       await patch(id, { Status: 'Ready' });
     } else if (targetStatus === 'Delivered') {
-      await patch(id, { Status: 'In Progress' });
       await patch(id, { Status: 'Ready' });
       await patch(id, { Status: 'Delivered' });
     } else if (targetStatus === 'Picked Up') {
-      await patch(id, { Status: 'In Progress' });
       await patch(id, { Status: 'Ready' });
       await patch(id, { Status: 'Picked Up' });
     } else if (targetStatus === 'Cancelled') {
-      await patch(id, { Status: 'In Progress' });
       await patch(id, { Status: 'Cancelled' });
     }
 
