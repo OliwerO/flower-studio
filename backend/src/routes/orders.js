@@ -29,8 +29,9 @@ router.get('/', async (req, res, next) => {
       maxRecords: 200,
     });
 
-    // Fetch linked customer name for each order
+    // Enrich each order with customer name and computed total
     for (const order of orders) {
+      // Customer name
       if (order.Customer?.length) {
         try {
           const customer = await db.getById(TABLES.CUSTOMERS, order.Customer[0]);
@@ -40,6 +41,18 @@ router.get('/', async (req, res, next) => {
         }
       } else {
         order['Customer Name'] = '';
+      }
+
+      // Compute sell total from order lines (if no Price Override set)
+      if (!order['Price Override'] && order['Order Lines']?.length) {
+        try {
+          let total = 0;
+          for (const lineId of order['Order Lines']) {
+            const line = await db.getById(TABLES.ORDER_LINES, lineId);
+            total += Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
+          }
+          order['Sell Total'] = total;
+        } catch { /* skip — lines may be deleted */ }
       }
     }
 
@@ -53,6 +66,14 @@ router.get('/', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.ORDERS, req.params.id);
+
+    // Resolve customer name
+    if (order.Customer?.length) {
+      try {
+        const customer = await db.getById(TABLES.CUSTOMERS, order.Customer[0]);
+        order['Customer Name'] = customer.Name || customer.Nickname || '';
+      } catch { order['Customer Name'] = ''; }
+    }
 
     // Fetch linked order lines if any exist
     if (order['Order Lines']?.length) {

@@ -5,6 +5,7 @@ const STATUS_STYLES = {
   'In Progress':  { dot: 'bg-ios-orange', label: 'bg-orange-50 text-orange-600' },
   'Ready':        { dot: 'bg-ios-green',  label: 'bg-green-50 text-green-700' },
   'Delivered':    { dot: 'bg-ios-tertiary', label: 'bg-gray-100 text-gray-500' },
+  'Picked Up':    { dot: 'bg-ios-tertiary', label: 'bg-gray-100 text-gray-500' },
   'Cancelled':    { dot: 'bg-ios-red',    label: 'bg-red-50 text-red-500' },
 };
 
@@ -38,7 +39,7 @@ export default function OrderCard({ order, onClick }) {
           </span>
         </div>
         {price > 0 && (
-          <span className="text-base font-bold text-brand-600 shrink-0">{price} zł</span>
+          <span className={`text-base font-bold shrink-0 ${isPaid ? 'text-ios-green' : 'text-ios-red'}`}>{price} zł</span>
         )}
       </div>
 

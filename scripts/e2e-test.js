@@ -1,88 +1,218 @@
-// E2E test — creates order, checks stock, transitions, cancels, verifies rollback
+// E2E test — comprehensive order lifecycle + all status transitions
+// Run: node --env-file=backend/.env.dev scripts/e2e-test.js
 const BASE = 'http://localhost:3001/api';
 const PIN = '5678';
 const headers = { 'Content-Type': 'application/json', 'X-Auth-PIN': PIN };
 
-async function test() {
-  // 1. Get stock items
-  console.log('=== 1. Fetching stock ===');
-  let res = await fetch(BASE + '/stock', { headers });
-  const stock = await res.json();
-  const rose = stock.find(s => s['Display Name'] && s['Display Name'].toLowerCase().includes('rose'));
-  const tulip = stock.find(s => s['Display Name'] && s['Display Name'].toLowerCase().includes('tulip'));
-  if (!rose || !tulip) { console.log('No rose/tulip found'); return; }
-  console.log('Rose:', rose['Display Name'], 'qty:', rose['Current Quantity']);
-  console.log('Tulip:', tulip['Display Name'], 'qty:', tulip['Current Quantity']);
+let passed = 0;
+let failed = 0;
 
-  // 2. Get a customer
-  res = await fetch(BASE + '/customers', { headers });
-  const customers = await res.json();
-  const cust = customers[0];
-  console.log('Customer:', cust.Name || cust.Nickname);
+function assert(label, condition, detail) {
+  if (condition) {
+    console.log(`  ✓ ${label}`);
+    passed++;
+  } else {
+    console.log(`  ✗ ${label} — ${detail || 'FAILED'}`);
+    failed++;
+  }
+}
 
-  // 3. Create order with delivery
-  console.log('\n=== 2. Creating order ===');
-  const orderBody = {
-    customer: cust.id,
-    customerRequest: 'E2E test bouquet',
+async function patchOrder(id, fields) {
+  const res = await fetch(`${BASE}/orders/${id}`, { method: 'PATCH', headers, body: JSON.stringify(fields) });
+  return { status: res.status, data: await res.json() };
+}
+
+async function createTestOrder(custId, rose, tulip, deliveryType) {
+  const body = {
+    customer: custId,
+    customerRequest: `E2E test — ${deliveryType}`,
     source: 'Walk-in',
-    deliveryType: 'Delivery',
+    deliveryType,
     orderLines: [
-      { stockItemId: rose.id, flowerName: rose['Display Name'], quantity: 2, costPricePerUnit: rose['Current Cost Price'], sellPricePerUnit: rose['Current Sell Price'] },
-      { stockItemId: tulip.id, flowerName: tulip['Display Name'], quantity: 3, costPricePerUnit: tulip['Current Cost Price'], sellPricePerUnit: tulip['Current Sell Price'] },
+      { stockItemId: rose.id, flowerName: rose['Display Name'], quantity: 1, costPricePerUnit: rose['Current Cost Price'], sellPricePerUnit: rose['Current Sell Price'] },
+      { stockItemId: tulip.id, flowerName: tulip['Display Name'], quantity: 1, costPricePerUnit: tulip['Current Cost Price'], sellPricePerUnit: tulip['Current Sell Price'] },
     ],
-    delivery: { address: '123 Test St', recipientName: 'Test Recipient', recipientPhone: '+48555000111', date: '2026-03-10', time: '14:00', fee: 35 },
+    ...(deliveryType === 'Delivery' ? {
+      delivery: { address: '123 Test St', recipientName: 'Test', recipientPhone: '+48555000111', date: '2026-03-10', time: '14:00', fee: 35 },
+    } : {}),
     paymentStatus: 'Unpaid',
     notes: 'E2E automated test',
   };
-  res = await fetch(BASE + '/orders', { method: 'POST', headers, body: JSON.stringify(orderBody) });
-  const created = await res.json();
-  console.log('Order ID:', created.order?.id);
-  console.log('Lines created:', created.orderLines?.length);
-  console.log('Delivery created:', !!created.delivery);
+  const res = await fetch(`${BASE}/orders`, { method: 'POST', headers, body: JSON.stringify(body) });
+  return res.json();
+}
 
-  // 4. Check stock decremented
-  console.log('\n=== 3. Checking stock after order ===');
+async function test() {
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 1. SETUP — Stock & Customer ═══');
+  let res = await fetch(BASE + '/stock', { headers });
+  const stock = await res.json();
+  const rose = stock.find(s => s['Display Name']?.toLowerCase().includes('rose'));
+  const tulip = stock.find(s => s['Display Name']?.toLowerCase().includes('tulip'));
+  assert('Found rose in stock', !!rose, 'No rose found');
+  assert('Found tulip in stock', !!tulip, 'No tulip found');
+  if (!rose || !tulip) { console.log('Cannot continue without stock items'); return; }
+  console.log(`  Rose: ${rose['Display Name']} (qty: ${rose['Current Quantity']})`);
+  console.log(`  Tulip: ${tulip['Display Name']} (qty: ${tulip['Current Quantity']})`);
+
+  res = await fetch(BASE + '/customers', { headers });
+  const customers = await res.json();
+  const cust = customers[0];
+  assert('Found customer', !!cust, 'No customers in dev base');
+  if (!cust) return;
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 2. ORDER CREATION — Delivery ═══');
+  const created = await createTestOrder(cust.id, rose, tulip, 'Delivery');
+  assert('Order created', !!created.order?.id);
+  assert('2 order lines created', created.orderLines?.length === 2);
+  assert('Delivery record created', !!created.delivery);
+  const orderId = created.order.id;
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 3. STOCK DECREMENT ═══');
   res = await fetch(BASE + '/stock', { headers });
   const stock2 = await res.json();
   const rose2 = stock2.find(s => s.id === rose.id);
   const tulip2 = stock2.find(s => s.id === tulip.id);
-  console.log('Rose qty:', rose['Current Quantity'], '->', rose2['Current Quantity'], rose2['Current Quantity'] === rose['Current Quantity'] - 2 ? 'OK' : 'FAIL');
-  console.log('Tulip qty:', tulip['Current Quantity'], '->', tulip2['Current Quantity'], tulip2['Current Quantity'] === tulip['Current Quantity'] - 3 ? 'OK' : 'FAIL');
+  assert('Rose decremented by 1', rose2['Current Quantity'] === rose['Current Quantity'] - 1, `got ${rose2['Current Quantity']}, expected ${rose['Current Quantity'] - 1}`);
+  assert('Tulip decremented by 1', tulip2['Current Quantity'] === tulip['Current Quantity'] - 1, `got ${tulip2['Current Quantity']}, expected ${tulip['Current Quantity'] - 1}`);
 
-  // 5. Get order detail (check delivery is linked)
-  console.log('\n=== 4. Checking order detail ===');
-  res = await fetch(BASE + '/orders/' + created.order.id, { headers });
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 4. ORDER DETAIL (GET /:id) ═══');
+  res = await fetch(`${BASE}/orders/${orderId}`, { headers });
   const detail = await res.json();
-  console.log('Order Lines loaded:', detail.orderLines?.length);
-  console.log('Delivery loaded:', !!detail.delivery);
-  console.log('Delivery address:', detail.delivery?.['Delivery Address']);
+  assert('Order lines loaded', detail.orderLines?.length === 2);
+  assert('Delivery loaded', !!detail.delivery);
+  assert('Delivery address correct', detail.delivery?.['Delivery Address'] === '123 Test St');
+  assert('Customer Name resolved', 'Customer Name' in detail, 'Customer Name key missing from response');
 
-  // 6. Transition: New -> In Progress -> Cancelled (test stock rollback)
-  console.log('\n=== 5. Status transitions ===');
-  res = await fetch(BASE + '/orders/' + created.order.id, { method: 'PATCH', headers, body: JSON.stringify({ Status: 'In Progress' }) });
-  let patched = await res.json();
-  console.log('New -> In Progress:', patched.Status);
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 5. VALID STATUS TRANSITIONS ═══');
 
-  res = await fetch(BASE + '/orders/' + created.order.id, { method: 'PATCH', headers, body: JSON.stringify({ Status: 'Cancelled' }) });
-  patched = await res.json();
-  console.log('In Progress -> Cancelled:', patched.Status);
+  // Path 1: New → In Progress → Ready → Delivered (happy path for delivery)
+  let p = await patchOrder(orderId, { Status: 'In Progress' });
+  assert('New → In Progress', p.data.Status === 'In Progress');
 
-  // 7. Check stock restored
-  console.log('\n=== 6. Checking stock after cancel ===');
+  p = await patchOrder(orderId, { Status: 'Ready' });
+  assert('In Progress → Ready', p.data.Status === 'Ready');
+
+  p = await patchOrder(orderId, { Status: 'Delivered' });
+  assert('Ready → Delivered', p.data.Status === 'Delivered');
+
+  // Create another order for pickup path
+  console.log('\n═══ 6. PICKUP PATH — New → In Progress → Ready → Picked Up ═══');
+  const pickup = await createTestOrder(cust.id, rose, tulip, 'Pickup');
+  const pickupId = pickup.order.id;
+  assert('Pickup order created', !!pickupId);
+
+  p = await patchOrder(pickupId, { Status: 'In Progress' });
+  assert('New → In Progress', p.data.Status === 'In Progress');
+
+  p = await patchOrder(pickupId, { Status: 'Ready' });
+  assert('In Progress → Ready', p.data.Status === 'Ready');
+
+  p = await patchOrder(pickupId, { Status: 'Picked Up' });
+  assert('Ready → Picked Up', p.data.Status === 'Picked Up');
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 7. CANCELLATION + STOCK ROLLBACK ═══');
+  const cancelOrder = await createTestOrder(cust.id, rose, tulip, 'Pickup');
+  const cancelId = cancelOrder.order.id;
+  // Record stock before cancel
   res = await fetch(BASE + '/stock', { headers });
-  const stock3 = await res.json();
-  const rose3 = stock3.find(s => s.id === rose.id);
-  const tulip3 = stock3.find(s => s.id === tulip.id);
-  console.log('Rose qty:', rose2['Current Quantity'], '->', rose3['Current Quantity'], rose3['Current Quantity'] === rose['Current Quantity'] ? 'RESTORED OK' : 'FAIL (expected ' + rose['Current Quantity'] + ')');
-  console.log('Tulip qty:', tulip2['Current Quantity'], '->', tulip3['Current Quantity'], tulip3['Current Quantity'] === tulip['Current Quantity'] ? 'RESTORED OK' : 'FAIL (expected ' + tulip['Current Quantity'] + ')');
+  const stockPre = await res.json();
+  const rosePre = stockPre.find(s => s.id === rose.id);
 
-  // 8. Test invalid transition
-  console.log('\n=== 7. Invalid transition test ===');
-  res = await fetch(BASE + '/orders/' + created.order.id, { method: 'PATCH', headers, body: JSON.stringify({ Status: 'Ready' }) });
-  const invalid = await res.json();
-  console.log('Cancelled -> Ready:', res.status === 400 ? 'BLOCKED OK' : 'FAIL', invalid.error || '');
+  p = await patchOrder(cancelId, { Status: 'In Progress' });
+  assert('New → In Progress', p.data.Status === 'In Progress');
 
-  console.log('\n=== ALL TESTS COMPLETE ===');
+  p = await patchOrder(cancelId, { Status: 'Cancelled' });
+  assert('In Progress → Cancelled', p.data.Status === 'Cancelled');
+
+  res = await fetch(BASE + '/stock', { headers });
+  const stockPost = await res.json();
+  const rosePost = stockPost.find(s => s.id === rose.id);
+  assert('Stock restored after cancel', rosePost['Current Quantity'] === rosePre['Current Quantity'] + 1, `got ${rosePost['Current Quantity']}, expected ${rosePre['Current Quantity'] + 1}`);
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 8. UN-CANCEL (Reopen) ═══');
+  p = await patchOrder(cancelId, { Status: 'New' });
+  assert('Cancelled → New (reopen)', p.data.Status === 'New');
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 9. INVALID TRANSITIONS (should all be blocked) ═══');
+
+  // New order for testing invalid paths
+  const inv = await createTestOrder(cust.id, rose, tulip, 'Pickup');
+  const invId = inv.order.id;
+
+  // From New: can only go to In Progress or Cancelled
+  p = await patchOrder(invId, { Status: 'Ready' });
+  assert('New → Ready BLOCKED', p.status === 400);
+
+  p = await patchOrder(invId, { Status: 'Delivered' });
+  assert('New → Delivered BLOCKED', p.status === 400);
+
+  p = await patchOrder(invId, { Status: 'Picked Up' });
+  assert('New → Picked Up BLOCKED', p.status === 400);
+
+  // Move to In Progress, test invalid from there
+  await patchOrder(invId, { Status: 'In Progress' });
+
+  p = await patchOrder(invId, { Status: 'Delivered' });
+  assert('In Progress → Delivered BLOCKED', p.status === 400);
+
+  p = await patchOrder(invId, { Status: 'Picked Up' });
+  assert('In Progress → Picked Up BLOCKED', p.status === 400);
+
+  p = await patchOrder(invId, { Status: 'New' });
+  assert('In Progress → New BLOCKED', p.status === 400);
+
+  // Move to Ready, test invalid from there
+  await patchOrder(invId, { Status: 'Ready' });
+
+  p = await patchOrder(invId, { Status: 'New' });
+  assert('Ready → New BLOCKED', p.status === 400);
+
+  // Move to Delivered (terminal)
+  await patchOrder(invId, { Status: 'Delivered' });
+
+  p = await patchOrder(invId, { Status: 'New' });
+  assert('Delivered → New BLOCKED', p.status === 400);
+
+  p = await patchOrder(invId, { Status: 'In Progress' });
+  assert('Delivered → In Progress BLOCKED', p.status === 400);
+
+  p = await patchOrder(invId, { Status: 'Cancelled' });
+  assert('Delivered → Cancelled BLOCKED', p.status === 400);
+
+  // Test Picked Up (terminal) — use the pickup order from earlier
+  p = await patchOrder(pickupId, { Status: 'New' });
+  assert('Picked Up → New BLOCKED', p.status === 400);
+
+  p = await patchOrder(pickupId, { Status: 'Cancelled' });
+  assert('Picked Up → Cancelled BLOCKED', p.status === 400);
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 10. READY → In Progress (rework path) ═══');
+  const rework = await createTestOrder(cust.id, rose, tulip, 'Pickup');
+  await patchOrder(rework.order.id, { Status: 'In Progress' });
+  await patchOrder(rework.order.id, { Status: 'Ready' });
+  p = await patchOrder(rework.order.id, { Status: 'In Progress' });
+  assert('Ready → In Progress (rework)', p.data.Status === 'In Progress');
+
+  // ═══════════════════════════════════════════
+  console.log('\n═══ 11. PAYMENT UPDATE ═══');
+  p = await patchOrder(rework.order.id, { 'Payment Status': 'Paid', 'Payment Method': 'Cash' });
+  assert('Payment marked Paid', p.data['Payment Status'] === 'Paid');
+  assert('Payment method set to Cash', p.data['Payment Method'] === 'Cash');
+
+  // ═══════════════════════════════════════════
+  console.log(`\n${'═'.repeat(50)}`);
+  console.log(`RESULTS: ${passed} passed, ${failed} failed, ${passed + failed} total`);
+  if (failed === 0) console.log('🌸 ALL TESTS PASSED');
+  else console.log('⚠️  SOME TESTS FAILED — review above');
 }
+
 test().catch(e => console.error('FATAL:', e));

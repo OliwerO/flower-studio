@@ -23,6 +23,7 @@ const STATUS_COLORS = {
   'In Progress': 'bg-orange-50 text-orange-600 border-orange-200',
   'Ready':       'bg-green-50 text-green-700 border-green-200',
   'Delivered':   'bg-gray-100 text-gray-500 border-gray-200',
+  'Picked Up':   'bg-gray-100 text-gray-500 border-gray-200',
   'Cancelled':   'bg-red-50 text-red-500 border-red-200',
 };
 
@@ -99,10 +100,11 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
         onClick={onClose}
       />
 
-      {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 flex flex-col max-h-[90vh]
-                      bg-[#f8f0f3] rounded-t-3xl shadow-2xl overflow-hidden
-                      animate-slide-up">
+      {/* Sheet — uses explicit transform instead of CSS animation (animation
+           doesn't reliably fire on React-mounted elements in all browsers) */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 flex flex-col min-h-[280px] max-h-[90vh]
+                      bg-[#f8f0f3] rounded-t-3xl shadow-2xl overflow-hidden"
+           style={{ transform: 'translateY(0)' }}>
 
         {/* Drag handle */}
         <div className="flex justify-center pt-3 pb-1 shrink-0">
@@ -129,7 +131,7 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
         </div>
 
         {/* Scrollable content */}
-        <div className="overflow-y-auto px-5 pb-10 flex flex-col gap-5">
+        <div className="overflow-y-auto px-5 pb-10 flex flex-col gap-5 flex-1">
 
           {loading ? (
             <div className="flex justify-center py-16">

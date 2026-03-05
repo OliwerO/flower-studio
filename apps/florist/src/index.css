@@ -117,6 +117,12 @@
     to   { transform: translateY(0); }
   }
   .animate-slide-up {
-    animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    animation: slide-up 0.28s cubic-bezier(0.32, 0.72, 0, 1) forwards;
+  }
+
+  /* Reliable bottom-sheet positioning — no animation dependency */
+  .bottom-sheet-open {
+    transform: translateY(0);
+    transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   }
 }

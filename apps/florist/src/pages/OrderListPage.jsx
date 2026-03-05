@@ -6,7 +6,7 @@ import OrderCard from '../components/OrderCard.jsx';
 import OrderDetailSheet from '../components/OrderDetailSheet.jsx';
 import t from '../translations.js';
 
-const STATUSES = ['', 'New', 'In Progress', 'Ready', 'Delivered', 'Cancelled'];
+const STATUSES = ['', 'New', 'In Progress', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 
 function todayISO() {
   return new Date().toISOString().split('T')[0];
