@@ -5,26 +5,18 @@ import { useState, useEffect } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 
-const STATUSES     = ['New', 'In Progress', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 const PAY_METHODS  = ['Cash', 'Card', 'Transfer'];
 
-// Must match backend ALLOWED_TRANSITIONS
+// Simplified flow: New → Ready → Delivered/Picked Up.
+// "In Progress" removed — unnecessary extra click without value added.
+// Like removing a WIP station that only adds handling time without quality benefit.
 const ALLOWED_TRANSITIONS = {
-  'New':         ['In Progress', 'Cancelled'],
-  'In Progress': ['Ready', 'Cancelled'],
-  'Ready':       ['Delivered', 'Picked Up', 'In Progress', 'Cancelled'],
+  'New':         ['Ready', 'Cancelled'],
+  'In Progress': ['Ready', 'Cancelled'],   // legacy: still allow exit from this state
+  'Ready':       ['Delivered', 'Picked Up', 'Cancelled'],
   'Delivered':   [],
   'Picked Up':   [],
   'Cancelled':   ['New'],
-};
-
-const STATUS_COLORS = {
-  'New':         'bg-blue-50 text-blue-600 border-blue-200',
-  'In Progress': 'bg-orange-50 text-orange-600 border-orange-200',
-  'Ready':       'bg-green-50 text-green-700 border-green-200',
-  'Delivered':   'bg-gray-100 text-gray-500 border-gray-200',
-  'Picked Up':   'bg-gray-100 text-gray-500 border-gray-200',
-  'Cancelled':   'bg-red-50 text-red-500 border-red-200',
 };
 
 function Pills({ options, value, onChange, disabled }) {
@@ -62,14 +54,19 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
   const { showToast }   = useToast();
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
 
   useEffect(() => {
     if (!orderId) return;
     setLoading(true);
+    setError(false);
     client.get(`/orders/${orderId}`)
       .then(r => setOrder(r.data))
-      .catch(() => showToast('Failed to load order.', 'error'))
+      .catch(() => {
+        setError(true);
+        showToast('Failed to load order.', 'error');
+      })
       .finally(() => setLoading(false));
   }, [orderId]);
 
@@ -94,16 +91,14 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
 
   return (
     <>
-      {/* Backdrop */}
+      {/* Backdrop — tapping anywhere outside the sheet closes it */}
       <div
-        className="fixed inset-0 bg-black/40 z-40 backdrop-blur-sm"
+        className="fixed inset-0 bg-black/40 z-40"
         onClick={onClose}
       />
 
-      {/* Sheet — NO animation/transform; pure CSS fixed positioning only.
-           CSS animations + translateY caused the "pink screen" bug where the
-           sheet would slide below the viewport after the animation finished. */}
-      <div className="fixed inset-x-0 bottom-0 z-50 flex flex-col min-h-[280px] max-h-[90vh]
+      {/* Sheet — capped at 85vh so backdrop is always reachable */}
+      <div className="fixed inset-x-0 bottom-0 z-50 flex flex-col max-h-[85vh]
                       bg-[#f8f0f3] rounded-t-3xl shadow-2xl overflow-hidden">
 
         {/* Drag handle */}
@@ -111,7 +106,7 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
           <div className="w-10 h-1 bg-ios-separator rounded-full" />
         </div>
 
-        {/* Header */}
+        {/* Header — always visible */}
         <div className="flex items-center justify-between px-5 py-3 shrink-0">
           <div>
             <p className="text-base font-semibold text-ios-label">
@@ -137,7 +132,19 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
             <div className="flex justify-center py-16">
               <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
             </div>
-          ) : !order ? null : (
+          ) : error || !order ? (
+            /* Error state — clear message + close button instead of blank pink */
+            <div className="flex flex-col items-center justify-center py-16 gap-4">
+              <p className="text-4xl">😕</p>
+              <p className="text-ios-tertiary text-sm">Could not load order details.</p>
+              <button
+                onClick={onClose}
+                className="px-5 py-2 rounded-full bg-brand-600 text-white text-sm font-medium active-scale"
+              >
+                Close
+              </button>
+            </div>
+          ) : (
             <>
               {/* Request */}
               {order['Customer Request'] && (
@@ -161,7 +168,7 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
                           </p>
                         </div>
                         <p className="text-sm font-semibold text-brand-600">
-                          {(Number(line['Sell Price Per Unit']) * Number(line['Quantity'])).toFixed(0)} zł
+                          {(Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0)).toFixed(0)} zł
                         </p>
                       </div>
                     ))}
@@ -198,7 +205,6 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
                   {(() => {
                     const current = order['Status'] || 'New';
                     const allowed = ALLOWED_TRANSITIONS[current] || [];
-                    // Show current status + allowed next statuses
                     const visible = [current, ...allowed];
                     return (
                       <Pills

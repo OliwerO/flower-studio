@@ -204,11 +204,13 @@ router.post('/', async (req, res, next) => {
 });
 
 // Allowed status transitions — like a production routing sheet.
-// Each status lists which statuses it can move to next.
+// Simplified: removed "In Progress" as a required step — unnecessary click
+// without value added. Orders flow: New → Ready → Delivered/Picked Up.
+// "In Progress" kept as legacy exit only (for orders already in that state).
 const ALLOWED_TRANSITIONS = {
-  'New':         ['In Progress', 'Cancelled'],
-  'In Progress': ['Ready', 'Cancelled'],
-  'Ready':       ['Delivered', 'Picked Up', 'In Progress', 'Cancelled'],
+  'New':         ['Ready', 'Cancelled'],
+  'In Progress': ['Ready', 'Cancelled'],   // legacy — still allow exit
+  'Ready':       ['Delivered', 'Picked Up', 'Cancelled'],
   'Delivered':   [],          // terminal — no changes
   'Picked Up':   [],          // terminal — no changes
   'Cancelled':   ['New'],     // allow un-cancel (reopen) back to New

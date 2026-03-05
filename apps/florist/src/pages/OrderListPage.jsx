@@ -3,10 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
-import OrderDetailSheet from '../components/OrderDetailSheet.jsx';
 import t from '../translations.js';
 
-const STATUSES = ['', 'New', 'In Progress', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
+const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 
 function todayISO() {
   return new Date().toISOString().split('T')[0];
@@ -19,7 +18,6 @@ export default function OrderListPage() {
   const [loading, setLoading]       = useState(true);
   const [date, setDate]             = useState(todayISO());
   const [status, setStatus]         = useState('');
-  const [selectedId, setSelectedId] = useState(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -104,7 +102,13 @@ export default function OrderListPage() {
         ) : (
           <div className="flex flex-col gap-2.5 mt-1">
             {orders.map(order => (
-              <OrderCard key={order.id} order={order} onClick={() => setSelectedId(order.id)} />
+              <OrderCard
+                key={order.id}
+                order={order}
+                onOrderUpdated={(id, patch) => {
+                  setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
+                }}
+              />
             ))}
           </div>
         )}
@@ -120,17 +124,6 @@ export default function OrderListPage() {
       >
         +
       </button>
-
-      {/* Order detail sheet */}
-      {selectedId && (
-        <OrderDetailSheet
-          orderId={selectedId}
-          onClose={() => setSelectedId(null)}
-          onOrderUpdated={(id, patch) => {
-            setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
-          }}
-        />
-      )}
     </div>
   );
 }

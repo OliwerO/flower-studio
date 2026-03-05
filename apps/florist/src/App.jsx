@@ -7,11 +7,12 @@ import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import { setClientPin } from './api/client.js';
 
-import LoginPage       from './pages/LoginPage.jsx';
-import OrderListPage   from './pages/OrderListPage.jsx';
-import NewOrderPage    from './pages/NewOrderPage.jsx';
-import StockPanelPage  from './pages/StockPanelPage.jsx';
-import Toast           from './components/Toast.jsx';
+import LoginPage        from './pages/LoginPage.jsx';
+import OrderListPage    from './pages/OrderListPage.jsx';
+import OrderDetailPage  from './pages/OrderDetailPage.jsx';
+import NewOrderPage     from './pages/NewOrderPage.jsx';
+import StockPanelPage   from './pages/StockPanelPage.jsx';
+import Toast            from './components/Toast.jsx';
 
 // PrivateRoute — like a badge-reader gate. Redirects to /login if no PIN in context.
 function PrivateRoute({ children }) {
@@ -39,6 +40,10 @@ export default function App() {
 
         <Route path="/orders/new" element={
           <PrivateRoute><NewOrderPage /></PrivateRoute>
+        } />
+
+        <Route path="/orders/:id" element={
+          <PrivateRoute><OrderDetailPage /></PrivateRoute>
         } />
 
         <Route path="/stock" element={
