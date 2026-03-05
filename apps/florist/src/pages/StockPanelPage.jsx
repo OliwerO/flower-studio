@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { useAuth } from '../context/AuthContext.jsx';
 import StockItem from '../components/StockItem.jsx';
 import ReceiveStockForm from '../components/ReceiveStockForm.jsx';
 import t from '../translations.js';
@@ -9,9 +10,11 @@ import t from '../translations.js';
 export default function StockPanelPage() {
   const navigate          = useNavigate();
   const { showToast }     = useToast();
+  const { role }          = useAuth();
   const [stock, setStock] = useState([]);
   const [loading, setLoading]     = useState(true);
   const [showReceive, setShowReceive] = useState(false);
+  const [editMode, setEditMode]       = useState(false);
 
   async function fetchStock() {
     setLoading(true);
@@ -31,9 +34,9 @@ export default function StockPanelPage() {
     } catch { showToast(t.adjustError, 'error'); }
   }
 
-  async function handleWriteOff(id, quantity) {
+  async function handleWriteOff(id, quantity, reason) {
     try {
-      const res = await client.post(`/stock/${id}/write-off`, { quantity });
+      const res = await client.post(`/stock/${id}/write-off`, { quantity, reason: reason || undefined });
       setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
       showToast(`${quantity} stems written off`, 'success');
     } catch { showToast(t.writeOffError, 'error'); }
@@ -99,11 +102,25 @@ export default function StockPanelPage() {
               <p className="ios-label">{category}</p>
               <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
                 {items.map(item => (
-                  <StockItem key={item.id} item={item} onAdjust={delta => handleAdjust(item.id, delta)} onWriteOff={qty => handleWriteOff(item.id, qty)} />
+                  <StockItem key={item.id} item={item} editMode={editMode} onAdjust={delta => handleAdjust(item.id, delta)} onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)} />
                 ))}
               </div>
             </div>
           ))
+        )}
+
+        {/* Owner-only edit mode toggle */}
+        {role === 'owner' && !loading && (
+          <button
+            onClick={() => setEditMode(!editMode)}
+            className={`w-full mt-4 h-11 rounded-2xl text-sm font-semibold transition-colors ${
+              editMode
+                ? 'bg-brand-600 text-white active:bg-brand-700'
+                : 'bg-ios-fill2 text-ios-secondary active:bg-ios-separator'
+            }`}
+          >
+            {editMode ? `✓ ${t.doneEditing}` : `✎ ${t.editStock}`}
+          </button>
         )}
       </main>
     </div>

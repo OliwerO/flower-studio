@@ -100,10 +100,21 @@ router.post('/:id/write-off', async (req, res, next) => {
     // Can't write off more than available
     const actualWriteOff = Math.min(quantity, currentQty);
 
-    const updated = await db.update(TABLES.STOCK, req.params.id, {
+    // Build update fields
+    const fields = {
       'Current Quantity':   currentQty - actualWriteOff,
       'Dead/Unsold Stems':  currentDead + actualWriteOff,
-    });
+    };
+
+    // Append write-off reason to Supplier Notes with timestamp
+    if (reason && reason.trim()) {
+      const today = new Date().toISOString().slice(0, 10);
+      const entry = `[WRITE-OFF ${today}] ${actualWriteOff} stems — ${reason.trim()}`;
+      const existing = item['Supplier Notes'] || '';
+      fields['Supplier Notes'] = existing ? `${existing}\n${entry}` : entry;
+    }
+
+    const updated = await db.update(TABLES.STOCK, req.params.id, fields);
 
     res.json(updated);
   } catch (err) {

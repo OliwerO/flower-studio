@@ -141,6 +141,9 @@ const t = {
   deadStems:        'dead',
   confirm:          'Confirm',
   writeOffError:    'Failed to write off stock.',
+  writeOffReason:   'Reason (optional)',
+  editStock:        'Edit stock',
+  doneEditing:      'Done',
 
   // Toast
   success:          'Done!',

@@ -99,8 +99,8 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
         <div
           className="
             absolute z-50 mt-2 left-0 right-0
-            ios-card p-2
-            shadow-lg
+            bg-white/95 backdrop-blur-xl rounded-2xl p-2
+            shadow-lg border border-white/60
             animate-in fade-in
           "
           style={{ animationDuration: '150ms' }}

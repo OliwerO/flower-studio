@@ -1,4 +1,8 @@
 // Step2Bouquet — catalog tap-to-add above, cart stepper below.
+//
+// Catalog rows are fully tappable (not just the + button).
+// Selected items get a brand tint so you can see at a glance what's in the bouquet.
+// Cart lines show only sell-price math. Cost + margin appear in the totals summary.
 
 import { useState, useMemo } from 'react';
 import t from '../../translations.js';
@@ -8,10 +12,9 @@ export default function Step2Bouquet({
   onChange, onLinesChange,
 }) {
   const [flowerQuery, setFlowerQuery] = useState('');
+  const [showCost, setShowCost]       = useState(false);
 
-  // Compute totals locally from orderLines — guarantees they always match the displayed lines.
-  // Previously these came as props from the parent, but a React rendering quirk
-  // caused the prop-based totals to lag behind when items were added via the catalog.
+  // Totals computed locally — avoids stale-prop timing issues with parent state.
   const costTotal = useMemo(
     () => orderLines.reduce((s, l) => s + Number(l.costPricePerUnit) * Number(l.quantity), 0),
     [orderLines]
@@ -20,6 +23,7 @@ export default function Step2Bouquet({
     () => orderLines.reduce((s, l) => s + Number(l.sellPricePerUnit) * Number(l.quantity), 0),
     [orderLines]
   );
+  const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
   const filteredStock = useMemo(() => {
     const q = flowerQuery.toLowerCase().trim();
@@ -35,7 +39,7 @@ export default function Step2Bouquet({
     onLinesChange(lines => {
       const exists = lines.find(l => l.stockItemId === stockItem.id);
       if (exists) {
-        if (exists.quantity >= maxQty) return lines; // cap at available stock
+        if (exists.quantity >= maxQty) return lines;
         return lines.map(l =>
           l.stockItemId === stockItem.id ? { ...l, quantity: l.quantity + 1 } : l
         );
@@ -96,7 +100,7 @@ export default function Step2Bouquet({
         </div>
       </div>
 
-      {/* ── Catalog ── */}
+      {/* ── Catalog — tap entire row to add ── */}
       <div>
         <div className="flex items-center justify-between mb-1.5 px-1">
           <p className="ios-label !px-0 !mb-0">{t.searchFlowers}</p>
@@ -129,34 +133,34 @@ export default function Step2Bouquet({
               const low    = qty > 0 && qty <= (s['Low Stock Threshold'] || 5);
               const out    = qty <= 0;
               const maxed  = inCart && inCart.quantity >= qty;
+              const disabled = out || maxed;
 
               return (
-                <div key={s.id} className="flex items-center px-4 py-3 gap-3">
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => !disabled && addOne(s)}
+                  disabled={disabled}
+                  className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors
+                              disabled:opacity-40 active-scale
+                              ${inCart ? 'bg-brand-50/70' : 'active:bg-white/40'}`}
+                >
                   <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium text-ios-label truncate">{s['Display Name']}</div>
+                    <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : 'text-ios-label'}`}>
+                      {s['Display Name']}
+                    </div>
                     <div className="text-xs text-ios-tertiary">
-                      {Number(s['Current Sell Price']).toFixed(0)} zł · {qty} pcs
+                      {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(1)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && <span className="text-ios-red"> · out</span>}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {inCart && (
-                      <span className="min-w-[22px] h-[22px] px-1 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">
-                        {inCart.quantity}
-                      </span>
-                    )}
-                    <button
-                      onClick={() => addOne(s)}
-                      disabled={out || maxed}
-                      className={`w-9 h-9 rounded-full text-xl font-bold flex items-center justify-center
-                                  active-scale disabled:opacity-30 transition-colors
-                                  ${inCart ? 'bg-brand-100 text-brand-700' : 'bg-brand-600 text-white'}`}
-                    >
-                      +
-                    </button>
-                  </div>
-                </div>
+                  {inCart && (
+                    <span className="min-w-[24px] h-[24px] px-1.5 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">
+                      {inCart.quantity}
+                    </span>
+                  )}
+                </button>
               );
             })
           )}
@@ -171,12 +175,13 @@ export default function Step2Bouquet({
             {orderLines.map(l => {
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
+              const lineSell  = Number(l.sellPricePerUnit) * Number(l.quantity);
               return (
               <div key={`${l.stockItemId}-${l.quantity}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
                   <div className="text-xs text-ios-tertiary">
-                    {Number(l.sellPricePerUnit).toFixed(1)} zł × {l.quantity} = <strong className="text-ios-label">{(Number(l.sellPricePerUnit) * Number(l.quantity)).toFixed(0)} zł</strong>
+                    {Number(l.sellPricePerUnit).toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -214,11 +219,24 @@ export default function Step2Bouquet({
             })}
           </div>
 
-          {/* Totals — computed locally from orderLines via useMemo */}
-          <div key={`totals-${costTotal}-${sellTotal}`} className="mt-2 ios-card px-4 py-3 flex justify-between text-sm">
-            <span className="text-ios-tertiary">{t.costTotal}: <strong className="text-ios-label">{costTotal.toFixed(0)} zł</strong></span>
-            <span className="text-brand-600 font-semibold">{t.sellTotal}: <strong>{sellTotal.toFixed(0)} zł</strong></span>
-          </div>
+          {/* Totals — tap to toggle cost/margin visibility */}
+          <button
+            key={`totals-${costTotal}-${sellTotal}`}
+            type="button"
+            onClick={() => setShowCost(v => !v)}
+            className="w-full mt-2 ios-card px-4 py-3 text-left active-scale transition-all"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-ios-label font-semibold">{t.sellTotal}</span>
+              <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(1)} zł</span>
+            </div>
+            {showCost && (
+              <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/40">
+                <span className="text-xs text-ios-tertiary">{t.costTotal}: (Margin: {margin}%)</span>
+                <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(1)} zł</span>
+              </div>
+            )}
+          </button>
         </div>
       )}
 
