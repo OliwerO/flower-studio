@@ -29,30 +29,48 @@ router.get('/', async (req, res, next) => {
       maxRecords: 200,
     });
 
-    // Enrich each order with customer name and computed total
-    for (const order of orders) {
-      // Customer name
-      if (order.Customer?.length) {
-        try {
-          const customer = await db.getById(TABLES.CUSTOMERS, order.Customer[0]);
-          order['Customer Name'] = customer.Name || customer.Nickname || '';
-        } catch {
-          order['Customer Name'] = '';
-        }
-      } else {
-        order['Customer Name'] = '';
-      }
+    // Bulk-fetch order lines + customers in 2 API calls (instead of N×M individual calls).
+    // Like loading a truck once with all parts instead of sending a separate van per item.
+    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
+    const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
 
-      // Compute sell total from order lines (if no Price Override set)
-      if (!order['Price Override'] && order['Order Lines']?.length) {
-        try {
-          let total = 0;
-          for (const lineId of order['Order Lines']) {
-            const line = await db.getById(TABLES.ORDER_LINES, lineId);
-            total += Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-          }
-          order['Sell Total'] = total;
-        } catch { /* skip — lines may be deleted */ }
+    const [allLines, allCustomers] = await Promise.all([
+      allLineIds.length > 0
+        ? db.list(TABLES.ORDER_LINES, {
+            filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
+            maxRecords: 1000,
+          })
+        : [],
+      uniqueCustomerIds.length > 0
+        ? db.list(TABLES.CUSTOMERS, {
+            filterByFormula: `OR(${uniqueCustomerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Name', 'Nickname'],
+          })
+        : [],
+    ]);
+
+    // Index customers by ID
+    const customerMap = {};
+    for (const c of allCustomers) customerMap[c.id] = c;
+
+    // Sum order line totals by order ID
+    const totalByOrder = {};
+    for (const line of allLines) {
+      const oid = line.Order?.[0];
+      if (oid) {
+        totalByOrder[oid] = (totalByOrder[oid] || 0)
+          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
+      }
+    }
+
+    // Enrich orders — zero additional API calls
+    for (const order of orders) {
+      const custId = order.Customer?.[0];
+      order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+
+      if (!order['Price Override'] && totalByOrder[order.id] != null) {
+        order['Sell Total'] = totalByOrder[order.id];
       }
     }
 

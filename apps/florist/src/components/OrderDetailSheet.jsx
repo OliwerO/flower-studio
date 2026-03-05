@@ -100,11 +100,11 @@ export default function OrderDetailSheet({ orderId, onClose, onOrderUpdated }) {
         onClick={onClose}
       />
 
-      {/* Sheet — uses explicit transform instead of CSS animation (animation
-           doesn't reliably fire on React-mounted elements in all browsers) */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 flex flex-col min-h-[280px] max-h-[90vh]
-                      bg-[#f8f0f3] rounded-t-3xl shadow-2xl overflow-hidden"
-           style={{ transform: 'translateY(0)' }}>
+      {/* Sheet — NO animation/transform; pure CSS fixed positioning only.
+           CSS animations + translateY caused the "pink screen" bug where the
+           sheet would slide below the viewport after the animation finished. */}
+      <div className="fixed inset-x-0 bottom-0 z-50 flex flex-col min-h-[280px] max-h-[90vh]
+                      bg-[#f8f0f3] rounded-t-3xl shadow-2xl overflow-hidden">
 
         {/* Drag handle */}
         <div className="flex justify-center pt-3 pb-1 shrink-0">
