@@ -68,6 +68,14 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const fields = { ...req.body };
 
+    // When a driver changes status, stamp their name on the delivery.
+    // Like signing a work order — whoever completes it gets credited.
+    if (fields.Status === 'Out for Delivery' || fields.Status === 'Delivered') {
+      if (req.driverName) {
+        fields['Assigned Driver'] = req.driverName;
+      }
+    }
+
     // When marking delivered, also stamp the timestamp and update the linked order
     if (fields.Status === 'Delivered') {
       fields['Delivered At'] = new Date().toISOString();

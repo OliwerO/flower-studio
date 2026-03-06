@@ -38,8 +38,6 @@ export default function DeliveryListPage() {
     setLoading(true);
     try {
       const params = { date: todayStr() };
-      // If driver is logged in, filter by their name
-      if (driverName) params.driver = driverName;
       const res = await client.get('/deliveries', { params });
       setDeliveries(res.data);
     } catch (err) {
