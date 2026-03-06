@@ -14,12 +14,12 @@ router.get('/', async (req, res, next) => {
     const [orders, deliveries, lowStock] = await Promise.all([
       // Today's orders
       db.list(TABLES.ORDERS, {
-        filterByFormula: `{Order Date} = '${today}'`,
+        filterByFormula: `DATESTR({Order Date}) = '${today}'`,
         sort: [{ field: 'Order Date', direction: 'desc' }],
       }),
       // Today's pending deliveries
       db.list(TABLES.DELIVERIES, {
-        filterByFormula: `AND({Delivery Date} = '${today}', {Status} != 'Delivered')`,
+        filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != 'Delivered')`,
       }),
       // Stock items below reorder threshold
       db.list(TABLES.STOCK, {

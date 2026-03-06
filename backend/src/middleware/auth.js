@@ -1,18 +1,30 @@
 // PIN auth middleware — like a badge reader at a facility gate.
 // Each role gets a PIN that grants access to its section of the API.
 // Sends role downstream via req.role so routes can check permissions.
+//
+// Drivers get individual PINs: PIN_DRIVER_TIMUR, PIN_DRIVER_NIKITA, etc.
+// The badge reader now knows *which* driver scanned in (req.driverName).
 
 const PINS = {
   owner:   process.env.PIN_OWNER,
   florist: process.env.PIN_FLORIST,
-  driver:  process.env.PIN_DRIVER,
 };
+
+// Build driver PINs dynamically from env vars matching PIN_DRIVER_*
+// Each env var like PIN_DRIVER_TIMUR=1234 maps to { pin: '1234', name: 'Timur' }
+const DRIVER_PINS = Object.entries(process.env)
+  .filter(([key]) => key.startsWith('PIN_DRIVER_'))
+  .map(([key, value]) => ({
+    pin:  value,
+    name: key.replace('PIN_DRIVER_', '').charAt(0).toUpperCase()
+          + key.replace('PIN_DRIVER_', '').slice(1).toLowerCase(),
+  }));
 
 // Route access per role
 const ROLE_ACCESS = {
   owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'auth'],
   florist: ['orders', 'customers', 'stock', 'stock-purchases'],
-  driver:  ['deliveries'],
+  driver:  ['deliveries', 'auth'],
 };
 
 export function authenticate(req, res, next) {
@@ -22,14 +34,22 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ error: 'PIN required. Send X-Auth-PIN header.' });
   }
 
+  // Check owner/florist PINs first
   const role = Object.keys(PINS).find((r) => PINS[r] === pin);
-
-  if (!role) {
-    return res.status(401).json({ error: 'Invalid PIN.' });
+  if (role) {
+    req.role = role;
+    return next();
   }
 
-  req.role = role;
-  next();
+  // Check driver PINs — each driver has their own badge
+  const driver = DRIVER_PINS.find(d => d.pin === pin);
+  if (driver) {
+    req.role = 'driver';
+    req.driverName = driver.name;
+    return next();
+  }
+
+  return res.status(401).json({ error: 'Invalid PIN.' });
 }
 
 // Route guard — checks that the role has access to the resource.

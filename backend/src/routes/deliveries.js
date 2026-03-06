@@ -12,7 +12,7 @@ router.get('/', async (req, res, next) => {
     const { date, status, driver } = req.query;
     const filters = [];
 
-    if (date)   filters.push(`{Delivery Date} = '${date}'`);
+    if (date)   filters.push(`DATESTR({Delivery Date}) = '${date}'`);
     if (status) filters.push(`{Status} = '${status}'`);
     if (driver) filters.push(`{Assigned Driver} = '${driver}'`);
 
@@ -20,6 +20,42 @@ router.get('/', async (req, res, next) => {
       filterByFormula: filters.length ? `AND(${filters.join(', ')})` : '',
       sort: [{ field: 'Delivery Date', direction: 'asc' }],
     });
+
+    // Enrich with customer name + phone from linked orders → customers.
+    // Like checking the original purchase order to find who placed it.
+    const orderIds = [...new Set(deliveries.flatMap(d => d['Linked Order'] || []))];
+    if (orderIds.length > 0) {
+      const orders = await db.list(TABLES.ORDERS, {
+        filterByFormula: `OR(${orderIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+        fields: ['Customer', 'Customer Request'],
+      });
+      const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+      const customers = customerIds.length > 0
+        ? await db.list(TABLES.CUSTOMERS, {
+            filterByFormula: `OR(${customerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Name', 'Nickname', 'Phone'],
+          })
+        : [];
+
+      const custMap = {};
+      for (const c of customers) custMap[c.id] = c;
+      const orderMap = {};
+      for (const o of orders) orderMap[o.id] = o;
+
+      for (const d of deliveries) {
+        const orderId = d['Linked Order']?.[0];
+        const order = orderMap[orderId];
+        const custId = order?.Customer?.[0];
+        const cust = custMap[custId];
+        if (cust) {
+          d['Customer Name'] = cust.Name || cust.Nickname || '';
+          d['Customer Phone'] = cust.Phone || '';
+        }
+        if (order) {
+          d['Order Contents'] = order['Customer Request'] || '';
+        }
+      }
+    }
 
     res.json(deliveries);
   } catch (err) {
