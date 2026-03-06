@@ -9,11 +9,25 @@
       "cwd": "backend"
     },
     {
+      "name": "florist",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js"],
+      "port": 5173,
+      "cwd": "apps/florist"
+    },
+    {
       "name": "delivery",
       "runtimeExecutable": "node",
       "runtimeArgs": ["node_modules/vite/bin/vite.js"],
       "port": 5174,
       "cwd": "apps/delivery"
+    },
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["node_modules/vite/bin/vite.js"],
+      "port": 5175,
+      "cwd": "apps/dashboard"
     }
   ]
 }

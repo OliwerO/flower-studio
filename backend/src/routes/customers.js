@@ -36,6 +36,42 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+// GET /api/customers/insights — segment distribution, churn risk, top spenders
+// Must be defined BEFORE /:id to avoid route collision.
+router.get('/insights', async (req, res, next) => {
+  try {
+    // Fetch all customers — don't filter by field names since some fields
+    // may not exist yet in the dev base (e.g. Segment, App Order Count)
+    const customers = await db.list(TABLES.CUSTOMERS, {
+      sort: [{ field: 'Name', direction: 'asc' }],
+    });
+
+    // Segment distribution
+    const segments = {};
+    for (const c of customers) {
+      const seg = c.Segment || 'Unassigned';
+      segments[seg] = (segments[seg] || 0) + 1;
+    }
+
+    // Churn risk: customers with 2+ orders who haven't ordered recently.
+    // Since we don't have "last order date" field easily, we flag customers
+    // with 2+ orders but rely on the frontend to show them for review.
+    const churnRisk = customers
+      .filter(c => (c['App Order Count'] || 0) >= 2 && c.Segment !== 'DO NOT CONTACT')
+      .slice(0, 20);
+
+    // Top 10 customers by total spend
+    const topCustomers = customers
+      .filter(c => (c['App Total Spend'] || 0) > 0)
+      .sort((a, b) => (b['App Total Spend'] || 0) - (a['App Total Spend'] || 0))
+      .slice(0, 10);
+
+    res.json({ segments, churnRisk, topCustomers });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/customers/:id
 router.get('/:id', async (req, res, next) => {
   try {

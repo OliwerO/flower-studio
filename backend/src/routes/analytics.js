@@ -66,12 +66,49 @@ router.get('/', async (req, res, next) => {
     const deliveryOrders = orders.filter((o) => o['Delivery Type'] === 'Delivery');
     const pickupOrders = orders.filter((o) => o['Delivery Type'] === 'Pickup');
 
-    // Source breakdown
-    const bySource = orders.reduce((acc, o) => {
+    // Source breakdown — count + revenue per channel
+    const bySource = {};
+    const revenueBySource = {};
+    for (const o of orders) {
       const src = o.Source || 'Other';
-      acc[src] = (acc[src] || 0) + 1;
-      return acc;
-    }, {});
+      bySource[src] = (bySource[src] || 0) + 1;
+      if (o['Payment Status'] !== 'Unpaid') {
+        revenueBySource[src] = (revenueBySource[src] || 0) + (o['Final Price'] || 0);
+      }
+    }
+
+    // Top products — aggregate order lines to find best sellers.
+    // Bulk-fetch all order lines for the period's orders.
+    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
+    let topProducts = [];
+    if (allLineIds.length > 0) {
+      // Fetch in batches of 100 to stay within formula length limits
+      const batchSize = 100;
+      const allLines = [];
+      for (let i = 0; i < allLineIds.length; i += batchSize) {
+        const batch = allLineIds.slice(i, i + batchSize);
+        const lines = await db.list(TABLES.ORDER_LINES, {
+          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+          fields: ['Flower Name', 'Quantity', 'Sell Price Per Unit'],
+          maxRecords: batchSize,
+        });
+        allLines.push(...lines);
+      }
+
+      // Aggregate by flower name
+      const productMap = {};
+      for (const line of allLines) {
+        const name = line['Flower Name'] || 'Unknown';
+        if (!productMap[name]) productMap[name] = { name, count: 0, totalQty: 0, revenue: 0 };
+        productMap[name].count++;
+        productMap[name].totalQty += line.Quantity || 0;
+        productMap[name].revenue += (line['Sell Price Per Unit'] || 0) * (line.Quantity || 0);
+      }
+
+      topProducts = Object.values(productMap)
+        .sort((a, b) => b.revenue - a.revenue)
+        .slice(0, 20);
+    }
 
     res.json({
       period: { from, to },
@@ -101,6 +138,8 @@ router.get('/', async (req, res, next) => {
       },
       orders: {
         bySource,
+        revenueBySource,
+        topProducts,
       },
     });
   } catch (err) {

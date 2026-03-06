@@ -9,7 +9,8 @@ router.use(authorize('dashboard'));
 // GET /api/dashboard — day-to-day operational summary for today
 router.get('/', async (req, res, next) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    // Accept optional ?date= param, default to today
+    const today = req.query.date || new Date().toISOString().split('T')[0];
 
     const [orders, deliveries, lowStock] = await Promise.all([
       // Today's orders
