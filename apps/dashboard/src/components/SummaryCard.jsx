@@ -1,12 +1,12 @@
 // SummaryCard — a KPI tile showing one metric with a label.
 // Like a gauge on a dashboard: one number, one context line.
-// Clickable cards act as navigation shortcuts to relevant tabs.
+// Uses solid white card (matching florist app's card style) for readability.
 
 const COLORS = {
   brand: 'text-brand-600',
-  green: 'text-ios-green',
-  blue:  'text-ios-blue',
-  red:   'text-ios-red',
+  green: 'text-emerald-600',
+  blue:  'text-sky-600',
+  red:   'text-rose-600',
   orange:'text-ios-orange',
 };
 
@@ -14,8 +14,8 @@ export default function SummaryCard({ label, value, detail, color = 'brand', onC
   return (
     <div
       onClick={onClick}
-      className={`glass-card px-4 py-4 ${
-        onClick ? 'cursor-pointer hover:scale-[1.02] hover:shadow-md transition-all active:scale-[0.98]' : ''
+      className={`bg-white rounded-2xl shadow-sm px-4 py-4 ${
+        onClick ? 'cursor-pointer hover:shadow-md transition-all active-scale' : ''
       }`}
     >
       <p className="text-xs text-ios-tertiary font-medium uppercase tracking-wide">{label}</p>

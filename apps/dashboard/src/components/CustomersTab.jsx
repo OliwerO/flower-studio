@@ -15,10 +15,11 @@ const SEGMENT_COLORS = {
   'DO NOT CONTACT': 'bg-ios-red/15 text-ios-red',
 };
 
-export default function CustomersTab() {
+export default function CustomersTab({ initialFilter }) {
+  const f = initialFilter || {};
   const [customers, setCustomers]   = useState([]);
   const [loading, setLoading]       = useState(false);
-  const [search, setSearch]         = useState('');
+  const [search, setSearch]         = useState(f.search || '');
   const [expandedId, setExpanded]   = useState(null);
   const [insights, setInsights]     = useState(null);
   const { showToast } = useToast();
@@ -56,7 +57,7 @@ export default function CustomersTab() {
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
           {/* Segment distribution */}
           {Object.entries(insights.segments || {}).map(([seg, count]) => (
-            <div key={seg} className="glass-card px-4 py-3 text-center">
+            <div key={seg} className="bg-white rounded-2xl shadow-sm px-4 py-3 text-center">
               <p className="text-2xl font-bold text-ios-label">{count}</p>
               <p className={`text-xs font-medium mt-1 inline-block px-2 py-0.5 rounded-full ${
                 SEGMENT_COLORS[seg] || 'bg-gray-100 text-gray-600'
@@ -68,7 +69,7 @@ export default function CustomersTab() {
 
           {/* Churn risk count */}
           {insights.churnRisk?.length > 0 && (
-            <div className="glass-card px-4 py-3 text-center">
+            <div className="bg-white rounded-2xl shadow-sm px-4 py-3 text-center">
               <p className="text-2xl font-bold text-ios-orange">{insights.churnRisk.length}</p>
               <p className="text-xs text-ios-orange font-medium mt-1">{t.churnRisk}</p>
             </div>
@@ -78,7 +79,7 @@ export default function CustomersTab() {
 
       {/* Top customers */}
       {insights?.topCustomers?.length > 0 && (
-        <div className="glass-card px-4 py-3">
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
           <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
             {t.topCustomers}
           </h3>
@@ -95,7 +96,7 @@ export default function CustomersTab() {
       )}
 
       {/* Search bar */}
-      <div className="glass-card px-4 py-3">
+      <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
         <input
           type="text"
           value={search}
@@ -111,17 +112,31 @@ export default function CustomersTab() {
         </div>
       )}
 
+      {/* Column headers */}
+      {!loading && customers.length > 0 && (
+        <div className="bg-white/40 rounded-xl px-4 py-2 flex items-center gap-4 text-[11px] text-ios-tertiary font-medium uppercase tracking-wide">
+          <span className="w-40">{t.customerName}</span>
+          <span className="w-28">{t.nickname}</span>
+          <span className="w-28">{t.phone}</span>
+          <span className="flex-1">{t.link}</span>
+          <span className="w-20 shrink-0">{t.segment}</span>
+          <span className="w-20 text-right shrink-0">{t.totalSpend}</span>
+          <span className="w-8 text-right shrink-0">#</span>
+          <span className="w-4"></span>
+        </div>
+      )}
+
       {/* Customer list */}
       {!loading && customers.length === 0 && search && (
         <div className="text-center py-8 text-ios-tertiary">{t.noResults}</div>
       )}
 
-      {!loading && customers.map(cust => {
+      {!loading && customers.filter(c => c.Name || c.Nickname || c.Phone || (c['App Order Count'] || 0) > 0).map(cust => {
         const isExpanded = expandedId === cust.id;
         const isDNC = cust.Segment === 'DO NOT CONTACT';
 
         return (
-          <div key={cust.id} className={`glass-card overflow-hidden ${isDNC ? 'ring-2 ring-ios-red/30' : ''}`}>
+          <div key={cust.id} className={`bg-white rounded-2xl shadow-sm overflow-hidden ${isDNC ? 'ring-2 ring-ios-red/30' : ''}`}>
             <div
               onClick={() => setExpanded(isExpanded ? null : cust.id)}
               className="px-4 py-3 flex items-center gap-4 cursor-pointer hover:bg-white/30 transition-colors"

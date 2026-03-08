@@ -10,13 +10,20 @@ export default function Step2Bouquet({
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
 
+  // Use current stock prices for display totals (snapshot happens at submit)
   const costTotal = useMemo(
-    () => orderLines.reduce((s, l) => s + Number(l.costPricePerUnit) * Number(l.quantity), 0),
-    [orderLines]
+    () => orderLines.reduce((s, l) => {
+      const si = stock.find(x => x.id === l.stockItemId);
+      return s + Number(si?.['Current Cost Price'] ?? l.costPricePerUnit) * Number(l.quantity);
+    }, 0),
+    [orderLines, stock]
   );
   const sellTotal = useMemo(
-    () => orderLines.reduce((s, l) => s + Number(l.sellPricePerUnit) * Number(l.quantity), 0),
-    [orderLines]
+    () => orderLines.reduce((s, l) => {
+      const si = stock.find(x => x.id === l.stockItemId);
+      return s + Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit) * Number(l.quantity);
+    }, 0),
+    [orderLines, stock]
   );
   const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
@@ -144,7 +151,7 @@ export default function Step2Bouquet({
                       {s['Display Name']}
                     </div>
                     <div className="text-xs text-ios-tertiary">
-                      {Number(s['Current Sell Price']).toFixed(0)} zl sell · {Number(s['Current Cost Price']).toFixed(1)} zl cost · {qty} pcs
+                      {Number(s['Current Sell Price']).toFixed(1)} zł sell · {Number(s['Current Cost Price']).toFixed(1)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && <span className="text-ios-red"> · out</span>}
                     </div>
@@ -169,13 +176,15 @@ export default function Step2Bouquet({
             {orderLines.map(l => {
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
-              const lineSell  = Number(l.sellPricePerUnit) * Number(l.quantity);
+              // Always use current stock price for display (snapshot happens at submit)
+              const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
+              const lineSell  = sellPrice * Number(l.quantity);
               return (
               <div key={`${l.stockItemId}-${l.quantity}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
                   <div className="text-xs text-ios-tertiary">
-                    {Number(l.sellPricePerUnit).toFixed(1)} zl x {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zl</strong>
+                    {sellPrice.toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -183,12 +192,12 @@ export default function Step2Bouquet({
                     onClick={() => changeQty(l.stockItemId, -1)}
                     className="w-8 h-8 rounded-full bg-white/60 text-ios-secondary text-xl font-bold
                                flex items-center justify-center active:bg-white"
-                  >&#8722;</button>
+                  >−</button>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={l.quantity}
-                    min={1}
-                    max={isFinite(maxQty) ? maxQty : undefined}
                     onChange={e => setQtyDirect(l.stockItemId, e.target.value)}
                     onFocus={e => e.target.select()}
                     className="w-9 text-center text-sm font-bold border border-white/50 rounded-xl py-1 bg-white/40 outline-none"
@@ -218,12 +227,12 @@ export default function Step2Bouquet({
           >
             <div className="flex items-center justify-between">
               <span className="text-sm text-ios-label font-semibold">{t.sellTotal}</span>
-              <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(1)} zl</span>
+              <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(1)} zł</span>
             </div>
             {showCost && (
               <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/40">
                 <span className="text-xs text-ios-tertiary">{t.costTotal}: (Margin: {margin}%)</span>
-                <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(1)} zl</span>
+                <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(1)} zł</span>
               </div>
             )}
           </button>

@@ -47,7 +47,7 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
       <div className="fixed inset-0 bg-black/30 z-40" onClick={onClose} />
 
       {/* Sheet */}
-      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white/95 backdrop-blur-xl
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white
                       rounded-t-3xl shadow-2xl max-h-[85vh] overflow-y-auto animate-slide-up">
 
         {/* Handle bar */}
@@ -63,7 +63,7 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
           </div>
 
           {/* Info rows */}
-          <div className="ios-card divide-y divide-white/40 overflow-hidden">
+          <div className="ios-card divide-y divide-gray-100 overflow-hidden">
             {/* Time */}
             {time && (
               <div className="flex items-center justify-between px-4 py-3">

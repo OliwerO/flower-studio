@@ -9,15 +9,18 @@ router.use(authorize('orders'));
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus } = req.query;
+    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus, excludeCancelled } = req.query;
     const filters = [];
 
-    if (status)        filters.push(`{Status} = '${status}'`);
-    if (source)        filters.push(`{Source} = '${source}'`);
-    if (deliveryType)  filters.push(`{Delivery Type} = '${deliveryType}'`);
-    if (paymentStatus) filters.push(`{Payment Status} = '${paymentStatus}'`);
-    if (dateFrom)      filters.push(`NOT(IS_BEFORE({Order Date}, '${dateFrom}'))`);
-    if (dateTo)        filters.push(`NOT(IS_AFTER({Order Date}, '${dateTo}'))`);
+    if (status)           filters.push(`{Status} = '${status}'`);
+    // "Other" in analytics means Source is blank/empty — match records with no Source set.
+    if (source === 'Other') filters.push(`OR({Source} = 'Other', {Source} = BLANK())`);
+    else if (source)        filters.push(`{Source} = '${source}'`);
+    if (deliveryType)     filters.push(`{Delivery Type} = '${deliveryType}'`);
+    if (paymentStatus)    filters.push(`{Payment Status} = '${paymentStatus}'`);
+    if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
+    if (dateFrom)         filters.push(`NOT(IS_BEFORE({Order Date}, '${dateFrom}'))`);
+    if (dateTo)           filters.push(`NOT(IS_AFTER({Order Date}, '${dateTo}'))`);
 
     const filterByFormula = filters.length
       ? `AND(${filters.join(', ')})`
@@ -29,12 +32,13 @@ router.get('/', async (req, res, next) => {
       maxRecords: 200,
     });
 
-    // Bulk-fetch order lines + customers in 2 API calls (instead of N×M individual calls).
+    // Bulk-fetch order lines + customers + deliveries in parallel.
     // Like loading a truck once with all parts instead of sending a separate van per item.
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+    const allDeliveryIds = orders.flatMap(o => o['Deliveries'] || []);
 
-    const [allLines, allCustomers] = await Promise.all([
+    const [allLines, allCustomers, allDeliveries] = await Promise.all([
       allLineIds.length > 0
         ? db.list(TABLES.ORDER_LINES, {
             filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
@@ -48,11 +52,20 @@ router.get('/', async (req, res, next) => {
             fields: ['Name', 'Nickname'],
           })
         : [],
+      allDeliveryIds.length > 0
+        ? db.list(TABLES.DELIVERIES, {
+            filterByFormula: `OR(${allDeliveryIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Delivery Date', 'Delivery Time'],
+          })
+        : [],
     ]);
 
-    // Index customers by ID
+    // Index customers and deliveries by ID
     const customerMap = {};
     for (const c of allCustomers) customerMap[c.id] = c;
+
+    const deliveryMap = {};
+    for (const d of allDeliveries) deliveryMap[d.id] = d;
 
     // Sum order line totals by order ID
     const totalByOrder = {};
@@ -71,6 +84,13 @@ router.get('/', async (req, res, next) => {
 
       if (!order['Price Override'] && totalByOrder[order.id] != null) {
         order['Sell Total'] = totalByOrder[order.id];
+      }
+
+      // Attach delivery date/time for display in the order list row
+      const delivId = order['Deliveries']?.[0];
+      if (delivId && deliveryMap[delivId]) {
+        order['Delivery Date'] = deliveryMap[delivId]['Delivery Date'] || null;
+        order['Delivery Time'] = deliveryMap[delivId]['Delivery Time'] || null;
       }
     }
 

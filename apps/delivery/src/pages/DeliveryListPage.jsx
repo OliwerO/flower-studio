@@ -123,13 +123,13 @@ export default function DeliveryListPage() {
           <div className="flex items-center gap-3">
             <button
               onClick={fetchDeliveries}
-              className="text-xs text-brand-600 font-medium px-2 py-1 rounded-lg active:bg-white/40 active-scale"
+              className="text-xs text-brand-600 font-medium px-2 py-1 rounded-lg active:bg-gray-100 active-scale"
             >
               ↻ {t.refreshList}
             </button>
             <button
               onClick={logout}
-              className="text-xs text-ios-tertiary font-medium px-2 py-1 rounded-lg active:bg-white/40"
+              className="text-xs text-ios-tertiary font-medium px-2 py-1 rounded-lg active:bg-gray-100"
             >
               {t.logout}
             </button>
@@ -212,7 +212,7 @@ export default function DeliveryListPage() {
 
       {/* Bottom bar — Map view button */}
       {activeDeliveries.length > 0 && (
-        <div className="fixed bottom-0 left-0 right-0 z-20 p-4 pb-6 bg-gradient-to-t from-[#F2CAD5] to-transparent">
+        <div className="fixed bottom-0 left-0 right-0 z-20 p-4 pb-6 bg-gradient-to-t from-[#F0F2F5] to-transparent">
           <button
             onClick={() => setShowMap(true)}
             className="w-full h-12 rounded-2xl bg-brand-600 text-white text-sm font-semibold

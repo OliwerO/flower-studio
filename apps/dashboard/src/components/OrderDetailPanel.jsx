@@ -9,12 +9,12 @@ import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 
 const STATUSES = [
-  { value: 'New',              label: t.statusNew,       activeClass: 'bg-ios-blue text-white shadow-sm' },
-  { value: 'Ready',            label: t.statusReady,     activeClass: 'bg-brand-600 text-white shadow-sm' },
-  { value: 'Out for Delivery', label: t.statusOutForDel, activeClass: 'bg-purple-600 text-white shadow-sm' },
-  { value: 'Delivered',        label: t.statusDelivered, activeClass: 'bg-ios-green text-white shadow-sm' },
-  { value: 'Picked Up',        label: t.statusPickedUp,  activeClass: 'bg-ios-green text-white shadow-sm' },
-  { value: 'Cancelled',        label: t.statusCancelled, activeClass: 'bg-ios-red text-white shadow-sm' },
+  { value: 'New',              label: t.statusNew,       activeClass: 'bg-indigo-600 text-white shadow-sm' },
+  { value: 'Ready',            label: t.statusReady,     activeClass: 'bg-amber-600 text-white shadow-sm' },
+  { value: 'Out for Delivery', label: t.statusOutForDel, activeClass: 'bg-sky-600 text-white shadow-sm' },
+  { value: 'Delivered',        label: t.statusDelivered, activeClass: 'bg-emerald-600 text-white shadow-sm' },
+  { value: 'Picked Up',        label: t.statusPickedUp,  activeClass: 'bg-teal-600 text-white shadow-sm' },
+  { value: 'Cancelled',        label: t.statusCancelled, activeClass: 'bg-rose-600 text-white shadow-sm' },
 ];
 
 const PAYMENT_STATUSES = [
@@ -130,7 +130,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const showPaymentMethod = o['Payment Status'] === 'Paid' || o['Payment Status'] === 'Partial';
 
   return (
-    <div className="border-t border-white/40 px-4 py-4 bg-white/20 space-y-5">
+    <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/70 space-y-5">
       {/* Status */}
       <Section label={t.status}>
         <Pills
@@ -195,9 +195,18 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           />
         </Section>
         <Section label={t.price}>
-          <span className="text-sm font-semibold text-ios-label">
-            {(o['Final Price'] || 0).toFixed(0)} {t.zl}
-          </span>
+          {(() => {
+            // Compute display price: same formula as analytics Effective Price
+            const lineTotal = (o.orderLines || []).reduce((sum, l) =>
+              sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
+            const deliveryFee = o.delivery?.['Delivery Fee'] || 0;
+            const displayPrice = o['Final Price'] || o['Price Override'] || (lineTotal + deliveryFee) || 0;
+            return (
+              <span className="text-sm font-semibold text-ios-label">
+                {displayPrice.toFixed(0)} {t.zl}
+              </span>
+            );
+          })()}
         </Section>
       </div>
 
@@ -218,10 +227,10 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
             Bouquet composition
           </p>
-          <div className="bg-white/40 rounded-xl overflow-hidden">
+          <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-xs text-ios-tertiary border-b border-white/40">
+                <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50">
                   <th className="text-left px-3 py-2 font-medium">Flower</th>
                   <th className="text-right px-3 py-2 font-medium">Qty</th>
                   <th className="text-right px-3 py-2 font-medium">Cost</th>
@@ -231,7 +240,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               </thead>
               <tbody>
                 {o.orderLines.map(line => (
-                  <tr key={line.id} className="border-b border-white/20">
+                  <tr key={line.id} className="border-b border-gray-50">
                     <td className="px-3 py-2 text-ios-label">{line['Flower Name'] || '—'}</td>
                     <td className="px-3 py-2 text-right">{line.Quantity}</td>
                     <td className="px-3 py-2 text-right text-ios-tertiary">
@@ -269,7 +278,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
             {t.delivery}
           </p>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 bg-white/40 rounded-xl px-4 py-3">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 bg-white rounded-xl border border-gray-100 px-4 py-3">
             <EditableRow label="Recipient" value={o.delivery['Recipient Name']}
               onSave={v => patchDelivery({ 'Recipient Name': v })} disabled={saving} />
             <EditableRow label="Phone" value={o.delivery['Recipient Phone']}
@@ -331,7 +340,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 </button>
                 <button
                   onClick={() => setConfirmCancel(false)}
-                  className="px-3 py-1.5 rounded-lg bg-white/50 text-xs"
+                  className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs"
                 >
                   {t.cancel}
                 </button>

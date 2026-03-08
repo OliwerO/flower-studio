@@ -12,7 +12,7 @@ export default function Pills({ options, value, onChange, disabled }) {
           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
             value === o.value
               ? (o.activeClass || 'bg-brand-600 text-white shadow-sm')
-              : 'bg-white/50 text-ios-secondary border border-white/60 hover:bg-white/70'
+              : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
           } ${disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
         >
           {o.label}

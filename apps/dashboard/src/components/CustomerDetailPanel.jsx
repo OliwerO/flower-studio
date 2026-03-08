@@ -69,13 +69,23 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
         <EditableField label={t.instagram} value={cust.Link} field="Link" onSave={patchField} />
         <div>
           <p className="text-xs text-ios-tertiary mb-1">{t.segment}</p>
-          <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium ${
-            cust.Segment === 'DO NOT CONTACT' ? 'bg-ios-red/15 text-ios-red' :
-            cust.Segment === 'Constant' ? 'bg-ios-green/15 text-ios-green' :
-            'bg-gray-100 text-gray-600'
-          }`}>
-            {cust.Segment || '—'}
-          </span>
+          <select
+            value={cust.Segment || ''}
+            onChange={e => patchField('Segment', e.target.value || null)}
+            className={`px-2.5 py-1 rounded-full text-xs font-medium border-0 outline-none cursor-pointer ${
+              cust.Segment === 'DO NOT CONTACT' ? 'bg-ios-red/15 text-ios-red' :
+              cust.Segment === 'Constant' ? 'bg-ios-green/15 text-ios-green' :
+              cust.Segment === 'New' ? 'bg-ios-blue/15 text-ios-blue' :
+              cust.Segment === 'Rare' ? 'bg-ios-orange/15 text-ios-orange' :
+              'bg-gray-100 text-gray-600'
+            }`}
+          >
+            <option value="">—</option>
+            <option value="New">New</option>
+            <option value="Constant">Constant</option>
+            <option value="Rare">Rare</option>
+            <option value="DO NOT CONTACT">DO NOT CONTACT</option>
+          </select>
         </div>
       </div>
 
@@ -143,7 +153,7 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
                       <span className="text-xs">{o.Status}</span>
                     </td>
                     <td className="px-3 py-2 text-right font-medium">
-                      {(o['Final Price'] || o['Sell Total'] || 0).toFixed(0)} {t.zl}
+                      {(o['Final Price'] || o['Price Override'] || o['Sell Price Total'] || 0).toFixed(0)} {t.zl}
                     </td>
                   </tr>
                 ))}

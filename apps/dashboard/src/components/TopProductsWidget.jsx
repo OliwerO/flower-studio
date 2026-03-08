@@ -9,7 +9,7 @@ export default function TopProductsWidget({ products }) {
   const maxRevenue = Math.max(...products.map(p => p.revenue || 0), 1);
 
   return (
-    <div className="glass-card px-4 py-4">
+    <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
       <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
         {t.bestSellers}
       </h3>

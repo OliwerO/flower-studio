@@ -14,14 +14,20 @@ export default function Step2Bouquet({
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
 
-  // Totals computed locally — avoids stale-prop timing issues with parent state.
+  // Use current stock prices for display totals (snapshot happens at submit)
   const costTotal = useMemo(
-    () => orderLines.reduce((s, l) => s + Number(l.costPricePerUnit) * Number(l.quantity), 0),
-    [orderLines]
+    () => orderLines.reduce((s, l) => {
+      const si = stock.find(x => x.id === l.stockItemId);
+      return s + Number(si?.['Current Cost Price'] ?? l.costPricePerUnit) * Number(l.quantity);
+    }, 0),
+    [orderLines, stock]
   );
   const sellTotal = useMemo(
-    () => orderLines.reduce((s, l) => s + Number(l.sellPricePerUnit) * Number(l.quantity), 0),
-    [orderLines]
+    () => orderLines.reduce((s, l) => {
+      const si = stock.find(x => x.id === l.stockItemId);
+      return s + Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit) * Number(l.quantity);
+    }, 0),
+    [orderLines, stock]
   );
   const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
@@ -123,7 +129,7 @@ export default function Step2Bouquet({
           )}
         </div>
 
-        <div className="ios-card overflow-hidden divide-y divide-white/40 max-h-64 overflow-y-auto">
+        <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-64 overflow-y-auto">
           {filteredStock.length === 0 ? (
             <p className="text-ios-tertiary text-sm text-center py-8">{t.noStockFound}</p>
           ) : (
@@ -143,14 +149,14 @@ export default function Step2Bouquet({
                   disabled={disabled}
                   className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors
                               disabled:opacity-40 active-scale
-                              ${inCart ? 'bg-brand-50/70' : 'active:bg-white/40'}`}
+                              ${inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
                 >
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : 'text-ios-label'}`}>
                       {s['Display Name']}
                     </div>
                     <div className="text-xs text-ios-tertiary">
-                      {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(1)} zł cost · {qty} pcs
+                      {Number(s['Current Sell Price']).toFixed(1)} zł sell · {Number(s['Current Cost Price']).toFixed(1)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && <span className="text-ios-red"> · out</span>}
                     </div>
@@ -171,35 +177,37 @@ export default function Step2Bouquet({
       {orderLines.length > 0 && (
         <div>
           <p className="ios-label">{t.bouquetContents}</p>
-          <div className="ios-card overflow-hidden divide-y divide-white/40">
+          <div className="ios-card overflow-hidden divide-y divide-gray-100">
             {orderLines.map(l => {
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
-              const lineSell  = Number(l.sellPricePerUnit) * Number(l.quantity);
+              // Always use current stock price for display (snapshot happens at submit)
+              const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
+              const lineSell  = sellPrice * Number(l.quantity);
               return (
               <div key={`${l.stockItemId}-${l.quantity}`} className="flex items-center gap-3 px-4 py-3">
                 <div className="flex-1 min-w-0">
                   <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
                   <div className="text-xs text-ios-tertiary">
-                    {Number(l.sellPricePerUnit).toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
+                    {sellPrice.toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
                   </div>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     onClick={() => changeQty(l.stockItemId, -1)}
-                    className="w-8 h-8 rounded-full bg-white/60 text-ios-secondary text-xl font-bold
-                               flex items-center justify-center active:bg-white active-scale"
+                    className="w-8 h-8 rounded-full bg-gray-100 text-ios-secondary text-xl font-bold
+                               flex items-center justify-center hover:bg-gray-200 active-scale"
                   >
                     −
                   </button>
                   <input
-                    type="number"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
                     value={l.quantity}
-                    min={1}
-                    max={isFinite(maxQty) ? maxQty : undefined}
                     onChange={e => setQtyDirect(l.stockItemId, e.target.value)}
                     onFocus={e => e.target.select()}
-                    className="w-9 text-center text-sm font-bold border border-white/50 rounded-xl py-1 bg-white/40 outline-none"
+                    className="w-9 text-center text-sm font-bold border border-gray-200 rounded-xl py-1 bg-white outline-none"
                   />
                   <button
                     onClick={() => changeQty(l.stockItemId, +1)}
@@ -231,7 +239,7 @@ export default function Step2Bouquet({
               <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(1)} zł</span>
             </div>
             {showCost && (
-              <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-white/40">
+              <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                 <span className="text-xs text-ios-tertiary">{t.costTotal}: (Margin: {margin}%)</span>
                 <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(1)} zł</span>
               </div>

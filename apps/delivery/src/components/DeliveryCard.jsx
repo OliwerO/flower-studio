@@ -76,7 +76,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
             <span>{t.fee}: {Number(fee).toFixed(0)} zł</span>
           )}
           {isDone && deliveredAt && (
-            <span className="text-ios-green font-medium">
+            <span className="text-emerald-600 font-medium">
               ✓ {new Date(deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
@@ -88,7 +88,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
             {isPending && (
               <button
                 onClick={e => { e.stopPropagation(); onStatusChange('Out for Delivery'); }}
-                className="w-full h-10 rounded-xl bg-ios-blue text-white text-sm font-semibold
+                className="w-full h-10 rounded-xl bg-sky-600 text-white text-sm font-semibold
                            flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
               >
                 🚗 {t.startDelivery}
@@ -97,7 +97,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
             {isOut && (
               <button
                 onClick={e => { e.stopPropagation(); onStatusChange('Delivered'); }}
-                className="w-full h-10 rounded-xl bg-ios-green text-white text-sm font-semibold
+                className="w-full h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold
                            flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
               >
                 ✓ {t.markDelivered}

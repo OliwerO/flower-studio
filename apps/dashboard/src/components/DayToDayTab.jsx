@@ -10,20 +10,29 @@ import t from '../translations.js';
 import SummaryCard from './SummaryCard.jsx';
 import SourceChart from './SourceChart.jsx';
 import TopProductsWidget from './TopProductsWidget.jsx';
+import KanbanBoard from './KanbanBoard.jsx';
+
+// "2026-03-08" → "Mar 8"
+function fmtDate(iso) {
+  if (!iso) return null;
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
+}
 
 const ALL_STATUSES = [
-  { key: 'New',              color: 'text-ios-blue' },
-  { key: 'Ready',            color: 'text-brand-600' },
-  { key: 'Out for Delivery', color: 'text-purple-600' },
-  { key: 'Delivered',        color: 'text-ios-green' },
-  { key: 'Picked Up',        color: 'text-ios-green' },
-  { key: 'Cancelled',        color: 'text-ios-red' },
+  { key: 'New',              color: 'text-indigo-600' },
+  { key: 'Ready',            color: 'text-amber-600' },
+  { key: 'Out for Delivery', color: 'text-sky-600' },
+  { key: 'Delivered',        color: 'text-emerald-600' },
+  { key: 'Picked Up',        color: 'text-teal-600' },
+  { key: 'Cancelled',        color: 'text-rose-600' },
 ];
 
 export default function DayToDayTab({ onNavigate }) {
   const [data, setData]           = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading]     = useState(true);
+  const [kanbanOpen, setKanbanOpen] = useState(false);
   const { showToast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -62,9 +71,10 @@ export default function DayToDayTab({ onNavigate }) {
 
   const nav = (tab, filter) => onNavigate?.({ tab, filter });
 
-  // Compute unpaid totals from recent orders
+  // Compute paid/unpaid totals from recent orders (use Effective Price computed by backend)
+  const paidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Paid');
   const unpaidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Unpaid');
-  const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + (o['Final Price'] || 0), 0);
+  const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
 
   // Build status counts map with all statuses (fill zeros)
   const statusCounts = {};
@@ -85,13 +95,6 @@ export default function DayToDayTab({ onNavigate }) {
           onClick={() => nav('orders')}
         />
         <SummaryCard
-          label={t.revenue}
-          value={`${data.todayRevenue.toFixed(0)} ${t.zl}`}
-          detail={t.paid}
-          color="green"
-          onClick={() => nav('orders', { payment: 'Paid' })}
-        />
-        <SummaryCard
           label={t.pendingDeliveries}
           value={data.pendingDeliveries?.length || 0}
           detail={t.tabToday}
@@ -99,86 +102,122 @@ export default function DayToDayTab({ onNavigate }) {
           onClick={() => nav('orders', { deliveryType: 'Delivery' })}
         />
         <SummaryCard
+          label={t.revenue}
+          value={`${data.todayRevenue.toFixed(0)} ${t.zl}`}
+          detail={`${paidOrders.length} orders`}
+          color="green"
+          onClick={() => nav('orders', { payment: 'Paid' })}
+        />
+        <SummaryCard
           label={t.unpaid}
-          value={unpaidOrders.length > 0 ? `${unpaidOrders.length}` : '✓'}
-          detail={unpaidTotal > 0 ? `${unpaidTotal.toFixed(0)} ${t.zl}` : t.paid}
+          value={unpaidOrders.length > 0 ? `${unpaidTotal.toFixed(0)} ${t.zl}` : '✓'}
+          detail={unpaidOrders.length > 0 ? `${unpaidOrders.length} orders` : 'All paid'}
           color={unpaidOrders.length > 0 ? 'red' : 'green'}
           onClick={() => nav('orders', { payment: 'Unpaid' })}
         />
       </div>
 
-      {/* Status breakdown — all statuses shown, clickable */}
-      <div className="glass-card px-4 py-3">
-        <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
-          {t.status}
-        </h3>
-        <div className="flex flex-wrap gap-3">
+      {/* Status breakdown — evenly spaced, click to expand kanban */}
+      <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
+            {t.status}
+          </h3>
+          <button
+            onClick={() => setKanbanOpen(!kanbanOpen)}
+            className="text-[11px] text-ios-secondary hover:text-ios-label transition-colors"
+          >
+            {kanbanOpen ? '✕ Close' : '▦ Board'}
+          </button>
+        </div>
+        <div className="grid grid-cols-6 gap-1">
           {ALL_STATUSES.map(({ key, color }) => (
             <div
               key={key}
-              onClick={() => nav('orders', { status: key })}
-              className="flex items-center gap-2 cursor-pointer hover:bg-white/40 rounded-lg px-2 py-1 -mx-2 transition-colors"
+              onClick={() => setKanbanOpen(!kanbanOpen)}
+              className="flex flex-col items-center gap-1 cursor-pointer hover:bg-white/40 rounded-lg py-2 transition-colors"
             >
               <span className={`text-2xl font-bold ${statusCounts[key] > 0 ? color : 'text-ios-tertiary/30'}`}>
                 {statusCounts[key]}
               </span>
-              <span className={`text-xs ${statusCounts[key] > 0 ? 'text-ios-secondary' : 'text-ios-tertiary/50'}`}>
+              <span className={`text-[11px] text-center ${statusCounts[key] > 0 ? 'text-ios-secondary' : 'text-ios-tertiary/50'}`}>
                 {key}
               </span>
             </div>
           ))}
         </div>
-      </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Source chart (this month) */}
-        {analytics && (
-          <SourceChart
-            bySource={analytics.orders?.bySource || {}}
-            revenueBySource={analytics.orders?.revenueBySource || {}}
-          />
-        )}
-
-        {/* Top products (this month) */}
-        {analytics?.orders?.topProducts && (
-          <TopProductsWidget products={analytics.orders.topProducts} />
+        {/* Kanban board — slides open below the status counts */}
+        {kanbanOpen && data.recentOrders?.length > 0 && (
+          <div className="mt-4 pt-3 border-t border-gray-100">
+            <KanbanBoard
+              orders={data.recentOrders}
+              onOrderClick={(order) => nav('orders', { orderId: order.id })}
+            />
+          </div>
         )}
       </div>
 
       {/* Pending deliveries */}
       {data.pendingDeliveries?.length > 0 && (
-        <div className="glass-card px-4 py-3">
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
           <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
             {t.pendingDeliveries}
           </h3>
-          <div className="space-y-1">
-            {data.pendingDeliveries.map(d => (
-              <div
-                key={d.id}
-                onClick={() => nav('orders', { orderId: d['Linked Order']?.[0] || d.id })}
-                className="flex items-center gap-4 py-2 border-b border-white/20 last:border-0 cursor-pointer hover:bg-white/30 rounded-lg px-2 -mx-2 transition-colors"
-              >
-                <span className="text-sm font-medium text-ios-label w-32 truncate">
-                  {d['Recipient Name'] || '—'}
-                </span>
-                <span className="text-xs text-ios-secondary flex-1 truncate">
-                  {d['Delivery Address'] || '—'}
-                </span>
-                <span className="text-xs text-brand-600 font-medium shrink-0">
-                  {d['Delivery Time'] || '—'}
-                </span>
-                <span className="text-xs text-ios-tertiary shrink-0">
-                  {d['Assigned Driver'] || '—'}
-                </span>
-              </div>
-            ))}
+          <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
+            {data.pendingDeliveries.map(d => {
+              const customerName = d['Customer Name'] || '—';
+              const recipientName = d['Recipient Name'] || '—';
+              // Only show "from → for" when customer differs from recipient (gift orders)
+              const isGift = customerName !== recipientName && customerName !== '—';
+              return (
+                <div
+                  key={d.id}
+                  onClick={() => nav('orders', { orderId: d['Linked Order']?.[0] || d.id })}
+                  className="flex items-center gap-4 px-4 py-2.5 cursor-pointer hover:bg-gray-50 transition-colors"
+                >
+                  <div className="w-44 shrink-0">
+                    {isGift ? (
+                      <>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[10px] text-ios-tertiary w-6 shrink-0">from</span>
+                          <span className="text-xs text-ios-secondary truncate">{customerName}</span>
+                        </div>
+                        <div className="flex items-baseline gap-1">
+                          <span className="text-[10px] text-ios-tertiary w-6 shrink-0">for</span>
+                          <span className="text-sm font-medium text-ios-label truncate">{recipientName}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <span className="text-sm font-medium text-ios-label truncate block">{recipientName}</span>
+                    )}
+                  </div>
+                  <span className="text-xs text-ios-secondary flex-1 truncate">
+                    {d['Delivery Address'] || '—'}
+                  </span>
+                  <div className="text-right shrink-0">
+                    {d['Delivery Date'] && (
+                      <div className="text-xs font-semibold text-ios-label">
+                        {fmtDate(d['Delivery Date'])}
+                      </div>
+                    )}
+                    <div className="text-xs text-brand-600 font-medium">
+                      {d['Delivery Time'] || '—'}
+                    </div>
+                  </div>
+                  <span className="text-xs text-ios-tertiary shrink-0">
+                    {d['Assigned Driver'] || '—'}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {/* Low stock alerts */}
       {data.lowStockAlerts?.length > 0 && (
-        <div className="glass-card px-4 py-3">
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
           <h3 className="text-xs font-semibold text-ios-orange uppercase tracking-wide mb-3">
             {t.lowStockAlerts}
           </h3>
@@ -187,9 +226,9 @@ export default function DayToDayTab({ onNavigate }) {
               <span
                 key={item.id}
                 onClick={() => nav('stock')}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-ios-orange/10 text-xs cursor-pointer hover:bg-ios-orange/20 transition-colors"
+                className="inline-flex items-center gap-1.5 bg-ios-orange/10 rounded-full px-3 py-1.5 text-xs cursor-pointer hover:bg-ios-orange/20 transition-all active-scale"
               >
-                <span className="font-semibold text-ios-orange">{item['Current Quantity'] || 0}</span>
+                <span className="font-bold text-ios-orange">{item['Current Quantity'] || 0}</span>
                 <span className="text-ios-label">{item['Display Name']}</span>
               </span>
             ))}
@@ -197,44 +236,19 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
       )}
 
-      {/* Recent orders feed */}
-      {data.recentOrders?.length > 0 && (
-        <div className="glass-card px-4 py-3">
-          <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
-            {t.recentOrders}
-          </h3>
-          <div className="space-y-1">
-            {data.recentOrders.map(o => {
-              const statusObj = ALL_STATUSES.find(s => s.key === o.Status);
-              return (
-                <div
-                  key={o.id}
-                  onClick={() => nav('orders', { orderId: o.id })}
-                  className="flex items-center gap-4 py-2 border-b border-white/20 last:border-0 cursor-pointer hover:bg-white/30 rounded-lg px-2 -mx-2 transition-colors"
-                >
-                  <span className="text-xs text-ios-tertiary w-16 shrink-0">
-                    {o['Order Date']}
-                  </span>
-                  <span className="text-sm font-medium text-ios-label w-32 truncate">
-                    {o['Customer Name'] || '—'}
-                  </span>
-                  <span className="text-xs text-ios-secondary flex-1 truncate">
-                    {o['Customer Request'] || '—'}
-                  </span>
-                  <span className={`text-xs font-medium ${statusObj?.color || ''}`}>
-                    {o.Status}
-                  </span>
-                  <span className={`text-sm font-semibold w-16 text-right ${
-                    o['Payment Status'] === 'Unpaid' ? 'text-ios-red' : 'text-ios-label'
-                  }`}>
-                    {(o['Final Price'] || 0).toFixed(0)} {t.zl}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {/* Month-to-date summaries — less urgent than today's operational data */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {analytics && (
+          <SourceChart
+            bySource={analytics.orders?.bySource || {}}
+            revenueBySource={analytics.orders?.revenueBySource || {}}
+          />
+        )}
+        {analytics?.orders?.topProducts && (
+          <TopProductsWidget products={analytics.orders.topProducts} />
+        )}
+      </div>
+
     </div>
   );
 }

@@ -125,13 +125,13 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
 
       {/* Calendar dropdown */}
       {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white/95 backdrop-blur-xl rounded-2xl p-3 shadow-lg border border-white/60">
+        <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white rounded-2xl p-3 shadow-lg border border-gray-200">
           {/* Month/Year header with navigation arrows */}
           <div className="flex items-center justify-between mb-2">
             <button
               type="button"
               onClick={prevMonth}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-white/50 text-ios-secondary transition-colors active:bg-white/80 active-scale"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-ios-secondary transition-colors hover:bg-gray-200 active-scale"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
@@ -145,7 +145,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
             <button
               type="button"
               onClick={nextMonth}
-              className="w-8 h-8 flex items-center justify-center rounded-full bg-white/50 text-ios-secondary transition-colors active:bg-white/80 active-scale"
+              className="w-8 h-8 flex items-center justify-center rounded-full bg-gray-100 text-ios-secondary transition-colors hover:bg-gray-200 active-scale"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
@@ -182,7 +182,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
                       ? 'bg-brand-600 text-white font-semibold shadow-sm'
                       : isToday
                         ? 'bg-brand-100 text-brand-700 font-medium'
-                        : 'text-ios-label hover:bg-white/60 active:bg-white/80',
+                        : 'text-ios-label hover:bg-gray-100 active:bg-gray-200',
                   ].join(' ')}
                 >
                   {day}

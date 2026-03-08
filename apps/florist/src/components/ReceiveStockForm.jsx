@@ -12,7 +12,7 @@ const FALLBACK_SUPPLIERS = ['Stojek', 'Stefan', 'Mateusz', '4f', 'Other'];
 
 function Row({ label, children }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3.5 border-b border-white/40 last:border-0">
+    <div className="flex items-center gap-3 px-4 py-3.5 border-b border-gray-100 last:border-0">
       <span className="text-sm text-ios-tertiary w-28 shrink-0">{label}</span>
       <div className="flex-1 text-right">{children}</div>
     </div>
@@ -92,7 +92,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
       {/* Flower selection */}
       <div>
         <p className="ios-label">{t.searchFlowers}</p>
-        <div className="ios-card overflow-hidden divide-y divide-white/40">
+        <div className="ios-card overflow-hidden divide-y divide-gray-100">
           {stock.map(s => (
             <button
               key={s.id}
@@ -123,7 +123,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
       {isNew && (
         <div>
           <p className="ios-label">{t.newItemName}</p>
-          <div className="ios-card overflow-hidden divide-y divide-white/40">
+          <div className="ios-card overflow-hidden divide-y divide-gray-100">
             <Row label={t.newItemName}>
               <TextInput value={newName} onChange={setNewName} placeholder="e.g. White tulips" />
             </Row>
@@ -144,7 +144,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
       {stockItemId && (
         <div>
           <p className="ios-label">Receipt details</p>
-          <div className="ios-card overflow-hidden divide-y divide-white/40">
+          <div className="ios-card overflow-hidden divide-y divide-gray-100">
             <Row label={t.quantityReceived}>
               <TextInput type="number" value={qty} onChange={setQty} placeholder="0" />
             </Row>
@@ -170,7 +170,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
                 className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
                   supplierId === s
                     ? 'bg-brand-600 text-white shadow-sm'
-                    : 'bg-white/50 text-ios-secondary border border-white/60'
+                    : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
                 }`}
               >
                 {s}
@@ -181,7 +181,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
                 isNewSupplier
                   ? 'bg-brand-600 text-white shadow-sm'
-                  : 'bg-white/50 text-ios-secondary border border-white/60'
+                  : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
               }`}
             >
               + New

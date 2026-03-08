@@ -12,9 +12,7 @@
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Helvetica Neue', Arial, sans-serif;
-    background: radial-gradient(ellipse at 15% 10%, rgba(219,39,119,0.18) 0%, transparent 55%),
-                radial-gradient(ellipse at 85% 80%, rgba(219,39,119,0.12) 0%, transparent 50%),
-                radial-gradient(ellipse at 50% 50%, #F2CAD5 0%, #f7dce4 100%);
+    background: #F0F2F5;
     min-height: 100vh;
   }
 
@@ -24,50 +22,45 @@
 }
 
 @layer utilities {
+  /* Navigation bar — solid white with a thin bottom border */
   .glass-nav {
-    background: rgba(255, 255, 255, 0.28);
-    backdrop-filter: blur(24px) saturate(200%);
-    -webkit-backdrop-filter: blur(24px) saturate(200%);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.45);
-    box-shadow: 0 1px 0 rgba(242, 202, 213, 0.3),
-                inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.07);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   }
 
+  /* Primary card — flat white with a subtle shadow */
   .glass-card {
-    background: rgba(255, 255, 255, 0.55);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.65);
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.06);
     border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06),
-                inset 0 1px 0 rgba(255,255,255,0.8),
-                inset 0 -1px 0 rgba(0,0,0,0.03);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04),
+                0 4px 16px rgba(0, 0, 0, 0.04);
   }
 
+  /* Button surface */
   .glass-btn {
-    background: rgba(255, 255, 255, 0.35);
-    backdrop-filter: blur(16px) saturate(160%);
-    -webkit-backdrop-filter: blur(16px) saturate(160%);
-    border: 1px solid rgba(255, 255, 255, 0.55);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.08),
-                inset 0 1px 0 rgba(255,255,255,0.7);
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.10);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
   }
 
+  /* Alias — same as glass-card, used in some components */
   .ios-card {
-    background: rgba(255, 255, 255, 0.55);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid rgba(255, 255, 255, 0.65);
+    background: #FFFFFF;
+    border: 1px solid rgba(0, 0, 0, 0.06);
     border-radius: 16px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.06),
-                inset 0 1px 0 rgba(255,255,255,0.8);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04),
+                0 4px 16px rgba(0, 0, 0, 0.04);
   }
 
   .ios-label {
     display: block;
     font-size: 0.75rem;
     font-weight: 600;
-    color: #9D6B7A;
+    color: #6B7280;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding-left: 1rem;
@@ -75,10 +68,10 @@
     margin-bottom: 0.25rem;
   }
 
-  /* Form field input — used in dashboard detail panels */
+  /* Form field input */
   .field-input {
-    @apply px-2 py-1.5 rounded-lg bg-white/60 border border-white/40 text-sm
-           outline-none focus:ring-2 focus:ring-brand-300;
+    @apply px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-sm
+           outline-none focus:ring-2 focus:ring-brand-300 focus:border-brand-300;
   }
 
   .active-scale {

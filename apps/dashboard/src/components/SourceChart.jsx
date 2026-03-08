@@ -18,7 +18,7 @@ export default function SourceChart({ bySource, revenueBySource }) {
   if (chartData.length === 0) return null;
 
   return (
-    <div className="glass-card px-4 py-4">
+    <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
       <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
         {t.bySource}
       </h3>
@@ -66,7 +66,7 @@ export default function SourceChart({ bySource, revenueBySource }) {
                   <span className="font-medium text-ios-label">{item.revenue.toFixed(0)} {t.zl}</span>
                 )}
                 {item.orders > 0 && item.revenue > 0 && (
-                  <span className="text-ios-tertiary">avg {(item.revenue / item.orders).toFixed(0)}</span>
+                  <span className="text-ios-tertiary">avg {(item.revenue / item.orders).toFixed(0)} {t.zl}</span>
                 )}
               </div>
             </div>

@@ -107,7 +107,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
                   const n = parseInt(e.target.value, 10);
                   if (!isNaN(n) && n >= 1 && n <= qty) setWriteOffQty(n);
                 }}
-                className="w-10 text-center text-sm font-bold border border-red-200 rounded-lg py-1 bg-white/60 outline-none"
+                className="w-10 text-center text-sm font-bold border border-red-200 rounded-lg py-1 bg-white outline-none"
               />
               <button
                 onClick={() => setWriteOffQty(q => Math.min(qty, q + 1))}
@@ -133,7 +133,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
             value={reason}
             onChange={e => setReason(e.target.value)}
             placeholder={t.writeOffReason}
-            className="w-full text-sm border border-red-100 rounded-lg px-3 py-1.5 bg-white/60 outline-none placeholder-ios-tertiary/50"
+            className="w-full text-sm border border-red-100 rounded-lg px-3 py-1.5 bg-white outline-none placeholder-ios-tertiary/50"
           />
         </div>
       )}

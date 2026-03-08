@@ -20,7 +20,7 @@ function Pills({ options, value, onChange }) {
           className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
             value === o.value
               ? 'bg-brand-600 text-white shadow-sm'
-              : 'bg-white/50 text-ios-secondary border border-white/60 active:bg-white/70'
+              : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
           }`}
         >
           {o.label}
@@ -43,14 +43,14 @@ function FormCard({ label, children }) {
   return (
     <div>
       <p className="ios-label">{label}</p>
-      <div className="ios-card overflow-hidden divide-y divide-white/40">{children}</div>
+      <div className="ios-card overflow-hidden divide-y divide-gray-100">{children}</div>
     </div>
   );
 }
 
 function Row({ label, children, last }) {
   return (
-    <div className={`flex items-center gap-3 px-4 py-3.5 ${!last ? 'border-b border-white/40' : ''}`}>
+    <div className={`flex items-center gap-3 px-4 py-3.5 ${!last ? 'border-b border-gray-100' : ''}`}>
       <span className="text-sm text-ios-tertiary w-28 shrink-0">{label}</span>
       <div className="flex-1 text-right">{children}</div>
     </div>
@@ -99,7 +99,7 @@ export default function Step3Details({ form, onChange }) {
       {/* Timing — relative z-20 so calendar/time dropdowns render above sibling sections */}
       <div className="relative z-20">
         <p className="ios-label">{form.deliveryType === 'Delivery' ? 'Delivery timing' : t.requiredBy}</p>
-        <div className="ios-card overflow-visible divide-y divide-white/40">
+        <div className="ios-card overflow-visible divide-y divide-gray-100">
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate}</span>
             <div className="flex-1">

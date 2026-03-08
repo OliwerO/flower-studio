@@ -30,7 +30,7 @@ function Pills({ options, value, onChange, disabled }) {
           className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
             value === o.value
               ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-              : 'bg-white/60 text-ios-secondary border-white/60 active:bg-white/80'
+              : 'bg-gray-100 text-ios-secondary border-gray-200 hover:bg-gray-200'
           }`}
         >
           {o.label}
@@ -43,7 +43,7 @@ function Pills({ options, value, onChange, disabled }) {
 function Row({ label, value }) {
   if (!value) return null;
   return (
-    <div className="flex justify-between gap-4 py-2 border-b border-white/30 last:border-0">
+    <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
       <span className="text-sm text-ios-tertiary shrink-0">{label}</span>
       <span className="text-sm text-ios-label text-right">{value}</span>
     </div>
@@ -98,7 +98,7 @@ export default function OrderDetailPage() {
         <div className="flex items-center gap-3 max-w-2xl mx-auto">
           <button
             onClick={() => navigate('/orders')}
-            className="w-8 h-8 rounded-full bg-white/40 flex items-center justify-center text-ios-secondary text-sm active-scale"
+            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-ios-secondary text-sm active-scale hover:bg-gray-200"
           >
             ←
           </button>
@@ -146,7 +146,7 @@ export default function OrderDetailPage() {
             {order.orderLines?.length > 0 && (
               <div>
                 <p className="ios-label">Bouquet</p>
-                <div className="ios-card overflow-hidden divide-y divide-white/40">
+                <div className="ios-card overflow-hidden divide-y divide-gray-100">
                   {order.orderLines.map((line, i) => (
                     <div key={i} className="flex items-center justify-between px-4 py-3">
                       <div>

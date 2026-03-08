@@ -99,8 +99,8 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
         <div
           className="
             absolute z-50 mt-2 left-0 right-0
-            bg-white/95 backdrop-blur-xl rounded-2xl p-2
-            shadow-lg border border-white/60
+            bg-white rounded-2xl p-2
+            shadow-lg border border-gray-200
             animate-in fade-in
           "
           style={{ animationDuration: '150ms' }}
@@ -119,7 +119,7 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
             {/* Hours column */}
             <div
               ref={hourColRef}
-              className="flex-1 max-h-52 overflow-y-auto rounded-xl bg-white/40 scrollbar-thin"
+              className="flex-1 max-h-52 overflow-y-auto rounded-xl bg-gray-50 scrollbar-thin"
             >
               {hours.map(h => {
                 const isSelected = h === selectedHour;
@@ -134,7 +134,7 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
                       rounded-lg transition-all duration-150
                       ${isSelected
                         ? 'bg-brand-600 text-white shadow-sm'
-                        : 'text-ios-label hover:bg-white/60 active:bg-white/80'
+                        : 'text-ios-label hover:bg-gray-100 active:bg-gray-200'
                       }
                     `}
                   >
@@ -147,7 +147,7 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
             {/* Minutes column */}
             <div
               ref={minColRef}
-              className="flex-1 max-h-52 overflow-y-auto rounded-xl bg-white/40 scrollbar-thin"
+              className="flex-1 max-h-52 overflow-y-auto rounded-xl bg-gray-50 scrollbar-thin"
             >
               {minutes.map(m => {
                 const isSelected = m === selectedMinute;
@@ -162,7 +162,7 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
                       rounded-lg transition-all duration-150
                       ${isSelected
                         ? 'bg-brand-600 text-white shadow-sm'
-                        : 'text-ios-label hover:bg-white/60 active:bg-white/80'
+                        : 'text-ios-label hover:bg-gray-100 active:bg-gray-200'
                       }
                     `}
                   >

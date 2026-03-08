@@ -128,7 +128,7 @@ export default function StockTab() {
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                 view === v.key
                   ? 'bg-brand-600 text-white'
-                  : 'bg-white/50 text-ios-secondary hover:bg-white/70'
+                  : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
               }`}
             >
               {v.label}
@@ -209,7 +209,7 @@ export default function StockTab() {
           </div>
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-ios-tertiary border-b border-white/30">
+              <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
                 <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.costPrice}</th>
@@ -255,13 +255,13 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch }) {
   const isZero = qty === 0;
   const cost = item['Current Cost Price'] || 0;
   const sell = item['Current Sell Price'] || 0;
-  const markupPct = cost > 0 ? ((sell / cost - 1) * 100).toFixed(0) : '—';
+  const markupPct = cost > 0 && sell > 0 ? ((sell / cost - 1) * 100).toFixed(0) : '—';
   const dead = item['Dead/Unsold Stems'] || 0;
   const rowColor = isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
 
   return (
     <>
-      <tr className={`border-b border-white/20 ${rowColor}`}>
+      <tr className={`border-b border-gray-100 ${rowColor}`}>
         <td className="px-3 py-2 text-ios-label font-medium">{item['Display Name']}</td>
         <td className={`px-3 py-2 text-right font-semibold ${
           isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
@@ -286,17 +286,17 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch }) {
             onSave={v => onPatch(item.id, { 'Current Sell Price': v ? Number(v) : 0 })}
           />
         </td>
-        <td className="px-3 py-2 text-right text-ios-tertiary">{markupPct}%</td>
+        <td className="px-3 py-2 text-right text-ios-tertiary">{markupPct === '—' ? '—' : `${markupPct}%`}</td>
         {/* Editable supplier */}
         <td className="px-3 py-2 relative">
           <span
             onClick={() => setEditSupplier(!editSupplier)}
-            className="text-ios-tertiary cursor-pointer hover:bg-white/40 rounded px-1 -mx-1 transition-colors text-sm"
+            className="text-ios-tertiary cursor-pointer hover:bg-gray-100 rounded px-1 -mx-1 transition-colors text-sm"
           >
             {item.Supplier || '—'}
           </span>
           {editSupplier && (
-            <div className="absolute left-0 top-full z-20 mt-1 bg-white/95 backdrop-blur-xl rounded-xl border border-white/60 shadow-lg p-2">
+            <div className="absolute left-0 top-full z-20 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg p-2">
               <Pills
                 options={SUPPLIERS.map(s => ({ value: s, label: s }))}
                 value={item.Supplier || ''}
@@ -320,9 +320,9 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch }) {
         <td className="px-3 py-2 text-right">
           <div className="flex items-center justify-end gap-1">
             <button onClick={() => onAdjust(item.id, -1)}
-              className="w-7 h-7 rounded-lg bg-white/50 text-ios-label text-sm hover:bg-white/70">−</button>
+              className="w-7 h-7 rounded-lg bg-gray-100 text-ios-label text-sm hover:bg-gray-200">−</button>
             <button onClick={() => onAdjust(item.id, 1)}
-              className="w-7 h-7 rounded-lg bg-white/50 text-ios-label text-sm hover:bg-white/70">+</button>
+              className="w-7 h-7 rounded-lg bg-gray-100 text-ios-label text-sm hover:bg-gray-200">+</button>
             <button onClick={() => setShowWo(!showWo)}
               className="ml-1 px-2 py-1 rounded-lg bg-ios-red/10 text-ios-red text-xs hover:bg-ios-red/20">
               {t.writeOff}

@@ -9,12 +9,12 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 
 const STATUS_STYLES = {
-  'New':          { label: 'bg-blue-50 text-blue-600' },
+  'New':          { label: 'bg-indigo-50 text-indigo-600' },
   'In Progress':  { label: 'bg-orange-50 text-orange-600' },
-  'Ready':        { label: 'bg-green-50 text-green-700' },
-  'Delivered':    { label: 'bg-gray-100 text-gray-500' },
-  'Picked Up':    { label: 'bg-gray-100 text-gray-500' },
-  'Cancelled':    { label: 'bg-red-50 text-red-500' },
+  'Ready':        { label: 'bg-amber-50 text-amber-700' },
+  'Delivered':    { label: 'bg-emerald-50 text-emerald-700' },
+  'Picked Up':    { label: 'bg-teal-50 text-teal-700' },
+  'Cancelled':    { label: 'bg-rose-50 text-rose-600' },
 };
 
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
@@ -39,7 +39,7 @@ function Pills({ options, value, onChange, disabled }) {
           className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
             value === o.value
               ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-              : 'bg-white/60 text-ios-secondary border-white/60 active:bg-white/80'
+              : 'bg-gray-100 text-ios-secondary border-gray-200 hover:bg-gray-200'
           }`}
         >
           {o.label}

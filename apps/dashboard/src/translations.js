@@ -94,6 +94,7 @@ const t = {
   email:            'Email',
   instagram:        'Instagram',
   segment:          'Segment',
+  link:             'Instagram / Email',
   totalSpend:       'Total spend',
   orderCount:       'Orders',
   lastOrder:        'Last order',
@@ -187,8 +188,49 @@ const t = {
   details:          'Details',
   orderTotal:       'Order total',
 
+  // Financial KPIs tab
+  tabFinancial:     'Financial',
+  thisMonth:        'This month',
+  lastMonth:        'Last month',
+  last3Months:      'Last 3 months',
+  last12Months:     'Last 12 months',
+  customRange:      'Custom',
+  revenueAndOrders: 'Revenue & Orders',
+  totalRevenue:     'Total Revenue',
+  avgOrderValue:    'Avg Order Value',
+  paidOrders:       'Paid Orders',
+  flowerRevenue:    'Flower Revenue',
+  deliveryRevTotal: 'Delivery Revenue',
+  revenueByMonth:   'Revenue by month',
+  revenueBySource:  'Revenue by source',
+  costsAndMargins:  'Costs & Margins',
+  flowerCost:       'Flower Cost',
+  estimatedRevenue: 'Estimated @2.2×',
+  revenueGap:       'Revenue Gap',
+  grossMargin:      'Gross Margin',
+  marginTrend:      'Margin trend',
+  wasteEfficiency:  'Waste & Efficiency',
+  unrealisedRevenue:'Unrealised Revenue',
+  wastePercent:     'Waste %',
+  wasteNote:        'Snapshot of current stock, not historical',
+  deliveryProfit:   'Delivery Profitability',
+  deliveryCount:    'Deliveries',
+  pickupCount:      'Pickups',
+  avgDeliveryFee:   'Avg Delivery Fee',
+  pickupVsDelivery: 'Pickup vs Delivery',
+  customerMetrics:  'Customer Metrics',
+  newCustomers:     'New Customers',
+  returningCust:    'Returning',
+  newVsReturning:   'New vs Returning',
+  topSpenders:      'Top Spenders',
+  flowers:          'Flowers',
+
+  // Filters
+  activeFilters:    'Filters',
+  clearAll:         'Clear all',
+
   // Misc
-  zl:               'zl',
+  zl:               'zł',
 };
 
 export default t;

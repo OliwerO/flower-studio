@@ -7,7 +7,15 @@ const router = Router();
 router.use(authorize('analytics'));
 
 // GET /api/analytics?from=2025-01-01&to=2025-01-31
-// Returns financial KPIs for the given period — mirrors the Blossom Audit spreadsheet.
+// Financial KPIs for the given period.
+//
+// Revenue formula per order:
+//   Effective Price = Final Price || Price Override || (orderLineSellTotal + deliveryFee)
+//   - Final Price is the Airtable formula field (usually 0 in practice)
+//   - Price Override is the florist's manual total (includes delivery)
+//   - Otherwise: flower sell total from order lines + delivery fee from Delivery record
+//
+// This ensures delivery fees are included in total revenue for non-override orders.
 router.get('/', async (req, res, next) => {
   try {
     const { from, to } = req.query;
@@ -16,98 +24,233 @@ router.get('/', async (req, res, next) => {
       return res.status(400).json({ error: 'from and to date params are required.' });
     }
 
-    const [orders, stockPurchases, stock] = await Promise.all([
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(
-          IS_AFTER({Order Date}, '${from}'),
-          IS_BEFORE({Order Date}, '${to}'),
-          {Status} != 'Cancelled'
-        )`,
-      }),
-      db.list(TABLES.STOCK_PURCHASES, {
-        filterByFormula: `AND(
-          IS_AFTER({Purchase Date}, '${from}'),
-          IS_BEFORE({Purchase Date}, '${to}')
-        )`,
-      }),
+    // ── Fetch orders + stock in parallel ──
+    // Inclusive date boundaries: NOT(IS_BEFORE) = >=, NOT(IS_AFTER) = <=
+    const dateFilter = `AND(
+      NOT(IS_BEFORE({Order Date}, '${from}')),
+      NOT(IS_AFTER({Order Date}, '${to}')),
+      {Status} != 'Cancelled'
+    )`;
+
+    const [orders, stock] = await Promise.all([
+      db.list(TABLES.ORDERS, { filterByFormula: dateFilter }),
       db.list(TABLES.STOCK, {
         filterByFormula: '{Active} = TRUE()',
-        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price'],
+        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price'],
       }),
     ]);
 
-    // Revenue metrics
-    const paidOrders = orders.filter((o) => o['Payment Status'] !== 'Unpaid');
-    const totalRevenue = paidOrders.reduce((sum, o) => sum + (o['Final Price'] || 0), 0);
-    const deliveryRevenue = paidOrders.reduce((sum, o) => sum + (o['Delivery Fee'] || 0), 0);
-    const flowerRevenue = totalRevenue - deliveryRevenue;
+    // ── Bulk-fetch order lines for cost + sell computation ──
+    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
+    const allLines = [];
+    if (allLineIds.length > 0) {
+      const batchSize = 100;
+      for (let i = 0; i < allLineIds.length; i += batchSize) {
+        const batch = allLineIds.slice(i, i + batchSize);
+        const lines = await db.list(TABLES.ORDER_LINES, {
+          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit'],
+          maxRecords: batchSize,
+        });
+        allLines.push(...lines);
+      }
+    }
+
+    // Per-order sell/cost totals from order lines
+    const orderSellTotals = {};
+    const orderCostTotals = {};
+    for (const line of allLines) {
+      const orderId = line.Order?.[0];
+      if (!orderId) continue;
+      const qty = line.Quantity || 0;
+      const sell = (line['Sell Price Per Unit'] || 0) * qty;
+      const cost = (line['Cost Price Per Unit'] || 0) * qty;
+      orderSellTotals[orderId] = (orderSellTotals[orderId] || 0) + sell;
+      orderCostTotals[orderId] = (orderCostTotals[orderId] || 0) + cost;
+    }
+
+    // ── Fetch delivery records for fee data ──
+    const deliveryIds = orders.flatMap(o => o['Deliveries'] || []);
+    const deliveryRecords = [];
+    if (deliveryIds.length > 0) {
+      const batchSize = 100;
+      for (let i = 0; i < deliveryIds.length; i += batchSize) {
+        const batch = deliveryIds.slice(i, i + batchSize);
+        const recs = await db.list(TABLES.DELIVERIES, {
+          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+          fields: ['Linked Order', 'Delivery Fee'],
+          maxRecords: batchSize,
+        });
+        deliveryRecords.push(...recs);
+      }
+    }
+
+    // Delivery fee lookup by order ID
+    const deliveryFeeByOrder = {};
+    for (const d of deliveryRecords) {
+      const orderId = d['Linked Order']?.[0];
+      if (orderId) deliveryFeeByOrder[orderId] = d['Delivery Fee'] || 0;
+    }
+
+    // ── Compute Effective Price per order ──
+    // Final Price || Price Override || (flower sell total + delivery fee)
+    for (const o of orders) {
+      const flowerSell = orderSellTotals[o.id] || 0;
+      const delFee = deliveryFeeByOrder[o.id] || 0;
+      o._flowerSell = flowerSell;
+      o._deliveryFee = delFee;
+      o._cost = orderCostTotals[o.id] || 0;
+      o['Effective Price'] = o['Final Price'] || o['Price Override'] || (flowerSell + delFee);
+    }
+
+    // ── Revenue metrics (paid orders only) ──
+    const paidOrders = orders.filter(o => o['Payment Status'] !== 'Unpaid');
+
+    const totalRevenue = paidOrders.reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
+
+    // Flower revenue = sum of order line sell prices for paid orders
+    const flowerRevenue = paidOrders.reduce((sum, o) => sum + o._flowerSell, 0);
+
+    // Delivery revenue = sum of delivery fees for paid orders
+    const deliveryRevenue = paidOrders.reduce((sum, o) => sum + o._deliveryFee, 0);
+
     const avgOrderValue = paidOrders.length ? totalRevenue / paidOrders.length : 0;
 
-    // Cost metrics
-    const totalFlowerCost = stockPurchases.reduce(
-      (sum, p) => sum + (p['Total Cost'] || 0), 0
-    );
-    const estimatedRevenue = totalFlowerCost * 2.2; // standard markup from existing spreadsheet
-    const grossMargin = totalRevenue
-      ? ((totalRevenue - totalFlowerCost) / totalRevenue) * 100
+    // ── Cost metrics (paid orders only — match costs to the revenue they generated) ──
+    const paidFlowerCost = paidOrders.reduce((sum, o) => sum + o._cost, 0);
+    const allFlowerCost = orders.reduce((sum, o) => sum + o._cost, 0);
+    const estimatedRevenue = allFlowerCost * 2.2;
+    const grossMargin = flowerRevenue > 0
+      ? ((flowerRevenue - paidFlowerCost) / flowerRevenue) * 100
       : 0;
 
-    // Waste metrics
+    // ── Waste metrics (from stock, period-independent snapshot) ──
     const totalDeadStems = stock.reduce((sum, s) => sum + (s['Dead/Unsold Stems'] || 0), 0);
     const unrealisedRevenue = stock.reduce(
       (sum, s) => sum + (s['Dead/Unsold Stems'] || 0) * (s['Current Cost Price'] || 0),
       0
     );
-    const wastePercent = totalFlowerCost
-      ? (unrealisedRevenue / totalFlowerCost) * 100
+    const wastePercent = allFlowerCost > 0
+      ? (unrealisedRevenue / allFlowerCost) * 100
       : 0;
 
-    // Delivery metrics
-    const deliveryOrders = orders.filter((o) => o['Delivery Type'] === 'Delivery');
-    const pickupOrders = orders.filter((o) => o['Delivery Type'] === 'Pickup');
+    // ── Delivery metrics (all delivery orders for volume stats, paid for revenue) ──
+    const deliveryOrders = orders.filter(o => o['Delivery Type'] === 'Delivery');
+    const pickupOrders = orders.filter(o => o['Delivery Type'] === 'Pickup');
+    const paidDeliveryOrders = paidOrders.filter(o => o['Delivery Type'] === 'Delivery');
+    const avgDeliveryFee = paidDeliveryOrders.length
+      ? paidDeliveryOrders.reduce((s, o) => s + o._deliveryFee, 0) / paidDeliveryOrders.length
+      : 0;
 
-    // Source breakdown — count + revenue per channel
+    // ── Source breakdown ──
     const bySource = {};
     const revenueBySource = {};
     for (const o of orders) {
       const src = o.Source || 'Other';
       bySource[src] = (bySource[src] || 0) + 1;
-      if (o['Payment Status'] !== 'Unpaid') {
-        revenueBySource[src] = (revenueBySource[src] || 0) + (o['Final Price'] || 0);
-      }
+    }
+    for (const o of paidOrders) {
+      const src = o.Source || 'Other';
+      revenueBySource[src] = (revenueBySource[src] || 0) + (o['Effective Price'] || 0);
     }
 
-    // Top products — aggregate order lines to find best sellers.
-    // Bulk-fetch all order lines for the period's orders.
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    let topProducts = [];
-    if (allLineIds.length > 0) {
-      // Fetch in batches of 100 to stay within formula length limits
+    // ── Top products (paid orders only — consistent with revenue metrics) ──
+    const paidOrderIds = new Set(paidOrders.map(o => o.id));
+    const productMap = {};
+    for (const line of allLines) {
+      const orderId = line.Order?.[0];
+      if (!orderId || !paidOrderIds.has(orderId)) continue;
+      const name = line['Flower Name'] || 'Unknown';
+      if (!productMap[name]) productMap[name] = { name, count: 0, totalQty: 0, revenue: 0, cost: 0 };
+      productMap[name].count++;
+      productMap[name].totalQty += line.Quantity || 0;
+      productMap[name].revenue += (line['Sell Price Per Unit'] || 0) * (line.Quantity || 0);
+      productMap[name].cost += (line['Cost Price Per Unit'] || 0) * (line.Quantity || 0);
+    }
+    const topProducts = Object.values(productMap)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 20);
+
+    // ── Monthly breakdown for trend charts ──
+    const monthlyMap = {};
+    for (const o of orders) {
+      const month = (o['Order Date'] || '').slice(0, 7);
+      if (!month) continue;
+      if (!monthlyMap[month]) monthlyMap[month] = { month, orders: [], paidOrders: [] };
+      monthlyMap[month].orders.push(o);
+      if (o['Payment Status'] !== 'Unpaid') monthlyMap[month].paidOrders.push(o);
+    }
+
+    const monthly = Object.values(monthlyMap)
+      .sort((a, b) => a.month.localeCompare(b.month))
+      .map(m => {
+        const rev = m.paidOrders.reduce((s, o) => s + (o['Effective Price'] || 0), 0);
+        const flowerRev = m.paidOrders.reduce((s, o) => s + o._flowerSell, 0);
+        const delRev = m.paidOrders.reduce((s, o) => s + o._deliveryFee, 0);
+        const mCost = m.paidOrders.reduce((s, o) => s + o._cost, 0);
+        const margin = flowerRev > 0 ? ((flowerRev - mCost) / flowerRev) * 100 : 0;
+        return {
+          month: m.month,
+          revenue: rev,
+          flowerRevenue: flowerRev,
+          deliveryRevenue: delRev,
+          orderCount: m.orders.length,
+          paidOrderCount: m.paidOrders.length,
+          flowerCost: mCost,
+          grossMarginPercent: margin,
+        };
+      });
+
+    // ── Customer metrics ──
+    const customerIds = [...new Set(orders.map(o => o.Customer?.[0]).filter(Boolean))];
+    let customers = { newCount: 0, returningCount: 0, segments: {}, topSpenders: [] };
+
+    if (customerIds.length > 0) {
+      const custRecords = [];
       const batchSize = 100;
-      const allLines = [];
-      for (let i = 0; i < allLineIds.length; i += batchSize) {
-        const batch = allLineIds.slice(i, i + batchSize);
-        const lines = await db.list(TABLES.ORDER_LINES, {
+      for (let i = 0; i < customerIds.length; i += batchSize) {
+        const batch = customerIds.slice(i, i + batchSize);
+        const recs = await db.list(TABLES.CUSTOMERS, {
           filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Flower Name', 'Quantity', 'Sell Price Per Unit'],
           maxRecords: batchSize,
         });
-        allLines.push(...lines);
+        custRecords.push(...recs);
       }
 
-      // Aggregate by flower name
-      const productMap = {};
-      for (const line of allLines) {
-        const name = line['Flower Name'] || 'Unknown';
-        if (!productMap[name]) productMap[name] = { name, count: 0, totalQty: 0, revenue: 0 };
-        productMap[name].count++;
-        productMap[name].totalQty += line.Quantity || 0;
-        productMap[name].revenue += (line['Sell Price Per Unit'] || 0) * (line.Quantity || 0);
+      const spendByCustomer = {};
+      for (const o of paidOrders) {
+        const cid = o.Customer?.[0];
+        if (!cid) continue;
+        spendByCustomer[cid] = (spendByCustomer[cid] || 0) + (o['Effective Price'] || 0);
       }
 
-      topProducts = Object.values(productMap)
-        .sort((a, b) => b.revenue - a.revenue)
-        .slice(0, 20);
+      const periodOrderIds = new Set(orders.map(o => o.id));
+      for (const c of custRecords) {
+        const allCustOrders = c['App Orders'] || [];
+        const hasOlderOrders = allCustOrders.some(oid => !periodOrderIds.has(oid));
+        if (hasOlderOrders) {
+          customers.returningCount++;
+        } else {
+          customers.newCount++;
+        }
+      }
+
+      const segments = {};
+      for (const c of custRecords) {
+        const seg = c.Segment || 'Unassigned';
+        segments[seg] = (segments[seg] || 0) + 1;
+      }
+      customers.segments = segments;
+
+      customers.topSpenders = custRecords
+        .map(c => ({
+          id: c.id,
+          name: c.Name || c.Nickname || '—',
+          spend: spendByCustomer[c.id] || 0,
+          segment: c.Segment || null,
+        }))
+        .sort((a, b) => b.spend - a.spend)
+        .slice(0, 10);
     }
 
     res.json({
@@ -121,7 +264,8 @@ router.get('/', async (req, res, next) => {
         paidOrderCount: paidOrders.length,
       },
       costs: {
-        totalFlowerCost,
+        totalFlowerCost: paidFlowerCost,
+        allFlowerCost,
         estimatedRevenueAt2_2x: estimatedRevenue,
         revenueGap: totalRevenue - estimatedRevenue,
         grossMarginPercent: grossMargin,
@@ -135,12 +279,15 @@ router.get('/', async (req, res, next) => {
         deliveryCount: deliveryOrders.length,
         pickupCount: pickupOrders.length,
         deliveryRevenue,
+        avgDeliveryFee,
       },
       orders: {
         bySource,
         revenueBySource,
         topProducts,
       },
+      monthly,
+      customers,
     });
   } catch (err) {
     next(err);
