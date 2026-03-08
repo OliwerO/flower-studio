@@ -10,7 +10,7 @@ router.use(authorize('orders'));
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus, excludeCancelled } = req.query;
+    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -19,6 +19,9 @@ router.get('/', async (req, res, next) => {
     else if (source)        filters.push(`{Source} = '${sanitizeFormulaValue(source)}'`);
     if (deliveryType)     filters.push(`{Delivery Type} = '${sanitizeFormulaValue(deliveryType)}'`);
     if (paymentStatus)    filters.push(`{Payment Status} = '${sanitizeFormulaValue(paymentStatus)}'`);
+    // "Not recorded" means orders where Payment Method is blank/empty
+    if (paymentMethod === 'Not recorded') filters.push(`OR({Payment Method} = BLANK(), {Payment Method} = '')`);
+    else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
     if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
     if (dateFrom)         filters.push(`NOT(IS_BEFORE({Order Date}, '${sanitizeFormulaValue(dateFrom)}'))`);
     if (dateTo)           filters.push(`NOT(IS_AFTER({Order Date}, '${sanitizeFormulaValue(dateTo)}'))`);

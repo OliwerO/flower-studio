@@ -379,8 +379,10 @@ export default function FinancialTab({ onNavigate }) {
               </thead>
               <tbody>
                 {data.paymentAnalysis.map(p => (
-                  <tr key={p.method} className={`border-b border-gray-50 ${
-                    p.method === 'Not recorded' ? 'bg-amber-50/50' : ''
+                  <tr key={p.method}
+                    onClick={() => nav('orders', { paymentMethod: p.method })}
+                    className={`border-b border-gray-50 cursor-pointer hover:bg-gray-50 transition-colors ${
+                    p.method === 'Not recorded' ? 'bg-amber-50/50 hover:bg-amber-100/50' : ''
                   }`}>
                     <td className="px-3 py-2 font-medium text-ios-label">
                       {p.method === 'Not recorded' ? t.notRecorded : p.method}
@@ -501,39 +503,45 @@ export default function FinancialTab({ onNavigate }) {
       {/* ── Top Products (what sells best?) ── */}
       {orders.topProducts?.length > 0 && (
         <Section title={t.bestSellers} sectionKey="products" collapsed={collapsed} onToggle={toggle}>
-          <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
-            <div className="grid grid-cols-14 gap-2 px-3 py-2 text-[11px] text-ios-tertiary font-medium uppercase">
-              <span className="col-span-3">{t.stockName}</span>
-              <span className="col-span-1 text-center">↕</span>
-              <span className="col-span-2 text-right">{t.quantity}</span>
-              <span className="col-span-2 text-right">{t.revenue}</span>
-              <span className="col-span-2 text-right">{t.costPrice}</span>
-              <span className="col-span-2 text-right">{t.markup}</span>
-              <span className="col-span-2 text-right">{t.productMargin}</span>
-            </div>
-            {orders.topProducts.slice(0, 10).map(p => {
-              const m = p.cost > 0 ? (p.revenue / p.cost).toFixed(1) : '—';
-              const marginPct = p.revenue > 0 ? Math.round(((p.revenue - p.cost) / p.revenue) * 100) : 0;
-              return (
-                <div key={p.name} className="grid grid-cols-14 gap-2 px-3 py-2 text-sm">
-                  <span className="col-span-3 truncate text-ios-label">{p.name}</span>
-                  <span className={`col-span-1 text-center font-medium ${
-                    p.trend === 'up' ? 'text-emerald-500' : p.trend === 'down' ? 'text-rose-500' : 'text-ios-tertiary'
-                  }`}>
-                    {p.trend === 'up' ? '↑' : p.trend === 'down' ? '↓' : '→'}
-                  </span>
-                  <span className="col-span-2 text-right text-ios-secondary">{p.totalQty}</span>
-                  <span className="col-span-2 text-right font-medium text-brand-700">{p.revenue.toFixed(0)} {t.zl}</span>
-                  <span className="col-span-2 text-right text-ios-secondary">{p.cost.toFixed(0)} {t.zl}</span>
-                  <span className={`col-span-2 text-right font-medium ${
-                    m !== '—' && parseFloat(m) >= 2.2 ? 'text-emerald-600' : m !== '—' ? 'text-amber-600' : 'text-ios-tertiary'
-                  }`}>{m}×</span>
-                  <span className={`col-span-2 text-right font-medium ${
-                    marginPct >= 55 ? 'text-emerald-600' : marginPct >= 40 ? 'text-amber-600' : 'text-rose-600'
-                  }`}>{marginPct}%</span>
-                </div>
-              );
-            })}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-ios-tertiary border-b border-gray-100">
+                  <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
+                  <th className="text-center px-2 py-2 font-medium w-8"></th>
+                  <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.revenue}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.costPrice}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.markup}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.productMargin}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {orders.topProducts.slice(0, 10).map(p => {
+                  const m = p.cost > 0 ? (p.revenue / p.cost).toFixed(1) : '—';
+                  const marginPct = p.revenue > 0 ? Math.round(((p.revenue - p.cost) / p.revenue) * 100) : 0;
+                  return (
+                    <tr key={p.name} className="border-b border-gray-50">
+                      <td className="px-3 py-2 font-medium text-ios-label">{p.name}</td>
+                      <td className={`px-2 py-2 text-center font-medium ${
+                        p.trend === 'up' ? 'text-emerald-500' : p.trend === 'down' ? 'text-rose-500' : 'text-ios-tertiary'
+                      }`}>
+                        {p.trend === 'up' ? '↑' : p.trend === 'down' ? '↓' : '→'}
+                      </td>
+                      <td className="px-3 py-2 text-right text-ios-secondary">{p.totalQty}</td>
+                      <td className="px-3 py-2 text-right font-medium text-brand-700">{p.revenue.toFixed(0)} {t.zl}</td>
+                      <td className="px-3 py-2 text-right text-ios-secondary">{p.cost.toFixed(0)} {t.zl}</td>
+                      <td className={`px-3 py-2 text-right font-medium ${
+                        m !== '—' && parseFloat(m) >= 2.2 ? 'text-emerald-600' : m !== '—' ? 'text-amber-600' : 'text-ios-tertiary'
+                      }`}>{m}×</td>
+                      <td className={`px-3 py-2 text-right font-medium ${
+                        marginPct >= 55 ? 'text-emerald-600' : marginPct >= 40 ? 'text-amber-600' : 'text-rose-600'
+                      }`}>{marginPct}%</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </Section>
       )}
