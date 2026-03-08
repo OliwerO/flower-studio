@@ -94,7 +94,7 @@ export default function CustomersTab({ initialFilter }) {
               .sort(([,a], [,b]) => b - a)
               .map(([src, count]) => (
                 <span key={src} className="px-3 py-1 rounded-full bg-gray-100 text-sm text-ios-label">
-                  {src} <span className="text-ios-tertiary">{count}</span>
+                  {src === 'Unknown' ? t.notRecorded : src} <span className="text-ios-tertiary">{count}</span>
                 </span>
               ))}
           </div>
@@ -155,14 +155,22 @@ export default function CustomersTab({ initialFilter }) {
       )}
 
       {/* Search bar */}
-      <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
+      <div className="bg-white rounded-2xl shadow-sm px-4 py-3 relative">
         <input
           type="text"
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder={t.search + ' (name, phone, Instagram, email)...'}
-          className="field-input w-full"
+          className="field-input w-full pr-8"
         />
+        {search && (
+          <button
+            onClick={() => setSearch('')}
+            className="absolute right-6 top-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-gray-200 text-gray-500 hover:bg-gray-300 text-xs flex items-center justify-center"
+          >
+            ×
+          </button>
+        )}
       </div>
 
       {/* At-risk customers list — shown when churn risk card is clicked */}
