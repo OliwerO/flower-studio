@@ -60,6 +60,54 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
 
   return (
     <div className="border-t border-white/40 px-4 py-4 bg-white/20 space-y-4">
+      {/* Lifetime summary — computed from order history */}
+      {orders.length > 0 && (() => {
+        const totalSpend = orders.reduce((sum, o) => sum + (o['Effective Price'] || o['Price Override'] || o['Final Price'] || 0), 0);
+        const avgOrderValue = Math.round(totalSpend / orders.length);
+
+        // Avg days between orders
+        const sortedDates = orders.map(o => new Date(o['Order Date'])).filter(d => !isNaN(d)).sort((a, b) => a - b);
+        let avgDaysBetween = 0;
+        if (sortedDates.length > 1) {
+          const gaps = [];
+          for (let i = 1; i < sortedDates.length; i++) {
+            gaps.push((sortedDates[i] - sortedDates[i-1]) / 86400000);
+          }
+          avgDaysBetween = Math.round(gaps.reduce((s, g) => s + g, 0) / gaps.length);
+        }
+
+        // Preferred source
+        const sourceCounts = {};
+        for (const o of orders) {
+          const src = o.Source || 'Unknown';
+          sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+        }
+        const preferredSource = Object.entries(sourceCounts).sort(([,a],[,b]) => b - a)[0]?.[0] || '\u2014';
+
+        const firstDate = sortedDates[0]?.toLocaleDateString('en-GB', { month: 'short', year: 'numeric' });
+
+        return (
+          <div className="grid grid-cols-4 gap-3 mb-4">
+            <div className="bg-gray-50 rounded-xl p-3 text-center">
+              <div className="text-lg font-bold text-brand-700">{orders.length}</div>
+              <div className="text-xs text-ios-tertiary">{t.orderCount}</div>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 text-center">
+              <div className="text-lg font-bold text-brand-700">{avgOrderValue} {t.zl}</div>
+              <div className="text-xs text-ios-tertiary">{t.avgOrderVal}</div>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 text-center">
+              <div className="text-lg font-bold text-brand-700">{avgDaysBetween > 0 ? `${avgDaysBetween}d` : '\u2014'}</div>
+              <div className="text-xs text-ios-tertiary">{t.avgTimeBetween}</div>
+            </div>
+            <div className="bg-gray-50 rounded-xl p-3 text-center">
+              <div className="text-lg font-bold text-brand-700">{preferredSource}</div>
+              <div className="text-xs text-ios-tertiary">{t.preferredChannel}</div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Contact info grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <EditableField label={t.name} value={cust.Name} field="Name" onSave={patchField} />

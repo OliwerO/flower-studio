@@ -23,6 +23,7 @@ export default function CustomersTab({ initialFilter }) {
   const [expandedId, setExpanded]   = useState(null);
   const [insights, setInsights]     = useState(null);
   const [showAtRisk, setShowAtRisk] = useState(false);
+  const [rfmFilter, setRfmFilter]   = useState(null);
   const { showToast } = useToast();
 
   // Search customers
@@ -53,6 +54,53 @@ export default function CustomersTab({ initialFilter }) {
 
   return (
     <div className="space-y-4">
+      {/* RFM Health Cards — auto-scored customer segments */}
+      {insights?.rfm?.summary && (
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">{t.customerHealth}</p>
+          <div className="grid grid-cols-5 gap-3">
+            {[
+              { key: 'Champions', color: 'bg-emerald-50 border-emerald-200 text-emerald-700', icon: '\u2605' },
+              { key: 'Loyal',     color: 'bg-blue-50 border-blue-200 text-blue-700', icon: '\u2665' },
+              { key: 'At Risk',   color: 'bg-amber-50 border-amber-200 text-amber-700', icon: '\u26A0' },
+              { key: 'Lost',      color: 'bg-rose-50 border-rose-200 text-rose-700', icon: '\u2717' },
+              { key: 'New',       color: 'bg-purple-50 border-purple-200 text-purple-700', icon: '\u2726' },
+            ].map(seg => {
+              const count = insights.rfm.summary[seg.key] || 0;
+              const rev = insights.rfm.revenue?.[seg.key] || 0;
+              return (
+                <button key={seg.key}
+                  onClick={() => setRfmFilter(rfmFilter === seg.key ? null : seg.key)}
+                  className={`rounded-xl border p-3 text-center transition-all ${seg.color} ${
+                    rfmFilter === seg.key ? 'ring-2 ring-brand-400 shadow-md' : 'hover:shadow-sm'
+                  }`}>
+                  <div className="text-lg">{seg.icon}</div>
+                  <div className="text-2xl font-bold">{count}</div>
+                  <div className="text-xs font-medium">{t[`rfm${seg.key.replace(' ', '')}`] || seg.key}</div>
+                  {rev > 0 && <div className="text-xs opacity-70 mt-0.5">{Math.round(rev)} {t.zl}</div>}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Acquisition source pills */}
+      {insights?.acquisitionBySource && Object.keys(insights.acquisitionBySource).length > 0 && (
+        <div className="mb-4">
+          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">{t.acquisitionSource}</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(insights.acquisitionBySource)
+              .sort(([,a], [,b]) => b - a)
+              .map(([src, count]) => (
+                <span key={src} className="px-3 py-1 rounded-full bg-gray-100 text-sm text-ios-label">
+                  {src} <span className="text-ios-tertiary">{count}</span>
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+
       {/* Insights summary bar */}
       {insights && (
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
@@ -65,6 +113,9 @@ export default function CustomersTab({ initialFilter }) {
               }`}>
                 {seg}
               </p>
+              {insights.segmentRevenue?.[seg] > 0 && (
+                <p className="text-xs text-ios-tertiary mt-1">{Math.round(insights.segmentRevenue[seg])} {t.zl}</p>
+              )}
             </div>
           ))}
 
@@ -75,6 +126,11 @@ export default function CustomersTab({ initialFilter }) {
               className="bg-white rounded-2xl shadow-sm px-4 py-3 text-center cursor-pointer hover:bg-ios-orange/10 transition-colors">
               <p className="text-2xl font-bold text-ios-orange">{insights.churnRisk.length}</p>
               <p className="text-xs text-ios-orange font-medium mt-1">{t.churnRisk}</p>
+              {insights.totalRevenueAtRisk > 0 && (
+                <span className="text-xs text-rose-500 font-medium ml-1">
+                  {Math.round(insights.totalRevenueAtRisk)} {t.zl} {t.revenueAtRisk}
+                </span>
+              )}
             </div>
           )}
         </div>
@@ -154,6 +210,7 @@ export default function CustomersTab({ initialFilter }) {
           <span className="w-28">{t.phone}</span>
           <span className="flex-1">{t.link}</span>
           <span className="w-20 shrink-0">{t.segment}</span>
+          <span className="w-24 shrink-0">{t.lastOrder}</span>
           <span className="w-20 text-right shrink-0">{t.totalSpend}</span>
           <span className="w-8 text-right shrink-0">#</span>
           <span className="w-4"></span>
@@ -165,7 +222,10 @@ export default function CustomersTab({ initialFilter }) {
         <div className="text-center py-8 text-ios-tertiary">{t.noResults}</div>
       )}
 
-      {!loading && customers.filter(c => c.Name || c.Nickname || c.Phone || (c['App Order Count'] || 0) > 0).map(cust => {
+      {!loading && customers
+        .filter(c => c.Name || c.Nickname || c.Phone || (c['App Order Count'] || 0) > 0)
+        .filter(c => !rfmFilter || insights?.rfm?.byCustomer?.[c.id]?.label === rfmFilter)
+        .map(cust => {
         const isExpanded = expandedId === cust.id;
         const isDNC = cust.Segment === 'DO NOT CONTACT';
 
@@ -193,16 +253,26 @@ export default function CustomersTab({ initialFilter }) {
                 <span className={`px-2.5 py-1 rounded-full text-xs font-medium shrink-0 ${
                   SEGMENT_COLORS[cust.Segment] || 'bg-gray-100 text-gray-600'
                 }`}>
-                  {isDNC ? '⛔ ' + t.doNotContact : cust.Segment}
+                  {isDNC ? '\u26D4 ' + t.doNotContact : cust.Segment}
                 </span>
               )}
+              <span className="w-24 shrink-0">
+                {(() => {
+                  const dateStr = insights?.lastOrderDates?.[cust.id];
+                  if (!dateStr) return <span className="text-ios-tertiary">—</span>;
+                  const days = Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+                  const color = days > 120 ? 'text-rose-600' : days > 60 ? 'text-amber-600' : 'text-ios-secondary';
+                  const label = days === 0 ? t.today : days < 30 ? `${days}d ago` : days < 365 ? `${Math.floor(days/30)}mo ago` : `${Math.floor(days/365)}y ago`;
+                  return <span className={`text-xs font-medium ${color}`}>{label}</span>;
+                })()}
+              </span>
               <span className="text-sm font-semibold text-ios-label w-20 text-right shrink-0">
                 {(cust['App Total Spend'] || 0).toFixed(0)} {t.zl}
               </span>
               <span className="text-xs text-ios-tertiary w-8 text-right shrink-0">
                 {cust['App Order Count'] || 0}
               </span>
-              <span className="text-ios-tertiary text-sm">{isExpanded ? '▲' : '▼'}</span>
+              <span className="text-ios-tertiary text-sm">{isExpanded ? '\u25B2' : '\u25BC'}</span>
             </div>
 
             {isExpanded && (

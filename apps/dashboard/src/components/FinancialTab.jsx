@@ -230,6 +230,18 @@ export default function FinancialTab({ onNavigate }) {
           <KPI label={t.flowerRevenue} value={`${revenue.flowers.toFixed(0)} ${t.zl}`} />
         </div>
 
+        {data.orders?.funnel && (
+          <div className="grid grid-cols-3 gap-3 mt-3">
+            <KPI label={t.created} value={data.orders.funnel.totalCreated} />
+            <KPI label={t.completed} value={`${data.orders.funnel.completionRate}%`}
+              sub={`${data.orders.funnel.completed} orders`}
+              color={data.orders.funnel.completionRate >= 80 ? 'text-emerald-600' : 'text-amber-600'} />
+            <KPI label={t.cancelled} value={data.orders.funnel.cancelled}
+              sub={`${data.orders.funnel.cancellationRate}%`}
+              color={data.orders.funnel.cancellationRate > 5 ? 'text-rose-600' : 'text-emerald-600'} />
+          </div>
+        )}
+
         {/* Monthly revenue stacked bar */}
         {monthly.length > 1 && (
           <div className="mb-4">
@@ -265,21 +277,59 @@ export default function FinancialTab({ onNavigate }) {
           </div>
         )}
 
-        {/* Weekly rhythm — which days are busiest? */}
-        {data.weeklyRhythm?.length > 0 && (
-          <div className="mt-4">
-            <p className="text-xs text-ios-tertiary font-medium mb-2">{t.weeklyRhythm}</p>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={data.weeklyRhythm}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                <XAxis dataKey="dayName" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip formatter={(v, name) => name === 'orderCount' ? `${v} orders` : `${v.toFixed(0)} ${t.zl}`} />
-                <Bar dataKey="orderCount" name={t.orders} fill="#db2777" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+        {/* Source efficiency breakdown */}
+        {data.orders?.sourceEfficiency?.length > 0 && (
+          <div className="overflow-x-auto mt-3">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-ios-tertiary border-b border-gray-100">
+                  <th className="text-left px-3 py-2 font-medium">{t.source}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.orders}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.revenue}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.avgOrderVal}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.marginPercent}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.orders.sourceEfficiency.map(s => (
+                  <tr key={s.source} className="border-b border-gray-50">
+                    <td className="px-3 py-2 font-medium text-ios-label">{s.source}</td>
+                    <td className="px-3 py-2 text-right text-ios-secondary">{s.orderCount}</td>
+                    <td className="px-3 py-2 text-right text-ios-label">{s.revenue} {t.zl}</td>
+                    <td className="px-3 py-2 text-right text-ios-secondary">{s.avgOrderValue} {t.zl}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${
+                      s.marginPercent >= 55 ? 'text-emerald-600' :
+                      s.marginPercent >= 40 ? 'text-amber-600' : 'text-rose-600'
+                    }`}>{s.marginPercent}%</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
+
+        {/* Weekly rhythm — which days are busiest? */}
+        {data.weeklyRhythm?.length > 0 && (() => {
+          const DAY_NAMES = [t.daySun, t.dayMon, t.dayTue, t.dayWed, t.dayThu, t.dayFri, t.daySat];
+          const rhythmData = (data.weeklyRhythm || []).map(d => ({
+            ...d,
+            dayName: DAY_NAMES[d.dayIndex],
+          }));
+          return (
+            <div className="mt-4">
+              <p className="text-xs text-ios-tertiary font-medium mb-2">{t.weeklyRhythm}</p>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={rhythmData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis dataKey="dayName" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip formatter={(v, name) => name === 'orderCount' ? `${v} orders` : `${v.toFixed(0)} ${t.zl}`} />
+                  <Bar dataKey="orderCount" name={t.orders} fill="#db2777" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          );
+        })()}
       </Section>
 
       {/* ── 3. Delivery & Logistics ── */}
@@ -313,10 +363,48 @@ export default function FinancialTab({ onNavigate }) {
         </div>
       </Section>
 
+      {/* ── Payment collection ── */}
+      <Section title={t.paymentAnalysis} sectionKey="payments" collapsed={collapsed} onToggle={toggle}>
+        {data.paymentAnalysis?.length > 0 ? (
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-ios-tertiary border-b border-gray-100">
+                  <th className="text-left px-3 py-2 font-medium">{t.paymentMethod}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.orders}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.revenue}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.unpaidRate}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.outstanding}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.paymentAnalysis.map(p => (
+                  <tr key={p.method} className={`border-b border-gray-50 ${
+                    p.method === 'Not recorded' ? 'bg-amber-50/50' : ''
+                  }`}>
+                    <td className="px-3 py-2 font-medium text-ios-label">
+                      {p.method === 'Not recorded' ? t.notRecorded : p.method}
+                    </td>
+                    <td className="px-3 py-2 text-right text-ios-secondary">{p.count}</td>
+                    <td className="px-3 py-2 text-right text-ios-label">{Math.round(p.revenue)} {t.zl}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${
+                      p.unpaidCount > 0 ? 'text-rose-600' : 'text-emerald-600'
+                    }`}>{p.count > 0 ? Math.round((p.unpaidCount / p.count) * 100) : 0}%</td>
+                    <td className={`px-3 py-2 text-right ${
+                      p.unpaidAmount > 0 ? 'text-rose-600 font-medium' : 'text-ios-tertiary'
+                    }`}>{p.unpaidAmount > 0 ? `${Math.round(p.unpaidAmount)} ${t.zl}` : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : <p className="text-ios-tertiary text-sm italic">No payment data</p>}
+      </Section>
+
       {/* ── 4. Waste (only show if there's data worth acting on) ── */}
       {(waste.totalDeadStems > 0 || costs.totalFlowerCost > 0) && (
         <Section title={t.wasteEfficiency} sectionKey="waste" collapsed={collapsed} onToggle={toggle}>
-          <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-2">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-2">
             <KPI label={t.deadStems} value={waste.totalDeadStems}
                  onClick={() => nav('stock')} />
             <KPI label={t.unrealisedRevenue} value={`${waste.unrealisedRevenuePLN.toFixed(0)} ${t.zl}`} color="text-rose-600" />
@@ -324,6 +412,14 @@ export default function FinancialTab({ onNavigate }) {
                  value={`${waste.wastePercent.toFixed(1)}%`}
                  sub={waste.wastePercent <= 10 ? 'Healthy' : waste.wastePercent <= 20 ? 'Monitor' : 'High'}
                  color={waste.wastePercent <= 10 ? 'text-emerald-600' : waste.wastePercent <= 20 ? 'text-amber-600' : 'text-rose-600'} />
+            {data.inventoryTurnover && (
+              <KPI
+                label={t.inventoryTurnover}
+                value={`${data.inventoryTurnover.turnsPerYear}×`}
+                sub={t.healthyRange}
+                color={data.inventoryTurnover.turnsPerYear >= 6 && data.inventoryTurnover.turnsPerYear <= 12 ? 'text-emerald-600' : 'text-amber-600'}
+              />
+            )}
           </div>
           <p className="text-[11px] text-ios-tertiary italic">{t.wasteNote}</p>
         </Section>
@@ -331,7 +427,7 @@ export default function FinancialTab({ onNavigate }) {
 
       {/* ── 5. Customer Insights ── */}
       <Section title={t.customerMetrics} sectionKey="customers" collapsed={collapsed} onToggle={toggle}>
-        <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <KPI label={t.newCustomers} value={customers.newCount} color="text-sky-600"
                onClick={() => nav('customers')} />
           <KPI label={t.returningCust} value={customers.returningCount} color="text-emerald-600"
@@ -341,6 +437,15 @@ export default function FinancialTab({ onNavigate }) {
               ? `${Math.round((customers.returningCount / (customers.newCount + customers.returningCount)) * 100)}% returning`
               : '—'
           } />
+          <KPI
+            label={t.repeatRate}
+            value={`${customers.newCount + customers.returningCount > 0
+              ? Math.round((customers.returningCount / (customers.newCount + customers.returningCount)) * 100)
+              : 0}%`}
+            sub={t.repeatRateBench}
+            color={customers.returningCount / (customers.newCount + customers.returningCount) >= 0.3 ? 'text-emerald-600'
+              : customers.returningCount / (customers.newCount + customers.returningCount) >= 0.15 ? 'text-amber-600' : 'text-rose-600'}
+          />
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -397,18 +502,20 @@ export default function FinancialTab({ onNavigate }) {
       {orders.topProducts?.length > 0 && (
         <Section title={t.bestSellers} sectionKey="products" collapsed={collapsed} onToggle={toggle}>
           <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
-            <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[11px] text-ios-tertiary font-medium uppercase">
+            <div className="grid grid-cols-14 gap-2 px-3 py-2 text-[11px] text-ios-tertiary font-medium uppercase">
               <span className="col-span-3">{t.stockName}</span>
               <span className="col-span-1 text-center">↕</span>
               <span className="col-span-2 text-right">{t.quantity}</span>
               <span className="col-span-2 text-right">{t.revenue}</span>
               <span className="col-span-2 text-right">{t.costPrice}</span>
               <span className="col-span-2 text-right">{t.markup}</span>
+              <span className="col-span-2 text-right">{t.productMargin}</span>
             </div>
             {orders.topProducts.slice(0, 10).map(p => {
               const m = p.cost > 0 ? (p.revenue / p.cost).toFixed(1) : '—';
+              const marginPct = p.revenue > 0 ? Math.round(((p.revenue - p.cost) / p.revenue) * 100) : 0;
               return (
-                <div key={p.name} className="grid grid-cols-12 gap-2 px-3 py-2 text-sm">
+                <div key={p.name} className="grid grid-cols-14 gap-2 px-3 py-2 text-sm">
                   <span className="col-span-3 truncate text-ios-label">{p.name}</span>
                   <span className={`col-span-1 text-center font-medium ${
                     p.trend === 'up' ? 'text-emerald-500' : p.trend === 'down' ? 'text-rose-500' : 'text-ios-tertiary'
@@ -421,6 +528,9 @@ export default function FinancialTab({ onNavigate }) {
                   <span className={`col-span-2 text-right font-medium ${
                     m !== '—' && parseFloat(m) >= 2.2 ? 'text-emerald-600' : m !== '—' ? 'text-amber-600' : 'text-ios-tertiary'
                   }`}>{m}×</span>
+                  <span className={`col-span-2 text-right font-medium ${
+                    marginPct >= 55 ? 'text-emerald-600' : marginPct >= 40 ? 'text-amber-600' : 'text-rose-600'
+                  }`}>{marginPct}%</span>
                 </div>
               );
             })}

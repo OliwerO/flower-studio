@@ -209,6 +209,30 @@ export default function StockTab() {
         />
       )}
 
+      {/* Restock cost estimate — how much cash needed for the next restock */}
+      {!loading && (() => {
+        const restockCost = stock.reduce((sum, item) => {
+          const qty = item['Current Quantity'] || 0;
+          const threshold = item['Reorder Threshold'] || 0;
+          const cost = item['Current Cost Price'] || 0;
+          if (qty < threshold && cost > 0) {
+            return sum + (threshold - qty) * cost;
+          }
+          return sum;
+        }, 0);
+        if (restockCost <= 0) return null;
+        return (
+          <div className="glass-card px-4 py-3 flex items-center gap-3">
+            <span className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
+              {t.restockEstimate}
+            </span>
+            <span className="text-lg font-bold text-ios-red">
+              {restockCost.toFixed(0)} {t.zl}
+            </span>
+          </div>
+        );
+      })()}
+
       {loading && (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />

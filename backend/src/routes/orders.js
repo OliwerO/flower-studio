@@ -43,7 +43,7 @@ router.get('/', async (req, res, next) => {
       allLineIds.length > 0
         ? db.list(TABLES.ORDER_LINES, {
             filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
+            fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity'],
             maxRecords: 1000,
           })
         : [],
@@ -68,13 +68,16 @@ router.get('/', async (req, res, next) => {
     const deliveryMap = {};
     for (const d of allDeliveries) deliveryMap[d.id] = d;
 
-    // Sum order line totals by order ID
+    // Sum order line totals by order ID (sell + cost for margin calculation)
     const totalByOrder = {};
+    const costByOrder = {};
     for (const line of allLines) {
       const oid = line.Order?.[0];
       if (oid) {
         totalByOrder[oid] = (totalByOrder[oid] || 0)
           + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
+        costByOrder[oid] = (costByOrder[oid] || 0)
+          + Number(line['Cost Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
       }
     }
 
@@ -85,6 +88,10 @@ router.get('/', async (req, res, next) => {
 
       if (!order['Price Override'] && totalByOrder[order.id] != null) {
         order['Sell Total'] = totalByOrder[order.id];
+      }
+      // Attach flower cost total for margin dot indicator
+      if (costByOrder[order.id] != null) {
+        order['Flowers Cost Total'] = costByOrder[order.id];
       }
 
       // Attach delivery date/time for display in the order list row

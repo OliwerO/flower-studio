@@ -100,13 +100,98 @@ router.get('/insights', async (req, res, next) => {
       .sort((a, b) => (b['App Total Spend'] || 0) - (a['App Total Spend'] || 0))
       .slice(0, 20);
 
+    // Total revenue at risk from churning customers
+    const totalRevenueAtRisk = churnRisk.reduce((sum, c) => sum + (c['App Total Spend'] || 0), 0);
+
     // Top 10 customers by total spend
     const topCustomers = customers
       .filter(c => (c['App Total Spend'] || 0) > 0)
       .sort((a, b) => (b['App Total Spend'] || 0) - (a['App Total Spend'] || 0))
       .slice(0, 10);
 
-    res.json({ segments, churnRisk, topCustomers });
+    // Revenue per segment — how much each segment contributes
+    const segmentRevenue = {};
+    for (const c of customers) {
+      const seg = c.Segment || 'Unassigned';
+      segmentRevenue[seg] = (segmentRevenue[seg] || 0) + (c['App Total Spend'] || 0);
+    }
+
+    // Acquisition source distribution — where customers come from
+    const acquisitionBySource = {};
+    for (const c of customers) {
+      const src = c.Source || 'Unknown';
+      acquisitionBySource[src] = (acquisitionBySource[src] || 0) + 1;
+    }
+
+    // RFM scoring — Recency / Frequency / Monetary health segmentation
+    let rfmData = null;
+    const scoredCustomers = customers.filter(c => lastOrderByCustomer[c.id]);
+
+    if (scoredCustomers.length > 0) {
+      // Quintile scoring (1-5, 5 is best)
+      function quintileScore(values, lowerIsBetter = false) {
+        const sorted = [...values].sort((a, b) => a - b);
+        const len = sorted.length;
+        return values.map(v => {
+          // Handle edge case: all same values → everyone gets score 3
+          if (sorted[0] === sorted[len - 1]) return 3;
+          const rank = sorted.filter(s => s <= v).length / len;
+          const score = Math.ceil(rank * 5) || 1;
+          return lowerIsBetter ? 6 - score : score;
+        });
+      }
+
+      // Calculate raw values
+      const recencyValues = scoredCustomers.map(c => {
+        const lastDate = lastOrderByCustomer[c.id];
+        return lastDate ? (now - new Date(lastDate).getTime()) / 86400000 : 999;
+      });
+      const frequencyValues = scoredCustomers.map(c => c['App Order Count'] || 0);
+      const monetaryValues = scoredCustomers.map(c => c['App Total Spend'] || 0);
+
+      const rScores = quintileScore(recencyValues, true);  // fewer days ago = higher score
+      const fScores = quintileScore(frequencyValues, false);
+      const mScores = quintileScore(monetaryValues, false);
+
+      // Map RFM scores to human-readable labels
+      function rfmLabel(r, f, m) {
+        if (r >= 4 && f >= 4 && m >= 4) return 'Champions';
+        if (f >= 4 || (r >= 3 && f >= 3 && m >= 3)) return 'Loyal';
+        if (r <= 2 && f >= 2 && m >= 3) return 'At Risk';
+        if (r <= 2 && f <= 2) return 'Lost';
+        if (f <= 1) return 'New';
+        return 'Loyal';
+      }
+
+      const rfmSummary = { Champions: 0, Loyal: 0, 'At Risk': 0, Lost: 0, New: 0 };
+      const rfmRevenue = { Champions: 0, Loyal: 0, 'At Risk': 0, Lost: 0, New: 0 };
+      const rfmByCustomer = {};
+
+      scoredCustomers.forEach((c, i) => {
+        const label = rfmLabel(rScores[i], fScores[i], mScores[i]);
+        const spend = c['App Total Spend'] || 0;
+        rfmSummary[label]++;
+        rfmRevenue[label] += spend;
+        rfmByCustomer[c.id] = {
+          r: rScores[i], f: fScores[i], m: mScores[i],
+          label,
+          spend,
+        };
+      });
+
+      rfmData = { summary: rfmSummary, revenue: rfmRevenue, byCustomer: rfmByCustomer };
+    }
+
+    res.json({
+      segments,
+      segmentRevenue,
+      churnRisk,
+      totalRevenueAtRisk,
+      topCustomers,
+      lastOrderDates: lastOrderByCustomer,
+      acquisitionBySource,
+      rfm: rfmData,
+    });
   } catch (err) {
     next(err);
   }

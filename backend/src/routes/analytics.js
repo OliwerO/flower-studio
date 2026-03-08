@@ -49,16 +49,24 @@ router.get('/', async (req, res, next) => {
       {Status} != 'Cancelled'
     )`;
 
-    const [orders, stock, prevOrders] = await Promise.all([
+    const [orders, stock, prevOrders, cancelledOrders] = await Promise.all([
       db.list(TABLES.ORDERS, { filterByFormula: dateFilter }),
       db.list(TABLES.STOCK, {
         filterByFormula: '{Active} = TRUE()',
-        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price'],
+        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price', 'Current Quantity'],
       }),
       db.list(TABLES.ORDERS, {
         filterByFormula: prevDateFilter,
         fields: ['Order Lines', 'Payment Status'],
       }),
+      db.list(TABLES.ORDERS, {
+        filterByFormula: `AND(
+          NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
+          NOT(IS_AFTER({Order Date}, '${safeTo}')),
+          {Status} = 'Cancelled'
+        )`,
+        fields: ['Order Date'],
+      }).catch(() => []),
     ]);
 
     // ── Bulk-fetch order lines + deliveries in parallel ──
@@ -219,10 +227,10 @@ router.get('/', async (req, res, next) => {
       });
 
     // ── Weekly rhythm — order count and avg revenue by day of week ──
-    const DAY_NAMES_RU = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    // Send dayIndex only — frontend maps to localized day names via translations.js
     const dayMap = {};
     for (let i = 0; i < 7; i++) {
-      dayMap[i] = { dayIndex: i, dayName: DAY_NAMES_RU[i], orderCount: 0, paidOrderCount: 0, paidRevenue: 0 };
+      dayMap[i] = { dayIndex: i, orderCount: 0, paidOrderCount: 0, paidRevenue: 0 };
     }
     for (const o of orders) {
       if (!o['Order Date']) continue;
@@ -235,10 +243,9 @@ router.get('/', async (req, res, next) => {
       dayMap[dow].paidOrderCount++;
       dayMap[dow].paidRevenue += o['Effective Price'] || 0;
     }
-    // Monday-first order for display: Пн=1, Вт=2, ..., Сб=6, Вс=0
+    // Monday-first order for display: Mon=1, Tue=2, ..., Sat=6, Sun=0
     const weeklyRhythm = [1, 2, 3, 4, 5, 6, 0].map(i => ({
       dayIndex: i,
-      dayName: DAY_NAMES_RU[i],
       orderCount: dayMap[i].orderCount,
       avgRevenue: dayMap[i].paidOrderCount > 0
         ? Math.round(dayMap[i].paidRevenue / dayMap[i].paidOrderCount)
@@ -327,6 +334,60 @@ router.get('/', async (req, res, next) => {
         .slice(0, 10);
     }
 
+    // ── Source Efficiency ──
+    const sourceEfficiency = {};
+    for (const o of orders) {
+      const src = o.Source || 'Other';
+      if (!sourceEfficiency[src]) sourceEfficiency[src] = { source: src, orderCount: 0, revenue: 0, flowerCost: 0 };
+      sourceEfficiency[src].orderCount++;
+    }
+    for (const o of paidOrders) {
+      const src = o.Source || 'Other';
+      if (!sourceEfficiency[src]) sourceEfficiency[src] = { source: src, orderCount: 0, revenue: 0, flowerCost: 0 };
+      sourceEfficiency[src].revenue += o['Effective Price'] || 0;
+      sourceEfficiency[src].flowerCost += o._cost || 0;
+    }
+    const sourceEffArr = Object.values(sourceEfficiency).map(s => ({
+      ...s,
+      avgOrderValue: s.orderCount > 0 ? Math.round(s.revenue / s.orderCount) : 0,
+      marginPercent: s.revenue > 0 ? Math.round(((s.revenue - s.flowerCost) / s.revenue) * 100) : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    // ── Payment Method Analysis ──
+    const paymentMap = {};
+    for (const o of orders) {
+      const method = o['Payment Method'] || 'Not recorded';
+      if (!paymentMap[method]) paymentMap[method] = { method, count: 0, paidCount: 0, revenue: 0, unpaidCount: 0, unpaidAmount: 0 };
+      paymentMap[method].count++;
+      if (o['Payment Status'] !== 'Unpaid') {
+        paymentMap[method].paidCount++;
+        paymentMap[method].revenue += o['Effective Price'] || 0;
+      } else {
+        paymentMap[method].unpaidCount++;
+        paymentMap[method].unpaidAmount += o['Effective Price'] || 0;
+      }
+    }
+    const paymentAnalysis = Object.values(paymentMap).sort((a, b) => b.count - a.count);
+
+    // ── Completion Funnel ──
+    const totalCreated = orders.length + cancelledOrders.length;
+    const completedOrders = orders.filter(o => o.Status === 'Delivered' || o.Status === 'Picked Up').length;
+    const funnel = {
+      totalCreated,
+      completed: completedOrders,
+      cancelled: cancelledOrders.length,
+      completionRate: totalCreated > 0 ? Math.round((completedOrders / totalCreated) * 100) : 0,
+      cancellationRate: totalCreated > 0 ? Math.round((cancelledOrders.length / totalCreated) * 100) : 0,
+    };
+
+    // ── Inventory Turnover ──
+    const currentStockValue = stock.reduce(
+      (sum, s) => sum + (Math.max(0, s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0)), 0
+    );
+    const periodDays = Math.max(1, (toDate.getTime() - fromDate.getTime()) / 86400000);
+    const annualizedCost = allFlowerCost * (365 / periodDays);
+    const inventoryTurnoverRatio = currentStockValue > 0 ? annualizedCost / currentStockValue : 0;
+
     res.json({
       period: { from, to },
       revenue: {
@@ -360,10 +421,18 @@ router.get('/', async (req, res, next) => {
         bySource,
         revenueBySource,
         topProducts,
+        sourceEfficiency: sourceEffArr,
+        funnel,
       },
       monthly,
       weeklyRhythm,
       customers,
+      paymentAnalysis,
+      inventoryTurnover: {
+        turnsPerYear: Math.round(inventoryTurnoverRatio * 10) / 10,
+        currentStockValue: Math.round(currentStockValue),
+        annualizedCost: Math.round(annualizedCost),
+      },
     });
   } catch (err) {
     next(err);

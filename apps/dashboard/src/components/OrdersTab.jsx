@@ -252,6 +252,17 @@ export default function OrdersTab({ initialFilter }) {
                   </span>
                 )}
               </span>
+              {/* Margin dot — green ≥55%, amber ≥40%, red <40%, gray if unknown */}
+              {(() => {
+                const cost = order['Flowers Cost Total'] || 0;
+                const rev  = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
+                const margin = rev > 0 && cost > 0 ? ((rev - cost) / rev) * 100 : null;
+                const dotColor = margin === null ? 'bg-gray-300'
+                  : margin >= 55 ? 'bg-emerald-400'
+                  : margin >= 40 ? 'bg-amber-400'
+                  : 'bg-rose-400';
+                return <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={margin !== null ? `${t.margin}: ${margin.toFixed(0)}%` : ''} />;
+              })()}
               <span className={`text-sm font-semibold w-20 text-right shrink-0 ${
                 order['Payment Status'] === 'Unpaid' ? 'text-ios-red' : 'text-ios-label'
               }`}>

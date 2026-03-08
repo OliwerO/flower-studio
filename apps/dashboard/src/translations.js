@@ -269,6 +269,60 @@ const t = {
   deliveryPnL:        'Delivery P&L',
   addDriverCosts:     'Add driver costs for full P&L',
   deliveryNet:        'Net',
+
+  // Kanban
+  statusDone:         'Done',
+
+  // Order detail panel
+  bouquetComposition: 'Bouquet composition',
+  methodMbank:        'Mbank',
+  methodMonobank:     'Monobank',
+  methodRevolut:      'Revolut',
+  methodPayPal:       'PayPal',
+  methodWixOnline:    'Wix Online',
+
+  // Day names (Mon-first, JS getDay(): 0=Sun)
+  dayMon:  'Mon',  dayTue: 'Tue', dayWed: 'Wed',
+  dayThu:  'Thu',  dayFri: 'Fri', daySat: 'Sat', daySun: 'Sun',
+
+  // Financial tab — new sections
+  sourceEfficiency:   'Channel efficiency',
+  avgOrderVal:        'AOV',
+  marginPercent:      'Margin %',
+  paymentAnalysis:    'Payment collection',
+  notRecorded:        'Not recorded',
+  unpaidRate:         'Unpaid rate',
+  outstanding:        'Outstanding',
+  completionRate:     'Completion rate',
+  created:            'Created',
+  completed:          'Completed',
+  cancelled:          'Cancelled',
+  inventoryTurnover:  'Inventory turnover',
+  turnsPerYear:       '×/year',
+  healthyRange:       'Healthy: 6–12×',
+  repeatRate:         'Repeat rate',
+  repeatRateBench:    'Industry: 30%+',
+  productMargin:      'Margin',
+
+  // Customers tab — RFM & enrichments
+  rfmChampions:       'Champions',
+  rfmLoyal:           'Loyal',
+  rfmAtRisk:          'At Risk',
+  rfmLost:            'Lost',
+  rfmNew:             'New',
+  revenueAtRisk:      'Revenue at stake',
+  acquisitionSource:  'Acquisition source',
+  customerSince:      'Customer since',
+  avgTimeBetween:     'Avg between orders',
+  daysLabel:          'days',
+  preferredChannel:   'Preferred channel',
+  lifetimeSummary:    'Customer summary',
+
+  // Stock
+  restockEstimate:    'Estimated restock cost',
+
+  // Orders
+  margin:             'Margin',
 };
 
 export default t;
