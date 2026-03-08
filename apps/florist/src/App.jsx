@@ -6,6 +6,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import { setClientPin } from './api/client.js';
+import { useNotifications } from './hooks/useNotifications.js';
 
 import LoginPage        from './pages/LoginPage.jsx';
 import OrderListPage    from './pages/OrderListPage.jsx';
@@ -27,6 +28,12 @@ export default function App() {
   useEffect(() => {
     setClientPin(pin);
   }, [pin]);
+
+  // Listen for real-time notifications (new Wix orders, etc.)
+  // Only active when logged in — SSE connection opens automatically
+  useNotifications(pin ? () => {
+    // Could trigger a refresh here — for now, toast is enough
+  } : null);
 
   return (
     <>

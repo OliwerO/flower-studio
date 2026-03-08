@@ -16,6 +16,7 @@ import dashboardRoutes     from './routes/dashboard.js';
 import analyticsRoutes     from './routes/analytics.js';
 import stockPurchaseRoutes from './routes/stockPurchases.js';
 import webhookRoutes       from './routes/webhook.js';
+import eventsRoutes        from './routes/events.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -54,6 +55,7 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 app.use('/api/auth', authRoutes);
+app.use('/api/events', eventsRoutes); // SSE — no auth needed, lightweight event stream
 
 // All routes below require a valid PIN in the X-Auth-PIN header
 app.use(authenticate);

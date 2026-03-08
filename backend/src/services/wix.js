@@ -5,6 +5,7 @@
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { broadcast } from './notifications.js';
 
 /**
  * Process a Wix order payload asynchronously.
@@ -236,6 +237,16 @@ export async function processWixOrder(payload) {
     }
 
     log('DONE', `Order ${order.id} created successfully from Wix #${wixOrderId}`);
+
+    // Broadcast to all connected SSE clients (florist app, dashboard)
+    broadcast({
+      type: 'new_order',
+      orderId: order.id,
+      customerName,
+      source: 'Wix',
+      request: customerRequest,
+    });
+
     return order;
   } catch (err) {
     console.error('[WIX] Processing failed:', err);

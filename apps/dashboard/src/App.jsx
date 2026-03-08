@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { setClientPin } from './api/client.js';
+import { useNotifications } from './hooks/useNotifications.js';
 import DashboardPage from './pages/DashboardPage.jsx';
 import Toast from './components/Toast.jsx';
 
@@ -16,6 +17,9 @@ export default function App() {
     setClientPin(pin);
     setReady(true);
   }, []);
+
+  // Listen for real-time notifications (new Wix orders, etc.)
+  useNotifications();
 
   if (!ready) return null;
 
