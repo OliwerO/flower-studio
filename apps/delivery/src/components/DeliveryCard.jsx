@@ -11,12 +11,35 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
   const isOut      = status === 'Out for Delivery';
   const isDone     = status === 'Delivered';
 
-  const address    = d['Delivery Address'] || '';
-  const phone      = d['Recipient Phone'] || '';
-  const time       = d['Delivery Time'] || '';
-  const recipient  = d['Recipient Name'] || 'Unknown';
-  const fee        = d['Delivery Fee'];
-  const deliveredAt = d['Delivered At'];
+  const address       = d['Delivery Address'] || '';
+  const phone         = d['Recipient Phone'] || '';
+  const time          = d['Delivery Time'] || '';
+  const recipient     = d['Recipient Name'] || 'Unknown';
+  const fee           = d['Delivery Fee'];
+  const deliveredAt   = d['Delivered At'];
+  const orderContents = d['Order Contents'] || '';
+  const specialInstr  = d['Special Instructions'] || '';
+  const paymentStatus = d['Payment Status'] || '';
+
+  // Payment status badge styling
+  function paymentBadge() {
+    if (!paymentStatus) return null;
+    if (paymentStatus === 'Paid') {
+      return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700">{t.paidBadge}</span>;
+    }
+    if (paymentStatus === 'Partial') {
+      return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{t.partialBadge}</span>;
+    }
+    return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">{t.unpaidBadge}</span>;
+  }
+
+  // Confirmation wrapper for status changes
+  function handleStatusChange(newStatus) {
+    if (newStatus === 'Delivered') {
+      if (!window.confirm(t.confirmDelivery)) return;
+    }
+    onStatusChange(newStatus);
+  }
 
   // Build Google Maps URL for the address
   const mapsUrl = address
@@ -34,14 +57,17 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
       }`}
     >
       <div className="px-4 py-3 space-y-2">
-        {/* Top row: recipient + time badge */}
-        <div className="flex items-center justify-between">
+        {/* Top row: recipient + time badge + payment badge */}
+        <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-ios-label truncate flex-1">{recipient}</h3>
-          {time && (
-            <span className="text-xs font-medium text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full shrink-0 ml-2">
-              🕐 {time}
-            </span>
-          )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {paymentBadge()}
+            {time && (
+              <span className="text-xs font-medium text-brand-600 bg-brand-50 px-2 py-0.5 rounded-full">
+                🕐 {time}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Address — tappable to open Maps */}
@@ -70,6 +96,16 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
           </a>
         )}
 
+        {/* Order contents */}
+        {orderContents && (
+          <p className="text-xs text-ios-secondary line-clamp-2">🌸 {orderContents}</p>
+        )}
+
+        {/* Special instructions */}
+        {specialInstr && (
+          <p className="text-xs text-ios-orange line-clamp-2">⚠ {specialInstr}</p>
+        )}
+
         {/* Fee + delivered timestamp */}
         <div className="flex items-center gap-3 text-xs text-ios-tertiary">
           {fee != null && fee !== '' && (
@@ -87,7 +123,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
           <div className="pt-1">
             {isPending && (
               <button
-                onClick={e => { e.stopPropagation(); onStatusChange('Out for Delivery'); }}
+                onClick={e => { e.stopPropagation(); handleStatusChange('Out for Delivery'); }}
                 className="w-full h-10 rounded-xl bg-sky-600 text-white text-sm font-semibold
                            flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
               >
@@ -96,7 +132,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
             )}
             {isOut && (
               <button
-                onClick={e => { e.stopPropagation(); onStatusChange('Delivered'); }}
+                onClick={e => { e.stopPropagation(); handleStatusChange('Delivered'); }}
                 className="w-full h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold
                            flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
               >

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -12,7 +13,7 @@ router.get('/', async (req, res, next) => {
     const { category } = req.query;
     const filters = ['{Active} = TRUE()'];
 
-    if (category) filters.push(`{Category} = '${category}'`);
+    if (category) filters.push(`{Category} = '${sanitizeFormulaValue(category)}'`);
 
     const stock = await db.list(TABLES.STOCK, {
       filterByFormula: `AND(${filters.join(', ')})`,

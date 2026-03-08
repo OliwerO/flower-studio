@@ -2,6 +2,7 @@
 // (NOT via import 'dotenv/config' — that caused hoisting bugs, see CHANGELOG.md)
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
@@ -17,17 +18,42 @@ import stockPurchaseRoutes from './routes/stockPurchases.js';
 import webhookRoutes       from './routes/webhook.js';
 
 const app = express();
+const isProduction = process.env.NODE_ENV === 'production';
 
-// Middleware
-app.use(cors());          // allow all origins in dev — lock down in production
-app.use(express.json());  // parse JSON request bodies
+// Security headers — helmet sets sensible defaults (X-Content-Type-Options,
+// X-Frame-Options, etc.). Like adding standard safety labels to every outgoing package.
+app.use(helmet());
+
+// CORS — in production, only allow specific frontend origins.
+// In dev, allow all origins for convenience.
+if (isProduction) {
+  const allowedOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map(o => o.trim())
+    .filter(Boolean);
+
+  app.use(cors({
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
+  }));
+} else {
+  app.use(cors());
+}
+
+// Webhook route needs raw body for HMAC signature verification.
+// Must be registered BEFORE the global JSON parser so it can capture raw bytes.
+app.use('/api/webhook', express.json({
+  limit: '1mb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}), webhookRoutes);
+
+// Parse JSON for all other routes — explicit size limit to prevent oversized payloads.
+app.use(express.json({ limit: '1mb' }));
 
 // Public routes — no PIN required
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
-app.use('/api/auth',    authRoutes);
-app.use('/api/webhook', webhookRoutes);
+app.use('/api/auth', authRoutes);
 
 // All routes below require a valid PIN in the X-Auth-PIN header
 app.use(authenticate);
@@ -44,7 +70,17 @@ app.use('/api/stock-purchases', stockPurchaseRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Flower Studio backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
+});
+
+// Graceful shutdown — let in-flight requests finish before exiting.
+// Like stopping a production line: finish current pieces, then power down.
+process.on('SIGTERM', () => {
+  console.log('[SHUTDOWN] SIGTERM received — closing server gracefully');
+  server.close(() => {
+    console.log('[SHUTDOWN] Server closed');
+    process.exit(0);
+  });
 });

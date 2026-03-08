@@ -168,10 +168,10 @@ export default function FinancialTab({ onNavigate }) {
                sub={costs.totalFlowerCost > 0 ? `Markup: ${markupAchieved}×` : null}
                color={markupOnTrack ? 'text-emerald-600' : costs.totalFlowerCost > 0 ? 'text-amber-600' : 'text-ios-label'}
                onClick={() => nav('stock')} />
-          <KPI label={t.grossMargin}
-               value={`${costs.grossMarginPercent.toFixed(1)}%`}
+          <KPI label={t.flowerMargin}
+               value={`${costs.flowerMarginPercent.toFixed(1)}%`}
                sub={costs.totalFlowerCost > 0 ? `Target: ≥55%` : 'No cost data'}
-               color={costs.grossMarginPercent >= 55 ? 'text-emerald-600' : costs.grossMarginPercent >= 40 ? 'text-amber-600' : 'text-rose-600'} />
+               color={costs.flowerMarginPercent >= 55 ? 'text-emerald-600' : costs.flowerMarginPercent >= 40 ? 'text-amber-600' : 'text-rose-600'} />
           <KPI label={t.avgOrderValue} value={`${revenue.avgOrderValue.toFixed(0)} ${t.zl}`} />
         </div>
 
@@ -185,7 +185,7 @@ export default function FinancialTab({ onNavigate }) {
                 <XAxis dataKey="month" tick={{ fontSize: 11 }} />
                 <YAxis tick={{ fontSize: 11 }} unit="%" domain={[0, 100]} />
                 <Tooltip formatter={(v) => `${v.toFixed(1)}%`} />
-                <Line type="monotone" dataKey="grossMarginPercent" name={t.grossMargin} stroke="#059669" strokeWidth={2} dot={{ r: 4 }} />
+                <Line type="monotone" dataKey="flowerMarginPercent" name={t.flowerMargin} stroke="#059669" strokeWidth={2} dot={{ r: 4 }} />
               </LineChart>
             </ResponsiveContainer>
           </div>

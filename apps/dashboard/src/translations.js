@@ -207,7 +207,7 @@ const t = {
   flowerCost:       'Flower Cost',
   estimatedRevenue: 'Estimated @2.2×',
   revenueGap:       'Revenue Gap',
-  grossMargin:      'Gross Margin',
+  flowerMargin:     'Flower Margin',
   marginTrend:      'Margin trend',
   wasteEfficiency:  'Waste & Efficiency',
   unrealisedRevenue:'Unrealised Revenue',

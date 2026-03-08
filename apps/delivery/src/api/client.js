@@ -25,7 +25,7 @@ client.interceptors.response.use(
   (error) => {
     if (error.response?.status === 401) {
       _pin = null;
-      window.location.href = '/login';
+      console.error('Authentication failed — PIN rejected');
     }
     return Promise.reject(error);
   }

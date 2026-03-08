@@ -271,7 +271,7 @@ export default function OrdersTab({ initialFilter }) {
             {isExpanded && (
               <OrderDetailPanel
                 orderId={order.id}
-                onUpdate={() => { setExpanded(null); fetchOrders(); }}
+                onUpdate={fetchOrders}
               />
             )}
           </div>

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('analytics'));
@@ -26,9 +27,11 @@ router.get('/', async (req, res, next) => {
 
     // ── Fetch orders + stock in parallel ──
     // Inclusive date boundaries: NOT(IS_BEFORE) = >=, NOT(IS_AFTER) = <=
+    const safeFrom = sanitizeFormulaValue(from);
+    const safeTo = sanitizeFormulaValue(to);
     const dateFilter = `AND(
-      NOT(IS_BEFORE({Order Date}, '${from}')),
-      NOT(IS_AFTER({Order Date}, '${to}')),
+      NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
+      NOT(IS_AFTER({Order Date}, '${safeTo}')),
       {Status} != 'Cancelled'
     )`;
 
@@ -40,21 +43,32 @@ router.get('/', async (req, res, next) => {
       }),
     ]);
 
-    // ── Bulk-fetch order lines for cost + sell computation ──
+    // ── Bulk-fetch order lines + deliveries in parallel ──
+    // Like running two production lines simultaneously instead of sequentially.
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const allLines = [];
-    if (allLineIds.length > 0) {
-      const batchSize = 100;
-      for (let i = 0; i < allLineIds.length; i += batchSize) {
-        const batch = allLineIds.slice(i, i + batchSize);
-        const lines = await db.list(TABLES.ORDER_LINES, {
-          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit'],
-          maxRecords: batchSize,
-        });
-        allLines.push(...lines);
+    const deliveryIds = orders.flatMap(o => o['Deliveries'] || []);
+    const batchSize = 100;
+
+    function batchFetch(ids, table, fields) {
+      if (ids.length === 0) return Promise.resolve([]);
+      const promises = [];
+      for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        promises.push(
+          db.list(table, {
+            filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields,
+            maxRecords: batchSize,
+          })
+        );
       }
+      return Promise.all(promises).then(results => results.flat());
     }
+
+    const [allLines, deliveryRecords] = await Promise.all([
+      batchFetch(allLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit']),
+      batchFetch(deliveryIds, TABLES.DELIVERIES, ['Linked Order', 'Delivery Fee']),
+    ]);
 
     // Per-order sell/cost totals from order lines
     const orderSellTotals = {};
@@ -67,22 +81,6 @@ router.get('/', async (req, res, next) => {
       const cost = (line['Cost Price Per Unit'] || 0) * qty;
       orderSellTotals[orderId] = (orderSellTotals[orderId] || 0) + sell;
       orderCostTotals[orderId] = (orderCostTotals[orderId] || 0) + cost;
-    }
-
-    // ── Fetch delivery records for fee data ──
-    const deliveryIds = orders.flatMap(o => o['Deliveries'] || []);
-    const deliveryRecords = [];
-    if (deliveryIds.length > 0) {
-      const batchSize = 100;
-      for (let i = 0; i < deliveryIds.length; i += batchSize) {
-        const batch = deliveryIds.slice(i, i + batchSize);
-        const recs = await db.list(TABLES.DELIVERIES, {
-          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Linked Order', 'Delivery Fee'],
-          maxRecords: batchSize,
-        });
-        deliveryRecords.push(...recs);
-      }
     }
 
     // Delivery fee lookup by order ID
@@ -100,7 +98,7 @@ router.get('/', async (req, res, next) => {
       o._flowerSell = flowerSell;
       o._deliveryFee = delFee;
       o._cost = orderCostTotals[o.id] || 0;
-      o['Effective Price'] = o['Final Price'] || o['Price Override'] || (flowerSell + delFee);
+      o['Effective Price'] = o['Final Price'] ?? o['Price Override'] ?? (flowerSell + delFee);
     }
 
     // ── Revenue metrics (paid orders only) ──
@@ -119,8 +117,10 @@ router.get('/', async (req, res, next) => {
     // ── Cost metrics (paid orders only — match costs to the revenue they generated) ──
     const paidFlowerCost = paidOrders.reduce((sum, o) => sum + o._cost, 0);
     const allFlowerCost = orders.reduce((sum, o) => sum + o._cost, 0);
-    const estimatedRevenue = allFlowerCost * 2.2;
-    const grossMargin = flowerRevenue > 0
+    // Use paid-order flower cost for estimated revenue — it's compared against
+    // totalRevenue which only counts paid orders, so denominators must match.
+    const estimatedRevenue = paidFlowerCost * 2.2;
+    const flowerMargin = flowerRevenue > 0
       ? ((flowerRevenue - paidFlowerCost) / flowerRevenue) * 100
       : 0;
 
@@ -197,7 +197,7 @@ router.get('/', async (req, res, next) => {
           orderCount: m.orders.length,
           paidOrderCount: m.paidOrders.length,
           flowerCost: mCost,
-          grossMarginPercent: margin,
+          flowerMarginPercent: margin,
         };
       });
 
@@ -268,7 +268,8 @@ router.get('/', async (req, res, next) => {
         allFlowerCost,
         estimatedRevenueAt2_2x: estimatedRevenue,
         revenueGap: totalRevenue - estimatedRevenue,
-        grossMarginPercent: grossMargin,
+        flowerMarginPercent: flowerMargin,
+        marginLabel: 'Flower Margin',
       },
       waste: {
         totalDeadStems,

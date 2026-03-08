@@ -37,10 +37,21 @@ export default function StockTab() {
   useEffect(() => { fetchStock(); }, [fetchStock]);
 
   async function adjustQty(id, delta) {
+    // Optimistic update: change local state immediately, revert on failure
+    setStock(prev => prev.map(item =>
+      item.id === id
+        ? { ...item, 'Current Quantity': (item['Current Quantity'] || 0) + delta }
+        : item
+    ));
     try {
       await client.post(`/stock/${id}/adjust`, { delta });
-      fetchStock();
     } catch {
+      // Revert the optimistic update
+      setStock(prev => prev.map(item =>
+        item.id === id
+          ? { ...item, 'Current Quantity': (item['Current Quantity'] || 0) - delta }
+          : item
+      ));
       showToast(t.error, 'error');
     }
   }

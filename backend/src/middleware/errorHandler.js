@@ -7,9 +7,16 @@ export function errorHandler(err, req, res, next) {
 
   // Airtable API errors carry a statusCode
   const status = err.statusCode || err.status || 500;
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // In production, hide internal error details (Airtable errors may leak
+  // table names, field names, or API key fragments). In dev, show everything.
+  const message = isProduction
+    ? 'Internal server error'
+    : (err.message || 'Internal server error');
 
   res.status(status).json({
-    error: err.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: err.stack }),
+    error: message,
+    ...(!isProduction && { stack: err.stack }),
   });
 }

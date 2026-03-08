@@ -55,8 +55,22 @@ export default function DayToDayTab({ onNavigate }) {
 
   useEffect(() => {
     fetchData();
-    const interval = setInterval(fetchData, 60000);
-    return () => clearInterval(interval);
+
+    // Poll every 60s, but skip when the browser tab is hidden (saves API calls)
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchData();
+    }, 60000);
+
+    // Re-fetch immediately when the user switches back to this browser tab
+    function handleVisibility() {
+      if (!document.hidden) fetchData();
+    }
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [fetchData]);
 
   if (loading) {

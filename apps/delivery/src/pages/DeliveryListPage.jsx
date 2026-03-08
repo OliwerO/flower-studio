@@ -33,6 +33,9 @@ export default function DeliveryListPage() {
   const [loading, setLoading]       = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [showMap, setShowMap]       = useState(false);
+  const [driverFilter, setDriverFilter] = useState('');
+
+  const DRIVERS = ['Timur', 'Nikita', 'Dmitri', 'Backup Driver'];
 
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
@@ -49,14 +52,19 @@ export default function DeliveryListPage() {
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
-  // Group deliveries by status — like sorting items into three bins
+  // Filter by driver, then group by status — like sorting items into three bins
+  const filtered = useMemo(() => {
+    if (!driverFilter) return deliveries;
+    return deliveries.filter(d => d['Assigned Driver'] === driverFilter);
+  }, [deliveries, driverFilter]);
+
   const grouped = useMemo(() => {
     const groups = {
       'Pending':          [],
       'Out for Delivery': [],
       'Delivered':        [],
     };
-    deliveries.forEach(d => {
+    filtered.forEach(d => {
       const status = d['Status'] || 'Pending';
       if (groups[status]) groups[status].push(d);
       else groups['Pending'].push(d);
@@ -67,7 +75,7 @@ export default function DeliveryListPage() {
     groups['Out for Delivery'].sort(timeSort);
     groups['Delivered'].sort(timeSort);
     return groups;
-  }, [deliveries]);
+  }, [filtered]);
 
   const selectedDelivery = deliveries.find(d => d.id === selectedId);
 
@@ -135,6 +143,29 @@ export default function DeliveryListPage() {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Driver filter pills */}
+      <div className="px-4 pt-3 flex gap-2 overflow-x-auto">
+        <button
+          onClick={() => setDriverFilter('')}
+          className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            !driverFilter ? 'bg-brand-600 text-white' : 'bg-ios-fill2 text-ios-secondary active:bg-ios-separator'
+          }`}
+        >
+          {t.allDrivers}
+        </button>
+        {DRIVERS.map(name => (
+          <button
+            key={name}
+            onClick={() => setDriverFilter(name)}
+            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              driverFilter === name ? 'bg-brand-600 text-white' : 'bg-ios-fill2 text-ios-secondary active:bg-ios-separator'
+            }`}
+          >
+            {name}
+          </button>
+        ))}
       </div>
 
       <div className="px-4 pt-4 space-y-5">

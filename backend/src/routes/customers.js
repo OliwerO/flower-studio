@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('customers'));
@@ -14,7 +15,7 @@ router.get('/', async (req, res, next) => {
 
     let filterByFormula = '';
     if (search) {
-      const q = search.replace(/'/g, "\\'"); // escape single quotes for formula
+      const q = sanitizeFormulaValue(search);
       filterByFormula = `OR(
         SEARCH(LOWER('${q}'), LOWER({Name})),
         SEARCH(LOWER('${q}'), LOWER({Nickname})),

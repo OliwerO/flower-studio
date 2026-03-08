@@ -26,10 +26,10 @@ export default function StockReceiveForm({ stock, onDone }) {
     try {
       await client.post('/stock-purchases', {
         stockItemId: itemId,
-        quantity: Number(quantity),
+        quantityPurchased: Number(quantity),
         pricePerUnit: Number(costPrice) || 0,
         sellPricePerUnit: Number(sellPrice) || undefined,
-        supplier,
+        supplierName: supplier,
         notes,
       });
       showToast(t.stockReceived);

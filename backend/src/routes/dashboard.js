@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('dashboard'));
@@ -10,7 +11,7 @@ router.use(authorize('dashboard'));
 router.get('/', async (req, res, next) => {
   try {
     // Accept optional ?date= param, default to today
-    const today = req.query.date || new Date().toISOString().split('T')[0];
+    const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
 
     const [orders, deliveries, lowStock] = await Promise.all([
       // Today's orders
@@ -71,7 +72,10 @@ router.get('/', async (req, res, next) => {
       if (!order['Price Override'] && totalByOrder[order.id] != null) {
         order['Sell Total'] = totalByOrder[order.id];
       }
-      order['Effective Price'] = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
+      const deliveryFee = Number(order['Delivery Fee'] || 0);
+      order['Effective Price'] = order['Final Price']
+        ?? order['Price Override']
+        ?? ((order['Sell Total'] || 0) + deliveryFee);
     }
 
     // Order count by status
@@ -80,9 +84,9 @@ router.get('/', async (req, res, next) => {
       return acc;
     }, {});
 
-    // Today's revenue from paid orders (using computed effective price)
+    // Today's revenue from paid + partial orders (matching analytics.js filter)
     const todayRevenue = orders
-      .filter((o) => o['Payment Status'] === 'Paid')
+      .filter((o) => o['Payment Status'] !== 'Unpaid')
       .reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
 
     // Enrich pending deliveries with customer name (who ordered)

@@ -12,10 +12,11 @@ router.post('/', async (req, res, next) => {
   try {
     const { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes } = req.body;
 
-    // Create the purchase record
+    // Create the purchase record (linked to the stock item for financial dashboard lookups)
     const purchase = await db.create(TABLES.STOCK_PURCHASES, {
       'Purchase Date':      new Date().toISOString().split('T')[0],
       Supplier:             supplierName || '',
+      ...(stockItemId ? { Flower: [stockItemId] } : {}),
       'Quantity Purchased': quantityPurchased,
       'Price Per Unit':     pricePerUnit,
       Notes:                notes || '',

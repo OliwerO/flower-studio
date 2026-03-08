@@ -3,7 +3,7 @@
 // monitoring screen (orders, inventory, customers, operations).
 // Cross-tab navigation: clicking a widget on Today navigates to the relevant tab with filters.
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, lazy, Suspense } from 'react';
 import t from '../translations.js';
 
 import OrdersTab from '../components/OrdersTab.jsx';
@@ -11,7 +11,9 @@ import StockTab from '../components/StockTab.jsx';
 import CustomersTab from '../components/CustomersTab.jsx';
 import DayToDayTab from '../components/DayToDayTab.jsx';
 import NewOrderTab from '../components/NewOrderTab.jsx';
-import FinancialTab from '../components/FinancialTab.jsx';
+
+// Lazy-load FinancialTab so Recharts (~160KB) isn't bundled until the tab is first opened
+const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 
 const TABS = [
   { key: 'today',     label: t.tabToday },
@@ -25,6 +27,9 @@ const TABS = [
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState('today');
   const [tabFilter, setTabFilter] = useState(null);
+  // Track whether the financial tab has ever been opened, so we only mount
+  // the lazy-loaded Recharts bundle on first visit (not on initial page load).
+  const [financialMounted, setFinancialMounted] = useState(false);
   // filterKey increments on every cross-tab navigation, forcing the target tab
   // to fully remount with a clean state. Without this, React may reuse the
   // previous component instance and old filter state "leaks" across navigations.
@@ -36,13 +41,16 @@ export default function DashboardPage() {
     setActiveTab(tab);
     setTabFilter(filter || null);
     setFilterKey(k => k + 1);
+    if (tab === 'financial') setFinancialMounted(true);
   }, []);
 
-  // When user clicks a tab pill manually, clear any navigation filter
+  // When user clicks a tab pill manually, clear any navigation filter.
+  // Don't increment filterKey here — CSS hiding keeps tabs alive, so we only
+  // force remount on cross-tab navigation (navigateTo) with a new filter.
   function handleTabClick(key) {
     setActiveTab(key);
     setTabFilter(null);
-    setFilterKey(k => k + 1);
+    if (key === 'financial') setFinancialMounted(true);
   }
 
   return (
@@ -71,14 +79,36 @@ export default function DashboardPage() {
         <div /> {/* spacer for flex justify-between */}
       </header>
 
-      {/* Tab content */}
+      {/* Tab content — all tabs stay mounted (CSS hiding) to preserve state across switches.
+           OrdersTab and CustomersTab use key={filterKey} so they remount when
+           cross-tab navigation passes a new filter (e.g., clicking a widget on Today). */}
       <main className="max-w-7xl mx-auto px-6 py-6">
-        {activeTab === 'today'     && <DayToDayTab onNavigate={navigateTo} />}
-        {activeTab === 'orders'    && <OrdersTab key={filterKey} initialFilter={tabFilter} />}
-        {activeTab === 'newOrder'  && <NewOrderTab onNavigate={navigateTo} />}
-        {activeTab === 'stock'     && <StockTab />}
-        {activeTab === 'customers' && <CustomersTab key={filterKey} initialFilter={tabFilter} />}
-        {activeTab === 'financial' && <FinancialTab onNavigate={navigateTo} />}
+        <div style={{ display: activeTab === 'today' ? 'block' : 'none' }}>
+          <DayToDayTab onNavigate={navigateTo} />
+        </div>
+        <div style={{ display: activeTab === 'orders' ? 'block' : 'none' }}>
+          <OrdersTab key={filterKey} initialFilter={tabFilter} />
+        </div>
+        <div style={{ display: activeTab === 'newOrder' ? 'block' : 'none' }}>
+          <NewOrderTab onNavigate={navigateTo} />
+        </div>
+        <div style={{ display: activeTab === 'stock' ? 'block' : 'none' }}>
+          <StockTab />
+        </div>
+        <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
+          <CustomersTab key={filterKey} initialFilter={tabFilter} />
+        </div>
+        {financialMounted && (
+          <div style={{ display: activeTab === 'financial' ? 'block' : 'none' }}>
+            <Suspense fallback={
+              <div className="flex justify-center py-16">
+                <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
+              </div>
+            }>
+              <FinancialTab onNavigate={navigateTo} />
+            </Suspense>
+          </div>
+        )}
       </main>
     </div>
   );
