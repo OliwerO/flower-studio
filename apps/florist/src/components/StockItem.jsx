@@ -15,7 +15,7 @@ import t from '../translations.js';
 export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
   const qty       = item['Current Quantity'] || 0;
   const dead      = item['Dead/Unsold Stems'] || 0;
-  const threshold = item['Low Stock Threshold'] || 5;
+  const threshold = item['Reorder Threshold'] || 5;
   const isLow     = qty > 0 && qty <= threshold;
   const isOut     = qty <= 0;
 

@@ -17,16 +17,19 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
   // Sync note when delivery changes
   useEffect(() => { setNote(d['Driver Notes'] || ''); }, [d]);
 
-  const address      = d['Delivery Address'] || '';
-  const phone        = d['Recipient Phone'] || '';
-  const time         = d['Delivery Time'] || '';
-  const recipient    = d['Recipient Name'] || 'Unknown';
-  const fee          = d['Delivery Fee'];
-  const payment      = d['Driver Payment Status'] || t.unpaid;
-  const cardText     = d['Greeting Card Text'] || '';
-  const deliveredAt  = d['Delivered At'];
-  const customerName  = d['Customer Name'] || '';
-  const customerPhone = d['Customer Phone'] || '';
+  const address        = d['Delivery Address'] || '';
+  const phone          = d['Recipient Phone'] || '';
+  const time           = d['Delivery Time'] || '';
+  const recipient      = d['Recipient Name'] || 'Unknown';
+  const fee            = d['Delivery Fee'];
+  const payment        = d['Driver Payment Status'] || t.unpaid;
+  const cardText       = d['Greeting Card Text'] || '';
+  const deliveredAt    = d['Delivered At'];
+  const customerName   = d['Customer Name'] || '';
+  const customerPhone  = d['Customer Phone'] || '';
+  const orderContents  = d['Order Contents'] || '';
+  const specialInstr   = d['Special Instructions'] || '';
+  const paymentStatus  = d['Payment Status'] || '';
   // Only show customer info when it differs from recipient (gift orders)
   const showCustomer = customerPhone && customerPhone !== phone;
 
@@ -133,6 +136,41 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
             )}
           </div>
 
+          {/* Payment status badge */}
+          {paymentStatus && (
+            <div className="flex items-center gap-2">
+              {paymentStatus === 'Paid' && (
+                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-emerald-100 text-emerald-700">{t.paidBadge}</span>
+              )}
+              {paymentStatus === 'Unpaid' && (
+                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-red-100 text-red-700">{t.unpaidBadge}</span>
+              )}
+              {paymentStatus === 'Partial' && (
+                <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 text-amber-700">{t.partialBadge}</span>
+              )}
+            </div>
+          )}
+
+          {/* Order contents */}
+          {orderContents && (
+            <div>
+              <p className="ios-label">{t.orderContents}</p>
+              <div className="ios-card px-4 py-3">
+                <p className="text-sm text-ios-label">🌸 {orderContents}</p>
+              </div>
+            </div>
+          )}
+
+          {/* Special instructions */}
+          {specialInstr && (
+            <div>
+              <p className="ios-label">{t.specialInstructions}</p>
+              <div className="ios-card px-4 py-3 border border-amber-200 bg-amber-50/50">
+                <p className="text-sm text-ios-label">⚠ {specialInstr}</p>
+              </div>
+            </div>
+          )}
+
           {/* Greeting card */}
           {cardText && (
             <div>
@@ -181,7 +219,9 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
               )}
               {isOut && (
                 <button
-                  onClick={() => onStatusChange('Delivered')}
+                  onClick={() => {
+                    if (window.confirm(t.confirmDelivery)) onStatusChange('Delivered');
+                  }}
                   className="w-full h-12 rounded-2xl bg-ios-green text-white text-base font-semibold
                              flex items-center justify-center gap-2 active:opacity-80 active-scale shadow-md"
                 >

@@ -207,7 +207,7 @@ const t = {
   flowerCost:       'Flower Cost',
   estimatedRevenue: 'Estimated @2.2×',
   revenueGap:       'Revenue Gap',
-  grossMargin:      'Gross Margin',
+  flowerMargin:     'Flower Margin',
   marginTrend:      'Margin trend',
   wasteEfficiency:  'Waste & Efficiency',
   unrealisedRevenue:'Unrealised Revenue',
@@ -231,6 +231,98 @@ const t = {
 
   // Misc
   zl:               'zł',
+
+  // Dashboard redesign — consultant insights
+  revenueGapCard:     'Revenue Gap (target 2.2×)',
+  actualRevenue:      'Actual Revenue',
+  expectedRevenue:    'Expected (2.2×)',
+  gapAmount:          'Gap',
+  aboveTarget:        'Above target',
+  belowTarget:        'Below target',
+  onTarget:           'On target',
+
+  unassignedDeliveries: 'Unassigned deliveries',
+  noDriverAssigned:   'No driver assigned',
+
+  atRiskCustomers:    'At risk',
+  daysSinceLastOrder: 'days since last order',
+  lastOrderDate:      'Last order',
+
+  unpaidAging:        'Outstanding payments',
+  agingToday:         'Today',
+  aging1to7:          '1–7 days',
+  aging8to30:         '8–30 days',
+  aging30plus:        '30+ days',
+  totalOutstanding:   'Total outstanding',
+
+  upcomingDates:      'Upcoming dates',
+  daysUntil:          'days',
+
+  daysOfSupplyHeader: 'Supply (days)',
+
+  weeklyRhythm:       'Weekly rhythm',
+
+  trendUp:            'Growing',
+  trendDown:          'Declining',
+  trendStable:        'Stable',
+
+  deliveryPnL:        'Delivery P&L',
+  addDriverCosts:     'Add driver costs for full P&L',
+  deliveryNet:        'Net',
+
+  // Kanban
+  statusDone:         'Done',
+
+  // Order detail panel
+  bouquetComposition: 'Bouquet composition',
+  methodMbank:        'Mbank',
+  methodMonobank:     'Monobank',
+  methodRevolut:      'Revolut',
+  methodPayPal:       'PayPal',
+  methodWixOnline:    'Wix Online',
+
+  // Day names (Mon-first, JS getDay(): 0=Sun)
+  dayMon:  'Mon',  dayTue: 'Tue', dayWed: 'Wed',
+  dayThu:  'Thu',  dayFri: 'Fri', daySat: 'Sat', daySun: 'Sun',
+
+  // Financial tab — new sections
+  sourceEfficiency:   'Channel efficiency',
+  avgOrderVal:        'AOV',
+  marginPercent:      'Margin %',
+  paymentAnalysis:    'Payment collection',
+  notRecorded:        'Not recorded',
+  unpaidRate:         'Unpaid rate',
+  outstanding:        'Outstanding',
+  completionRate:     'Completion rate',
+  created:            'Created',
+  completed:          'Completed',
+  cancelled:          'Cancelled',
+  inventoryTurnover:  'Inventory turnover',
+  turnsPerYear:       '×/year',
+  healthyRange:       'Healthy: 6–12×',
+  repeatRate:         'Repeat rate',
+  repeatRateBench:    'Industry: 30%+',
+  productMargin:      'Margin',
+
+  // Customers tab — RFM & enrichments
+  rfmChampions:       'Champions',
+  rfmLoyal:           'Loyal',
+  rfmAtRisk:          'At Risk',
+  rfmLost:            'Lost',
+  rfmNew:             'New',
+  revenueAtRisk:      'Revenue at stake',
+  acquisitionSource:  'Acquisition source',
+  customerSince:      'Customer since',
+  avgTimeBetween:     'Avg between orders',
+  daysLabel:          'days',
+  preferredChannel:   'Preferred channel',
+  lifetimeSummary:    'Customer summary',
+
+  // Stock
+  restockEstimate:    'Estimated restock cost',
+
+  // Orders
+  margin:             'Margin',
 };
 
 export default t;

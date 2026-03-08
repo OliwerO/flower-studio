@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -9,18 +10,21 @@ router.use(authorize('orders'));
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus, excludeCancelled } = req.query;
+    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled } = req.query;
     const filters = [];
 
-    if (status)           filters.push(`{Status} = '${status}'`);
+    if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
     // "Other" in analytics means Source is blank/empty — match records with no Source set.
     if (source === 'Other') filters.push(`OR({Source} = 'Other', {Source} = BLANK())`);
-    else if (source)        filters.push(`{Source} = '${source}'`);
-    if (deliveryType)     filters.push(`{Delivery Type} = '${deliveryType}'`);
-    if (paymentStatus)    filters.push(`{Payment Status} = '${paymentStatus}'`);
+    else if (source)        filters.push(`{Source} = '${sanitizeFormulaValue(source)}'`);
+    if (deliveryType)     filters.push(`{Delivery Type} = '${sanitizeFormulaValue(deliveryType)}'`);
+    if (paymentStatus)    filters.push(`{Payment Status} = '${sanitizeFormulaValue(paymentStatus)}'`);
+    // "Not recorded" means orders where Payment Method is blank/empty
+    if (paymentMethod === 'Not recorded') filters.push(`OR({Payment Method} = BLANK(), {Payment Method} = '')`);
+    else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
     if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
-    if (dateFrom)         filters.push(`NOT(IS_BEFORE({Order Date}, '${dateFrom}'))`);
-    if (dateTo)           filters.push(`NOT(IS_AFTER({Order Date}, '${dateTo}'))`);
+    if (dateFrom)         filters.push(`NOT(IS_BEFORE({Order Date}, '${sanitizeFormulaValue(dateFrom)}'))`);
+    if (dateTo)           filters.push(`NOT(IS_AFTER({Order Date}, '${sanitizeFormulaValue(dateTo)}'))`);
 
     const filterByFormula = filters.length
       ? `AND(${filters.join(', ')})`
@@ -42,7 +46,7 @@ router.get('/', async (req, res, next) => {
       allLineIds.length > 0
         ? db.list(TABLES.ORDER_LINES, {
             filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
+            fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity'],
             maxRecords: 1000,
           })
         : [],
@@ -67,13 +71,16 @@ router.get('/', async (req, res, next) => {
     const deliveryMap = {};
     for (const d of allDeliveries) deliveryMap[d.id] = d;
 
-    // Sum order line totals by order ID
+    // Sum order line totals by order ID (sell + cost for margin calculation)
     const totalByOrder = {};
+    const costByOrder = {};
     for (const line of allLines) {
       const oid = line.Order?.[0];
       if (oid) {
         totalByOrder[oid] = (totalByOrder[oid] || 0)
           + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
+        costByOrder[oid] = (costByOrder[oid] || 0)
+          + Number(line['Cost Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
       }
     }
 
@@ -84,6 +91,10 @@ router.get('/', async (req, res, next) => {
 
       if (!order['Price Override'] && totalByOrder[order.id] != null) {
         order['Sell Total'] = totalByOrder[order.id];
+      }
+      // Attach flower cost total for margin dot indicator
+      if (costByOrder[order.id] != null) {
+        order['Flowers Cost Total'] = costByOrder[order.id];
       }
 
       // Attach delivery date/time for display in the order list row
@@ -169,6 +180,7 @@ router.post('/', async (req, res, next) => {
       'Greeting Card Text': delivery?.cardText || '',
       'Payment Status':     paymentStatus || 'Unpaid',
       'Payment Method':     paymentMethod || null,
+      'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? 35) : 0,
       'Price Override':     priceOverride || null,
       Status:               'New',
       'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
@@ -208,7 +220,7 @@ router.post('/', async (req, res, next) => {
         'Delivery Date':   delivery.date || null,
         'Delivery Time':   delivery.time || '',
         'Assigned Driver': delivery.driver || null,
-        'Delivery Fee':      delivery.fee || 35,
+        'Delivery Fee':      delivery.fee ?? 35,
         Status:              'Pending',
       });
 
@@ -229,7 +241,8 @@ router.post('/', async (req, res, next) => {
 // without value added. Orders flow: New → Ready → Delivered/Picked Up.
 // "In Progress" kept as legacy exit only (for orders already in that state).
 const ALLOWED_TRANSITIONS = {
-  'New':         ['Ready', 'Cancelled'],
+  'New':         ['Accepted', 'Ready', 'Cancelled'],
+  'Accepted':    ['Ready', 'Cancelled'],
   'In Progress': ['Ready', 'Cancelled'],   // legacy — still allow exit
   'Ready':       ['Delivered', 'Picked Up', 'Cancelled'],
   'Delivered':   [],          // terminal — no changes
@@ -254,22 +267,9 @@ router.patch('/:id', async (req, res, next) => {
         });
       }
 
-      // Stock rollback on cancellation — return flowers to inventory
-      if (newStatus === 'Cancelled' && currentStatus !== 'Cancelled') {
-        const lineIds = current['Order Lines'] || [];
-        for (const lineId of lineIds) {
-          try {
-            const line = await db.getById(TABLES.ORDER_LINES, lineId);
-            const stockItemIds = line['Stock Item'];
-            if (stockItemIds?.length && line.Quantity) {
-              const stockItem = await db.getById(TABLES.STOCK, stockItemIds[0]);
-              await db.update(TABLES.STOCK, stockItemIds[0], {
-                'Current Quantity': (stockItem['Current Quantity'] || 0) + line.Quantity,
-              });
-            }
-          } catch { /* line or stock item may have been deleted — skip */ }
-        }
-      }
+      // Stock not auto-returned on cancel per business rules —
+      // florist must manually re-add via Stock Panel.
+      // Flowers may have already been used or discarded.
     }
 
     const order = await db.update(TABLES.ORDERS, req.params.id, {

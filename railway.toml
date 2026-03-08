@@ -1,0 +1,28 @@
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+startCommand = "node src/index.js"
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3
+
+# Railway sets PORT automatically — backend reads process.env.PORT
+# Set these environment variables in the Railway dashboard:
+#
+#   NODE_ENV=production
+#   AIRTABLE_API_KEY=pat_xxxxx
+#   AIRTABLE_BASE_ID=appXXXXX
+#   AIRTABLE_ORDERS_TABLE=tblXXXXX
+#   AIRTABLE_ORDER_LINES_TABLE=tblXXXXX
+#   AIRTABLE_CUSTOMERS_TABLE=tblXXXXX
+#   AIRTABLE_STOCK_TABLE=tblXXXXX
+#   AIRTABLE_DELIVERIES_TABLE=tblXXXXX
+#   AIRTABLE_STOCK_PURCHASES_TABLE=tblXXXXX
+#   AIRTABLE_LEGACY_ORDERS_TABLE=tblXXXXX
+#   WIX_WEBHOOK_SECRET=xxxxx
+#   PIN_OWNER=xxxx
+#   PIN_FLORIST=xxxx
+#   PIN_DRIVER_TIMUR=xxxx
+#   PIN_DRIVER_NIKITA=xxxx
+#   PIN_DRIVER_DMITRI=xxxx
+#   CORS_ORIGINS=https://florist.vercel.app,https://delivery.vercel.app,https://dashboard.vercel.app

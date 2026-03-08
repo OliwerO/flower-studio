@@ -24,14 +24,13 @@ client.interceptors.request.use((config) => {
   return config;
 });
 
-// Response interceptor — if badge is rejected, send to login
+// Response interceptor — if badge is rejected, clear PIN so user re-authenticates
 client.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      // Clear stored PIN and hard-redirect to login
       _pin = null;
-      window.location.href = '/login';
+      console.error('Authentication failed — PIN rejected');
     }
     return Promise.reject(error);
   }

@@ -136,7 +136,7 @@ export default function Step2Bouquet({
             filteredStock.map(s => {
               const qty    = Number(s['Current Quantity']) || 0;
               const inCart = orderLines.find(l => l.stockItemId === s.id);
-              const low    = qty > 0 && qty <= (s['Low Stock Threshold'] || 5);
+              const low    = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
               const out    = qty <= 0;
               const maxed  = inCart && inCart.quantity >= qty;
               const disabled = out || maxed;

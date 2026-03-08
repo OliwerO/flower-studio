@@ -29,7 +29,7 @@ const COLUMNS = [
   },
   {
     key: 'Done',
-    label: 'Done',
+    label: t.statusDone,
     statuses: ['Delivered', 'Picked Up'],
     border: 'border-emerald-200/80',
     dot: 'bg-emerald-400',

@@ -24,24 +24,24 @@ const PAYMENT_STATUSES = [
 ];
 
 const PAYMENT_METHODS = [
-  { value: 'Cash',       label: 'Cash' },
-  { value: 'Card',       label: 'Card' },
-  { value: 'Mbank',      label: 'Mbank' },
-  { value: 'Monobank',   label: 'Monobank' },
-  { value: 'Revolut',    label: 'Revolut' },
-  { value: 'PayPal',     label: 'PayPal' },
-  { value: 'Wix Online', label: 'Wix Online' },
-  { value: 'Other',      label: 'Other' },
+  { value: 'Cash',       label: t.methodCash },
+  { value: 'Card',       label: t.methodCard },
+  { value: 'Mbank',      label: t.methodMbank },
+  { value: 'Monobank',   label: t.methodMonobank },
+  { value: 'Revolut',    label: t.methodRevolut },
+  { value: 'PayPal',     label: t.methodPayPal },
+  { value: 'Wix Online', label: t.methodWixOnline },
+  { value: 'Other',      label: t.sourceOther },
 ];
 
 const SOURCES = [
-  { value: 'In-store',  label: 'In-store' },
-  { value: 'Instagram', label: 'Instagram' },
-  { value: 'WhatsApp',  label: 'WhatsApp' },
-  { value: 'Telegram',  label: 'Telegram' },
-  { value: 'Wix',       label: 'Wix' },
-  { value: 'Flowwow',   label: 'Flowwow' },
-  { value: 'Other',     label: 'Other' },
+  { value: 'In-store',  label: t.sourceWalk },
+  { value: 'Instagram', label: t.sourceInstagram },
+  { value: 'WhatsApp',  label: t.sourceWhatsApp },
+  { value: 'Telegram',  label: t.sourceTelegram },
+  { value: 'Wix',       label: t.sourceWebsite },
+  { value: 'Flowwow',   label: t.sourceFlowwow },
+  { value: 'Other',     label: t.sourceOther },
 ];
 
 const DELIVERY_TYPES = [
@@ -225,17 +225,17 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
       {o.orderLines?.length > 0 && (
         <div>
           <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
-            Bouquet composition
+            {t.bouquetComposition}
           </p>
           <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50">
-                  <th className="text-left px-3 py-2 font-medium">Flower</th>
-                  <th className="text-right px-3 py-2 font-medium">Qty</th>
-                  <th className="text-right px-3 py-2 font-medium">Cost</th>
-                  <th className="text-right px-3 py-2 font-medium">Sell</th>
-                  <th className="text-right px-3 py-2 font-medium">Total</th>
+                  <th className="text-left px-3 py-2 font-medium">{t.flowers}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.costPrice}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.sellPrice}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.orderTotal}</th>
                 </tr>
               </thead>
               <tbody>

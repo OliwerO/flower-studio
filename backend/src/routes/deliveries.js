@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -12,9 +13,9 @@ router.get('/', async (req, res, next) => {
     const { date, status, driver } = req.query;
     const filters = [];
 
-    if (date)   filters.push(`DATESTR({Delivery Date}) = '${date}'`);
-    if (status) filters.push(`{Status} = '${status}'`);
-    if (driver) filters.push(`{Assigned Driver} = '${driver}'`);
+    if (date)   filters.push(`DATESTR({Delivery Date}) = '${sanitizeFormulaValue(date)}'`);
+    if (status) filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
+    if (driver) filters.push(`{Assigned Driver} = '${sanitizeFormulaValue(driver)}'`);
 
     const deliveries = await db.list(TABLES.DELIVERIES, {
       filterByFormula: filters.length ? `AND(${filters.join(', ')})` : '',
@@ -27,7 +28,7 @@ router.get('/', async (req, res, next) => {
     if (orderIds.length > 0) {
       const orders = await db.list(TABLES.ORDERS, {
         filterByFormula: `OR(${orderIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Customer', 'Customer Request'],
+        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text'],
       });
       const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
       const customers = customerIds.length > 0
@@ -53,6 +54,11 @@ router.get('/', async (req, res, next) => {
         }
         if (order) {
           d['Order Contents'] = order['Customer Request'] || '';
+          d['Payment Status'] = order['Payment Status'] || '';
+          d['Special Instructions'] = order['Notes Translated'] || '';
+          if (!d['Greeting Card Text']) {
+            d['Greeting Card Text'] = order['Greeting Card Text'] || '';
+          }
         }
       }
     }

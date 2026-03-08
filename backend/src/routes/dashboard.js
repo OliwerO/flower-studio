@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('dashboard'));
@@ -10,15 +11,15 @@ router.use(authorize('dashboard'));
 router.get('/', async (req, res, next) => {
   try {
     // Accept optional ?date= param, default to today
-    const today = req.query.date || new Date().toISOString().split('T')[0];
+    const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
 
-    const [orders, deliveries, lowStock] = await Promise.all([
+    const [orders, deliveries, lowStock, unpaidOrders, customersWithDates] = await Promise.all([
       // Today's orders
       db.list(TABLES.ORDERS, {
         filterByFormula: `DATESTR({Order Date}) = '${today}'`,
         sort: [{ field: 'Order Date', direction: 'desc' }],
       }),
-      // Today's pending deliveries
+      // Today's pending deliveries (all statuses — we filter below)
       db.list(TABLES.DELIVERIES, {
         filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != 'Delivered')`,
       }),
@@ -27,6 +28,17 @@ router.get('/', async (req, res, next) => {
         filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < {Reorder Threshold})`,
         sort: [{ field: 'Current Quantity', direction: 'asc' }],
       }),
+      // All unpaid/partial non-cancelled orders for aging calculation
+      // Don't restrict fields — 'Final Price' is a formula field that may not exist in all bases
+      db.list(TABLES.ORDERS, {
+        filterByFormula: `AND(OR({Payment Status} = 'Unpaid', {Payment Status} = 'Partial'), {Status} != 'Cancelled')`,
+      }),
+      // Customers with key person dates set for upcoming reminders
+      // Wrapped in catch — these fields may not exist in all Airtable bases
+      db.list(TABLES.CUSTOMERS, {
+        filterByFormula: `OR({Key person 1 (important DATE)} != '', {Key person 2 (important DATE)} != '')`,
+        fields: ['Name', 'Nickname', 'Key person 1 (Name + Contact details)', 'Key person 1 (important DATE)', 'Key person 2 (Name + Contact details)', 'Key person 2 (important DATE)'],
+      }).catch(() => []),
     ]);
 
     // Enrich orders with customer names + computed prices
@@ -71,7 +83,10 @@ router.get('/', async (req, res, next) => {
       if (!order['Price Override'] && totalByOrder[order.id] != null) {
         order['Sell Total'] = totalByOrder[order.id];
       }
-      order['Effective Price'] = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
+      const deliveryFee = Number(order['Delivery Fee'] || 0);
+      order['Effective Price'] = order['Final Price']
+        ?? order['Price Override']
+        ?? ((order['Sell Total'] || 0) + deliveryFee);
     }
 
     // Order count by status
@@ -80,10 +95,73 @@ router.get('/', async (req, res, next) => {
       return acc;
     }, {});
 
-    // Today's revenue from paid orders (using computed effective price)
+    // Today's revenue from paid + partial orders (matching analytics.js filter)
     const todayRevenue = orders
-      .filter((o) => o['Payment Status'] === 'Paid')
+      .filter((o) => o['Payment Status'] !== 'Unpaid')
       .reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
+
+    // Unassigned deliveries: pending deliveries with no driver assigned
+    const unassignedDeliveries = deliveries.filter(d => !d['Assigned Driver'] && d.Status !== 'Delivered');
+
+    // Unpaid orders aging: group by how old they are relative to today
+    const todayMs = new Date(today).getTime();
+    const DAY_MS = 86400000;
+    const unpaidAging = {
+      today:  { count: 0, total: 0 },
+      week:   { count: 0, total: 0 },
+      month:  { count: 0, total: 0 },
+      older:  { count: 0, total: 0 },
+      grandTotal: { count: 0, total: 0 },
+    };
+    for (const o of unpaidOrders) {
+      const orderDateMs = o['Order Date'] ? new Date(o['Order Date']).getTime() : todayMs;
+      const daysOld = Math.floor((todayMs - orderDateMs) / DAY_MS);
+      const sellTotal = Number(o['Sell Price Total'] || 0);
+      const delFee = Number(o['Delivery Fee'] || 0);
+      const effectivePrice = o['Final Price'] ?? o['Price Override'] ?? (sellTotal + delFee);
+      const amt = Number(effectivePrice) || 0;
+
+      let bucket;
+      if (daysOld === 0) bucket = 'today';
+      else if (daysOld <= 7) bucket = 'week';
+      else if (daysOld <= 30) bucket = 'month';
+      else bucket = 'older';
+
+      unpaidAging[bucket].count++;
+      unpaidAging[bucket].total += amt;
+      unpaidAging.grandTotal.count++;
+      unpaidAging.grandTotal.total += amt;
+    }
+
+    // Key date reminders: customers with Key Person 1 or 2 dates within next 7 days
+    // Dates are anniversaries/birthdays — match month+day regardless of year
+    const nowDate = new Date(today);
+    const keyDateReminders = [];
+    for (const c of customersWithDates) {
+      const checks = [
+        { personName: c['Key person 1 (Name + Contact details)'], date: c['Key person 1 (important DATE)'] },
+        { personName: c['Key person 2 (Name + Contact details)'], date: c['Key person 2 (important DATE)'] },
+      ];
+      for (const { personName, date } of checks) {
+        if (!date) continue;
+        // Normalize to this year or next year — find nearest future occurrence
+        const d = new Date(date);
+        if (isNaN(d.getTime())) continue;
+        let candidate = new Date(nowDate.getFullYear(), d.getMonth(), d.getDate());
+        if (candidate < nowDate) candidate = new Date(nowDate.getFullYear() + 1, d.getMonth(), d.getDate());
+        const daysUntil = Math.round((candidate.getTime() - nowDate.getTime()) / DAY_MS);
+        if (daysUntil <= 7) {
+          keyDateReminders.push({
+            customerId: c.id,
+            customerName: c.Name || c.Nickname || '—',
+            keyPersonName: personName || '—',
+            date: candidate.toISOString().split('T')[0],
+            daysUntil,
+          });
+        }
+      }
+    }
+    keyDateReminders.sort((a, b) => a.daysUntil - b.daysUntil);
 
     // Enrich pending deliveries with customer name (who ordered)
     // by following the chain: Delivery → Order → Customer.
@@ -129,6 +207,9 @@ router.get('/', async (req, res, next) => {
       statusCounts,
       todayRevenue,
       pendingDeliveries: deliveries,
+      unassignedDeliveries,
+      unpaidAging,
+      keyDateReminders,
       lowStockAlerts: lowStock,
       recentOrders: orders.slice(0, 10),
     });

@@ -49,6 +49,20 @@ const t = {
   routeStart:    'Route starts here',
   locating:      'Getting your location...',
 
+  // Payment status
+  paidBadge:     'Оплачен',
+  unpaidBadge:   'Не оплачен',
+  partialBadge:  'Частично',
+
+  // Order info
+  specialInstructions: 'Special instructions',
+
+  // Driver filter
+  allDrivers:    'Все',
+
+  // Confirmation
+  confirmDelivery: 'Подтвердить доставку?',
+
   // General
   loading:       'Loading...',
   error:         'Something went wrong',

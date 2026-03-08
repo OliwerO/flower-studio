@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -12,7 +13,7 @@ router.get('/', async (req, res, next) => {
     const { category } = req.query;
     const filters = ['{Active} = TRUE()'];
 
-    if (category) filters.push(`{Category} = '${category}'`);
+    if (category) filters.push(`{Category} = '${sanitizeFormulaValue(category)}'`);
 
     const stock = await db.list(TABLES.STOCK, {
       filterByFormula: `AND(${filters.join(', ')})`,
@@ -23,6 +24,60 @@ router.get('/', async (req, res, next) => {
     });
 
     res.json(stock);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stock/velocity — days of supply per stock item based on last 30 days of sales
+// IMPORTANT: defined before /:id routes so "velocity" isn't interpreted as an ID param.
+router.get('/velocity', async (req, res, next) => {
+  try {
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
+
+    // Fetch non-cancelled orders in the last 30 days
+    const recentOrders = await db.list(TABLES.ORDERS, {
+      filterByFormula: `AND(NOT(IS_BEFORE({Order Date}, '${thirtyDaysAgo}')), NOT(IS_AFTER({Order Date}, '${today}')), {Status} != 'Cancelled')`,
+      fields: ['Order Lines'],
+    });
+
+    const lineIds = recentOrders.flatMap(o => o['Order Lines'] || []);
+
+    // Batch-fetch order lines (100 per request — Airtable formula length limit)
+    const lines = [];
+    for (let i = 0; i < lineIds.length; i += 100) {
+      const batch = lineIds.slice(i, i + 100);
+      if (batch.length === 0) continue;
+      const recs = await db.list(TABLES.ORDER_LINES, {
+        filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+        fields: ['Stock Item', 'Quantity'],
+        maxRecords: 100,
+      });
+      lines.push(...recs);
+    }
+
+    // Sum qty sold per stock item over the 30-day window
+    const qtySoldByStock = {};
+    for (const line of lines) {
+      const stockId = line['Stock Item']?.[0];
+      if (stockId) {
+        qtySoldByStock[stockId] = (qtySoldByStock[stockId] || 0) + (line.Quantity || 0);
+      }
+    }
+
+    // Build velocity map: stockId → { qtySold30d, avgDailyUsage }
+    // daysOfSupply is left to the frontend — it needs current qty from the stock list
+    const velocity = {};
+    for (const [stockId, qtySold] of Object.entries(qtySoldByStock)) {
+      const avgDaily = qtySold / 30;
+      velocity[stockId] = {
+        qtySold30d: qtySold,
+        avgDailyUsage: Math.round(avgDaily * 10) / 10,
+      };
+    }
+
+    res.json(velocity);
   } catch (err) {
     next(err);
   }

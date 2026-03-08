@@ -62,6 +62,7 @@ export default function OrdersTab({ initialFilter }) {
   const [paidOnly, setPaidOnly]   = useState(f.payment === 'Paid');
   const [deliveryTypeFilter, setDeliveryType] = useState(f.deliveryType || '');
   const [sourceFilter, setSourceFilter] = useState(f.source || '');
+  const [paymentMethodFilter, setPaymentMethod] = useState(f.paymentMethod || '');
   const [excludeCancelled, setExcludeCancelled] = useState(!!f.excludeCancelled);
   const [expandedId, setExpanded] = useState(f.orderId || null);
   const { showToast }             = useToast();
@@ -77,6 +78,7 @@ export default function OrdersTab({ initialFilter }) {
       if (paidOnly) params.paymentStatus = 'Paid';
       if (deliveryTypeFilter) params.deliveryType = deliveryTypeFilter;
       if (sourceFilter) params.source = sourceFilter;
+      if (paymentMethodFilter) params.paymentMethod = paymentMethodFilter;
       if (excludeCancelled) params.excludeCancelled = '1';
       const res = await client.get('/orders', { params });
       setOrders(res.data);
@@ -85,7 +87,7 @@ export default function OrdersTab({ initialFilter }) {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, dateFrom, dateTo, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, excludeCancelled, showToast]);
+  }, [statusFilter, dateFrom, dateTo, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
@@ -159,7 +161,7 @@ export default function OrdersTab({ initialFilter }) {
       </div>
 
       {/* Active filter badges — show when cross-tab filters are active */}
-      {(sourceFilter || paidOnly || deliveryTypeFilter || excludeCancelled) && (
+      {(sourceFilter || paidOnly || deliveryTypeFilter || paymentMethodFilter || excludeCancelled) && (
         <div className="flex flex-wrap items-center gap-2 px-1">
           <span className="text-[11px] text-ios-tertiary">{t.activeFilters}:</span>
           {sourceFilter && (
@@ -180,6 +182,12 @@ export default function OrdersTab({ initialFilter }) {
               <button onClick={() => setDeliveryType('')} className="ml-0.5 text-sky-400 hover:text-sky-700">×</button>
             </span>
           )}
+          {paymentMethodFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-medium">
+              {t.paymentMethod}: {paymentMethodFilter}
+              <button onClick={() => setPaymentMethod('')} className="ml-0.5 text-purple-400 hover:text-purple-700">×</button>
+            </span>
+          )}
           {excludeCancelled && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">
               {t.statusCancelled} ✗
@@ -187,7 +195,7 @@ export default function OrdersTab({ initialFilter }) {
             </span>
           )}
           <button
-            onClick={() => { setSourceFilter(''); setPaidOnly(false); setUnpaid(false); setDeliveryType(''); setStatus(''); setExcludeCancelled(false); }}
+            onClick={() => { setSourceFilter(''); setPaidOnly(false); setUnpaid(false); setDeliveryType(''); setPaymentMethod(''); setStatus(''); setExcludeCancelled(false); }}
             className="text-xs text-ios-secondary hover:text-ios-red underline"
           >
             {t.clearAll}
@@ -252,6 +260,17 @@ export default function OrdersTab({ initialFilter }) {
                   </span>
                 )}
               </span>
+              {/* Margin dot — green ≥55%, amber ≥40%, red <40%, gray if unknown */}
+              {(() => {
+                const cost = order['Flowers Cost Total'] || 0;
+                const rev  = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
+                const margin = rev > 0 && cost > 0 ? ((rev - cost) / rev) * 100 : null;
+                const dotColor = margin === null ? 'bg-gray-300'
+                  : margin >= 55 ? 'bg-emerald-400'
+                  : margin >= 40 ? 'bg-amber-400'
+                  : 'bg-rose-400';
+                return <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={margin !== null ? `${t.margin}: ${margin.toFixed(0)}%` : ''} />;
+              })()}
               <span className={`text-sm font-semibold w-20 text-right shrink-0 ${
                 order['Payment Status'] === 'Unpaid' ? 'text-ios-red' : 'text-ios-label'
               }`}>
@@ -271,7 +290,7 @@ export default function OrdersTab({ initialFilter }) {
             {isExpanded && (
               <OrderDetailPanel
                 orderId={order.id}
-                onUpdate={() => { setExpanded(null); fetchOrders(); }}
+                onUpdate={fetchOrders}
               />
             )}
           </div>

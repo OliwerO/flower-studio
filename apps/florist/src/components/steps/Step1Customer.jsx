@@ -102,8 +102,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
         </div>
       )}
 
-      {/* Divider */}
-      {!showCreate && (
+      {/* Create new — only visible after a search with no results */}
+      {!showCreate && query.length >= 2 && !searching && results.length === 0 && (
         <button
           onClick={() => setShowCreate(true)}
           className="ios-card px-4 py-3.5 flex items-center gap-3 w-full active:bg-ios-fill active-scale"

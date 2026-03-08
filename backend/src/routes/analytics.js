@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('analytics'));
@@ -26,35 +27,78 @@ router.get('/', async (req, res, next) => {
 
     // ── Fetch orders + stock in parallel ──
     // Inclusive date boundaries: NOT(IS_BEFORE) = >=, NOT(IS_AFTER) = <=
+    const safeFrom = sanitizeFormulaValue(from);
+    const safeTo = sanitizeFormulaValue(to);
     const dateFilter = `AND(
-      NOT(IS_BEFORE({Order Date}, '${from}')),
-      NOT(IS_AFTER({Order Date}, '${to}')),
+      NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
+      NOT(IS_AFTER({Order Date}, '${safeTo}')),
       {Status} != 'Cancelled'
     )`;
 
-    const [orders, stock] = await Promise.all([
+    // Calculate previous period of the same length for product trend comparison
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const periodLengthMs = toDate.getTime() - fromDate.getTime();
+    const prevToDate = new Date(fromDate.getTime() - 1); // day before current period starts
+    const prevFromDate = new Date(prevToDate.getTime() - periodLengthMs);
+    const safePrevFrom = sanitizeFormulaValue(prevFromDate.toISOString().split('T')[0]);
+    const safePrevTo = sanitizeFormulaValue(prevToDate.toISOString().split('T')[0]);
+    const prevDateFilter = `AND(
+      NOT(IS_BEFORE({Order Date}, '${safePrevFrom}')),
+      NOT(IS_AFTER({Order Date}, '${safePrevTo}')),
+      {Status} != 'Cancelled'
+    )`;
+
+    const [orders, stock, prevOrders, cancelledOrders] = await Promise.all([
       db.list(TABLES.ORDERS, { filterByFormula: dateFilter }),
       db.list(TABLES.STOCK, {
         filterByFormula: '{Active} = TRUE()',
-        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price'],
+        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price', 'Current Quantity'],
       }),
+      db.list(TABLES.ORDERS, {
+        filterByFormula: prevDateFilter,
+        fields: ['Order Lines', 'Payment Status'],
+      }),
+      db.list(TABLES.ORDERS, {
+        filterByFormula: `AND(
+          NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
+          NOT(IS_AFTER({Order Date}, '${safeTo}')),
+          {Status} = 'Cancelled'
+        )`,
+        fields: ['Order Date'],
+      }).catch(() => []),
     ]);
 
-    // ── Bulk-fetch order lines for cost + sell computation ──
+    // ── Bulk-fetch order lines + deliveries in parallel ──
+    // Like running two production lines simultaneously instead of sequentially.
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const allLines = [];
-    if (allLineIds.length > 0) {
-      const batchSize = 100;
-      for (let i = 0; i < allLineIds.length; i += batchSize) {
-        const batch = allLineIds.slice(i, i + batchSize);
-        const lines = await db.list(TABLES.ORDER_LINES, {
-          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit'],
-          maxRecords: batchSize,
-        });
-        allLines.push(...lines);
+    const deliveryIds = orders.flatMap(o => o['Deliveries'] || []);
+    const batchSize = 100;
+
+    function batchFetch(ids, table, fields) {
+      if (ids.length === 0) return Promise.resolve([]);
+      const promises = [];
+      for (let i = 0; i < ids.length; i += batchSize) {
+        const batch = ids.slice(i, i + batchSize);
+        promises.push(
+          db.list(table, {
+            filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields,
+            maxRecords: batchSize,
+          })
+        );
       }
+      return Promise.all(promises).then(results => results.flat());
     }
+
+    // Also fetch previous period order lines for product trend comparison
+    const allPrevLineIds = prevOrders.flatMap(o => o['Order Lines'] || []);
+
+    const [allLines, deliveryRecords, prevLines] = await Promise.all([
+      batchFetch(allLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit']),
+      batchFetch(deliveryIds, TABLES.DELIVERIES, ['Linked Order', 'Delivery Fee']),
+      batchFetch(allPrevLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity']),
+    ]);
 
     // Per-order sell/cost totals from order lines
     const orderSellTotals = {};
@@ -67,22 +111,6 @@ router.get('/', async (req, res, next) => {
       const cost = (line['Cost Price Per Unit'] || 0) * qty;
       orderSellTotals[orderId] = (orderSellTotals[orderId] || 0) + sell;
       orderCostTotals[orderId] = (orderCostTotals[orderId] || 0) + cost;
-    }
-
-    // ── Fetch delivery records for fee data ──
-    const deliveryIds = orders.flatMap(o => o['Deliveries'] || []);
-    const deliveryRecords = [];
-    if (deliveryIds.length > 0) {
-      const batchSize = 100;
-      for (let i = 0; i < deliveryIds.length; i += batchSize) {
-        const batch = deliveryIds.slice(i, i + batchSize);
-        const recs = await db.list(TABLES.DELIVERIES, {
-          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Linked Order', 'Delivery Fee'],
-          maxRecords: batchSize,
-        });
-        deliveryRecords.push(...recs);
-      }
     }
 
     // Delivery fee lookup by order ID
@@ -100,7 +128,7 @@ router.get('/', async (req, res, next) => {
       o._flowerSell = flowerSell;
       o._deliveryFee = delFee;
       o._cost = orderCostTotals[o.id] || 0;
-      o['Effective Price'] = o['Final Price'] || o['Price Override'] || (flowerSell + delFee);
+      o['Effective Price'] = o['Final Price'] ?? o['Price Override'] ?? (flowerSell + delFee);
     }
 
     // ── Revenue metrics (paid orders only) ──
@@ -119,8 +147,10 @@ router.get('/', async (req, res, next) => {
     // ── Cost metrics (paid orders only — match costs to the revenue they generated) ──
     const paidFlowerCost = paidOrders.reduce((sum, o) => sum + o._cost, 0);
     const allFlowerCost = orders.reduce((sum, o) => sum + o._cost, 0);
-    const estimatedRevenue = allFlowerCost * 2.2;
-    const grossMargin = flowerRevenue > 0
+    // Use paid-order flower cost for estimated revenue — it's compared against
+    // totalRevenue which only counts paid orders, so denominators must match.
+    const estimatedRevenue = paidFlowerCost * 2.2;
+    const flowerMargin = flowerRevenue > 0
       ? ((flowerRevenue - paidFlowerCost) / flowerRevenue) * 100
       : 0;
 
@@ -167,9 +197,60 @@ router.get('/', async (req, res, next) => {
       productMap[name].revenue += (line['Sell Price Per Unit'] || 0) * (line.Quantity || 0);
       productMap[name].cost += (line['Cost Price Per Unit'] || 0) * (line.Quantity || 0);
     }
+
+    // Build previous-period qty map for trend calculation
+    // Only count prev-period paid order lines (match same filter as current period)
+    const prevPaidOrderIds = new Set(
+      prevOrders.filter(o => o['Payment Status'] !== 'Unpaid').map(o => o.id)
+    );
+    const prevProductQty = {};
+    for (const line of prevLines) {
+      const orderId = line.Order?.[0];
+      if (!orderId || !prevPaidOrderIds.has(orderId)) continue;
+      const name = line['Flower Name'] || 'Unknown';
+      prevProductQty[name] = (prevProductQty[name] || 0) + (line.Quantity || 0);
+    }
+
     const topProducts = Object.values(productMap)
       .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 20);
+      .slice(0, 20)
+      .map(p => {
+        const prevQty = prevProductQty[p.name] || 0;
+        let trend = 'stable';
+        if (prevQty === 0 && p.totalQty > 0) {
+          trend = 'up'; // new product this period
+        } else if (prevQty > 0) {
+          if (p.totalQty > prevQty * 1.1) trend = 'up';
+          else if (p.totalQty < prevQty * 0.9) trend = 'down';
+        }
+        return { ...p, prevQty, trend };
+      });
+
+    // ── Weekly rhythm — order count and avg revenue by day of week ──
+    // Send dayIndex only — frontend maps to localized day names via translations.js
+    const dayMap = {};
+    for (let i = 0; i < 7; i++) {
+      dayMap[i] = { dayIndex: i, orderCount: 0, paidOrderCount: 0, paidRevenue: 0 };
+    }
+    for (const o of orders) {
+      if (!o['Order Date']) continue;
+      const dow = new Date(o['Order Date']).getDay();
+      dayMap[dow].orderCount++;
+    }
+    for (const o of paidOrders) {
+      if (!o['Order Date']) continue;
+      const dow = new Date(o['Order Date']).getDay();
+      dayMap[dow].paidOrderCount++;
+      dayMap[dow].paidRevenue += o['Effective Price'] || 0;
+    }
+    // Monday-first order for display: Mon=1, Tue=2, ..., Sat=6, Sun=0
+    const weeklyRhythm = [1, 2, 3, 4, 5, 6, 0].map(i => ({
+      dayIndex: i,
+      orderCount: dayMap[i].orderCount,
+      avgRevenue: dayMap[i].paidOrderCount > 0
+        ? Math.round(dayMap[i].paidRevenue / dayMap[i].paidOrderCount)
+        : 0,
+    }));
 
     // ── Monthly breakdown for trend charts ──
     const monthlyMap = {};
@@ -197,7 +278,7 @@ router.get('/', async (req, res, next) => {
           orderCount: m.orders.length,
           paidOrderCount: m.paidOrders.length,
           flowerCost: mCost,
-          grossMarginPercent: margin,
+          flowerMarginPercent: margin,
         };
       });
 
@@ -253,6 +334,60 @@ router.get('/', async (req, res, next) => {
         .slice(0, 10);
     }
 
+    // ── Source Efficiency ──
+    const sourceEfficiency = {};
+    for (const o of orders) {
+      const src = o.Source || 'Other';
+      if (!sourceEfficiency[src]) sourceEfficiency[src] = { source: src, orderCount: 0, revenue: 0, flowerCost: 0 };
+      sourceEfficiency[src].orderCount++;
+    }
+    for (const o of paidOrders) {
+      const src = o.Source || 'Other';
+      if (!sourceEfficiency[src]) sourceEfficiency[src] = { source: src, orderCount: 0, revenue: 0, flowerCost: 0 };
+      sourceEfficiency[src].revenue += o['Effective Price'] || 0;
+      sourceEfficiency[src].flowerCost += o._cost || 0;
+    }
+    const sourceEffArr = Object.values(sourceEfficiency).map(s => ({
+      ...s,
+      avgOrderValue: s.orderCount > 0 ? Math.round(s.revenue / s.orderCount) : 0,
+      marginPercent: s.revenue > 0 ? Math.round(((s.revenue - s.flowerCost) / s.revenue) * 100) : 0,
+    })).sort((a, b) => b.revenue - a.revenue);
+
+    // ── Payment Method Analysis ──
+    const paymentMap = {};
+    for (const o of orders) {
+      const method = o['Payment Method'] || 'Not recorded';
+      if (!paymentMap[method]) paymentMap[method] = { method, count: 0, paidCount: 0, revenue: 0, unpaidCount: 0, unpaidAmount: 0 };
+      paymentMap[method].count++;
+      if (o['Payment Status'] !== 'Unpaid') {
+        paymentMap[method].paidCount++;
+        paymentMap[method].revenue += o['Effective Price'] || 0;
+      } else {
+        paymentMap[method].unpaidCount++;
+        paymentMap[method].unpaidAmount += o['Effective Price'] || 0;
+      }
+    }
+    const paymentAnalysis = Object.values(paymentMap).sort((a, b) => b.count - a.count);
+
+    // ── Completion Funnel ──
+    const totalCreated = orders.length + cancelledOrders.length;
+    const completedOrders = orders.filter(o => o.Status === 'Delivered' || o.Status === 'Picked Up').length;
+    const funnel = {
+      totalCreated,
+      completed: completedOrders,
+      cancelled: cancelledOrders.length,
+      completionRate: totalCreated > 0 ? Math.round((completedOrders / totalCreated) * 100) : 0,
+      cancellationRate: totalCreated > 0 ? Math.round((cancelledOrders.length / totalCreated) * 100) : 0,
+    };
+
+    // ── Inventory Turnover ──
+    const currentStockValue = stock.reduce(
+      (sum, s) => sum + (Math.max(0, s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0)), 0
+    );
+    const periodDays = Math.max(1, (toDate.getTime() - fromDate.getTime()) / 86400000);
+    const annualizedCost = allFlowerCost * (365 / periodDays);
+    const inventoryTurnoverRatio = currentStockValue > 0 ? annualizedCost / currentStockValue : 0;
+
     res.json({
       period: { from, to },
       revenue: {
@@ -268,7 +403,8 @@ router.get('/', async (req, res, next) => {
         allFlowerCost,
         estimatedRevenueAt2_2x: estimatedRevenue,
         revenueGap: totalRevenue - estimatedRevenue,
-        grossMarginPercent: grossMargin,
+        flowerMarginPercent: flowerMargin,
+        marginLabel: 'Flower Margin',
       },
       waste: {
         totalDeadStems,
@@ -285,9 +421,18 @@ router.get('/', async (req, res, next) => {
         bySource,
         revenueBySource,
         topProducts,
+        sourceEfficiency: sourceEffArr,
+        funnel,
       },
       monthly,
+      weeklyRhythm,
       customers,
+      paymentAnalysis,
+      inventoryTurnover: {
+        turnsPerYear: Math.round(inventoryTurnoverRatio * 10) / 10,
+        currentStockValue: Math.round(currentStockValue),
+        annualizedCost: Math.round(annualizedCost),
+      },
     });
   } catch (err) {
     next(err);

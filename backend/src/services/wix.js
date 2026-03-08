@@ -4,6 +4,8 @@
 
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { broadcast } from './notifications.js';
 
 /**
  * Process a Wix order payload asynchronously.
@@ -32,7 +34,7 @@ export async function processWixOrder(payload) {
 
     // 2. Dedup — check if we already processed this order
     const existing = await db.list(TABLES.ORDERS, {
-      filterByFormula: `{Wix Order ID} = '${wixOrderId}'`,
+      filterByFormula: `{Wix Order ID} = '${sanitizeFormulaValue(wixOrderId)}'`,
       maxRecords: 1,
     });
     if (existing.length > 0) {
@@ -74,11 +76,11 @@ export async function processWixOrder(payload) {
       const searchFilters = [];
       if (customerPhone) {
         // Search by phone — strip spaces for flexible matching
-        const cleanPhone = customerPhone.replace(/\s/g, '');
+        const cleanPhone = sanitizeFormulaValue(customerPhone.replace(/\s/g, ''));
         searchFilters.push(`SEARCH('${cleanPhone}', SUBSTITUTE({Phone}, ' ', ''))`);
       }
       if (customerEmail) {
-        searchFilters.push(`SEARCH(LOWER('${customerEmail}'), LOWER({Email}))`);
+        searchFilters.push(`SEARCH(LOWER('${sanitizeFormulaValue(customerEmail)}'), LOWER({Email}))`);
       }
 
       const matches = await db.list(TABLES.CUSTOMERS, {
@@ -222,7 +224,11 @@ export async function processWixOrder(payload) {
         'Delivery Address': deliveryAddress,
         'Recipient Name': recipientName,
         'Recipient Phone': recipientPhone,
-        'Delivery Date': new Date().toISOString().split('T')[0],
+        'Delivery Date': shipping.deliveryDate
+          || shipping.shipmentDetails?.deliveryDate
+          || shipping.expectedDeliveryDate
+          || wixOrder.fulfillments?.[0]?.expectedDeliveryDate
+          || new Date().toISOString().split('T')[0],
         'Delivery Time': '',
         'Delivery Fee': 0, // studio adjusts later
         Status: 'Pending',
@@ -231,6 +237,16 @@ export async function processWixOrder(payload) {
     }
 
     log('DONE', `Order ${order.id} created successfully from Wix #${wixOrderId}`);
+
+    // Broadcast to all connected SSE clients (florist app, dashboard)
+    broadcast({
+      type: 'new_order',
+      orderId: order.id,
+      customerName,
+      source: 'Wix',
+      request: customerRequest,
+    });
+
     return order;
   } catch (err) {
     console.error('[WIX] Processing failed:', err);
