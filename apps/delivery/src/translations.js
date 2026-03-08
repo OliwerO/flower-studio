@@ -50,18 +50,18 @@ const t = {
   locating:      'Getting your location...',
 
   // Payment status
-  paidBadge:     'Оплачен',
-  unpaidBadge:   'Не оплачен',
-  partialBadge:  'Частично',
+  paidBadge:     'Paid',
+  unpaidBadge:   'Unpaid',
+  partialBadge:  'Partial',
 
   // Order info
   specialInstructions: 'Special instructions',
 
   // Driver filter
-  allDrivers:    'Все',
+  allDrivers:    'All',
 
   // Confirmation
-  confirmDelivery: 'Подтвердить доставку?',
+  confirmDelivery: 'Confirm delivery?',
 
   // General
   loading:       'Loading...',

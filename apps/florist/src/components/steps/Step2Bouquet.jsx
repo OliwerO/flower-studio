@@ -7,6 +7,77 @@
 import { useState, useMemo } from 'react';
 import t from '../../translations.js';
 
+// Isolated cart row — holds local input state so typing multi-digit numbers
+// doesn't re-render the parent and kill focus. Like a sub-assembly station
+// that buffers its output before sending it down the line.
+function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove }) {
+  const stockItem = stock.find(s => s.id === l.stockItemId);
+  const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
+  const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
+  const lineSell  = sellPrice * Number(l.quantity);
+
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState('');
+
+  function handleFocus(e) {
+    setEditing(true);
+    setDraft(String(l.quantity));
+    e.target.select();
+  }
+
+  function handleBlur() {
+    setEditing(false);
+    onCommitQty(l.stockItemId, draft);
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') e.target.blur();
+  }
+
+  return (
+    <div className="flex items-center gap-3 px-4 py-3">
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
+        <div className="text-xs text-ios-tertiary">
+          {sellPrice.toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
+        </div>
+      </div>
+      <div className="flex items-center gap-1.5 shrink-0">
+        <button
+          onClick={() => onChangeQty(l.stockItemId, -1)}
+          className="w-8 h-8 rounded-full bg-gray-100 text-ios-secondary text-xl font-bold
+                     flex items-center justify-center hover:bg-gray-200 active-scale"
+        >
+          −
+        </button>
+        <input
+          type="text"
+          inputMode="numeric"
+          pattern="[0-9]*"
+          value={editing ? draft : l.quantity}
+          onChange={e => setDraft(e.target.value)}
+          onFocus={handleFocus}
+          onBlur={handleBlur}
+          onKeyDown={handleKeyDown}
+          className="w-9 text-center text-sm font-bold border border-gray-200 rounded-xl py-1 bg-white outline-none"
+        />
+        <button
+          onClick={() => onChangeQty(l.stockItemId, +1)}
+          disabled={l.quantity >= maxQty}
+          className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
+                     flex items-center justify-center active:bg-brand-200 active-scale disabled:opacity-30"
+        >
+          +
+        </button>
+        <button onClick={() => onRemove(l.stockItemId)}
+                className="text-ios-tertiary text-base ml-1 active:text-ios-red px-1">
+          ✕
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
   onChange, onLinesChange,
@@ -73,7 +144,9 @@ export default function Step2Bouquet({
     );
   }
 
-  function setQtyDirect(stockItemId, value) {
+  // Commit a typed quantity value — called on blur (not on every keystroke).
+  // This lets the florist type multi-digit numbers without losing focus.
+  function commitQty(stockItemId, value) {
     const n = parseInt(value, 10);
     if (isNaN(n) || n < 0) return;
     const maxQty = Number(stock.find(s => s.id === stockItemId)?.['Current Quantity']) || Infinity;
@@ -178,53 +251,16 @@ export default function Step2Bouquet({
         <div>
           <p className="ios-label">{t.bouquetContents}</p>
           <div className="ios-card overflow-hidden divide-y divide-gray-100">
-            {orderLines.map(l => {
-              const stockItem = stock.find(s => s.id === l.stockItemId);
-              const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
-              // Always use current stock price for display (snapshot happens at submit)
-              const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
-              const lineSell  = sellPrice * Number(l.quantity);
-              return (
-              <div key={`${l.stockItemId}-${l.quantity}`} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
-                  <div className="text-xs text-ios-tertiary">
-                    {sellPrice.toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => changeQty(l.stockItemId, -1)}
-                    className="w-8 h-8 rounded-full bg-gray-100 text-ios-secondary text-xl font-bold
-                               flex items-center justify-center hover:bg-gray-200 active-scale"
-                  >
-                    −
-                  </button>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={l.quantity}
-                    onChange={e => setQtyDirect(l.stockItemId, e.target.value)}
-                    onFocus={e => e.target.select()}
-                    className="w-9 text-center text-sm font-bold border border-gray-200 rounded-xl py-1 bg-white outline-none"
-                  />
-                  <button
-                    onClick={() => changeQty(l.stockItemId, +1)}
-                    disabled={l.quantity >= maxQty}
-                    className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
-                               flex items-center justify-center active:bg-brand-200 active-scale disabled:opacity-30"
-                  >
-                    +
-                  </button>
-                  <button onClick={() => removeLine(l.stockItemId)}
-                          className="text-ios-tertiary text-base ml-1 active:text-ios-red px-1">
-                    ✕
-                  </button>
-                </div>
-              </div>
-              );
-            })}
+            {orderLines.map(l => (
+              <CartLine
+                key={l.stockItemId}
+                line={l}
+                stock={stock}
+                onChangeQty={changeQty}
+                onCommitQty={commitQty}
+                onRemove={removeLine}
+              />
+            ))}
           </div>
 
           {/* Totals — tap to toggle cost/margin visibility */}
