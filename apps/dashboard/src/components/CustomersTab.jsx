@@ -24,6 +24,7 @@ export default function CustomersTab({ initialFilter }) {
   const [insights, setInsights]     = useState(null);
   const [showAtRisk, setShowAtRisk] = useState(false);
   const [rfmFilter, setRfmFilter]   = useState(null);
+  const [sourceFilter, setSourceFilter] = useState(null);
   const { showToast } = useToast();
 
   // Search customers — fetches on every search change (including clearing)
@@ -92,9 +93,15 @@ export default function CustomersTab({ initialFilter }) {
             {Object.entries(insights.acquisitionBySource)
               .sort(([,a], [,b]) => b - a)
               .map(([src, count]) => (
-                <span key={src} className="px-3 py-1 rounded-full bg-gray-100 text-sm text-ios-label">
-                  {src === 'Unknown' ? t.notRecorded : src} <span className="text-ios-tertiary">{count}</span>
-                </span>
+                <button key={src}
+                  onClick={() => setSourceFilter(sourceFilter === src ? null : src)}
+                  className={`px-3 py-1 rounded-full text-sm transition-all ${
+                    sourceFilter === src
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-ios-label hover:bg-gray-200'
+                  }`}>
+                  {src === 'Unknown' ? t.notRecorded : src} <span className={sourceFilter === src ? 'text-white/70' : 'text-ios-tertiary'}>{count}</span>
+                </button>
               ))}
           </div>
         </div>
@@ -173,7 +180,7 @@ export default function CustomersTab({ initialFilter }) {
       </div>
 
       {/* Active filters bar */}
-      {(search || rfmFilter) && (
+      {(search || rfmFilter || sourceFilter) && (
         <div className="flex flex-wrap items-center gap-2 px-1">
           <span className="text-[11px] text-ios-tertiary">{t.activeFilters}:</span>
           {search && (
@@ -188,8 +195,14 @@ export default function CustomersTab({ initialFilter }) {
               <button onClick={() => setRfmFilter(null)} className="ml-0.5 text-purple-400 hover:text-purple-700">×</button>
             </span>
           )}
+          {sourceFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">
+              {t.source}: {sourceFilter === 'Unknown' ? t.notRecorded : sourceFilter}
+              <button onClick={() => setSourceFilter(null)} className="ml-0.5 text-sky-400 hover:text-sky-700">×</button>
+            </span>
+          )}
           <button
-            onClick={() => { setSearch(''); setRfmFilter(null); }}
+            onClick={() => { setSearch(''); setRfmFilter(null); setSourceFilter(null); }}
             className="text-xs text-ios-secondary hover:text-ios-red underline"
           >
             {t.clearAll}
@@ -257,6 +270,7 @@ export default function CustomersTab({ initialFilter }) {
       {!loading && customers
         .filter(c => c.Name || c.Nickname || c.Phone || (c['App Order Count'] || 0) > 0)
         .filter(c => !rfmFilter || insights?.rfm?.byCustomer?.[c.id]?.label === rfmFilter)
+        .filter(c => !sourceFilter || (sourceFilter === 'Unknown' ? !c.Source : c.Source === sourceFilter))
         .map(cust => {
         const isExpanded = expandedId === cust.id;
         const isDNC = cust.Segment === 'DO NOT CONTACT';
