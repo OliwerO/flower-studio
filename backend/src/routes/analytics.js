@@ -35,11 +35,29 @@ router.get('/', async (req, res, next) => {
       {Status} != 'Cancelled'
     )`;
 
-    const [orders, stock] = await Promise.all([
+    // Calculate previous period of the same length for product trend comparison
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    const periodLengthMs = toDate.getTime() - fromDate.getTime();
+    const prevToDate = new Date(fromDate.getTime() - 1); // day before current period starts
+    const prevFromDate = new Date(prevToDate.getTime() - periodLengthMs);
+    const safePrevFrom = sanitizeFormulaValue(prevFromDate.toISOString().split('T')[0]);
+    const safePrevTo = sanitizeFormulaValue(prevToDate.toISOString().split('T')[0]);
+    const prevDateFilter = `AND(
+      NOT(IS_BEFORE({Order Date}, '${safePrevFrom}')),
+      NOT(IS_AFTER({Order Date}, '${safePrevTo}')),
+      {Status} != 'Cancelled'
+    )`;
+
+    const [orders, stock, prevOrders] = await Promise.all([
       db.list(TABLES.ORDERS, { filterByFormula: dateFilter }),
       db.list(TABLES.STOCK, {
         filterByFormula: '{Active} = TRUE()',
         fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price'],
+      }),
+      db.list(TABLES.ORDERS, {
+        filterByFormula: prevDateFilter,
+        fields: ['Order Lines', 'Payment Status'],
       }),
     ]);
 
@@ -65,9 +83,13 @@ router.get('/', async (req, res, next) => {
       return Promise.all(promises).then(results => results.flat());
     }
 
-    const [allLines, deliveryRecords] = await Promise.all([
+    // Also fetch previous period order lines for product trend comparison
+    const allPrevLineIds = prevOrders.flatMap(o => o['Order Lines'] || []);
+
+    const [allLines, deliveryRecords, prevLines] = await Promise.all([
       batchFetch(allLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit']),
       batchFetch(deliveryIds, TABLES.DELIVERIES, ['Linked Order', 'Delivery Fee']),
+      batchFetch(allPrevLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity']),
     ]);
 
     // Per-order sell/cost totals from order lines
@@ -167,9 +189,61 @@ router.get('/', async (req, res, next) => {
       productMap[name].revenue += (line['Sell Price Per Unit'] || 0) * (line.Quantity || 0);
       productMap[name].cost += (line['Cost Price Per Unit'] || 0) * (line.Quantity || 0);
     }
+
+    // Build previous-period qty map for trend calculation
+    // Only count prev-period paid order lines (match same filter as current period)
+    const prevPaidOrderIds = new Set(
+      prevOrders.filter(o => o['Payment Status'] !== 'Unpaid').map(o => o.id)
+    );
+    const prevProductQty = {};
+    for (const line of prevLines) {
+      const orderId = line.Order?.[0];
+      if (!orderId || !prevPaidOrderIds.has(orderId)) continue;
+      const name = line['Flower Name'] || 'Unknown';
+      prevProductQty[name] = (prevProductQty[name] || 0) + (line.Quantity || 0);
+    }
+
     const topProducts = Object.values(productMap)
       .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, 20);
+      .slice(0, 20)
+      .map(p => {
+        const prevQty = prevProductQty[p.name] || 0;
+        let trend = 'stable';
+        if (prevQty === 0 && p.totalQty > 0) {
+          trend = 'up'; // new product this period
+        } else if (prevQty > 0) {
+          if (p.totalQty > prevQty * 1.1) trend = 'up';
+          else if (p.totalQty < prevQty * 0.9) trend = 'down';
+        }
+        return { ...p, prevQty, trend };
+      });
+
+    // ── Weekly rhythm — order count and avg revenue by day of week ──
+    const DAY_NAMES_RU = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+    const dayMap = {};
+    for (let i = 0; i < 7; i++) {
+      dayMap[i] = { dayIndex: i, dayName: DAY_NAMES_RU[i], orderCount: 0, paidOrderCount: 0, paidRevenue: 0 };
+    }
+    for (const o of orders) {
+      if (!o['Order Date']) continue;
+      const dow = new Date(o['Order Date']).getDay();
+      dayMap[dow].orderCount++;
+    }
+    for (const o of paidOrders) {
+      if (!o['Order Date']) continue;
+      const dow = new Date(o['Order Date']).getDay();
+      dayMap[dow].paidOrderCount++;
+      dayMap[dow].paidRevenue += o['Effective Price'] || 0;
+    }
+    // Monday-first order for display: Пн=1, Вт=2, ..., Сб=6, Вс=0
+    const weeklyRhythm = [1, 2, 3, 4, 5, 6, 0].map(i => ({
+      dayIndex: i,
+      dayName: DAY_NAMES_RU[i],
+      orderCount: dayMap[i].orderCount,
+      avgRevenue: dayMap[i].paidOrderCount > 0
+        ? Math.round(dayMap[i].paidRevenue / dayMap[i].paidOrderCount)
+        : 0,
+    }));
 
     // ── Monthly breakdown for trend charts ──
     const monthlyMap = {};
@@ -288,6 +362,7 @@ router.get('/', async (req, res, next) => {
         topProducts,
       },
       monthly,
+      weeklyRhythm,
       customers,
     });
   } catch (err) {

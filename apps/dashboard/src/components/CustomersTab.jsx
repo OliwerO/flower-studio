@@ -22,6 +22,7 @@ export default function CustomersTab({ initialFilter }) {
   const [search, setSearch]         = useState(f.search || '');
   const [expandedId, setExpanded]   = useState(null);
   const [insights, setInsights]     = useState(null);
+  const [showAtRisk, setShowAtRisk] = useState(false);
   const { showToast } = useToast();
 
   // Search customers
@@ -67,9 +68,11 @@ export default function CustomersTab({ initialFilter }) {
             </div>
           ))}
 
-          {/* Churn risk count */}
+          {/* Churn risk count — clickable to toggle at-risk list */}
           {insights.churnRisk?.length > 0 && (
-            <div className="bg-white rounded-2xl shadow-sm px-4 py-3 text-center">
+            <div
+              onClick={() => setShowAtRisk(!showAtRisk)}
+              className="bg-white rounded-2xl shadow-sm px-4 py-3 text-center cursor-pointer hover:bg-ios-orange/10 transition-colors">
               <p className="text-2xl font-bold text-ios-orange">{insights.churnRisk.length}</p>
               <p className="text-xs text-ios-orange font-medium mt-1">{t.churnRisk}</p>
             </div>
@@ -105,6 +108,37 @@ export default function CustomersTab({ initialFilter }) {
           className="field-input w-full"
         />
       </div>
+
+      {/* At-risk customers list — shown when churn risk card is clicked */}
+      {showAtRisk && insights?.churnRisk?.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
+          <h3 className="text-xs font-semibold text-ios-orange uppercase tracking-wide mb-3">
+            {t.atRiskCustomers} — {t.churnRisk}
+          </h3>
+          <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
+            {insights.churnRisk.map(c => (
+              <div key={c.id}
+                onClick={() => { setExpanded(c.id); setShowAtRisk(false); }}
+                className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-gray-100 transition-colors">
+                <div>
+                  <span className="text-sm font-medium text-ios-label">{c.Name || c.Nickname || '—'}</span>
+                  {c.Segment && (
+                    <span className={`ml-2 text-[10px] px-2 py-0.5 rounded-full ${SEGMENT_COLORS[c.Segment] || 'bg-gray-100 text-gray-600'}`}>
+                      {c.Segment}
+                    </span>
+                  )}
+                </div>
+                <div className="flex items-center gap-3">
+                  {c.daysSinceLastOrder && (
+                    <span className="text-xs text-ios-orange">{c.daysSinceLastOrder} {t.daysSinceLastOrder}</span>
+                  )}
+                  <span className="text-sm font-semibold text-ios-label">{(c['App Total Spend'] || 0).toFixed(0)} {t.zl}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {loading && (
         <div className="flex justify-center py-12">

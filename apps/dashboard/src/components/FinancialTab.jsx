@@ -116,12 +116,6 @@ export default function FinancialTab({ onNavigate }) {
     .map(([name, value]) => ({ name, value }))
     .sort((a, b) => b.value - a.value);
 
-  // Delivery pie
-  const deliveryPie = [
-    { name: t.delivery, value: delivery.deliveryCount },
-    { name: t.pickup, value: delivery.pickupCount },
-  ].filter(d => d.value > 0);
-
   // Segment data
   const segmentData = Object.entries(customers?.segments || {}).map(([name, value]) => ({ name, value }));
 
@@ -161,6 +155,35 @@ export default function FinancialTab({ onNavigate }) {
 
       {/* ── 1. Profitability Overview (the #1 strategic question: are we making money?) ── */}
       <Section title="Profitability" sectionKey="profit" collapsed={collapsed} onToggle={toggle}>
+        {/* Revenue Gap — the owner's #1 pricing question */}
+        {costs.totalFlowerCost > 0 && (
+          <div className={`rounded-xl px-4 py-3 mb-4 flex items-center justify-between ${
+            costs.revenueGap >= 0 ? 'bg-emerald-50 border border-emerald-200'
+            : Math.abs(costs.revenueGap) / costs.estimatedRevenueAt2_2x < 0.1 ? 'bg-amber-50 border border-amber-200'
+            : 'bg-rose-50 border border-rose-200'
+          }`}>
+            <div>
+              <p className="text-xs font-medium text-ios-tertiary">{t.revenueGapCard}</p>
+              <div className="flex items-baseline gap-3 mt-1">
+                <span className="text-sm text-ios-secondary">{t.actualRevenue}: <b>{revenue.total.toFixed(0)} {t.zl}</b></span>
+                <span className="text-sm text-ios-secondary">{t.expectedRevenue}: <b>{costs.estimatedRevenueAt2_2x.toFixed(0)} {t.zl}</b></span>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className={`text-2xl font-bold ${
+                costs.revenueGap >= 0 ? 'text-emerald-600'
+                : Math.abs(costs.revenueGap) / costs.estimatedRevenueAt2_2x < 0.1 ? 'text-amber-600'
+                : 'text-rose-600'
+              }`}>
+                {costs.revenueGap >= 0 ? '+' : ''}{costs.revenueGap.toFixed(0)} {t.zl}
+              </p>
+              <p className="text-[11px] text-ios-tertiary">
+                {costs.revenueGap >= 0 ? t.aboveTarget : costs.revenueGap / costs.estimatedRevenueAt2_2x > -0.1 ? t.onTarget : t.belowTarget}
+              </p>
+            </div>
+          </div>
+        )}
+
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
           <KPI label={t.totalRevenue} value={`${revenue.total.toFixed(0)} ${t.zl}`}
                onClick={() => nav('orders', { payment: 'Paid' })} />
@@ -241,6 +264,22 @@ export default function FinancialTab({ onNavigate }) {
             </ResponsiveContainer>
           </div>
         )}
+
+        {/* Weekly rhythm — which days are busiest? */}
+        {data.weeklyRhythm?.length > 0 && (
+          <div className="mt-4">
+            <p className="text-xs text-ios-tertiary font-medium mb-2">{t.weeklyRhythm}</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <BarChart data={data.weeklyRhythm}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="dayName" tick={{ fontSize: 11 }} />
+                <YAxis tick={{ fontSize: 11 }} />
+                <Tooltip formatter={(v, name) => name === 'orderCount' ? `${v} orders` : `${v.toFixed(0)} ${t.zl}`} />
+                <Bar dataKey="orderCount" name={t.orders} fill="#db2777" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        )}
       </Section>
 
       {/* ── 3. Delivery & Logistics ── */}
@@ -254,24 +293,24 @@ export default function FinancialTab({ onNavigate }) {
           <KPI label={t.avgDeliveryFee} value={`${(delivery.avgDeliveryFee || 0).toFixed(0)} ${t.zl}`} />
         </div>
 
-        {deliveryPie.length > 0 && (
-          <div>
-            <p className="text-xs text-ios-tertiary font-medium mb-2">{t.pickupVsDelivery}</p>
-            <ResponsiveContainer width="100%" height={250}>
-              <PieChart>
-                <Pie data={deliveryPie} cx="50%" cy="50%"
-                     innerRadius={50} outerRadius={80} dataKey="value"
-                     cursor="pointer"
-                     onClick={(_, idx) => nav('orders', { deliveryType: idx === 0 ? 'Delivery' : 'Pickup' })}>
-                  <Cell fill="#db2777" />
-                  <Cell fill="#007AFF" />
-                </Pie>
-                <Tooltip />
-                <Legend />
-              </PieChart>
-            </ResponsiveContainer>
+        <div className="bg-gray-50 rounded-xl px-4 py-3">
+          <p className="text-xs text-ios-tertiary font-medium mb-2">{t.deliveryPnL}</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm text-ios-secondary">{t.deliveryRevTotal}</p>
+              <p className="text-lg font-bold text-ios-label">{(delivery.deliveryRevenue || 0).toFixed(0)} {t.zl}</p>
+            </div>
+            <div className="text-center px-4">
+              <p className="text-sm text-ios-secondary">{t.costPrice}</p>
+              <p className="text-lg font-bold text-ios-tertiary">—</p>
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-ios-secondary">{t.deliveryNet}</p>
+              <p className="text-lg font-bold text-emerald-600">{(delivery.deliveryRevenue || 0).toFixed(0)} {t.zl}</p>
+            </div>
           </div>
-        )}
+          <p className="text-[10px] text-ios-tertiary mt-2 italic">{t.addDriverCosts}</p>
+        </div>
       </Section>
 
       {/* ── 4. Waste (only show if there's data worth acting on) ── */}
@@ -359,7 +398,8 @@ export default function FinancialTab({ onNavigate }) {
         <Section title={t.bestSellers} sectionKey="products" collapsed={collapsed} onToggle={toggle}>
           <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
             <div className="grid grid-cols-12 gap-2 px-3 py-2 text-[11px] text-ios-tertiary font-medium uppercase">
-              <span className="col-span-4">{t.stockName}</span>
+              <span className="col-span-3">{t.stockName}</span>
+              <span className="col-span-1 text-center">↕</span>
               <span className="col-span-2 text-right">{t.quantity}</span>
               <span className="col-span-2 text-right">{t.revenue}</span>
               <span className="col-span-2 text-right">{t.costPrice}</span>
@@ -369,7 +409,12 @@ export default function FinancialTab({ onNavigate }) {
               const m = p.cost > 0 ? (p.revenue / p.cost).toFixed(1) : '—';
               return (
                 <div key={p.name} className="grid grid-cols-12 gap-2 px-3 py-2 text-sm">
-                  <span className="col-span-4 truncate text-ios-label">{p.name}</span>
+                  <span className="col-span-3 truncate text-ios-label">{p.name}</span>
+                  <span className={`col-span-1 text-center font-medium ${
+                    p.trend === 'up' ? 'text-emerald-500' : p.trend === 'down' ? 'text-rose-500' : 'text-ios-tertiary'
+                  }`}>
+                    {p.trend === 'up' ? '↑' : p.trend === 'down' ? '↓' : '→'}
+                  </span>
                   <span className="col-span-2 text-right text-ios-secondary">{p.totalQty}</span>
                   <span className="col-span-2 text-right font-medium text-brand-700">{p.revenue.toFixed(0)} {t.zl}</span>
                   <span className="col-span-2 text-right text-ios-secondary">{p.cost.toFixed(0)} {t.zl}</span>

@@ -54,11 +54,50 @@ router.get('/insights', async (req, res, next) => {
       segments[seg] = (segments[seg] || 0) + 1;
     }
 
-    // Churn risk: customers with 2+ orders who haven't ordered recently.
-    // Since we don't have "last order date" field easily, we flag customers
-    // with 2+ orders but rely on the frontend to show them for review.
+    // Churn risk: customers with 2+ orders whose last order was >60 days ago.
+    // Fetch recent orders to build a lastOrderDate map per customer.
+    const recentOrders = await db.list(TABLES.ORDERS, {
+      sort: [{ field: 'Order Date', direction: 'desc' }],
+      fields: ['Customer', 'Order Date'],
+      maxRecords: 500,
+    });
+
+    const lastOrderByCustomer = {};
+    for (const o of recentOrders) {
+      const cid = o.Customer?.[0];
+      if (cid && !lastOrderByCustomer[cid]) {
+        lastOrderByCustomer[cid] = o['Order Date'];
+      }
+    }
+
+    const now = Date.now();
+    const sixtyDaysMs = 60 * 86400000;
+
     const churnRisk = customers
-      .filter(c => (c['App Order Count'] || 0) >= 2 && c.Segment !== 'DO NOT CONTACT')
+      .filter(c => {
+        if ((c['App Order Count'] || 0) < 2) return false;
+        if (c.Segment === 'DO NOT CONTACT') return false;
+        const lastDate = lastOrderByCustomer[c.id];
+        if (!lastDate) return true; // has order count but no recent order found in query window
+        return (now - new Date(lastDate).getTime()) > sixtyDaysMs;
+      })
+      .map(c => {
+        const lastDate = lastOrderByCustomer[c.id];
+        const daysSince = lastDate
+          ? Math.floor((now - new Date(lastDate).getTime()) / 86400000)
+          : 999;
+        return {
+          id: c.id,
+          Name: c.Name,
+          Nickname: c.Nickname,
+          Segment: c.Segment,
+          'App Total Spend': c['App Total Spend'] || 0,
+          'App Order Count': c['App Order Count'] || 0,
+          lastOrderDate: lastDate || null,
+          daysSinceLastOrder: daysSince,
+        };
+      })
+      .sort((a, b) => (b['App Total Spend'] || 0) - (a['App Total Spend'] || 0))
       .slice(0, 20);
 
     // Top 10 customers by total spend

@@ -20,6 +20,7 @@ export default function StockTab() {
   const [showAddItem, setShowAddItem] = useState(false);
   const [newItem, setNewItem]       = useState({ displayName: '', category: '', quantity: 0, costPrice: 0 });
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow'
+  const [velocity, setVelocity]     = useState({});
   const { showToast } = useToast();
 
   const fetchStock = useCallback(async () => {
@@ -35,6 +36,10 @@ export default function StockTab() {
   }, [showToast]);
 
   useEffect(() => { fetchStock(); }, [fetchStock]);
+
+  useEffect(() => {
+    client.get('/stock/velocity').then(r => setVelocity(r.data)).catch(() => {});
+  }, []);
 
   async function adjustQty(id, delta) {
     // Optimistic update: change local state immediately, revert on failure
@@ -228,6 +233,7 @@ export default function StockTab() {
                 <th className="text-right px-3 py-2 font-medium">{t.markup}</th>
                 <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.threshold}</th>
+                <th className="text-right px-3 py-2 font-medium">{t.daysOfSupplyHeader}</th>
                 {view === 'waste' && (
                   <th className="text-right px-3 py-2 font-medium">{t.deadStems}</th>
                 )}
@@ -243,6 +249,7 @@ export default function StockTab() {
                   onAdjust={adjustQty}
                   onWriteOff={writeOff}
                   onPatch={patchStock}
+                  velocity={velocity[item.id]}
                 />
               ))}
             </tbody>
@@ -254,7 +261,7 @@ export default function StockTab() {
 }
 
 // Individual stock row with inline editing
-function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch }) {
+function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity }) {
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
   const [showWo, setShowWo]     = useState(false);
@@ -325,6 +332,21 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch }) {
             onSave={v => onPatch(item.id, { 'Reorder Threshold': v ? Number(v) : 0 })}
           />
         </td>
+        {/* Days of supply — qty / avg daily usage */}
+        <td className="px-3 py-2 text-right">
+          {velocity ? (
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+              velocity.avgDailyUsage === 0 ? 'bg-gray-100 text-ios-tertiary'
+              : qty / velocity.avgDailyUsage < 2 ? 'bg-rose-100 text-rose-600'
+              : qty / velocity.avgDailyUsage < 5 ? 'bg-amber-100 text-amber-600'
+              : 'bg-emerald-100 text-emerald-600'
+            }`}>
+              {velocity.avgDailyUsage > 0 ? Math.round(qty / velocity.avgDailyUsage) : '—'}
+            </span>
+          ) : (
+            <span className="text-xs text-ios-tertiary">—</span>
+          )}
+        </td>
         {showWaste && (
           <td className="px-3 py-2 text-right text-ios-red font-medium">{dead}</td>
         )}
@@ -343,7 +365,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch }) {
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={showWaste ? 9 : 8} className="px-3 py-2">
+          <td colSpan={showWaste ? 10 : 9} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}

@@ -231,6 +231,44 @@ const t = {
 
   // Misc
   zl:               'zł',
+
+  // Dashboard redesign — consultant insights
+  revenueGapCard:     'Revenue Gap (target 2.2×)',
+  actualRevenue:      'Actual Revenue',
+  expectedRevenue:    'Expected (2.2×)',
+  gapAmount:          'Gap',
+  aboveTarget:        'Above target',
+  belowTarget:        'Below target',
+  onTarget:           'On target',
+
+  unassignedDeliveries: 'Unassigned deliveries',
+  noDriverAssigned:   'No driver assigned',
+
+  atRiskCustomers:    'At risk',
+  daysSinceLastOrder: 'days since last order',
+  lastOrderDate:      'Last order',
+
+  unpaidAging:        'Outstanding payments',
+  agingToday:         'Today',
+  aging1to7:          '1–7 days',
+  aging8to30:         '8–30 days',
+  aging30plus:        '30+ days',
+  totalOutstanding:   'Total outstanding',
+
+  upcomingDates:      'Upcoming dates',
+  daysUntil:          'days',
+
+  daysOfSupplyHeader: 'Supply (days)',
+
+  weeklyRhythm:       'Weekly rhythm',
+
+  trendUp:            'Growing',
+  trendDown:          'Declining',
+  trendStable:        'Stable',
+
+  deliveryPnL:        'Delivery P&L',
+  addDriverCosts:     'Add driver costs for full P&L',
+  deliveryNet:        'Net',
 };
 
 export default t;

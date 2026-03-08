@@ -8,8 +8,6 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import SummaryCard from './SummaryCard.jsx';
-import SourceChart from './SourceChart.jsx';
-import TopProductsWidget from './TopProductsWidget.jsx';
 import KanbanBoard from './KanbanBoard.jsx';
 
 // "2026-03-08" → "Mar 8"
@@ -131,6 +129,25 @@ export default function DayToDayTab({ onNavigate }) {
         />
       </div>
 
+      {/* Unassigned deliveries — crisis alert */}
+      {data.unassignedDeliveries?.length > 0 && (
+        <div className="bg-rose-50 border border-rose-200 rounded-2xl px-4 py-3">
+          <h3 className="text-xs font-semibold text-rose-600 uppercase tracking-wide mb-2">
+            {t.unassignedDeliveries} ({data.unassignedDeliveries.length})
+          </h3>
+          <div className="space-y-1">
+            {data.unassignedDeliveries.map(d => (
+              <div key={d.id}
+                onClick={() => nav('orders', { orderId: d['Linked Order']?.[0] || d.id })}
+                className="flex items-center justify-between text-sm cursor-pointer hover:bg-rose-100/50 rounded-lg px-2 py-1 transition-colors">
+                <span className="text-ios-label font-medium">{d['Recipient Name'] || '—'}</span>
+                <span className="text-rose-600 text-xs font-medium">{d['Delivery Time'] || '—'}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Status breakdown — evenly spaced, click to expand kanban */}
       <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
         <div className="flex items-center justify-between mb-3">
@@ -250,18 +267,62 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
       )}
 
-      {/* Month-to-date summaries — less urgent than today's operational data */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {analytics && (
-          <SourceChart
-            bySource={analytics.orders?.bySource || {}}
-            revenueBySource={analytics.orders?.revenueBySource || {}}
-          />
-        )}
-        {analytics?.orders?.topProducts && (
-          <TopProductsWidget products={analytics.orders.topProducts} />
-        )}
-      </div>
+      {/* Unpaid orders aging */}
+      {data.unpaidAging && data.unpaidAging.grandTotal.count > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
+          <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
+            {t.unpaidAging}
+          </h3>
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
+            {[
+              { label: t.agingToday, data: data.unpaidAging.today },
+              { label: t.aging1to7, data: data.unpaidAging.week },
+              { label: t.aging8to30, data: data.unpaidAging.month },
+              { label: t.aging30plus, data: data.unpaidAging.older, alert: true },
+              { label: t.totalOutstanding, data: data.unpaidAging.grandTotal, bold: true },
+            ].map(bucket => (
+              <div key={bucket.label} className={`rounded-xl px-3 py-2 text-center ${
+                bucket.alert && bucket.data.count > 0 ? 'bg-rose-50' : bucket.bold ? 'bg-brand-50' : 'bg-gray-50'
+              }`}>
+                <p className={`text-lg font-bold ${
+                  bucket.alert && bucket.data.count > 0 ? 'text-rose-600' : bucket.bold ? 'text-brand-700' : 'text-ios-label'
+                }`}>
+                  {bucket.data.total.toFixed(0)} {t.zl}
+                </p>
+                <p className="text-[10px] text-ios-tertiary">{bucket.data.count} orders</p>
+                <p className="text-[11px] text-ios-secondary mt-0.5">{bucket.label}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Key date reminders — upcoming birthdays/anniversaries */}
+      {data.keyDateReminders?.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
+          <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
+            {t.upcomingDates}
+          </h3>
+          <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
+            {data.keyDateReminders.map((r, i) => (
+              <div key={i}
+                onClick={() => nav('customers', { search: r.customerName })}
+                className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-gray-100 transition-colors">
+                <div>
+                  <span className="text-sm font-medium text-ios-label">{r.customerName}</span>
+                  <span className="text-xs text-ios-tertiary ml-2">{r.keyPersonName}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xs font-medium text-brand-600">
+                    {r.daysUntil === 0 ? 'Today!' : `${r.daysUntil} ${t.daysUntil}`}
+                  </span>
+                  <span className="text-[10px] text-ios-tertiary ml-2">{r.date}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
     </div>
   );
