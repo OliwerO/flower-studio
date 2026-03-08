@@ -26,9 +26,8 @@ export default function CustomersTab({ initialFilter }) {
   const [rfmFilter, setRfmFilter]   = useState(null);
   const { showToast } = useToast();
 
-  // Search customers
+  // Search customers — fetches on every search change (including clearing)
   const doSearch = useCallback(async () => {
-    if (!search && customers.length > 0) return;
     setLoading(true);
     try {
       const params = search ? { search } : {};
@@ -172,6 +171,31 @@ export default function CustomersTab({ initialFilter }) {
           </button>
         )}
       </div>
+
+      {/* Active filters bar */}
+      {(search || rfmFilter) && (
+        <div className="flex flex-wrap items-center gap-2 px-1">
+          <span className="text-[11px] text-ios-tertiary">{t.activeFilters}:</span>
+          {search && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-brand-100 text-brand-700 text-xs font-medium">
+              {t.search}: {search}
+              <button onClick={() => setSearch('')} className="ml-0.5 text-brand-400 hover:text-brand-700">×</button>
+            </span>
+          )}
+          {rfmFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-medium">
+              RFM: {rfmFilter}
+              <button onClick={() => setRfmFilter(null)} className="ml-0.5 text-purple-400 hover:text-purple-700">×</button>
+            </span>
+          )}
+          <button
+            onClick={() => { setSearch(''); setRfmFilter(null); }}
+            className="text-xs text-ios-secondary hover:text-ios-red underline"
+          >
+            {t.clearAll}
+          </button>
+        </div>
+      )}
 
       {/* At-risk customers list — shown when churn risk card is clicked */}
       {showAtRisk && insights?.churnRisk?.length > 0 && (
