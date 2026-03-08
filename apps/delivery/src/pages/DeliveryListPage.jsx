@@ -33,9 +33,6 @@ export default function DeliveryListPage() {
   const [loading, setLoading]       = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [showMap, setShowMap]       = useState(false);
-  const [driverFilter, setDriverFilter] = useState('');
-
-  const DRIVERS = ['Timur', 'Nikita', 'Dmitri', 'Backup Driver'];
 
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
@@ -52,30 +49,31 @@ export default function DeliveryListPage() {
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
 
-  // Filter by driver, then group by status — like sorting items into three bins
-  const filtered = useMemo(() => {
-    if (!driverFilter) return deliveries;
-    return deliveries.filter(d => d['Assigned Driver'] === driverFilter);
-  }, [deliveries, driverFilter]);
-
+  // Group by status, with the logged-in driver's deliveries sorted to the top.
+  // Like a shared task board where your own tasks float up.
   const grouped = useMemo(() => {
     const groups = {
       'Pending':          [],
       'Out for Delivery': [],
       'Delivered':        [],
     };
-    filtered.forEach(d => {
+    deliveries.forEach(d => {
       const status = d['Status'] || 'Pending';
       if (groups[status]) groups[status].push(d);
       else groups['Pending'].push(d);
     });
-    // Sort non-delivered by time
-    const timeSort = (a, b) => (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
-    groups['Pending'].sort(timeSort);
-    groups['Out for Delivery'].sort(timeSort);
-    groups['Delivered'].sort(timeSort);
+    // Sort: own deliveries first, then by time
+    const prioritySort = (a, b) => {
+      const aIsMine = a['Assigned Driver'] === driverName ? 0 : 1;
+      const bIsMine = b['Assigned Driver'] === driverName ? 0 : 1;
+      if (aIsMine !== bIsMine) return aIsMine - bIsMine;
+      return (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
+    };
+    groups['Pending'].sort(prioritySort);
+    groups['Out for Delivery'].sort(prioritySort);
+    groups['Delivered'].sort(prioritySort);
     return groups;
-  }, [filtered]);
+  }, [deliveries, driverName]);
 
   const selectedDelivery = deliveries.find(d => d.id === selectedId);
 
@@ -143,29 +141,6 @@ export default function DeliveryListPage() {
             </button>
           </div>
         </div>
-      </div>
-
-      {/* Driver filter pills */}
-      <div className="px-4 pt-3 flex gap-2 overflow-x-auto">
-        <button
-          onClick={() => setDriverFilter('')}
-          className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-            !driverFilter ? 'bg-brand-600 text-white' : 'bg-ios-fill2 text-ios-secondary active:bg-ios-separator'
-          }`}
-        >
-          {t.allDrivers}
-        </button>
-        {DRIVERS.map(name => (
-          <button
-            key={name}
-            onClick={() => setDriverFilter(name)}
-            className={`shrink-0 px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-              driverFilter === name ? 'bg-brand-600 text-white' : 'bg-ios-fill2 text-ios-secondary active:bg-ios-separator'
-            }`}
-          >
-            {name}
-          </button>
-        ))}
       </div>
 
       <div className="px-4 pt-4 space-y-5">
