@@ -1,0 +1,13 @@
+{
+  "name": "Blossom — Флорист",
+  "short_name": "Blossom",
+  "description": "Flower studio order management for florists",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#e6033a",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
