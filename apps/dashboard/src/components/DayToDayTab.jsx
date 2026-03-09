@@ -9,6 +9,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import SummaryCard from './SummaryCard.jsx';
 import KanbanBoard from './KanbanBoard.jsx';
+import { DashboardSkeleton } from './Skeleton.jsx';
 
 // "2026-03-08" → "Mar 8"
 function fmtDate(iso) {
@@ -76,13 +77,7 @@ export default function DayToDayTab({ onNavigate }) {
     };
   }, [fetchData]);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <DashboardSkeleton />;
 
   if (!data) return null;
 

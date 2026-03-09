@@ -330,6 +330,12 @@ const en = {
   healthyRange:       'Healthy: 6–12×',
   repeatRate:         'Repeat rate',
   repeatRateBench:    'Industry: 30%+',
+  // Tooltips for KPIs
+  tipFlowerMargin:    'Revenue minus flower cost, as % of revenue. Target: 55%+',
+  tipAOV:             'Average revenue per order (paid orders only)',
+  tipInventoryTurn:   'How many times stock cycles per year. Healthy: 6-12×',
+  tipWastePercent:    'Dead/unsold stems as % of total purchased',
+  tipPrepTime:        'Time between Accepted and Ready status',
   productMargin:      'Margin',
 
   // Customers tab — RFM & enrichments
@@ -682,6 +688,12 @@ const ru = {
   healthyRange:       'Норма: 6–12×',
   repeatRate:         'Повторные заказы',
   repeatRateBench:    'Отрасль: 30%+',
+  // Tooltips
+  tipFlowerMargin:    'Выручка минус стоимость цветов, в % от выручки. Цель: 55%+',
+  tipAOV:             'Средняя выручка за заказ (только оплаченные)',
+  tipInventoryTurn:   'Сколько раз склад обновляется в год. Норма: 6-12×',
+  tipWastePercent:    'Увядшие/непроданные стебли как % от купленных',
+  tipPrepTime:        'Время между статусами Принято и Готово',
   productMargin:      'Маржа',
 
   // Customers tab — RFM & enrichments

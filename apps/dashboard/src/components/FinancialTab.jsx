@@ -10,6 +10,7 @@ import {
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
+import { DashboardSkeleton } from './Skeleton.jsx';
 
 // ── Date range presets ──
 function getPresetRange(preset) {
@@ -91,13 +92,7 @@ export default function FinancialTab({ onNavigate }) {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-      </div>
-    );
-  }
+  if (loading) return <DashboardSkeleton />;
 
   if (!data) return null;
 
@@ -191,11 +186,11 @@ export default function FinancialTab({ onNavigate }) {
                sub={costs.totalFlowerCost > 0 ? `Markup: ${markupAchieved}×` : null}
                color={markupOnTrack ? 'text-emerald-600' : costs.totalFlowerCost > 0 ? 'text-amber-600' : 'text-ios-label'}
                onClick={() => nav('stock')} />
-          <KPI label={t.flowerMargin}
+          <KPI label={t.flowerMargin} tip={t.tipFlowerMargin}
                value={`${costs.flowerMarginPercent.toFixed(1)}%`}
                sub={costs.totalFlowerCost > 0 ? `Target: ≥55%` : 'No cost data'}
                color={costs.flowerMarginPercent >= 55 ? 'text-emerald-600' : costs.flowerMarginPercent >= 40 ? 'text-amber-600' : 'text-rose-600'} />
-          <KPI label={t.avgOrderValue} value={`${revenue.avgOrderValue.toFixed(0)} ${t.zl}`} />
+          <KPI label={t.avgOrderValue} value={`${revenue.avgOrderValue.toFixed(0)} ${t.zl}`} tip={t.tipAOV} />
         </div>
 
         {/* Margin trend — only useful with multi-month data */}
@@ -367,7 +362,7 @@ export default function FinancialTab({ onNavigate }) {
       {data.prepTime && (
         <Section title={t.prepTime} sectionKey="preptime" collapsed={collapsed} onToggle={toggle}>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            <KPI label={t.avgPrepTime} value={`${data.prepTime.avgMinutes} ${t.minutes}`}
+            <KPI label={t.avgPrepTime} value={`${data.prepTime.avgMinutes} ${t.minutes}`} tip={t.tipPrepTime}
                  color={data.prepTime.avgMinutes <= 60 ? 'text-emerald-600' : data.prepTime.avgMinutes <= 120 ? 'text-amber-600' : 'text-rose-600'} />
             <KPI label={t.medianPrepTime} value={`${data.prepTime.medianMinutes} ${t.minutes}`} />
             <KPI label={t.fastestPrep} value={`${data.prepTime.minMinutes} ${t.minutes}`} />
@@ -427,12 +422,12 @@ export default function FinancialTab({ onNavigate }) {
             <KPI label={t.deadStems} value={waste.totalDeadStems}
                  onClick={() => nav('stock')} />
             <KPI label={t.unrealisedRevenue} value={`${waste.unrealisedRevenuePLN.toFixed(0)} ${t.zl}`} color="text-rose-600" />
-            <KPI label={t.wastePercent}
+            <KPI label={t.wastePercent} tip={t.tipWastePercent}
                  value={`${waste.wastePercent.toFixed(1)}%`}
                  sub={waste.wastePercent <= 10 ? 'Healthy' : waste.wastePercent <= 20 ? 'Monitor' : 'High'}
                  color={waste.wastePercent <= 10 ? 'text-emerald-600' : waste.wastePercent <= 20 ? 'text-amber-600' : 'text-rose-600'} />
             {data.inventoryTurnover && (
-              <KPI
+              <KPI tip={t.tipInventoryTurn}
                 label={t.inventoryTurnover}
                 value={`${data.inventoryTurnover.turnsPerYear}×`}
                 sub={t.healthyRange}
@@ -654,11 +649,11 @@ function Section({ title, sectionKey, collapsed, onToggle, children }) {
   );
 }
 
-// ── KPI metric card with optional sub-label ──
-function KPI({ label, value, sub, color, onClick }) {
+// ── KPI metric card with optional sub-label + tooltip ──
+function KPI({ label, value, sub, color, onClick, tip }) {
   return (
-    <div onClick={onClick}
-      className={`bg-gray-50 rounded-xl px-3 py-2.5 text-center transition-all ${
+    <div onClick={onClick} title={tip || ''}
+      className={`bg-gray-50 rounded-xl px-3 py-2.5 text-center transition-all group relative ${
         onClick ? 'cursor-pointer hover:bg-gray-100 hover:shadow-sm active:scale-[0.98]' : ''
       }`}>
       <p className={`text-xl font-bold ${color || 'text-ios-label'}`}>{value}</p>
