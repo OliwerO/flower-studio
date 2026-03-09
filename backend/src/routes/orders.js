@@ -253,13 +253,14 @@ router.post('/', async (req, res, next) => {
 // without value added. Orders flow: New → Ready → Delivered/Picked Up.
 // "In Progress" kept as legacy exit only (for orders already in that state).
 const ALLOWED_TRANSITIONS = {
-  'New':         ['Accepted', 'Ready', 'Cancelled'],
-  'Accepted':    ['Ready', 'Cancelled'],
-  'In Progress': ['Ready', 'Cancelled'],   // legacy — still allow exit
-  'Ready':       ['Delivered', 'Picked Up', 'Cancelled'],
-  'Delivered':   [],          // terminal — no changes
-  'Picked Up':   [],          // terminal — no changes
-  'Cancelled':   ['New'],     // allow un-cancel (reopen) back to New
+  'New':              ['Accepted', 'Ready', 'Cancelled'],
+  'Accepted':         ['Ready', 'Cancelled'],
+  'In Progress':      ['Ready', 'Cancelled'],          // legacy — still allow exit
+  'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
+  'Out for Delivery': ['Delivered', 'Cancelled'],       // driver is en route
+  'Delivered':        [],          // terminal — no changes
+  'Picked Up':        [],          // terminal — no changes
+  'Cancelled':        ['New'],     // allow un-cancel (reopen) back to New
 };
 
 // PATCH /api/orders/:id — update status, prices, assignment, etc.

@@ -9,23 +9,25 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 
 const STATUS_STYLES = {
-  'New':          { label: 'bg-indigo-50 text-indigo-600' },
-  'In Progress':  { label: 'bg-orange-50 text-orange-600' },
-  'Ready':        { label: 'bg-amber-50 text-amber-700' },
-  'Delivered':    { label: 'bg-emerald-50 text-emerald-700' },
-  'Picked Up':    { label: 'bg-teal-50 text-teal-700' },
-  'Cancelled':    { label: 'bg-rose-50 text-rose-600' },
+  'New':              { label: 'bg-indigo-50 text-indigo-600' },
+  'In Progress':      { label: 'bg-orange-50 text-orange-600' },
+  'Ready':            { label: 'bg-amber-50 text-amber-700' },
+  'Out for Delivery': { label: 'bg-sky-50 text-sky-700' },
+  'Delivered':        { label: 'bg-emerald-50 text-emerald-700' },
+  'Picked Up':        { label: 'bg-teal-50 text-teal-700' },
+  'Cancelled':        { label: 'bg-rose-50 text-rose-600' },
 };
 
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
 
 const ALLOWED_TRANSITIONS = {
-  'New':         ['Ready', 'Cancelled'],
-  'In Progress': ['Ready', 'Cancelled'],
-  'Ready':       ['Delivered', 'Picked Up', 'Cancelled'],
-  'Delivered':   [],
-  'Picked Up':   [],
-  'Cancelled':   ['New'],
+  'New':              ['Ready', 'Cancelled'],
+  'In Progress':      ['Ready', 'Cancelled'],
+  'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
+  'Out for Delivery': ['Delivered', 'Cancelled'],
+  'Delivered':        [],
+  'Picked Up':        [],
+  'Cancelled':        ['New'],
 };
 
 function Pills({ options, value, onChange, disabled }) {

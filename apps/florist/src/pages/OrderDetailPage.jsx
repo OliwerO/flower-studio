@@ -9,14 +9,15 @@ import { useToast } from '../context/ToastContext.jsx';
 
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
 
-// Simplified flow: New → Ready → Delivered/Picked Up.
+// Order flow: New → Ready → Out for Delivery → Delivered (or Picked Up for pickup orders).
 const ALLOWED_TRANSITIONS = {
-  'New':         ['Ready', 'Cancelled'],
-  'In Progress': ['Ready', 'Cancelled'],
-  'Ready':       ['Delivered', 'Picked Up', 'Cancelled'],
-  'Delivered':   [],
-  'Picked Up':   [],
-  'Cancelled':   ['New'],
+  'New':              ['Ready', 'Cancelled'],
+  'In Progress':      ['Ready', 'Cancelled'],
+  'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
+  'Out for Delivery': ['Delivered', 'Cancelled'],
+  'Delivered':        [],
+  'Picked Up':        [],
+  'Cancelled':        ['New'],
 };
 
 function Pills({ options, value, onChange, disabled }) {

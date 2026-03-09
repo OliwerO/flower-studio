@@ -13,7 +13,9 @@ router.get('/', async (req, res, next) => {
     const { date, status, driver } = req.query;
     const filters = [];
 
-    if (date)   filters.push(`DATESTR({Delivery Date}) = '${sanitizeFormulaValue(date)}'`);
+    // Show deliveries for the requested date OR deliveries with no date set
+    // (no-date deliveries would be invisible otherwise — like lost packages without a label)
+    if (date)   filters.push(`OR(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(date)}', {Delivery Date} = BLANK())`);
     if (status) filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
     if (driver) filters.push(`{Assigned Driver} = '${sanitizeFormulaValue(driver)}'`);
 
@@ -82,15 +84,18 @@ router.patch('/:id', async (req, res, next) => {
       }
     }
 
-    // When marking delivered, also stamp the timestamp and update the linked order
-    if (fields.Status === 'Delivered') {
-      fields['Delivered At'] = new Date().toISOString();
+    // Cascade delivery status changes to the linked order.
+    // Like updating the master production board when the shipping dept changes status.
+    if (fields.Status === 'Out for Delivery' || fields.Status === 'Delivered') {
+      if (fields.Status === 'Delivered') {
+        fields['Delivered At'] = new Date().toISOString();
+      }
 
-      // Update the linked order status too
+      // Update the linked order status to match
       const delivery = await db.getById(TABLES.DELIVERIES, req.params.id);
       if (delivery['Linked Order']?.length) {
         await db.update(TABLES.ORDERS, delivery['Linked Order'][0], {
-          Status: 'Delivered',
+          Status: fields.Status,
         });
       }
     }
