@@ -8,6 +8,26 @@ import t from '../translations.js';
 
 const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 
+// Priority order: actionable statuses first, completed/cancelled last
+const STATUS_PRIORITY = {
+  'New': 0,
+  'Accepted': 1,
+  'In Preparation': 2,
+  'Ready': 3,
+  'Out for Delivery': 4,
+  'Delivered': 5,
+  'Picked Up': 6,
+  'Cancelled': 7,
+};
+
+function sortByStatus(orders) {
+  return [...orders].sort((a, b) => {
+    const pa = STATUS_PRIORITY[a.status] ?? 99;
+    const pb = STATUS_PRIORITY[b.status] ?? 99;
+    return pa - pb;
+  });
+}
+
 function todayISO() {
   return new Date().toISOString().split('T')[0];
 }
@@ -103,7 +123,7 @@ export default function OrderListPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-2.5 mt-1">
-            {orders.map(order => (
+            {sortByStatus(orders).map(order => (
               <OrderCard
                 key={order.id}
                 order={order}
