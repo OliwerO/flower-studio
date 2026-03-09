@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { broadcast } from '../services/notifications.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -226,6 +227,15 @@ router.post('/', async (req, res, next) => {
 
     }
 
+    // Broadcast new order to all connected SSE clients (florist + delivery + dashboard)
+    broadcast({
+      type: 'new_order',
+      orderId: order.id,
+      customerName: '', // caller already knows — this is for other open tabs/apps
+      source: source || 'In-store',
+      request: customerRequest || '',
+    });
+
     res.status(201).json({
       order,
       orderLines: createdLines,
@@ -276,6 +286,16 @@ router.patch('/:id', async (req, res, next) => {
       ...otherFields,
       ...(newStatus ? { Status: newStatus } : {}),
     });
+
+    // Broadcast status changes that other apps care about
+    if (newStatus === 'Ready') {
+      broadcast({
+        type: 'order_ready',
+        orderId: order.id,
+        customerRequest: order['Customer Request'] || '',
+      });
+    }
+
     res.json(order);
   } catch (err) {
     next(err);
