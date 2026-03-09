@@ -4,7 +4,7 @@ Open your existing base "CRM Blossom (NEW)" for all steps below.
 
 ---
 
-## Step 1 — Import the 5 new tables
+## Step 1 — Import the 5 core tables
 
 For each CSV file, in Airtable:
 **+ Add or import → Import a CSV file → upload the file → name the table exactly as shown below**
@@ -143,7 +143,71 @@ These cannot be imported from CSV. Add them field by field in each table.
 
 ---
 
-## Step 5 — Copy table IDs into .env
+## Step 5 — Import the 3 audit-improvement tables (Phase 2+)
+
+Same process as Step 1: import each CSV, name the table exactly.
+
+| File | Table name (exact) |
+|------|--------------------|
+| 06_webhook-log.csv | Webhook Log |
+| 07_marketing-spend.csv | Marketing Spend |
+| 08_stock-loss-log.csv | Stock Loss Log |
+
+After importing, delete the demo rows (they exist to seed single-select options).
+
+### Webhook Log — fix field types:
+| Field | Change to |
+|-------|-----------|
+| Timestamp | Date — enable "Include time" |
+| Status | Single Select (should auto-detect: Success, Failed, Duplicate) |
+
+Then add manually:
+| Field | Type | Configuration |
+|-------|------|---------------|
+| App Order | Link to another record | → App Orders table |
+
+### Marketing Spend — fix field types:
+| Field | Change to |
+|-------|-----------|
+| Month | Date |
+| Channel | Single Select (should auto-detect: Instagram, WhatsApp, Telegram, Wix, Flowwow, In-store, Other) |
+| Amount | Currency (PLN) |
+
+### Stock Loss Log — fix field types:
+| Field | Change to |
+|-------|-----------|
+| Date | Date |
+| Quantity | Number (integer) |
+| Reason | Single Select (should auto-detect: Wilted, Damaged, Overstock, Other) |
+
+Then add manually:
+| Field | Type | Configuration |
+|-------|------|---------------|
+| Stock Item | Link to another record | → Stock table |
+| Loss Value | Formula | `{Quantity} * LOOKUP({Stock Item}, 'Current Cost Price')` — or simpler: add a "Cost Per Unit" number field and use `{Quantity} * {Cost Per Unit}` |
+
+---
+
+## Step 6 — Add new fields to existing App Orders table
+
+These support prep time tracking:
+
+| Field | Type |
+|-------|------|
+| Prep Started At | Date — enable "Include time" |
+| Prep Ready At | Date — enable "Include time" |
+
+---
+
+## Step 7 — Add new field to existing Deliveries table
+
+| Field | Type |
+|-------|------|
+| Delivery Result | Single Select → options: Success, Not Home, Wrong Address, Refused, Incomplete |
+
+---
+
+## Step 8 — Copy ALL table IDs into .env
 
 In Airtable, right-click each table name → **API documentation**.
 The URL will contain the table ID: `https://airtable.com/appXXXXX/tblXXXXX/...`
@@ -161,11 +225,16 @@ AIRTABLE_STOCK_TABLE=tblXXXXX         ← Stock
 AIRTABLE_DELIVERIES_TABLE=tblXXXXX    ← Deliveries
 AIRTABLE_STOCK_PURCHASES_TABLE=tblXXXXX ← Stock Purchases
 AIRTABLE_LEGACY_ORDERS_TABLE=tblXXXXX ← Orders (LEGACY) — read-only
+
+# New tables (audit improvements)
+AIRTABLE_WEBHOOK_LOG_TABLE=tblXXXXX   ← Webhook Log
+AIRTABLE_MARKETING_SPEND_TABLE=tblXXXXX ← Marketing Spend
+AIRTABLE_STOCK_LOSS_LOG_TABLE=tblXXXXX ← Stock Loss Log
 ```
 
 ---
 
-## Step 6 — Verify
+## Step 9 — Verify
 
 Start the backend and run:
 ```bash

@@ -1,0 +1,4 @@
+Timestamp,Wix Order ID,Status,Payload,Error Message
+2026-03-01 09:15:00,wix-001,Success,"{""orderId"":""wix-001"",""customer"":{""name"":""Anna"",""email"":""anna@test.com""},""lineItems"":[{""name"":""Pink roses"",""qty"":5}]}",
+2026-03-01 10:30:00,wix-002,Failed,"{""orderId"":""wix-002"",""customer"":{""name"":""Boris""},""lineItems"":[]}",Customer matching failed: no phone or email provided
+2026-03-01 11:00:00,wix-001,Duplicate,"{""orderId"":""wix-001""}",Wix Order ID wix-001 already exists in App Orders
