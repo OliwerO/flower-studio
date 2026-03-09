@@ -215,9 +215,9 @@ function MarketingSpendSection({ sources }) {
             <tbody>
               {entries.map(e => (
                 <tr key={e.id} className="border-b border-gray-50">
-                  <td className="py-1">{e.fields?.Month?.slice(0, 7)}</td>
-                  <td className="py-1">{e.fields?.Channel}</td>
-                  <td className="py-1 text-right">{e.fields?.Amount?.toFixed(0)} zł</td>
+                  <td className="py-1">{e.Month?.slice(0, 7)}</td>
+                  <td className="py-1">{e.Channel}</td>
+                  <td className="py-1 text-right">{e.Amount?.toFixed(0)} zł</td>
                 </tr>
               ))}
             </tbody>
@@ -282,7 +282,7 @@ function StockLossSection() {
         >
           <option value="">{t.stockName}...</option>
           {stock.map(s => (
-            <option key={s.id} value={s.id}>{s.fields?.['Display Name'] || s.fields?.['Purchase Name']}</option>
+            <option key={s.id} value={s.id}>{s['Display Name'] || s['Purchase Name']}</option>
           ))}
         </select>
         <input
@@ -329,10 +329,10 @@ function StockLossSection() {
             <tbody>
               {entries.slice(0, 20).map(e => (
                 <tr key={e.id} className="border-b border-gray-50">
-                  <td className="py-1">{e.fields?.Date}</td>
-                  <td className="py-1">{e.fields?.['Stock Item Name'] || '—'}</td>
-                  <td className="py-1 text-right">{e.fields?.Quantity}</td>
-                  <td className="py-1">{reasonLabels[e.fields?.Reason] || e.fields?.Reason}</td>
+                  <td className="py-1">{e.Date}</td>
+                  <td className="py-1">{e['Stock Item Name'] || '—'}</td>
+                  <td className="py-1 text-right">{e.Quantity}</td>
+                  <td className="py-1">{reasonLabels[e.Reason] || e.Reason}</td>
                 </tr>
               ))}
             </tbody>
@@ -347,12 +347,16 @@ function StockLossSection() {
 // ── Main SettingsTab ──
 export default function SettingsTab() {
   const [config, setConfig] = useState(null);
+  const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState('');
 
   useEffect(() => {
     client.get('/settings')
-      .then(r => setConfig(r.data.config))
+      .then(r => {
+        setConfig(r.data.config);
+        setDrivers(r.data.drivers || []);
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -411,6 +415,24 @@ export default function SettingsTab() {
           type="number"
           hint={t.settingsDriverCostHint}
           onSave={v => updateConfig({ driverCostPerDelivery: v })}
+        />
+      </Section>
+
+      {/* Drivers */}
+      <Section title={t.settingsDrivers}>
+        <p className="text-xs text-gray-400 mb-2">{t.settingsDriversHint}</p>
+        <div className="flex flex-wrap gap-1.5 mb-2">
+          {drivers.map(name => (
+            <span key={name} className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2.5 py-1 rounded-full">
+              {name}
+            </span>
+          ))}
+        </div>
+        <ListEditor
+          label={t.settingsExtraDrivers}
+          items={config.extraDrivers || []}
+          hint={t.settingsExtraDriversHint}
+          onSave={v => updateConfig({ extraDrivers: v })}
         />
       </Section>
 

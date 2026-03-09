@@ -19,6 +19,7 @@ const config = {
   paymentMethods:     ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
   orderSources:       ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
   driverCostPerDelivery: 0, // TBD — per-delivery flat rate for driver cost
+  extraDrivers: [], // drivers without app PINs (assignment-only, e.g. backup drivers)
 };
 
 // ── Daily settings (auto-reset at midnight) ─────────────────
@@ -45,11 +46,16 @@ function autoClearIfNewDay() {
 }
 
 // ── GET /api/settings — read all settings + config (any authenticated role) ──
+// Merges PIN-based drivers (from env vars) with extra drivers (from config).
+// Like a staffing roster: some employees have badge access (PINs), others are temps
+// who can be assigned work but don't have building access.
 router.get('/', authorize('orders'), (req, res) => {
   autoClearIfNewDay();
+  const allDrivers = [...new Set([...driverNames, ...config.extraDrivers])];
   res.json({
     driverOfDay: daily.driverOfDay,
-    drivers:     driverNames,
+    drivers:     allDrivers,
+    pinDrivers:  driverNames, // drivers with app access (have PINs)
     config,
   });
 });
