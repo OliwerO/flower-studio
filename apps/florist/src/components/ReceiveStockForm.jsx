@@ -67,6 +67,8 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
           category:    newCategory,
           quantity:    0,
           costPrice:   Number(price) || 0,
+          sellPrice:   Number(sellPrice) || 0,
+          supplier:    supplierValue || undefined,
         });
         itemId = res.data.id;
       }

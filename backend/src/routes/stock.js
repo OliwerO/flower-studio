@@ -84,20 +84,25 @@ router.get('/velocity', async (req, res, next) => {
 });
 
 // POST /api/stock — create a new stock item (florist quick-add during spontaneous delivery)
-// Body: { displayName, category, quantity, costPrice }
+// Body: { displayName, category, quantity, costPrice, sellPrice?, supplier?, unit? }
 router.post('/', async (req, res, next) => {
   try {
-    const { displayName, category, quantity, costPrice } = req.body;
+    const { displayName, category, quantity, costPrice, sellPrice, supplier, unit } = req.body;
     if (!displayName) return res.status(400).json({ error: 'displayName is required' });
 
-    const item = await db.create(TABLES.STOCK, {
+    const fields = {
       'Display Name':       displayName,
       'Purchase Name':      displayName,
       Category:             category || 'Other',
       'Current Quantity':   Number(quantity) || 0,
       'Current Cost Price': Number(costPrice) || 0,
       Active:               true,
-    });
+    };
+    if (sellPrice)  fields['Current Sell Price'] = Number(sellPrice);
+    if (supplier)   fields['Supplier'] = supplier;
+    if (unit)       fields['Unit'] = unit;
+
+    const item = await db.create(TABLES.STOCK, fields);
     res.status(201).json(item);
   } catch (err) {
     next(err);

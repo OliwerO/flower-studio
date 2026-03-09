@@ -142,6 +142,8 @@ router.get('/:id', async (req, res, next) => {
     ]);
 
     order['Customer Name'] = customer?.Name || customer?.Nickname || '';
+    order['Customer Phone'] = customer?.Phone || '';
+    order['Customer Nickname'] = customer?.Nickname || '';
     order.orderLines = orderLines;
     if (delivery) order.delivery = delivery;
 
