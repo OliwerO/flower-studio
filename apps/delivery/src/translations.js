@@ -74,6 +74,9 @@ const en = {
   newOrderAlert:   'New order received',
   orderReadyAlert: 'Order ready for delivery',
 
+  // Confirmations
+  confirmDelivered: 'Mark this delivery as completed?',
+
   // General
   loading:       'Loading...',
   error:         'Something went wrong',
@@ -152,6 +155,9 @@ const ru = {
   // Notifications
   newOrderAlert:   'Новый заказ получен',
   orderReadyAlert: 'Заказ готов к доставке',
+
+  // Confirmations
+  confirmDelivered: 'Отметить доставку как выполненную?',
 
   // General
   loading:       'Загрузка...',

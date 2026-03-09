@@ -62,7 +62,13 @@ export default function FinancialTab({ onNavigate }) {
   const [customTo, setCustomTo]   = useState('');
   const [data, setData]           = useState(null);
   const [loading, setLoading]     = useState(true);
-  const [collapsed, setCollapsed] = useState({});
+  // Default most sections collapsed — only Revenue & Costs expand on load.
+  // Prevents information overload (40+ KPIs visible at once).
+  const [collapsed, setCollapsed] = useState({
+    delivery: true, customers: true, products: true,
+    pairings: true, prepTime: true, suppliers: true, stockLoss: true,
+    sourceEfficiency: true, payment: true, completion: true,
+  });
   const { showToast } = useToast();
 
   const toggle = (key) => setCollapsed(prev => ({ ...prev, [key]: !prev[key] }));

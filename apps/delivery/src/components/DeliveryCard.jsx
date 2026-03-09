@@ -134,7 +134,10 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
             {isOut && (
               <div className="flex gap-2">
                 <button
-                  onClick={e => { e.stopPropagation(); handleStatusChange('Delivered'); }}
+                  onClick={e => {
+                    e.stopPropagation();
+                    if (window.confirm(t.confirmDelivered)) handleStatusChange('Delivered');
+                  }}
                   className="flex-1 h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold
                              flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
                 >

@@ -41,6 +41,16 @@ export default function NewOrderPage() {
       });
   }, []);
 
+  // Protect against accidental navigation (browser back/refresh) when form has data.
+  // Like a "save your work?" prompt when closing an unsaved document.
+  useEffect(() => {
+    const hasData = form.customerId || form.orderLines.length > 0 || form.customerRequest;
+    if (!hasData) return;
+    const handler = (e) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [form.customerId, form.orderLines.length, form.customerRequest]);
+
   // Apply import draft if navigated from TextImportModal
   useEffect(() => {
     const draft = location.state?.importDraft;

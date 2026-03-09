@@ -51,7 +51,7 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove }) {
           {confidence === 'none' && <span className="text-red-400 text-xs" title={t.intake?.confidenceNone}>✗</span>}
         </div>
         <div className="text-xs text-ios-tertiary">
-          {sellPrice.toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
+          {sellPrice.toFixed(0)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
@@ -250,7 +250,7 @@ export default function Step2Bouquet({
                       {s['Display Name']}
                     </div>
                     <div className="text-xs text-ios-tertiary">
-                      {Number(s['Current Sell Price']).toFixed(1)} zł sell · {Number(s['Current Cost Price']).toFixed(1)} zł cost · {qty} pcs
+                      {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && <span className="text-ios-red"> · out</span>}
                     </div>
@@ -293,12 +293,12 @@ export default function Step2Bouquet({
           >
             <div className="flex items-center justify-between">
               <span className="text-sm text-ios-label font-semibold">{t.sellTotal}</span>
-              <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(1)} zł</span>
+              <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(0)} zł</span>
             </div>
             {showCost && (
               <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                 <span className="text-xs text-ios-tertiary">{t.costTotal}: (Margin: {margin}%)</span>
-                <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(1)} zł</span>
+                <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(0)} zł</span>
               </div>
             )}
           </button>

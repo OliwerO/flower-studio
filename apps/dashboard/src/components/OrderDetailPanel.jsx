@@ -261,19 +261,19 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
             {t.delivery}
           </p>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-x-6 gap-y-3 bg-white rounded-xl border border-gray-100 px-4 py-3">
-            <EditableRow label="Recipient" value={o.delivery['Recipient Name']}
+            <EditableRow label={t.recipientName} value={o.delivery['Recipient Name']}
               onSave={v => patchDelivery({ 'Recipient Name': v })} disabled={saving} />
-            <EditableRow label="Phone" value={o.delivery['Recipient Phone']}
+            <EditableRow label={t.phone} value={o.delivery['Recipient Phone']}
               onSave={v => patchDelivery({ 'Recipient Phone': v })} disabled={saving} />
-            <EditableRow label="Address" value={o.delivery['Delivery Address']}
+            <EditableRow label={t.deliveryAddress} value={o.delivery['Delivery Address']}
               onSave={v => patchDelivery({ 'Delivery Address': v })} disabled={saving} multiline />
-            <EditableRow label="Date" value={o.delivery['Delivery Date'] || ''}
+            <EditableRow label={t.deliveryDate} value={o.delivery['Delivery Date'] || ''}
               onSave={v => patchDelivery({ 'Delivery Date': v || null })} disabled={saving} type="date" />
-            <EditableRow label="Time" value={o.delivery['Delivery Time']}
+            <EditableRow label={t.deliveryTime} value={o.delivery['Delivery Time']}
               onSave={v => patchDelivery({ 'Delivery Time': v })} disabled={saving} />
-            <EditableRow label="Card" value={o.delivery['Greeting Card Text']}
+            <EditableRow label={t.cardText} value={o.delivery['Greeting Card Text']}
               onSave={v => patchDelivery({ 'Greeting Card Text': v })} disabled={saving} multiline />
-            <EditableRow label="Fee" value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}
+            <EditableRow label={t.deliveryFee} value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}
               onSave={v => patchDelivery({ 'Delivery Fee': v ? Number(v) : null })} disabled={saving} type="number"
               suffix={t.zl} />
           </div>

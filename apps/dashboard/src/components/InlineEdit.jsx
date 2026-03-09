@@ -19,9 +19,10 @@ export default function InlineEdit({ value, onSave, type = 'text', placeholder, 
     return (
       <span
         onClick={() => !disabled && setEditing(true)}
-        className={`text-sm cursor-pointer hover:bg-white/40 rounded px-1 -mx-1 transition-colors ${
+        className={`text-sm cursor-pointer rounded px-1 -mx-1 transition-colors
+          border-b border-dashed border-transparent hover:border-brand-300 hover:bg-brand-50/30 ${
           value ? 'text-ios-label' : 'text-ios-tertiary'
-        } ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
+        } ${disabled ? 'cursor-not-allowed opacity-50 hover:border-transparent hover:bg-transparent' : ''}`}
       >
         {value || placeholder || '—'}
       </span>

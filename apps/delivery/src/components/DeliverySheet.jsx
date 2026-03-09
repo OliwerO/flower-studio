@@ -228,7 +228,7 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
               {isOut && (
                 <div className="flex gap-2">
                   <button
-                    onClick={() => onStatusChange('Delivered')}
+                    onClick={() => { if (window.confirm(t.confirmDelivered)) onStatusChange('Delivered'); }}
                     className="flex-1 h-12 rounded-2xl bg-ios-green text-white text-base font-semibold
                                flex items-center justify-center gap-2 active:opacity-80 active-scale shadow-md"
                   >
