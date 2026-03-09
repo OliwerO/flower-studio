@@ -31,7 +31,9 @@ export function useNotifications(onNewOrder) {
   onNewOrderRef.current = onNewOrder;
 
   useEffect(() => {
-    const source = new EventSource('/api/events');
+    // Connect directly to Railway backend for SSE (Vercel proxy buffers streams)
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+    const source = new EventSource(`${backendUrl}/api/events`);
 
     source.onmessage = (event) => {
       try {
