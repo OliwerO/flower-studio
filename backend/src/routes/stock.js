@@ -7,6 +7,20 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 const router = Router();
 router.use(authorize('stock'));
 
+const STOCK_PATCH_ALLOWED = [
+  'Display Name', 'Purchase Name', 'Category', 'Current Quantity', 'Unit',
+  'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
+  'Active', 'Supplier Notes', 'Dead/Unsold Stems',
+];
+
+function pickAllowed(body, allowedFields) {
+  const filtered = {};
+  for (const key of allowedFields) {
+    if (key in body) filtered[key] = body[key];
+  }
+  return filtered;
+}
+
 // GET /api/stock?category=Roses&activeOnly=true
 router.get('/', async (req, res, next) => {
   try {
@@ -112,7 +126,8 @@ router.post('/', async (req, res, next) => {
 // PATCH /api/stock/:id — update prices, threshold, etc.
 router.patch('/:id', async (req, res, next) => {
   try {
-    const item = await db.update(TABLES.STOCK, req.params.id, req.body);
+    const safeFields = pickAllowed(req.body, STOCK_PATCH_ALLOWED);
+    const item = await db.update(TABLES.STOCK, req.params.id, safeFields);
     res.json(item);
   } catch (err) {
     next(err);
@@ -130,7 +145,14 @@ router.post('/:id/adjust', async (req, res, next) => {
     }
 
     const item = await db.getById(TABLES.STOCK, req.params.id);
-    const newQty = (item['Current Quantity'] || 0) + delta;
+    const currentQty = item['Current Quantity'] || 0;
+    const newQty = currentQty + delta;
+
+    if (newQty < 0) {
+      return res.status(400).json({
+        error: `Cannot go below 0. Current: ${currentQty}, requested delta: ${delta}.`,
+      });
+    }
 
     const updated = await db.update(TABLES.STOCK, req.params.id, {
       'Current Quantity': newQty,

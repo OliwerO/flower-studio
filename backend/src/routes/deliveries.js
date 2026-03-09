@@ -7,6 +7,20 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 const router = Router();
 router.use(authorize('deliveries'));
 
+const DELIVERIES_PATCH_ALLOWED = [
+  'Delivery Address', 'Recipient Name', 'Recipient Phone',
+  'Delivery Date', 'Delivery Time', 'Assigned Driver', 'Status',
+  'Driver Payment Status', 'Driver Notes', 'Delivered At', 'Delivery Fee',
+];
+
+function pickAllowed(body, allowedFields) {
+  const filtered = {};
+  for (const key of allowedFields) {
+    if (key in body) filtered[key] = body[key];
+  }
+  return filtered;
+}
+
 // GET /api/deliveries?date=2025-01-15&status=Pending&driver=Timur
 router.get('/', async (req, res, next) => {
   try {
@@ -74,7 +88,7 @@ router.get('/', async (req, res, next) => {
 // PATCH /api/deliveries/:id — mark delivered, assign driver, add note, etc.
 router.patch('/:id', async (req, res, next) => {
   try {
-    const fields = { ...req.body };
+    const fields = pickAllowed(req.body, DELIVERIES_PATCH_ALLOWED);
 
     // When a driver changes status, stamp their name on the delivery.
     // Like signing a work order — whoever completes it gets credited.

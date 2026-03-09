@@ -145,6 +145,10 @@ const t = {
   editStock:        'Edit stock',
   doneEditing:      'Done',
 
+  // Validation
+  stockLoadError:        'Failed to load stock data.',
+  deliveryAddressRequired: 'Delivery address is required.',
+
   // Toast
   success:          'Done!',
   error:            'Error',

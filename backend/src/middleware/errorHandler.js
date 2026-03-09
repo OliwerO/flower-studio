@@ -12,11 +12,11 @@ export function errorHandler(err, req, res, next) {
   // In production, hide internal error details (Airtable errors may leak
   // table names, field names, or API key fragments). In dev, show everything.
   const message = isProduction
-    ? 'Internal server error'
+    ? (status === 404 ? 'Not found' : 'Internal server error')
     : (err.message || 'Internal server error');
 
   res.status(status).json({
     error: message,
-    ...(!isProduction && { stack: err.stack }),
+    ...(!isProduction && { details: err.message, stack: err.stack }),
   });
 }

@@ -8,6 +8,27 @@ import { broadcast } from '../services/notifications.js';
 const router = Router();
 router.use(authorize('orders'));
 
+// --- Helpers ---
+
+// Filters an object to only include keys present in the allowedFields array.
+// Like an incoming goods inspection gate — only approved parts get through.
+function pickAllowed(body, allowedFields) {
+  const filtered = {};
+  for (const key of allowedFields) {
+    if (key in body) filtered[key] = body[key];
+  }
+  return filtered;
+}
+
+const VALID_SOURCES = ['Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'In-store', 'Other'];
+const VALID_PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
+
+const ORDERS_PATCH_ALLOWED = [
+  'Status', 'Payment Status', 'Payment Method', 'Price Override',
+  'Notes Original', 'Greeting Card Text', 'Customer Request',
+  'Delivery Type', 'Required By', 'Source', 'Delivery Fee',
+];
+
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
 router.get('/', async (req, res, next) => {
   try {
@@ -182,78 +203,156 @@ router.post('/', async (req, res, next) => {
       requiredBy,
     } = req.body;
 
-    // 1. Create the parent order record
-    const order = await db.create(TABLES.ORDERS, {
-      Customer:         [customer],
-      'Customer Request': customerRequest,
-      Source:           source,
-      'Delivery Type':  deliveryType,
-      'Order Date':     new Date().toISOString().split('T')[0],
-      'Required By':    requiredBy || null,
-      'Notes Original':     notes || '',
-      'Greeting Card Text': delivery?.cardText || '',
-      'Payment Status':     paymentStatus || 'Unpaid',
-      'Payment Method':     paymentMethod || null,
-      'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? 35) : 0,
-      'Price Override':     priceOverride || null,
-      Status:               'New',
-      'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
-    });
-
-    // 2. Create order line records (one per flower) — prices are snapshotted here
-    const createdLines = [];
-    for (const line of orderLines) {
-      const created = await db.create(TABLES.ORDER_LINES, {
-        Order:                  [order.id],
-        ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
-        'Flower Name':          line.flowerName,
-        Quantity:               line.quantity,
-        'Cost Price Per Unit':  line.costPricePerUnit || 0,
-        'Sell Price Per Unit':  line.sellPricePerUnit || 0,
-      });
-      createdLines.push(created);
-
-      // 3. Decrement stock quantity for each flower used
-      if (line.stockItemId) {
-        const stockItem = await db.getById(TABLES.STOCK, line.stockItemId);
-        const newQty = (stockItem['Current Quantity'] || 0) - line.quantity;
-        await db.update(TABLES.STOCK, line.stockItemId, {
-          'Current Quantity': newQty,
-        });
+    // --- Fix 1: Input validation (defect detection gate) ---
+    if (!customer || typeof customer !== 'string') {
+      return res.status(400).json({ error: 'customer (Airtable record ID) is required and must be a non-empty string.' });
+    }
+    if (orderLines && !Array.isArray(orderLines)) {
+      return res.status(400).json({ error: 'orderLines must be an array.' });
+    }
+    for (let i = 0; i < orderLines.length; i++) {
+      const line = orderLines[i];
+      if (typeof line.quantity !== 'number' || line.quantity <= 0) {
+        return res.status(400).json({ error: `orderLines[${i}].quantity must be a positive number.` });
+      }
+      if (line.costPricePerUnit !== undefined && (typeof line.costPricePerUnit !== 'number' || line.costPricePerUnit < 0)) {
+        return res.status(400).json({ error: `orderLines[${i}].costPricePerUnit must be >= 0 if provided.` });
+      }
+      if (line.sellPricePerUnit !== undefined && (typeof line.sellPricePerUnit !== 'number' || line.sellPricePerUnit < 0)) {
+        return res.status(400).json({ error: `orderLines[${i}].sellPricePerUnit must be >= 0 if provided.` });
       }
     }
-
-    // 4. Create delivery record if delivery type
-    let createdDelivery = null;
-    if (deliveryType === 'Delivery' && delivery) {
-      createdDelivery = await db.create(TABLES.DELIVERIES, {
-        'Linked Order':      [order.id],
-        'Delivery Address':  delivery.address || '',
-        'Recipient Name':    delivery.recipientName || '',
-        'Recipient Phone':   delivery.recipientPhone || '',
-        'Delivery Date':   delivery.date || null,
-        'Delivery Time':   delivery.time || '',
-        'Assigned Driver': delivery.driver || null,
-        'Delivery Fee':      delivery.fee ?? 35,
-        Status:              'Pending',
-      });
-
+    if (deliveryType === 'Delivery' && (!delivery || !delivery.address || typeof delivery.address !== 'string' || !delivery.address.trim())) {
+      return res.status(400).json({ error: 'delivery.address is required and must be non-empty when deliveryType is "Delivery".' });
+    }
+    if (priceOverride !== undefined && priceOverride !== null && (typeof priceOverride !== 'number' || priceOverride < 0)) {
+      return res.status(400).json({ error: 'priceOverride must be a number >= 0 if provided.' });
+    }
+    if (source && !VALID_SOURCES.includes(source)) {
+      return res.status(400).json({ error: `source must be one of: ${VALID_SOURCES.join(', ')}` });
+    }
+    if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
+      return res.status(400).json({ error: `paymentStatus must be one of: ${VALID_PAYMENT_STATUSES.join(', ')}` });
     }
 
-    // Broadcast new order to all connected SSE clients (florist + delivery + dashboard)
-    broadcast({
-      type: 'new_order',
-      orderId: order.id,
-      customerName: '', // caller already knows — this is for other open tabs/apps
-      source: source || 'In-store',
-      request: customerRequest || '',
-    });
+    // --- Fix 4: Batch pre-fetch stock items (single consistent snapshot) ---
+    // Like doing one warehouse count before starting a production run,
+    // instead of checking each bin mid-assembly.
+    const stockItemIds = [...new Set(orderLines.filter(l => l.stockItemId).map(l => l.stockItemId))];
+    const stockSnapshot = {};
+    if (stockItemIds.length > 0) {
+      const stockItems = await db.list(TABLES.STOCK, {
+        filterByFormula: `OR(${stockItemIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+      });
+      for (const item of stockItems) stockSnapshot[item.id] = item;
+    }
 
-    res.status(201).json({
-      order,
-      orderLines: createdLines,
-      delivery: createdDelivery,
-    });
+    // --- Fix 3: Rollback tracking ---
+    let order = null;
+    const createdLineIds = [];
+    let createdDelivery = null;
+
+    try {
+      // 1. Create the parent order record
+      order = await db.create(TABLES.ORDERS, {
+        Customer:         [customer],
+        'Customer Request': customerRequest,
+        Source:           source,
+        'Delivery Type':  deliveryType,
+        'Order Date':     new Date().toISOString().split('T')[0],
+        'Required By':    requiredBy || null,
+        'Notes Original':     notes || '',
+        'Greeting Card Text': delivery?.cardText || '',
+        'Payment Status':     paymentStatus || 'Unpaid',
+        'Payment Method':     paymentMethod || null,
+        'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? 35) : 0,
+        'Price Override':     priceOverride || null,
+        Status:               'New',
+        'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
+      });
+
+      // 2. Create order line records (one per flower) — prices are snapshotted here
+      const createdLines = [];
+      for (const line of orderLines) {
+        const created = await db.create(TABLES.ORDER_LINES, {
+          Order:                  [order.id],
+          ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
+          'Flower Name':          line.flowerName,
+          Quantity:               line.quantity,
+          'Cost Price Per Unit':  line.costPricePerUnit || 0,
+          'Sell Price Per Unit':  line.sellPricePerUnit || 0,
+        });
+        createdLines.push(created);
+        createdLineIds.push(created.id);
+      }
+
+      // 3. Deduct stock using the pre-fetched snapshot quantities
+      for (const line of orderLines) {
+        if (line.stockItemId && stockSnapshot[line.stockItemId]) {
+          const snapshotQty = stockSnapshot[line.stockItemId]['Current Quantity'] || 0;
+          // Deduct from snapshot, then update snapshot for subsequent lines using same stock item
+          const newQty = snapshotQty - line.quantity;
+          stockSnapshot[line.stockItemId]['Current Quantity'] = newQty;
+          await db.update(TABLES.STOCK, line.stockItemId, {
+            'Current Quantity': newQty,
+          });
+        }
+      }
+
+      // 4. Create delivery record if delivery type
+      if (deliveryType === 'Delivery' && delivery) {
+        createdDelivery = await db.create(TABLES.DELIVERIES, {
+          'Linked Order':      [order.id],
+          'Delivery Address':  delivery.address || '',
+          'Recipient Name':    delivery.recipientName || '',
+          'Recipient Phone':   delivery.recipientPhone || '',
+          'Delivery Date':   delivery.date || null,
+          'Delivery Time':   delivery.time || '',
+          'Assigned Driver': delivery.driver || null,
+          'Delivery Fee':      delivery.fee ?? 35,
+          Status:              'Pending',
+        });
+      }
+
+      // Broadcast new order to all connected SSE clients (florist + delivery + dashboard)
+      broadcast({
+        type: 'new_order',
+        orderId: order.id,
+        customerName: '', // caller already knows — this is for other open tabs/apps
+        source: source || 'In-store',
+        request: customerRequest || '',
+      });
+
+      res.status(201).json({
+        order,
+        orderLines: createdLines,
+        delivery: createdDelivery,
+      });
+    } catch (creationErr) {
+      // --- Fix 3: Rollback — clean up partially created records ---
+      // Like scrapping a half-assembled unit when a defect is found mid-line.
+      // We delete what was created but don't attempt to restore stock (too complex/stale).
+      console.error('Order creation failed mid-sequence, rolling back:', creationErr.message);
+      const rollbackErrors = [];
+
+      for (const lineId of createdLineIds) {
+        try { await db.deleteRecord(TABLES.ORDER_LINES, lineId); }
+        catch (e) { rollbackErrors.push(`Failed to delete order line ${lineId}: ${e.message}`); }
+      }
+      if (order) {
+        try { await db.deleteRecord(TABLES.ORDERS, order.id); }
+        catch (e) { rollbackErrors.push(`Failed to delete order ${order.id}: ${e.message}`); }
+      }
+
+      if (rollbackErrors.length > 0) {
+        console.error('Rollback encountered errors:', rollbackErrors);
+      }
+
+      return res.status(500).json({
+        error: 'Order creation failed. Partial records have been cleaned up.',
+        detail: creationErr.message,
+      });
+    }
   } catch (err) {
     next(err);
   }
@@ -277,7 +376,9 @@ const ALLOWED_TRANSITIONS = {
 // PATCH /api/orders/:id — update status, prices, assignment, etc.
 router.patch('/:id', async (req, res, next) => {
   try {
-    const { Status: newStatus, ...otherFields } = req.body;
+    // Fix 2: Field whitelisting — only approved fields pass through
+    const safeFields = pickAllowed(req.body, ORDERS_PATCH_ALLOWED);
+    const { Status: newStatus, ...otherFields } = safeFields;
 
     // If status is being changed, validate the transition
     if (newStatus) {

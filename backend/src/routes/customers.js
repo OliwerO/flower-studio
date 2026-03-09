@@ -7,6 +7,24 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 const router = Router();
 router.use(authorize('customers'));
 
+// Field whitelisting — only approved fields pass through on updates.
+// Like an incoming inspection gate — rejects unauthorized parts.
+const CUSTOMERS_PATCH_ALLOWED = [
+  'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
+  'Home address', 'Sex/Business', 'Notes / Preferences',
+  'WhatsApp Contact', 'Default Delivery Address', 'Found us from',
+  'Connected people', 'Key person 1', 'Key person 2',
+  'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
+];
+
+function pickAllowed(body, allowedFields) {
+  const filtered = {};
+  for (const key of allowedFields) {
+    if (key in body) filtered[key] = body[key];
+  }
+  return filtered;
+}
+
 // GET /api/customers?search=anna
 // Searches across Name, Nickname, Phone, Instagram (Link), Email
 router.get('/', async (req, res, next) => {
@@ -220,7 +238,8 @@ router.post('/', async (req, res, next) => {
 // PATCH /api/customers/:id
 router.patch('/:id', async (req, res, next) => {
   try {
-    const customer = await db.update(TABLES.CUSTOMERS, req.params.id, req.body);
+    const safeFields = pickAllowed(req.body, CUSTOMERS_PATCH_ALLOWED);
+    const customer = await db.update(TABLES.CUSTOMERS, req.params.id, safeFields);
     res.json(customer);
   } catch (err) {
     next(err);

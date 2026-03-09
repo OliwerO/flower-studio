@@ -13,5 +13,5 @@
  */
 export function sanitizeFormulaValue(value) {
   if (typeof value !== 'string') return '';
-  return value.replace(/['\\(),]/g, '');
+  return value.replace(/['\\(),{}]/g, '');
 }

@@ -12,6 +12,10 @@ export function setClientPin(pin) {
   _pin = pin;
 }
 
+export function getClientPin() {
+  return _pin;
+}
+
 const client = axios.create({
   baseURL: '/api',
 });

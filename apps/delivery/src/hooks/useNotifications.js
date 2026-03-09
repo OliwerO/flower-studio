@@ -4,6 +4,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useToast } from '../context/ToastContext.jsx';
+import { getClientPin } from '../api/client.js';
 import t from '../translations.js';
 
 function playNotificationSound() {
@@ -36,7 +37,8 @@ export function useNotifications(enabled = true, onEvent) {
     if (!enabled) return;
 
     const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
-    const source = new EventSource(`${backendUrl}/api/events`);
+    const pin = getClientPin();
+    const source = new EventSource(`${backendUrl}/api/events${pin ? `?pin=${pin}` : ''}`);
 
     source.onmessage = (event) => {
       try {

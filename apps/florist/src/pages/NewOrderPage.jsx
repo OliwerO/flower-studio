@@ -28,9 +28,16 @@ export default function NewOrderPage() {
   const [form, setForm]       = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [stock, setStock]     = useState([]);
+  const [stockError, setStockError] = useState(false);
 
   useEffect(() => {
-    client.get('/stock').then(r => setStock(r.data)).catch(console.error);
+    client.get('/stock')
+      .then(r => { setStock(r.data); setStockError(false); })
+      .catch(err => {
+        console.error('Failed to load stock:', err);
+        setStockError(true);
+        showToast(t.stockLoadError || 'Failed to load stock data', 'error');
+      });
   }, []);
 
   function updateForm(patch) {
@@ -47,7 +54,33 @@ export default function NewOrderPage() {
     setStep(1);
   }
 
+  // Validate before advancing to the next step
+  function validateStep(currentStep) {
+    if (currentStep === 1 && form.orderLines.length === 0) {
+      showToast(t.bouquetRequired, 'error');
+      return false;
+    }
+    if (currentStep === 2 && form.deliveryType === 'Delivery' && !form.deliveryAddress.trim()) {
+      showToast(t.deliveryAddressRequired || 'Delivery address is required', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  function handleNext() {
+    if (!validateStep(step)) return;
+    setStep(step + 1);
+  }
+
   async function handleSubmit() {
+    // Final validation before API call
+    if (!form.customerId) { showToast(t.customerRequired, 'error'); return; }
+    if (form.orderLines.length === 0) { showToast(t.bouquetRequired, 'error'); return; }
+    if (form.deliveryType === 'Delivery' && !form.deliveryAddress.trim()) {
+      showToast(t.deliveryAddressRequired || 'Delivery address is required', 'error');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const body = {
@@ -127,6 +160,27 @@ export default function NewOrderPage() {
         </div>
       </header>
 
+      {/* Stock load error banner */}
+      {stockError && (
+        <div className="max-w-2xl mx-auto px-4 mt-2">
+          <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 flex items-center justify-between">
+            <span className="text-red-700 text-sm font-medium">
+              {t.stockLoadError || 'Failed to load stock. Bouquet builder may not work.'}
+            </span>
+            <button
+              onClick={() => {
+                client.get('/stock')
+                  .then(r => { setStock(r.data); setStockError(false); })
+                  .catch(() => showToast(t.stockLoadError || 'Still unable to load stock', 'error'));
+              }}
+              className="text-red-600 text-sm font-semibold ml-3 shrink-0"
+            >
+              Retry
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Step content */}
       <main className="max-w-2xl mx-auto px-4 py-5 pb-36">
         {step === 0 && (
@@ -143,7 +197,7 @@ export default function NewOrderPage() {
             orderLines={form.orderLines}
             priceOverride={form.priceOverride}
             stock={stock}
-            onStockRefresh={() => client.get('/stock').then(r => setStock(r.data))}
+            onStockRefresh={() => client.get('/stock').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
             onChange={updateForm}
             onLinesChange={updateLines}
           />
@@ -164,8 +218,8 @@ export default function NewOrderPage() {
         <div className="fixed bottom-0 left-0 right-0 glass-bar px-4 py-4 pb-6">
           <div className="max-w-2xl mx-auto">
             <button
-              onClick={() => setStep(step + 1)}
-              disabled={step === 1 && form.orderLines.length === 0}
+              onClick={handleNext}
+              disabled={(step === 1 && form.orderLines.length === 0) || (step === 1 && stockError)}
               className="w-full h-14 rounded-2xl bg-brand-600 text-white text-base font-semibold
                          disabled:opacity-30 active:bg-brand-700 transition-colors shadow-lg active-scale"
             >

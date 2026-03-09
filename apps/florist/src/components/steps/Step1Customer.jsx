@@ -33,8 +33,14 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
     onSelect(patch);  // onSelect updates form AND advances step
   }
 
+  const [nameError, setNameError] = useState('');
+
   async function saveNewCustomer() {
-    if (!newCustomer.Name && !newCustomer.Phone) return;
+    if (!newCustomer.Name.trim()) {
+      setNameError(t.customerName + ' is required');
+      return;
+    }
+    setNameError('');
     setSaving(true);
     try {
       const res = await client.post('/customers', newCustomer);
@@ -120,20 +126,32 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
           <p className="ios-label">{t.createNew}</p>
           <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
             {[
-              { key: 'Name',     label: t.customerName,     type: 'text',  placeholder: 'Anna Kowalska' },
+              { key: 'Name',     label: t.customerName,     type: 'text',  placeholder: 'Anna Kowalska', required: true },
               { key: 'Phone',    label: t.customerPhone,    type: 'tel',   placeholder: '+48 000 000 000' },
               { key: 'Nickname', label: t.customerNickname, type: 'text',  placeholder: '@instagram' },
               { key: 'Email',    label: t.customerEmail,    type: 'email', placeholder: 'anna@email.com' },
-            ].map(({ key, label, type, placeholder }) => (
-              <div key={key} className="flex items-center px-4 py-3 gap-3">
-                <span className="text-sm text-ios-tertiary w-24 shrink-0">{label}</span>
-                <input
-                  type={type}
-                  value={newCustomer[key]}
-                  onChange={e => setNewCustomer(p => ({ ...p, [key]: e.target.value }))}
-                  placeholder={placeholder}
-                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
-                />
+            ].map(({ key, label, type, placeholder, required }) => (
+              <div key={key} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <span className="text-sm text-ios-tertiary w-24 shrink-0">
+                    {label}{required && <span className="text-red-500"> *</span>}
+                  </span>
+                  <input
+                    type={type}
+                    value={newCustomer[key]}
+                    onChange={e => {
+                      setNewCustomer(p => ({ ...p, [key]: e.target.value }));
+                      if (key === 'Name') setNameError('');
+                    }}
+                    placeholder={placeholder}
+                    className={`flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50 ${
+                      key === 'Name' && nameError ? 'text-red-600' : ''
+                    }`}
+                  />
+                </div>
+                {key === 'Name' && nameError && (
+                  <p className="text-red-500 text-xs mt-1 ml-[108px]">{nameError}</p>
+                )}
               </div>
             ))}
           </div>
@@ -147,7 +165,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
             </button>
             <button
               onClick={saveNewCustomer}
-              disabled={(!newCustomer.Name && !newCustomer.Phone) || saving}
+              disabled={!newCustomer.Name.trim() || saving}
               className="flex-1 h-12 rounded-2xl bg-brand-600 text-white font-semibold
                          disabled:opacity-30 active:bg-brand-700 shadow-sm active-scale"
             >

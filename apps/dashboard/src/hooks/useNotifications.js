@@ -3,6 +3,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useToast } from '../context/ToastContext.jsx';
+import { getClientPin } from '../api/client.js';
 
 function playNotificationSound() {
   try {
@@ -33,7 +34,8 @@ export function useNotifications(onNewOrder) {
   useEffect(() => {
     // Connect directly to Railway backend for SSE (Vercel proxy buffers streams)
     const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
-    const source = new EventSource(`${backendUrl}/api/events`);
+    const pin = getClientPin();
+    const source = new EventSource(`${backendUrl}/api/events${pin ? `?pin=${pin}` : ''}`);
 
     source.onmessage = (event) => {
       try {

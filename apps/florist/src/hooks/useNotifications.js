@@ -4,6 +4,7 @@
 
 import { useEffect, useRef } from 'react';
 import { useToast } from '../context/ToastContext.jsx';
+import { getClientPin } from '../api/client.js';
 
 // Simple notification sound — short chime using Web Audio API
 function playNotificationSound() {
@@ -40,7 +41,8 @@ export function useNotifications(onNewOrder) {
     // Vercel rewrites work for REST calls but buffer/timeout SSE streams.
     // Like running a dedicated radio link instead of routing through the switchboard.
     const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
-    const source = new EventSource(`${backendUrl}/api/events`);
+    const pin = getClientPin();
+    const source = new EventSource(`${backendUrl}/api/events${pin ? `?pin=${pin}` : ''}`);
 
     source.onmessage = (event) => {
       try {
