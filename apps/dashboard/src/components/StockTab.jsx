@@ -18,7 +18,7 @@ export default function StockTab() {
   const [search, setSearch]         = useState('');
   const [showReceive, setShowReceive] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
-  const [newItem, setNewItem]       = useState({ displayName: '', category: '', quantity: 0, costPrice: 0 });
+  const [newItem, setNewItem]       = useState({ displayName: '', category: '', quantity: 0, costPrice: 0, sellPrice: 0, supplier: '', unit: 'Stems' });
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow'
   const [velocity, setVelocity]     = useState({});
   const { showToast } = useToast();
@@ -86,7 +86,7 @@ export default function StockTab() {
     try {
       await client.post('/stock', newItem);
       showToast(t.itemCreated);
-      setNewItem({ displayName: '', category: '', quantity: 0, costPrice: 0 });
+      setNewItem({ displayName: '', category: '', quantity: 0, costPrice: 0, sellPrice: 0, supplier: '', unit: 'Stems' });
       setShowAddItem(false);
       fetchStock();
     } catch {
@@ -179,9 +179,14 @@ export default function StockTab() {
           </div>
           <div>
             <label className="text-xs text-ios-tertiary">{t.category}</label>
-            <input value={newItem.category}
+            <select value={newItem.category}
               onChange={e => setNewItem({ ...newItem, category: e.target.value })}
-              className="field-input block w-28" />
+              className="field-input block w-32">
+              <option value="">— Select —</option>
+              {['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'].map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
           </div>
           <div>
             <label className="text-xs text-ios-tertiary">{t.quantity}</label>
@@ -195,7 +200,33 @@ export default function StockTab() {
               onChange={e => setNewItem({ ...newItem, costPrice: Number(e.target.value) })}
               className="field-input block w-20" />
           </div>
-          <button onClick={createItem} className="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold">
+          <div>
+            <label className="text-xs text-ios-tertiary">{t.sellPrice}</label>
+            <input type="number" value={newItem.sellPrice}
+              onChange={e => setNewItem({ ...newItem, sellPrice: Number(e.target.value) })}
+              className="field-input block w-20" />
+          </div>
+          <div>
+            <label className="text-xs text-ios-tertiary">{t.supplier}</label>
+            <select value={newItem.supplier}
+              onChange={e => setNewItem({ ...newItem, supplier: e.target.value })}
+              className="field-input block w-28">
+              <option value="">— Select —</option>
+              {SUPPLIERS.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-ios-tertiary">{t.unit || 'Unit'}</label>
+            <select value={newItem.unit}
+              onChange={e => setNewItem({ ...newItem, unit: e.target.value })}
+              className="field-input block w-24">
+              {['Stems', 'Bunches', 'Pots', 'Pieces'].map(u => (
+                <option key={u} value={u}>{u}</option>
+              ))}
+            </select>
+          </div>
+          <button onClick={createItem} disabled={!newItem.displayName}
+            className="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold disabled:opacity-50">
             {t.save}
           </button>
         </div>

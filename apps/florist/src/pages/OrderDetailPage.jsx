@@ -134,6 +134,25 @@ export default function OrderDetailPage() {
           </div>
         ) : (
           <>
+            {/* Customer info — who placed the order */}
+            <div>
+              <p className="ios-label">Customer</p>
+              <div className="ios-card px-4 py-2">
+                <Row label="Name" value={order['Customer Name']} />
+                {order['Customer Nickname'] && order['Customer Nickname'] !== order['Customer Name'] && (
+                  <Row label="Nickname" value={order['Customer Nickname']} />
+                )}
+                {order['Customer Phone'] && (
+                  <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+                    <span className="text-sm text-ios-tertiary shrink-0">Phone</span>
+                    <a href={`tel:${order['Customer Phone']}`} className="text-sm text-brand-600 font-medium">
+                      {order['Customer Phone']}
+                    </a>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Customer request */}
             {order['Customer Request'] && (
               <div className="ios-card px-4 py-3">
@@ -179,9 +198,26 @@ export default function OrderDetailPage() {
                   <Row label="Time"      value={order.delivery?.['Delivery Time']} />
                   <Row label="Address"   value={order.delivery?.['Delivery Address']} />
                   <Row label="Recipient" value={order.delivery?.['Recipient Name']} />
-                  <Row label="Phone"     value={order.delivery?.['Recipient Phone']} />
+                  {order.delivery?.['Recipient Phone'] && (
+                    <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+                      <span className="text-sm text-ios-tertiary shrink-0">Phone</span>
+                      <a href={`tel:${order.delivery['Recipient Phone']}`} className="text-sm text-brand-600 font-medium">
+                        {order.delivery['Recipient Phone']}
+                      </a>
+                    </div>
+                  )}
                   <Row label="Card msg"  value={order['Greeting Card Text']} />
                   <Row label="Fee"       value={order.delivery?.['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
+                </div>
+              </div>
+            )}
+
+            {/* Pickup details */}
+            {!isDelivery && order['Required By'] && (
+              <div>
+                <p className="ios-label">Pickup</p>
+                <div className="ios-card px-4 py-2">
+                  <Row label="Pickup time" value={order['Required By']} />
                 </div>
               </div>
             )}
