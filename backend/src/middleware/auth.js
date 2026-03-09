@@ -6,6 +6,7 @@
 // The badge reader now knows *which* driver scanned in (req.driverName).
 
 import crypto from 'node:crypto';
+import { getBackupDriverName } from '../services/driverState.js';
 
 function safeEqual(a, b) {
   if (typeof a !== 'string' || typeof b !== 'string') return false;
@@ -55,7 +56,10 @@ export function authenticate(req, res, next) {
   const driver = DRIVER_PINS.find(d => safeEqual(d.pin, pin));
   if (driver) {
     req.role = 'driver';
-    req.driverName = driver.name;
+    // If this is the backup PIN and the owner set a name for today, use that instead
+    req.driverName = driver.name === 'Backup'
+      ? (getBackupDriverName() || driver.name)
+      : driver.name;
     return next();
   }
 

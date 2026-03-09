@@ -5,6 +5,7 @@
 
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
+import { getBackupDriverName, setBackupDriverName } from '../services/driverState.js';
 
 const router = Router();
 
@@ -51,11 +52,15 @@ function autoClearIfNewDay() {
 // who can be assigned work but don't have building access.
 router.get('/', authorize('orders'), (req, res) => {
   autoClearIfNewDay();
-  const allDrivers = [...new Set([...driverNames, ...config.extraDrivers])];
+  const backupName = getBackupDriverName();
+  // Replace "Backup" with today's freelancer name if set
+  const resolvedDrivers = [...new Set([...driverNames, ...config.extraDrivers])]
+    .map(name => name === 'Backup' && backupName ? backupName : name);
   res.json({
-    driverOfDay: daily.driverOfDay,
-    drivers:     allDrivers,
-    pinDrivers:  driverNames, // drivers with app access (have PINs)
+    driverOfDay:      daily.driverOfDay,
+    backupDriverName: backupName,
+    drivers:          resolvedDrivers,
+    pinDrivers:       driverNames,
     config,
   });
 });
@@ -66,6 +71,16 @@ router.put('/driver-of-day', authorize('admin'), (req, res) => {
   daily.driverOfDay = driverName || null;
   daily._lastSetDate = driverName ? new Date().toISOString().split('T')[0] : null;
   res.json({ driverOfDay: daily.driverOfDay });
+});
+
+// ── PUT /api/settings/backup-driver — set today's freelancer name ──
+// The backup PIN is a shared credential. This endpoint lets the owner
+// label who's actually using it today (like writing a temp worker's name
+// on a shared badge).
+router.put('/backup-driver', authorize('admin'), (req, res) => {
+  const { name } = req.body;
+  setBackupDriverName(name);
+  res.json({ backupDriverName: getBackupDriverName() });
 });
 
 // ── PUT /api/settings/config — update operational config (owner only) ──
