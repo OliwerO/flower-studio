@@ -4,10 +4,15 @@ import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
 import TimePicker from '../TimePicker.jsx';
 
-const SOURCES       = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
-const SOURCE_LABELS = { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
-const PAY_METHODS   = ['Cash', 'Card', 'Transfer'];
-const METHOD_LABELS = { Cash: t.methodCash, Card: t.methodCard, Transfer: t.methodTransfer };
+const SOURCES     = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
+const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
+
+function getSourceLabels() {
+  return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
+}
+function getMethodLabels() {
+  return { Cash: t.methodCash, Card: t.methodCard, Transfer: t.methodTransfer };
+}
 
 // Reusable pill-button group — same style everywhere
 function Pills({ options, value, onChange }) {
@@ -70,6 +75,8 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
 }
 
 export default function Step3Details({ form, onChange }) {
+  const SOURCE_LABELS = getSourceLabels();
+  const METHOD_LABELS = getMethodLabels();
   const set = key => val => onChange({ [key]: val });
 
   return (

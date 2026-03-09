@@ -5,6 +5,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
 import StockItem from '../components/StockItem.jsx';
 import ReceiveStockForm from '../components/ReceiveStockForm.jsx';
+import HelpPanel from '../components/HelpPanel.jsx';
 import t from '../translations.js';
 
 export default function StockPanelPage() {
@@ -15,6 +16,7 @@ export default function StockPanelPage() {
   const [loading, setLoading]     = useState(true);
   const [showReceive, setShowReceive] = useState(false);
   const [editMode, setEditMode]       = useState(false);
+  const [showHelp, setShowHelp]       = useState(false);
 
   async function fetchStock() {
     setLoading(true);
@@ -68,7 +70,14 @@ export default function StockPanelPage() {
             ‹ {t.navOrders}
           </button>
           <h1 className="text-base font-semibold text-ios-label">{t.stockTitle}</h1>
-          <button onClick={fetchStock} className="text-ios-tertiary text-base active-scale">↻</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowHelp(true)}
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-ios-secondary
+                         hover:bg-gray-200 active-scale flex items-center justify-center"
+            >?</button>
+            <button onClick={fetchStock} className="text-ios-tertiary text-base active-scale">↻</button>
+          </div>
         </div>
       </header>
 
@@ -123,6 +132,8 @@ export default function StockPanelPage() {
           </button>
         )}
       </main>
+
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

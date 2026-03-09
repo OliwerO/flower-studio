@@ -5,6 +5,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
+import { LanguageProvider } from './context/LanguageContext.jsx';
 import { setClientPin } from './api/client.js';
 import { useNotifications } from './hooks/useNotifications.js';
 
@@ -36,7 +37,7 @@ export default function App() {
   } : null);
 
   return (
-    <>
+    <LanguageProvider>
       <Toast />
       <Routes>
         <Route path="/login" element={<LoginPage />} />
@@ -62,6 +63,6 @@ export default function App() {
           pin ? <Navigate to="/orders" replace /> : <Navigate to="/login" replace />
         } />
       </Routes>
-    </>
+    </LanguageProvider>
   );
 }

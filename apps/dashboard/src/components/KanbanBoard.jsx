@@ -5,38 +5,13 @@
 
 import t from '../translations.js';
 
-const COLUMNS = [
-  {
-    key: 'New',
-    label: t.statusNew,
-    statuses: ['New'],
-    border: 'border-indigo-200/80',
-    dot: 'bg-indigo-400',
-  },
-  {
-    key: 'Ready',
-    label: t.statusReady,
-    statuses: ['Ready'],
-    border: 'border-amber-200/80',
-    dot: 'bg-amber-400',
-  },
-  {
-    key: 'Out for Delivery',
-    label: t.statusOutForDel,
-    statuses: ['Out for Delivery'],
-    border: 'border-sky-200/80',
-    dot: 'bg-sky-400',
-  },
-  {
-    key: 'Done',
-    label: t.statusDone,
-    statuses: ['Delivered', 'Picked Up'],
-    border: 'border-emerald-200/80',
-    dot: 'bg-emerald-400',
-  },
-];
-
 export default function KanbanBoard({ orders, onOrderClick }) {
+  const COLUMNS = [
+    { key: 'New', label: t.statusNew, statuses: ['New'], border: 'border-indigo-200/80', dot: 'bg-indigo-400' },
+    { key: 'Ready', label: t.statusReady, statuses: ['Ready'], border: 'border-amber-200/80', dot: 'bg-amber-400' },
+    { key: 'Out for Delivery', label: t.statusOutForDel, statuses: ['Out for Delivery'], border: 'border-sky-200/80', dot: 'bg-sky-400' },
+    { key: 'Done', label: t.statusDone, statuses: ['Delivered', 'Picked Up'], border: 'border-emerald-200/80', dot: 'bg-emerald-400' },
+  ];
   const columns = COLUMNS.map(col => ({
     ...col,
     orders: (orders || []).filter(o => col.statuses.includes(o.Status)),

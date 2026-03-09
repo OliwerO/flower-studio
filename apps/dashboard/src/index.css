@@ -80,4 +80,13 @@
   .active-scale:active {
     transform: scale(0.95);
   }
+
+  /* Right-edge slide-in for dashboard HelpPanel */
+  @keyframes slide-right {
+    from { transform: translateX(100%); }
+    to   { transform: translateX(0); }
+  }
+  .animate-slide-right {
+    animation: slide-right 0.3s ease-out;
+  }
 }

@@ -1,8 +1,9 @@
-// All user-facing strings in one place.
-// To switch from English to Russian, edit only this file.
-// Components import `t` and use t.keyName — no i18n library needed for a single-language app.
+// All user-facing strings in one place — Proxy-based bilingual support.
+// Components still do `import t from '../translations.js'` and use `t.keyName`.
+// The Proxy reads from the current language at access time.
+// Re-renders are triggered by LanguageContext, not by this module.
 
-const t = {
+const en = {
   // Auth
   appName:          'Blossom',
   enterPin:         'Enter PIN',
@@ -156,6 +157,179 @@ const t = {
 
   // Text import / intake
   intake: {
+    title:              'Paste text',
+    modeGeneral:        'Any message',
+    hintGeneral:        'Paste customer messages from any channel — AI will extract order data.',
+    hintFlowwow:        'Paste Flowwow email text — we\'ll auto-detect order, address, recipient.',
+    placeholderGeneral: 'Paste customer message...\n\nMultiple messages at once are fine.',
+    placeholderFlowwow: 'Paste Flowwow email text...',
+    parseButton:        'Parse',
+    parsing:            'Parsing...',
+    parseError:         'Could not parse text. Try again.',
+    warningsTitle:      'Warnings',
+    fabLabel:           'Paste text',
+    fabManual:          'New order',
+    needsComposition:   'Compose',
+    confidenceHigh:     'Match found',
+    confidenceLow:      'Check match',
+    confidenceNone:     'Not in stock',
+  },
+};
+
+const ru = {
+  // Auth
+  appName:          'Blossom',
+  enterPin:         'Введите PIN',
+  pinPlaceholder:   '••••',
+  login:            'Войти',
+  invalidPin:       'Неверный PIN. Попробуйте ещё раз.',
+  logout:           'Выйти',
+
+  // Nav
+  navOrders:        'Заказы',
+  navStock:         'Склад',
+  navNew:           'Новый заказ',
+
+  // Order list
+  ordersTitle:      'Заказы',
+  today:            'Сегодня',
+  filterStatus:     'Статус',
+  allStatuses:      'Все',
+  newOrder:         'Новый заказ',
+  noOrders:         'Заказы не найдены.',
+  loading:          'Загрузка...',
+
+  // Order statuses
+  statusNew:        'Новый',
+  statusInProgress: 'В работе',
+  statusReady:      'Готов',
+  statusDelivered:  'Доставлен',
+  statusCancelled:  'Отменён',
+
+  // Order card
+  pickup:           'Самовывоз',
+  delivery:         'Доставка',
+  unpaid:           'Не оплачен',
+  paid:             'Оплачен',
+
+  // New order wizard
+  newOrderTitle:    'Новый заказ',
+  step1:            'Клиент',
+  step2:            'Букет',
+  step3:            'Детали',
+  step4:            'Обзор',
+  back:             'Назад',
+  next:             'Далее',
+  submit:           'Оформить заказ',
+  submitting:       'Отправка...',
+  cancel:           'Отмена',
+
+  // Step 1 — Customer
+  searchCustomer:   'Поиск клиента',
+  searchPlaceholder:'Имя, телефон, Instagram...',
+  createNew:        'Создать нового клиента',
+  selectCustomer:   'Выбрать клиента',
+  customerName:     'Имя',
+  customerPhone:    'Телефон',
+  customerNickname: 'Ник / Instagram',
+  customerEmail:    'Email',
+  saveCustomer:     'Сохранить клиента',
+  customerRequired: 'Выберите или создайте клиента.',
+
+  // Step 2 — Bouquet
+  customerRequest:  'Запрос клиента (описание)',
+  requestPlaceholder: 'Напр. розовые розы, что-то нежное и романтичное...',
+  searchFlowers:    'Поиск цветов',
+  flowerSearch:     'Поиск по названию...',
+  addToBouquet:     'Добавить',
+  bouquetContents:  'Состав букета',
+  quantity:         'Кол-во',
+  remove:           'Удалить',
+  costTotal:        'Себестоимость',
+  sellTotal:        'Итого продажа',
+  priceOverride:    'Своя цена (опционально)',
+  noFlowersAdded:   'Цветы ещё не добавлены.',
+  refreshStock:     'Обновить склад',
+  noStockFound:     'Цветы не найдены.',
+  outOfStock:       'Нет в наличии',
+  bouquetRequired:  'Добавьте хотя бы один цветок.',
+  lowStock:         'Мало на складе',
+
+  // Step 3 — Details
+  source:           'Источник заказа',
+  sourceWalk:       'Офлайн',
+  sourceInstagram:  'Instagram',
+  sourceWhatsApp:   'WhatsApp',
+  sourceTelegram:   'Telegram',
+  sourceWebsite:    'Wix',
+  sourceFlowwow:    'Flowwow',
+  sourceOther:      'Другое',
+  deliveryType:     'Способ получения',
+  deliveryPickup:   'Самовывоз',
+  deliveryDelivery: 'Доставка',
+  deliveryDate:     'Дата доставки',
+  deliveryTime:     'Время доставки',
+  recipientName:    'Имя получателя',
+  recipientPhone:   'Телефон получателя',
+  deliveryAddress:  'Адрес доставки',
+  cardText:         'Текст открытки',
+  orderNotes:       'Заметки',
+  paymentStatus:    'Оплата',
+  paymentUnpaid:    'Не оплачен',
+  paymentPaid:      'Оплачен',
+  paymentMethod:    'Способ оплаты',
+  methodCash:       'Наличные',
+  methodCard:       'Карта',
+  methodTransfer:   'Перевод',
+  requiredBy:       'Нужен к (дата/время)',
+  deliveryFee:      'Стоимость доставки',
+
+  // Step 4 — Review
+  reviewTitle:      'Проверка заказа',
+  edit:             'Изменить',
+  customer:         'Клиент',
+  bouquet:          'Букет',
+  details:          'Детали',
+  orderTotal:       'Итого',
+  orderSubmitted:   'Заказ оформлен!',
+  submitError:      'Не удалось оформить заказ. Попробуйте ещё раз.',
+
+  // Stock panel
+  stockTitle:       'Склад',
+  adjust:           'Корректировка',
+  receiveStock:     'Приёмка',
+  supplier:         'Поставщик',
+  quantityReceived: 'Количество',
+  pricePerUnit:     'Цена за единицу',
+  notes:            'Заметки',
+  save:             'Сохранить',
+  saving:           'Сохранение...',
+  adjustError:      'Не удалось скорректировать склад.',
+  receiveError:     'Не удалось записать приёмку.',
+  newStockItem:     '+ Новая позиция',
+  newItemName:      'Название цветка',
+  newItemCategory:  'Категория',
+
+  // Stock write-off
+  writeOff:         'Списание',
+  deadStems:        'списано',
+  confirm:          'Подтвердить',
+  writeOffError:    'Не удалось списать.',
+  writeOffReason:   'Причина (опционально)',
+  editStock:        'Редактировать склад',
+  doneEditing:      'Готово',
+
+  // Validation
+  stockLoadError:        'Не удалось загрузить данные склада.',
+  deliveryAddressRequired: 'Укажите адрес доставки.',
+
+  // Toast
+  success:          'Готово!',
+  error:            'Ошибка',
+  dismiss:          'Закрыть',
+
+  // Text import / intake
+  intake: {
     title:              'Вставить текст',
     modeGeneral:        'Любое сообщение',
     hintGeneral:        'Вставьте сообщения клиента из любого канала — AI извлечёт данные заказа.',
@@ -174,5 +348,26 @@ const t = {
     confidenceNone:     'Не найдено на складе',
   },
 };
+
+// ── Proxy-based dynamic translation ──
+// The Proxy reads from whichever language is currently active.
+// When LanguageContext triggers a re-render, components re-read `t.key`
+// and get the updated language automatically. No import changes needed.
+
+let currentLang = (typeof localStorage !== 'undefined'
+  ? localStorage.getItem('blossom-lang')
+  : null) || 'ru';
+
+const langs = { en, ru };
+
+const t = new Proxy({}, {
+  get(_, key) {
+    return langs[currentLang]?.[key] ?? langs.en[key] ?? key;
+  },
+});
+
+export function setLanguage(lang) {
+  currentLang = lang;
+}
 
 export default t;

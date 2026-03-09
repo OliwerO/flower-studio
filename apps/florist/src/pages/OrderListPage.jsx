@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
+import { LangToggle } from '../context/LanguageContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
+import HelpPanel from '../components/HelpPanel.jsx';
 import t from '../translations.js';
 
 const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
@@ -42,6 +44,7 @@ export default function OrderListPage() {
   const [status, setStatus]         = useState('');
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
+  const [showHelp, setShowHelp]     = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -68,6 +71,12 @@ export default function OrderListPage() {
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <img src="/logo.png" alt="Blossom" className="h-7" />
           <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowHelp(true)}
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-ios-secondary
+                         hover:bg-gray-200 active-scale flex items-center justify-center"
+            >?</button>
+            <LangToggle />
             <button
               onClick={() => navigate('/stock')}
               className="text-brand-600 text-sm font-medium px-3 py-1.5 rounded-full bg-brand-50 active:bg-brand-100"
@@ -185,6 +194,9 @@ export default function OrderListPage() {
           }}
         />
       )}
+
+      {/* Help panel */}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

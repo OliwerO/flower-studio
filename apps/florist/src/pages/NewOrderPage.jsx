@@ -9,8 +9,6 @@ import Step2Bouquet  from '../components/steps/Step2Bouquet.jsx';
 import Step3Details  from '../components/steps/Step3Details.jsx';
 import Step4Review   from '../components/steps/Step4Review.jsx';
 
-const STEPS = [t.step1, t.step2, t.step3, t.step4];
-
 const emptyForm = {
   customerId: '', customerName: '',
   customerRequest: '', orderLines: [], priceOverride: '',
@@ -22,6 +20,7 @@ const emptyForm = {
 };
 
 export default function NewOrderPage() {
+  const STEPS = [t.step1, t.step2, t.step3, t.step4];
   const navigate              = useNavigate();
   const location              = useLocation();
   const { showToast }         = useToast();

@@ -1,0 +1,42 @@
+// LanguageContext for the dashboard app — same pattern as florist/delivery.
+
+import { createContext, useContext, useState, useCallback } from 'react';
+import { setLanguage } from '../translations.js';
+
+const LanguageContext = createContext({ lang: 'ru', setLang: () => {} });
+
+export function LanguageProvider({ children }) {
+  const [lang, setLangState] = useState(
+    () => localStorage.getItem('blossom-lang') || 'ru'
+  );
+
+  const setLang = useCallback((newLang) => {
+    setLanguage(newLang);
+    localStorage.setItem('blossom-lang', newLang);
+    setLangState(newLang);
+  }, []);
+
+  return (
+    <LanguageContext.Provider value={{ lang, setLang }}>
+      {children}
+    </LanguageContext.Provider>
+  );
+}
+
+export function useLanguage() {
+  return useContext(LanguageContext);
+}
+
+export function LangToggle() {
+  const { lang, setLang } = useLanguage();
+  return (
+    <button
+      onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
+      className="text-xs font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-500
+                 hover:bg-gray-200 active:scale-95 uppercase tracking-wide"
+      title="Switch language"
+    >
+      {lang === 'ru' ? 'EN' : 'RU'}
+    </button>
+  );
+}

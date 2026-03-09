@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { setClientPin } from './api/client.js';
+import { LanguageProvider } from './context/LanguageContext.jsx';
 import { useNotifications } from './hooks/useNotifications.js';
 import DashboardPage from './pages/DashboardPage.jsx';
 import Toast from './components/Toast.jsx';
@@ -46,9 +47,9 @@ export default function App() {
   if (!ready) return null;
 
   return (
-    <>
+    <LanguageProvider>
       <Toast />
       <DashboardPage />
-    </>
+    </LanguageProvider>
   );
 }

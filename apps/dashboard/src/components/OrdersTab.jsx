@@ -16,15 +16,17 @@ function fmtDate(iso) {
   return d.toLocaleDateString('en-GB', { month: 'short', day: 'numeric' });
 }
 
-const STATUS_OPTIONS = [
-  { value: '',                label: t.allStatuses },
-  { value: 'New',             label: t.statusNew },
-  { value: 'Ready',           label: t.statusReady },
-  { value: 'Out for Delivery', label: t.statusOutForDel },
-  { value: 'Delivered',       label: t.statusDelivered },
-  { value: 'Picked Up',       label: t.statusPickedUp },
-  { value: 'Cancelled',       label: t.statusCancelled },
-];
+function getStatusOptions() {
+  return [
+    { value: '',                label: t.allStatuses },
+    { value: 'New',             label: t.statusNew },
+    { value: 'Ready',           label: t.statusReady },
+    { value: 'Out for Delivery', label: t.statusOutForDel },
+    { value: 'Delivered',       label: t.statusDelivered },
+    { value: 'Picked Up',       label: t.statusPickedUp },
+    { value: 'Cancelled',       label: t.statusCancelled },
+  ];
+}
 
 const STATUS_COLORS = {
   New:              'bg-indigo-100 text-indigo-700',
@@ -45,6 +47,7 @@ function monthStart() {
 }
 
 export default function OrdersTab({ initialFilter }) {
+  const STATUS_OPTIONS = getStatusOptions();
   // Initialize state from initialFilter to avoid double-fetch race condition.
   // If a filter is passed from another tab (e.g., Financial), use it from the start.
   const f = initialFilter || {};

@@ -5,6 +5,8 @@
 
 import { useState, useCallback, lazy, Suspense } from 'react';
 import t from '../translations.js';
+import { LangToggle } from '../context/LanguageContext.jsx';
+import HelpPanel from '../components/HelpPanel.jsx';
 
 import OrdersTab from '../components/OrdersTab.jsx';
 import StockTab from '../components/StockTab.jsx';
@@ -15,16 +17,16 @@ import NewOrderTab from '../components/NewOrderTab.jsx';
 // Lazy-load FinancialTab so Recharts (~160KB) isn't bundled until the tab is first opened
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 
-const TABS = [
-  { key: 'today',     label: t.tabToday },
-  { key: 'orders',    label: t.tabOrders },
-  { key: 'newOrder',  label: t.tabNewOrder },
-  { key: 'stock',     label: t.tabStock },
-  { key: 'customers', label: t.tabCustomers },
-  { key: 'financial', label: t.tabFinancial },
-];
-
 export default function DashboardPage() {
+  // TABS defined inside component so the Proxy reads the current language on each render
+  const TABS = [
+    { key: 'today',     label: t.tabToday },
+    { key: 'orders',    label: t.tabOrders },
+    { key: 'newOrder',  label: t.tabNewOrder },
+    { key: 'stock',     label: t.tabStock },
+    { key: 'customers', label: t.tabCustomers },
+    { key: 'financial', label: t.tabFinancial },
+  ];
   const [activeTab, setActiveTab] = useState('today');
   const [tabFilter, setTabFilter] = useState(null);
   // Track whether the financial tab has ever been opened, so we only mount
@@ -35,6 +37,7 @@ export default function DashboardPage() {
   // previous component instance and old filter state "leaks" across navigations.
   // Think of it like resetting a workstation between different job orders.
   const [filterKey, setFilterKey] = useState(0);
+  const [showHelp, setShowHelp] = useState(false);
 
   // Called by DayToDayTab / FinancialTab when user clicks a widget
   const navigateTo = useCallback(({ tab, filter }) => {
@@ -76,7 +79,14 @@ export default function DashboardPage() {
           ))}
         </nav>
 
-        <div /> {/* spacer for flex justify-between */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowHelp(true)}
+            className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-gray-500
+                       hover:bg-gray-200 transition-colors flex items-center justify-center"
+          >?</button>
+          <LangToggle />
+        </div>
       </header>
 
       {/* Tab content — all tabs stay mounted (CSS hiding) to preserve state across switches.
@@ -110,6 +120,8 @@ export default function DashboardPage() {
           </div>
         )}
       </main>
+
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

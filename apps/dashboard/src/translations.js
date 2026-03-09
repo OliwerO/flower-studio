@@ -1,4 +1,7 @@
-const t = {
+// Dashboard translations — Proxy-based bilingual support.
+// Components use `import t from '../translations.js'` unchanged.
+
+const en = {
   // Auth
   appName:          'Blossom',
   enterPin:         'Enter owner PIN',
@@ -123,7 +126,7 @@ const t = {
   stemsSold:        'stems sold',
   timesOrdered:     'times ordered',
 
-  // New order wizard (shared with florist step components)
+  // New order wizard
   newOrderTitle:    'New Order',
   step1:            'Customer',
   step2:            'Bouquet',
@@ -281,7 +284,7 @@ const t = {
   methodPayPal:       'PayPal',
   methodWixOnline:    'Wix Online',
 
-  // Day names (Mon-first, JS getDay(): 0=Sun)
+  // Day names
   dayMon:  'Mon',  dayTue: 'Tue', dayWed: 'Wed',
   dayThu:  'Thu',  dayFri: 'Fri', daySat: 'Sat', daySun: 'Sun',
 
@@ -324,5 +327,349 @@ const t = {
   // Orders
   margin:             'Margin',
 };
+
+const ru = {
+  // Auth
+  appName:          'Blossom',
+  enterPin:         'Введите PIN владельца',
+  login:            'Войти',
+  invalidPin:       'Неверный PIN. Попробуйте ещё раз.',
+  logout:           'Выйти',
+
+  // Tabs
+  tabOrders:        'Заказы',
+  tabNewOrder:      'Новый заказ',
+  tabStock:         'Склад',
+  tabCustomers:     'Клиенты',
+  tabToday:         'Сегодня',
+
+  // General
+  loading:          'Загрузка...',
+  save:             'Сохранить',
+  saving:           'Сохранение...',
+  cancel:           'Отмена',
+  confirm:          'Подтвердить',
+  close:            'Закрыть',
+  search:           'Поиск',
+  noResults:        'Ничего не найдено.',
+  error:            'Что-то пошло не так',
+  refresh:          'Обновить',
+
+  // Orders tab
+  allStatuses:      'Все',
+  statusNew:        'Новый',
+  statusReady:      'Готов',
+  statusOutForDel:  'В доставке',
+  statusDelivered:  'Доставлен',
+  statusPickedUp:   'Забрали',
+  statusCancelled:  'Отменён',
+  delivery:         'Доставка',
+  pickup:           'Самовывоз',
+  paid:             'Оплачен',
+  unpaid:           'Не оплачен',
+  partial:          'Частично',
+  customer:         'Клиент',
+  request:          'Запрос',
+  status:           'Статус',
+  price:            'Цена',
+  date:             'Дата',
+  source:           'Источник',
+  paymentStatus:    'Оплата',
+  paymentMethod:    'Способ оплаты',
+  deliveryType:     'Тип',
+  priceOverride:    'Своя цена',
+  notes:            'Заметки',
+  driver:           'Водитель',
+  assignDriver:     'Назначить водителя',
+  markPickedUp:     'Забрали',
+  cancelOrder:      'Отменить заказ',
+  cancelConfirm:    'Вы уверены, что хотите отменить этот заказ?',
+  orderUpdated:     'Заказ обновлён',
+  orderCancelled:   'Заказ отменён',
+  unpaidOrders:     'Неоплаченные заказы',
+  daysOld:          'дней',
+  showUnpaid:       'Только неоплаченные',
+
+  // Stock tab
+  stockName:        'Название',
+  category:         'Категория',
+  quantity:         'Кол-во',
+  unit:             'Ед.',
+  costPrice:        'Закупка',
+  sellPrice:        'Продажа',
+  markup:           'Наценка',
+  supplier:         'Поставщик',
+  threshold:        'Порог',
+  addItem:          'Добавить',
+  receiveStock:     'Приёмка',
+  writeOff:         'Списание',
+  quantityReceived: 'Количество',
+  pricePerUnit:     'Цена за ед.',
+  sellPricePerUnit: 'Цена продажи за ед.',
+  reason:           'Причина',
+  wasteLog:         'Журнал списаний',
+  deadStems:        'Списано',
+  slowMovers:       'Медленные продажи',
+  noOrders14Days:   'Нет заказов 14+ дней',
+  wasteRate:        'Потери %',
+  stockReceived:    'Приёмка записана',
+  stockWrittenOff:  'Списание записано',
+  stockUpdated:     'Склад обновлён',
+  itemCreated:      'Позиция создана',
+
+  // Customers tab
+  name:             'Имя',
+  nickname:         'Ник',
+  phone:            'Телефон',
+  email:            'Email',
+  instagram:        'Instagram',
+  segment:          'Сегмент',
+  link:             'Instagram / Email',
+  totalSpend:       'Всего потрачено',
+  orderCount:       'Заказы',
+  lastOrder:        'Последний заказ',
+  keyPerson:        'Контактное лицо',
+  importantDate:    'Важная дата',
+  preferences:      'Предпочтения',
+  orderHistory:     'История заказов',
+  doNotContact:     'НЕ КОНТАКТИРОВАТЬ',
+  churnRisk:        'Риск оттока',
+  noOrderIn90Days:  'Нет заказов 90+ дней',
+  topCustomers:     'Лучшие клиенты',
+  segmentDistribution: 'Сегменты',
+  customerUpdated:  'Клиент обновлён',
+
+  // Day-to-day tab
+  todaySummary:     'Сегодня',
+  revenue:          'Выручка',
+  orders:           'Заказы',
+  pendingDeliveries:'Ожидающие доставки',
+  lowStockAlerts:   'Мало на складе',
+  recentOrders:     'Последние заказы',
+  paymentHealth:    'Оплаты',
+  unpaidTotal:      'Неоплачено всего',
+  bySource:         'По источникам',
+  bestSellers:      'Лидеры продаж',
+  stemsSold:        'шт. продано',
+  timesOrdered:     'раз заказано',
+
+  // New order wizard
+  newOrderTitle:    'Новый заказ',
+  step1:            'Клиент',
+  step2:            'Букет',
+  step3:            'Детали',
+  step4:            'Обзор',
+  back:             'Назад',
+  next:             'Далее',
+  submit:           'Оформить заказ',
+  submitting:       'Отправка...',
+  orderSubmitted:   'Заказ оформлен!',
+  submitError:      'Не удалось оформить заказ.',
+
+  // Step 1 — Customer
+  searchCustomer:   'Поиск клиента',
+  searchPlaceholder:'Имя, телефон, Instagram...',
+  createNew:        'Создать нового клиента',
+  customerName:     'Имя',
+  customerPhone:    'Телефон',
+  customerNickname: 'Ник / Instagram',
+  customerEmail:    'Email',
+  saveCustomer:     'Сохранить клиента',
+
+  // Step 2 — Bouquet
+  customerRequest:  'Запрос клиента',
+  requestPlaceholder: 'Напр. розовые розы, что-то нежное и романтичное...',
+  searchFlowers:    'Поиск цветов',
+  flowerSearch:     'Поиск по названию...',
+  bouquetContents:  'Состав букета',
+  costTotal:        'Себестоимость',
+  sellTotal:        'Итого продажа',
+  refreshStock:     'Обновить склад',
+  noStockFound:     'Цветы не найдены.',
+
+  // Step 3 — Details
+  sourceWalk:       'Офлайн',
+  sourceInstagram:  'Instagram',
+  sourceWhatsApp:   'WhatsApp',
+  sourceTelegram:   'Telegram',
+  sourceWebsite:    'Wix',
+  sourceFlowwow:    'Flowwow',
+  sourceOther:      'Другое',
+  deliveryPickup:   'Самовывоз',
+  deliveryDelivery: 'Доставка',
+  deliveryDate:     'Дата',
+  deliveryTime:     'Время',
+  recipientName:    'Получатель',
+  recipientPhone:   'Телефон получателя',
+  deliveryAddress:  'Адрес',
+  cardText:         'Текст открытки',
+  orderNotes:       'Заметки',
+  paymentUnpaid:    'Не оплачен',
+  paymentPaid:      'Оплачен',
+  methodCash:       'Наличные',
+  methodCard:       'Карта',
+  requiredBy:       'Нужен к',
+  deliveryFee:      'Стоимость доставки',
+
+  // Step 4 — Review
+  reviewTitle:      'Проверка заказа',
+  edit:             'Изменить',
+  bouquet:          'Букет',
+  details:          'Детали',
+  orderTotal:       'Итого',
+
+  // Financial KPIs tab
+  tabFinancial:     'Финансы',
+  thisMonth:        'Этот месяц',
+  lastMonth:        'Прошлый месяц',
+  last3Months:      'Последние 3 мес.',
+  last12Months:     'Последние 12 мес.',
+  customRange:      'Свой период',
+  revenueAndOrders: 'Выручка и заказы',
+  totalRevenue:     'Общая выручка',
+  avgOrderValue:    'Средний чек',
+  paidOrders:       'Оплаченные заказы',
+  flowerRevenue:    'Выручка от цветов',
+  deliveryRevTotal: 'Выручка от доставки',
+  revenueByMonth:   'Выручка по месяцам',
+  revenueBySource:  'Выручка по каналам',
+  costsAndMargins:  'Затраты и маржа',
+  flowerCost:       'Затраты на цветы',
+  estimatedRevenue: 'Расчётная @2.2×',
+  revenueGap:       'Разрыв выручки',
+  flowerMargin:     'Маржа цветов',
+  marginTrend:      'Тренд маржи',
+  wasteEfficiency:  'Потери и эффективность',
+  unrealisedRevenue:'Нереализованная выручка',
+  wastePercent:     'Потери %',
+  wasteNote:        'Снимок текущего склада, не исторические данные',
+  deliveryProfit:   'Прибыльность доставки',
+  deliveryCount:    'Доставки',
+  pickupCount:      'Самовывозы',
+  avgDeliveryFee:   'Средняя стоимость доставки',
+  pickupVsDelivery: 'Самовывоз vs Доставка',
+  customerMetrics:  'Метрики клиентов',
+  newCustomers:     'Новые клиенты',
+  returningCust:    'Возвращающиеся',
+  newVsReturning:   'Новые vs Возвращающиеся',
+  topSpenders:      'Топ по расходам',
+  flowers:          'Цветы',
+
+  // Filters
+  activeFilters:    'Фильтры',
+  clearAll:         'Сбросить',
+
+  // Misc
+  zl:               'zł',
+
+  // Dashboard redesign — consultant insights
+  revenueGapCard:     'Разрыв выручки (цель 2.2×)',
+  actualRevenue:      'Фактическая выручка',
+  expectedRevenue:    'Ожидаемая (2.2×)',
+  gapAmount:          'Разрыв',
+  aboveTarget:        'Выше плана',
+  belowTarget:        'Ниже плана',
+  onTarget:           'В плане',
+
+  unassignedDeliveries: 'Без водителя',
+  noDriverAssigned:   'Водитель не назначен',
+
+  atRiskCustomers:    'Под угрозой',
+  daysSinceLastOrder: 'дней с последнего заказа',
+  lastOrderDate:      'Последний заказ',
+
+  unpaidAging:        'Просроченные платежи',
+  agingToday:         'Сегодня',
+  aging1to7:          '1–7 дней',
+  aging8to30:         '8–30 дней',
+  aging30plus:        '30+ дней',
+  totalOutstanding:   'Итого задолженность',
+
+  upcomingDates:      'Ближайшие даты',
+  daysUntil:          'дней',
+
+  daysOfSupplyHeader: 'Запас (дней)',
+
+  weeklyRhythm:       'Недельный ритм',
+
+  trendUp:            'Рост',
+  trendDown:          'Снижение',
+  trendStable:        'Стабильно',
+
+  deliveryPnL:        'P&L доставки',
+  addDriverCosts:     'Добавьте расходы на водителей для полной P&L',
+  deliveryNet:        'Нетто',
+
+  // Kanban
+  statusDone:         'Готово',
+
+  // Order detail panel
+  bouquetComposition: 'Состав букета',
+  methodMbank:        'Mbank',
+  methodMonobank:     'Monobank',
+  methodRevolut:      'Revolut',
+  methodPayPal:       'PayPal',
+  methodWixOnline:    'Wix Online',
+
+  // Day names
+  dayMon:  'Пн',  dayTue: 'Вт', dayWed: 'Ср',
+  dayThu:  'Чт',  dayFri: 'Пт', daySat: 'Сб', daySun: 'Вс',
+
+  // Financial tab — new sections
+  sourceEfficiency:   'Эффективность каналов',
+  avgOrderVal:        'Средний чек',
+  marginPercent:      'Маржа %',
+  paymentAnalysis:    'Сбор оплат',
+  notRecorded:        'Не записано',
+  unpaidRate:         'Доля неоплаченных',
+  outstanding:        'Задолженность',
+  completionRate:     'Выполнение',
+  created:            'Создано',
+  completed:          'Выполнено',
+  cancelled:          'Отменено',
+  inventoryTurnover:  'Оборачиваемость',
+  turnsPerYear:       '×/год',
+  healthyRange:       'Норма: 6–12×',
+  repeatRate:         'Повторные заказы',
+  repeatRateBench:    'Отрасль: 30%+',
+  productMargin:      'Маржа',
+
+  // Customers tab — RFM & enrichments
+  rfmChampions:       'Чемпионы',
+  rfmLoyal:           'Лояльные',
+  rfmAtRisk:          'Под угрозой',
+  rfmLost:            'Потерянные',
+  rfmNew:             'Новые',
+  revenueAtRisk:      'Выручка под угрозой',
+  acquisitionSource:  'Источник привлечения',
+  customerSince:      'Клиент с',
+  avgTimeBetween:     'Среднее между заказами',
+  daysLabel:          'дней',
+  preferredChannel:   'Предпочитаемый канал',
+  lifetimeSummary:    'Профиль клиента',
+
+  // Stock
+  restockEstimate:    'Оценка закупки',
+
+  // Orders
+  margin:             'Маржа',
+};
+
+// ── Proxy-based dynamic translation ──
+let currentLang = (typeof localStorage !== 'undefined'
+  ? localStorage.getItem('blossom-lang')
+  : null) || 'ru';
+
+const langs = { en, ru };
+
+const t = new Proxy({}, {
+  get(_, key) {
+    return langs[currentLang]?.[key] ?? langs.en[key] ?? key;
+  },
+});
+
+export function setLanguage(lang) {
+  currentLang = lang;
+}
 
 export default t;

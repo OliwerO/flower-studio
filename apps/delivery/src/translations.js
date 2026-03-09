@@ -1,7 +1,7 @@
-// All UI strings in one place — switch to Russian by editing this file only.
-// Same pattern as the florist app: a single source of truth for text.
+// Delivery app translations — Proxy-based bilingual support.
+// Components use `import t from '../translations.js'` unchanged.
 
-const t = {
+const en = {
   // Login
   enterPin:     'Enter your driver PIN',
   login:        'Sign in',
@@ -72,5 +72,94 @@ const t = {
   error:         'Something went wrong',
   today:         'Today',
 };
+
+const ru = {
+  // Login
+  enterPin:     'Введите PIN водителя',
+  login:        'Войти',
+  invalidPin:   'Неверный PIN. Попробуйте ещё раз.',
+  hello:        'Привет',
+
+  // Header
+  deliveries:   'Доставки',
+  refreshList:  'Обновить',
+  logout:       'Выйти',
+
+  // Status groups
+  pending:       'Ожидают',
+  outForDelivery:'В пути',
+  delivered:     'Доставлено',
+
+  // Card
+  callRecipient: 'Позвонить',
+  openMaps:      'Навигация',
+  startDelivery: 'Начать доставку',
+  markDelivered: 'Доставлено',
+  deliveredAt:   'Доставлено в',
+  fee:           'Стоимость',
+  unpaid:        'Не оплачен',
+  paid:          'Оплачен',
+
+  // Detail sheet
+  recipient:     'Получатель',
+  phone:         'Телефон',
+  orderedBy:     'Заказчик',
+  address:       'Адрес',
+  time:          'Время',
+  orderContents: 'Состав заказа',
+  greetingCard:  'Открытка',
+  driverNotes:   'Заметки водителя',
+  notesPlaceholder: 'Добавить заметку...',
+  saveNote:      'Сохранить',
+  close:         'Закрыть',
+
+  // Map
+  viewOnMap:     'На карте',
+  openAllStops:  'Все точки в Google Maps',
+  noDeliveries:  'Нет доставок на сегодня',
+  yourLocation:  'Ваше местоположение',
+  routeStart:    'Начало маршрута',
+  locating:      'Определяем местоположение...',
+
+  // Payment status
+  paidBadge:     'Оплачен',
+  unpaidBadge:   'Не оплачен',
+  partialBadge:  'Частично',
+
+  // Order info
+  specialInstructions: 'Особые указания',
+
+  // Driver filter
+  allDrivers:    'Все',
+
+  // Confirmation
+  confirmDelivery: 'Подтвердить доставку?',
+
+  // Notifications
+  newOrderAlert:   'Новый заказ получен',
+  orderReadyAlert: 'Заказ готов к доставке',
+
+  // General
+  loading:       'Загрузка...',
+  error:         'Что-то пошло не так',
+  today:         'Сегодня',
+};
+
+// ── Proxy-based dynamic translation ──
+let currentLang = (typeof localStorage !== 'undefined'
+  ? localStorage.getItem('blossom-lang')
+  : null) || 'ru';
+
+const langs = { en, ru };
+
+const t = new Proxy({}, {
+  get(_, key) {
+    return langs[currentLang]?.[key] ?? langs.en[key] ?? key;
+  },
+});
+
+export function setLanguage(lang) {
+  currentLang = lang;
+}
 
 export default t;

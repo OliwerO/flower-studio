@@ -11,8 +11,6 @@ import Step2Bouquet  from './steps/Step2Bouquet.jsx';
 import Step3Details  from './steps/Step3Details.jsx';
 import Step4Review   from './steps/Step4Review.jsx';
 
-const STEPS = [t.step1, t.step2, t.step3, t.step4];
-
 const emptyForm = {
   customerId: '', customerName: '',
   customerRequest: '', orderLines: [], priceOverride: '',
@@ -24,6 +22,7 @@ const emptyForm = {
 };
 
 export default function NewOrderTab({ onNavigate }) {
+  const STEPS = [t.step1, t.step2, t.step3, t.step4];
   const { showToast }         = useToast();
   const [step, setStep]       = useState(0);
   const [form, setForm]       = useState(emptyForm);

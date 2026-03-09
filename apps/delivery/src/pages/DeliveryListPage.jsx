@@ -5,11 +5,13 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import { LangToggle } from '../context/LanguageContext.jsx';
 import client from '../api/client.js';
 import t from '../translations.js';
 import DeliveryCard from '../components/DeliveryCard.jsx';
 import DeliverySheet from '../components/DeliverySheet.jsx';
 import MapView from '../components/MapView.jsx';
+import HelpPanel from '../components/HelpPanel.jsx';
 
 function todayStr() {
   const d = new Date();
@@ -33,6 +35,7 @@ export default function DeliveryListPage() {
   const [loading, setLoading]       = useState(true);
   const [selectedId, setSelectedId] = useState(null);
   const [showMap, setShowMap]       = useState(false);
+  const [showHelp, setShowHelp]     = useState(false);
 
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
@@ -127,6 +130,12 @@ export default function DeliveryListPage() {
             <p className="text-xs text-ios-tertiary">{formatDateHeader()} · {driverName || 'Driver'}</p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={() => setShowHelp(true)}
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-ios-secondary
+                         hover:bg-gray-200 active-scale flex items-center justify-center"
+            >?</button>
+            <LangToggle />
             <button
               onClick={fetchDeliveries}
               className="text-xs text-brand-600 font-medium px-2 py-1 rounded-lg active:bg-gray-100 active-scale"
@@ -230,6 +239,8 @@ export default function DeliveryListPage() {
       )}
 
       {/* Detail sheet */}
+      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+
       {selectedDelivery && (
         <DeliverySheet
           delivery={selectedDelivery}
