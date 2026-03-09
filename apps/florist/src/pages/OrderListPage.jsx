@@ -22,8 +22,8 @@ const STATUS_PRIORITY = {
 
 function sortByStatus(orders) {
   return [...orders].sort((a, b) => {
-    const pa = STATUS_PRIORITY[a.status] ?? 99;
-    const pb = STATUS_PRIORITY[b.status] ?? 99;
+    const pa = STATUS_PRIORITY[a['Status']] ?? 99;
+    const pb = STATUS_PRIORITY[b['Status']] ?? 99;
     return pa - pb;
   });
 }
