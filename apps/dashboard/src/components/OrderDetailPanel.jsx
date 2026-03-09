@@ -289,6 +289,23 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           onSave={v => patchOrder({ 'Notes Original': v })}
           disabled={saving}
         />
+        {o['Notes Translated'] && o['Notes Translated'] !== o['Notes Original'] && (
+          <p className="text-xs text-gray-500 mt-1 italic">{o['Notes Translated']}</p>
+        )}
+        {o['Notes Original'] && (
+          <button
+            onClick={async () => {
+              try {
+                const { data } = await client.post(`/orders/${orderId}/translate`);
+                setOrder(prev => ({ ...prev, 'Notes Translated': data.translated }));
+                showToast(t.translated);
+              } catch {
+                showToast(t.error, 'error');
+              }
+            }}
+            className="text-xs text-brand-600 hover:text-brand-700 mt-1"
+          >{t.retranslate}</button>
+        )}
       </Section>
 
       {/* Action buttons */}

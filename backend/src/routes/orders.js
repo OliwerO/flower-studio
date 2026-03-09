@@ -5,6 +5,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from '../services/notifications.js';
 import { getDriverOfDay, getConfig } from './settings.js';
+import { translateOrderNotes } from '../services/translate.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -303,10 +304,17 @@ router.post('/', async (req, res, next) => {
       broadcast({
         type: 'new_order',
         orderId: order.id,
-        customerName: '', // caller already knows — this is for other open tabs/apps
+        customerName: '',
         source: source || 'In-store',
         request: customerRequest || '',
       });
+
+      // Translate notes async — fire-and-forget, never blocks the response
+      if (notes) {
+        translateOrderNotes(order.id, notes).catch(err =>
+          console.error('[ORDER] Translation failed (non-blocking):', err.message)
+        );
+      }
 
       res.status(201).json({
         order,
@@ -465,6 +473,25 @@ router.post('/:id/cancel-with-return', async (req, res, next) => {
       message: 'Order cancelled and stock returned.',
       returnedItems,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/orders/:id/translate — manually re-translate order notes.
+// Like asking the translator to redo a document — useful if the auto-translation
+// was wrong or the notes were updated after initial creation.
+router.post('/:id/translate', async (req, res, next) => {
+  try {
+    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    const notes = order['Notes Original'];
+    if (!notes || !notes.trim()) {
+      return res.json({ translated: '' });
+    }
+    const { translateToRussian } = await import('../services/translate.js');
+    const translated = await translateToRussian(notes);
+    await db.update(TABLES.ORDERS, req.params.id, { 'Notes Translated': translated });
+    res.json({ translated });
   } catch (err) {
     next(err);
   }

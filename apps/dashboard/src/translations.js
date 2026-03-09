@@ -357,6 +357,8 @@ const en = {
 
   // Orders
   margin:             'Margin',
+  translated:         'Translated',
+  retranslate:        'Translate to Russian',
 
   // Settings tab
   tabSettings:              'Settings',
@@ -738,6 +740,8 @@ const ru = {
 
   // Orders
   margin:             'Маржа',
+  translated:         'Переведено',
+  retranslate:        'Перевести на русский',
 
   // Settings tab
   tabSettings:              'Настройки',
