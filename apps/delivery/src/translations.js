@@ -63,6 +63,10 @@ const t = {
   // Confirmation
   confirmDelivery: 'Confirm delivery?',
 
+  // Notifications
+  newOrderAlert:   'New order received',
+  orderReadyAlert: 'Order ready for delivery',
+
   // General
   loading:       'Loading...',
   error:         'Something went wrong',

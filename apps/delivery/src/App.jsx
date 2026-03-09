@@ -5,6 +5,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import { setClientPin } from './api/client.js';
+import { useNotifications } from './hooks/useNotifications.js';
 
 import LoginPage        from './pages/LoginPage.jsx';
 import DeliveryListPage from './pages/DeliveryListPage.jsx';
@@ -21,6 +22,9 @@ export default function App() {
   useEffect(() => {
     setClientPin(pin);
   }, [pin]);
+
+  // Listen for SSE notifications only when logged in
+  useNotifications(!!pin);
 
   return (
     <>
