@@ -5,6 +5,11 @@ import base, { TABLES } from '../config/airtable.js';
 // Like a loading dock with 5 bays — 5 trucks can unload at once, then the next batch.
 const queue = new PQueue({ concurrency: 5, intervalCap: 5, interval: 1000 });
 
+// Stock-specific queue: concurrency 1 — serializes ALL stock quantity changes.
+// Like a single-lane loading dock: only one adjustment at a time,
+// so two simultaneous orders can't read the same quantity and clobber each other.
+const stockQueue = new PQueue({ concurrency: 1 });
+
 // Wraps every Airtable call so it flows through the queue automatically.
 const enqueue = (fn) => queue.add(fn);
 
@@ -91,5 +96,29 @@ export async function deleteRecord(tableId, recordId) {
   return enqueue(async () => {
     const record = await base(tableId).destroy(recordId);
     return { id: record.id, deleted: true };
+  });
+}
+
+/**
+ * Atomically adjust a stock item's quantity by a delta (negative = deduct, positive = add).
+ * Runs through stockQueue (concurrency 1) so concurrent orders are serialized.
+ * Returns { previousQty, newQty } for rollback tracking.
+ */
+export async function atomicStockAdjust(stockId, delta) {
+  return stockQueue.add(async () => {
+    // 1. Read current quantity — fresh, not from a stale snapshot
+    const item = await enqueue(async () => {
+      const r = await base(TABLES.STOCK).find(stockId);
+      return { id: r.id, ...r.fields };
+    });
+    const previousQty = Number(item['Current Quantity'] || 0);
+    const newQty = previousQty + delta;
+
+    // 2. Write new quantity
+    await enqueue(() =>
+      base(TABLES.STOCK).update(stockId, { 'Current Quantity': newQty }, { typecast: true })
+    );
+
+    return { stockId, previousQty, newQty };
   });
 }

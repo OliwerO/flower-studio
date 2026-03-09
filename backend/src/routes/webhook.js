@@ -1,6 +1,9 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { processWixOrder } from '../services/wix.js';
+import { authorize } from '../middleware/auth.js';
+import * as db from '../services/airtable.js';
+import { TABLES } from '../config/airtable.js';
 
 const router = Router();
 
@@ -66,6 +69,23 @@ router.post('/wix', verifyWixSignature, (req, res) => {
   processWixOrder(payload).catch(err => {
     console.error('[WEBHOOK] Wix processing error:', err);
   });
+});
+
+// GET /api/webhook/log — owner-only endpoint for viewing webhook history.
+// Like a receiving dock log book — shows all packages received, processed, or rejected.
+router.get('/log', authorize('admin'), async (req, res, next) => {
+  try {
+    if (!TABLES.WEBHOOK_LOG) {
+      return res.json([]);
+    }
+    const logs = await db.list(TABLES.WEBHOOK_LOG, {
+      sort: [{ field: 'Timestamp', direction: 'desc' }],
+      maxRecords: 100,
+    });
+    res.json(logs);
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

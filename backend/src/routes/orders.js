@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from '../services/notifications.js';
+import { getDriverOfDay } from './settings.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -235,21 +236,10 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: `paymentStatus must be one of: ${VALID_PAYMENT_STATUSES.join(', ')}` });
     }
 
-    // --- Fix 4: Batch pre-fetch stock items (single consistent snapshot) ---
-    // Like doing one warehouse count before starting a production run,
-    // instead of checking each bin mid-assembly.
-    const stockItemIds = [...new Set(orderLines.filter(l => l.stockItemId).map(l => l.stockItemId))];
-    const stockSnapshot = {};
-    if (stockItemIds.length > 0) {
-      const stockItems = await db.list(TABLES.STOCK, {
-        filterByFormula: `OR(${stockItemIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-      });
-      for (const item of stockItems) stockSnapshot[item.id] = item;
-    }
-
-    // --- Fix 3: Rollback tracking ---
+    // --- Rollback tracking ---
     let order = null;
     const createdLineIds = [];
+    const stockAdjustments = []; // track deductions for rollback: [{ stockId, delta }]
     let createdDelivery = null;
 
     try {
@@ -286,16 +276,11 @@ router.post('/', async (req, res, next) => {
         createdLineIds.push(created.id);
       }
 
-      // 3. Deduct stock using the pre-fetched snapshot quantities
+      // 3. Deduct stock atomically — serialized through stockQueue (no race conditions)
       for (const line of orderLines) {
-        if (line.stockItemId && stockSnapshot[line.stockItemId]) {
-          const snapshotQty = stockSnapshot[line.stockItemId]['Current Quantity'] || 0;
-          // Deduct from snapshot, then update snapshot for subsequent lines using same stock item
-          const newQty = snapshotQty - line.quantity;
-          stockSnapshot[line.stockItemId]['Current Quantity'] = newQty;
-          await db.update(TABLES.STOCK, line.stockItemId, {
-            'Current Quantity': newQty,
-          });
+        if (line.stockItemId) {
+          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+          stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
         }
       }
 
@@ -308,7 +293,7 @@ router.post('/', async (req, res, next) => {
           'Recipient Phone':   delivery.recipientPhone || '',
           'Delivery Date':   delivery.date || null,
           'Delivery Time':   delivery.time || '',
-          'Assigned Driver': delivery.driver || null,
+          'Assigned Driver': delivery.driver || getDriverOfDay() || null,
           'Delivery Fee':      delivery.fee ?? 35,
           Status:              'Pending',
         });
@@ -329,11 +314,16 @@ router.post('/', async (req, res, next) => {
         delivery: createdDelivery,
       });
     } catch (creationErr) {
-      // --- Fix 3: Rollback — clean up partially created records ---
-      // Like scrapping a half-assembled unit when a defect is found mid-line.
-      // We delete what was created but don't attempt to restore stock (too complex/stale).
+      // Rollback — reverse stock deductions, delete created records.
+      // Like scrapping a half-assembled unit and returning parts to the bins.
       console.error('Order creation failed mid-sequence, rolling back:', creationErr.message);
       const rollbackErrors = [];
+
+      // Reverse stock deductions (add back what was deducted)
+      for (const adj of stockAdjustments) {
+        try { await db.atomicStockAdjust(adj.stockId, -adj.delta); }
+        catch (e) { rollbackErrors.push(`Failed to reverse stock ${adj.stockId}: ${e.message}`); }
+      }
 
       for (const lineId of createdLineIds) {
         try { await db.deleteRecord(TABLES.ORDER_LINES, lineId); }
@@ -412,6 +402,61 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     res.json(order);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/orders/:id/cancel-with-return — cancel order AND return stock quantities.
+// Unlike plain cancel (which leaves stock as-is because flowers may be used/discarded),
+// this explicitly adds quantities back. Like a full return-to-shelf after a cancelled production run.
+router.post('/:id/cancel-with-return', async (req, res, next) => {
+  try {
+    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    const currentStatus = order.Status || 'New';
+
+    // Only allow cancel-with-return from non-terminal states
+    if (currentStatus === 'Delivered' || currentStatus === 'Picked Up') {
+      return res.status(400).json({
+        error: `Cannot cancel a ${currentStatus} order — it has already been fulfilled.`,
+      });
+    }
+    if (currentStatus === 'Cancelled') {
+      return res.status(400).json({ error: 'Order is already cancelled.' });
+    }
+
+    // Fetch order lines to know what stock to return
+    const lineIds = order['Order Lines'] || [];
+    let returnedItems = [];
+
+    if (lineIds.length > 0) {
+      const lines = await db.list(TABLES.ORDER_LINES, {
+        filterByFormula: `OR(${lineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+      });
+
+      // Return stock for each line that has a linked stock item
+      for (const line of lines) {
+        const stockId = line['Stock Item']?.[0];
+        const qty = Number(line.Quantity || 0);
+        if (stockId && qty > 0) {
+          const { newQty } = await db.atomicStockAdjust(stockId, qty);
+          returnedItems.push({
+            stockId,
+            flowerName: line['Flower Name'] || '?',
+            quantityReturned: qty,
+            newStockQty: newQty,
+          });
+        }
+      }
+    }
+
+    // Cancel the order
+    await db.update(TABLES.ORDERS, req.params.id, { Status: 'Cancelled' });
+
+    res.json({
+      message: 'Order cancelled and stock returned.',
+      returnedItems,
+    });
   } catch (err) {
     next(err);
   }

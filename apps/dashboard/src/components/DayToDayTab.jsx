@@ -31,6 +31,8 @@ export default function DayToDayTab({ onNavigate }) {
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading]     = useState(true);
   const [kanbanOpen, setKanbanOpen] = useState(false);
+  const [driverOfDay, setDriverOfDay] = useState(null);
+  const [drivers, setDrivers]     = useState([]);
   const { showToast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -38,12 +40,15 @@ export default function DayToDayTab({ onNavigate }) {
       const today = new Date().toISOString().split('T')[0];
       const firstOfMonth = today.slice(0, 8) + '01';
 
-      const [dashRes, analyticsRes] = await Promise.all([
+      const [dashRes, analyticsRes, settingsRes] = await Promise.all([
         client.get('/dashboard', { params: { date: today } }),
         client.get('/analytics', { params: { from: firstOfMonth, to: today } }).catch(() => ({ data: null })),
+        client.get('/settings').catch(() => ({ data: {} })),
       ]);
       setData(dashRes.data);
       setAnalytics(analyticsRes.data);
+      setDriverOfDay(settingsRes.data.driverOfDay || null);
+      setDrivers(settingsRes.data.drivers || []);
     } catch {
       showToast(t.error, 'error');
     } finally {
@@ -82,6 +87,16 @@ export default function DayToDayTab({ onNavigate }) {
   if (!data) return null;
 
   const nav = (tab, filter) => onNavigate?.({ tab, filter });
+
+  async function handleDriverOfDay(name) {
+    try {
+      await client.put('/settings/driver-of-day', { driverName: name || null });
+      setDriverOfDay(name || null);
+      showToast(name ? `${t.driverOfDay}: ${name}` : t.driverOfDayCleared);
+    } catch {
+      showToast(t.error, 'error');
+    }
+  }
 
   // Compute paid/unpaid totals from recent orders (use Effective Price computed by backend)
   const paidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Paid');
@@ -128,6 +143,35 @@ export default function DayToDayTab({ onNavigate }) {
           onClick={() => nav('orders', { payment: 'Unpaid' })}
         />
       </div>
+
+      {/* Driver of the day — quick toggle for auto-assigning deliveries */}
+      {drivers.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
+          <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
+            {t.driverOfDay}
+          </h3>
+          <div className="flex flex-wrap gap-2">
+            {drivers.map(name => (
+              <button
+                key={name}
+                onClick={() => handleDriverOfDay(driverOfDay === name ? null : name)}
+                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all active-scale ${
+                  driverOfDay === name
+                    ? 'bg-brand-600 text-white shadow-md'
+                    : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+          {driverOfDay && (
+            <p className="text-xs text-ios-secondary mt-2">
+              {t.driverOfDayHint}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Unassigned deliveries — crisis alert */}
       {data.unassignedDeliveries?.length > 0 && (

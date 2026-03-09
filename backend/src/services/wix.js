@@ -6,6 +6,7 @@ import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
+import { logWebhookEvent } from './webhookLog.js';
 
 /**
  * Process a Wix order payload asynchronously.
@@ -39,6 +40,7 @@ export async function processWixOrder(payload) {
     });
     if (existing.length > 0) {
       log('2-DEDUP', `Already exists as ${existing[0].id} — skipping`);
+      await logWebhookEvent({ status: 'Duplicate', wixOrderId, appOrderId: existing[0].id });
       return;
     }
     log('2-DEDUP', 'New order — processing');
@@ -235,6 +237,7 @@ export async function processWixOrder(payload) {
     }
 
     log('DONE', `Order ${order.id} created successfully from Wix #${wixOrderId}`);
+    await logWebhookEvent({ status: 'Success', wixOrderId, appOrderId: order.id });
 
     // Broadcast to all connected SSE clients (florist app, dashboard)
     broadcast({
@@ -248,5 +251,11 @@ export async function processWixOrder(payload) {
     return order;
   } catch (err) {
     console.error('[WIX] Processing failed:', err);
+    await logWebhookEvent({
+      status: 'Failed',
+      wixOrderId: payload?.data?.order?.id || payload?.order?.id || payload?.id || 'unknown',
+      errorMessage: err.message,
+      rawPayload: payload,
+    });
   }
 }

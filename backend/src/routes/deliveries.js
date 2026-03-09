@@ -11,7 +11,11 @@ const DELIVERIES_PATCH_ALLOWED = [
   'Delivery Address', 'Recipient Name', 'Recipient Phone',
   'Delivery Date', 'Delivery Time', 'Assigned Driver', 'Status',
   'Driver Payment Status', 'Driver Notes', 'Delivered At', 'Delivery Fee',
+  'Delivery Result',
 ];
+
+// SYNC: must match RESULTS in apps/delivery/src/components/DeliveryResultPicker.jsx
+const VALID_DELIVERY_RESULTS = ['Success', 'Not Home', 'Wrong Address', 'Refused', 'Incomplete'];
 
 function pickAllowed(body, allowedFields) {
   const filtered = {};
@@ -89,6 +93,13 @@ router.get('/', async (req, res, next) => {
 router.patch('/:id', async (req, res, next) => {
   try {
     const fields = pickAllowed(req.body, DELIVERIES_PATCH_ALLOWED);
+
+    // Validate Delivery Result if provided
+    if (fields['Delivery Result'] && !VALID_DELIVERY_RESULTS.includes(fields['Delivery Result'])) {
+      return res.status(400).json({
+        error: `Delivery Result must be one of: ${VALID_DELIVERY_RESULTS.join(', ')}`,
+      });
+    }
 
     // When a driver changes status, stamp their name on the delivery.
     // Like signing a work order — whoever completes it gets credited.

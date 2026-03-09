@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react';
 import t from '../translations.js';
 
-export default function DeliverySheet({ delivery, onClose, onStatusChange, onSaveNote }) {
+export default function DeliverySheet({ delivery, onClose, onStatusChange, onProblem, onSaveNote }) {
   const d = delivery;
   const status     = d['Status'] || 'Pending';
   const isPending  = status === 'Pending';
@@ -25,6 +25,7 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
   const payment        = d['Driver Payment Status'] || t.unpaid;
   const cardText       = d['Greeting Card Text'] || '';
   const deliveredAt    = d['Delivered At'];
+  const deliveryResult = d['Delivery Result'] || '';
   const customerName   = d['Customer Name'] || '';
   const customerPhone  = d['Customer Phone'] || '';
   const orderContents  = d['Order Contents'] || '';
@@ -125,13 +126,20 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
               </div>
             )}
 
-            {/* Delivered at */}
+            {/* Delivered at + result */}
             {isDone && deliveredAt && (
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-ios-tertiary">{t.deliveredAt}</span>
-                <span className="text-sm font-medium text-ios-green">
-                  ✓ {new Date(deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </span>
+                <div className="text-right">
+                  <span className="text-sm font-medium text-ios-green">
+                    ✓ {new Date(deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                  {deliveryResult && deliveryResult !== 'Success' && (
+                    <p className="text-xs text-ios-orange mt-0.5">
+                      {t[`result_${deliveryResult.replace(/\s/g, '_').toLowerCase()}`] || deliveryResult}
+                    </p>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -218,15 +226,22 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onSav
                 </button>
               )}
               {isOut && (
-                <button
-                  onClick={() => {
-                    if (window.confirm(t.confirmDelivery)) onStatusChange('Delivered');
-                  }}
-                  className="w-full h-12 rounded-2xl bg-ios-green text-white text-base font-semibold
-                             flex items-center justify-center gap-2 active:opacity-80 active-scale shadow-md"
-                >
-                  ✓ {t.markDelivered}
-                </button>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => onStatusChange('Delivered')}
+                    className="flex-1 h-12 rounded-2xl bg-ios-green text-white text-base font-semibold
+                               flex items-center justify-center gap-2 active:opacity-80 active-scale shadow-md"
+                  >
+                    ✓ {t.markDelivered}
+                  </button>
+                  <button
+                    onClick={() => onProblem?.()}
+                    className="h-12 px-4 rounded-2xl bg-orange-500 text-white text-base font-semibold
+                               flex items-center justify-center active:opacity-80 active-scale shadow-md"
+                  >
+                    ⚠ {t.problem}
+                  </button>
+                </div>
               )}
             </div>
           )}

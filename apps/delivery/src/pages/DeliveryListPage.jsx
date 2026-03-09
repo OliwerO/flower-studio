@@ -10,6 +10,7 @@ import client from '../api/client.js';
 import t from '../translations.js';
 import DeliveryCard from '../components/DeliveryCard.jsx';
 import DeliverySheet from '../components/DeliverySheet.jsx';
+import DeliveryResultPicker from '../components/DeliveryResultPicker.jsx';
 import MapView from '../components/MapView.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 
@@ -36,6 +37,8 @@ export default function DeliveryListPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [showMap, setShowMap]       = useState(false);
   const [showHelp, setShowHelp]     = useState(false);
+  // Track which delivery is awaiting a result selection (replaces window.confirm)
+  const [resultPickerId, setResultPickerId] = useState(null);
 
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
@@ -80,12 +83,37 @@ export default function DeliveryListPage() {
 
   const selectedDelivery = deliveries.find(d => d.id === selectedId);
 
+  // Standard status change — "Start Delivery" or "Mark Delivered" (= Success)
   async function updateStatus(id, newStatus) {
     try {
-      const res = await client.patch(`/deliveries/${id}`, { Status: newStatus });
+      const patch = { Status: newStatus };
+      if (newStatus === 'Delivered') patch['Delivery Result'] = 'Success';
+      const res = await client.patch(`/deliveries/${id}`, patch);
       setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...res.data } : d));
       showToast(`${newStatus}!`);
       if (newStatus === 'Delivered') setSelectedId(null);
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
+  // "Problem" button → opens result picker for non-success outcomes
+  function openProblemPicker(id) {
+    setResultPickerId(id);
+  }
+
+  // Called when driver picks a problem reason from the DeliveryResultPicker
+  async function handleDeliveryProblem(result) {
+    const id = resultPickerId;
+    setResultPickerId(null);
+    try {
+      const res = await client.patch(`/deliveries/${id}`, {
+        Status: 'Delivered',
+        'Delivery Result': result,
+      });
+      setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...res.data } : d));
+      showToast(`${t.delivered} — ${result}`);
+      setSelectedId(null);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
     }
@@ -176,6 +204,7 @@ export default function DeliveryListPage() {
                       delivery={d}
                       onTap={() => setSelectedId(d.id)}
                       onStatusChange={(status) => updateStatus(d.id, status)}
+                      onProblem={() => openProblemPicker(d.id)}
                     />
                   ))}
                 </div>
@@ -196,6 +225,7 @@ export default function DeliveryListPage() {
                       delivery={d}
                       onTap={() => setSelectedId(d.id)}
                       onStatusChange={(status) => updateStatus(d.id, status)}
+                      onProblem={() => openProblemPicker(d.id)}
                     />
                   ))}
                 </div>
@@ -246,7 +276,16 @@ export default function DeliveryListPage() {
           delivery={selectedDelivery}
           onClose={() => setSelectedId(null)}
           onStatusChange={(status) => updateStatus(selectedDelivery.id, status)}
+          onProblem={() => openProblemPicker(selectedDelivery.id)}
           onSaveNote={(note) => saveNote(selectedDelivery.id, note)}
+        />
+      )}
+
+      {/* Problem picker — shown when driver taps "Problem" button */}
+      {resultPickerId && (
+        <DeliveryResultPicker
+          onSelect={handleDeliveryProblem}
+          onCancel={() => setResultPickerId(null)}
         />
       )}
     </div>

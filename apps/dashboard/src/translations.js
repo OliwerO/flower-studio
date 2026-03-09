@@ -246,6 +246,9 @@ const en = {
 
   unassignedDeliveries: 'Unassigned deliveries',
   noDriverAssigned:   'No driver assigned',
+  driverOfDay:        'Driver of the day',
+  driverOfDayCleared: 'Driver of the day cleared',
+  driverOfDayHint:    'New deliveries will auto-assign to this driver',
 
   atRiskCustomers:    'At risk',
   daysSinceLastOrder: 'days since last order',
@@ -573,6 +576,9 @@ const ru = {
 
   unassignedDeliveries: 'Без водителя',
   noDriverAssigned:   'Водитель не назначен',
+  driverOfDay:        'Водитель дня',
+  driverOfDayCleared: 'Водитель дня снят',
+  driverOfDayHint:    'Новые доставки автоматически назначаются этому водителю',
 
   atRiskCustomers:    'Под угрозой',
   daysSinceLastOrder: 'дней с последнего заказа',

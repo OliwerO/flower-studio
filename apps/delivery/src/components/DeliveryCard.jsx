@@ -4,7 +4,7 @@
 
 import t from '../translations.js';
 
-export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }) {
+export default function DeliveryCard({ delivery, onTap, onStatusChange, onProblem, dimmed }) {
   const d = delivery;
   const status     = d['Status'] || 'Pending';
   const isPending  = status === 'Pending';
@@ -16,8 +16,9 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
   const time          = d['Delivery Time'] || '';
   const recipient     = d['Recipient Name'] || 'Unknown';
   const fee           = d['Delivery Fee'];
-  const deliveredAt   = d['Delivered At'];
-  const orderContents = d['Order Contents'] || '';
+  const deliveredAt     = d['Delivered At'];
+  const deliveryResult  = d['Delivery Result'] || '';
+  const orderContents   = d['Order Contents'] || '';
   const specialInstr  = d['Special Instructions'] || '';
   const paymentStatus = d['Payment Status'] || '';
 
@@ -33,11 +34,8 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
     return <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-red-100 text-red-700">{t.unpaidBadge}</span>;
   }
 
-  // Confirmation wrapper for status changes
+  // Status changes flow up to parent — result picker is handled at page level
   function handleStatusChange(newStatus) {
-    if (newStatus === 'Delivered') {
-      if (!window.confirm(t.confirmDelivery)) return;
-    }
     onStatusChange(newStatus);
   }
 
@@ -116,6 +114,9 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
               ✓ {new Date(deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           )}
+          {isDone && deliveryResult && deliveryResult !== 'Success' && (
+            <span className="text-orange-500 font-medium">{deliveryResult}</span>
+          )}
         </div>
 
         {/* Action button */}
@@ -131,13 +132,22 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, dimmed }
               </button>
             )}
             {isOut && (
-              <button
-                onClick={e => { e.stopPropagation(); handleStatusChange('Delivered'); }}
-                className="w-full h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold
-                           flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
-              >
-                ✓ {t.markDelivered}
-              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={e => { e.stopPropagation(); handleStatusChange('Delivered'); }}
+                  className="flex-1 h-10 rounded-xl bg-emerald-600 text-white text-sm font-semibold
+                             flex items-center justify-center gap-1.5 active:opacity-80 active-scale"
+                >
+                  ✓ {t.markDelivered}
+                </button>
+                <button
+                  onClick={e => { e.stopPropagation(); onProblem?.(); }}
+                  className="h-10 px-3 rounded-xl bg-orange-500 text-white text-sm font-semibold
+                             flex items-center justify-center active:opacity-80 active-scale"
+                >
+                  ⚠
+                </button>
+              </div>
             )}
           </div>
         )}

@@ -60,8 +60,15 @@ const en = {
   // Driver filter
   allDrivers:    'All',
 
-  // Confirmation
-  confirmDelivery: 'Confirm delivery?',
+  // Delivery actions
+  problem:              'Problem',
+  deliveryProblem:      'What happened?',
+  result_success:       'Delivered successfully',
+  result_not_home:      'Not home',
+  result_wrong_address: 'Wrong address',
+  result_refused:       'Refused',
+  result_incomplete:    'Incomplete delivery',
+  cancel:               'Cancel',
 
   // Notifications
   newOrderAlert:   'New order received',
@@ -132,8 +139,15 @@ const ru = {
   // Driver filter
   allDrivers:    'Все',
 
-  // Confirmation
-  confirmDelivery: 'Подтвердить доставку?',
+  // Delivery actions
+  problem:              'Проблема',
+  deliveryProblem:      'Что произошло?',
+  result_success:       'Доставлено успешно',
+  result_not_home:      'Нет дома',
+  result_wrong_address: 'Неверный адрес',
+  result_refused:       'Отказ',
+  result_incomplete:    'Неполная доставка',
+  cancel:               'Отмена',
 
   // Notifications
   newOrderAlert:   'Новый заказ получен',
