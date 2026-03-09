@@ -19,6 +19,8 @@ import webhookRoutes       from './routes/webhook.js';
 import eventsRoutes        from './routes/events.js';
 import intakeRoutes        from './routes/intake.js';
 import settingsRoutes      from './routes/settings.js';
+import marketingSpendRoutes from './routes/marketingSpend.js';
+import stockLossRoutes     from './routes/stockLoss.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -71,6 +73,8 @@ app.use('/api/analytics',       analyticsRoutes);
 app.use('/api/stock-purchases', stockPurchaseRoutes);
 app.use('/api/intake',          intakeRoutes);
 app.use('/api/settings',        settingsRoutes);
+app.use('/api/marketing-spend', marketingSpendRoutes);
+app.use('/api/stock-loss',      stockLossRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);

@@ -444,6 +444,61 @@ export default function FinancialTab({ onNavigate }) {
         </Section>
       )}
 
+      {/* ── Stock Loss Breakdown ── */}
+      {data.stockLossBreakdown?.totalQty > 0 && (
+        <Section title={t.stockLossBreakdown} sectionKey="stockloss" collapsed={collapsed} onToggle={toggle}>
+          <div className="space-y-2">
+            {data.stockLossBreakdown.byReason.map(r => (
+              <div key={r.reason} className="flex items-center gap-3">
+                <span className="text-sm font-medium text-ios-label w-24">{r.reason}</span>
+                <div className="flex-1 bg-gray-100 rounded-full h-5 overflow-hidden">
+                  <div
+                    className="h-full bg-rose-400 rounded-full flex items-center justify-end pr-2"
+                    style={{ width: `${Math.max(r.percent, 8)}%` }}
+                  >
+                    <span className="text-[10px] font-bold text-white">{r.qty}</span>
+                  </div>
+                </div>
+                <span className="text-xs text-ios-tertiary w-10 text-right">{r.percent}%</span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-ios-tertiary mt-2 italic">
+            {t.totalLost}: {data.stockLossBreakdown.totalQty} {t.stems}
+          </p>
+        </Section>
+      )}
+
+      {/* ── Supplier Scorecard ── */}
+      {data.supplierScorecard?.length > 0 && (
+        <Section title={t.supplierScorecard} sectionKey="suppliers" collapsed={collapsed} onToggle={toggle}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-xs text-ios-tertiary border-b border-gray-100">
+                  <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.purchases}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.totalSpend}</th>
+                  <th className="text-right px-3 py-2 font-medium">{t.avgPrice}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.supplierScorecard.map(s => (
+                  <tr key={s.supplier} className="border-b border-gray-50">
+                    <td className="px-3 py-2 font-medium text-ios-label">{s.supplier}</td>
+                    <td className="px-3 py-2 text-right text-ios-secondary">{s.purchaseCount}</td>
+                    <td className="px-3 py-2 text-right text-ios-secondary">{s.totalQty}</td>
+                    <td className="px-3 py-2 text-right font-medium text-brand-700">{s.totalSpend.toFixed(0)} {t.zl}</td>
+                    <td className="px-3 py-2 text-right text-ios-secondary">{s.avgPricePerUnit.toFixed(2)} {t.zl}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+      )}
+
       {/* ── 5. Customer Insights ── */}
       <Section title={t.customerMetrics} sectionKey="customers" collapsed={collapsed} onToggle={toggle}>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">

@@ -49,7 +49,7 @@ router.get('/', async (req, res, next) => {
       {Status} != 'Cancelled'
     )`;
 
-    const [orders, stock, prevOrders, cancelledOrders] = await Promise.all([
+    const [orders, stock, prevOrders, cancelledOrders, stockPurchases, stockLosses] = await Promise.all([
       db.list(TABLES.ORDERS, { filterByFormula: dateFilter }),
       db.list(TABLES.STOCK, {
         filterByFormula: '{Active} = TRUE()',
@@ -67,6 +67,20 @@ router.get('/', async (req, res, next) => {
         )`,
         fields: ['Order Date'],
       }).catch(() => []),
+      // Stock purchases in period — for supplier scorecard
+      TABLES.STOCK_PURCHASES ? db.list(TABLES.STOCK_PURCHASES, {
+        filterByFormula: `AND(
+          NOT(IS_BEFORE({Purchase Date}, '${safeFrom}')),
+          NOT(IS_AFTER({Purchase Date}, '${safeTo}'))
+        )`,
+      }).catch(() => []) : Promise.resolve([]),
+      // Stock losses in period — for waste breakdown
+      TABLES.STOCK_LOSS_LOG ? db.list(TABLES.STOCK_LOSS_LOG, {
+        filterByFormula: `AND(
+          NOT(IS_BEFORE({Date}, '${safeFrom}')),
+          NOT(IS_AFTER({Date}, '${safeTo}'))
+        )`,
+      }).catch(() => []) : Promise.resolve([]),
     ]);
 
     // ── Bulk-fetch order lines + deliveries in parallel ──
@@ -437,6 +451,34 @@ router.get('/', async (req, res, next) => {
       maxMinutes: Math.max(...prepTimes),
     } : null;
 
+    // ── Supplier scorecard — aggregate stock purchases by supplier ──
+    const supplierMap = {};
+    for (const p of stockPurchases) {
+      const name = p.Supplier || 'Unknown';
+      if (!supplierMap[name]) supplierMap[name] = { supplier: name, totalSpend: 0, purchaseCount: 0, totalQty: 0 };
+      supplierMap[name].totalSpend += (p['Price Per Unit'] || 0) * (p['Quantity Purchased'] || 0);
+      supplierMap[name].purchaseCount++;
+      supplierMap[name].totalQty += p['Quantity Purchased'] || 0;
+    }
+    const supplierScorecard = Object.values(supplierMap)
+      .map(s => ({
+        ...s,
+        avgPricePerUnit: s.totalQty > 0 ? Math.round((s.totalSpend / s.totalQty) * 100) / 100 : 0,
+      }))
+      .sort((a, b) => b.totalSpend - a.totalSpend);
+
+    // ── Stock loss breakdown by reason ──
+    const lossReasonMap = {};
+    let totalLossQty = 0;
+    for (const l of stockLosses) {
+      const reason = l.Reason || 'Other';
+      lossReasonMap[reason] = (lossReasonMap[reason] || 0) + (l.Quantity || 0);
+      totalLossQty += l.Quantity || 0;
+    }
+    const stockLossBreakdown = Object.entries(lossReasonMap)
+      .map(([reason, qty]) => ({ reason, qty, percent: totalLossQty > 0 ? Math.round((qty / totalLossQty) * 100) : 0 }))
+      .sort((a, b) => b.qty - a.qty);
+
     res.json({
       period: { from, to },
       revenue: {
@@ -484,6 +526,8 @@ router.get('/', async (req, res, next) => {
         annualizedCost: Math.round(annualizedCost),
       },
       prepTime: prepTimeStats,
+      supplierScorecard,
+      stockLossBreakdown: { byReason: stockLossBreakdown, totalQty: totalLossQty },
     });
   } catch (err) {
     next(err);
