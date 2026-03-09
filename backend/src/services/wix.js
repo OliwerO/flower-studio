@@ -205,15 +205,13 @@ export async function processWixOrder(payload) {
 
       await db.create(TABLES.ORDER_LINES, lineFields);
 
-      // Deduct stock if matched
+      // No stock deduction for Wix orders — Wix "bouquets" don't map to
+      // individual flower stock items. The florist opens the order later and
+      // manually composes the real bouquet from actual stock.
       if (matched) {
-        const newQty = (matched['Current Quantity'] || 0) - qty;
-        await db.update(TABLES.STOCK, matched.id, {
-          'Current Quantity': newQty,
-        });
-        log('7-STOCK', `Deducted ${qty} from "${matched['Display Name']}" → ${newQty} remaining`);
+        log('7-STOCK', `Matched "${productName}" to stock "${matched['Display Name']}" (no deduction — florist composes manually)`);
       } else {
-        log('7-STOCK', `No stock match for "${productName}" — text-only line (florist will handle)`);
+        log('7-STOCK', `No stock match for "${productName}" — text-only line`);
       }
     }
 

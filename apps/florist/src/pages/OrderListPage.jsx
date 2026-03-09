@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
+import TextImportModal from '../components/TextImportModal.jsx';
 import t from '../translations.js';
 
 const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
@@ -39,6 +40,8 @@ export default function OrderListPage() {
   const [loading, setLoading]       = useState(true);
   const [date, setDate]             = useState(todayISO());
   const [status, setStatus]         = useState('');
+  const [fabOpen, setFabOpen]       = useState(false);
+  const [showImport, setShowImport] = useState(false);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -136,16 +139,52 @@ export default function OrderListPage() {
         )}
       </main>
 
-      {/* FAB */}
-      <button
-        onClick={() => navigate('/orders/new')}
-        className="fixed bottom-8 right-5 w-14 h-14 bg-brand-600 text-white text-3xl
-                   rounded-full shadow-lg flex items-center justify-center
-                   active:bg-brand-700 active-scale"
-        aria-label={t.newOrder}
-      >
-        +
-      </button>
+      {/* Speed-dial FAB — tap "+" to expand, shows two options */}
+      {fabOpen && (
+        <div className="fixed inset-0 z-40" onClick={() => setFabOpen(false)} />
+      )}
+      <div className="fixed bottom-8 right-5 z-50 flex flex-col items-end gap-3">
+        {fabOpen && (
+          <>
+            {/* Paste import option */}
+            <button
+              onClick={() => { setFabOpen(false); setShowImport(true); }}
+              className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active-scale"
+            >
+              <span className="text-sm font-semibold text-ios-label">{t.intake.fabLabel}</span>
+              <span className="w-10 h-10 rounded-full bg-amber-500 text-white text-lg flex items-center justify-center">📋</span>
+            </button>
+            {/* Manual new order option */}
+            <button
+              onClick={() => { setFabOpen(false); navigate('/orders/new'); }}
+              className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active-scale"
+            >
+              <span className="text-sm font-semibold text-ios-label">{t.intake.fabManual}</span>
+              <span className="w-10 h-10 rounded-full bg-brand-600 text-white text-lg flex items-center justify-center">✏️</span>
+            </button>
+          </>
+        )}
+        {/* Main FAB */}
+        <button
+          onClick={() => setFabOpen(v => !v)}
+          className={`w-14 h-14 bg-brand-600 text-white text-3xl rounded-full shadow-lg
+                     flex items-center justify-center active:bg-brand-700 active-scale
+                     transition-transform duration-200 ${fabOpen ? 'rotate-45' : ''}`}
+          aria-label={t.newOrder}
+        >
+          +
+        </button>
+      </div>
+
+      {/* Text import modal */}
+      {showImport && (
+        <TextImportModal
+          onClose={() => setShowImport(false)}
+          onParsed={(draft) => {
+            navigate('/orders/new', { state: { importDraft: draft } });
+          }}
+        />
+      )}
     </div>
   );
 }

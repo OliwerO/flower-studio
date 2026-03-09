@@ -75,6 +75,9 @@ export default function OrderCard({ order, onOrderUpdated }) {
   const request    = order['Customer Request'] || '';
   const price      = order['Price Override'] || order['Sell Total'] || '';
   const isPaid     = order['Payment Status'] === 'Paid';
+  const isWix      = order['Source'] === 'Wix';
+  // Wix orders without a composed bouquet — florist needs to select actual flowers
+  const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
 
   function toggle() {
     if (expanded) {
@@ -136,6 +139,11 @@ export default function OrderCard({ order, onOrderUpdated }) {
           }`}>
             {currentPaid ? t.paid : t.unpaid}
           </span>
+          {needsComposition && (
+            <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700">
+              {t.intake?.needsComposition || '🌸 Compose'}
+            </span>
+          )}
         </div>
         {currentPrice > 0 && (
           <span className={`text-sm font-bold shrink-0 px-3 py-1 rounded-full ${

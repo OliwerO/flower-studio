@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -23,12 +23,14 @@ const emptyForm = {
 
 export default function NewOrderPage() {
   const navigate              = useNavigate();
+  const location              = useLocation();
   const { showToast }         = useToast();
   const [step, setStep]       = useState(0);
   const [form, setForm]       = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [stock, setStock]     = useState([]);
   const [stockError, setStockError] = useState(false);
+  const [importWarnings, setImportWarnings] = useState([]);
 
   useEffect(() => {
     client.get('/stock')
@@ -39,6 +41,64 @@ export default function NewOrderPage() {
         showToast(t.stockLoadError || 'Failed to load stock data', 'error');
       });
   }, []);
+
+  // Apply import draft if navigated from TextImportModal
+  useEffect(() => {
+    const draft = location.state?.importDraft;
+    if (!draft) return;
+
+    // Clear navigation state so refreshing doesn't re-apply
+    window.history.replaceState({}, '');
+
+    const patch = {};
+    if (draft.customerRequest) patch.customerRequest = draft.customerRequest;
+    if (draft.source) patch.source = draft.source;
+    if (draft.paymentStatus) patch.paymentStatus = draft.paymentStatus;
+    if (draft.notes) patch.notes = draft.notes;
+    if (draft.deliveryFee != null) patch.deliveryFee = draft.deliveryFee;
+    if (draft.totalPrice) patch.priceOverride = String(draft.totalPrice);
+
+    // Delivery fields
+    if (draft.delivery?.address) {
+      patch.deliveryType = 'Delivery';
+      patch.deliveryAddress = draft.delivery.address;
+    }
+    if (draft.delivery?.recipientName) patch.recipientName = draft.delivery.recipientName;
+    if (draft.delivery?.recipientPhone) patch.recipientPhone = draft.delivery.recipientPhone;
+    if (draft.delivery?.date) patch.deliveryDate = draft.delivery.date;
+    if (draft.delivery?.time) patch.deliveryTime = draft.delivery.time;
+    if (draft.delivery?.cardText) patch.cardText = draft.delivery.cardText;
+
+    // Order lines from AI matching
+    if (draft.orderLines?.length > 0) {
+      patch.orderLines = draft.orderLines.map(l => ({
+        stockItemId:      l.stockItemId || null,
+        flowerName:       l.flowerName || '',
+        quantity:         l.quantity || 1,
+        costPricePerUnit: l.costPricePerUnit || 0,
+        sellPricePerUnit: l.sellPricePerUnit || 0,
+        confidence:       l.confidence || 'none',
+      }));
+    }
+
+    // Customer — if AI found a match, pre-select them
+    if (draft.customer?.suggestedMatchId) {
+      patch.customerId = draft.customer.suggestedMatchId;
+      patch.customerName = draft.customer.suggestedMatchName || draft.customer.name || '';
+      // Skip Step 1 (customer) and go to Step 2 (bouquet)
+      setStep(1);
+    } else if (draft.customer?.name || draft.customer?.phone) {
+      // Pre-fill customer creation form — stays on Step 1
+      patch.customerName = draft.customer.name || '';
+    }
+
+    setForm(prev => ({ ...prev, ...patch }));
+
+    // Show warnings
+    if (draft.warnings?.length > 0) {
+      setImportWarnings(draft.warnings);
+    }
+  }, [location.state]);
 
   function updateForm(patch) {
     setForm(prev => ({ ...prev, ...patch }));
@@ -177,6 +237,21 @@ export default function NewOrderPage() {
             >
               Retry
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Import warnings banner */}
+      {importWarnings.length > 0 && (
+        <div className="max-w-2xl mx-auto px-4 mt-2">
+          <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-amber-800 text-xs font-semibold uppercase tracking-wide">{t.intake.warningsTitle}</span>
+              <button onClick={() => setImportWarnings([])} className="text-amber-600 text-xs font-medium">✕</button>
+            </div>
+            {importWarnings.map((w, i) => (
+              <p key={i} className="text-amber-700 text-sm">{w}</p>
+            ))}
           </div>
         </div>
       )}

@@ -153,6 +153,26 @@ const t = {
   success:          'Done!',
   error:            'Error',
   dismiss:          'Dismiss',
+
+  // Text import / intake
+  intake: {
+    title:              'Вставить текст',
+    modeGeneral:        'Любое сообщение',
+    hintGeneral:        'Вставьте сообщения клиента из любого канала — AI извлечёт данные заказа.',
+    hintFlowwow:        'Вставьте текст письма от Flowwow — автоматически распознаем заказ, адрес, получателя.',
+    placeholderGeneral: 'Вставьте сообщение клиента...\n\nМожно несколько сообщений сразу.',
+    placeholderFlowwow: 'Вставьте текст письма Flowwow...',
+    parseButton:        'Распознать',
+    parsing:            'Распознаём...',
+    parseError:         'Не удалось распознать текст. Попробуйте ещё раз.',
+    warningsTitle:      'Предупреждения',
+    fabLabel:           'Вставить текст',
+    fabManual:          'Новый заказ',
+    needsComposition:   'Нужно собрать',
+    confidenceHigh:     'Совпадение найдено',
+    confidenceLow:      'Проверьте соответствие',
+    confidenceNone:     'Не найдено на складе',
+  },
 };
 
 export default t;

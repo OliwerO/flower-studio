@@ -10,11 +10,19 @@ import t from '../../translations.js';
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
 // that buffers its output before sending it down the line.
+// Confidence border colors for AI-matched import lines
+const CONFIDENCE_STYLES = {
+  high: 'border-l-4 border-l-green-400',
+  low:  'border-l-4 border-l-amber-400',
+  none: 'border-l-4 border-l-red-300',
+};
+
 function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove }) {
   const stockItem = stock.find(s => s.id === l.stockItemId);
   const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
   const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
   const lineSell  = sellPrice * Number(l.quantity);
+  const confidence = l.confidence; // 'high' | 'low' | 'none' | undefined
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState('');
@@ -27,7 +35,7 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove }) {
 
   function handleBlur() {
     setEditing(false);
-    onCommitQty(l.stockItemId, draft);
+    onCommitQty(l.stockItemId || l.flowerName, draft);
   }
 
   function handleKeyDown(e) {
@@ -35,16 +43,20 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove }) {
   }
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
+    <div className={`flex items-center gap-3 px-4 py-3 ${confidence ? CONFIDENCE_STYLES[confidence] || '' : ''}`}>
       <div className="flex-1 min-w-0">
-        <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-sm font-medium text-ios-label truncate">{l.flowerName}</span>
+          {confidence === 'low' && <span className="text-amber-500 text-xs" title={t.intake?.confidenceLow}>?</span>}
+          {confidence === 'none' && <span className="text-red-400 text-xs" title={t.intake?.confidenceNone}>✗</span>}
+        </div>
         <div className="text-xs text-ios-tertiary">
           {sellPrice.toFixed(1)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(1)} zł</strong>
         </div>
       </div>
       <div className="flex items-center gap-1.5 shrink-0">
         <button
-          onClick={() => onChangeQty(l.stockItemId, -1)}
+          onClick={() => onChangeQty(l.stockItemId || l.flowerName, -1)}
           className="w-8 h-8 rounded-full bg-gray-100 text-ios-secondary text-xl font-bold
                      flex items-center justify-center hover:bg-gray-200 active-scale"
         >
@@ -62,14 +74,14 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove }) {
           className="w-9 text-center text-sm font-bold border border-gray-200 rounded-xl py-1 bg-white outline-none"
         />
         <button
-          onClick={() => onChangeQty(l.stockItemId, +1)}
+          onClick={() => onChangeQty(l.stockItemId || l.flowerName, +1)}
           disabled={l.quantity >= maxQty}
           className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
                      flex items-center justify-center active:bg-brand-200 active-scale disabled:opacity-30"
         >
           +
         </button>
-        <button onClick={() => onRemove(l.stockItemId)}
+        <button onClick={() => onRemove(l.stockItemId || l.flowerName)}
                 className="text-ios-tertiary text-base ml-1 active:text-ios-red px-1">
           ✕
         </button>
@@ -132,11 +144,20 @@ export default function Step2Bouquet({
     });
   }
 
-  function changeQty(stockItemId, delta) {
-    const maxQty = Number(stock.find(s => s.id === stockItemId)?.['Current Quantity']) || Infinity;
+  // lineKey can be stockItemId or flowerName (for unmatched imports)
+  function matchesKey(line, key) {
+    return line.stockItemId === key || (!line.stockItemId && line.flowerName === key);
+  }
+
+  function lineKey(line) {
+    return line.stockItemId || line.flowerName;
+  }
+
+  function changeQty(key, delta) {
+    const maxQty = Number(stock.find(s => s.id === key)?.['Current Quantity']) || Infinity;
     onLinesChange(lines =>
       lines
-        .map(l => l.stockItemId === stockItemId
+        .map(l => matchesKey(l, key)
           ? { ...l, quantity: Math.min(l.quantity + delta, maxQty) }
           : l
         )
@@ -146,20 +167,20 @@ export default function Step2Bouquet({
 
   // Commit a typed quantity value — called on blur (not on every keystroke).
   // This lets the florist type multi-digit numbers without losing focus.
-  function commitQty(stockItemId, value) {
+  function commitQty(key, value) {
     const n = parseInt(value, 10);
     if (isNaN(n) || n < 0) return;
-    const maxQty = Number(stock.find(s => s.id === stockItemId)?.['Current Quantity']) || Infinity;
+    const maxQty = Number(stock.find(s => s.id === key)?.['Current Quantity']) || Infinity;
     const capped = Math.min(n, maxQty);
     onLinesChange(lines =>
       capped === 0
-        ? lines.filter(l => l.stockItemId !== stockItemId)
-        : lines.map(l => l.stockItemId === stockItemId ? { ...l, quantity: capped } : l)
+        ? lines.filter(l => !matchesKey(l, key))
+        : lines.map(l => matchesKey(l, key) ? { ...l, quantity: capped } : l)
     );
   }
 
-  function removeLine(stockItemId) {
-    onLinesChange(lines => lines.filter(l => l.stockItemId !== stockItemId));
+  function removeLine(key) {
+    onLinesChange(lines => lines.filter(l => !matchesKey(l, key)));
   }
 
   return (
@@ -253,12 +274,12 @@ export default function Step2Bouquet({
           <div className="ios-card overflow-hidden divide-y divide-gray-100">
             {orderLines.map(l => (
               <CartLine
-                key={l.stockItemId}
+                key={lineKey(l)}
                 line={l}
                 stock={stock}
-                onChangeQty={changeQty}
-                onCommitQty={commitQty}
-                onRemove={removeLine}
+                onChangeQty={(key, delta) => changeQty(key, delta)}
+                onCommitQty={(key, val) => commitQty(key, val)}
+                onRemove={(key) => removeLine(key)}
               />
             ))}
           </div>
