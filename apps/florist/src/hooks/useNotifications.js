@@ -36,8 +36,11 @@ export function useNotifications(onNewOrder) {
   onNewOrderRef.current = onNewOrder;
 
   useEffect(() => {
-    // EventSource auto-reconnects on disconnect — built into the browser API
-    const source = new EventSource('/api/events');
+    // EventSource connects directly to Railway backend, bypassing Vercel's proxy.
+    // Vercel rewrites work for REST calls but buffer/timeout SSE streams.
+    // Like running a dedicated radio link instead of routing through the switchboard.
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+    const source = new EventSource(`${backendUrl}/api/events`);
 
     source.onmessage = (event) => {
       try {
