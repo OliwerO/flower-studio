@@ -29,11 +29,11 @@ Web app replacing multi-spreadsheet workflow for **Blossom**, a flower studio in
 | 1 | Done | Backend scaffold + Airtable CRUD |
 | 2 | Done | Florist app — bouquet builder + order form |
 | 3 | Done | Delivery app — driver task board |
-| 4 | Partial | Wix webhook — route exists, needs full implementation |
-| 5 | Not started | Translation integration (Claude Haiku) |
+| 4 | Done | Wix webhook — full pipeline + logging + dedup |
+| 5 | Done | Translation integration (Claude Haiku) |
 | 6 | Done | Owner dashboard — day-to-day operations |
 | 7 | Done | Owner dashboard — financial KPIs |
-| 8 | Not started | SSE notifications |
+| 8 | Done | SSE notifications (florist + dashboard) |
 | 9 | Not started | Polish + testing + deployment |
 | 10 | Future | Excel migration script |
 
