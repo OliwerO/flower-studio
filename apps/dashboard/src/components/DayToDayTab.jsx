@@ -31,6 +31,7 @@ export default function DayToDayTab({ onNavigate }) {
   const [data, setData]           = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading]     = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [driverOfDay, setDriverOfDay] = useState(null);
   const [drivers, setDrivers]     = useState([]);
@@ -50,7 +51,9 @@ export default function DayToDayTab({ onNavigate }) {
       setAnalytics(analyticsRes.data);
       setDriverOfDay(settingsRes.data.driverOfDay || null);
       setDrivers(settingsRes.data.drivers || []);
+      setFetchError(false);
     } catch {
+      setFetchError(true);
       showToast(t.error, 'error');
     } finally {
       setLoading(false);
@@ -79,7 +82,14 @@ export default function DayToDayTab({ onNavigate }) {
 
   if (loading) return <DashboardSkeleton />;
 
-  if (!data) return null;
+  if (fetchError || !data) return (
+    <div className="text-center py-16">
+      <p className="text-ios-tertiary mb-3">{t.error}</p>
+      <button onClick={fetchData}
+        className="px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium"
+      >{t.refresh}</button>
+    </div>
+  );
 
   const nav = (tab, filter) => onNavigate?.({ tab, filter });
 

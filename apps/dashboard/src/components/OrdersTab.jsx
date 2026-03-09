@@ -57,6 +57,7 @@ export default function OrdersTab({ initialFilter }) {
   const defaultTo   = f.dateTo   || todayStr();
   const [orders, setOrders]       = useState([]);
   const [loading, setLoading]     = useState(true);
+  const [fetchError, setFetchError] = useState(false);
   const [search, setSearch]       = useState('');
   const [statusFilter, setStatus] = useState(f.status || '');
   const [dateFrom, setDateFrom]   = useState(defaultFrom);
@@ -86,7 +87,9 @@ export default function OrdersTab({ initialFilter }) {
       if (excludeCancelled) params.excludeCancelled = '1';
       const res = await client.get('/orders', { params });
       setOrders(res.data);
+      setFetchError(false);
     } catch {
+      setFetchError(true);
       showToast(t.error, 'error');
     } finally {
       setLoading(false);
@@ -264,7 +267,16 @@ export default function OrdersTab({ initialFilter }) {
         </div>
       )}
 
-      {!loading && sorted.length === 0 && (
+      {!loading && fetchError && (
+        <div className="text-center py-12">
+          <p className="text-ios-tertiary mb-3">{t.error}</p>
+          <button onClick={fetchOrders}
+            className="px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-medium"
+          >{t.refresh}</button>
+        </div>
+      )}
+
+      {!loading && !fetchError && sorted.length === 0 && (
         <div className="text-center py-12 text-ios-tertiary">{t.noResults}</div>
       )}
 
