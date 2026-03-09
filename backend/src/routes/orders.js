@@ -4,7 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from '../services/notifications.js';
-import { getDriverOfDay } from './settings.js';
+import { getDriverOfDay, getConfig } from './settings.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -255,7 +255,7 @@ router.post('/', async (req, res, next) => {
         'Greeting Card Text': delivery?.cardText || '',
         'Payment Status':     paymentStatus || 'Unpaid',
         'Payment Method':     paymentMethod || null,
-        'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? 35) : 0,
+        'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
         'Price Override':     priceOverride || null,
         Status:               'New',
         'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
@@ -294,7 +294,7 @@ router.post('/', async (req, res, next) => {
           'Delivery Date':   delivery.date || null,
           'Delivery Time':   delivery.time || '',
           'Assigned Driver': delivery.driver || getDriverOfDay() || null,
-          'Delivery Fee':      delivery.fee ?? 35,
+          'Delivery Fee':      delivery.fee ?? getConfig('defaultDeliveryFee'),
           Status:              'Pending',
         });
       }

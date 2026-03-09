@@ -6,12 +6,11 @@ import { useState } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-
-const SUPPLIERS = ['Stojek', '4f', 'Stefan', 'Mateusz', 'Other'];
-const CATEGORIES = ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'];
+import useConfigLists from '../hooks/useConfigLists.js';
 const NEW_ITEM_VALUE = '__new__';
 
 export default function StockReceiveForm({ stock, onDone }) {
+  const { suppliers: SUPPLIERS, categories: CATEGORIES } = useConfigLists();
   const [itemId, setItemId]       = useState('');
   const [newName, setNewName]     = useState('');
   const [newCategory, setNewCategory] = useState('Other');

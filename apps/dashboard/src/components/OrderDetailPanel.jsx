@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
+import useConfigLists from '../hooks/useConfigLists.js';
 
 const STATUSES = [
   { value: 'New',              label: t.statusNew,       activeClass: 'bg-indigo-600 text-white shadow-sm' },
@@ -23,40 +24,17 @@ const PAYMENT_STATUSES = [
   { value: 'Partial', label: t.partial, activeClass: 'bg-ios-orange text-white shadow-sm' },
 ];
 
-const PAYMENT_METHODS = [
-  { value: 'Cash',       label: t.methodCash },
-  { value: 'Card',       label: t.methodCard },
-  { value: 'Mbank',      label: t.methodMbank },
-  { value: 'Monobank',   label: t.methodMonobank },
-  { value: 'Revolut',    label: t.methodRevolut },
-  { value: 'PayPal',     label: t.methodPayPal },
-  { value: 'Wix Online', label: t.methodWixOnline },
-  { value: 'Other',      label: t.sourceOther },
-];
-
-const SOURCES = [
-  { value: 'In-store',  label: t.sourceWalk },
-  { value: 'Instagram', label: t.sourceInstagram },
-  { value: 'WhatsApp',  label: t.sourceWhatsApp },
-  { value: 'Telegram',  label: t.sourceTelegram },
-  { value: 'Wix',       label: t.sourceWebsite },
-  { value: 'Flowwow',   label: t.sourceFlowwow },
-  { value: 'Other',     label: t.sourceOther },
-];
-
 const DELIVERY_TYPES = [
   { value: 'Delivery', label: '🚗 ' + t.delivery },
   { value: 'Pickup',   label: '🏪 ' + t.pickup },
 ];
 
-const DRIVERS = [
-  { value: 'Timur',         label: 'Timur' },
-  { value: 'Nikita',        label: 'Nikita' },
-  { value: 'Dmitri',        label: 'Dmitri' },
-  { value: 'Backup Driver', label: 'Backup' },
-];
-
 export default function OrderDetailPanel({ orderId, onUpdate }) {
+  const { paymentMethods: pmList, orderSources: srcList } = useConfigLists();
+  const PAYMENT_METHODS = pmList.map(v => ({ value: v, label: v }));
+  const SOURCES = srcList.map(v => ({ value: v, label: v }));
+  const [driverNames, setDriverNames] = useState([]);
+  const DRIVERS = driverNames.map(v => ({ value: v, label: v }));
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
@@ -67,8 +45,12 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
     async function load() {
       setLoading(true);
       try {
-        const res = await client.get(`/orders/${orderId}`);
-        setOrder(res.data);
+        const [orderRes, settingsRes] = await Promise.all([
+          client.get(`/orders/${orderId}`),
+          client.get('/settings').catch(() => ({ data: { drivers: [] } })),
+        ]);
+        setOrder(orderRes.data);
+        setDriverNames(settingsRes.data.drivers || []);
       } catch {
         showToast(t.error, 'error');
       } finally {

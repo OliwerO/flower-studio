@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { getConfig } from './settings.js';
 
 const router = Router();
 router.use(authorize('analytics'));
@@ -163,7 +164,7 @@ router.get('/', async (req, res, next) => {
     const allFlowerCost = orders.reduce((sum, o) => sum + o._cost, 0);
     // Use paid-order flower cost for estimated revenue — it's compared against
     // totalRevenue which only counts paid orders, so denominators must match.
-    const estimatedRevenue = paidFlowerCost * 2.2;
+    const estimatedRevenue = paidFlowerCost * getConfig('targetMarkup');
     const flowerMargin = flowerRevenue > 0
       ? ((flowerRevenue - paidFlowerCost) / flowerRevenue) * 100
       : 0;

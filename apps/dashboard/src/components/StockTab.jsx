@@ -9,10 +9,10 @@ import t from '../translations.js';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import Pills from './Pills.jsx';
-
-const SUPPLIERS = ['Stojek', '4f', 'Stefan', 'Mateusz', 'Other'];
+import useConfigLists from '../hooks/useConfigLists.js';
 
 export default function StockTab() {
+  const { suppliers: SUPPLIERS } = useConfigLists();
   const [stock, setStock]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');

@@ -357,6 +357,23 @@ const en = {
 
   // Orders
   margin:             'Margin',
+
+  // Settings tab
+  tabSettings:              'Settings',
+  settingsOperational:      'Operational parameters',
+  settingsLists:            'Lists & categories',
+  defaultDeliveryFee:       'Default delivery fee',
+  settingsDeliveryFeeHint:  'Applied when no fee specified (zł)',
+  settingsTargetMarkup:     'Target markup',
+  settingsMarkupHint:       'Cost × markup = expected revenue',
+  settingsDriverCost:       'Driver cost per delivery',
+  settingsDriverCostHint:   'Flat rate per delivery (zł)',
+  marketingSpend:           'Marketing spend',
+  reasonWilted:             'Wilted',
+  reasonDamaged:            'Damaged',
+  reasonOverstock:          'Overstock',
+  reasonOther:              'Other',
+  settingsNote:             'Settings reset on server restart. Defaults are loaded automatically.',
 };
 
 const ru = {
@@ -715,6 +732,23 @@ const ru = {
 
   // Orders
   margin:             'Маржа',
+
+  // Settings tab
+  tabSettings:              'Настройки',
+  settingsOperational:      'Параметры работы',
+  settingsLists:            'Списки и категории',
+  defaultDeliveryFee:       'Стоимость доставки по умолчанию',
+  settingsDeliveryFeeHint:  'Применяется, если не указана вручную (zł)',
+  settingsTargetMarkup:     'Целевая наценка',
+  settingsMarkupHint:       'Себестоимость × наценка = ожидаемая выручка',
+  settingsDriverCost:       'Расход на водителя за доставку',
+  settingsDriverCostHint:   'Фиксированная ставка за доставку (zł)',
+  marketingSpend:           'Расходы на маркетинг',
+  reasonWilted:             'Увядшие',
+  reasonDamaged:            'Повреждённые',
+  reasonOverstock:          'Излишки',
+  reasonOther:              'Другое',
+  settingsNote:             'Настройки сбрасываются при перезапуске сервера. Значения по умолчанию загружаются автоматически.',
 };
 
 // ── Proxy-based dynamic translation ──
