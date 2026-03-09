@@ -9,12 +9,13 @@ import { useToast } from '../context/ToastContext.jsx';
 
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
 
-// Order flow: New → Ready → Out for Delivery → Delivered (or Picked Up for pickup orders).
+// Florist flow: New → Ready → Delivered/Picked Up.
+// "Out for Delivery" is set automatically by drivers — florists don't need that button.
 const ALLOWED_TRANSITIONS = {
   'New':              ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],
-  'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
-  'Out for Delivery': ['Delivered', 'Cancelled'],
+  'Ready':            ['Delivered', 'Picked Up', 'Cancelled'],
+  'Out for Delivery': ['Delivered', 'Cancelled'],   // can still advance if driver started it
   'Delivered':        [],
   'Picked Up':        [],
   'Cancelled':        ['New'],
