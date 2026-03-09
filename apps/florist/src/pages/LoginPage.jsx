@@ -21,6 +21,10 @@ export default function LoginPage() {
     setClientPin(pin);
     try {
       const res = await client.post('/auth/verify', { pin });
+      // Only owner and florist roles can use this app — drivers have their own app
+      if (res.data.role === 'driver') {
+        throw new Error('wrong_role');
+      }
       login(pin, res.data.role);
       navigate('/orders', { replace: true });
     } catch {

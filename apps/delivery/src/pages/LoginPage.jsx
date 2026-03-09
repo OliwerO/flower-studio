@@ -27,6 +27,10 @@ export default function LoginPage() {
     try {
       const res = await client.post('/auth/verify', { pin });
       const { role, driverName } = res.data;
+      // Only drivers and owner can use the delivery app — florists have their own app
+      if (role === 'florist') {
+        throw new Error('wrong_role');
+      }
       login(pin, role, driverName);
 
       // Show greeting briefly before navigating
