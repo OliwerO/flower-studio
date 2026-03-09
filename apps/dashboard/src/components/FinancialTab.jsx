@@ -363,6 +363,23 @@ export default function FinancialTab({ onNavigate }) {
         </div>
       </Section>
 
+      {/* ── Prep time (cycle time from Accepted → Ready) ── */}
+      {data.prepTime && (
+        <Section title={t.prepTime} sectionKey="preptime" collapsed={collapsed} onToggle={toggle}>
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            <KPI label={t.avgPrepTime} value={`${data.prepTime.avgMinutes} ${t.minutes}`}
+                 color={data.prepTime.avgMinutes <= 60 ? 'text-emerald-600' : data.prepTime.avgMinutes <= 120 ? 'text-amber-600' : 'text-rose-600'} />
+            <KPI label={t.medianPrepTime} value={`${data.prepTime.medianMinutes} ${t.minutes}`} />
+            <KPI label={t.fastestPrep} value={`${data.prepTime.minMinutes} ${t.minutes}`} />
+            <KPI label={t.slowestPrep} value={`${data.prepTime.maxMinutes} ${t.minutes}`}
+                 color={data.prepTime.maxMinutes > 180 ? 'text-rose-600' : 'text-ios-label'} />
+          </div>
+          <p className="text-[10px] text-ios-tertiary mt-3 italic">
+            {t.prepTimeNote} ({data.prepTime.count} {t.ordersTracked})
+          </p>
+        </Section>
+      )}
+
       {/* ── Payment collection ── */}
       <Section title={t.paymentAnalysis} sectionKey="payments" collapsed={collapsed} onToggle={toggle}>
         {data.paymentAnalysis?.length > 0 ? (
@@ -542,6 +559,24 @@ export default function FinancialTab({ onNavigate }) {
                 })}
               </tbody>
             </table>
+          </div>
+        </Section>
+      )}
+
+      {/* ── Flower Pairings (what sells together?) ── */}
+      {orders.topPairings?.length > 0 && (
+        <Section title={t.flowerPairings} sectionKey="pairings" collapsed={collapsed} onToggle={toggle}>
+          <div className="space-y-1.5">
+            {orders.topPairings.map((p, i) => (
+              <div key={i} className="flex items-center gap-3 px-1 py-1.5">
+                <span className="text-xs font-bold text-brand-600 w-6 text-right">{p.count}×</span>
+                <div className="flex-1 flex items-center gap-2 text-sm text-ios-label">
+                  <span className="font-medium">{p.flower1}</span>
+                  <span className="text-ios-tertiary">+</span>
+                  <span className="font-medium">{p.flower2}</span>
+                </div>
+              </div>
+            ))}
           </div>
         </Section>
       )}

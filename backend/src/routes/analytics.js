@@ -226,6 +226,35 @@ router.get('/', async (req, res, next) => {
         return { ...p, prevQty, trend };
       });
 
+    // ── Flower pairing analysis — which flowers are ordered together most often ──
+    // Group lines by order, then count every pair of distinct flower names.
+    const orderFlowers = {};
+    for (const line of allLines) {
+      const orderId = line.Order?.[0];
+      if (!orderId || !paidOrderIds.has(orderId)) continue;
+      const name = line['Flower Name'] || 'Unknown';
+      if (!orderFlowers[orderId]) orderFlowers[orderId] = new Set();
+      orderFlowers[orderId].add(name);
+    }
+    const pairCounts = {};
+    for (const flowers of Object.values(orderFlowers)) {
+      const arr = [...flowers].sort();
+      for (let i = 0; i < arr.length; i++) {
+        for (let j = i + 1; j < arr.length; j++) {
+          const key = `${arr[i]}|||${arr[j]}`;
+          pairCounts[key] = (pairCounts[key] || 0) + 1;
+        }
+      }
+    }
+    const topPairings = Object.entries(pairCounts)
+      .filter(([, count]) => count >= 2)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([key, count]) => {
+        const [flower1, flower2] = key.split('|||');
+        return { flower1, flower2, count };
+      });
+
     // ── Weekly rhythm — order count and avg revenue by day of week ──
     // Send dayIndex only — frontend maps to localized day names via translations.js
     const dayMap = {};
@@ -388,6 +417,26 @@ router.get('/', async (req, res, next) => {
     const annualizedCost = allFlowerCost * (365 / periodDays);
     const inventoryTurnoverRatio = currentStockValue > 0 ? annualizedCost / currentStockValue : 0;
 
+    // ── Prep time analysis — how long from Accepted to Ready ──
+    // Only orders that have both timestamps (i.e., went through the full prep workflow).
+    const prepTimes = orders
+      .filter(o => o['Prep Started At'] && o['Prep Ready At'])
+      .map(o => {
+        const started = new Date(o['Prep Started At']).getTime();
+        const ready = new Date(o['Prep Ready At']).getTime();
+        const minutes = Math.round((ready - started) / 60000);
+        return minutes > 0 && minutes < 1440 ? minutes : null; // ignore outliers >24h
+      })
+      .filter(Boolean);
+
+    const prepTimeStats = prepTimes.length > 0 ? {
+      count: prepTimes.length,
+      avgMinutes: Math.round(prepTimes.reduce((a, b) => a + b, 0) / prepTimes.length),
+      medianMinutes: prepTimes.sort((a, b) => a - b)[Math.floor(prepTimes.length / 2)],
+      minMinutes: Math.min(...prepTimes),
+      maxMinutes: Math.max(...prepTimes),
+    } : null;
+
     res.json({
       period: { from, to },
       revenue: {
@@ -421,6 +470,7 @@ router.get('/', async (req, res, next) => {
         bySource,
         revenueBySource,
         topProducts,
+        topPairings,
         sourceEfficiency: sourceEffArr,
         funnel,
       },
@@ -433,6 +483,7 @@ router.get('/', async (req, res, next) => {
         currentStockValue: Math.round(currentStockValue),
         annualizedCost: Math.round(annualizedCost),
       },
+      prepTime: prepTimeStats,
     });
   } catch (err) {
     next(err);

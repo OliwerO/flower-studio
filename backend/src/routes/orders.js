@@ -387,9 +387,17 @@ router.patch('/:id', async (req, res, next) => {
       // Flowers may have already been used or discarded.
     }
 
+    // Record prep timestamps for cycle-time analysis.
+    // "Accepted" = work starts (like punching in at a workstation).
+    // "Ready" = work complete (like scanning finished goods).
+    const timestamps = {};
+    if (newStatus === 'Accepted') timestamps['Prep Started At'] = new Date().toISOString();
+    if (newStatus === 'Ready') timestamps['Prep Ready At'] = new Date().toISOString();
+
     const order = await db.update(TABLES.ORDERS, req.params.id, {
       ...otherFields,
       ...(newStatus ? { Status: newStatus } : {}),
+      ...timestamps,
     });
 
     // Broadcast status changes that other apps care about

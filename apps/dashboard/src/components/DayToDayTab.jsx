@@ -311,7 +311,7 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
       )}
 
-      {/* Unpaid orders aging */}
+      {/* Unpaid orders aging — clickable buckets drill down to filtered order list */}
       {data.unpaidAging && data.unpaidAging.grandTotal.count > 0 && (
         <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
           <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
@@ -319,15 +319,38 @@ export default function DayToDayTab({ onNavigate }) {
           </h3>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2">
             {[
-              { label: t.agingToday, data: data.unpaidAging.today },
-              { label: t.aging1to7, data: data.unpaidAging.week },
-              { label: t.aging8to30, data: data.unpaidAging.month },
-              { label: t.aging30plus, data: data.unpaidAging.older, alert: true },
-              { label: t.totalOutstanding, data: data.unpaidAging.grandTotal, bold: true },
+              { label: t.agingToday, data: data.unpaidAging.today, daysBack: 0 },
+              { label: t.aging1to7, data: data.unpaidAging.week, daysBack: 7 },
+              { label: t.aging8to30, data: data.unpaidAging.month, daysBack: 30 },
+              { label: t.aging30plus, data: data.unpaidAging.older, daysBack: 365, alert: true },
+              { label: t.totalOutstanding, data: data.unpaidAging.grandTotal, daysBack: 365, bold: true },
             ].map(bucket => (
-              <div key={bucket.label} className={`rounded-xl px-3 py-2 text-center ${
-                bucket.alert && bucket.data.count > 0 ? 'bg-rose-50' : bucket.bold ? 'bg-brand-50' : 'bg-gray-50'
-              }`}>
+              <div
+                key={bucket.label}
+                onClick={() => {
+                  if (bucket.data.count === 0) return;
+                  const today = new Date();
+                  const to = new Date(today);
+                  const from = new Date(today);
+                  if (bucket.daysBack === 0) {
+                    // Today only
+                  } else if (bucket.bold) {
+                    // Grand total — show all unpaid
+                    from.setDate(from.getDate() - 365);
+                  } else {
+                    // Specific bucket range
+                    to.setDate(to.getDate() - (bucket.daysBack === 7 ? 1 : bucket.daysBack === 30 ? 8 : 31));
+                    from.setDate(from.getDate() - bucket.daysBack);
+                  }
+                  const fmt = d => d.toISOString().split('T')[0];
+                  nav('orders', { payment: 'Unpaid', dateFrom: fmt(from), dateTo: fmt(to) });
+                }}
+                className={`rounded-xl px-3 py-2 text-center transition-all ${
+                  bucket.data.count > 0 ? 'cursor-pointer hover:ring-2 hover:ring-brand-300 active-scale' : ''
+                } ${
+                  bucket.alert && bucket.data.count > 0 ? 'bg-rose-50' : bucket.bold ? 'bg-brand-50' : 'bg-gray-50'
+                }`}
+              >
                 <p className={`text-lg font-bold ${
                   bucket.alert && bucket.data.count > 0 ? 'text-rose-600' : bucket.bold ? 'text-brand-700' : 'text-ios-label'
                 }`}>
