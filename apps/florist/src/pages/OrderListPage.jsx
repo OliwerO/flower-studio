@@ -11,6 +11,20 @@ import t from '../translations.js';
 
 const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 
+// Map Airtable status values → translated display labels
+function statusLabel(s) {
+  const map = {
+    'New':              () => t.statusNew,
+    'In Progress':      () => t.statusInProgress,
+    'Ready':            () => t.statusReady,
+    'Out for Delivery': () => t.statusOutForDelivery,
+    'Delivered':        () => t.statusDelivered,
+    'Picked Up':        () => t.statusPickedUp,
+    'Cancelled':        () => t.statusCancelled,
+  };
+  return map[s]?.() || s;
+}
+
 // Priority order: actionable statuses first, completed/cancelled last
 const STATUS_PRIORITY = {
   'New': 0,
@@ -113,7 +127,7 @@ export default function OrderListPage() {
                   : 'text-ios-secondary active:bg-ios-fill'
               }`}
             >
-              {s || t.allStatuses}
+              {s ? statusLabel(s) : t.allStatuses}
             </button>
           ))}
         </div>

@@ -18,7 +18,23 @@ const STATUS_STYLES = {
   'Cancelled':        { label: 'bg-rose-50 text-rose-600' },
 };
 
+// Map Airtable status values → translation keys
+const STATUS_LABELS = {
+  'New':              () => t.statusNew,
+  'In Progress':      () => t.statusInProgress,
+  'Ready':            () => t.statusReady,
+  'Out for Delivery': () => t.statusOutForDelivery,
+  'Delivered':        () => t.statusDelivered,
+  'Picked Up':        () => t.statusPickedUp,
+  'Cancelled':        () => t.statusCancelled,
+};
+
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
+const PAY_METHOD_LABELS = {
+  'Cash':     () => t.methodCash,
+  'Card':     () => t.methodCard,
+  'Transfer': () => t.methodTransfer,
+};
 
 // Florist doesn't trigger "Out for Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
@@ -90,7 +106,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
       setLoading(true);
       client.get(`/orders/${order.id}`)
         .then(r => setDetail(r.data))
-        .catch(() => showToast('Failed to load details.', 'error'))
+        .catch(() => showToast(t.loadError, 'error'))
         .finally(() => setLoading(false));
     }
   }
@@ -101,9 +117,9 @@ export default function OrderCard({ order, onOrderUpdated }) {
       const res = await client.patch(`/orders/${order.id}`, fields);
       setDetail(prev => prev ? { ...prev, ...res.data } : res.data);
       onOrderUpdated?.(order.id, res.data);
-      showToast('Updated!', 'success');
+      showToast(t.updated, 'success');
     } catch (err) {
-      const msg = err.response?.data?.error || 'Failed to update.';
+      const msg = err.response?.data?.error || t.updateError;
       showToast(msg, 'error');
     } finally {
       setSaving(false);
@@ -116,6 +132,10 @@ export default function OrderCard({ order, onOrderUpdated }) {
   const currentPaid   = d['Payment Status'] === 'Paid';
   const currentPrice  = d['Price Override'] || d['Sell Total'] || price;
 
+  function statusLabel(s) {
+    return STATUS_LABELS[s]?.() || s;
+  }
+
   return (
     <div
       onClick={toggle}
@@ -127,7 +147,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
           <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${styles.label}`}>
-            {currentStatus}
+            {statusLabel(currentStatus)}
           </span>
           <span className={`text-xs px-2.5 py-0.5 rounded-full font-medium ${
             isDelivery ? 'bg-purple-50 text-purple-600' : 'bg-teal-50 text-teal-700'
@@ -174,13 +194,13 @@ export default function OrderCard({ order, onOrderUpdated }) {
               <div className="w-6 h-6 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
             </div>
           ) : !detail ? (
-            <p className="text-xs text-ios-tertiary text-center py-4">Could not load details.</p>
+            <p className="text-xs text-ios-tertiary text-center py-4">{t.errorLoadDetails}</p>
           ) : (
             <>
               {/* Order lines */}
               {detail.orderLines?.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">Bouquet</p>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelBouquet}</p>
                   <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
                     {detail.orderLines.map((line, i) => (
                       <div key={i} className="flex items-center justify-between px-3 py-2">
@@ -202,22 +222,22 @@ export default function OrderCard({ order, onOrderUpdated }) {
               {/* Delivery details */}
               {isDelivery && detail.delivery && (
                 <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">Delivery</p>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDelivery}</p>
                   <div className="bg-gray-50 rounded-xl px-3 py-1">
-                    <Row label="Date"      value={detail.delivery['Delivery Date']} />
-                    <Row label="Time"      value={detail.delivery['Delivery Time']} />
-                    <Row label="Address"   value={detail.delivery['Delivery Address']} />
-                    <Row label="Recipient" value={detail.delivery['Recipient Name']} />
-                    <Row label="Phone"     value={detail.delivery['Recipient Phone']} />
-                    <Row label="Card msg"  value={detail['Greeting Card Text']} />
-                    <Row label="Fee"       value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
+                    <Row label={t.labelDate}      value={detail.delivery['Delivery Date']} />
+                    <Row label={t.labelTime}      value={detail.delivery['Delivery Time']} />
+                    <Row label={t.labelAddress}   value={detail.delivery['Delivery Address']} />
+                    <Row label={t.labelRecipient} value={detail.delivery['Recipient Name']} />
+                    <Row label={t.labelPhone}     value={detail.delivery['Recipient Phone']} />
+                    <Row label={t.labelCardMsg}   value={detail['Greeting Card Text']} />
+                    <Row label={t.labelFee}       value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
                   </div>
                 </div>
               )}
 
               {/* Status controls */}
               <div>
-                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">Status</p>
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelStatus}</p>
                 {(() => {
                   const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
                   const visible = [currentStatus, ...allowed];
@@ -226,7 +246,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
                       value={currentStatus}
                       onChange={val => patch({ 'Status': val })}
                       disabled={saving}
-                      options={visible.map(s => ({ value: s, label: s }))}
+                      options={visible.map(s => ({ value: s, label: statusLabel(s) }))}
                     />
                   );
                 })()}
@@ -234,7 +254,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
 
               {/* Payment controls */}
               <div>
-                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">Payment</p>
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelPayment}</p>
                 <div className="flex flex-col gap-2">
                   <Pills
                     value={d['Payment Status'] || 'Unpaid'}
@@ -244,8 +264,8 @@ export default function OrderCard({ order, onOrderUpdated }) {
                     })}
                     disabled={saving}
                     options={[
-                      { value: 'Unpaid', label: 'Unpaid' },
-                      { value: 'Paid',   label: 'Paid' },
+                      { value: 'Unpaid', label: t.unpaid },
+                      { value: 'Paid',   label: t.paid },
                     ]}
                   />
                   {currentPaid && (
@@ -253,7 +273,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
                       value={d['Payment Method'] || ''}
                       onChange={val => patch({ 'Payment Method': val })}
                       disabled={saving}
-                      options={PAY_METHODS.map(m => ({ value: m, label: m }))}
+                      options={PAY_METHODS.map(m => ({ value: m, label: PAY_METHOD_LABELS[m]?.() || m }))}
                     />
                   )}
                 </div>
@@ -262,7 +282,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
               {/* Notes */}
               {detail['Notes Original'] && (
                 <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">Notes</p>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelNotes}</p>
                   <p className="text-sm text-ios-label bg-gray-50 rounded-xl px-3 py-2">{detail['Notes Original']}</p>
                 </div>
               )}
@@ -274,7 +294,7 @@ export default function OrderCard({ order, onOrderUpdated }) {
             onClick={(e) => { e.stopPropagation(); setExpanded(false); }}
             className="text-xs text-ios-tertiary text-center py-1 active-scale"
           >
-            ▲ Collapse
+            ▲ {t.collapse}
           </button>
         </div>
       )}

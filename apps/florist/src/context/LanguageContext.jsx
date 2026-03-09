@@ -4,6 +4,7 @@
 
 import { createContext, useContext, useState, useCallback } from 'react';
 import { setLanguage } from '../translations.js';
+import { setGuideLanguage } from '../guideContent.js';
 
 const LanguageContext = createContext({ lang: 'ru', setLang: () => {} });
 
@@ -14,6 +15,7 @@ export function LanguageProvider({ children }) {
 
   const setLang = useCallback((newLang) => {
     setLanguage(newLang);
+    setGuideLanguage(newLang);
     localStorage.setItem('blossom-lang', newLang);
     setLangState(newLang);
   }, []);

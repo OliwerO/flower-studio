@@ -105,7 +105,7 @@ export default function Step3Details({ form, onChange }) {
 
       {/* Timing — relative z-20 so calendar/time dropdowns render above sibling sections */}
       <div className="relative z-20">
-        <p className="ios-label">{form.deliveryType === 'Delivery' ? 'Delivery timing' : t.requiredBy}</p>
+        <p className="ios-label">{form.deliveryType === 'Delivery' ? t.labelDeliveryTiming : t.requiredBy}</p>
         <div className="ios-card overflow-visible divide-y divide-gray-100">
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate}</span>
@@ -133,7 +133,7 @@ export default function Step3Details({ form, onChange }) {
       {/* Delivery-specific */}
       {form.deliveryType === 'Delivery' && (
         <>
-          <FormCard label="Recipient">
+          <FormCard label={t.labelRecipient}>
             <Row label={t.recipientName}>
               <TextInput value={form.recipientName} onChange={set('recipientName')} placeholder="Name" />
             </Row>
