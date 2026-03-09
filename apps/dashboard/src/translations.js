@@ -240,6 +240,11 @@ const en = {
   // Filters
   activeFilters:    'Filters',
   clearAll:         'Clear all',
+  selected:         'selected',
+  markPaid:         'Mark paid',
+  bulkCancel:       'Cancel',
+  clearSelection:   'Deselect',
+  updated:          'updated',
 
   // Misc
   zl:               'zł',
@@ -587,6 +592,11 @@ const ru = {
   // Filters
   activeFilters:    'Фильтры',
   clearAll:         'Сбросить',
+  selected:         'выбрано',
+  markPaid:         'Оплачено',
+  bulkCancel:       'Отменить',
+  clearSelection:   'Снять выбор',
+  updated:          'обновлено',
 
   // Misc
   zl:               'zł',

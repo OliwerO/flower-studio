@@ -68,6 +68,7 @@ export default function OrdersTab({ initialFilter }) {
   const [paymentMethodFilter, setPaymentMethod] = useState(f.paymentMethod || '');
   const [excludeCancelled, setExcludeCancelled] = useState(!!f.excludeCancelled);
   const [expandedId, setExpanded] = useState(f.orderId || null);
+  const [selected, setSelected]   = useState(new Set());
   const { showToast }             = useToast();
 
   const fetchOrders = useCallback(async () => {
@@ -111,6 +112,38 @@ export default function OrdersTab({ initialFilter }) {
   function daysSince(dateStr) {
     if (!dateStr) return 0;
     return Math.floor((Date.now() - new Date(dateStr).getTime()) / 86400000);
+  }
+
+  // Selection helpers
+  function toggleSelect(id, e) {
+    e.stopPropagation();
+    setSelected(prev => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+  function toggleSelectAll() {
+    if (selected.size === sorted.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(sorted.map(o => o.id)));
+    }
+  }
+
+  // Bulk actions
+  async function bulkUpdateField(field, value) {
+    const ids = [...selected];
+    let ok = 0;
+    for (const id of ids) {
+      try {
+        await client.patch(`/orders/${id}`, { [field]: value });
+        ok++;
+      } catch { /* skip failures */ }
+    }
+    showToast(`${ok}/${ids.length} ${t.updated}`);
+    setSelected(new Set());
+    fetchOrders();
   }
 
   return (
@@ -216,9 +249,19 @@ export default function OrdersTab({ initialFilter }) {
       {/* Order list */}
       {/* Results count */}
       {!loading && (
-        <p className="text-xs text-ios-tertiary px-1">
-          {sorted.length} {t.orders.toLowerCase()}
-        </p>
+        <div className="flex items-center gap-3 px-1">
+          <label className="flex items-center gap-1.5 cursor-pointer" onClick={e => e.stopPropagation()}>
+            <input
+              type="checkbox"
+              checked={sorted.length > 0 && selected.size === sorted.length}
+              onChange={toggleSelectAll}
+              className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+            />
+            <span className="text-xs text-ios-tertiary">
+              {selected.size > 0 ? `${selected.size} / ` : ''}{sorted.length} {t.orders.toLowerCase()}
+            </span>
+          </label>
+        </div>
       )}
 
       {!loading && sorted.length === 0 && (
@@ -240,6 +283,12 @@ export default function OrdersTab({ initialFilter }) {
               onClick={() => setExpanded(isExpanded ? null : order.id)}
               className="px-4 py-3 flex items-center gap-4 cursor-pointer hover:bg-gray-50 transition-colors"
             >
+              <input
+                type="checkbox"
+                checked={selected.has(order.id)}
+                onChange={e => toggleSelect(order.id, e)}
+                className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 shrink-0"
+              />
               <span className="text-xs text-ios-tertiary w-20 shrink-0">
                 {order['Order Date'] || '—'}
               </span>
@@ -299,6 +348,39 @@ export default function OrdersTab({ initialFilter }) {
           </div>
         );
       })}
+
+      {/* Floating bulk action bar — like a batch processing control panel */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40
+                        bg-white rounded-2xl shadow-2xl border border-gray-200
+                        px-5 py-3 flex items-center gap-3 animate-slide-up">
+          <span className="text-sm font-semibold text-ios-label">
+            {selected.size} {t.selected}
+          </span>
+          <div className="w-px h-6 bg-gray-200" />
+          <button
+            onClick={() => bulkUpdateField('Payment Status', 'Paid')}
+            className="px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-medium
+                       hover:bg-emerald-200 active-scale"
+          >
+            {t.markPaid}
+          </button>
+          <button
+            onClick={() => bulkUpdateField('Status', 'Cancelled')}
+            className="px-3 py-1.5 rounded-lg bg-rose-100 text-rose-700 text-xs font-medium
+                       hover:bg-rose-200 active-scale"
+          >
+            {t.bulkCancel}
+          </button>
+          <button
+            onClick={() => setSelected(new Set())}
+            className="px-3 py-1.5 rounded-lg bg-gray-100 text-ios-secondary text-xs font-medium
+                       hover:bg-gray-200 active-scale"
+          >
+            {t.clearSelection}
+          </button>
+        </div>
+      )}
     </div>
   );
 }
