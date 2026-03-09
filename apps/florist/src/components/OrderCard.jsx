@@ -150,8 +150,11 @@ export default function OrderCard({ order, onOrderUpdated }) {
       {request && (
         <p className={`text-sm text-ios-tertiary mt-0.5 ${expanded ? '' : 'line-clamp-1'}`}>{request}</p>
       )}
+      {order['Bouquet Summary'] && (
+        <p className="text-xs text-brand-600/70 mt-1 line-clamp-1">🌸 {order['Bouquet Summary']}</p>
+      )}
       {order['Order Date'] && (
-        <p className="text-xs text-ios-tertiary mt-1.5">{order['Order Date']}</p>
+        <p className="text-xs text-ios-tertiary mt-1">{order['Order Date']}</p>
       )}
 
       {/* ── Expanded details (inline, no overlays) ── */}
