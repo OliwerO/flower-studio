@@ -285,6 +285,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               onSave={v => patchDelivery({ 'Recipient Phone': v })} disabled={saving} />
             <EditableRow label="Address" value={o.delivery['Delivery Address']}
               onSave={v => patchDelivery({ 'Delivery Address': v })} disabled={saving} multiline />
+            <EditableRow label="Date" value={o.delivery['Delivery Date'] || ''}
+              onSave={v => patchDelivery({ 'Delivery Date': v || null })} disabled={saving} type="date" />
             <EditableRow label="Time" value={o.delivery['Delivery Time']}
               onSave={v => patchDelivery({ 'Delivery Time': v })} disabled={saving} />
             <EditableRow label="Card" value={o.delivery['Greeting Card Text']}

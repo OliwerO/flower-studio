@@ -20,10 +20,11 @@ const STATUS_STYLES = {
 
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
 
+// Florist doesn't trigger "Out for Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
   'New':              ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],
-  'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
+  'Ready':            ['Delivered', 'Picked Up', 'Cancelled'],
   'Out for Delivery': ['Delivered', 'Cancelled'],
   'Delivered':        [],
   'Picked Up':        [],
