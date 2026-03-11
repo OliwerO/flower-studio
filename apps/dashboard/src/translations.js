@@ -308,6 +308,9 @@ const en = {
 
   upcomingDates:      'Upcoming dates',
   daysUntil:          'days',
+  wixAvailableToday:  'Wix — Available today',
+  wixNoProducts:      'No products available today',
+  fromPrice:          'from',
 
   daysOfSupplyHeader: 'Supply (days)',
 
@@ -752,6 +755,9 @@ const ru = {
 
   upcomingDates:      'Ближайшие даты',
   daysUntil:          'дней',
+  wixAvailableToday:  'Wix — Доступно сегодня',
+  wixNoProducts:      'Нет доступных товаров на сегодня',
+  fromPrice:          'от',
 
   daysOfSupplyHeader: 'Запас (дней)',
 

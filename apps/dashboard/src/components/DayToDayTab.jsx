@@ -35,6 +35,7 @@ export default function DayToDayTab({ onNavigate }) {
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [driverOfDay, setDriverOfDay] = useState(null);
   const [drivers, setDrivers]     = useState([]);
+  const [wixProducts, setWixProducts] = useState([]);
   const { showToast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -42,15 +43,18 @@ export default function DayToDayTab({ onNavigate }) {
       const today = new Date().toISOString().split('T')[0];
       const firstOfMonth = today.slice(0, 8) + '01';
 
-      const [dashRes, analyticsRes, settingsRes] = await Promise.all([
+      const [dashRes, analyticsRes, settingsRes, productsRes] = await Promise.all([
         client.get('/dashboard', { params: { date: today } }),
         client.get('/analytics', { params: { from: firstOfMonth, to: today } }).catch(() => ({ data: null })),
         client.get('/settings').catch(() => ({ data: {} })),
+        client.get('/public/products').catch(() => ({ data: { products: [] } })),
       ]);
       setData(dashRes.data);
       setAnalytics(analyticsRes.data);
       setDriverOfDay(settingsRes.data.driverOfDay || null);
       setDrivers(settingsRes.data.drivers || []);
+      const available = (productsRes.data.products || []).filter(p => p.availableToday);
+      setWixProducts(available);
       setFetchError(false);
     } catch {
       setFetchError(true);
@@ -395,6 +399,41 @@ export default function DayToDayTab({ onNavigate }) {
           </div>
         </div>
       )}
+
+      {/* Wix — Available Today: products the storefront shows as same-day */}
+      <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
+        <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-3">
+          {t.wixAvailableToday}
+          <span className="ml-2 text-ios-secondary font-normal normal-case">
+            ({wixProducts.length})
+          </span>
+        </h3>
+        {wixProducts.length === 0 ? (
+          <p className="text-sm text-ios-tertiary">{t.wixNoProducts}</p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {wixProducts.map(p => (
+              <div
+                key={p.wixProductId}
+                onClick={() => nav('products')}
+                className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2 cursor-pointer hover:bg-gray-100 transition-all active-scale"
+              >
+                {p.imageUrl && (
+                  <img src={p.imageUrl} alt="" className="w-8 h-8 rounded-lg object-cover shrink-0" />
+                )}
+                <div className="min-w-0">
+                  <span className="text-sm font-medium text-ios-label block truncate">{p.name}</span>
+                  {p.minPrice > 0 && (
+                    <span className="text-[11px] text-ios-secondary">
+                      {t.fromPrice} {p.minPrice} {t.zl}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
     </div>
   );
