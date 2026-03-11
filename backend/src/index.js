@@ -22,6 +22,7 @@ import settingsRoutes      from './routes/settings.js';
 import marketingSpendRoutes from './routes/marketingSpend.js';
 import stockLossRoutes     from './routes/stockLoss.js';
 import publicRoutes        from './routes/public.js';
+import productRoutes       from './routes/products.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -77,6 +78,7 @@ app.use('/api/intake',          intakeRoutes);
 app.use('/api/settings',        settingsRoutes);
 app.use('/api/marketing-spend', marketingSpendRoutes);
 app.use('/api/stock-loss',      stockLossRoutes);
+app.use('/api/products',        productRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);
