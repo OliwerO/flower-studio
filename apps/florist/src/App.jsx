@@ -14,12 +14,21 @@ import OrderListPage    from './pages/OrderListPage.jsx';
 import OrderDetailPage  from './pages/OrderDetailPage.jsx';
 import NewOrderPage     from './pages/NewOrderPage.jsx';
 import StockPanelPage   from './pages/StockPanelPage.jsx';
+import DaySummaryPage   from './pages/DaySummaryPage.jsx';
 import Toast            from './components/Toast.jsx';
 
 // PrivateRoute — like a badge-reader gate. Redirects to /login if no PIN in context.
 function PrivateRoute({ children }) {
   const { pin } = useAuth();
   return pin ? children : <Navigate to="/login" replace />;
+}
+
+// OwnerRoute — only allows the owner role through. Florists get redirected to orders.
+function OwnerRoute({ children }) {
+  const { pin, role } = useAuth();
+  if (!pin) return <Navigate to="/login" replace />;
+  if (role !== 'owner') return <Navigate to="/orders" replace />;
+  return children;
 }
 
 export default function App() {
@@ -56,6 +65,10 @@ export default function App() {
 
         <Route path="/stock" element={
           <PrivateRoute><StockPanelPage /></PrivateRoute>
+        } />
+
+        <Route path="/day-summary" element={
+          <OwnerRoute><DaySummaryPage /></OwnerRoute>
         } />
 
         {/* Default: send logged-in users to orders, others to login */}

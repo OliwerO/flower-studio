@@ -184,6 +184,30 @@ const en = {
   error:            'Error',
   dismiss:          'Dismiss',
 
+  // Owner features
+  owner: {
+    today:              'Today',
+    orders:             'orders',
+    paidLabel:          'Paid',
+    unpaidLabel:        'Unpaid',
+    finances:           'Finances',
+    cost:               'Cost',
+    margin:             'Margin',
+    stockAlerts:        'Stock Alerts',
+    outOfStock:         'out of stock',
+    left:               'left',
+    threshold:          'threshold',
+    dismissAlerts:      'Dismiss',
+    daySummary:         'Day Summary',
+    revenue:            'Revenue',
+    statusBreakdown:    'Status Breakdown',
+    pendingDeliveries:  'Pending Deliveries',
+    unpaidOrders:       'Unpaid Orders',
+    noDeliveries:       'No pending deliveries',
+    noUnpaid:           'All orders paid',
+    noAlerts:           'Stock levels OK',
+  },
+
   // Text import / intake
   intake: {
     title:              'Paste text',
@@ -385,6 +409,30 @@ const ru = {
   success:          'Готово!',
   error:            'Ошибка',
   dismiss:          'Закрыть',
+
+  // Owner features
+  owner: {
+    today:              'Сегодня',
+    orders:             'заказов',
+    paidLabel:          'Оплачено',
+    unpaidLabel:        'Не оплачено',
+    finances:           'Финансы',
+    cost:               'Себестоимость',
+    margin:             'Маржа',
+    stockAlerts:        'Склад — внимание',
+    outOfStock:         'нет в наличии',
+    left:               'осталось',
+    threshold:          'порог',
+    dismissAlerts:      'Скрыть',
+    daySummary:         'Сводка дня',
+    revenue:            'Выручка',
+    statusBreakdown:    'По статусам',
+    pendingDeliveries:  'Ожидающие доставки',
+    unpaidOrders:       'Неоплаченные заказы',
+    noDeliveries:       'Нет ожидающих доставок',
+    noUnpaid:           'Все заказы оплачены',
+    noAlerts:           'Склад в порядке',
+  },
 
   // Text import / intake
   intake: {

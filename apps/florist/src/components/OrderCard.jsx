@@ -78,7 +78,7 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated }) {
+export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
   const [detail, setDetail]       = useState(null);
@@ -234,6 +234,31 @@ export default function OrderCard({ order, onOrderUpdated }) {
                   </div>
                 </div>
               )}
+
+              {/* Owner: Cost/Margin — computed from order lines */}
+              {isOwner && (() => {
+                // Compute cost from line items (detail endpoint doesn't pre-calculate this)
+                const costTotal = (detail.orderLines || []).reduce(
+                  (sum, l) => sum + Number(l['Cost Price Per Unit'] || 0) * Number(l['Quantity'] || 0), 0
+                );
+                const sellTotal = Number(detail['Price Override'] || 0)
+                  || (detail.orderLines || []).reduce(
+                    (sum, l) => sum + Number(l['Sell Price Per Unit'] || 0) * Number(l['Quantity'] || 0), 0
+                  );
+                const effectivePrice = sellTotal + Number(detail['Delivery Fee'] || 0);
+                if (!costTotal && !effectivePrice) return null;
+                const marginAmt = effectivePrice - costTotal;
+                const marginPct = effectivePrice > 0 ? Math.round((marginAmt / effectivePrice) * 100) : 0;
+                return (
+                  <div>
+                    <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.owner.finances}</p>
+                    <div className="bg-gray-50 rounded-xl px-3 py-1">
+                      <Row label={t.owner.cost} value={`${Math.round(costTotal)} zł`} />
+                      <Row label={t.owner.margin} value={`${Math.round(marginAmt)} zł (${marginPct}%)`} />
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Status controls */}
               <div>

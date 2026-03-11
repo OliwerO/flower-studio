@@ -9,6 +9,9 @@ import TextImportModal from '../components/TextImportModal.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 import t from '../translations.js';
 
+// Key for dismissing stock alerts per session
+const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
+
 const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
 
 // Map Airtable status values → translated display labels
@@ -51,7 +54,8 @@ function todayISO() {
 
 export default function OrderListPage() {
   const navigate         = useNavigate();
-  const { logout }       = useAuth();
+  const { logout, role } = useAuth();
+  const isOwner = role === 'owner';
   const [orders, setOrders]         = useState([]);
   const [loading, setLoading]       = useState(true);
   const [date, setDate]             = useState(todayISO());
@@ -59,6 +63,12 @@ export default function OrderListPage() {
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [showHelp, setShowHelp]     = useState(false);
+
+  // Owner-only: dashboard summary data
+  const [dashData, setDashData]       = useState(null);
+  const [alertsDismissed, setAlertsDismissed] = useState(
+    () => sessionStorage.getItem(ALERTS_DISMISSED_KEY) === 'true'
+  );
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -77,6 +87,19 @@ export default function OrderListPage() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
+  // Owner: fetch dashboard data for today's summary + stock alerts
+  useEffect(() => {
+    if (!isOwner) return;
+    client.get('/dashboard', { params: { date: date || todayISO() } })
+      .then(r => setDashData(r.data))
+      .catch(() => {}); // non-critical — silently ignore
+  }, [isOwner, date]);
+
+  function dismissAlerts() {
+    setAlertsDismissed(true);
+    sessionStorage.setItem(ALERTS_DISMISSED_KEY, 'true');
+  }
+
   return (
     <div className="min-h-screen">
 
@@ -91,6 +114,13 @@ export default function OrderListPage() {
                          hover:bg-gray-200 active-scale flex items-center justify-center"
             >?</button>
             <LangToggle />
+            {isOwner && (
+              <button
+                onClick={() => navigate('/day-summary')}
+                className="text-brand-600 text-sm font-medium w-8 h-8 rounded-full bg-brand-50 active:bg-brand-100 flex items-center justify-center"
+                title={t.owner.daySummary}
+              >📊</button>
+            )}
             <button
               onClick={() => navigate('/stock')}
               className="text-brand-600 text-sm font-medium px-3 py-1.5 rounded-full bg-brand-50 active:bg-brand-100"
@@ -106,6 +136,25 @@ export default function OrderListPage() {
           </div>
         </div>
       </header>
+
+      {/* Owner: Revenue summary card */}
+      {isOwner && dashData && (
+        <div className="px-4 pt-3 max-w-2xl mx-auto">
+          <div className="bg-white rounded-2xl shadow-sm px-4 py-3 border border-gray-100">
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.owner.today}</span>
+              <div className="flex items-center gap-3 text-sm">
+                <span className="text-ios-secondary">{dashData.orderCount} {t.owner.orders}</span>
+                <span className="font-bold text-brand-600">{Math.round(dashData.todayRevenue)} zł</span>
+              </div>
+            </div>
+            <div className="flex gap-4 text-xs">
+              <span className="text-green-600">{t.owner.paidLabel}: {Math.round(dashData.todayRevenue)} zł</span>
+              <span className="text-red-500">{t.owner.unpaidLabel}: {Math.round(dashData.unpaidAging?.today?.total || 0)} zł</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="px-4 py-3 max-w-2xl mx-auto flex gap-2 items-center flex-wrap">
@@ -136,6 +185,37 @@ export default function OrderListPage() {
         </button>
       </div>
 
+      {/* Owner: Stock alerts banner */}
+      {isOwner && dashData?.lowStockAlerts?.length > 0 && !alertsDismissed && (
+        <div className="px-4 max-w-2xl mx-auto">
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-xs font-semibold text-amber-800 uppercase tracking-wide">{t.owner.stockAlerts}</span>
+              <button onClick={dismissAlerts} className="text-xs text-amber-600 active-scale">{t.owner.dismissAlerts}</button>
+            </div>
+            <div className="flex flex-col gap-1">
+              {dashData.lowStockAlerts
+                .sort((a, b) => (a['Current Quantity'] || 0) - (b['Current Quantity'] || 0))
+                .map((item, i) => {
+                  const qty = item['Current Quantity'] || 0;
+                  const isOut = qty === 0;
+                  return (
+                    <button
+                      key={i}
+                      onClick={() => navigate('/stock')}
+                      className="text-left text-xs py-0.5 active-scale"
+                    >
+                      <span className={isOut ? 'text-red-600' : 'text-orange-600'}>
+                        {isOut ? '🔴' : '🟠'} {item['Display Name']} — {isOut ? t.owner.outOfStock : `${qty} ${t.owner.left} (${t.owner.threshold}: ${item['Reorder Threshold']})`}
+                      </span>
+                    </button>
+                  );
+                })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* List */}
       <main className="px-4 pb-28 max-w-2xl mx-auto">
         {loading ? (
@@ -153,6 +233,7 @@ export default function OrderListPage() {
               <OrderCard
                 key={order.id}
                 order={order}
+                isOwner={isOwner}
                 onOrderUpdated={(id, patch) => {
                   setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
                 }}
