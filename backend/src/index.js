@@ -21,6 +21,7 @@ import intakeRoutes        from './routes/intake.js';
 import settingsRoutes      from './routes/settings.js';
 import marketingSpendRoutes from './routes/marketingSpend.js';
 import stockLossRoutes     from './routes/stockLoss.js';
+import publicRoutes        from './routes/public.js';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -59,7 +60,8 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 app.use('/api/auth', authRoutes);
-app.use('/api/events', eventsRoutes); // SSE — no auth needed, lightweight event stream
+app.use('/api/events', eventsRoutes);   // SSE — no auth needed, lightweight event stream
+app.use('/api/public', publicRoutes);   // Storefront data — no auth, consumed by Wix Velo
 
 // All routes below require a valid PIN in the X-Auth-PIN header
 app.use(authenticate);

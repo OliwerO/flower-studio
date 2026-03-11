@@ -7,7 +7,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
 import { logWebhookEvent } from './webhookLog.js';
-import { translateOrderNotes } from './translate.js';
+
 
 /**
  * Process a Wix order payload asynchronously.
@@ -237,13 +237,8 @@ export async function processWixOrder(payload) {
       log('8-DELIVERY', `Delivery created → ${deliveryAddress}`);
     }
 
-    // Translate order notes (Wix notes may be in PL/EN/etc.)
-    const notesText = wixOrder.buyerNote || wixOrder.note || '';
-    if (notesText) {
-      translateOrderNotes(order.id, notesText).catch(err =>
-        console.error('[WIX] Translation failed (non-blocking):', err.message)
-      );
-    }
+    // Note: translation feature was removed (commit c04a8b8).
+    // Wix buyer notes are stored as-is in Notes Original.
 
     log('DONE', `Order ${order.id} created successfully from Wix #${wixOrderId}`);
     await logWebhookEvent({ status: 'Success', wixOrderId, appOrderId: order.id });

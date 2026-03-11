@@ -21,6 +21,33 @@ const config = {
   orderSources:       ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
   driverCostPerDelivery: 0, // TBD — per-delivery flat rate for driver cost
   extraDrivers: [], // drivers without app PINs (assignment-only, e.g. backup drivers)
+
+  // ── Storefront categories (Wix integration) ──
+  // Permanent categories are always shown in the store nav.
+  // Seasonal categories rotate: only one active at a time.
+  // "Available Today" is auto-generated (LT=0 + inStock).
+  storefrontCategories: {
+    permanent: ['All Bouquets', 'Bestsellers'],
+    seasonal: [
+      { name: "Valentine's Day", slug: 'valentines-day', from: '01-25', to: '02-15' },
+      { name: "Women's Day",     slug: 'womens-day',     from: '02-25', to: '03-10' },
+      { name: "Mother's Day",    slug: 'mothers-day',    from: '04-20', to: '05-26' },
+      { name: 'Easter',          slug: 'easter',         from: '03-28', to: '04-15' },
+      { name: 'Christmas',       slug: 'christmas',      from: '12-01', to: '12-26' },
+    ],
+    autoSchedule: true,       // auto-activate seasonal by date range
+    manualOverride: null,     // slug of forced seasonal category (overrides auto)
+  },
+
+  // ── Delivery zones (Wix checkout + shipping SPI) ──
+  deliveryZones: [
+    { id: 1, name: 'Central Krakow', fee: 35, postcodes: ['30-0', '30-1', '31-0'] },
+    { id: 2, name: 'Suburbs',        fee: 50, postcodes: ['32-0'] },
+    { id: 3, name: 'Out of city',    fee: 80, postcodes: [] },
+  ],
+  freeDeliveryThreshold: 300,
+  expressSurcharge: 20,
+  deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
 };
 
 // ── Daily settings (auto-reset at midnight) ─────────────────
@@ -119,6 +146,33 @@ export function getDriverOfDay() {
 
 export function getConfig(key) {
   return config[key];
+}
+
+/**
+ * Returns the currently active seasonal category based on config rules.
+ * Priority: manual override > auto-schedule by date > null (none active).
+ */
+export function getActiveSeasonalCategory() {
+  const sc = config.storefrontCategories;
+
+  // Manual override takes precedence
+  if (sc.manualOverride) {
+    const forced = sc.seasonal.find(s => s.slug === sc.manualOverride);
+    if (forced) return { name: forced.name, slug: forced.slug };
+  }
+
+  // Auto-schedule: check which season we're in today
+  if (sc.autoSchedule) {
+    const now = new Date();
+    const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    for (const s of sc.seasonal) {
+      if (mmdd >= s.from && mmdd <= s.to) {
+        return { name: s.name, slug: s.slug };
+      }
+    }
+  }
+
+  return null;
 }
 
 export default router;

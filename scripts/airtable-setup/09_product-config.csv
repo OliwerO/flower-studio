@@ -1,0 +1,13 @@
+Product Name,Variant Name,Sort Order,Wix Product ID,Wix Variant ID,Category,Lead Time Days,Price,Image URL,Min Stems,Active,Visible in Wix,Product Type,Available From,Available To
+Sample Rose Mix,S,1,wix_sample_001,var_001,"All Bouquets,Bestsellers",1,200,,0,false,false,mix,,
+Sample Rose Mix,M,2,wix_sample_001,var_002,"All Bouquets,Bestsellers",1,280,,0,false,false,mix,,
+Sample Rose Mix,L,3,wix_sample_001,var_003,"All Bouquets,Bestsellers",1,380,,0,false,false,mix,,
+Sample Rose Mix,XL,4,wix_sample_001,var_004,"All Bouquets,Bestsellers",1,500,,0,false,false,mix,,
+Sample Tulip Mono,11,1,wix_sample_002,var_005,"All Bouquets",0,165,,11,false,false,mono,,
+Sample Tulip Mono,25,2,wix_sample_002,var_006,"All Bouquets",0,375,,25,false,false,mono,,
+Sample Tulip Mono,51,3,wix_sample_002,var_007,"All Bouquets",1,765,,51,false,false,mono,,
+Sample Seasonal Mix,S,1,wix_sample_003,var_008,"Mother's Day",1,220,,0,false,false,mix,04-20,05-26
+Sample Seasonal Mix,M,2,wix_sample_003,var_009,"Mother's Day",1,320,,0,false,false,mix,04-20,05-26
+Sample XS Bouquet,XS,1,wix_sample_004,var_010,"All Bouquets",0,120,,0,false,false,mix,,
+Sample XXL Bouquet,XXL,1,wix_sample_005,var_011,"Bestsellers",2,900,,0,false,false,mix,,
+Sample Mono 101,101,1,wix_sample_006,var_012,"All Bouquets,Bestsellers",2,1500,,101,false,false,mono,,
