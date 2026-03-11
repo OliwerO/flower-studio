@@ -180,14 +180,18 @@ router.get('/categories', (_req, res) => {
   const seasonal = getActiveSeasonalCategory();
 
   const permanent = sc.permanent || [];
+  const allSeasonal = (sc.seasonal || []).map(s => s.name);
   const auto = ['Available Today'];
   const all = [...permanent, ...(seasonal ? [seasonal.name] : []), ...auto];
+  // allCategories: every possible category (for dashboard product assignment)
+  const allCategories = [...new Set([...permanent, ...allSeasonal, ...auto])];
 
   res.json({
     permanent,
     seasonal: seasonal || { active: null, slug: null },
     auto,
     all,
+    allCategories,
   });
 });
 

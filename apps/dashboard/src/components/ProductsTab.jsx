@@ -29,12 +29,12 @@ export default function ProductsTab() {
         client.get('/products'),
         client.get('/stock'),
         client.get('/products/sync-log'),
-        client.get('/public/categories').catch(() => ({ data: { all: [] } })),
+        client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
       ]);
       setProducts(prodRes.data);
       setStock(stockRes.data);
       setSyncLog(logRes.data?.[0] || null);
-      setCategories(catRes.data?.all || []);
+      setCategories(catRes.data?.allCategories || catRes.data?.all || []);
     } catch {
       showToast(t.error, 'error');
     } finally {
