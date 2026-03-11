@@ -96,7 +96,8 @@ export default function ProductsTab() {
   }
 
   const stockMap = Object.fromEntries(stock.map(s => [s.id, s]));
-  const stockList = stock.filter(s => s['Active'] !== false);
+  // Show all stock items for Key Flower mapping (not just active/in-stock ones)
+  const stockList = stock;
 
   return (
     <div>
