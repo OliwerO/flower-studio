@@ -1,31 +1,27 @@
-// Settings routes — in-memory store for operational config + daily settings.
-// Like a shift whiteboard + factory config binder: daily preferences reset,
-// but operational configs persist until the server restarts.
-// Defaults match current hardcoded values so nothing breaks if never changed.
+// Settings routes — config persisted to Airtable, daily settings in memory.
+// Like a factory config binder stored in the central filing cabinet (Airtable)
+// instead of on a whiteboard that gets erased when the lights go off.
+// Daily preferences (driver-of-day) still reset at midnight — that's intentional.
 
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import { getBackupDriverName, setBackupDriverName } from '../services/driverState.js';
+import * as db from '../services/airtable.js';
+import { TABLES } from '../config/airtable.js';
 
 const router = Router();
 
 // ── Default configuration values ────────────────────────────
-// These are the same values currently hardcoded across the codebase.
-// The Settings tab lets the owner tweak them without touching code.
-const config = {
+// Used as fallback if Airtable config row doesn't exist yet or is empty.
+const DEFAULTS = {
   defaultDeliveryFee: 35,
   targetMarkup:       2.2,
   suppliers:          ['Stojek', '4f', 'Stefan', 'Mateusz', 'Other'],
   stockCategories:    ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'],
   paymentMethods:     ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
   orderSources:       ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
-  driverCostPerDelivery: 0, // TBD — per-delivery flat rate for driver cost
-  extraDrivers: [], // drivers without app PINs (assignment-only, e.g. backup drivers)
-
-  // ── Storefront categories (Wix integration) ──
-  // Permanent categories are always shown in the store nav.
-  // Seasonal categories rotate: only one active at a time.
-  // "Available Today" is auto-generated (LT=0 + inStock).
+  driverCostPerDelivery: 0,
+  extraDrivers: [],
   storefrontCategories: {
     permanent: ['All Bouquets', 'Bestsellers'],
     seasonal: [
@@ -35,11 +31,9 @@ const config = {
       { name: 'Easter',          slug: 'easter',         from: '03-28', to: '04-15' },
       { name: 'Christmas',       slug: 'christmas',      from: '12-01', to: '12-26' },
     ],
-    autoSchedule: true,       // auto-activate seasonal by date range
-    manualOverride: null,     // slug of forced seasonal category (overrides auto)
+    autoSchedule: true,
+    manualOverride: null,
   },
-
-  // ── Delivery zones (Wix checkout + shipping SPI) ──
   deliveryZones: [
     { id: 1, name: 'Central Krakow', fee: 35, postcodes: ['30-0', '30-1', '31-0'] },
     { id: 2, name: 'Suburbs',        fee: 50, postcodes: ['32-0'] },
@@ -49,6 +43,94 @@ const config = {
   expressSurcharge: 20,
   deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
 };
+
+// ── In-memory config (loaded from Airtable on startup) ──────
+let config = { ...DEFAULTS };
+let configRecordId = null; // Airtable record ID for the config row
+let configLoaded = false;
+
+/**
+ * Load config from Airtable App Config table.
+ * Merges stored values over defaults so new keys auto-appear.
+ */
+async function loadConfig() {
+  if (!TABLES.APP_CONFIG) {
+    console.warn('[SETTINGS] AIRTABLE_APP_CONFIG_TABLE not set — using defaults');
+    configLoaded = true;
+    return;
+  }
+
+  try {
+    const rows = await db.list(TABLES.APP_CONFIG, {
+      filterByFormula: "{Key} = 'config'",
+      maxRecords: 1,
+    });
+
+    if (rows.length > 0) {
+      configRecordId = rows[0].id;
+      const stored = rows[0].Value;
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Deep merge: defaults + stored values (stored wins)
+        config = deepMerge(DEFAULTS, parsed);
+      }
+      console.log('[SETTINGS] Config loaded from Airtable');
+    } else {
+      // No config row yet — create one with defaults
+      const created = await db.create(TABLES.APP_CONFIG, {
+        Key: 'config',
+        Value: JSON.stringify(DEFAULTS),
+      });
+      configRecordId = created.id;
+      console.log('[SETTINGS] Config row created in Airtable with defaults');
+    }
+  } catch (err) {
+    console.error('[SETTINGS] Failed to load config from Airtable:', err.message);
+    console.warn('[SETTINGS] Using in-memory defaults');
+  }
+
+  configLoaded = true;
+}
+
+/**
+ * Save current config to Airtable.
+ */
+async function saveConfig() {
+  if (!TABLES.APP_CONFIG || !configRecordId) return;
+
+  try {
+    await db.update(TABLES.APP_CONFIG, configRecordId, {
+      Value: JSON.stringify(config),
+    });
+  } catch (err) {
+    console.error('[SETTINGS] Failed to save config to Airtable:', err.message);
+  }
+}
+
+/**
+ * Deep merge: target gets source values, preserving nested structure.
+ * Arrays are replaced (not merged) — source array wins entirely.
+ */
+function deepMerge(target, source) {
+  const result = { ...target };
+  for (const key of Object.keys(source)) {
+    if (
+      source[key] !== null &&
+      typeof source[key] === 'object' &&
+      !Array.isArray(source[key]) &&
+      typeof target[key] === 'object' &&
+      !Array.isArray(target[key])
+    ) {
+      result[key] = deepMerge(target[key] || {}, source[key]);
+    } else {
+      result[key] = source[key];
+    }
+  }
+  return result;
+}
+
+// Load config on startup
+loadConfig();
 
 // ── Daily settings (auto-reset at midnight) ─────────────────
 const daily = {
@@ -64,7 +146,6 @@ const driverNames = Object.entries(process.env)
     + key.replace('PIN_DRIVER_', '').slice(1).toLowerCase()
   );
 
-// Auto-clear driver-of-day when the date changes.
 function autoClearIfNewDay() {
   const today = new Date().toISOString().split('T')[0];
   if (daily._lastSetDate && daily._lastSetDate !== today) {
@@ -73,14 +154,10 @@ function autoClearIfNewDay() {
   }
 }
 
-// ── GET /api/settings — read all settings + config (any authenticated role) ──
-// Merges PIN-based drivers (from env vars) with extra drivers (from config).
-// Like a staffing roster: some employees have badge access (PINs), others are temps
-// who can be assigned work but don't have building access.
+// ── GET /api/settings — read all settings + config ──
 router.get('/', authorize('orders'), (req, res) => {
   autoClearIfNewDay();
   const backupName = getBackupDriverName();
-  // Replace "Backup" with today's freelancer name if set
   const resolvedDrivers = [...new Set([...driverNames, ...config.extraDrivers])]
     .map(name => name === 'Backup' && backupName ? backupName : name);
   res.json({
@@ -92,7 +169,7 @@ router.get('/', authorize('orders'), (req, res) => {
   });
 });
 
-// ── PUT /api/settings/driver-of-day — set today's default driver ──
+// ── PUT /api/settings/driver-of-day ──
 router.put('/driver-of-day', authorize('admin'), (req, res) => {
   const { driverName } = req.body;
   daily.driverOfDay = driverName || null;
@@ -100,20 +177,15 @@ router.put('/driver-of-day', authorize('admin'), (req, res) => {
   res.json({ driverOfDay: daily.driverOfDay });
 });
 
-// ── PUT /api/settings/backup-driver — set today's freelancer name ──
-// The backup PIN is a shared credential. This endpoint lets the owner
-// label who's actually using it today (like writing a temp worker's name
-// on a shared badge).
+// ── PUT /api/settings/backup-driver ──
 router.put('/backup-driver', authorize('admin'), (req, res) => {
   const { name } = req.body;
   setBackupDriverName(name);
   res.json({ backupDriverName: getBackupDriverName() });
 });
 
-// ── PUT /api/settings/config — update operational config (owner only) ──
-// Accepts a partial object — only the keys provided will be updated.
-// Like updating a factory parameter sheet: change one line, rest stays.
-router.put('/config', authorize('admin'), (req, res) => {
+// ── PUT /api/settings/config — update + persist to Airtable ──
+router.put('/config', authorize('admin'), async (req, res) => {
   const allowed = Object.keys(config);
   const updates = req.body;
 
@@ -123,11 +195,15 @@ router.put('/config', authorize('admin'), (req, res) => {
     }
   }
 
+  // Persist to Airtable (fire-and-forget — don't block the response)
+  saveConfig().catch(err =>
+    console.error('[SETTINGS] Background save failed:', err.message)
+  );
+
   res.json({ config });
 });
 
-// ── GET /api/settings/lists — returns just the list configs (for dropdown population) ──
-// Accessible by any authenticated role (florists need supplier/category lists).
+// ── GET /api/settings/lists ──
 router.get('/lists', authorize('orders'), (req, res) => {
   res.json({
     suppliers:      config.suppliers,
@@ -155,13 +231,11 @@ export function getConfig(key) {
 export function getActiveSeasonalCategory() {
   const sc = config.storefrontCategories;
 
-  // Manual override takes precedence
   if (sc.manualOverride) {
     const forced = sc.seasonal.find(s => s.slug === sc.manualOverride);
     if (forced) return { name: forced.name, slug: forced.slug };
   }
 
-  // Auto-schedule: check which season we're in today
   if (sc.autoSchedule) {
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;

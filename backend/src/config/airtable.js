@@ -18,6 +18,7 @@ export const TABLES = {
   STOCK_LOSS_LOG:  process.env.AIRTABLE_STOCK_LOSS_LOG_TABLE,
   PRODUCT_CONFIG:  process.env.AIRTABLE_PRODUCT_CONFIG_TABLE,
   SYNC_LOG:        process.env.AIRTABLE_SYNC_LOG_TABLE,
+  APP_CONFIG:      process.env.AIRTABLE_APP_CONFIG_TABLE,
 };
 
 export default base;
