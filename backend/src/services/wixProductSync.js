@@ -8,6 +8,7 @@
 
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sendAlert } from './telegram.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -280,6 +281,17 @@ export async function runSync() {
     });
   } catch (err) {
     console.error('[SYNC] Failed to write sync log:', err.message);
+  }
+
+  // Send Telegram alert on sync failure
+  if (stats.errors.length > 0) {
+    const errorSummary = stats.errors.slice(0, 5).join('\n');
+    await sendAlert(
+      `SYNC FAILED\n\n`
+      + `New: ${stats.new}, Updated: ${stats.updated}, Errors: ${stats.errors.length}\n\n`
+      + `${errorSummary}`
+      + (stats.errors.length > 5 ? `\n...and ${stats.errors.length - 5} more` : '')
+    );
   }
 
   return stats;
