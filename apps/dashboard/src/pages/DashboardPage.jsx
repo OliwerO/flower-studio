@@ -14,6 +14,7 @@ import CustomersTab from '../components/CustomersTab.jsx';
 import DayToDayTab from '../components/DayToDayTab.jsx';
 import NewOrderTab from '../components/NewOrderTab.jsx';
 import SettingsTab from '../components/SettingsTab.jsx';
+import ProductsTab from '../components/ProductsTab.jsx';
 
 // Lazy-load FinancialTab so Recharts (~160KB) isn't bundled until the tab is first opened
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
@@ -27,6 +28,7 @@ export default function DashboardPage() {
     { key: 'stock',     label: t.tabStock },
     { key: 'customers', label: t.tabCustomers },
     { key: 'financial', label: t.tabFinancial },
+    { key: 'products', label: t.tabProducts },
     { key: 'settings', label: '\u2699 ' + t.tabSettings },
   ];
   const [activeTab, setActiveTab] = useState('today');
@@ -109,6 +111,9 @@ export default function DashboardPage() {
         </div>
         <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
           <CustomersTab key={filterKey} initialFilter={tabFilter} />
+        </div>
+        <div style={{ display: activeTab === 'products' ? 'block' : 'none' }}>
+          <ProductsTab />
         </div>
         <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }}>
           <SettingsTab />
