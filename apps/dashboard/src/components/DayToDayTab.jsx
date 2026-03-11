@@ -423,11 +423,16 @@ export default function DayToDayTab({ onNavigate }) {
                 )}
                 <div className="min-w-0">
                   <span className="text-sm font-medium text-ios-label block truncate">{p.name}</span>
-                  {p.minPrice > 0 && (
-                    <span className="text-[11px] text-ios-secondary">
-                      {t.fromPrice} {p.minPrice} {t.zl}
-                    </span>
-                  )}
+                  <div className="flex flex-wrap gap-1 mt-0.5">
+                    {p.variants
+                      .filter(v => v.leadTimeDays === 0 && v.inStock)
+                      .map(v => (
+                        <span key={v.wixVariantId}
+                          className="inline-block bg-emerald-100 text-emerald-700 text-[10px] font-medium rounded-full px-1.5 py-0.5">
+                          {v.name}
+                        </span>
+                      ))}
+                  </div>
                 </div>
               </div>
             ))}
