@@ -1,7 +1,7 @@
 // ProductsTab — Wix product catalog management for the owner.
 // Like a product master data screen: see all items from the supplier (Wix),
 // set prices, lead times, categories, and toggle visibility.
-// New products from Wix sync appear with a review badge.
+// New products from Wix sync appear with a "New" badge.
 
 import { useState, useEffect, useCallback } from 'react';
 import client from '../api/client.js';
@@ -13,10 +13,11 @@ const PRODUCT_TYPES = ['mono', 'mix'];
 export default function ProductsTab() {
   const [products, setProducts] = useState([]);
   const [stock, setStock] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [syncLog, setSyncLog] = useState(null);
-  const [filter, setFilter] = useState('all'); // 'all' | 'review' | 'active' | 'inactive'
+  const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState(null);
   const { showToast } = useToast();
@@ -24,14 +25,16 @@ export default function ProductsTab() {
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const [prodRes, stockRes, logRes] = await Promise.all([
+      const [prodRes, stockRes, logRes, catRes] = await Promise.all([
         client.get('/products'),
         client.get('/stock'),
         client.get('/products/sync-log'),
+        client.get('/public/categories').catch(() => ({ data: { all: [] } })),
       ]);
       setProducts(prodRes.data);
       setStock(stockRes.data);
       setSyncLog(logRes.data?.[0] || null);
+      setCategories(catRes.data?.all || []);
     } catch {
       showToast(t.error, 'error');
     } finally {
@@ -46,9 +49,10 @@ export default function ProductsTab() {
 
   // Filter
   const filtered = grouped.filter(g => {
-    if (filter === 'review') return g.variants.some(v => !v['Active']);
+    if (filter === 'review') return g.variants.every(v => !v['Active']);
     if (filter === 'active') return g.variants.some(v => v['Active']);
     if (filter === 'inactive') return g.variants.every(v => !v['Active']);
+    if (filter === 'today') return g.variants.some(v => v['Active'] && Number(v['Lead Time Days'] ?? 1) === 0);
     return true;
   }).filter(g => {
     if (!search) return true;
@@ -56,7 +60,7 @@ export default function ProductsTab() {
     return g.name.toLowerCase().includes(s);
   });
 
-  const needsReview = grouped.filter(g => g.variants.some(v => !v['Active'])).length;
+  const needsReview = grouped.filter(g => g.variants.every(v => !v['Active'])).length;
 
   async function handleSync() {
     setSyncing(true);
@@ -73,7 +77,6 @@ export default function ProductsTab() {
   }
 
   async function updateVariant(id, field, value) {
-    // Optimistic update
     setProducts(prev => prev.map(p =>
       p.id === id ? { ...p, [field]: value } : p
     ));
@@ -81,14 +84,19 @@ export default function ProductsTab() {
       await client.patch(`/products/${id}`, { [field]: value });
     } catch {
       showToast(t.error, 'error');
-      fetchProducts(); // revert
+      fetchProducts();
     }
   }
 
-  // Build stock lookup for suggested price
-  const stockMap = Object.fromEntries(
-    stock.map(s => [s.id, s])
-  );
+  // Update all variants of a product at once (for product-level fields)
+  async function updateAllVariants(group, field, value) {
+    for (const v of group.variants) {
+      await updateVariant(v.id, field, value);
+    }
+  }
+
+  const stockMap = Object.fromEntries(stock.map(s => [s.id, s]));
+  const stockList = stock.filter(s => s['Active'] !== false);
 
   return (
     <div>
@@ -96,9 +104,7 @@ export default function ProductsTab() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">{t.tabProducts}</h2>
-          {syncLog && (
-            <SyncStatus log={syncLog} />
-          )}
+          {syncLog && <SyncStatus log={syncLog} />}
         </div>
         <button
           onClick={handleSync}
@@ -131,6 +137,7 @@ export default function ProductsTab() {
           {[
             ['all', t.prodFilterAll],
             ['active', t.prodFilterActive],
+            ['today', t.prodFilterToday],
             ['inactive', t.prodFilterInactive],
             ['review', t.prodFilterReview],
           ].map(([key, label]) => (
@@ -169,11 +176,14 @@ export default function ProductsTab() {
               key={group.wixProductId}
               group={group}
               stockMap={stockMap}
+              stockList={stockList}
+              categories={categories}
               expanded={expandedProduct === group.wixProductId}
               onToggle={() => setExpandedProduct(
                 expandedProduct === group.wixProductId ? null : group.wixProductId
               )}
               onUpdate={updateVariant}
+              onUpdateAll={updateAllVariants}
             />
           ))}
           {filtered.length === 0 && (
@@ -185,13 +195,13 @@ export default function ProductsTab() {
   );
 }
 
-// ── Product card (one per Wix product, shows all variants) ──
+// ── Product card ──
 
-function ProductCard({ group, stockMap, expanded, onToggle, onUpdate }) {
+function ProductCard({ group, stockMap, stockList, categories, expanded, onToggle, onUpdate, onUpdateAll }) {
   const allActive = group.variants.every(v => v['Active']);
   const anyActive = group.variants.some(v => v['Active']);
   const productType = group.variants[0]?.['Product Type'] || 'mix';
-  const categories = parseCats(group.variants[0]?.['Category']);
+  const currentCats = parseCats(group.variants[0]?.['Category']);
 
   return (
     <div className={`bg-white rounded-2xl border ${anyActive ? 'border-gray-200' : 'border-amber-200'} shadow-sm overflow-hidden`}>
@@ -200,7 +210,6 @@ function ProductCard({ group, stockMap, expanded, onToggle, onUpdate }) {
         onClick={onToggle}
         className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors"
       >
-        {/* Thumbnail */}
         {group.imageUrl ? (
           <img src={group.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
         ) : (
@@ -213,7 +222,7 @@ function ProductCard({ group, stockMap, expanded, onToggle, onUpdate }) {
             <span className="text-xs text-gray-400">({productType})</span>
             {!allActive && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
-                {t.prodNeedsSetup}
+                {t.prodNew}
               </span>
             )}
           </div>
@@ -221,31 +230,28 @@ function ProductCard({ group, stockMap, expanded, onToggle, onUpdate }) {
             <span className="text-xs text-gray-400">
               {group.variants.length} {t.prodVariants}
             </span>
-            {categories.length > 0 && (
+            {currentCats.length > 0 && (
               <span className="text-xs text-gray-400">
-                · {categories.join(', ')}
+                · {currentCats.join(', ')}
               </span>
             )}
           </div>
         </div>
 
-        <span className="text-gray-300 text-lg">{expanded ? '−' : '+'}</span>
+        <span className="text-gray-300 text-lg">{expanded ? '\u2212' : '+'}</span>
       </button>
 
-      {/* Expanded: variant table */}
+      {/* Expanded detail */}
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-3">
           {/* Product-level fields */}
-          <div className="flex gap-3 mb-3 flex-wrap">
+          <div className="flex gap-4 mb-3 flex-wrap items-start">
+            {/* Type selector */}
             <label className="flex items-center gap-2 text-xs text-gray-600">
               {t.prodType}:
               <select
                 value={productType}
-                onChange={e => {
-                  for (const v of group.variants) {
-                    onUpdate(v.id, 'Product Type', e.target.value);
-                  }
-                }}
+                onChange={e => onUpdateAll(group, 'Product Type', e.target.value)}
                 className="border border-gray-200 rounded-lg px-2 py-1 text-xs"
               >
                 {PRODUCT_TYPES.map(pt => (
@@ -253,25 +259,46 @@ function ProductCard({ group, stockMap, expanded, onToggle, onUpdate }) {
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-2 text-xs text-gray-600">
-              {t.category}:
-              <input
-                type="text"
-                defaultValue={categories.join(', ')}
-                onBlur={e => {
-                  const cats = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                  for (const v of group.variants) {
-                    onUpdate(v.id, 'Category', cats);
-                  }
-                }}
-                className="border border-gray-200 rounded-lg px-2 py-1 text-xs w-48"
-                placeholder="All Bouquets, Bestsellers"
-              />
-            </label>
+
+            {/* Category multi-select (checkboxes) */}
+            <div className="text-xs text-gray-600">
+              <span className="mr-2">{t.category}:</span>
+              <div className="inline-flex flex-wrap gap-1.5 mt-0.5">
+                {categories.map(cat => {
+                  const checked = currentCats.includes(cat);
+                  return (
+                    <label key={cat} className={`flex items-center gap-1 px-2 py-0.5 rounded-full border cursor-pointer transition-colors ${
+                      checked ? 'bg-brand-50 border-brand-300 text-brand-700' : 'bg-gray-50 border-gray-200 text-gray-500'
+                    }`}>
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => {
+                          const next = checked
+                            ? currentCats.filter(c => c !== cat)
+                            : [...currentCats, cat];
+                          onUpdateAll(group, 'Category', next);
+                        }}
+                        className="sr-only"
+                      />
+                      {cat}
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
           </div>
 
+          {/* Key flower selector */}
+          <KeyFlowerSelector
+            group={group}
+            stockMap={stockMap}
+            stockList={stockList}
+            onUpdateAll={onUpdateAll}
+          />
+
           {/* Variant rows */}
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto mt-3">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-gray-400 border-b border-gray-100">
@@ -299,10 +326,43 @@ function ProductCard({ group, stockMap, expanded, onToggle, onUpdate }) {
               </tbody>
             </table>
           </div>
-
-          {/* Stock mapping */}
-          <StockMapping variant={group.variants[0]} stockMap={stockMap} onUpdate={onUpdate} />
         </div>
+      )}
+    </div>
+  );
+}
+
+// ── Key flower selector ──
+
+function KeyFlowerSelector({ group, stockMap, stockList, onUpdateAll }) {
+  const keyFlower = group.variants[0]?.['Key Flower'];
+  const stockId = Array.isArray(keyFlower) ? keyFlower[0] : keyFlower;
+  const stockItem = stockId ? stockMap[stockId] : null;
+
+  return (
+    <div className="flex items-center gap-2 text-xs pb-2 border-b border-gray-100">
+      <span className="text-gray-500">{t.prodKeyFlower}:</span>
+      <select
+        value={stockId || ''}
+        onChange={e => {
+          const val = e.target.value ? [e.target.value] : [];
+          onUpdateAll(group, 'Key Flower', val);
+        }}
+        className="border border-gray-200 rounded-lg px-2 py-1 text-xs min-w-[180px]"
+      >
+        <option value="">{t.prodSelectFlower}</option>
+        {stockList
+          .sort((a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''))
+          .map(s => (
+            <option key={s.id} value={s.id}>
+              {s['Display Name']} ({s['Current Quantity'] || 0} {t.prodInStock})
+            </option>
+          ))}
+      </select>
+      {stockItem && (
+        <span className="text-green-600">
+          {stockItem['Current Quantity'] || 0} {t.prodInStock}
+        </span>
       )}
     </div>
   );
@@ -386,27 +446,6 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
         />
       </td>
     </tr>
-  );
-}
-
-// ── Stock mapping indicator ──
-
-function StockMapping({ variant, stockMap, onUpdate }) {
-  const keyFlower = variant?.['Key Flower'];
-  const stockId = Array.isArray(keyFlower) ? keyFlower[0] : keyFlower;
-  const stockItem = stockId ? stockMap[stockId] : null;
-
-  return (
-    <div className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs">
-      <span className="text-gray-500">{t.prodKeyFlower}:</span>
-      {stockItem ? (
-        <span className="text-green-600 font-medium">
-          {stockItem['Display Name']} ({stockItem['Current Quantity'] || 0} {t.prodInStock})
-        </span>
-      ) : (
-        <span className="text-amber-500">{t.prodNotMapped}</span>
-      )}
-    </div>
   );
 }
 

@@ -194,7 +194,7 @@ const en = {
 
   // Products tab (Wix integration)
   tabProducts:          'Products',
-  prodSyncFromWix:      'Sync from Wix',
+  prodSyncFromWix:      'Sync with Wix',
   prodSyncing:          'Syncing...',
   prodSyncDone:         'Sync complete',
   prodSyncFailed:       'Sync failed',
@@ -204,6 +204,7 @@ const en = {
   prodShowReview:       'Show',
   prodFilterAll:        'All',
   prodFilterActive:     'Active',
+  prodFilterToday:      'Available today',
   prodFilterInactive:   'Inactive',
   prodFilterReview:     'Needs review',
   prodProducts:         'products',
@@ -216,9 +217,9 @@ const en = {
   prodApplySuggested:   'Apply suggested price',
   prodStems:            'stems',
   prodKeyFlower:        'Key flower',
+  prodSelectFlower:     'Select stock item...',
   prodInStock:          'in stock',
   prodNotMapped:        'Not mapped to stock',
-  prodNeedsSetup:       'Needs setup',
   prodLastSync:         'Last sync',
   prodAgo:              'ago',
 
@@ -617,6 +618,7 @@ const ru = {
   prodShowReview:       'Показать',
   prodFilterAll:        'Все',
   prodFilterActive:     'Активные',
+  prodFilterToday:      'Доступно сегодня',
   prodFilterInactive:   'Неактивные',
   prodFilterReview:     'На проверку',
   prodProducts:         'товаров',
@@ -629,9 +631,9 @@ const ru = {
   prodApplySuggested:   'Применить рекомендуемую цену',
   prodStems:            'стеблей',
   prodKeyFlower:        'Основной цветок',
+  prodSelectFlower:     'Выбрать цветок...',
   prodInStock:          'в наличии',
   prodNotMapped:        'Не привязан к складу',
-  prodNeedsSetup:       'Настроить',
   prodLastSync:         'Последняя синхронизация',
   prodAgo:              'назад',
 
