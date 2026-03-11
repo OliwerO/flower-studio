@@ -413,6 +413,36 @@ const en = {
   reasonOverstock:          'Overstock',
   reasonOther:              'Other',
   settingsNote:             'Settings reset on server restart. Defaults are loaded automatically.',
+
+  // Storefront categories
+  sfCategories:             'Storefront categories',
+  sfPermanent:              'Permanent (always visible)',
+  sfPermanentHint:          'These categories always appear in the store navigation',
+  sfSeasonal:               'Seasonal (one active at a time)',
+  sfSeasonalHint:           'Only one seasonal category shows in the store nav at a time',
+  sfLive:                   'LIVE',
+  sfCategoryName:           'Category name',
+  sfFrom:                   'From',
+  sfTo:                     'To',
+  sfAutoSchedule:           'Auto-activate by schedule',
+  sfAutoScheduleHint:       'Automatically switch seasonal category based on date range',
+  sfManualOverride:         'Manual override',
+  sfManualOverrideHint:     'Force a specific seasonal category regardless of schedule',
+  sfNone:                   'None (use auto)',
+
+  // Delivery zones
+  dzTitle:                  'Delivery zones',
+  dzAddZone:                'Add zone',
+  dzZoneName:               'Zone name',
+  dzFee:                    'Fee (zl)',
+  dzPostcodes:              'Postcode prefixes (comma-separated)',
+  dzAnyPostcode:            'Any postcode',
+  dzFreeThreshold:          'Free delivery threshold',
+  dzFreeThresholdHint:      'Orders above this amount get free delivery (zl)',
+  dzExpressSurcharge:       'Express surcharge',
+  dzExpressSurchargeHint:   'Extra fee for same-day delivery (zl)',
+  dzTimeSlots:              'Delivery time slots',
+  dzTimeSlotsHint:          'Available time windows for customer selection',
 };
 
 const ru = {
@@ -827,6 +857,36 @@ const ru = {
   reasonOverstock:          'Излишки',
   reasonOther:              'Другое',
   settingsNote:             'Настройки сбрасываются при перезапуске сервера. Значения по умолчанию загружаются автоматически.',
+
+  // Storefront categories
+  sfCategories:             'Категории витрины',
+  sfPermanent:              'Постоянные (всегда видны)',
+  sfPermanentHint:          'Эти категории всегда отображаются в навигации магазина',
+  sfSeasonal:               'Сезонные (одна активная)',
+  sfSeasonalHint:           'Только одна сезонная категория отображается в навигации',
+  sfLive:                   'АКТИВНА',
+  sfCategoryName:           'Название категории',
+  sfFrom:                   'С',
+  sfTo:                     'По',
+  sfAutoSchedule:           'Авто-активация по расписанию',
+  sfAutoScheduleHint:       'Автоматически переключать сезонную категорию по датам',
+  sfManualOverride:         'Ручное переключение',
+  sfManualOverrideHint:     'Принудительно выбрать сезонную категорию вне расписания',
+  sfNone:                   'Нет (авто)',
+
+  // Delivery zones
+  dzTitle:                  'Зоны доставки',
+  dzAddZone:                'Добавить зону',
+  dzZoneName:               'Название зоны',
+  dzFee:                    'Стоимость (zl)',
+  dzPostcodes:              'Префиксы индексов (через запятую)',
+  dzAnyPostcode:            'Любой индекс',
+  dzFreeThreshold:          'Порог бесплатной доставки',
+  dzFreeThresholdHint:      'Заказы выше этой суммы — бесплатная доставка (zl)',
+  dzExpressSurcharge:       'Наценка за экспресс',
+  dzExpressSurchargeHint:   'Доплата за доставку в тот же день (zl)',
+  dzTimeSlots:              'Окна доставки',
+  dzTimeSlotsHint:          'Доступные временные интервалы для выбора клиентом',
 };
 
 // ── Proxy-based dynamic translation ──

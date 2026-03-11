@@ -344,6 +344,276 @@ function StockLossSection() {
 }
 
 
+// ── Storefront Categories Manager ──
+function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
+  const sc = cfg.storefrontCategories || {};
+  const [editingSeasonal, setEditingSeasonal] = useState(null); // index or 'new'
+  const [draft, setDraft] = useState({ name: '', slug: '', from: '', to: '' });
+
+  function startEdit(i) {
+    if (i === 'new') {
+      setDraft({ name: '', slug: '', from: '', to: '' });
+    } else {
+      setDraft({ ...sc.seasonal[i] });
+    }
+    setEditingSeasonal(i);
+  }
+
+  function saveSeasonal() {
+    if (!draft.name || !draft.from || !draft.to) return;
+    const slug = draft.slug || draft.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const entry = { ...draft, slug };
+    const updated = [...(sc.seasonal || [])];
+    if (editingSeasonal === 'new') {
+      updated.push(entry);
+    } else {
+      updated[editingSeasonal] = entry;
+    }
+    onUpdate({ storefrontCategories: { ...sc, seasonal: updated } });
+    setEditingSeasonal(null);
+  }
+
+  function removeSeasonal(i) {
+    const updated = sc.seasonal.filter((_, idx) => idx !== i);
+    onUpdate({ storefrontCategories: { ...sc, seasonal: updated } });
+  }
+
+  // Determine which seasonal is currently active
+  const now = new Date();
+  const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+  return (
+    <Section title={t.sfCategories}>
+      {/* Permanent categories */}
+      <ListEditor
+        label={t.sfPermanent}
+        items={sc.permanent || []}
+        hint={t.sfPermanentHint}
+        onSave={v => onUpdate({ storefrontCategories: { ...sc, permanent: v } })}
+      />
+
+      {/* Seasonal categories */}
+      <div className="py-3 border-b border-gray-100">
+        <div className="flex items-center justify-between mb-2">
+          <div>
+            <span className="text-sm font-medium text-gray-700">{t.sfSeasonal}</span>
+            <p className="text-xs text-gray-400 mt-0.5">{t.sfSeasonalHint}</p>
+          </div>
+          <button
+            onClick={() => startEdit('new')}
+            className="text-xs text-brand-600 font-medium hover:bg-brand-50 px-2 py-1 rounded-lg"
+          >+ {t.addItem}</button>
+        </div>
+
+        <div className="space-y-1.5">
+          {(sc.seasonal || []).map((s, i) => {
+            const isActive = sc.manualOverride === s.slug
+              || (sc.autoSchedule && !sc.manualOverride && mmdd >= s.from && mmdd <= s.to);
+            return (
+              <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm ${
+                isActive ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'
+              }`}>
+                <span className="flex-1 font-medium text-gray-700">{s.name}</span>
+                <span className="text-xs text-gray-400">{s.from} → {s.to}</span>
+                {isActive && <span className="text-xs text-green-600 font-medium">{t.sfLive}</span>}
+                <button onClick={() => startEdit(i)} className="text-xs text-brand-600">{t.edit}</button>
+                <button onClick={() => removeSeasonal(i)} className="text-xs text-red-400 hover:text-red-600">✕</button>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Edit/Add seasonal form */}
+        {editingSeasonal !== null && (
+          <div className="mt-2 p-3 bg-white border border-gray-200 rounded-xl space-y-2">
+            <div className="flex gap-2">
+              <input
+                value={draft.name}
+                onChange={e => setDraft({ ...draft, name: e.target.value })}
+                placeholder={t.sfCategoryName}
+                className="flex-1 text-sm px-2 py-1 border rounded-lg"
+              />
+            </div>
+            <div className="flex gap-2 items-center">
+              <label className="text-xs text-gray-500">{t.sfFrom}:</label>
+              <input
+                value={draft.from}
+                onChange={e => setDraft({ ...draft, from: e.target.value })}
+                placeholder="MM-DD"
+                className="w-20 text-sm px-2 py-1 border rounded-lg"
+              />
+              <label className="text-xs text-gray-500">{t.sfTo}:</label>
+              <input
+                value={draft.to}
+                onChange={e => setDraft({ ...draft, to: e.target.value })}
+                placeholder="MM-DD"
+                className="w-20 text-sm px-2 py-1 border rounded-lg"
+              />
+              <button onClick={saveSeasonal} className="text-xs text-white bg-brand-600 px-3 py-1 rounded-lg">{t.save}</button>
+              <button onClick={() => setEditingSeasonal(null)} className="text-xs text-gray-400">✕</button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Auto-schedule toggle */}
+      <div className="flex items-center justify-between py-3 border-b border-gray-100">
+        <div>
+          <span className="text-sm font-medium text-gray-700">{t.sfAutoSchedule}</span>
+          <p className="text-xs text-gray-400 mt-0.5">{t.sfAutoScheduleHint}</p>
+        </div>
+        <label className="relative inline-flex items-center cursor-pointer">
+          <input
+            type="checkbox"
+            checked={sc.autoSchedule !== false}
+            onChange={e => onUpdate({ storefrontCategories: { ...sc, autoSchedule: e.target.checked } })}
+            className="sr-only peer"
+          />
+          <div className="w-9 h-5 bg-gray-200 peer-checked:bg-brand-600 rounded-full transition-colors
+                          after:content-[''] after:absolute after:top-[2px] after:left-[2px]
+                          after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all
+                          peer-checked:after:translate-x-full" />
+        </label>
+      </div>
+
+      {/* Manual override */}
+      <div className="flex items-center justify-between py-3">
+        <div>
+          <span className="text-sm font-medium text-gray-700">{t.sfManualOverride}</span>
+          <p className="text-xs text-gray-400 mt-0.5">{t.sfManualOverrideHint}</p>
+        </div>
+        <select
+          value={sc.manualOverride || ''}
+          onChange={e => onUpdate({ storefrontCategories: { ...sc, manualOverride: e.target.value || null } })}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-1"
+        >
+          <option value="">{t.sfNone}</option>
+          {(sc.seasonal || []).map(s => (
+            <option key={s.slug} value={s.slug}>{s.name}</option>
+          ))}
+        </select>
+      </div>
+    </Section>
+  );
+}
+
+// ── Delivery Zones Manager ──
+function DeliveryZonesSection({ config: cfg, onUpdate }) {
+  const zones = cfg.deliveryZones || [];
+  const [editingZone, setEditingZone] = useState(null); // index or 'new'
+  const [draft, setDraft] = useState({ name: '', fee: 0, postcodes: '' });
+
+  function startEdit(i) {
+    if (i === 'new') {
+      setDraft({ name: '', fee: 0, postcodes: '' });
+    } else {
+      const z = zones[i];
+      setDraft({ name: z.name, fee: z.fee, postcodes: (z.postcodes || []).join(', ') });
+    }
+    setEditingZone(i);
+  }
+
+  function saveZone() {
+    if (!draft.name) return;
+    const entry = {
+      id: editingZone === 'new' ? (zones.length > 0 ? Math.max(...zones.map(z => z.id)) + 1 : 1) : zones[editingZone].id,
+      name: draft.name,
+      fee: Number(draft.fee) || 0,
+      postcodes: draft.postcodes.split(',').map(s => s.trim()).filter(Boolean),
+    };
+    const updated = [...zones];
+    if (editingZone === 'new') {
+      updated.push(entry);
+    } else {
+      updated[editingZone] = entry;
+    }
+    onUpdate({ deliveryZones: updated });
+    setEditingZone(null);
+  }
+
+  function removeZone(i) {
+    onUpdate({ deliveryZones: zones.filter((_, idx) => idx !== i) });
+  }
+
+  return (
+    <Section title={t.dzTitle}>
+      {/* Zone list */}
+      <div className="space-y-1.5 mb-3">
+        {zones.map((z, i) => (
+          <div key={z.id} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-xl text-sm border border-gray-100">
+            <span className="flex-1 font-medium text-gray-700">{z.name}</span>
+            <span className="text-xs text-gray-500">{z.fee} zl</span>
+            <span className="text-xs text-gray-400">{(z.postcodes || []).join(', ') || t.dzAnyPostcode}</span>
+            <button onClick={() => startEdit(i)} className="text-xs text-brand-600">{t.edit}</button>
+            <button onClick={() => removeZone(i)} className="text-xs text-red-400 hover:text-red-600">✕</button>
+          </div>
+        ))}
+      </div>
+
+      <button
+        onClick={() => startEdit('new')}
+        className="text-xs text-brand-600 font-medium hover:bg-brand-50 px-2 py-1 rounded-lg mb-3"
+      >+ {t.dzAddZone}</button>
+
+      {/* Edit/Add zone form */}
+      {editingZone !== null && (
+        <div className="p-3 bg-white border border-gray-200 rounded-xl space-y-2 mb-3">
+          <div className="flex gap-2">
+            <input
+              value={draft.name}
+              onChange={e => setDraft({ ...draft, name: e.target.value })}
+              placeholder={t.dzZoneName}
+              className="flex-1 text-sm px-2 py-1 border rounded-lg"
+            />
+            <input
+              type="number"
+              value={draft.fee}
+              onChange={e => setDraft({ ...draft, fee: e.target.value })}
+              placeholder={t.dzFee}
+              className="w-20 text-sm px-2 py-1 border rounded-lg"
+              min="0"
+            />
+          </div>
+          <div className="flex gap-2 items-center">
+            <input
+              value={draft.postcodes}
+              onChange={e => setDraft({ ...draft, postcodes: e.target.value })}
+              placeholder={t.dzPostcodes}
+              className="flex-1 text-sm px-2 py-1 border rounded-lg"
+            />
+            <button onClick={saveZone} className="text-xs text-white bg-brand-600 px-3 py-1 rounded-lg">{t.save}</button>
+            <button onClick={() => setEditingZone(null)} className="text-xs text-gray-400">✕</button>
+          </div>
+        </div>
+      )}
+
+      {/* Global delivery settings */}
+      <ConfigRow
+        label={t.dzFreeThreshold}
+        value={cfg.freeDeliveryThreshold || 0}
+        type="number"
+        hint={t.dzFreeThresholdHint}
+        onSave={v => onUpdate({ freeDeliveryThreshold: v })}
+      />
+      <ConfigRow
+        label={t.dzExpressSurcharge}
+        value={cfg.expressSurcharge || 0}
+        type="number"
+        hint={t.dzExpressSurchargeHint}
+        onSave={v => onUpdate({ expressSurcharge: v })}
+      />
+
+      {/* Time slots */}
+      <ListEditor
+        label={t.dzTimeSlots}
+        items={cfg.deliveryTimeSlots || []}
+        hint={t.dzTimeSlotsHint}
+        onSave={v => onUpdate({ deliveryTimeSlots: v })}
+      />
+    </Section>
+  );
+}
+
 // ── Main SettingsTab ──
 export default function SettingsTab() {
   const [config, setConfig] = useState(null);
@@ -500,6 +770,12 @@ export default function SettingsTab() {
           onSave={v => updateConfig({ orderSources: v })}
         />
       </Section>
+
+      {/* Storefront Categories */}
+      <StorefrontCategoriesSection config={config} onUpdate={updateConfig} />
+
+      {/* Delivery Zones */}
+      <DeliveryZonesSection config={config} onUpdate={updateConfig} />
 
       {/* Marketing Spend */}
       <MarketingSpendSection sources={config.orderSources} />
