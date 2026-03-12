@@ -181,8 +181,12 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
       {order['Bouquet Summary'] && (
         <p className="text-xs text-brand-600/70 mt-1 line-clamp-1">🌸 {order['Bouquet Summary']}</p>
       )}
-      {order['Order Date'] && (
-        <p className="text-xs text-ios-tertiary mt-1">{order['Order Date']}</p>
+      {/* Show delivery/pickup date in overview — more actionable than order date */}
+      {(order['Delivery Date'] || order['Required By']) && (
+        <p className="text-xs text-ios-tertiary mt-1">
+          {order['Delivery Date'] || order['Required By']}
+          {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
+        </p>
       )}
 
       {/* ── Expanded details (inline, no overlays) ── */}
@@ -216,6 +220,13 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                       </div>
                     ))}
                   </div>
+                </div>
+              )}
+
+              {/* Order date (shown in expanded view, not overview) */}
+              {d['Order Date'] && (
+                <div className="bg-gray-50 rounded-xl px-3 py-1">
+                  <Row label={t.labelOrderDate} value={d['Order Date']} />
                 </div>
               )}
 
