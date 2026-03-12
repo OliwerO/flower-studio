@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from '../services/notifications.js';
+import { notifyNewOrder } from '../services/telegram.js';
 import { getDriverOfDay, getConfig } from './settings.js';
 
 const router = Router();
@@ -202,6 +203,8 @@ router.post('/', async (req, res, next) => {
       paymentMethod,
       priceOverride,
       requiredBy,
+      cardText,         // top-level card text (works for both delivery and pickup)
+      deliveryTime,     // top-level time slot (used for pickup timing)
     } = req.body;
 
     // --- Fix 1: Input validation (defect detection gate) ---
@@ -250,9 +253,10 @@ router.post('/', async (req, res, next) => {
         Source:           source,
         'Delivery Type':  deliveryType,
         'Order Date':     new Date().toISOString().split('T')[0],
-        'Required By':    requiredBy || null,
+        'Required By':    requiredBy || delivery?.date || null,
+        'Delivery Time':  deliveryTime || delivery?.time || '',
         'Notes Original':     notes || '',
-        'Greeting Card Text': delivery?.cardText || '',
+        'Greeting Card Text': cardText || delivery?.cardText || '',
         'Payment Status':     paymentStatus || 'Unpaid',
         'Payment Method':     paymentMethod || null,
         'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
@@ -307,6 +311,15 @@ router.post('/', async (req, res, next) => {
         source: source || 'In-store',
         request: customerRequest || '',
       });
+
+      // Telegram notification to owner + florists (non-blocking)
+      notifyNewOrder({
+        source: source || 'In-store',
+        customerName: '',
+        request: customerRequest,
+        deliveryType,
+        price: priceOverride || null,
+      }).catch(err => console.error('[TELEGRAM] Notification error:', err.message));
 
 
       res.status(201).json({

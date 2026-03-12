@@ -164,6 +164,11 @@ export default function NewOrderPage() {
         priceOverride:   form.priceOverride ? Number(form.priceOverride) : null,
         orderLines:      form.orderLines,
       };
+      // Card text + date/time apply to both delivery and pickup
+      body.cardText = form.cardText || '';
+      body.requiredBy = form.deliveryDate || null;
+      body.deliveryTime = form.deliveryTime || '';
+
       if (form.deliveryType === 'Delivery') {
         body.delivery = {
           address: form.deliveryAddress, recipientName: form.recipientName,

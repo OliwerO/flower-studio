@@ -6,6 +6,7 @@ import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
+import { notifyNewOrder } from './telegram.js';
 import { logWebhookEvent } from './webhookLog.js';
 
 
@@ -251,6 +252,15 @@ export async function processWixOrder(payload) {
       source: 'Wix',
       request: customerRequest,
     });
+
+    // Telegram notification to owner + florists
+    notifyNewOrder({
+      source: 'Wix',
+      customerName,
+      request: customerRequest,
+      deliveryType: shipping ? 'Delivery' : 'Pickup',
+      price: order['Final Price'] || order['Sell Price Total'] || null,
+    }).catch(err => console.error('[TELEGRAM] Wix notification error:', err.message));
 
     return order;
   } catch (err) {

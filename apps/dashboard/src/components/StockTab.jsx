@@ -56,8 +56,11 @@ export default function StockTab() {
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchStock]);
 
+  const [lossLog, setLossLog] = useState([]);
+
   useEffect(() => {
     client.get('/stock/velocity').then(r => setVelocity(r.data)).catch(() => {});
+    client.get('/stock-loss').then(r => setLossLog(r.data)).catch(() => {});
   }, []);
 
   async function adjustQty(id, delta) {
@@ -95,6 +98,8 @@ export default function StockTab() {
       await client.post(`/stock/${id}/write-off`, { quantity, reason });
       showToast(t.stockWrittenOff);
       fetchStock();
+      // Refresh loss log
+      client.get('/stock-loss').then(r => setLossLog(r.data)).catch(() => {});
     } catch {
       showToast(t.error, 'error');
     }
@@ -330,6 +335,43 @@ export default function StockTab() {
           </table>
         </div>
       ))}
+
+      {/* Recent write-off log — shown in waste view */}
+      {view === 'waste' && lossLog.length > 0 && (
+        <div className="glass-card overflow-hidden">
+          <h3 className="px-4 py-2 text-sm font-semibold text-ios-secondary border-b">{t.recentWriteOffs || 'Recent write-offs'}</h3>
+          <div className="max-h-64 overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 sticky top-0">
+                <tr className="text-xs text-ios-tertiary">
+                  <th className="text-left px-3 py-2">{t.date}</th>
+                  <th className="text-left px-3 py-2">{t.stockName}</th>
+                  <th className="text-right px-3 py-2">{t.quantity}</th>
+                  <th className="text-left px-3 py-2">{t.reason}</th>
+                  <th className="text-left px-3 py-2">{t.notes || 'Notes'}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lossLog.slice(0, 30).map(e => (
+                  <tr key={e.id} className="border-b border-gray-50">
+                    <td className="px-3 py-1.5 text-xs">{e.Date}</td>
+                    <td className="px-3 py-1.5 text-xs">{e['Stock Item Name'] || '—'}</td>
+                    <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
+                    <td className="px-3 py-1.5 text-xs">
+                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                        e.Reason === 'Wilted' ? 'bg-yellow-100 text-yellow-800' :
+                        e.Reason === 'Damaged' ? 'bg-red-100 text-red-700' :
+                        'bg-gray-100 text-gray-600'
+                      }`}>{e.Reason}</span>
+                    </td>
+                    <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Notes || ''}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

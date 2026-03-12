@@ -87,6 +87,7 @@ const en = {
   reasonWilted:     'Wilted',
   reasonDamaged:    'Broken at delivery',
   wasteLog:         'Waste log',
+  recentWriteOffs:  'Recent write-offs',
   deadStems:        'Dead/unsold',
   slowMovers:       'Slow movers',
   noOrders14Days:   'No orders in 14+ days',
@@ -199,7 +200,7 @@ const en = {
   orderTotal:       'Order total',
 
   // Products tab (Wix integration)
-  tabProducts:          'Products',
+  tabProducts:          'Wix',
   prodSyncFromWix:      'Sync with Wix',
   prodSyncing:          'Syncing...',
   prodSyncDone:         'Sync complete',
@@ -540,6 +541,7 @@ const ru = {
   reasonWilted:     'Завяли',
   reasonDamaged:    'Сломаны при доставке',
   wasteLog:         'Журнал списаний',
+  recentWriteOffs:  'Последние списания',
   deadStems:        'Списано',
   slowMovers:       'Медленные продажи',
   noOrders14Days:   'Нет заказов 14+ дней',
@@ -652,7 +654,7 @@ const ru = {
   orderTotal:       'Итого',
 
   // Products tab (Wix integration)
-  tabProducts:          'Товары',
+  tabProducts:          'Wix',
   prodSyncFromWix:      'Синхронизация с Wix',
   prodSyncing:          'Синхронизация...',
   prodSyncDone:         'Синхронизация завершена',
