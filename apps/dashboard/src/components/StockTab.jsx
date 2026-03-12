@@ -21,6 +21,7 @@ export default function StockTab() {
   const [newItem, setNewItem]       = useState({ displayName: '', category: '', quantity: 0, costPrice: 0, sellPrice: 0, supplier: '', unit: 'Stems' });
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow'
   const [velocity, setVelocity]     = useState({});
+  const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const { showToast } = useToast();
 
   const stockLoaded = useRef(false);
@@ -58,10 +59,31 @@ export default function StockTab() {
 
   const [lossLog, setLossLog] = useState([]);
 
+  function wasteDateRange(period) {
+    const now = new Date();
+    const to = now.toISOString().split('T')[0];
+    let from;
+    if (period === 'month') {
+      from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
+    } else if (period === '30d') {
+      from = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+    } else {
+      from = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+    }
+    return { from, to };
+  }
+
+  function fetchLossLog(period) {
+    const { from, to } = wasteDateRange(period || wastePeriod);
+    client.get(`/stock-loss?from=${from}&to=${to}`).then(r => setLossLog(r.data)).catch(() => {});
+  }
+
   useEffect(() => {
     client.get('/stock/velocity').then(r => setVelocity(r.data)).catch(() => {});
-    client.get('/stock-loss').then(r => setLossLog(r.data)).catch(() => {});
+    fetchLossLog();
   }, []);
+
+  useEffect(() => { fetchLossLog(wastePeriod); }, [wastePeriod]);
 
   async function adjustQty(id, delta) {
     // Optimistic update: change local state immediately, revert on failure
@@ -98,8 +120,7 @@ export default function StockTab() {
       await client.post(`/stock/${id}/write-off`, { quantity, reason });
       showToast(t.stockWrittenOff);
       fetchStock();
-      // Refresh loss log
-      client.get('/stock-loss').then(r => setLossLog(r.data)).catch(() => {});
+      fetchLossLog();
     } catch {
       showToast(t.error, 'error');
     }
@@ -292,7 +313,21 @@ export default function StockTab() {
         </div>
       )}
 
-      {/* ── Waste view: dedicated write-off log with supplier grouping ── */}
+      {/* ── Waste view: period filter + dedicated write-off log ── */}
+      {view === 'waste' && (
+        <div className="glass-card px-4 py-2 flex items-center gap-2">
+          {[
+            { key: 'month', label: t.thisMonth || 'This month' },
+            { key: '30d',   label: t.last30d || 'Last 30 days' },
+            { key: '90d',   label: t.last90d || 'Last 3 months' },
+          ].map(p => (
+            <button key={p.key} onClick={() => setWastePeriod(p.key)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                wastePeriod === p.key ? 'bg-brand-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+              }`}>{p.label}</button>
+          ))}
+        </div>
+      )}
       {view === 'waste' && !loading && (() => {
         // Filter by search
         const filteredLog = search

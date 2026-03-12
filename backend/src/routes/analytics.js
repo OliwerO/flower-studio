@@ -482,7 +482,7 @@ router.get('/', async (req, res, next) => {
 
     // ── Waste by supplier — cross-reference losses with stock items ──
     const lossStockIds = [...new Set(stockLosses.flatMap(l => l['Stock Item'] || []))];
-    const lossStockItems = await batchFetch(lossStockIds, TABLES.STOCK, ['Display Name', 'Supplier', 'Current Cost Price']);
+    const lossStockItems = await batchFetch(lossStockIds, TABLES.STOCK, ['Display Name', 'Supplier']);
     const lossStockMap = {};
     for (const s of lossStockItems) lossStockMap[s.id] = s;
 
@@ -491,23 +491,22 @@ router.get('/', async (req, res, next) => {
       const stockId = l['Stock Item']?.[0];
       const stockItem = lossStockMap[stockId];
       const supplier = stockItem?.Supplier || 'Unknown';
-      const costPrice = stockItem?.['Current Cost Price'] || 0;
       const qty = l.Quantity || 0;
-      if (!wasteBySupplier[supplier]) wasteBySupplier[supplier] = { supplier, wasteQty: 0, wasteCost: 0 };
+      if (!wasteBySupplier[supplier]) wasteBySupplier[supplier] = { supplier, wasteQty: 0 };
       wasteBySupplier[supplier].wasteQty += qty;
-      wasteBySupplier[supplier].wasteCost += qty * costPrice;
     }
-    // Merge waste into supplier scorecard
+    // Merge waste into supplier scorecard — use avgPricePerUnit for cost (historical, not current)
     for (const s of supplierScorecard) {
       const waste = wasteBySupplier[s.supplier];
       s.wasteQty = waste?.wasteQty || 0;
-      s.wasteCost = waste?.wasteCost || 0;
-      s.wastePercent = s.totalQty > 0 ? Math.round((s.wasteQty / s.totalQty) * 100) : 0;
+      s.wasteCost = Math.round(s.wasteQty * s.avgPricePerUnit);
+      // Cap at 100% — waste can exceed period purchases if old stock was written off
+      s.wastePercent = s.totalQty > 0 ? Math.min(100, Math.round((s.wasteQty / s.totalQty) * 100)) : 0;
     }
     // Add suppliers that only appear in waste (not in purchases)
     for (const [sup, data] of Object.entries(wasteBySupplier)) {
       if (!supplierScorecard.find(s => s.supplier === sup)) {
-        supplierScorecard.push({ supplier: sup, totalSpend: 0, purchaseCount: 0, totalQty: 0, avgPricePerUnit: 0, ...data });
+        supplierScorecard.push({ supplier: sup, totalSpend: 0, purchaseCount: 0, totalQty: 0, avgPricePerUnit: 0, wasteCost: 0, wastePercent: 0, ...data });
       }
     }
 
