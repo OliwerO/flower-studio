@@ -88,8 +88,10 @@ export default function OrdersTab({ initialFilter }) {
   const [sortBy, setSortBy]       = useState('status');
   const { showToast }             = useToast();
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
+  const initialLoaded = useRef(false);
+
+  const fetchOrders = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = {};
       if (statusFilter) params.status = statusFilter;
@@ -102,21 +104,30 @@ export default function OrdersTab({ initialFilter }) {
       if (paymentMethodFilter) params.paymentMethod = paymentMethodFilter;
       if (excludeCancelled) params.excludeCancelled = '1';
       const res = await client.get('/orders', { params });
-      setOrders(res.data);
+      setOrders(prev => {
+        if (!initialLoaded.current) return res.data;
+        const newMap = new Map(res.data.map(o => [o.id, o]));
+        const merged = prev.map(o => newMap.get(o.id) || o).filter(o => newMap.has(o.id));
+        for (const o of res.data) {
+          if (!merged.find(m => m.id === o.id)) merged.push(o);
+        }
+        return merged;
+      });
+      initialLoaded.current = true;
       setFetchError(false);
     } catch {
       setFetchError(true);
-      showToast(t.error, 'error');
+      if (!silent) showToast(t.error, 'error');
     } finally {
       setLoading(false);
     }
   }, [statusFilter, dateFrom, dateTo, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
 
   useEffect(() => {
+    initialLoaded.current = false;
     fetchOrders();
-    // Poll every 30s when tab is visible — keeps data fresh
-    const interval = setInterval(() => { if (!document.hidden) fetchOrders(); }, 30000);
-    function onVisible() { if (!document.hidden) fetchOrders(); }
+    const interval = setInterval(() => { if (!document.hidden) fetchOrders(true); }, 30000);
+    function onVisible() { if (!document.hidden) fetchOrders(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders]);

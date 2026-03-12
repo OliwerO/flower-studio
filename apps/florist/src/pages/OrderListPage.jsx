@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
@@ -73,14 +73,29 @@ export default function OrderListPage() {
   const [payMethods, setPayMethods] = useState(null);
   const [timeSlots, setTimeSlots]   = useState(null);
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
+  // Track whether we've done the initial load (show spinner only on first load)
+  const initialLoaded = useRef(false);
+
+  const fetchOrders = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const params = {};
       if (status) params.status = status;
       if (date)   { params.dateFrom = date; params.dateTo = date; }
       const res = await client.get('/orders', { params });
-      setOrders(res.data);
+      // Merge: update existing orders in place, add new ones, remove deleted.
+      // This preserves React state (expanded cards, scroll position).
+      setOrders(prev => {
+        if (!initialLoaded.current) return res.data;
+        const newMap = new Map(res.data.map(o => [o.id, o]));
+        const merged = prev.map(o => newMap.get(o.id) || o).filter(o => newMap.has(o.id));
+        // Add any truly new orders not in previous list
+        for (const o of res.data) {
+          if (!merged.find(m => m.id === o.id)) merged.push(o);
+        }
+        return merged;
+      });
+      initialLoaded.current = true;
     } catch (err) {
       console.error(err);
     } finally {
@@ -89,10 +104,11 @@ export default function OrderListPage() {
   }, [date, status]);
 
   useEffect(() => {
+    initialLoaded.current = false;
     fetchOrders();
-    // Poll every 30s when tab is visible — keeps data fresh
-    const interval = setInterval(() => { if (!document.hidden) fetchOrders(); }, 30000);
-    function onVisible() { if (!document.hidden) fetchOrders(); }
+    // Silent poll every 30s — merges data without resetting expanded cards
+    const interval = setInterval(() => { if (!document.hidden) fetchOrders(true); }, 30000);
+    function onVisible() { if (!document.hidden) fetchOrders(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders]);

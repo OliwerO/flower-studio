@@ -174,7 +174,9 @@ const en = {
   deadStems:        'dead',
   confirm:          'Confirm',
   writeOffError:    'Failed to write off stock.',
-  writeOffReason:   'Reason (optional)',
+  writeOffReason:   'Select reason',
+  reasonWilted:     'Wilted',
+  reasonDamaged:    'Broken at delivery',
   editStock:        'Edit stock',
   doneEditing:      'Done',
 
@@ -403,7 +405,9 @@ const ru = {
   deadStems:        'списано',
   confirm:          'Подтвердить',
   writeOffError:    'Не удалось списать.',
-  writeOffReason:   'Причина (опционально)',
+  writeOffReason:   'Выберите причину',
+  reasonWilted:     'Завяли',
+  reasonDamaged:    'Сломаны при доставке',
   editStock:        'Редактировать склад',
   doneEditing:      'Готово',
 

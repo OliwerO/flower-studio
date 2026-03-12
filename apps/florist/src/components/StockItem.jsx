@@ -127,14 +127,16 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
               {t.cancel}
             </button>
           </div>
-          {/* Optional reason input */}
-          <input
-            type="text"
+          {/* Reason selector */}
+          <select
             value={reason}
             onChange={e => setReason(e.target.value)}
-            placeholder={t.writeOffReason}
-            className="w-full text-sm border border-red-100 rounded-lg px-3 py-1.5 bg-white outline-none placeholder-ios-tertiary/50"
-          />
+            className="w-full text-sm border border-red-100 rounded-lg px-3 py-1.5 bg-white outline-none text-ios-label"
+          >
+            <option value="">{t.writeOffReason}</option>
+            <option value="Wilted">{t.reasonWilted || 'Wilted'}</option>
+            <option value="Damaged">{t.reasonDamaged || 'Broken at delivery'}</option>
+          </select>
         </div>
       )}
     </div>

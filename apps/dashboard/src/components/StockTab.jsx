@@ -431,9 +431,12 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity }) 
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}
                 className="field-input w-16" />
-              <input value={woReason} onChange={e => setWoReason(e.target.value)}
-                placeholder={t.reason}
-                className="field-input flex-1" />
+              <select value={woReason} onChange={e => setWoReason(e.target.value)}
+                className="field-input flex-1">
+                <option value="">{t.reason}</option>
+                <option value="Wilted">{t.reasonWilted || 'Wilted'}</option>
+                <option value="Damaged">{t.reasonDamaged || 'Broken at delivery'}</option>
+              </select>
               <button
                 onClick={() => { onWriteOff(item.id, woQty, woReason); setShowWo(false); setWoQty(1); setWoReason(''); }}
                 className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold">

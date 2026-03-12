@@ -217,6 +217,18 @@ router.post('/:id/write-off', async (req, res, next) => {
 
     const updated = await db.update(TABLES.STOCK, req.params.id, fields);
 
+    // Also log to Stock Loss Log table for analytics breakdown
+    if (TABLES.STOCK_LOSS_LOG && actualWriteOff > 0) {
+      const lossReason = (reason === 'Wilted' || reason === 'Damaged') ? reason : 'Other';
+      db.create(TABLES.STOCK_LOSS_LOG, {
+        Date: new Date().toISOString().split('T')[0],
+        'Stock Item': [req.params.id],
+        Quantity: actualWriteOff,
+        Reason: lossReason,
+        Notes: reason && reason !== lossReason ? reason : '',
+      }).catch(err => console.error('[STOCK] Failed to log to Stock Loss Log:', err.message));
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);
