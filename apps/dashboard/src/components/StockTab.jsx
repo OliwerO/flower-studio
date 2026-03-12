@@ -123,10 +123,8 @@ export default function StockTab() {
     ? stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(search.toLowerCase()))
     : stock;
 
-  // View filters
-  if (view === 'waste') {
-    filtered = filtered.filter(s => (s['Dead/Unsold Stems'] || 0) > 0);
-  } else if (view === 'slow') {
+  // View filters (waste view uses lossLog instead of stock table)
+  if (view === 'slow') {
     const fourteenDaysAgo = Date.now() - 14 * 86400000;
     filtered = filtered.filter(s =>
       (s['Current Quantity'] || 0) > 0
@@ -294,8 +292,95 @@ export default function StockTab() {
         </div>
       )}
 
-      {/* Stock table grouped by category */}
-      {!loading && Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([cat, items]) => (
+      {/* ── Waste view: dedicated write-off log with supplier grouping ── */}
+      {view === 'waste' && !loading && (() => {
+        // Filter by search
+        const filteredLog = search
+          ? lossLog.filter(e => (e.flowerName || '').toLowerCase().includes(search.toLowerCase())
+              || (e.supplier || '').toLowerCase().includes(search.toLowerCase()))
+          : lossLog;
+        // Group by supplier
+        const bySupplier = {};
+        let totalLost = 0;
+        let totalCostLost = 0;
+        for (const e of filteredLog) {
+          const sup = e.supplier || '—';
+          if (!bySupplier[sup]) bySupplier[sup] = { entries: [], totalQty: 0, totalCost: 0 };
+          bySupplier[sup].entries.push(e);
+          bySupplier[sup].totalQty += e.Quantity || 0;
+          bySupplier[sup].totalCost += (e.Quantity || 0) * (e.costPrice || 0);
+          totalLost += e.Quantity || 0;
+          totalCostLost += (e.Quantity || 0) * (e.costPrice || 0);
+        }
+        return (
+          <>
+            {/* Summary bar */}
+            {filteredLog.length > 0 && (
+              <div className="glass-card px-4 py-3 flex flex-wrap gap-6">
+                <div>
+                  <span className="text-xs text-ios-tertiary">{t.totalLost || 'Total lost'}</span>
+                  <p className="text-lg font-bold text-ios-red">{totalLost} {t.stems}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-ios-tertiary">{t.revenueLost || 'Revenue lost'}</span>
+                  <p className="text-lg font-bold text-ios-red">{totalCostLost.toFixed(0)} {t.zl}</p>
+                </div>
+                <div>
+                  <span className="text-xs text-ios-tertiary">{t.suppliers || 'Suppliers'}</span>
+                  <p className="text-lg font-bold text-ios-label">{Object.keys(bySupplier).length}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Write-off log grouped by supplier */}
+            {Object.entries(bySupplier).sort(([,a], [,b]) => b.totalQty - a.totalQty).map(([sup, data]) => (
+              <div key={sup} className="glass-card overflow-hidden">
+                <div className="px-4 py-2 bg-brand-50/40 border-b border-white/40 flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
+                    {sup}
+                  </h3>
+                  <span className="text-xs text-ios-tertiary">
+                    {data.totalQty} {t.stems} · {data.totalCost.toFixed(0)} {t.zl}
+                  </span>
+                </div>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
+                      <th className="text-left px-3 py-2 font-medium">{t.date}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
+                      <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.reason}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.entries.map(e => (
+                      <tr key={e.id} className="border-b border-gray-50">
+                        <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
+                        <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{e.flowerName}</td>
+                        <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
+                        <td className="px-3 py-1.5 text-xs">
+                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                            e.Reason === 'Wilted' ? 'bg-yellow-100 text-yellow-800' :
+                            e.Reason === 'Damaged' ? 'bg-red-100 text-red-700' :
+                            e.Reason === 'Overstock' ? 'bg-blue-100 text-blue-700' :
+                            'bg-gray-100 text-gray-600'
+                          }`}>{e.Reason}</span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+            {filteredLog.length === 0 && (
+              <p className="text-center text-sm text-ios-tertiary py-8">{t.noData}</p>
+            )}
+          </>
+        );
+      })()}
+
+      {/* ── Stock table grouped by category (all/slow views) ── */}
+      {view !== 'waste' && !loading && Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([cat, items]) => (
         <div key={cat} className="glass-card overflow-hidden">
           <div className="px-4 py-2 bg-brand-50/40 border-b border-white/40">
             <h3 className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
@@ -313,9 +398,6 @@ export default function StockTab() {
                 <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.threshold}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.daysOfSupplyHeader}</th>
-                {view === 'waste' && (
-                  <th className="text-right px-3 py-2 font-medium">{t.deadStems}</th>
-                )}
                 <th className="text-right px-3 py-2 font-medium w-36"></th>
               </tr>
             </thead>
@@ -324,7 +406,7 @@ export default function StockTab() {
                 <StockRow
                   key={item.id}
                   item={item}
-                  showWaste={view === 'waste'}
+                  showWaste={false}
                   onAdjust={adjustQty}
                   onWriteOff={writeOff}
                   onPatch={patchStock}
@@ -335,43 +417,6 @@ export default function StockTab() {
           </table>
         </div>
       ))}
-
-      {/* Recent write-off log — shown in waste view */}
-      {view === 'waste' && lossLog.length > 0 && (
-        <div className="glass-card overflow-hidden">
-          <h3 className="px-4 py-2 text-sm font-semibold text-ios-secondary border-b">{t.recentWriteOffs || 'Recent write-offs'}</h3>
-          <div className="max-h-64 overflow-y-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-gray-50 sticky top-0">
-                <tr className="text-xs text-ios-tertiary">
-                  <th className="text-left px-3 py-2">{t.date}</th>
-                  <th className="text-left px-3 py-2">{t.stockName}</th>
-                  <th className="text-right px-3 py-2">{t.quantity}</th>
-                  <th className="text-left px-3 py-2">{t.reason}</th>
-                  <th className="text-left px-3 py-2">{t.notes || 'Notes'}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lossLog.slice(0, 30).map(e => (
-                  <tr key={e.id} className="border-b border-gray-50">
-                    <td className="px-3 py-1.5 text-xs">{e.Date}</td>
-                    <td className="px-3 py-1.5 text-xs">{e['Stock Item Name'] || '—'}</td>
-                    <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
-                    <td className="px-3 py-1.5 text-xs">
-                      <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                        e.Reason === 'Wilted' ? 'bg-yellow-100 text-yellow-800' :
-                        e.Reason === 'Damaged' ? 'bg-red-100 text-red-700' :
-                        'bg-gray-100 text-gray-600'
-                      }`}>{e.Reason}</span>
-                    </td>
-                    <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Notes || ''}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

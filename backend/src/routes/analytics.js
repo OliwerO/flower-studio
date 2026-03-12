@@ -480,6 +480,37 @@ router.get('/', async (req, res, next) => {
       .map(([reason, qty]) => ({ reason, qty, percent: totalLossQty > 0 ? Math.round((qty / totalLossQty) * 100) : 0 }))
       .sort((a, b) => b.qty - a.qty);
 
+    // ── Waste by supplier — cross-reference losses with stock items ──
+    const lossStockIds = [...new Set(stockLosses.flatMap(l => l['Stock Item'] || []))];
+    const lossStockItems = await batchFetch(lossStockIds, TABLES.STOCK, ['Display Name', 'Supplier', 'Current Cost Price']);
+    const lossStockMap = {};
+    for (const s of lossStockItems) lossStockMap[s.id] = s;
+
+    const wasteBySupplier = {};
+    for (const l of stockLosses) {
+      const stockId = l['Stock Item']?.[0];
+      const stockItem = lossStockMap[stockId];
+      const supplier = stockItem?.Supplier || 'Unknown';
+      const costPrice = stockItem?.['Current Cost Price'] || 0;
+      const qty = l.Quantity || 0;
+      if (!wasteBySupplier[supplier]) wasteBySupplier[supplier] = { supplier, wasteQty: 0, wasteCost: 0 };
+      wasteBySupplier[supplier].wasteQty += qty;
+      wasteBySupplier[supplier].wasteCost += qty * costPrice;
+    }
+    // Merge waste into supplier scorecard
+    for (const s of supplierScorecard) {
+      const waste = wasteBySupplier[s.supplier];
+      s.wasteQty = waste?.wasteQty || 0;
+      s.wasteCost = waste?.wasteCost || 0;
+      s.wastePercent = s.totalQty > 0 ? Math.round((s.wasteQty / s.totalQty) * 100) : 0;
+    }
+    // Add suppliers that only appear in waste (not in purchases)
+    for (const [sup, data] of Object.entries(wasteBySupplier)) {
+      if (!supplierScorecard.find(s => s.supplier === sup)) {
+        supplierScorecard.push({ supplier: sup, totalSpend: 0, purchaseCount: 0, totalQty: 0, avgPricePerUnit: 0, ...data });
+      }
+    }
+
     res.json({
       period: { from, to },
       revenue: {

@@ -12,6 +12,7 @@ router.use(authorize('orders')); // florists + owner can log waste
 const VALID_REASONS = ['Wilted', 'Damaged', 'Overstock', 'Other'];
 
 // GET /api/stock-loss?from=2026-01-01&to=2026-03-31
+// Enriches each entry with flower name + supplier from the linked Stock record.
 router.get('/', async (req, res, next) => {
   try {
     if (!TABLES.STOCK_LOSS_LOG) return res.json([]);
@@ -24,7 +25,32 @@ router.get('/', async (req, res, next) => {
       filterByFormula: filters.length ? `AND(${filters.join(',')})` : '',
       sort: [{ field: 'Date', direction: 'desc' }],
     });
-    res.json(records);
+
+    // Collect unique stock item IDs to batch-fetch names + suppliers
+    const stockIds = [...new Set(records.flatMap(r => r['Stock Item'] || []))];
+    const stockMap = {};
+    for (let i = 0; i < stockIds.length; i += 100) {
+      const batch = stockIds.slice(i, i + 100);
+      const items = await db.list(TABLES.STOCK, {
+        filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+        fields: ['Display Name', 'Purchase Name', 'Supplier', 'Current Cost Price'],
+      });
+      for (const item of items) stockMap[item.id] = item;
+    }
+
+    // Enrich each loss entry
+    const enriched = records.map(r => {
+      const stockId = r['Stock Item']?.[0];
+      const stock = stockMap[stockId];
+      return {
+        ...r,
+        flowerName: stock?.['Display Name'] || stock?.['Purchase Name'] || '—',
+        supplier: stock?.Supplier || '—',
+        costPrice: stock?.['Current Cost Price'] || 0,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
     next(err);
   }
