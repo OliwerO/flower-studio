@@ -25,7 +25,9 @@ router.post('/', async (req, res, next) => {
 
       if (existingQty > 0) {
         // Old batch still has stock — create a NEW record for the new batch
-        const batchLabel = `${today.slice(5).replace('-', '/')}`;
+        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        const d = new Date(today);
+        const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
         const newBatch = await db.create(TABLES.STOCK, {
           'Display Name':       `${stockItem['Display Name']} (${batchLabel})`,
           'Purchase Name':      stockItem['Purchase Name'] || stockItem['Display Name'],
