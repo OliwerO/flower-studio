@@ -2,7 +2,7 @@
 // Like a warehouse management screen: see every item, adjust quantities,
 // receive deliveries, track waste. All fields inline-editable.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -23,22 +23,35 @@ export default function StockTab() {
   const [velocity, setVelocity]     = useState({});
   const { showToast } = useToast();
 
-  const fetchStock = useCallback(async () => {
-    setLoading(true);
+  const stockLoaded = useRef(false);
+
+  const fetchStock = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await client.get('/stock');
-      setStock(res.data);
+      setStock(prev => {
+        if (!stockLoaded.current) return res.data;
+        // Merge: update existing items in place, preserve local UI state
+        const newMap = new Map(res.data.map(s => [s.id, s]));
+        const merged = prev.map(s => newMap.get(s.id) || s).filter(s => newMap.has(s.id));
+        for (const s of res.data) {
+          if (!merged.find(m => m.id === s.id)) merged.push(s);
+        }
+        return merged;
+      });
+      stockLoaded.current = true;
     } catch {
-      showToast(t.error, 'error');
+      if (!silent) showToast(t.error, 'error');
     } finally {
       setLoading(false);
     }
   }, [showToast]);
 
   useEffect(() => {
+    stockLoaded.current = false;
     fetchStock();
-    const interval = setInterval(() => { if (!document.hidden) fetchStock(); }, 60000);
-    function onVisible() { if (!document.hidden) fetchStock(); }
+    const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 60000);
+    function onVisible() { if (!document.hidden) fetchStock(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchStock]);

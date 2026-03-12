@@ -38,7 +38,7 @@ export default function DayToDayTab({ onNavigate }) {
   const [wixProducts, setWixProducts] = useState([]);
   const { showToast } = useToast();
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (silent = false) => {
     try {
       const today = new Date().toISOString().split('T')[0];
       const firstOfMonth = today.slice(0, 8) + '01';
@@ -57,8 +57,10 @@ export default function DayToDayTab({ onNavigate }) {
       setWixProducts(available);
       setFetchError(false);
     } catch {
-      setFetchError(true);
-      showToast(t.error, 'error');
+      if (!silent) {
+        setFetchError(true);
+        showToast(t.error, 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -67,14 +69,13 @@ export default function DayToDayTab({ onNavigate }) {
   useEffect(() => {
     fetchData();
 
-    // Poll every 60s, but skip when the browser tab is hidden (saves API calls)
+    // Silent poll every 60s — updates data without disrupting UI
     const interval = setInterval(() => {
-      if (!document.hidden) fetchData();
+      if (!document.hidden) fetchData(true);
     }, 60000);
 
-    // Re-fetch immediately when the user switches back to this browser tab
     function handleVisibility() {
-      if (!document.hidden) fetchData();
+      if (!document.hidden) fetchData(true);
     }
     document.addEventListener('visibilitychange', handleVisibility);
 
