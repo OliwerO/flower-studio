@@ -37,6 +37,21 @@ const STATUS_COLORS = {
   Cancelled:        'bg-rose-100 text-rose-700',
 };
 
+// Priority: actionable statuses first, completed/cancelled last
+const STATUS_PRIORITY = {
+  New: 0, Ready: 1, 'Out for Delivery': 2,
+  Delivered: 3, 'Picked Up': 4, Cancelled: 5,
+};
+
+function getSortOptions() {
+  return [
+    { value: 'status',       label: t.sortByStatus || 'Status' },
+    { value: 'deliveryDate', label: t.sortByDelivery || 'Delivery date' },
+    { value: 'type',         label: t.sortByType || 'Delivery/Pickup' },
+    { value: 'orderDate',    label: t.sortByOrderDate || 'Order date' },
+  ];
+}
+
 function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -70,6 +85,7 @@ export default function OrdersTab({ initialFilter }) {
   const [excludeCancelled, setExcludeCancelled] = useState(!!f.excludeCancelled);
   const [expandedId, setExpanded] = useState(f.orderId || null);
   const [selected, setSelected]   = useState(new Set());
+  const [sortBy, setSortBy]       = useState('status');
   const { showToast }             = useToast();
 
   const fetchOrders = useCallback(async () => {
@@ -96,7 +112,14 @@ export default function OrdersTab({ initialFilter }) {
     }
   }, [statusFilter, dateFrom, dateTo, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => {
+    fetchOrders();
+    // Poll every 30s when tab is visible — keeps data fresh
+    const interval = setInterval(() => { if (!document.hidden) fetchOrders(); }, 30000);
+    function onVisible() { if (!document.hidden) fetchOrders(); }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+  }, [fetchOrders]);
 
   // Client-side search filter
   const filtered = search
@@ -107,10 +130,28 @@ export default function OrdersTab({ initialFilter }) {
       })
     : orders;
 
-  // Sort unpaid orders by age when unpaid filter is active
-  const sorted = unpaidOnly
-    ? [...filtered].sort((a, b) => new Date(a['Order Date']) - new Date(b['Order Date']))
-    : filtered;
+  // Sort orders based on selected sort option
+  const sorted = [...filtered].sort((a, b) => {
+    if (unpaidOnly) return new Date(a['Order Date']) - new Date(b['Order Date']);
+    switch (sortBy) {
+      case 'status':
+        return (STATUS_PRIORITY[a['Status']] ?? 99) - (STATUS_PRIORITY[b['Status']] ?? 99);
+      case 'deliveryDate': {
+        const da = a['Delivery Date'] || a['Required By'] || '9999';
+        const db = b['Delivery Date'] || b['Required By'] || '9999';
+        return da.localeCompare(db) || (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
+      }
+      case 'type': {
+        const ta = a['Delivery Type'] === 'Delivery' ? 0 : 1;
+        const tb = b['Delivery Type'] === 'Delivery' ? 0 : 1;
+        return ta - tb || (STATUS_PRIORITY[a['Status']] ?? 99) - (STATUS_PRIORITY[b['Status']] ?? 99);
+      }
+      case 'orderDate':
+        return (b['Order Date'] || '').localeCompare(a['Order Date'] || '');
+      default:
+        return 0;
+    }
+  });
 
   function daysSince(dateStr) {
     if (!dateStr) return 0;
@@ -197,6 +238,17 @@ export default function OrdersTab({ initialFilter }) {
         >
           {t.showUnpaid}
         </button>
+
+        {/* Sort selector */}
+        <select
+          value={sortBy}
+          onChange={e => setSortBy(e.target.value)}
+          className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-ios-secondary"
+        >
+          {getSortOptions().map(opt => (
+            <option key={opt.value} value={opt.value}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       {/* Active filter badges — show when cross-tab filters are active */}
@@ -264,6 +316,10 @@ export default function OrdersTab({ initialFilter }) {
               {selected.size > 0 ? `${selected.size} / ` : ''}{sorted.length} {t.orders.toLowerCase()}
             </span>
           </label>
+          <button onClick={fetchOrders}
+            className="ml-auto text-xs text-ios-secondary hover:text-brand-600 transition-colors"
+            title={t.refresh}
+          >↻ {t.refresh}</button>
         </div>
       )}
 

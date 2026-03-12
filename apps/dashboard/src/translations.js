@@ -62,6 +62,10 @@ const en = {
   unpaidOrders:     'Unpaid orders',
   daysOld:          'days',
   showUnpaid:       'Unpaid only',
+  sortByStatus:     'Sort: Status',
+  sortByDelivery:   'Sort: Delivery date',
+  sortByType:       'Sort: Type',
+  sortByOrderDate:  'Sort: Order date',
 
   // Stock tab
   stockName:        'Name',
@@ -509,6 +513,10 @@ const ru = {
   unpaidOrders:     'Неоплаченные заказы',
   daysOld:          'дней',
   showUnpaid:       'Только неоплаченные',
+  sortByStatus:     'Сорт: Статус',
+  sortByDelivery:   'Сорт: Дата доставки',
+  sortByType:       'Сорт: Тип',
+  sortByOrderDate:  'Сорт: Дата заказа',
 
   // Stock tab
   stockName:        'Название',

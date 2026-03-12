@@ -253,6 +253,7 @@ export default function Step2Bouquet({
                       {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && <span className="text-ios-red"> · out</span>}
+                      {s['Last Restocked'] && <span className="text-ios-tertiary/70"> · {s['Last Restocked'].slice(5)}</span>}
                     </div>
                   </div>
                   {inCart && (

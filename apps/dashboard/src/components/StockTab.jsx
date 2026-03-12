@@ -35,7 +35,13 @@ export default function StockTab() {
     }
   }, [showToast]);
 
-  useEffect(() => { fetchStock(); }, [fetchStock]);
+  useEffect(() => {
+    fetchStock();
+    const interval = setInterval(() => { if (!document.hidden) fetchStock(); }, 60000);
+    function onVisible() { if (!document.hidden) fetchStock(); }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+  }, [fetchStock]);
 
   useEffect(() => {
     client.get('/stock/velocity').then(r => setVelocity(r.data)).catch(() => {});
