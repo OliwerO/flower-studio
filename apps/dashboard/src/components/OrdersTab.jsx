@@ -357,6 +357,9 @@ export default function OrdersTab({ initialFilter }) {
                 onChange={e => toggleSelect(order.id, e)}
                 className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500 shrink-0"
               />
+              {order['Order ID'] && (
+                <span className="text-[11px] font-mono text-ios-tertiary w-10 shrink-0">#{order['Order ID']}</span>
+              )}
               <span className="text-xs text-ios-tertiary w-20 shrink-0">
                 {order['Order Date'] || '—'}
               </span>

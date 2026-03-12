@@ -40,6 +40,7 @@ const en = {
   delivery:         'Delivery',
   unpaid:           'Unpaid',
   paid:             'Paid',
+  collectPayment:   'Collect payment before handing over!',
 
   // Section / field labels
   labelBouquet:         'Bouquet',
@@ -268,6 +269,7 @@ const ru = {
   delivery:         'Доставка',
   unpaid:           'Не оплачен',
   paid:             'Оплачен',
+  collectPayment:   'Соберите оплату перед выдачей!',
 
   // Section / field labels
   labelBouquet:         'Букет',

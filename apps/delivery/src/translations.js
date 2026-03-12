@@ -53,6 +53,7 @@ const en = {
   paidBadge:     'Paid',
   unpaidBadge:   'Unpaid',
   partialBadge:  'Partial',
+  collectPayment: 'Collect payment before handing over!',
 
   // Order info
   specialInstructions: 'Special instructions',
@@ -135,6 +136,7 @@ const ru = {
   paidBadge:     'Оплачен',
   unpaidBadge:   'Не оплачен',
   partialBadge:  'Частично',
+  collectPayment: 'Соберите оплату перед выдачей!',
 
   // Order info
   specialInstructions: 'Особые указания',

@@ -88,7 +88,14 @@ export default function OrderListPage() {
     }
   }, [date, status]);
 
-  useEffect(() => { fetchOrders(); }, [fetchOrders]);
+  useEffect(() => {
+    fetchOrders();
+    // Poll every 30s when tab is visible — keeps data fresh
+    const interval = setInterval(() => { if (!document.hidden) fetchOrders(); }, 30000);
+    function onVisible() { if (!document.hidden) fetchOrders(); }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
+  }, [fetchOrders]);
 
   // Load config once (payment methods, delivery time slots)
   useEffect(() => {

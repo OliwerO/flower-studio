@@ -55,6 +55,14 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
       }`}
     >
       <div className="px-4 py-3 space-y-2">
+        {/* Unpaid warning — driver must collect payment before handing over */}
+        {paymentStatus && paymentStatus !== 'Paid' && status !== 'Delivered' && (
+          <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 flex items-center gap-2">
+            <span className="text-red-500 text-sm">⚠</span>
+            <span className="text-xs font-semibold text-red-700">{t.collectPayment || 'Collect payment before handing over'}</span>
+          </div>
+        )}
+
         {/* Top row: recipient + time badge + payment badge */}
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-ios-label truncate flex-1">{recipient}</h3>
