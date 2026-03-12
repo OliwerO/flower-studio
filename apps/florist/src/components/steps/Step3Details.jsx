@@ -184,20 +184,22 @@ export default function Step3Details({ form, onChange }) {
             </div>
           </div>
 
-          <div>
-            <p className="ios-label">{t.cardText}</p>
-            <div className="ios-card px-4 py-3">
-              <textarea
-                value={form.cardText}
-                onChange={e => onChange({ cardText: e.target.value })}
-                placeholder="Happy birthday! 🎂"
-                rows={4}
-                className="w-full text-lg text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50 leading-relaxed"
-              />
-            </div>
-          </div>
         </>
       )}
+
+      {/* Card text — available for both delivery and pickup */}
+      <div>
+        <p className="ios-label">{t.cardText}</p>
+        <div className="ios-card px-4 py-3">
+          <textarea
+            value={form.cardText}
+            onChange={e => onChange({ cardText: e.target.value })}
+            placeholder="Happy birthday! 🎂"
+            rows={4}
+            className="w-full text-lg text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50 leading-relaxed"
+          />
+        </div>
+      </div>
 
       {/* Notes */}
       <div>
