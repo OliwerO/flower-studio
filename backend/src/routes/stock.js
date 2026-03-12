@@ -124,10 +124,29 @@ router.post('/', async (req, res, next) => {
 });
 
 // PATCH /api/stock/:id — update prices, threshold, etc.
+// When Reorder Threshold changes, sync it across all batches of the same flower
+// (matched by Purchase Name) so the threshold applies uniformly.
 router.patch('/:id', async (req, res, next) => {
   try {
     const safeFields = pickAllowed(req.body, STOCK_PATCH_ALLOWED);
     const item = await db.update(TABLES.STOCK, req.params.id, safeFields);
+
+    // Sync threshold across batches of the same base flower
+    if ('Reorder Threshold' in safeFields && item['Purchase Name']) {
+      const baseName = item['Purchase Name'];
+      const siblings = await db.list(TABLES.STOCK, {
+        filterByFormula: `AND({Purchase Name} = '${sanitizeFormulaValue(baseName)}', RECORD_ID() != '${req.params.id}')`,
+        fields: ['Reorder Threshold'],
+      });
+      for (const sib of siblings) {
+        if (sib['Reorder Threshold'] !== safeFields['Reorder Threshold']) {
+          await db.update(TABLES.STOCK, sib.id, {
+            'Reorder Threshold': safeFields['Reorder Threshold'],
+          });
+        }
+      }
+    }
+
     res.json(item);
   } catch (err) {
     next(err);
