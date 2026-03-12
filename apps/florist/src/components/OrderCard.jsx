@@ -220,11 +220,14 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
-      {/* Card text shown in overview — florists use it to write the physical card */}
-      {order['Greeting Card Text'] && (
-        <p className="text-sm text-ios-label mt-2 bg-amber-50 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
-          {order['Greeting Card Text']}
-        </p>
+      {/* Card text hint — truncated in collapsed view, full text in expanded */}
+      {!expanded && order['Greeting Card Text'] && (
+        <div className="relative mt-2 bg-amber-50 rounded-lg px-3 py-1.5 overflow-hidden" style={{ maxHeight: '2.2em' }}>
+          <p className="text-sm text-ios-label leading-snug whitespace-pre-wrap">
+            ✉ {order['Greeting Card Text']}
+          </p>
+          <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-amber-50 to-transparent" />
+        </div>
       )}
 
       {/* ── Expanded details (inline, no overlays) ── */}
