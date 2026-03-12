@@ -3,10 +3,11 @@
 // No overlays, no fixed positioning — just normal DOM flow. Like flipping
 // a kanban card over to see the full work order on the back.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
+import DatePicker from './DatePicker.jsx';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
@@ -29,12 +30,8 @@ const STATUS_LABELS = {
   'Cancelled':        () => t.statusCancelled,
 };
 
-const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
-const PAY_METHOD_LABELS = {
-  'Cash':     () => t.methodCash,
-  'Card':     () => t.methodCard,
-  'Transfer': () => t.methodTransfer,
-};
+const FALLBACK_PAY_METHODS = ['Cash', 'Card', 'Transfer'];
+const FALLBACK_TIME_SLOTS  = ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
 
 // Florist doesn't trigger "Out for Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
@@ -78,7 +75,7 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated, isOwner }) {
+export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, timeSlots }) {
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
   const [detail, setDetail]       = useState(null);
@@ -117,6 +114,30 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
       const res = await client.patch(`/orders/${order.id}`, fields);
       setDetail(prev => prev ? { ...prev, ...res.data } : res.data);
       onOrderUpdated?.(order.id, res.data);
+      showToast(t.updated, 'success');
+    } catch (err) {
+      const msg = err.response?.data?.error || t.updateError;
+      showToast(msg, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function patchDelivery(fields) {
+    const deliveryId = detail?.delivery?.id;
+    if (!deliveryId) return;
+    setSaving(true);
+    try {
+      await client.patch(`/deliveries/${deliveryId}`, fields);
+      setDetail(prev => ({
+        ...prev,
+        delivery: { ...prev.delivery, ...fields },
+      }));
+      // Also update the order-level fields so the collapsed view refreshes
+      onOrderUpdated?.(order.id, {
+        'Delivery Date': fields['Delivery Date'] ?? detail.delivery['Delivery Date'],
+        'Delivery Time': fields['Delivery Time'] ?? detail.delivery['Delivery Time'],
+      });
       showToast(t.updated, 'success');
     } catch (err) {
       const msg = err.response?.data?.error || t.updateError;
@@ -188,6 +209,12 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
+      {/* Card text shown in overview — florists use it to write the physical card */}
+      {order['Greeting Card Text'] && (
+        <p className="text-sm text-ios-label mt-2 bg-amber-50 rounded-lg px-3 py-2 leading-relaxed whitespace-pre-wrap">
+          {order['Greeting Card Text']}
+        </p>
+      )}
 
       {/* ── Expanded details (inline, no overlays) ── */}
       {expanded && (
@@ -230,19 +257,59 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* Delivery details */}
+              {/* Delivery details — date + time editable */}
               {isDelivery && detail.delivery && (
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDelivery}</p>
-                  <div className="bg-gray-50 rounded-xl px-3 py-1">
-                    <Row label={t.labelDate}      value={detail.delivery['Delivery Date']} />
-                    <Row label={t.labelTime}      value={detail.delivery['Delivery Time']} />
+                  <div className="bg-gray-50 rounded-xl px-3 py-2 space-y-2">
+                    {/* Editable date */}
+                    <div className="flex items-center justify-between gap-2 py-1">
+                      <span className="text-xs text-ios-tertiary shrink-0">{t.labelDate}</span>
+                      <div className="relative z-10">
+                        <DatePicker
+                          value={detail.delivery['Delivery Date'] || ''}
+                          onChange={val => patchDelivery({ 'Delivery Date': val })}
+                          placeholder={t.optional || '—'}
+                        />
+                      </div>
+                    </div>
+                    {/* Editable time slot */}
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(timeSlots || FALLBACK_TIME_SLOTS).map(slot => (
+                          <button
+                            key={slot}
+                            onClick={() => patchDelivery({
+                              'Delivery Time': detail.delivery['Delivery Time'] === slot ? '' : slot,
+                            })}
+                            disabled={saving}
+                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
+                              detail.delivery['Delivery Time'] === slot
+                                ? 'bg-brand-600 text-white shadow-sm'
+                                : 'bg-white text-ios-secondary border border-gray-200 hover:bg-gray-100'
+                            }`}
+                          >
+                            {slot}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <Row label={t.labelAddress}   value={detail.delivery['Delivery Address']} />
                     <Row label={t.labelRecipient} value={detail.delivery['Recipient Name']} />
                     <Row label={t.labelPhone}     value={detail.delivery['Recipient Phone']} />
-                    <Row label={t.labelCardMsg}   value={detail['Greeting Card Text']} />
                     <Row label={t.labelFee}       value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
                   </div>
+                </div>
+              )}
+
+              {/* Greeting card text — large, readable for writing onto physical card */}
+              {detail['Greeting Card Text'] && (
+                <div>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelCardMsg}</p>
+                  <p className="text-lg text-ios-label bg-amber-50 rounded-xl px-4 py-3 leading-relaxed whitespace-pre-wrap">
+                    {detail['Greeting Card Text']}
+                  </p>
                 </div>
               )}
 
@@ -309,7 +376,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                       value={d['Payment Method'] || ''}
                       onChange={val => patch({ 'Payment Method': val })}
                       disabled={saving}
-                      options={PAY_METHODS.map(m => ({ value: m, label: PAY_METHOD_LABELS[m]?.() || m }))}
+                      options={(payMethods || FALLBACK_PAY_METHODS).map(m => ({ value: m, label: m }))}
                     />
                   )}
                 </div>

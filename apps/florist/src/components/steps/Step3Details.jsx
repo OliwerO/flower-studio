@@ -1,17 +1,16 @@
 // Step3Details — consistent pill-button selectors throughout, matching Order Source style.
 
+import { useState, useEffect } from 'react';
+import client from '../../api/client.js';
 import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
-import TimePicker from '../TimePicker.jsx';
 
 const SOURCES     = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
-const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
+const FALLBACK_PAY_METHODS = ['Cash', 'Card', 'Transfer'];
+const FALLBACK_TIME_SLOTS  = ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
 
 function getSourceLabels() {
   return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
-}
-function getMethodLabels() {
-  return { Cash: t.methodCash, Card: t.methodCard, Transfer: t.methodTransfer };
 }
 
 // Reusable pill-button group — same style everywhere
@@ -76,8 +75,24 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
 
 export default function Step3Details({ form, onChange }) {
   const SOURCE_LABELS = getSourceLabels();
-  const METHOD_LABELS = getMethodLabels();
   const set = key => val => onChange({ [key]: val });
+
+  // Fetch config lists from backend (time slots, payment methods)
+  const [timeSlots, setTimeSlots] = useState(FALLBACK_TIME_SLOTS);
+  const [payMethods, setPayMethods] = useState(FALLBACK_PAY_METHODS);
+
+  useEffect(() => {
+    client.get('/settings/lists')
+      .then(r => {
+        if (r.data.paymentMethods?.length) setPayMethods(r.data.paymentMethods);
+      })
+      .catch(() => {});
+    client.get('/settings')
+      .then(r => {
+        if (r.data.config?.deliveryTimeSlots?.length) setTimeSlots(r.data.config.deliveryTimeSlots);
+      })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="flex flex-col gap-6">
@@ -103,7 +118,7 @@ export default function Step3Details({ form, onChange }) {
         />
       </SectionCard>
 
-      {/* Timing — relative z-20 so calendar/time dropdowns render above sibling sections */}
+      {/* Timing — date + time slot (both optional — may be provided later) */}
       <div className="relative z-20">
         <p className="ios-label">{form.deliveryType === 'Delivery' ? t.labelDeliveryTiming : t.requiredBy}</p>
         <div className="ios-card overflow-visible divide-y divide-gray-100">
@@ -113,18 +128,26 @@ export default function Step3Details({ form, onChange }) {
               <DatePicker
                 value={form.deliveryDate}
                 onChange={val => onChange({ deliveryDate: val })}
-                placeholder={t.deliveryDate}
+                placeholder={t.optional}
               />
             </div>
           </div>
-          <div className="flex items-center gap-3 px-4 py-3.5">
-            <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryTime}</span>
-            <div className="flex-1">
-              <TimePicker
-                value={form.deliveryTime}
-                onChange={val => onChange({ deliveryTime: val })}
-                placeholder={t.deliveryTime}
-              />
+          <div className="px-4 py-3.5">
+            <span className="text-sm text-ios-tertiary mb-2 block">{t.deliveryTime}</span>
+            <div className="flex flex-wrap gap-2">
+              {timeSlots.map(slot => (
+                <button
+                  key={slot}
+                  onClick={() => onChange({ deliveryTime: form.deliveryTime === slot ? '' : slot })}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
+                    form.deliveryTime === slot
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
+                  }`}
+                >
+                  {slot}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -168,8 +191,8 @@ export default function Step3Details({ form, onChange }) {
                 value={form.cardText}
                 onChange={e => onChange({ cardText: e.target.value })}
                 placeholder="Happy birthday! 🎂"
-                rows={2}
-                className="w-full text-base text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50"
+                rows={4}
+                className="w-full text-lg text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50 leading-relaxed"
               />
             </div>
           </div>
@@ -208,7 +231,7 @@ export default function Step3Details({ form, onChange }) {
           <Pills
             value={form.paymentMethod}
             onChange={val => onChange({ paymentMethod: val })}
-            options={PAY_METHODS.map(m => ({ value: m, label: METHOD_LABELS[m] }))}
+            options={payMethods.map(m => ({ value: m, label: m }))}
           />
         </SectionCard>
       )}

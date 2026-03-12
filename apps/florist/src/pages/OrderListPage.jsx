@@ -69,6 +69,9 @@ export default function OrderListPage() {
   const [alertsDismissed, setAlertsDismissed] = useState(
     () => sessionStorage.getItem(ALERTS_DISMISSED_KEY) === 'true'
   );
+  // Config lists shared with OrderCard (payment methods, time slots)
+  const [payMethods, setPayMethods] = useState(null);
+  const [timeSlots, setTimeSlots]   = useState(null);
 
   const fetchOrders = useCallback(async () => {
     setLoading(true);
@@ -86,6 +89,16 @@ export default function OrderListPage() {
   }, [date, status]);
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  // Load config once (payment methods, delivery time slots)
+  useEffect(() => {
+    client.get('/settings/lists')
+      .then(r => { if (r.data.paymentMethods?.length) setPayMethods(r.data.paymentMethods); })
+      .catch(() => {});
+    client.get('/settings')
+      .then(r => { if (r.data.config?.deliveryTimeSlots?.length) setTimeSlots(r.data.config.deliveryTimeSlots); })
+      .catch(() => {});
+  }, []);
 
   // Owner: fetch dashboard data for today's summary + stock alerts
   useEffect(() => {
@@ -234,6 +247,8 @@ export default function OrderListPage() {
                 key={order.id}
                 order={order}
                 isOwner={isOwner}
+                payMethods={payMethods}
+                timeSlots={timeSlots}
                 onOrderUpdated={(id, patch) => {
                   setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
                 }}
