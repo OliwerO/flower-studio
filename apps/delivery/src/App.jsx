@@ -10,6 +10,7 @@ import { useNotifications } from './hooks/useNotifications.js';
 
 import LoginPage        from './pages/LoginPage.jsx';
 import DeliveryListPage from './pages/DeliveryListPage.jsx';
+import StockPickupPage  from './pages/StockPickupPage.jsx';
 import Toast            from './components/Toast.jsx';
 
 function PrivateRoute({ children }) {
@@ -35,6 +36,10 @@ export default function App() {
 
         <Route path="/deliveries" element={
           <PrivateRoute><DeliveryListPage /></PrivateRoute>
+        } />
+
+        <Route path="/stock-pickup" element={
+          <PrivateRoute><StockPickupPage /></PrivateRoute>
         } />
 
         <Route path="*" element={

@@ -33,9 +33,9 @@ const DRIVER_PINS = Object.entries(process.env)
 
 // Route access per role
 const ROLE_ACCESS = {
-  owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'auth', 'admin'],
-  florist: ['orders', 'customers', 'stock', 'stock-purchases', 'deliveries'],
-  driver:  ['deliveries', 'auth'],
+  owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'stock-orders', 'auth', 'admin'],
+  florist: ['orders', 'customers', 'stock', 'stock-purchases', 'stock-orders', 'deliveries'],
+  driver:  ['deliveries', 'stock-orders', 'auth'],
 };
 
 export function authenticate(req, res, next) {
@@ -68,11 +68,17 @@ export function authenticate(req, res, next) {
 
 // Route guard — checks that the role has access to the resource.
 // Usage: router.use(authorize('stock'))
-export function authorize(resource) {
+// Optional roles array restricts to specific roles: authorize('stock-orders', ['owner'])
+export function authorize(resource, roles) {
   return (req, res, next) => {
     if (!ROLE_ACCESS[req.role]?.includes(resource)) {
       return res.status(403).json({
         error: `Role "${req.role}" does not have access to /${resource}.`,
+      });
+    }
+    if (roles && !roles.includes(req.role)) {
+      return res.status(403).json({
+        error: `Role "${req.role}" is not allowed to perform this action.`,
       });
     }
     next();

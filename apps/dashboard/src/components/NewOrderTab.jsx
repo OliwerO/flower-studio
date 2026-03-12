@@ -30,7 +30,7 @@ export default function NewOrderTab({ onNavigate }) {
   const [stock, setStock]     = useState([]);
 
   useEffect(() => {
-    client.get('/stock').then(r => setStock(r.data)).catch(console.error);
+    client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(console.error);
   }, []);
 
   function updateForm(patch) {
@@ -69,7 +69,19 @@ export default function NewOrderTab({ onNavigate }) {
         };
       }
       await client.post('/orders', body);
-      showToast(t.orderSubmitted, 'success');
+      // Check if any non-deferred ordered items exceed available stock
+      const negativeItems = form.orderLines.filter(l => {
+        if (l.stockDeferred) return false; // deferred lines don't pull from inventory
+        const si = stock.find(s => s.id === l.stockItemId);
+        if (!si) return false;
+        const available = Number(si['Current Quantity']) || 0;
+        return l.quantity > available;
+      });
+      if (negativeItems.length > 0) {
+        showToast(t.negativeStockWarning, 'warning');
+      } else {
+        showToast(t.orderSubmitted, 'success');
+      }
       // Navigate to orders tab to see the new order
       onNavigate?.({ tab: 'orders' });
     } catch (err) {
@@ -145,6 +157,7 @@ export default function NewOrderTab({ onNavigate }) {
             onStockRefresh={() => client.get('/stock').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}
+            requiredBy={form.deliveryDate || form.requiredBy}
           />
         )}
         {step === 2 && <Step3Details form={form} onChange={updateForm} />}

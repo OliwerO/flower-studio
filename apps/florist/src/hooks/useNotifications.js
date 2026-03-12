@@ -5,6 +5,7 @@
 import { useEffect, useRef } from 'react';
 import { useToast } from '../context/ToastContext.jsx';
 import { getClientPin } from '../api/client.js';
+import t from '../translations.js';
 
 // Simple notification sound — short chime using Web Audio API
 function playNotificationSound() {
@@ -57,6 +58,11 @@ export function useNotifications(onNewOrder) {
           if (onNewOrderRef.current) {
             onNewOrderRef.current(data);
           }
+        }
+
+        if (data.type === 'stock_evaluation_ready') {
+          showToast(`📦 ${t.stockEvalBanner}`, 'success');
+          playNotificationSound();
         }
       } catch {
         // Ignore parse errors (heartbeats, malformed events)

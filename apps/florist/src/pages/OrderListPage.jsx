@@ -64,6 +64,9 @@ export default function OrderListPage() {
   const [showImport, setShowImport] = useState(false);
   const [showHelp, setShowHelp]     = useState(false);
 
+  // Stock evaluation pending count
+  const [evalCount, setEvalCount] = useState(0);
+
   // Owner-only: dashboard summary data
   const [dashData, setDashData]       = useState(null);
   const [alertsDismissed, setAlertsDismissed] = useState(
@@ -131,6 +134,13 @@ export default function OrderListPage() {
       .catch(() => {}); // non-critical — silently ignore
   }, [isOwner, date]);
 
+  // Check for pending stock evaluations
+  useEffect(() => {
+    client.get('/stock-orders?status=Evaluating')
+      .then(r => setEvalCount(r.data.length))
+      .catch(() => {});
+  }, []);
+
   function dismissAlerts() {
     setAlertsDismissed(true);
     sessionStorage.setItem(ALERTS_DISMISSED_KEY, 'true');
@@ -172,6 +182,21 @@ export default function OrderListPage() {
           </div>
         </div>
       </header>
+
+      {/* Stock evaluation banner */}
+      {evalCount > 0 && (
+        <div className="px-4 pt-3 max-w-2xl mx-auto">
+          <button
+            onClick={() => navigate('/stock-evaluation')}
+            className="w-full flex items-center justify-between bg-purple-50 border border-purple-200 rounded-2xl px-4 py-3 active-scale"
+          >
+            <span className="text-sm font-semibold text-purple-700">
+              {t.stockEvalBanner} ({evalCount})
+            </span>
+            <span className="text-purple-600 text-sm font-medium">→</span>
+          </button>
+        </div>
+      )}
 
       {/* Owner: Revenue summary card */}
       {isOwner && dashData && (

@@ -78,10 +78,34 @@ const en = {
   // Confirmations
   confirmDelivered: 'Mark this delivery as completed?',
 
+  // Stock pickup
+  stockPickups:         'Stock pickups',
+  stockPickupBanner:    'stock pickups assigned',
+  goToPickup:           'Go to pickup',
+  foundAll:             'Found all',
+  partial:              'Partial',
+  notFound:             'Not found',
+  foundAtSupplier:      'Found at',
+  foundMoreElsewhere:   'Found more elsewhere?',
+  altSupplier:          'Other supplier',
+  altAmount:            'Amount',
+  foundAlternative:     'Found alternative?',
+  altFlowerName:        'Alternative flower',
+  totalPaidAt:          'Total paid at',
+  doneShopping:         'Done shopping',
+  need:                 'need',
+  doneShoppingConfirm:  'Mark shopping as complete?',
+  yes:                  'Yes',
+  no:                   'No',
+  note:                 'Note',
+  stockPickupAssigned:  'Stock pickup assigned',
+
   // General
   loading:       'Loading...',
   error:         'Something went wrong',
   today:         'Today',
+  lotSize:       'Lot Size',
+  packs:         'packs',
 };
 
 const ru = {
@@ -161,10 +185,34 @@ const ru = {
   // Confirmations
   confirmDelivered: 'Отметить доставку как выполненную?',
 
+  // Stock pickup
+  stockPickups:         'Закупки',
+  stockPickupBanner:    'закупок назначено',
+  goToPickup:           'К закупкам',
+  foundAll:             'Всё найдено',
+  partial:              'Частично',
+  notFound:             'Не найдено',
+  foundAtSupplier:      'Найдено у',
+  foundMoreElsewhere:   'Нашли ещё где-то?',
+  altSupplier:          'Другой поставщик',
+  altAmount:            'Количество',
+  foundAlternative:     'Нашли замену?',
+  altFlowerName:        'Замена',
+  totalPaidAt:          'Оплачено у',
+  doneShopping:         'Закупка завершена',
+  need:                 'нужно',
+  doneShoppingConfirm:  'Отметить закупку как завершённую?',
+  yes:                  'Да',
+  no:                   'Нет',
+  note:                 'Заметка',
+  stockPickupAssigned:  'Назначена закупка',
+
   // General
   loading:       'Загрузка...',
   error:         'Что-то пошло не так',
   today:         'Сегодня',
+  lotSize:       'Фасовка',
+  packs:         'уп.',
 };
 
 // ── Proxy-based dynamic translation ──

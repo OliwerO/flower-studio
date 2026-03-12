@@ -32,7 +32,7 @@ export default function NewOrderPage() {
   const [importWarnings, setImportWarnings] = useState([]);
 
   useEffect(() => {
-    client.get('/stock')
+    client.get('/stock?includeEmpty=true')
       .then(r => { setStock(r.data); setStockError(false); })
       .catch(err => {
         console.error('Failed to load stock:', err);
@@ -177,7 +177,19 @@ export default function NewOrderPage() {
         };
       }
       await client.post('/orders', body);
-      showToast(t.orderSubmitted, 'success');
+      // Check if any non-deferred ordered items exceed available stock
+      const negativeItems = form.orderLines.filter(l => {
+        if (l.stockDeferred) return false; // deferred lines don't pull from inventory
+        const si = stock.find(s => s.id === l.stockItemId);
+        if (!si) return false;
+        const available = Number(si['Current Quantity']) || 0;
+        return l.quantity > available;
+      });
+      if (negativeItems.length > 0) {
+        showToast(t.negativeStockWarning, 'warning');
+      } else {
+        showToast(t.orderSubmitted, 'success');
+      }
       navigate('/orders');
     } catch (err) {
       const detail = err.response?.data?.error || err.message || t.submitError;
@@ -289,6 +301,7 @@ export default function NewOrderPage() {
             onStockRefresh={() => client.get('/stock').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
             onChange={updateForm}
             onLinesChange={updateLines}
+            requiredBy={form.deliveryDate || form.requiredBy}
           />
         )}
         {step === 2 && <Step3Details form={form} onChange={updateForm} />}

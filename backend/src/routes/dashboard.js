@@ -13,7 +13,7 @@ router.get('/', async (req, res, next) => {
     // Accept optional ?date= param, default to today
     const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
 
-    const [orders, deliveries, lowStock, unpaidOrders, customersWithDates] = await Promise.all([
+    const [orders, deliveries, lowStock, unpaidOrders, customersWithDates, negativeStockItems] = await Promise.all([
       // Today's orders
       db.list(TABLES.ORDERS, {
         filterByFormula: `DATESTR({Order Date}) = '${today}'`,
@@ -33,6 +33,11 @@ router.get('/', async (req, res, next) => {
       db.list(TABLES.ORDERS, {
         filterByFormula: `AND(OR({Payment Status} = 'Unpaid', {Payment Status} = 'Partial'), {Status} != 'Cancelled')`,
       }),
+      // Active stock items with negative quantity
+      db.list(TABLES.STOCK, {
+        filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < 0)`,
+        fields: ['Display Name', 'Current Quantity', 'Supplier', 'Order Lines'],
+      }).catch(() => []),
       // Customers with key person dates set for upcoming reminders
       // Wrapped in catch — these fields may not exist in all Airtable bases
       db.list(TABLES.CUSTOMERS, {
@@ -201,6 +206,126 @@ router.get('/', async (req, res, next) => {
       }
     }
 
+    // Include deferred order lines as additional demand in "Flowers Needed".
+    // Deferred lines have Stock Deferred = true — they signal "need to buy" without deducting stock.
+    const deferredLines = await db.list(TABLES.ORDER_LINES, {
+      filterByFormula: `AND({Stock Deferred} = TRUE())`,
+      fields: ['Stock Item', 'Flower Name', 'Quantity', 'Order'],
+      maxRecords: 500,
+    }).catch(() => []);
+
+    // Aggregate deferred demand by stock item: stockId → { name, qty, neededBy }
+    const deferredDemand = {};
+    if (deferredLines.length > 0) {
+      // Fetch parent orders to get Required By dates and exclude cancelled orders
+      const deferredOrderIds = [...new Set(deferredLines.flatMap(l => l.Order || []))];
+      const deferredOrders = deferredOrderIds.length > 0
+        ? await db.list(TABLES.ORDERS, {
+            filterByFormula: `AND(OR(${deferredOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != 'Cancelled')`,
+            fields: ['Required By'],
+          }).catch(() => [])
+        : [];
+      const deferredOrderMap = {};
+      for (const o of deferredOrders) deferredOrderMap[o.id] = o;
+
+      for (const line of deferredLines) {
+        const stockId = line['Stock Item']?.[0];
+        if (!stockId) continue;
+        const orderId = line.Order?.[0];
+        const parentOrder = deferredOrderMap[orderId];
+        if (!parentOrder) continue; // order cancelled or not found
+        const reqBy = parentOrder['Required By'] || null;
+
+        if (!deferredDemand[stockId]) {
+          deferredDemand[stockId] = { name: line['Flower Name'] || '?', qty: 0, neededBy: null };
+        }
+        deferredDemand[stockId].qty += Number(line.Quantity || 0);
+        if (reqBy && (!deferredDemand[stockId].neededBy || reqBy < deferredDemand[stockId].neededBy)) {
+          deferredDemand[stockId].neededBy = reqBy;
+        }
+      }
+    }
+
+    // Compute needed-by dates for negative stock items
+    // For each negative item, find linked order lines → parent order → earliest Required By date
+    let negativeStock = [];
+    if (negativeStockItems.length > 0) {
+      // Collect all order line IDs from negative stock items
+      const negLineIds = negativeStockItems.flatMap(s => s['Order Lines'] || []);
+      const negLines = negLineIds.length > 0
+        ? await db.list(TABLES.ORDER_LINES, {
+            filterByFormula: `OR(${negLineIds.slice(0, 100).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Order'],
+            maxRecords: 200,
+          }).catch(() => [])
+        : [];
+
+      // Get unique parent order IDs
+      const parentOrderIds = [...new Set(negLines.flatMap(l => l.Order || []))];
+      const parentOrders = parentOrderIds.length > 0
+        ? await db.list(TABLES.ORDERS, {
+            filterByFormula: `AND(OR(${parentOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != 'Cancelled')`,
+            fields: ['Required By', 'Order Lines'],
+          }).catch(() => [])
+        : [];
+
+      // Build map: stockId → earliest neededBy
+      const neededByMap = {};
+      for (const order of parentOrders) {
+        const reqBy = order['Required By'];
+        if (!reqBy) continue;
+        const orderLineIds = new Set(order['Order Lines'] || []);
+        for (const si of negativeStockItems) {
+          const siLineIds = si['Order Lines'] || [];
+          if (siLineIds.some(lid => orderLineIds.has(lid))) {
+            if (!neededByMap[si.id] || reqBy < neededByMap[si.id]) {
+              neededByMap[si.id] = reqBy;
+            }
+          }
+        }
+      }
+
+      negativeStock = negativeStockItems.map(s => ({
+        id: s.id,
+        name: s['Display Name'],
+        qty: s['Current Quantity'],
+        neededBy: neededByMap[s.id] || null,
+        supplier: s.Supplier || null,
+      }));
+      negativeStock.sort((a, b) => {
+        if (a.neededBy && b.neededBy) return a.neededBy.localeCompare(b.neededBy);
+        if (a.neededBy) return -1;
+        return 1;
+      });
+    }
+
+    // Merge deferred demand into negativeStock list.
+    // Items already negative get their deferred qty added; new deferred-only items are appended.
+    for (const [stockId, demand] of Object.entries(deferredDemand)) {
+      const existing = negativeStock.find(s => s.id === stockId);
+      if (existing) {
+        existing.deferredQty = demand.qty;
+        if (demand.neededBy && (!existing.neededBy || demand.neededBy < existing.neededBy)) {
+          existing.neededBy = demand.neededBy;
+        }
+      } else {
+        negativeStock.push({
+          id: stockId,
+          name: demand.name,
+          qty: 0,  // not negative in stock, but has deferred demand
+          deferredQty: demand.qty,
+          neededBy: demand.neededBy,
+          supplier: null,
+        });
+      }
+    }
+    // Re-sort after merging deferred items
+    negativeStock.sort((a, b) => {
+      if (a.neededBy && b.neededBy) return a.neededBy.localeCompare(b.neededBy);
+      if (a.neededBy) return -1;
+      return 1;
+    });
+
     res.json({
       date: today,
       orderCount: orders.length,
@@ -211,6 +336,7 @@ router.get('/', async (req, res, next) => {
       unpaidAging,
       keyDateReminders,
       lowStockAlerts: lowStock,
+      negativeStock,
       recentOrders: orders.slice(0, 10),
     });
   } catch (err) {

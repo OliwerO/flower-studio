@@ -7,19 +7,21 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import StockReceiveForm from './StockReceiveForm.jsx';
+import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import Pills from './Pills.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 
-export default function StockTab() {
+export default function StockTab({ initialFilter }) {
   const { suppliers: SUPPLIERS } = useConfigLists();
   const [stock, setStock]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [showReceive, setShowReceive] = useState(false);
   const [showAddItem, setShowAddItem] = useState(false);
+  const [showPurchaseOrders, setShowPurchaseOrders] = useState(initialFilter?.action === 'createPO');
   const [newItem, setNewItem]       = useState({ displayName: '', category: '', quantity: 0, costPrice: 0, sellPrice: 0, supplier: '', unit: 'Stems' });
-  const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow'
+  const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [velocity, setVelocity]     = useState({});
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const { showToast } = useToast();
@@ -145,6 +147,9 @@ export default function StockTab() {
     : stock;
 
   // View filters (waste view uses lossLog instead of stock table)
+  if (view === 'negative') {
+    filtered = filtered.filter(s => (s['Current Quantity'] || 0) < 0);
+  }
   if (view === 'slow') {
     const fourteenDaysAgo = Date.now() - 14 * 86400000;
     filtered = filtered.filter(s =>
@@ -177,9 +182,10 @@ export default function StockTab() {
         {/* View toggles */}
         <div className="flex gap-1">
           {[
-            { key: 'all',   label: t.allStatuses },
-            { key: 'waste', label: t.wasteLog },
-            { key: 'slow',  label: t.slowMovers },
+            { key: 'all',      label: t.allStatuses },
+            { key: 'negative', label: t.negativeFilter || 'Negative' },
+            { key: 'waste',    label: t.wasteLog },
+            { key: 'slow',     label: t.slowMovers },
           ].map(v => (
             <button
               key={v.key}
@@ -196,6 +202,12 @@ export default function StockTab() {
         </div>
 
         <div className="ml-auto flex gap-2">
+          <button
+            onClick={() => setShowPurchaseOrders(!showPurchaseOrders)}
+            className="px-3 py-1.5 rounded-xl bg-blue-100 text-blue-700 text-xs font-semibold"
+          >
+            {t.stockOrders || 'Purchase Orders'}
+          </button>
           <button
             onClick={() => setShowAddItem(!showAddItem)}
             className="px-3 py-1.5 rounded-xl bg-brand-100 text-brand-700 text-xs font-semibold"
@@ -280,6 +292,20 @@ export default function StockTab() {
         <StockReceiveForm
           stock={stock}
           onDone={() => { setShowReceive(false); fetchStock(); }}
+        />
+      )}
+
+      {/* Purchase Orders panel */}
+      {showPurchaseOrders && (
+        <StockOrderPanel
+          negativeStock={stock.filter(s => (s['Current Quantity'] || 0) < 0).map(s => ({
+            id: s.id,
+            name: s['Display Name'],
+            qty: s['Current Quantity'],
+            supplier: s.Supplier,
+          }))}
+          stock={stock}
+          onClose={() => setShowPurchaseOrders(false)}
         />
       )}
 
@@ -431,6 +457,7 @@ export default function StockTab() {
                 <th className="text-right px-3 py-2 font-medium">{t.sellPrice}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.markup}</th>
                 <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
+                <th className="text-right px-3 py-2 font-medium">{t.lotSize}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.threshold}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.daysOfSupplyHeader}</th>
                 <th className="text-right px-3 py-2 font-medium w-36"></th>
@@ -446,6 +473,7 @@ export default function StockTab() {
                   onWriteOff={writeOff}
                   onPatch={patchStock}
                   velocity={velocity[item.id]}
+                  suppliers={SUPPLIERS}
                 />
               ))}
             </tbody>
@@ -457,7 +485,7 @@ export default function StockTab() {
 }
 
 // Individual stock row with inline editing
-function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity }) {
+function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, suppliers = [] }) {
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
   const [showWo, setShowWo]     = useState(false);
@@ -465,20 +493,22 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity }) 
 
   const qty = item['Current Quantity'] || 0;
   const threshold = item['Reorder Threshold'] || 0;
+  const lotSize = item['Lot Size'] || 1;
   const isLow = qty > 0 && qty <= threshold;
   const isZero = qty === 0;
+  const isNegative = qty < 0;
   const cost = item['Current Cost Price'] || 0;
   const sell = item['Current Sell Price'] || 0;
   const markupPct = cost > 0 && sell > 0 ? ((sell / cost - 1) * 100).toFixed(0) : '—';
   const dead = item['Dead/Unsold Stems'] || 0;
-  const rowColor = isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
+  const rowColor = isNegative ? 'bg-red-50' : isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
 
   return (
     <>
       <tr className={`border-b border-gray-100 ${rowColor}`}>
         <td className="px-3 py-2 text-ios-label font-medium">{item['Display Name']}</td>
         <td className={`px-3 py-2 text-right font-semibold ${
-          isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
+          isNegative ? 'text-red-600 font-bold' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
           {qty}
         </td>
@@ -512,12 +542,21 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity }) 
           {editSupplier && (
             <div className="absolute left-0 top-full z-20 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg p-2">
               <Pills
-                options={SUPPLIERS.map(s => ({ value: s, label: s }))}
+                options={suppliers.map(s => ({ value: s, label: s }))}
                 value={item.Supplier || ''}
                 onChange={v => { onPatch(item.id, { Supplier: v }); setEditSupplier(false); }}
               />
             </div>
           )}
+        </td>
+        {/* Editable lot size */}
+        <td className="px-3 py-2 text-right">
+          <InlineEdit
+            value={lotSize > 1 ? String(lotSize) : ''}
+            type="number"
+            placeholder="1"
+            onSave={v => onPatch(item.id, { 'Lot Size': v ? Number(v) : 1 })}
+          />
         </td>
         {/* Editable threshold */}
         <td className="px-3 py-2 text-right">
@@ -561,7 +600,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity }) 
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={showWaste ? 10 : 9} className="px-3 py-2">
+          <td colSpan={showWaste ? 11 : 10} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}

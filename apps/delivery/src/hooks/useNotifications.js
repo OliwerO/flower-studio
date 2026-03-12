@@ -54,6 +54,11 @@ export function useNotifications(enabled = true, onEvent) {
           playNotificationSound();
         }
 
+        if (data.type === 'stock_pickup_assigned') {
+          showToast(`🛒 ${t.stockPickupAssigned}`, 'success');
+          playNotificationSound();
+        }
+
         if (onEventRef.current) {
           onEventRef.current(data);
         }

@@ -275,14 +275,16 @@ router.post('/', async (req, res, next) => {
           Quantity:               line.quantity,
           'Cost Price Per Unit':  line.costPricePerUnit || 0,
           'Sell Price Per Unit':  line.sellPricePerUnit || 0,
+          'Stock Deferred':       line.stockDeferred || false,
         });
         createdLines.push(created);
         createdLineIds.push(created.id);
       }
 
       // 3. Deduct stock atomically — serialized through stockQueue (no race conditions)
+      // Skip deduction for deferred lines — they signal demand without pulling from inventory.
       for (const line of orderLines) {
-        if (line.stockItemId) {
+        if (line.stockItemId && !line.stockDeferred) {
           await db.atomicStockAdjust(line.stockItemId, -line.quantity);
           stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
         }

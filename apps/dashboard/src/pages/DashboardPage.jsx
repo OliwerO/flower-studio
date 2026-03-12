@@ -107,7 +107,7 @@ export default function DashboardPage() {
           <NewOrderTab onNavigate={navigateTo} />
         </div>
         <div style={{ display: activeTab === 'stock' ? 'block' : 'none' }}>
-          <StockTab />
+          <StockTab key={filterKey} initialFilter={tabFilter} />
         </div>
         <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
           <CustomersTab key={filterKey} initialFilter={tabFilter} />

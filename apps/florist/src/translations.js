@@ -180,6 +180,27 @@ const en = {
   editStock:        'Edit stock',
   doneEditing:      'Done',
 
+  // Stock deferred (future orders)
+  useStock:              'Stock',
+  orderNew:              'New',
+
+  // Negative stock
+  notInStock:            'not in stock',
+  negativeStockWarning:  'Some items went below zero stock. Create a purchase order?',
+  outOfStock:            'Out of stock',
+
+  // Stock evaluation
+  stockEvaluation:       'Stock Evaluation',
+  stockEvalBanner:       'Stock delivery to evaluate',
+  driverFound:           'Driver found',
+  accept:                'Accept',
+  writeOffQty:           'Write off',
+  completeEvaluation:    'Complete Evaluation',
+  notFoundByDriver:      'Not found by driver',
+  addManually:           'Add manually',
+  evaluationComplete:    'Evaluation complete!',
+  evaluationError:       'Failed to complete evaluation.',
+
   // Validation
   stockLoadError:        'Failed to load stock data.',
   deliveryAddressRequired: 'Delivery address is required.',
@@ -232,6 +253,8 @@ const en = {
     confidenceLow:      'Check match',
     confidenceNone:     'Not in stock',
   },
+  lotSize:            'Lot Size',
+  packs:              'packs',
 };
 
 const ru = {
@@ -411,6 +434,27 @@ const ru = {
   editStock:        'Редактировать склад',
   doneEditing:      'Готово',
 
+  // Stock deferred (future orders)
+  useStock:              'Со склада',
+  orderNew:              'Заказать',
+
+  // Negative stock
+  notInStock:            'нет на складе',
+  negativeStockWarning:  'Некоторые позиции ушли в минус. Создать заказ поставщику?',
+  outOfStock:            'Нет в наличии',
+
+  // Stock evaluation
+  stockEvaluation:       'Оценка цветов',
+  stockEvalBanner:       'Цветы для оценки',
+  driverFound:           'Водитель нашёл',
+  accept:                'Принять',
+  writeOffQty:           'Списать',
+  completeEvaluation:    'Завершить оценку',
+  notFoundByDriver:      'Не найдено водителем',
+  addManually:           'Добавить вручную',
+  evaluationComplete:    'Оценка завершена!',
+  evaluationError:       'Не удалось завершить оценку.',
+
   // Validation
   stockLoadError:        'Не удалось загрузить данные склада.',
   deliveryAddressRequired: 'Укажите адрес доставки.',
@@ -463,6 +507,8 @@ const ru = {
     confidenceLow:      'Проверьте соответствие',
     confidenceNone:     'Не найдено на складе',
   },
+  lotSize:            'Фасовка',
+  packs:              'уп.',
 };
 
 // ── Proxy-based dynamic translation ──

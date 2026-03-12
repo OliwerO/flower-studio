@@ -398,6 +398,39 @@ const en = {
   preferredChannel:   'Preferred channel',
   lifetimeSummary:    'Customer summary',
 
+  // Stock deferred (future orders)
+  useStock:           'Stock',
+  orderNew:           'New',
+
+  // Negative stock / purchase orders
+  notInStock:         'not in stock',
+  negativeStockWarning: 'Some items went below zero stock. Create a purchase order?',
+  outOfStock:         'Out of stock',
+  flowersNeeded:      'Flowers Needed',
+  createPurchaseOrder:'Create Purchase Order',
+  negativeFilter:     'Negative',
+  neededBy:           'needed by',
+
+  // Stock orders
+  stockOrders:        'Purchase Orders',
+  stockOrderDraft:    'Draft',
+  stockOrderSent:     'Sent',
+  stockOrderShopping: 'Shopping',
+  stockOrderEvaluating: 'Evaluating',
+  stockOrderComplete: 'Complete',
+  newStockOrder:      'New Purchase Order',
+  sendToDriver:       'Send to Driver',
+  assignedDriver:     'Assigned driver',
+  stockOrderNotes:    'Notes',
+  stockOrderLines:    'Items',
+  qtyNeeded:          'Qty needed',
+  addLine:            'Add line',
+  supplierPayments:   'Supplier payments',
+  stockOrderCreated:  'Purchase order created',
+  stockOrderUpdated:  'Purchase order updated',
+  stockOrderSentMsg:  'Sent to driver',
+  noStockOrders:      'No purchase orders',
+
   // Stock
   restockEstimate:    'Estimated restock cost',
 
@@ -458,6 +491,8 @@ const en = {
   dzExpressSurchargeHint:   'Extra fee for same-day delivery (zl)',
   dzTimeSlots:              'Delivery time slots',
   dzTimeSlotsHint:          'Available time windows for customer selection',
+  lotSize:                  'Lot Size',
+  packs:                    'packs',
 };
 
 const ru = {
@@ -857,6 +892,39 @@ const ru = {
   preferredChannel:   'Предпочитаемый канал',
   lifetimeSummary:    'Профиль клиента',
 
+  // Stock deferred (future orders)
+  useStock:           'Со склада',
+  orderNew:           'Заказать',
+
+  // Negative stock / purchase orders
+  notInStock:         'нет на складе',
+  negativeStockWarning: 'Некоторые позиции ушли в минус. Создать заказ поставщику?',
+  outOfStock:         'Нет в наличии',
+  flowersNeeded:      'Нужны цветы',
+  createPurchaseOrder:'Создать заказ поставщику',
+  negativeFilter:     'Минус',
+  neededBy:           'нужен к',
+
+  // Stock orders
+  stockOrders:        'Заказы поставщикам',
+  stockOrderDraft:    'Черновик',
+  stockOrderSent:     'Отправлен',
+  stockOrderShopping: 'Закупка',
+  stockOrderEvaluating: 'Оценка',
+  stockOrderComplete: 'Завершён',
+  newStockOrder:      'Новый заказ поставщику',
+  sendToDriver:       'Отправить водителю',
+  assignedDriver:     'Назначенный водитель',
+  stockOrderNotes:    'Заметки',
+  stockOrderLines:    'Позиции',
+  qtyNeeded:          'Нужно',
+  addLine:            'Добавить позицию',
+  supplierPayments:   'Оплаты поставщикам',
+  stockOrderCreated:  'Заказ поставщику создан',
+  stockOrderUpdated:  'Заказ поставщику обновлён',
+  stockOrderSentMsg:  'Отправлен водителю',
+  noStockOrders:      'Нет заказов поставщикам',
+
   // Stock
   restockEstimate:    'Оценка закупки',
 
@@ -917,6 +985,8 @@ const ru = {
   dzExpressSurchargeHint:   'Доплата за доставку в тот же день (zl)',
   dzTimeSlots:              'Окна доставки',
   dzTimeSlotsHint:          'Доступные временные интервалы для выбора клиентом',
+  lotSize:                  'Фасовка',
+  packs:                    'уп.',
 };
 
 // ── Proxy-based dynamic translation ──

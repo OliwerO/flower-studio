@@ -3,6 +3,7 @@
 // Think of it as a Kanban board with three columns, but displayed as a scrollable phone list.
 
 import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
@@ -29,6 +30,7 @@ function formatDateHeader() {
 }
 
 export default function DeliveryListPage() {
+  const navigate = useNavigate();
   const { driverName, logout } = useAuth();
   const { showToast } = useToast();
 
@@ -37,6 +39,7 @@ export default function DeliveryListPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [showMap, setShowMap]       = useState(false);
   const [showHelp, setShowHelp]     = useState(false);
+  const [pickupCount, setPickupCount] = useState(0);
   // Track which delivery is awaiting a result selection (replaces window.confirm)
   const [resultPickerId, setResultPickerId] = useState(null);
 
@@ -54,6 +57,16 @@ export default function DeliveryListPage() {
   }, [driverName, showToast]);
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
+
+  // Check for assigned stock pickups
+  useEffect(() => {
+    Promise.all([
+      client.get('/stock-orders?status=Sent').catch(() => ({ data: [] })),
+      client.get('/stock-orders?status=Shopping').catch(() => ({ data: [] })),
+    ]).then(([sent, shopping]) => {
+      setPickupCount(sent.data.length + shopping.data.length);
+    });
+  }, []);
 
   // Group by status, with the logged-in driver's deliveries sorted to the top.
   // Like a shared task board where your own tasks float up.
@@ -181,6 +194,19 @@ export default function DeliveryListPage() {
       </div>
 
       <div className="px-4 pt-4 space-y-5">
+        {/* Stock pickup banner */}
+        {pickupCount > 0 && (
+          <button
+            onClick={() => navigate('/stock-pickup')}
+            className="w-full flex items-center justify-between bg-blue-50 border border-blue-200 rounded-2xl px-4 py-3 active-scale"
+          >
+            <span className="text-sm font-semibold text-blue-700">
+              {pickupCount} {t.stockPickupBanner}
+            </span>
+            <span className="text-blue-600 text-sm font-medium">{t.goToPickup} →</span>
+          </button>
+        )}
+
         {loading ? (
           <p className="text-center text-ios-tertiary py-12">{t.loading}</p>
         ) : deliveries.length === 0 ? (

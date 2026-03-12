@@ -13,9 +13,10 @@ import LoginPage        from './pages/LoginPage.jsx';
 import OrderListPage    from './pages/OrderListPage.jsx';
 import OrderDetailPage  from './pages/OrderDetailPage.jsx';
 import NewOrderPage     from './pages/NewOrderPage.jsx';
-import StockPanelPage   from './pages/StockPanelPage.jsx';
-import DaySummaryPage   from './pages/DaySummaryPage.jsx';
-import Toast            from './components/Toast.jsx';
+import StockPanelPage       from './pages/StockPanelPage.jsx';
+import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
+import DaySummaryPage       from './pages/DaySummaryPage.jsx';
+import Toast                from './components/Toast.jsx';
 
 // PrivateRoute — like a badge-reader gate. Redirects to /login if no PIN in context.
 function PrivateRoute({ children }) {
@@ -65,6 +66,10 @@ export default function App() {
 
         <Route path="/stock" element={
           <PrivateRoute><StockPanelPage /></PrivateRoute>
+        } />
+
+        <Route path="/stock-evaluation" element={
+          <PrivateRoute><StockEvaluationPage /></PrivateRoute>
         } />
 
         <Route path="/day-summary" element={

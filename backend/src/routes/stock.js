@@ -10,7 +10,7 @@ router.use(authorize('stock'));
 const STOCK_PATCH_ALLOWED = [
   'Display Name', 'Purchase Name', 'Category', 'Current Quantity', 'Unit',
   'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
-  'Active', 'Supplier Notes', 'Dead/Unsold Stems',
+  'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size',
 ];
 
 function pickAllowed(body, allowedFields) {
@@ -170,9 +170,7 @@ router.post('/:id/adjust', async (req, res, next) => {
     const newQty = currentQty + delta;
 
     if (newQty < 0) {
-      return res.status(400).json({
-        error: `Cannot go below 0. Current: ${currentQty}, requested delta: ${delta}.`,
-      });
+      console.warn(`[STOCK] Negative stock: ${req.params.id} going to ${newQty} (current: ${currentQty}, delta: ${delta})`);
     }
 
     const updated = await db.update(TABLES.STOCK, req.params.id, {

@@ -5,8 +5,15 @@ import t from '../../translations.js';
 
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
-  onChange, onLinesChange,
+  onChange, onLinesChange, requiredBy,
 }) {
+  // Determine if the order is for a future date (not today).
+  // Future orders allow toggling between "use current stock" and "order new" per line.
+  const isFutureOrder = (() => {
+    if (!requiredBy) return false;
+    const today = new Date().toISOString().split('T')[0];
+    return requiredBy > today;
+  })();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
 
@@ -37,32 +44,29 @@ export default function Step2Bouquet({
   }, [stock, flowerQuery]);
 
   function addOne(stockItem) {
-    const maxQty = Number(stockItem['Current Quantity']) || 0;
     onLinesChange(lines => {
       const exists = lines.find(l => l.stockItemId === stockItem.id);
       if (exists) {
-        if (exists.quantity >= maxQty) return lines;
         return lines.map(l =>
           l.stockItemId === stockItem.id ? { ...l, quantity: l.quantity + 1 } : l
         );
       }
-      if (maxQty <= 0) return lines;
       return [...lines, {
         stockItemId:      stockItem.id,
         flowerName:       stockItem['Display Name'],
         quantity:         1,
         costPricePerUnit: Number(stockItem['Current Cost Price']) || 0,
         sellPricePerUnit: Number(stockItem['Current Sell Price']) || 0,
+        stockDeferred:    isFutureOrder,
       }];
     });
   }
 
   function changeQty(stockItemId, delta) {
-    const maxQty = Number(stock.find(s => s.id === stockItemId)?.['Current Quantity']) || Infinity;
     onLinesChange(lines =>
       lines
         .map(l => l.stockItemId === stockItemId
-          ? { ...l, quantity: Math.min(l.quantity + delta, maxQty) }
+          ? { ...l, quantity: l.quantity + delta }
           : l
         )
         .filter(l => l.quantity > 0)
@@ -72,17 +76,21 @@ export default function Step2Bouquet({
   function setQtyDirect(stockItemId, value) {
     const n = parseInt(value, 10);
     if (isNaN(n) || n < 0) return;
-    const maxQty = Number(stock.find(s => s.id === stockItemId)?.['Current Quantity']) || Infinity;
-    const capped = Math.min(n, maxQty);
     onLinesChange(lines =>
-      capped === 0
+      n === 0
         ? lines.filter(l => l.stockItemId !== stockItemId)
-        : lines.map(l => l.stockItemId === stockItemId ? { ...l, quantity: capped } : l)
+        : lines.map(l => l.stockItemId === stockItemId ? { ...l, quantity: n } : l)
     );
   }
 
   function removeLine(stockItemId) {
     onLinesChange(lines => lines.filter(l => l.stockItemId !== stockItemId));
+  }
+
+  function toggleDeferred(stockItemId) {
+    onLinesChange(lines =>
+      lines.map(l => l.stockItemId === stockItemId ? { ...l, stockDeferred: !l.stockDeferred } : l)
+    );
   }
 
   return (
@@ -133,27 +141,23 @@ export default function Step2Bouquet({
               const inCart = orderLines.find(l => l.stockItemId === s.id);
               const low    = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
               const out    = qty <= 0;
-              const maxed  = inCart && inCart.quantity >= qty;
-              const disabled = out || maxed;
 
               return (
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => !disabled && addOne(s)}
-                  disabled={disabled}
+                  onClick={() => addOne(s)}
                   className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors
-                              disabled:opacity-40
-                              ${inCart ? 'bg-brand-50/70' : 'active:bg-white/40'}`}
+                              ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-white/40'}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : 'text-ios-label'}`}>
+                    <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
                       {s['Display Name']}
                     </div>
                     <div className="text-xs text-ios-tertiary">
                       {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {out && <span className="text-ios-red"> · out</span>}
+                      {out && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
                     </div>
                   </div>
                   {inCart && (
@@ -175,44 +179,66 @@ export default function Step2Bouquet({
           <div className="ios-card overflow-hidden divide-y divide-white/40">
             {orderLines.map(l => {
               const stockItem = stock.find(s => s.id === l.stockItemId);
-              const maxQty    = Number(stockItem?.['Current Quantity']) || Infinity;
+              const availableQty = Number(stockItem?.['Current Quantity']) || 0;
+              const overStock = l.stockItemId && !l.stockDeferred && l.quantity > availableQty;
               // Always use current stock price for display (snapshot happens at submit)
               const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
               const lineSell  = sellPrice * Number(l.quantity);
               return (
-              <div key={`${l.stockItemId}-${l.quantity}`} className="flex items-center gap-3 px-4 py-3">
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium text-ios-label truncate">{l.flowerName}</div>
-                  <div className="text-xs text-ios-tertiary">
-                    {sellPrice.toFixed(0)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
+              <div key={l.stockItemId} className="px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-sm font-medium text-ios-label truncate">{l.flowerName}</span>
+                      {isFutureOrder && (
+                        <button
+                          type="button"
+                          onClick={() => toggleDeferred(l.stockItemId)}
+                          className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${
+                            l.stockDeferred
+                              ? 'bg-blue-100 text-blue-700'
+                              : 'bg-green-100 text-green-700'
+                          }`}
+                        >
+                          {l.stockDeferred ? (t.orderNew || 'New') : (t.useStock || 'Stock')}
+                        </button>
+                      )}
+                    </div>
+                    <div className="text-xs text-ios-tertiary">
+                      {sellPrice.toFixed(0)} zł × {l.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => changeQty(l.stockItemId, -1)}
+                      className="w-8 h-8 rounded-full bg-white/60 text-ios-secondary text-xl font-bold
+                                 flex items-center justify-center active:bg-white"
+                    >−</button>
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      value={l.quantity}
+                      onChange={e => setQtyDirect(l.stockItemId, e.target.value)}
+                      onFocus={e => e.target.select()}
+                      className="w-9 text-center text-sm font-bold border border-white/50 rounded-xl py-1 bg-white/40 outline-none"
+                    />
+                    <button
+                      onClick={() => changeQty(l.stockItemId, +1)}
+                      className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
+                                 flex items-center justify-center active:bg-brand-200"
+                    >+</button>
+                    <button onClick={() => removeLine(l.stockItemId)}
+                            className="text-ios-tertiary text-base ml-1 active:text-ios-red px-1">
+                      &#10005;
+                    </button>
                   </div>
                 </div>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <button
-                    onClick={() => changeQty(l.stockItemId, -1)}
-                    className="w-8 h-8 rounded-full bg-white/60 text-ios-secondary text-xl font-bold
-                               flex items-center justify-center active:bg-white"
-                  >−</button>
-                  <input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="[0-9]*"
-                    value={l.quantity}
-                    onChange={e => setQtyDirect(l.stockItemId, e.target.value)}
-                    onFocus={e => e.target.select()}
-                    className="w-9 text-center text-sm font-bold border border-white/50 rounded-xl py-1 bg-white/40 outline-none"
-                  />
-                  <button
-                    onClick={() => changeQty(l.stockItemId, +1)}
-                    disabled={l.quantity >= maxQty}
-                    className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
-                               flex items-center justify-center active:bg-brand-200 disabled:opacity-30"
-                  >+</button>
-                  <button onClick={() => removeLine(l.stockItemId)}
-                          className="text-ios-tertiary text-base ml-1 active:text-ios-red px-1">
-                    &#10005;
-                  </button>
-                </div>
+                {overStock && (
+                  <div className="mt-1 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
+                    {l.quantity - availableQty} {t.notInStock || 'not in stock'}
+                  </div>
+                )}
               </div>
               );
             })}
@@ -250,7 +276,7 @@ export default function Step2Bouquet({
             placeholder={sellTotal > 0 ? String(Math.round(sellTotal)) : '0'}
             className="flex-1 py-3.5 text-base text-ios-label bg-transparent outline-none placeholder-ios-tertiary/50"
           />
-          <span className="text-ios-tertiary text-sm shrink-0 pr-1">zl</span>
+          <span className="text-ios-tertiary text-sm shrink-0 pr-1">zł</span>
         </div>
       </div>
     </div>

@@ -300,6 +300,40 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
       )}
 
+      {/* Flowers Needed — negative stock items requiring purchase */}
+      {data.negativeStock?.length > 0 && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-4">
+          <h3 className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-3">
+            {t.flowersNeeded}
+          </h3>
+          <div className="space-y-1.5 mb-3">
+            {data.negativeStock.map(item => (
+              <div
+                key={item.id}
+                onClick={() => nav('stock')}
+                className="flex items-center justify-between bg-white/60 rounded-xl px-3 py-2 cursor-pointer hover:bg-white transition-colors"
+              >
+                <span className="text-sm font-medium text-ios-label">{item.name}</span>
+                <div className="flex items-center gap-3 text-xs">
+                  <span className="font-bold text-red-600">{item.qty}</span>
+                  {item.neededBy && (
+                    <span className="text-ios-secondary">
+                      {t.neededBy} {fmtDate(item.neededBy)}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+          <button
+            onClick={() => nav('stock', { action: 'createPO' })}
+            className="w-full py-2.5 rounded-xl bg-red-600 text-white text-sm font-semibold active-scale"
+          >
+            {t.createPurchaseOrder}
+          </button>
+        </div>
+      )}
+
       {/* Low stock alerts */}
       {data.lowStockAlerts?.length > 0 && (
         <div className="bg-white rounded-2xl shadow-sm px-4 py-4">
