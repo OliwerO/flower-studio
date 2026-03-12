@@ -21,12 +21,14 @@ function pickAllowed(body, allowedFields) {
   return filtered;
 }
 
-// GET /api/stock?category=Roses&activeOnly=true
+// GET /api/stock?category=Roses&includeEmpty=true
+// By default hides items with qty=0 (old depleted batches). Pass includeEmpty=true to see all.
 router.get('/', async (req, res, next) => {
   try {
-    const { category } = req.query;
+    const { category, includeEmpty } = req.query;
     const filters = ['{Active} = TRUE()'];
 
+    if (includeEmpty !== 'true') filters.push('{Current Quantity} > 0');
     if (category) filters.push(`{Category} = '${sanitizeFormulaValue(category)}'`);
 
     const stock = await db.list(TABLES.STOCK, {

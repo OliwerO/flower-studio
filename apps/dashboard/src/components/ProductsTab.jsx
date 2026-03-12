@@ -27,7 +27,7 @@ export default function ProductsTab() {
     try {
       const [prodRes, stockRes, logRes, catRes] = await Promise.all([
         client.get('/products'),
-        client.get('/stock'),
+        client.get('/stock?includeEmpty=true'),
         client.get('/products/sync-log'),
         client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
       ]);

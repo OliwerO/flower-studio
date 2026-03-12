@@ -28,7 +28,7 @@ export default function StockTab() {
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await client.get('/stock');
+      const res = await client.get('/stock?includeEmpty=true');
       setStock(prev => {
         if (!stockLoaded.current) return res.data;
         // Merge: update existing items in place, preserve local UI state
