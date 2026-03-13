@@ -1,7 +1,7 @@
 // StockOrderPanel — Purchase Order management for the dashboard Stock tab.
 // Like a procurement kanban: create POs, assign drivers, track progress, view history.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -15,7 +15,7 @@ const STATUS_COLORS = {
   Complete:   'bg-emerald-100 text-emerald-700',
 };
 
-export default function StockOrderPanel({ negativeStock, stock, onClose }) {
+export default function StockOrderPanel({ negativeStock, stock, autoCreate, onClose }) {
   const { suppliers: SUPPLIERS } = useConfigLists();
   const { showToast } = useToast();
   const [orders, setOrders] = useState([]);
@@ -50,6 +50,16 @@ export default function StockOrderPanel({ negativeStock, stock, onClose }) {
     fetchOrders();
     client.get('/settings').then(r => setDrivers(r.data.drivers || [])).catch(() => {});
   }, [fetchOrders]);
+
+  // Auto-open "New PO" form when navigating from Today tab's "Create Purchase Order" button.
+  // Like a kanban card automatically moving to the next station — no extra click needed.
+  const autoCreated = useRef(false);
+  useEffect(() => {
+    if (autoCreate && !autoCreated.current && stock?.length > 0) {
+      autoCreated.current = true;
+      startNewPO();
+    }
+  }, [autoCreate, stock]);
 
   // Pre-fill form from negative stock items
   // Quantity defaults to full lots (rounded up) so the driver buys in pack multiples.

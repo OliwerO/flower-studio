@@ -305,6 +305,7 @@ export default function StockTab({ initialFilter }) {
             supplier: s.Supplier,
           }))}
           stock={stock}
+          autoCreate={initialFilter?.action === 'createPO'}
           onClose={() => setShowPurchaseOrders(false)}
         />
       )}
