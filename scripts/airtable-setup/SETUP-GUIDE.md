@@ -207,7 +207,55 @@ These support prep time tracking:
 
 ---
 
-## Step 8 — Copy ALL table IDs into .env
+## Step 8 — Import the 2 Purchase Order tables
+
+Same process: import each CSV, name the table exactly.
+
+| File | Table name (exact) |
+|------|--------------------|
+| 12_stock-orders.csv | Stock Orders |
+| 13_stock-order-lines.csv | Stock Order Lines |
+
+After importing, delete the seed rows (marked "Seed row - delete after import").
+
+### Stock Orders — fix field types:
+| Field | Change to |
+|-------|-----------|
+| Status | Single Select (should auto-detect: Draft, Sent, Shopping, Evaluating, Eval Error, Complete) |
+| Created Date | Date |
+| Assigned Driver | Single Select (should auto-detect: Nikita, Timur, Dmitri) |
+
+Then add manually:
+| Field | Type | Configuration |
+|-------|------|---------------|
+| Order Lines | Link to another record | → Stock Order Lines table |
+
+### Stock Order Lines — fix field types:
+| Field | Change to |
+|-------|-----------|
+| Quantity Needed | Number (integer) |
+| Lot Size | Number (integer) |
+| Driver Status | Single Select (should auto-detect: Pending, Found All, Partial, Not Found) |
+| Supplier | Single Select (should auto-detect: Stojek, 4f, Stefan, Mateusz) |
+| Cost Price | Currency (PLN) |
+| Sell Price | Currency (PLN) |
+| Quantity Found | Number (integer) |
+| Quantity Accepted | Number (integer) |
+| Write Off Qty | Number (integer) |
+| Eval Status | Single Select → options: Pending, Processed |
+| Price Needs Review | Checkbox |
+| Alt Quantity Found | Number (integer) |
+
+Then add manually:
+| Field | Type | Configuration |
+|-------|------|---------------|
+| Stock Order | Link to another record | → Stock Orders table |
+| Stock Item | Link to another record | → Stock table |
+| Lots Ordered | Formula | `CEILING({Quantity Needed} / {Lot Size})` |
+
+---
+
+## Step 9 — Copy ALL table IDs into .env
 
 In Airtable, right-click each table name → **API documentation**.
 The URL will contain the table ID: `https://airtable.com/appXXXXX/tblXXXXX/...`
@@ -230,11 +278,15 @@ AIRTABLE_LEGACY_ORDERS_TABLE=tblXXXXX ← Orders (LEGACY) — read-only
 AIRTABLE_WEBHOOK_LOG_TABLE=tblXXXXX   ← Webhook Log
 AIRTABLE_MARKETING_SPEND_TABLE=tblXXXXX ← Marketing Spend
 AIRTABLE_STOCK_LOSS_LOG_TABLE=tblXXXXX ← Stock Loss Log
+
+# Purchase Order tables
+AIRTABLE_STOCK_ORDERS_TABLE=tblXXXXX   ← Stock Orders
+AIRTABLE_STOCK_ORDER_LINES_TABLE=tblXXXXX ← Stock Order Lines
 ```
 
 ---
 
-## Step 9 — Verify
+## Step 10 — Verify
 
 Start the backend and run:
 ```bash
