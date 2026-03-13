@@ -254,7 +254,6 @@ router.post('/', async (req, res, next) => {
         'Delivery Type':  deliveryType,
         'Order Date':     new Date().toISOString().split('T')[0],
         'Required By':    requiredBy || delivery?.date || null,
-        'Delivery Time':  deliveryTime || delivery?.time || '',
         'Notes Original':     notes || '',
         'Greeting Card Text': cardText || delivery?.cardText || '',
         'Payment Status':     paymentStatus || 'Unpaid',
