@@ -42,7 +42,7 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
 
     // Optionally include lines in a single batch fetch instead of N+1 calls
     if (include === 'lines' && orders.length > 0) {
-      const allLineIds = orders.flatMap(o => o['Stock Order Lines'] || []);
+      const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
       let allLines = [];
       if (allLineIds.length > 0) {
         // Airtable formula limit: batch into chunks of 100 IDs
@@ -59,7 +59,7 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
       const lineMap = new Map(allLines.map(l => [l.id, l]));
       const result = orders.map(o => ({
         ...o,
-        lines: (o['Stock Order Lines'] || []).map(id => lineMap.get(id)).filter(Boolean),
+        lines: (o['Order Lines'] || []).map(id => lineMap.get(id)).filter(Boolean),
       }));
       return res.json(result);
     }
@@ -74,7 +74,7 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
 router.get('/:id', authorize('stock-orders'), async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    const lineIds = order['Stock Order Lines'] || [];
+    const lineIds = order['Order Lines'] || [];
     let lines = [];
     if (lineIds.length > 0) {
       lines = await db.list(TABLES.STOCK_ORDER_LINES, {
@@ -121,7 +121,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
         } catch { /* stock item may have been deleted */ }
       }
       const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, {
-        'Stock Order': [order.id],
+        'Stock Orders': [order.id],
         ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
         'Flower Name': line.flowerName || '',
         'Quantity Needed': Number(line.quantity) || 0,
