@@ -274,7 +274,6 @@ router.post('/', async (req, res, next) => {
           Quantity:               line.quantity,
           'Cost Price Per Unit':  line.costPricePerUnit || 0,
           'Sell Price Per Unit':  line.sellPricePerUnit || 0,
-          'Stock Deferred':       line.stockDeferred || false,
         });
         createdLines.push(created);
         createdLineIds.push(created.id);
