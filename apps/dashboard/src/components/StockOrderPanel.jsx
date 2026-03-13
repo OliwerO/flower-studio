@@ -66,13 +66,14 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   function startNewPO() {
     const lines = (negativeStock || []).map(item => {
       const si = (stock || []).find(s => s.id === item.id);
-      const lotSize = Number(si?.['Lot Size']) || 1;
+      const lotSize = Number(si?.['Lot Size']) || 0;
       const rawQty = Math.abs(item.qty);
       const quantity = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
       return {
         stockItemId: item.id,
         flowerName: item.name,
         quantity,
+        lotSize,
         supplier: item.supplier || '',
         costPrice: 0,
         sellPrice: 0,
@@ -97,7 +98,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   }
 
   function emptyLine() {
-    return { stockItemId: '', flowerName: '', quantity: 1, supplier: '', costPrice: 0, sellPrice: 0, notes: '' };
+    return { stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, supplier: '', costPrice: 0, sellPrice: 0, notes: '' };
   }
 
   function updateFormLine(idx, patch) {
@@ -113,6 +114,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     updateFormLine(idx, {
       stockItemId: stockItem.id,
       flowerName: stockItem['Display Name'],
+      lotSize: Number(stockItem['Lot Size']) || 0,
       costPrice: Number(stockItem['Current Cost Price']) || 0,
       sellPrice: Number(stockItem['Current Sell Price']) || 0,
       supplier: stockItem.Supplier || '',
@@ -202,9 +204,8 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                 {sup}
               </div>
               {lines.map(line => {
-                const si = line.stockItemId ? (stock || []).find(s => s.id === line.stockItemId) : null;
-                const formLotSize = Number(si?.['Lot Size']) || 1;
-                const formLots = formLotSize > 1 ? Math.ceil((line.quantity || 0) / formLotSize) : 0;
+                const ls = Number(line.lotSize) || 0;
+                const lotsNeeded = ls > 1 ? Math.ceil((line.quantity || 0) / ls) : 0;
                 return (
                 <div key={line._idx} className="flex items-center gap-2 px-3 py-2 border-t border-gray-100">
                   <div className="flex-1 min-w-0">
@@ -221,10 +222,23 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                     onChange={e => updateFormLine(line._idx, { quantity: Number(e.target.value) })}
                     className="field-input w-16 text-center"
                     min="1"
+                    title={t.quantity}
                   />
-                  {formLots > 0 && (
-                    <span className="text-xs text-ios-secondary whitespace-nowrap">
-                      {formLots} × {formLotSize}
+                  {/* Lot size — editable so owner can set it at PO creation time */}
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
+                    <input
+                      type="number"
+                      value={line.lotSize || ''}
+                      onChange={e => updateFormLine(line._idx, { lotSize: Number(e.target.value) || 0 })}
+                      className="field-input w-14 text-center text-xs"
+                      min="0"
+                      placeholder="—"
+                    />
+                  </div>
+                  {lotsNeeded > 0 && (
+                    <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
+                      = {lotsNeeded} × {ls}
                     </span>
                   )}
                   <select

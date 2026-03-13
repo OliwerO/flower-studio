@@ -109,22 +109,23 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       Notes: notes || '',
     });
 
-    // Create lines — fetch Lot Size from stock item so the driver sees pack context
+    // Create lines — use lot size from the PO form (owner can set/override),
+    // falling back to the stock item's configured lot size, then 1.
     const createdLines = [];
     for (const line of (lines || [])) {
-      let lotSize = 1;
-      if (line.stockItemId) {
+      let lotSize = Number(line.lotSize) || 0;
+      if (!lotSize && line.stockItemId) {
         try {
           const stockItem = await db.getById(TABLES.STOCK, line.stockItemId);
-          lotSize = Number(stockItem['Lot Size']) || 1;
-        } catch { /* stock item may have been deleted — default to 1 */ }
+          lotSize = Number(stockItem['Lot Size']) || 0;
+        } catch { /* stock item may have been deleted */ }
       }
       const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, {
         'Stock Order': [order.id],
         ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
         'Flower Name': line.flowerName || '',
         'Quantity Needed': Number(line.quantity) || 0,
-        'Lot Size': lotSize,
+        ...(lotSize > 0 ? { 'Lot Size': lotSize } : {}),
         'Driver Status': 'Pending',
         Supplier: line.supplier || '',
         'Cost Price': Number(line.costPrice) || 0,
