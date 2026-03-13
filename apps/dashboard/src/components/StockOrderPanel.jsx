@@ -187,7 +187,7 @@ export default function StockOrderPanel({ negativeStock, stock, onClose }) {
 
           {/* Lines grouped by supplier */}
           {Object.entries(formLinesBySupplier).map(([sup, lines]) => (
-            <div key={sup} className="border border-gray-200 rounded-xl overflow-hidden">
+            <div key={sup} className="border border-gray-200 rounded-xl overflow-visible">
               <div className="bg-gray-50 px-3 py-2 text-xs font-semibold text-ios-secondary uppercase">
                 {sup}
               </div>
