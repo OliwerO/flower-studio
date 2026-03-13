@@ -15,8 +15,9 @@ import OrderDetailPage  from './pages/OrderDetailPage.jsx';
 import NewOrderPage     from './pages/NewOrderPage.jsx';
 import StockPanelPage       from './pages/StockPanelPage.jsx';
 import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
-import DaySummaryPage       from './pages/DaySummaryPage.jsx';
-import Toast                from './components/Toast.jsx';
+import DaySummaryPage          from './pages/DaySummaryPage.jsx';
+import ShoppingSupportPage     from './pages/ShoppingSupportPage.jsx';
+import Toast                   from './components/Toast.jsx';
 
 // PrivateRoute — like a badge-reader gate. Redirects to /login if no PIN in context.
 function PrivateRoute({ children }) {
@@ -29,6 +30,15 @@ function OwnerRoute({ children }) {
   const { pin, role } = useAuth();
   if (!pin) return <Navigate to="/login" replace />;
   if (role !== 'owner') return <Navigate to="/orders" replace />;
+  return children;
+}
+
+// FloristRoute — blocks the owner, allows florist role only.
+// Owner has her own pages for the same workflows (e.g. shopping support instead of evaluation).
+function FloristRoute({ children }) {
+  const { pin, role } = useAuth();
+  if (!pin) return <Navigate to="/login" replace />;
+  if (role === 'owner') return <Navigate to="/orders" replace />;
   return children;
 }
 
@@ -69,7 +79,11 @@ export default function App() {
         } />
 
         <Route path="/stock-evaluation" element={
-          <PrivateRoute><StockEvaluationPage /></PrivateRoute>
+          <FloristRoute><StockEvaluationPage /></FloristRoute>
+        } />
+
+        <Route path="/shopping-support" element={
+          <OwnerRoute><ShoppingSupportPage /></OwnerRoute>
         } />
 
         <Route path="/day-summary" element={

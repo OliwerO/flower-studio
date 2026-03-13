@@ -64,8 +64,9 @@ export default function OrderListPage() {
   const [showImport, setShowImport] = useState(false);
   const [showHelp, setShowHelp]     = useState(false);
 
-  // Stock evaluation pending count
+  // Stock evaluation pending count (florist) / shopping POs count (owner)
   const [evalCount, setEvalCount] = useState(0);
+  const [shoppingCount, setShoppingCount] = useState(0);
 
   // Owner-only: dashboard summary data
   const [dashData, setDashData]       = useState(null);
@@ -134,12 +135,22 @@ export default function OrderListPage() {
       .catch(() => {}); // non-critical — silently ignore
   }, [isOwner, date]);
 
-  // Check for pending stock evaluations
+  // Check for pending stock evaluations (florist) or active shopping POs (owner)
   useEffect(() => {
-    client.get('/stock-orders?status=Evaluating')
-      .then(r => setEvalCount(r.data.length))
-      .catch(() => {});
-  }, []);
+    if (isOwner) {
+      // Owner sees shopping support banner
+      Promise.all([
+        client.get('/stock-orders?status=Sent'),
+        client.get('/stock-orders?status=Shopping'),
+      ]).then(([s, sh]) => setShoppingCount(s.data.length + sh.data.length))
+        .catch(() => {});
+    } else {
+      // Florist sees evaluation banner
+      client.get('/stock-orders?status=Evaluating')
+        .then(r => setEvalCount(r.data.length))
+        .catch(() => {});
+    }
+  }, [isOwner]);
 
   function dismissAlerts() {
     setAlertsDismissed(true);
@@ -160,6 +171,13 @@ export default function OrderListPage() {
                          hover:bg-gray-200 active-scale flex items-center justify-center"
             >?</button>
             <LangToggle />
+            {isOwner && (
+              <button
+                onClick={() => navigate('/shopping-support')}
+                className="text-brand-600 text-sm font-medium w-8 h-8 rounded-full bg-brand-50 active:bg-brand-100 flex items-center justify-center"
+                title={t.shopping.title}
+              >🛒</button>
+            )}
             {isOwner && (
               <button
                 onClick={() => navigate('/day-summary')}
@@ -183,8 +201,8 @@ export default function OrderListPage() {
         </div>
       </header>
 
-      {/* Stock evaluation banner */}
-      {evalCount > 0 && (
+      {/* Stock evaluation banner — florist only */}
+      {!isOwner && evalCount > 0 && (
         <div className="px-4 pt-3 max-w-2xl mx-auto">
           <button
             onClick={() => navigate('/stock-evaluation')}
@@ -194,6 +212,21 @@ export default function OrderListPage() {
               {t.stockEvalBanner} ({evalCount})
             </span>
             <span className="text-purple-600 text-sm font-medium">→</span>
+          </button>
+        </div>
+      )}
+
+      {/* Shopping support banner — owner only */}
+      {isOwner && shoppingCount > 0 && (
+        <div className="px-4 pt-3 max-w-2xl mx-auto">
+          <button
+            onClick={() => navigate('/shopping-support')}
+            className="w-full flex items-center justify-between bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3 active-scale"
+          >
+            <span className="text-sm font-semibold text-amber-700">
+              🛒 {t.shopping.banner} ({shoppingCount})
+            </span>
+            <span className="text-amber-600 text-sm font-medium">→</span>
           </button>
         </div>
       )}

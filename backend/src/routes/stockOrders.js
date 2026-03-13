@@ -172,6 +172,7 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
   try {
     const allowed = [
       'Driver Status', 'Quantity Found', 'Alt Supplier', 'Alt Quantity Found',
+      'Alt Flower Name', 'Cost Price',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
     ];
     const fields = {};

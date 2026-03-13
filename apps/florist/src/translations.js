@@ -255,6 +255,28 @@ const en = {
   },
   lotSize:            'Lot Size',
   packs:              'packs',
+
+  // Shopping support (owner)
+  shopping: {
+    title:          'Shopping Support',
+    banner:         'Active purchase orders',
+    empty:          'No active purchase orders',
+    driver:         'Driver',
+    need:           'Need',
+    pending:        'Pending',
+    foundAll:       'Found',
+    partial:        'Partial',
+    notFound:       'Not found',
+    qtyFound:       'Qty found',
+    costPrice:      'Cost price',
+    altFlower:      'Alt flower',
+    altFlowerHint:  'Alternative flower name...',
+    altSupplier:    'Alt supplier',
+    altQty:         'Alt qty',
+    notes:          'Notes',
+    notesHint:      'Note for driver or florist...',
+    paidTo:         'Paid to',
+  },
 };
 
 const ru = {
@@ -509,6 +531,28 @@ const ru = {
   },
   lotSize:            'Фасовка',
   packs:              'уп.',
+
+  // Shopping support (owner)
+  shopping: {
+    title:          'Поддержка закупки',
+    banner:         'Активные заказы поставщикам',
+    empty:          'Нет активных заказов поставщикам',
+    driver:         'Водитель',
+    need:           'Нужно',
+    pending:        'Ожидание',
+    foundAll:       'Найдено',
+    partial:        'Частично',
+    notFound:       'Не найдено',
+    qtyFound:       'Найдено шт.',
+    costPrice:      'Цена закупки',
+    altFlower:      'Замена',
+    altFlowerHint:  'Название замены...',
+    altSupplier:    'Другой поставщик',
+    altQty:         'Кол-во замены',
+    notes:          'Заметки',
+    notesHint:      'Заметка для водителя или флориста...',
+    paidTo:         'Оплачено',
+  },
 };
 
 // ── Proxy-based dynamic translation ──
