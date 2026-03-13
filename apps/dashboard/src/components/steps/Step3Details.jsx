@@ -1,11 +1,14 @@
 // Step3Details — adapted for dashboard with full payment method list.
+// Uses server-configured delivery time slots (pill buttons) matching the florist app.
 
+import { useState, useEffect } from 'react';
 import t from '../../translations.js';
+import client from '../../api/client.js';
 import DatePicker from '../DatePicker.jsx';
-import TimePicker from '../TimePicker.jsx';
 
 const SOURCES     = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
-const PAY_METHODS = ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online', 'Other'];
+const FALLBACK_PAY_METHODS = ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online', 'Other'];
+const FALLBACK_TIME_SLOTS  = ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
 
 function getSourceLabels() {
   return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
@@ -81,6 +84,21 @@ export default function Step3Details({ form, onChange }) {
   const METHOD_LABELS = getMethodLabels();
   const set = key => val => onChange({ [key]: val });
 
+  // Fetch config lists from backend (time slots, payment methods)
+  const [timeSlots, setTimeSlots] = useState(FALLBACK_TIME_SLOTS);
+  const [payMethods, setPayMethods] = useState(FALLBACK_PAY_METHODS);
+
+  useEffect(() => {
+    client.get('/settings/lists')
+      .then(r => { if (r.data.paymentMethods?.length) setPayMethods(r.data.paymentMethods); })
+      .catch(() => {});
+    client.get('/settings')
+      .then(r => {
+        if (r.data.config?.deliveryTimeSlots?.length) setTimeSlots(r.data.config.deliveryTimeSlots);
+      })
+      .catch(() => {});
+  }, []);
+
   return (
     <div className="flex flex-col gap-6">
       {/* Source */}
@@ -104,9 +122,9 @@ export default function Step3Details({ form, onChange }) {
         />
       </SectionCard>
 
-      {/* Timing */}
+      {/* Timing — date picker + time slot pills (fetched from server config) */}
       <div className="relative z-20">
-        <p className="ios-label">{form.deliveryType === 'Delivery' ? 'Delivery timing' : t.requiredBy}</p>
+        <p className="ios-label">{form.deliveryType === 'Delivery' ? t.labelDeliveryTiming : t.requiredBy}</p>
         <div className="ios-card overflow-visible divide-y divide-white/40">
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate}</span>
@@ -114,18 +132,26 @@ export default function Step3Details({ form, onChange }) {
               <DatePicker
                 value={form.deliveryDate}
                 onChange={val => onChange({ deliveryDate: val })}
-                placeholder={t.deliveryDate}
+                placeholder={t.optional}
               />
             </div>
           </div>
-          <div className="flex items-center gap-3 px-4 py-3.5">
-            <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryTime}</span>
-            <div className="flex-1">
-              <TimePicker
-                value={form.deliveryTime}
-                onChange={val => onChange({ deliveryTime: val })}
-                placeholder={t.deliveryTime}
-              />
+          <div className="px-4 py-3.5">
+            <span className="text-sm text-ios-tertiary mb-2 block">{t.deliveryTime}</span>
+            <div className="flex flex-wrap gap-2">
+              {timeSlots.map(slot => (
+                <button
+                  key={slot}
+                  onClick={() => onChange({ deliveryTime: form.deliveryTime === slot ? '' : slot })}
+                  className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
+                    form.deliveryTime === slot
+                      ? 'bg-brand-600 text-white shadow-sm'
+                      : 'bg-white/50 text-ios-secondary border border-white/60 active:bg-white/70'
+                  }`}
+                >
+                  {slot}
+                </button>
+              ))}
             </div>
           </div>
         </div>
@@ -134,7 +160,7 @@ export default function Step3Details({ form, onChange }) {
       {/* Delivery-specific */}
       {form.deliveryType === 'Delivery' && (
         <>
-          <FormCard label="Recipient">
+          <FormCard label={t.labelRecipient}>
             <Row label={t.recipientName}>
               <TextInput value={form.recipientName} onChange={set('recipientName')} placeholder="Name" />
             </Row>
@@ -161,21 +187,22 @@ export default function Step3Details({ form, onChange }) {
               />
             </div>
           </div>
-
-          <div>
-            <p className="ios-label">{t.cardText}</p>
-            <div className="ios-card px-4 py-3">
-              <textarea
-                value={form.cardText}
-                onChange={e => onChange({ cardText: e.target.value })}
-                placeholder="Happy birthday!"
-                rows={2}
-                className="w-full text-base text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50"
-              />
-            </div>
-          </div>
         </>
       )}
+
+      {/* Card text — available for both Delivery and Pickup */}
+      <div>
+        <p className="ios-label">{t.cardText}</p>
+        <div className="ios-card px-4 py-3">
+          <textarea
+            value={form.cardText}
+            onChange={e => onChange({ cardText: e.target.value })}
+            placeholder="Happy birthday!"
+            rows={2}
+            className="w-full text-base text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50"
+          />
+        </div>
+      </div>
 
       {/* Notes */}
       <div>
@@ -209,7 +236,7 @@ export default function Step3Details({ form, onChange }) {
           <Pills
             value={form.paymentMethod}
             onChange={val => onChange({ paymentMethod: val })}
-            options={PAY_METHODS.map(m => ({ value: m, label: METHOD_LABELS[m] }))}
+            options={payMethods.map(m => ({ value: m, label: METHOD_LABELS[m] || m }))}
           />
         </SectionCard>
       )}

@@ -193,6 +193,9 @@ const en = {
   methodCash:       'Cash',
   methodCard:       'Card',
   requiredBy:       'Required by',
+  labelDeliveryTiming: 'Delivery timing',
+  labelRecipient:   'Recipient',
+  optional:         'optional',
   deliveryFee:      'Delivery fee',
 
   // Step 4 — Review
@@ -687,6 +690,9 @@ const ru = {
   methodCash:       'Наличные',
   methodCard:       'Карта',
   requiredBy:       'Нужен к',
+  labelDeliveryTiming: 'Время доставки',
+  labelRecipient:   'Получатель',
+  optional:         'необязательно',
   deliveryFee:      'Стоимость доставки',
 
   // Step 4 — Review

@@ -15,7 +15,7 @@ const emptyForm = {
   customerId: '', customerName: '',
   customerRequest: '', orderLines: [], priceOverride: '',
   source: 'In-store', deliveryType: 'Pickup',
-  requiredBy: '', recipientName: '', recipientPhone: '',
+  recipientName: '', recipientPhone: '',
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
   cardText: '', notes: '',
   paymentStatus: 'Unpaid', paymentMethod: '', deliveryFee: 35,
@@ -54,7 +54,9 @@ export default function NewOrderTab({ onNavigate }) {
         customerRequest: form.customerRequest,
         source:          form.source,
         deliveryType:    form.deliveryType,
-        requiredBy:      form.requiredBy || null,
+        requiredBy:      form.deliveryDate || null,
+        deliveryTime:    form.deliveryTime || '',
+        cardText:        form.cardText || '',
         notes:           form.notes,
         paymentStatus:   form.paymentStatus,
         paymentMethod:   form.paymentMethod,
@@ -64,7 +66,7 @@ export default function NewOrderTab({ onNavigate }) {
       if (form.deliveryType === 'Delivery') {
         body.delivery = {
           address: form.deliveryAddress, recipientName: form.recipientName,
-          recipientPhone: form.recipientPhone, date: form.deliveryDate,
+          recipientPhone: form.recipientPhone, date: form.deliveryDate || null,
           time: form.deliveryTime, cardText: form.cardText, fee: form.deliveryFee,
         };
       }
@@ -157,7 +159,7 @@ export default function NewOrderTab({ onNavigate }) {
             onStockRefresh={() => client.get('/stock').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}
-            requiredBy={form.deliveryDate || form.requiredBy}
+            requiredBy={form.deliveryDate}
           />
         )}
         {step === 2 && <Step3Details form={form} onChange={updateForm} />}
