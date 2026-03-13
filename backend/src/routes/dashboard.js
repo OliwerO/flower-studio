@@ -13,7 +13,7 @@ router.get('/', async (req, res, next) => {
     // Accept optional ?date= param, default to today
     const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
 
-    const [orders, deliveries, lowStock, unpaidOrders, customersWithDates, negativeStockItems] = await Promise.all([
+    const [orders, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
       // Today's orders
       db.list(TABLES.ORDERS, {
         filterByFormula: `DATESTR({Order Date}) = '${today}'`,
