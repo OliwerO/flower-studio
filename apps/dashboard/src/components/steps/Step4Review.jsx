@@ -55,17 +55,17 @@ export default function Step4Review({ form, orderTotal, deliveryFee, onEdit, onS
       <Section title={t.details} stepIndex={2} onEdit={onEdit}>
         <Row label={t.source}       value={form.source} />
         <Row label={t.deliveryType} value={form.deliveryType === 'Delivery' ? t.deliveryDelivery : t.deliveryPickup} />
+        <Row label={t.deliveryDate}    value={form.deliveryDate} />
+        <Row label={t.deliveryTime}    value={form.deliveryTime} />
         {form.deliveryType === 'Delivery' && (
           <>
             <Row label={t.recipientName}   value={form.recipientName} />
             <Row label={t.recipientPhone}  value={form.recipientPhone} />
             <Row label={t.deliveryAddress} value={form.deliveryAddress} />
-            <Row label={t.deliveryDate}    value={form.deliveryDate} />
-            <Row label={t.deliveryTime}    value={form.deliveryTime} />
-            <Row label={t.cardText}        value={form.cardText} />
             <Row label={t.deliveryFee}     value={`${form.deliveryFee} zl`} />
           </>
         )}
+        <Row label={t.cardText}        value={form.cardText} />
         <Row label={t.paymentStatus} value={form.paymentStatus === 'Paid' ? t.paymentPaid : t.paymentUnpaid} />
         <Row label={t.paymentMethod} value={form.paymentMethod} />
         {form.notes && <Row label={t.orderNotes} value={form.notes} />}
