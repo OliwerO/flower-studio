@@ -85,6 +85,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
   const [removeIdx, setRemoveIdx] = useState(null);
+  const [stockAction, setStockAction] = useState(null); // null | 'pending' — shown before save when qty reduced
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
@@ -150,6 +151,43 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
     } catch (err) {
       const msg = err.response?.data?.error || t.updateError;
       showToast(msg, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Save bouquet edits — action is 'return', 'writeoff', or null (no stock changes needed)
+  async function doSave(action) {
+    setSaving(true);
+    try {
+      // For qty-reduced lines, add stock adjustment entries to removedLines
+      const finalRemoved = [...removedLines];
+      if (action) {
+        for (const line of editLines) {
+          if (line._originalQty > 0 && line.quantity < line._originalQty) {
+            const delta = line._originalQty - line.quantity;
+            finalRemoved.push({
+              lineId: null, // not removing the line, just reducing qty
+              stockItemId: line.stockItemId,
+              quantity: delta,
+              action,
+              reason: action === 'writeoff' ? 'Bouquet edit' : undefined,
+            });
+          }
+        }
+        // Ensure fully removed lines also have the chosen action
+        for (const rem of finalRemoved) {
+          if (!rem.action) rem.action = action;
+        }
+      }
+      await client.put(`/orders/${order.id}/lines`, { lines: editLines, removedLines: finalRemoved });
+      setEditingBouquet(false);
+      setStockAction(null);
+      const res = await client.get(`/orders/${order.id}`);
+      setDetail(res.data);
+      showToast(t.bouquetUpdated || 'Bouquet updated');
+    } catch (err) {
+      showToast(err.response?.data?.error || t.updateError, 'error');
     } finally {
       setSaving(false);
     }
@@ -398,22 +436,48 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                         </div>
                       )}
 
+                      {/* Stock action dialog — shown when Save is tapped and quantities decreased */}
+                      {stockAction === 'pending' && (() => {
+                        const reduced = editLines.filter(l => l._originalQty > 0 && l.quantity < l._originalQty);
+                        const totalReduced = reduced.reduce((s, l) => s + (l._originalQty - l.quantity), 0);
+                        return totalReduced > 0 || removedLines.length > 0 ? (
+                          <div className="bg-amber-50 rounded-xl px-3 py-3 space-y-2">
+                            <p className="text-sm font-medium text-amber-800">
+                              {totalReduced > 0 && `${totalReduced} ${t.stemsReduced || 'stems reduced'}`}
+                              {totalReduced > 0 && removedLines.length > 0 && ' + '}
+                              {removedLines.length > 0 && `${removedLines.length} ${t.flowersRemoved || 'flowers removed'}`}
+                            </p>
+                            <p className="text-xs text-amber-700">{t.returnOrWriteOff || 'Return to stock or write off?'}</p>
+                            <div className="flex gap-2">
+                              <button onClick={() => doSave('return')}
+                                className="flex-1 py-2.5 rounded-xl bg-green-600 text-white text-sm font-medium active-scale">
+                                {t.returnToStock || 'Return to stock'}
+                              </button>
+                              <button onClick={() => doSave('writeoff')}
+                                className="flex-1 py-2.5 rounded-xl bg-amber-600 text-white text-sm font-medium active-scale">
+                                {t.writeOff || 'Write off'}
+                              </button>
+                            </div>
+                            <button onClick={() => setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                          </div>
+                        ) : null;
+                      })()}
+
                       <div className="flex gap-2 pt-1">
-                        <button onClick={async () => {
-                          setSaving(true);
-                          try {
-                            await client.put(`/orders/${order.id}/lines`, { lines: editLines, removedLines });
-                            setEditingBouquet(false);
-                            const res = await client.get(`/orders/${order.id}`);
-                            setDetail(res.data);
-                            showToast(t.bouquetUpdated || 'Bouquet updated');
-                          } catch (err) {
-                            showToast(err.response?.data?.error || t.updateError, 'error');
-                          } finally { setSaving(false); }
+                        <button onClick={() => {
+                          // Check if any quantities decreased or lines removed
+                          const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
+                          const hasRemovals = removedLines.length > 0;
+                          if ((hasReductions || hasRemovals) && stockAction !== 'pending') {
+                            setStockAction('pending');
+                            return;
+                          }
+                          // No reductions — save directly (additions or no changes)
+                          doSave(null);
                         }} disabled={saving}
                           className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
                         >{saving ? '...' : (t.save || 'Save')}</button>
-                        <button onClick={() => { setEditingBouquet(false); setRemoveIdx(null); }}
+                        <button onClick={() => { setEditingBouquet(false); setRemoveIdx(null); setStockAction(null); }}
                           className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
                         >{t.cancel}</button>
                       </div>

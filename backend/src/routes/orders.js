@@ -398,14 +398,22 @@ router.put('/:id/lines', async (req, res, next) => {
       }
     }
 
+    // Track which stock items already had explicit stock actions in removedLines
+    // (qty reduction entries sent by frontend with lineId=null).
+    // Skip auto-adjustment for these to avoid double-counting.
+    const explicitStockIds = new Set(
+      removedLines.filter(r => !r.lineId && r.stockItemId).map(r => r.stockItemId)
+    );
+
     // 2. Handle new/updated lines
     const createdLines = [];
     for (const line of lines) {
       if (line.id) {
-        // Existing line — update quantity (compute stock delta)
+        // Existing line — update quantity
         if (line._originalQty != null && line.quantity !== line._originalQty) {
+          // Only auto-adjust stock if the frontend didn't already send an explicit action
           const delta = line._originalQty - line.quantity;
-          if (line.stockItemId && !line.stockDeferred && delta !== 0) {
+          if (line.stockItemId && !line.stockDeferred && delta !== 0 && !explicitStockIds.has(line.stockItemId)) {
             await db.atomicStockAdjust(line.stockItemId, delta);
           }
           await db.update(TABLES.ORDER_LINES, line.id, { Quantity: line.quantity });

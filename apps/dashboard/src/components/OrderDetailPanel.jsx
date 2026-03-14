@@ -43,6 +43,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
   const [showRemoveDialog, setShowRemoveDialog] = useState(null);
+  const [stockAction, setStockAction] = useState(null);
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
@@ -74,6 +75,36 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
       // Update local state optimistically
       setOrder(prev => ({ ...prev, ...fields }));
       showToast(t.orderUpdated);
+      onUpdate();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function doSaveDashboard(action) {
+    setSaving(true);
+    try {
+      const finalRemoved = [...removedLines];
+      if (action) {
+        for (const line of editLines) {
+          if (line._originalQty > 0 && line.quantity < line._originalQty) {
+            finalRemoved.push({
+              lineId: null, stockItemId: line.stockItemId,
+              quantity: line._originalQty - line.quantity,
+              action, reason: action === 'writeoff' ? 'Bouquet edit' : undefined,
+            });
+          }
+        }
+        for (const rem of finalRemoved) { if (!rem.action) rem.action = action; }
+      }
+      await client.put(`/orders/${orderId}/lines`, { lines: editLines, removedLines: finalRemoved });
+      setEditingBouquet(false);
+      setStockAction(null);
+      const res = await client.get(`/orders/${orderId}`);
+      setOrder(res.data);
+      showToast(t.bouquetUpdated || 'Bouquet updated');
       onUpdate();
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
@@ -360,29 +391,45 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 </div>
               )}
 
+              {/* Stock action dialog — when quantities decreased */}
+              {stockAction === 'pending' && (() => {
+                const reduced = editLines.filter(l => l._originalQty > 0 && l.quantity < l._originalQty);
+                const totalReduced = reduced.reduce((s, l) => s + (l._originalQty - l.quantity), 0);
+                return (totalReduced > 0 || removedLines.length > 0) ? (
+                  <div className="bg-amber-50 rounded-xl px-4 py-3 space-y-2">
+                    <p className="text-sm font-medium text-amber-800">
+                      {totalReduced > 0 && `${totalReduced} ${t.stemsReduced || 'stems reduced'}`}
+                      {totalReduced > 0 && removedLines.length > 0 && ' + '}
+                      {removedLines.length > 0 && `${removedLines.length} ${t.flowersRemoved || 'flowers removed'}`}
+                    </p>
+                    <div className="flex gap-2">
+                      <button onClick={() => doSaveDashboard('return')}
+                        className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-medium">
+                        {t.returnToStock || 'Return to stock'}</button>
+                      <button onClick={() => doSaveDashboard('writeoff')}
+                        className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-sm font-medium">
+                        {t.writeOff || 'Write off'}</button>
+                    </div>
+                    <button onClick={() => setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                  </div>
+                ) : null;
+              })()}
+
               <div className="flex gap-2 pt-1">
                 <button
-                  onClick={async () => {
-                    setSaving(true);
-                    try {
-                      await client.put(`/orders/${orderId}/lines`, { lines: editLines, removedLines });
-                      setEditingBouquet(false);
-                      // Reload order
-                      const res = await client.get(`/orders/${orderId}`);
-                      setOrder(res.data);
-                      showToast(t.bouquetUpdated || 'Bouquet updated');
-                      onUpdate();
-                    } catch (err) {
-                      showToast(err.response?.data?.error || t.error, 'error');
-                    } finally {
-                      setSaving(false);
+                  onClick={() => {
+                    const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
+                    if ((hasReductions || removedLines.length > 0) && stockAction !== 'pending') {
+                      setStockAction('pending');
+                      return;
                     }
+                    doSaveDashboard(null);
                   }}
                   disabled={saving}
                   className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold"
                 >{saving ? '...' : (t.saveBouquet || 'Save')}</button>
                 <button
-                  onClick={() => { setEditingBouquet(false); setShowRemoveDialog(null); }}
+                  onClick={() => { setEditingBouquet(false); setShowRemoveDialog(null); setStockAction(null); }}
                   className="px-4 py-2 rounded-xl bg-gray-100 text-ios-secondary text-sm"
                 >{t.cancel}</button>
               </div>
