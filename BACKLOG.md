@@ -116,6 +116,17 @@ Features and improvements tracked against original build phases.
 - [x] **Telegram notifications** — new order alerts to owner
 - [x] **Marketing spend tracking** — monthly log by channel
 - [x] **Stock loss logging** — waste events with reason tracking
+- [x] **Order editing** — bouquet composition editable after creation (add/remove flowers, return-to-stock or write-off, auto-revert status on owner edit)
+- [x] **Add unlisted flowers** — bouquet builder can create new stock items mid-order (with optional supplier/cost/sell/lot)
+- [x] **PO workflow: owner review step** — Shopping → Reviewing → Evaluating, owner can adjust before florist evaluates
+- [x] **PO workflow: driver UX** — bigger buttons, status switchable, clearer prompts, alt flower name in Partial
+- [x] **PO workflow: live SSE sync** — owner ↔ driver changes reflected instantly via SSE events
+- [x] **PO workflow: florist evaluation** — shows cost price, qty needed, alt flower names, substitute info
+- [x] **Dashboard: Kanban detail** — cards show bouquet, delivery address, time slot, driver
+- [x] **Dashboard: orders bubble** — counts by Required By date (planned today), not Order Date
+- [x] **Dashboard: driver-of-day cascade** — auto-assigns to all unassigned deliveries for today
+- [x] **Dashboard Step2Bouquet key fix** — uses stable identity key (no quantity)
+- [x] **Dark mode (florist app)** — system preference + manual toggle, iOS dark palette, ThemeContext
 
 ---
 
@@ -139,11 +150,7 @@ Features and improvements tracked against original build phases.
 - [ ] **Error monitoring** — Sentry or similar for production error tracking
 - [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
 
-### Florist App
-- [ ] **Order editing** — allow florist to edit an existing order (add/remove flowers, change delivery details)
-
 ### Known Issues (from PO system audit)
-- [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, StockPickupPage, DeliveryListPage
+- [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
-- [ ] **Dashboard Step2Bouquet key instability** — cart key includes quantity, causes focus loss on edit

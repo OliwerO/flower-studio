@@ -140,6 +140,14 @@ Changes made to the **dev base** that must be replicated in **production** befor
 - Fixes: removed Stock Deferred field write (not yet created in Airtable) (`25a00f2`)
 - Fixes: PO dropdown overflow, negative stock query destructuring order (`0ac41b5`, `b7010d1`)
 
+### 2026-03-14
+
+**PO Owner Feedback — Blocks A-D**
+- Block A: Kanban cards show bouquet/address/time/driver, orders bubble counts by Required By date, driver-of-day auto-assigns unassigned deliveries, alt field labels clarified (EN+RU), PO creation bugs fixed (`934dd5a`)
+- Block B: Add unlisted flowers to bouquet builder (creates stock record with optional supplier/cost/sell/lot), edit bouquet after order creation with return-to-stock or write-off choice, auto-revert Ready→In Preparation on owner edit (`38f894e`)
+- Block C: Driver PO UX overhaul (bigger buttons, always visible, status switchable), live SSE sync between owner and driver, new Reviewing status (Shopping→Reviewing→Evaluating), owner approve-review step, florist evaluation shows cost price/qty needed/alt flower names (`4c8af85`)
+- Block D: Florist app dark mode — system preference + manual toggle, iOS-style dark palette, ThemeContext with localStorage persistence (`259c67f`)
+
 ---
 
 ## Go-Live Checklist
