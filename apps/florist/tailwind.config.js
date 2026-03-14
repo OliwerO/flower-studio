@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
+  darkMode: 'class',
   content: ['./index.html', './src/**/*.{js,jsx}'],
   theme: {
     extend: {
@@ -32,6 +33,15 @@ export default {
           orange:   '#FF9500',
           fill:     '#F2F2F7',
           fill2:    '#E5E5EA',
+        },
+        dark: {
+          bg:       '#1C1C1E',
+          card:     '#2C2C2E',
+          elevated: '#3A3A3C',
+          label:    '#FFFFFF',
+          secondary:'#EBEBF5',
+          tertiary: '#636366',
+          separator:'#38383A',
         },
       },
     },

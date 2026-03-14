@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
+import { useTheme } from '../context/ThemeContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
@@ -55,6 +56,7 @@ function todayISO() {
 export default function OrderListPage() {
   const navigate         = useNavigate();
   const { logout, role } = useAuth();
+  const { dark, toggle: toggleDark } = useTheme();
   const isOwner = role === 'owner';
   const [orders, setOrders]         = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -158,7 +160,7 @@ export default function OrderListPage() {
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen dark:bg-dark-bg dark:text-dark-label">
 
       {/* Navigation bar */}
       <header className="glass-nav px-4 py-3 sticky top-0 z-10">
@@ -166,8 +168,14 @@ export default function OrderListPage() {
           <img src="/logo.png" alt="Blossom" className="h-7" />
           <div className="flex items-center gap-2">
             <button
+              onClick={toggleDark}
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 dark:bg-dark-elevated text-ios-secondary
+                         hover:bg-gray-200 active-scale flex items-center justify-center"
+              title={dark ? 'Light mode' : 'Dark mode'}
+            >{dark ? '☀️' : '🌙'}</button>
+            <button
               onClick={() => setShowHelp(true)}
-              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-ios-secondary
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 dark:bg-dark-elevated text-ios-secondary
                          hover:bg-gray-200 active-scale flex items-center justify-center"
             >?</button>
             <LangToggle />

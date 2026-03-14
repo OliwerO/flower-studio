@@ -6,6 +6,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useEffect } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import { LanguageProvider } from './context/LanguageContext.jsx';
+import { ThemeProvider } from './context/ThemeContext.jsx';
 import { setClientPin } from './api/client.js';
 import { useNotifications } from './hooks/useNotifications.js';
 
@@ -57,6 +58,7 @@ export default function App() {
   } : null);
 
   return (
+    <ThemeProvider>
     <LanguageProvider>
       <Toast />
       <Routes>
@@ -96,5 +98,6 @@ export default function App() {
         } />
       </Routes>
     </LanguageProvider>
+    </ThemeProvider>
   );
 }
