@@ -127,6 +127,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     try {
       await client.post('/stock-orders', {
         notes: formNotes,
+        driver: formDriver,
         lines: formLines.filter(l => l.flowerName),
       });
       showToast(t.stockOrderCreated);
@@ -136,6 +137,38 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       showToast(t.error, 'error');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  // Draft PO line editing
+  async function updateDraftLine(orderId, lineId, fields) {
+    try {
+      await client.patch(`/stock-orders/${orderId}/lines/${lineId}`, fields);
+      // Refresh expanded lines
+      const res = await client.get(`/stock-orders/${orderId}`);
+      setExpandedLines(res.data.lines || []);
+    } catch {
+      showToast(t.error, 'error');
+    }
+  }
+
+  async function removeDraftLine(orderId, lineId) {
+    try {
+      await client.delete(`/stock-orders/${orderId}/lines/${lineId}`);
+      setExpandedLines(prev => prev.filter(l => l.id !== lineId));
+    } catch {
+      showToast(t.error, 'error');
+    }
+  }
+
+  async function addDraftLine(orderId) {
+    try {
+      const line = await client.post(`/stock-orders/${orderId}/lines`, {
+        flowerName: '', quantity: 1,
+      });
+      setExpandedLines(prev => [...prev, line.data]);
+    } catch {
+      showToast(t.error, 'error');
     }
   }
 
@@ -342,60 +375,81 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                   {order.Notes && (
                     <p className="text-xs text-ios-secondary">{order.Notes}</p>
                   )}
-                  {expandedLines.map(line => {
-                    const lineLotSize = Number(line['Lot Size']) || 1;
-                    const lineNeeded = Number(line['Quantity Needed']) || 0;
-                    const lineLots = lineLotSize > 1 ? Math.ceil(lineNeeded / lineLotSize) : 0;
-                    return (
-                    <div key={line.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
-                      <div>
-                        <span className="font-medium text-ios-label">{line['Flower Name']}</span>
-                        <span className="text-xs text-ios-tertiary ml-2">{line.Supplier}</span>
-                      </div>
-                      <div className="flex items-center gap-3 text-xs">
-                        <span>
-                          {t.qtyNeeded}: {lineNeeded}
-                          {lineLots > 0 && (
-                            <span className="ml-1 text-ios-secondary">
-                              → {lineLots} × {lineLotSize}
-                            </span>
-                          )}
-                        </span>
-                        {line['Driver Status'] && line['Driver Status'] !== 'Pending' && (
-                          <span className={`px-2 py-0.5 rounded-full font-medium ${
-                            line['Driver Status'] === 'Found All' ? 'bg-emerald-100 text-emerald-700' :
-                            line['Driver Status'] === 'Partial' ? 'bg-amber-100 text-amber-700' :
-                            'bg-red-100 text-red-700'
-                          }`}>
-                            {line['Driver Status']}
-                            {line['Quantity Found'] != null && ` (${line['Quantity Found']})`}
-                          </span>
-                        )}
-                        {line['Quantity Accepted'] != null && (
-                          <span className="text-emerald-600">✓ {line['Quantity Accepted']}</span>
-                        )}
-                      </div>
-                    </div>
-                  );})}
 
-                  {/* Actions based on status */}
-                  {order.Status === 'Draft' && (
-                    <div className="flex items-center gap-2 pt-2">
-                      <select
-                        value={editDrivers[order.id] || drivers[0] || 'Nikita'}
-                        onChange={e => setEditDrivers(prev => ({ ...prev, [order.id]: e.target.value }))}
-                        className="field-input w-32"
-                      >
-                        {drivers.map(d => <option key={d} value={d}>{d}</option>)}
-                        {drivers.length === 0 && <option value="Nikita">Nikita</option>}
-                      </select>
+                  {/* Draft POs: editable lines */}
+                  {order.Status === 'Draft' ? (
+                    <>
+                      {expandedLines.map((line, idx) => (
+                        <DraftLineEditor
+                          key={line.id}
+                          line={line}
+                          stock={stock}
+                          orderId={order.id}
+                          onUpdate={(lineId, fields) => updateDraftLine(order.id, lineId, fields)}
+                          onRemove={(lineId) => removeDraftLine(order.id, lineId)}
+                        />
+                      ))}
                       <button
-                        onClick={() => sendToDriver(order.id)}
-                        className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold active-scale"
+                        onClick={() => addDraftLine(order.id)}
+                        className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
                       >
-                        {t.sendToDriver}
+                        + {t.addLine || 'Add line'}
                       </button>
-                    </div>
+                      <div className="flex items-center gap-2 pt-2">
+                        <select
+                          value={editDrivers[order.id] || order['Assigned Driver'] || drivers[0] || 'Nikita'}
+                          onChange={e => setEditDrivers(prev => ({ ...prev, [order.id]: e.target.value }))}
+                          className="field-input w-32"
+                        >
+                          {drivers.map(d => <option key={d} value={d}>{d}</option>)}
+                          {drivers.length === 0 && <option value="Nikita">Nikita</option>}
+                        </select>
+                        <button
+                          onClick={() => sendToDriver(order.id)}
+                          className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold active-scale"
+                        >
+                          {t.sendToDriver}
+                        </button>
+                      </div>
+                    </>
+                  ) : (
+                    /* Non-draft POs: read-only lines */
+                    expandedLines.map(line => {
+                      const lineLotSize = Number(line['Lot Size']) || 1;
+                      const lineNeeded = Number(line['Quantity Needed']) || 0;
+                      const lineLots = lineLotSize > 1 ? Math.ceil(lineNeeded / lineLotSize) : 0;
+                      return (
+                        <div key={line.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
+                          <div>
+                            <span className="font-medium text-ios-label">{line['Flower Name']}</span>
+                            <span className="text-xs text-ios-tertiary ml-2">{line.Supplier}</span>
+                          </div>
+                          <div className="flex items-center gap-3 text-xs">
+                            <span>
+                              {t.qtyNeeded}: {lineNeeded}
+                              {lineLots > 0 && (
+                                <span className="ml-1 text-ios-secondary">
+                                  → {lineLots} × {lineLotSize}
+                                </span>
+                              )}
+                            </span>
+                            {line['Driver Status'] && line['Driver Status'] !== 'Pending' && (
+                              <span className={`px-2 py-0.5 rounded-full font-medium ${
+                                line['Driver Status'] === 'Found All' ? 'bg-emerald-100 text-emerald-700' :
+                                line['Driver Status'] === 'Partial' ? 'bg-amber-100 text-amber-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                {line['Driver Status']}
+                                {line['Quantity Found'] != null && ` (${line['Quantity Found']})`}
+                              </span>
+                            )}
+                            {line['Quantity Accepted'] != null && (
+                              <span className="text-emerald-600">✓ {line['Quantity Accepted']}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
               )}
@@ -488,6 +542,57 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
               {t.noResults || 'No matches found'}
             </div>
           )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Inline editor for a single Draft PO line — flower search, qty, supplier, cost/sell.
+// Auto-saves on blur so changes persist immediately without a "save" button.
+function DraftLineEditor({ line, stock, onUpdate, onRemove }) {
+  const [qty, setQty] = useState(line['Quantity Needed'] || 1);
+
+  function handleStockSelect(item) {
+    onUpdate(line.id, {
+      'Flower Name': item['Display Name'],
+      Supplier: item.Supplier || '',
+      'Cost Price': Number(item['Current Cost Price']) || 0,
+      'Sell Price': Number(item['Current Sell Price']) || 0,
+      'Lot Size': Number(item['Lot Size']) || 0,
+      'Quantity Needed': qty,
+    });
+  }
+
+  return (
+    <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
+      <div className="flex items-center gap-2">
+        <div className="flex-1">
+          <StockSearchInput
+            stock={stock}
+            value={line['Flower Name'] || ''}
+            onChange={name => onUpdate(line.id, { 'Flower Name': name })}
+            onSelect={handleStockSelect}
+          />
+        </div>
+        <input
+          type="number"
+          value={qty}
+          onChange={e => setQty(Number(e.target.value) || 0)}
+          onBlur={() => onUpdate(line.id, { 'Quantity Needed': qty })}
+          className="field-input w-16 text-sm text-center"
+          min="1"
+        />
+        <button
+          onClick={() => onRemove(line.id)}
+          className="text-red-400 hover:text-red-600 text-sm px-1"
+        >
+          ✕
+        </button>
+      </div>
+      {line['Lot Size'] > 1 && (
+        <div className="text-[11px] text-ios-tertiary">
+          {t.lotSize}: {line['Lot Size']} → {Math.ceil(qty / line['Lot Size'])} × {line['Lot Size']}
         </div>
       )}
     </div>

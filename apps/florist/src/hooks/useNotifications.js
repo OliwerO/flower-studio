@@ -50,7 +50,7 @@ export function useNotifications(onNewOrder) {
         const data = JSON.parse(event.data);
 
         if (data.type === 'new_order') {
-          const msg = `🌸 New ${data.source || ''} order: ${data.customerName || 'Customer'}`;
+          const msg = `🌸 ${t.newOrder}: ${data.customerName || ''} (${data.source || ''})`;
           showToast(msg, 'success');
           playNotificationSound();
 

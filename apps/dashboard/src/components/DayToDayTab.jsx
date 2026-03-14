@@ -100,9 +100,14 @@ export default function DayToDayTab({ onNavigate }) {
 
   async function handleDriverOfDay(name) {
     try {
-      await client.put('/settings/driver-of-day', { driverName: name || null });
+      const res = await client.put('/settings/driver-of-day', { driverName: name || null });
       setDriverOfDay(name || null);
-      showToast(name ? `${t.driverOfDay}: ${name}` : t.driverOfDayCleared);
+      const assigned = res.data?.assignedCount || 0;
+      const msg = name
+        ? `${t.driverOfDay}: ${name}` + (assigned > 0 ? ` (${assigned} ${t.deliveriesAssigned})` : '')
+        : t.driverOfDayCleared;
+      showToast(msg);
+      if (assigned > 0) fetchData(true);
     } catch {
       showToast(t.error, 'error');
     }
@@ -125,8 +130,8 @@ export default function DayToDayTab({ onNavigate }) {
       {/* Summary cards row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <SummaryCard
-          label={t.orders}
-          value={data.orderCount}
+          label={t.plannedToday}
+          value={data.ordersDueToday ?? data.orderCount}
           detail={t.tabToday}
           color="brand"
           onClick={() => nav('orders')}

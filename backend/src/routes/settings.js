@@ -8,6 +8,7 @@ import { authorize } from '../middleware/auth.js';
 import { getBackupDriverName, setBackupDriverName } from '../services/driverState.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 
@@ -170,11 +171,31 @@ router.get('/', authorize('orders'), (req, res) => {
 });
 
 // ── PUT /api/settings/driver-of-day ──
-router.put('/driver-of-day', authorize('admin'), (req, res) => {
-  const { driverName } = req.body;
-  daily.driverOfDay = driverName || null;
-  daily._lastSetDate = driverName ? new Date().toISOString().split('T')[0] : null;
-  res.json({ driverOfDay: daily.driverOfDay });
+// When a driver-of-day is set, auto-assign them to all today's unassigned deliveries.
+// Like a shift supervisor assigning the day's driver to all open dispatches at once.
+router.put('/driver-of-day', authorize('admin'), async (req, res, next) => {
+  try {
+    const { driverName } = req.body;
+    daily.driverOfDay = driverName || null;
+    daily._lastSetDate = driverName ? new Date().toISOString().split('T')[0] : null;
+
+    let assignedCount = 0;
+    if (driverName) {
+      const today = new Date().toISOString().split('T')[0];
+      const unassigned = await db.list(TABLES.DELIVERIES, {
+        filterByFormula: `AND(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(today)}', {Assigned Driver} = '', {Status} != 'Delivered')`,
+        fields: ['Assigned Driver'],
+      });
+      for (const d of unassigned) {
+        await db.update(TABLES.DELIVERIES, d.id, { 'Assigned Driver': driverName });
+        assignedCount++;
+      }
+    }
+
+    res.json({ driverOfDay: daily.driverOfDay, assignedCount });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── PUT /api/settings/backup-driver ──

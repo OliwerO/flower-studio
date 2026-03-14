@@ -13,12 +13,18 @@ router.get('/', async (req, res, next) => {
     // Accept optional ?date= param, default to today
     const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
 
-    const [orders, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
-      // Today's orders
+    const [orders, ordersDueToday, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
+      // Today's orders (by Order Date — for revenue, status breakdown)
       db.list(TABLES.ORDERS, {
         filterByFormula: `DATESTR({Order Date}) = '${today}'`,
         sort: [{ field: 'Order Date', direction: 'desc' }],
       }),
+      // Orders due today (by Required By — for "planned today" count)
+      db.list(TABLES.ORDERS, {
+        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != 'Cancelled')`,
+        fields: ['Required By', 'Status'],
+        maxRecords: 200,
+      }).catch(() => []),
       // Today's pending deliveries (all statuses — we filter below)
       db.list(TABLES.DELIVERIES, {
         filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != 'Delivered')`,
@@ -329,6 +335,7 @@ router.get('/', async (req, res, next) => {
     res.json({
       date: today,
       orderCount: orders.length,
+      ordersDueToday: ordersDueToday.length,
       statusCounts,
       todayRevenue,
       pendingDeliveries: deliveries,

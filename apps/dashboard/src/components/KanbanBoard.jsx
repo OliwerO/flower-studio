@@ -56,29 +56,50 @@ function KanbanCard({ order, onClick }) {
   const isPaid = order['Payment Status'] === 'Paid';
   const price = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
 
+  // Bouquet summary: "3× Rose Red, 2× Tulip Pink"
+  const bouquet = order['Bouquet Summary'] || order['Customer Request'] || '—';
+
+  // Delivery info
+  const address = order['Delivery Address'] || '';
+  const timeSlot = order['Delivery Time'] || '';
+  const driver = order['Assigned Driver'] || '';
+
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-xl shadow-sm px-3 py-2 cursor-pointer
+      className="bg-white rounded-xl shadow-sm px-3 py-2.5 cursor-pointer
                  hover:shadow-md transition-all active-scale"
     >
-      {/* Customer name */}
-      <div className="text-xs font-semibold text-ios-label truncate">
-        {order['Customer Name'] || '—'}
+      {/* Customer name + price */}
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-semibold text-ios-label truncate">
+          {order['Customer Name'] || '—'}
+        </span>
+        <span className="text-[11px] font-medium text-ios-secondary">
+          {price > 0 ? `${price.toFixed(0)} ${t.zl}` : ''}
+        </span>
       </div>
 
-      {/* Request text */}
+      {/* Bouquet composition */}
       <div className="text-[11px] text-ios-tertiary truncate mt-0.5">
-        {order['Customer Request'] || '—'}
+        {bouquet}
       </div>
 
-      {/* Bottom row */}
-      <div className="flex items-center justify-between mt-1.5">
+      {/* Delivery details row */}
+      <div className="flex items-center gap-1.5 mt-1 text-[10px] text-ios-secondary">
+        <span>{isDelivery ? '🚗' : '🏪'}</span>
+        {timeSlot && <span>{timeSlot}</span>}
+        {isDelivery && address && (
+          <span className="truncate max-w-[120px]">{address}</span>
+        )}
+      </div>
+
+      {/* Driver + payment badges */}
+      <div className="flex items-center justify-between mt-1">
         <div className="flex items-center gap-1.5">
-          <span className="text-[10px]">{isDelivery ? '🚗' : '🏪'}</span>
-          <span className="text-[11px] font-medium text-ios-secondary">
-            {price > 0 ? `${price.toFixed(0)} ${t.zl}` : ''}
-          </span>
+          {driver && (
+            <span className="text-[10px] text-ios-tertiary">{driver}</span>
+          )}
         </div>
         {!isPaid && (
           <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-full bg-rose-50 text-rose-600">

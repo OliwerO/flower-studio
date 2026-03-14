@@ -91,7 +91,7 @@ router.get('/:id', authorize('stock-orders'), async (req, res, next) => {
 // Body: { notes, lines: [{ stockItemId, flowerName, quantity, supplier, costPrice, sellPrice }] }
 router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
-    const { notes, lines } = req.body;
+    const { notes, lines, driver } = req.body;
 
     if (!Array.isArray(lines) || lines.length === 0) {
       return res.status(400).json({ error: 'PO must include at least one line.' });
@@ -102,12 +102,15 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
 
     const today = new Date().toISOString().split('T')[0];
 
-    // Create the PO header
-    const order = await db.create(TABLES.STOCK_ORDERS, {
+    // Create the PO header — carry over driver selection from the form
+    const orderFields = {
       Status: 'Draft',
       'Created Date': today,
       Notes: notes || '',
-    });
+    };
+    if (driver) orderFields['Assigned Driver'] = driver;
+
+    const order = await db.create(TABLES.STOCK_ORDERS, orderFields);
 
     // Create lines — use lot size from the PO form (owner can set/override),
     // falling back to the stock item's configured lot size, then 1.
@@ -173,8 +176,9 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
   try {
     const allowed = [
       'Driver Status', 'Quantity Found', 'Alt Supplier', 'Alt Quantity Found',
-      'Alt Flower Name', 'Cost Price',
+      'Alt Flower Name', 'Cost Price', 'Sell Price',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
+      'Flower Name', 'Supplier', 'Lot Size',
     ];
     const fields = {};
     for (const key of allowed) {
@@ -190,6 +194,45 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
     }
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/stock-orders/:id/lines — add a line to a Draft PO
+router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res, next) => {
+  try {
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (po.Status !== 'Draft') {
+      return res.status(400).json({ error: 'Can only add lines to Draft POs.' });
+    }
+    const { stockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
+    const line = await db.create(TABLES.STOCK_ORDER_LINES, {
+      'Stock Orders': [req.params.id],
+      'Stock Item': stockItemId ? [stockItemId] : undefined,
+      'Flower Name': flowerName || '',
+      'Quantity Needed': Number(quantity) || 1,
+      Supplier: supplier || '',
+      'Cost Price': Number(costPrice) || 0,
+      'Sell Price': Number(sellPrice) || 0,
+      'Lot Size': Number(lotSize) || 0,
+      'Driver Status': 'Pending',
+    });
+    res.json(line);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/stock-orders/:id/lines/:lineId — remove a line from a Draft PO
+router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async (req, res, next) => {
+  try {
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (po.Status !== 'Draft') {
+      return res.status(400).json({ error: 'Can only remove lines from Draft POs.' });
+    }
+    await db.deleteRecord(TABLES.STOCK_ORDER_LINES, req.params.lineId);
+    res.json({ deleted: true });
   } catch (err) {
     next(err);
   }
