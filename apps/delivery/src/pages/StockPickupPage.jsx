@@ -34,6 +34,20 @@ export default function StockPickupPage() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
+  // SSE listener: owner edits lines → driver sees changes in real time
+  useEffect(() => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+    const pin = client.defaults?.headers?.['X-Auth-PIN'] || '';
+    const source = new EventSource(`${backendUrl}/api/events${pin ? `?pin=${pin}` : ''}`);
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'stock_order_line_updated') fetchOrders();
+      } catch {}
+    };
+    return () => source.close();
+  }, [fetchOrders]);
+
   // Auto-save line update
   async function updateLine(orderId, lineId, fields) {
     setSaving(prev => ({ ...prev, [lineId]: true }));
@@ -229,42 +243,26 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
   const lots = lotSize > 1 ? Math.ceil(needed / lotSize) : 0;
   const fullLotQty = lots > 0 ? lots * lotSize : needed;
 
-  function handleFoundAll() {
-    onUpdate(orderId, line.id, {
-      'Driver Status': 'Found All',
-      'Quantity Found': fullLotQty,
-    });
-    setExpanded(false);
+  function selectStatus(newStatus) {
+    if (newStatus === 'Found All') {
+      onUpdate(orderId, line.id, { 'Driver Status': 'Found All', 'Quantity Found': fullLotQty });
+      setQtyFound(fullLotQty);
+      setExpanded(false);
+    } else if (newStatus === 'Partial') {
+      onUpdate(orderId, line.id, { 'Driver Status': 'Partial' });
+      setExpanded(true);
+    } else {
+      onUpdate(orderId, line.id, { 'Driver Status': 'Not Found', 'Quantity Found': 0 });
+      setQtyFound(0);
+      setExpanded(true);
+    }
   }
 
-  function handlePartial() {
-    setExpanded(true);
-    onUpdate(orderId, line.id, { 'Driver Status': 'Partial' });
-  }
-
-  function handleNotFound() {
-    setExpanded(true);
-    onUpdate(orderId, line.id, {
-      'Driver Status': 'Not Found',
-      'Quantity Found': 0,
-    });
-  }
-
-  function savePartialDetails() {
+  function saveDetails() {
     const fields = {
       'Quantity Found': Number(qtyFound) || 0,
       Notes: note,
     };
-    if (showAlt) {
-      fields['Alt Flower Name'] = altFlowerName;
-      fields['Alt Supplier'] = altSupplier;
-      fields['Alt Quantity Found'] = Number(altQty) || 0;
-    }
-    onUpdate(orderId, line.id, fields);
-  }
-
-  function saveNotFoundDetails() {
-    const fields = { Notes: note };
     if (showAlt) {
       fields['Alt Flower Name'] = altFlowerName;
       fields['Alt Supplier'] = altSupplier;
@@ -282,171 +280,105 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
       {/* Line header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
-          <div className={`w-2 h-2 rounded-full ${statusColor}`} />
-          <span className="text-sm font-medium text-ios-label">{line['Flower Name']}</span>
-          <span className="text-xs text-ios-tertiary">
-            ({t.need}: {needed})
-            {lots > 0 && <span className="ml-1 font-medium text-ios-secondary">— {lots} {t.packs} × {lotSize}</span>}
-          </span>
+          <div className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
+          <span className="text-base font-medium text-ios-label">{line['Flower Name']}</span>
         </div>
         {isSaving && (
           <div className="w-4 h-4 border border-brand-300 border-t-brand-600 rounded-full animate-spin" />
         )}
       </div>
 
-      {/* 3-option buttons */}
-      {status === 'Pending' && (
-        <div className="flex gap-2">
-          <button onClick={handleFoundAll}
-            className="flex-1 py-2 rounded-xl bg-emerald-100 text-emerald-700 text-xs font-semibold active-scale">
-            ✓ {t.foundAll}
-          </button>
-          <button onClick={handlePartial}
-            className="flex-1 py-2 rounded-xl bg-amber-100 text-amber-700 text-xs font-semibold active-scale">
-            ½ {t.partial}
-          </button>
-          <button onClick={handleNotFound}
-            className="flex-1 py-2 rounded-xl bg-red-100 text-red-700 text-xs font-semibold active-scale">
-            ✗ {t.notFound}
-          </button>
-        </div>
-      )}
+      {/* Quantity needed with lot info */}
+      <div className="text-sm text-ios-secondary mb-3">
+        {t.need}: <strong>{needed}</strong>
+        {lots > 0 && <span className="ml-1">({lots} {t.packs} × {lotSize})</span>}
+      </div>
 
-      {/* Status badge for resolved items */}
-      {status !== 'Pending' && !expanded && (
-        <button
-          onClick={() => setExpanded(true)}
-          className={`px-3 py-1 rounded-full text-xs font-medium ${
-            status === 'Found All' ? 'bg-emerald-100 text-emerald-700' :
-            status === 'Partial' ? 'bg-amber-100 text-amber-700' :
-            'bg-red-100 text-red-700'
-          }`}
-        >
-          {status === 'Found All' ? `✓ ${t.foundAll}` :
-           status === 'Partial' ? `½ ${t.partial} (${line['Quantity Found'] || 0})` :
-           `✗ ${t.notFound}`}
+      {/* 3 action buttons — ALWAYS visible, current selection highlighted */}
+      <div className="flex gap-2 mb-2">
+        <button onClick={() => selectStatus('Found All')}
+          className={`flex-1 py-3.5 rounded-xl text-sm font-semibold active-scale transition-all ${
+            status === 'Found All'
+              ? 'bg-emerald-600 text-white shadow-md'
+              : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+          }`}>
+          ✓ {t.foundAll}
         </button>
-      )}
+        <button onClick={() => selectStatus('Partial')}
+          className={`flex-1 py-3.5 rounded-xl text-sm font-semibold active-scale transition-all ${
+            status === 'Partial'
+              ? 'bg-amber-600 text-white shadow-md'
+              : 'bg-amber-50 text-amber-700 border border-amber-200'
+          }`}>
+          ½ {t.partial}
+        </button>
+        <button onClick={() => selectStatus('Not Found')}
+          className={`flex-1 py-3.5 rounded-xl text-sm font-semibold active-scale transition-all ${
+            status === 'Not Found'
+              ? 'bg-red-600 text-white shadow-md'
+              : 'bg-red-50 text-red-700 border border-red-200'
+          }`}>
+          ✗ {t.notFound}
+        </button>
+      </div>
 
-      {/* Expanded partial details */}
-      {expanded && status === 'Partial' && (
-        <div className="mt-2 bg-amber-50 rounded-xl p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-ios-secondary w-24">{t.foundAtSupplier}:</span>
-            <input
-              type="number"
-              value={qtyFound}
-              onChange={e => setQtyFound(e.target.value)}
-              onBlur={savePartialDetails}
-              className="w-16 text-center text-sm border border-amber-200 rounded-lg px-2 py-1 bg-white outline-none"
-            />
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-ios-secondary">{t.foundMoreElsewhere}</span>
-            <button onClick={() => setShowAlt(true)}
-              className={`px-2 py-0.5 rounded text-xs font-medium ${showAlt ? 'bg-brand-600 text-white' : 'bg-gray-100'}`}>
-              {t.yes}
-            </button>
-            <button onClick={() => { setShowAlt(false); setAltFlowerName(''); setAltSupplier(''); setAltQty('');}}
-              className={`px-2 py-0.5 rounded text-xs font-medium ${!showAlt ? 'bg-brand-600 text-white' : 'bg-gray-100'}`}>
-              {t.no}
-            </button>
-          </div>
-
-          {showAlt && (
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                value={altSupplier}
-                onChange={e => setAltSupplier(e.target.value)}
-                onBlur={savePartialDetails}
-                placeholder={t.altSupplier}
-                className="flex-1 text-sm border border-amber-200 rounded-lg px-2 py-1 bg-white outline-none"
-              />
+      {/* Expanded details for Partial or Not Found */}
+      {expanded && (status === 'Partial' || status === 'Not Found') && (
+        <div className={`mt-1 rounded-xl p-3 space-y-3 ${status === 'Partial' ? 'bg-amber-50' : 'bg-red-50'}`}>
+          {/* Quantity found — only for Partial */}
+          {status === 'Partial' && (
+            <div>
+              <label className="text-xs text-ios-secondary font-medium block mb-1">{t.howManyFound}</label>
               <input
                 type="number"
-                value={altQty}
-                onChange={e => setAltQty(e.target.value)}
-                onBlur={savePartialDetails}
-                placeholder={t.altAmount}
-                className="w-16 text-center text-sm border border-amber-200 rounded-lg px-2 py-1 bg-white outline-none"
+                value={qtyFound}
+                onChange={e => setQtyFound(e.target.value)}
+                onBlur={saveDetails}
+                className="w-full text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                placeholder="0"
               />
             </div>
           )}
 
-          <input
-            type="text"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            onBlur={savePartialDetails}
-            placeholder={t.note}
-            className="w-full text-sm border border-amber-200 rounded-lg px-2 py-1 bg-white outline-none"
-          />
-
-          <button onClick={() => setExpanded(false)} className="text-xs text-ios-secondary">
-            {t.close}
-          </button>
-        </div>
-      )}
-
-      {/* Expanded not-found details */}
-      {expanded && status === 'Not Found' && (
-        <div className="mt-2 bg-red-50 rounded-xl p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-ios-secondary">{t.foundAlternative}</span>
-            <button onClick={() => setShowAlt(true)}
-              className={`px-2 py-0.5 rounded text-xs font-medium ${showAlt ? 'bg-brand-600 text-white' : 'bg-gray-100'}`}>
-              {t.yes}
-            </button>
-            <button onClick={() => { setShowAlt(false); setAltFlowerName(''); setAltSupplier(''); setAltQty('');}}
-              className={`px-2 py-0.5 rounded text-xs font-medium ${!showAlt ? 'bg-brand-600 text-white' : 'bg-gray-100'}`}>
-              {t.no}
-            </button>
+          {/* Alt supplier / substitute toggle */}
+          <div>
+            <label className="text-xs text-ios-secondary font-medium block mb-1">
+              {status === 'Not Found' ? t.foundAlternative : t.foundMoreElsewhere}
+            </label>
+            <div className="flex gap-2">
+              <button onClick={() => setShowAlt(true)}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${showAlt ? 'bg-brand-600 text-white' : 'bg-white border border-gray-200'}`}>
+                {t.yes}
+              </button>
+              <button onClick={() => { setShowAlt(false); setAltFlowerName(''); setAltSupplier(''); setAltQty(''); }}
+                className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${!showAlt ? 'bg-brand-600 text-white' : 'bg-white border border-gray-200'}`}>
+                {t.no}
+              </button>
+            </div>
           </div>
 
           {showAlt && (
-            <>
-              <input
-                type="text"
-                value={altFlowerName}
-                onChange={e => setAltFlowerName(e.target.value)}
-                onBlur={saveNotFoundDetails}
-                placeholder={t.altFlowerName}
-                className="w-full text-sm border border-red-200 rounded-lg px-2 py-1 bg-white outline-none"
-              />
-              <div className="flex items-center gap-2">
-                <input
-                  type="number"
-                  value={altQty}
-                  onChange={e => setAltQty(e.target.value)}
-                  onBlur={saveNotFoundDetails}
-                  placeholder={t.altAmount}
-                  className="w-16 text-center text-sm border border-red-200 rounded-lg px-2 py-1 bg-white outline-none"
-                />
-                <input
-                  type="text"
-                  value={altSupplier}
-                  onChange={e => setAltSupplier(e.target.value)}
-                  onBlur={saveNotFoundDetails}
-                  placeholder={t.altSupplier}
-                  className="flex-1 text-sm border border-red-200 rounded-lg px-2 py-1 bg-white outline-none"
-                />
+            <div className="space-y-2">
+              <input type="text" value={altFlowerName} onChange={e => setAltFlowerName(e.target.value)}
+                onBlur={saveDetails} placeholder={t.altFlowerName}
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
+              <div className="grid grid-cols-2 gap-2">
+                <input type="text" value={altSupplier} onChange={e => setAltSupplier(e.target.value)}
+                  onBlur={saveDetails} placeholder={t.altSupplier}
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
+                <input type="number" value={altQty} onChange={e => setAltQty(e.target.value)}
+                  onBlur={saveDetails} placeholder={t.altAmount}
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
               </div>
-            </>
+            </div>
           )}
 
-          <input
-            type="text"
-            value={note}
-            onChange={e => setNote(e.target.value)}
-            onBlur={saveNotFoundDetails}
-            placeholder={t.note}
-            className="w-full text-sm border border-red-200 rounded-lg px-2 py-1 bg-white outline-none"
-          />
+          <input type="text" value={note} onChange={e => setNote(e.target.value)}
+            onBlur={saveDetails} placeholder={t.note}
+            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
 
           <button onClick={() => setExpanded(false)} className="text-xs text-ios-secondary">
-            {t.close}
+            {t.close || 'Close'}
           </button>
         </div>
       )}

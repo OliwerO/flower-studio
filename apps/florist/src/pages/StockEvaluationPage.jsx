@@ -172,21 +172,31 @@ export default function StockEvaluationPage() {
 
                         const evalLotSize = Number(line['Lot Size']) || 1;
 
+                        const costPrice = Number(line['Cost Price']) || 0;
+                        const needed = Number(line['Quantity Needed']) || 0;
+                        const altFlowerName = line['Alt Flower Name'] || '';
+
                         return (
                           <div key={line.id} className="px-4 py-3 space-y-2">
-                            {/* Header */}
+                            {/* Header with qty needed, found, cost */}
                             <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-ios-label">
-                                {line['Flower Name']}
-                                {evalLotSize > 1 && (
-                                  <span className="text-xs text-ios-tertiary ml-1">
-                                    ({t.lotSize}: {evalLotSize})
-                                  </span>
+                              <div>
+                                <span className="text-sm font-medium text-ios-label">
+                                  {line['Flower Name']}
+                                  {evalLotSize > 1 && (
+                                    <span className="text-xs text-ios-tertiary ml-1">
+                                      ({t.lotSize}: {evalLotSize})
+                                    </span>
+                                  )}
+                                </span>
+                                {costPrice > 0 && (
+                                  <span className="text-xs text-ios-tertiary ml-2">{costPrice} zł/{t.unit || 'pc'}</span>
                                 )}
-                              </span>
-                              <span className="text-xs text-ios-tertiary">
-                                {t.driverFound}: {found}
-                              </span>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-xs text-ios-tertiary">{t.qtyNeeded || 'Needed'}: {needed}</div>
+                                <div className="text-xs font-medium text-ios-label">{t.driverFound}: {found}</div>
+                              </div>
                             </div>
 
                             {/* Accept / write-off row */}
@@ -227,12 +237,16 @@ export default function StockEvaluationPage() {
                               </div>
                             </div>
 
-                            {/* Alt supplier row (if driver found more elsewhere) */}
+                            {/* Alt supplier/substitute row */}
                             {altSupplier && altFound > 0 && (
-                              <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-1">
-                                <span className="text-xs text-ios-secondary">
-                                  + {altSupplier}: {altFound}
-                                </span>
+                              <div className="bg-indigo-50 rounded-lg px-3 py-2 space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-xs font-medium text-indigo-700">
+                                    {altFlowerName
+                                      ? `↳ ${altFlowerName} (${altSupplier})`
+                                      : `+ ${altSupplier}`}: {altFound}
+                                  </span>
+                                </div>
                                 <div className="flex items-center gap-3">
                                   <div className="flex-1">
                                     <input
@@ -282,12 +296,22 @@ export default function StockEvaluationPage() {
                       {t.notFoundByDriver} ({notFoundLines.length})
                     </summary>
                     <div className="divide-y divide-gray-100">
-                      {notFoundLines.map(line => (
-                        <div key={line.id} className="px-4 py-2 flex items-center justify-between">
-                          <span className="text-sm text-ios-secondary">{line['Flower Name']}</span>
-                          <span className="text-xs text-ios-tertiary">{line.Notes || '—'}</span>
+                      {notFoundLines.map(line => {
+                        const hasAlt = line['Alt Supplier'] && Number(line['Alt Quantity Found']) > 0;
+                        return (
+                        <div key={line.id} className="px-4 py-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-ios-secondary">{line['Flower Name']}</span>
+                            <span className="text-xs text-ios-tertiary">{line.Notes || '—'}</span>
+                          </div>
+                          {hasAlt && (
+                            <div className="text-xs text-indigo-600 mt-1">
+                              ↳ {t.substitute || 'Substitute'}: {line['Alt Flower Name'] || '?'} ({line['Alt Supplier']}) × {line['Alt Quantity Found']}
+                            </div>
+                          )}
                         </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </details>
                 )}

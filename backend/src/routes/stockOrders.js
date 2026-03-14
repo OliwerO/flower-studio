@@ -12,12 +12,13 @@ import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
-const VALID_STATUSES = ['Draft', 'Sent', 'Shopping', 'Evaluating', 'Eval Error', 'Complete'];
+const VALID_STATUSES = ['Draft', 'Sent', 'Shopping', 'Reviewing', 'Evaluating', 'Eval Error', 'Complete'];
 
 const ALLOWED_TRANSITIONS = {
   'Draft': ['Sent'],
   'Sent': ['Shopping', 'Draft'],
-  'Shopping': ['Evaluating'],
+  'Shopping': ['Reviewing'],
+  'Reviewing': ['Evaluating'],
   'Evaluating': ['Eval Error', 'Complete'],
   'Eval Error': ['Evaluating'],
 };
@@ -193,6 +194,13 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       }
     }
 
+    // SSE broadcast: notify owner and driver of line changes in real time
+    broadcast({
+      type: 'stock_order_line_updated',
+      stockOrderId: req.params.id,
+      lineId: req.params.lineId,
+    });
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -258,15 +266,31 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
 });
 
 // POST /api/stock-orders/:id/driver-complete — driver marks shopping done
+// Goes to Reviewing first (owner can adjust), then owner or auto → Evaluating
 router.post('/:id/driver-complete', authorize('stock-orders'), async (req, res, next) => {
   try {
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
-      Status: 'Evaluating',
+      Status: 'Reviewing',
     });
 
-    // SSE notification to florists
-    broadcast({ type: 'stock_evaluation_ready', stockOrderId: req.params.id });
+    // SSE notification to owner + florists: shopping complete, review ready
+    broadcast({ type: 'stock_review_ready', stockOrderId: req.params.id });
 
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/stock-orders/:id/approve-review — owner approves, moves to Evaluating
+router.post('/:id/approve-review', authorize('stock-orders', ['owner']), async (req, res, next) => {
+  try {
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (po.Status !== 'Reviewing') {
+      return res.status(400).json({ error: `PO is "${po.Status}", not "Reviewing".` });
+    }
+    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: 'Evaluating' });
+    broadcast({ type: 'stock_evaluation_ready', stockOrderId: req.params.id });
     res.json(updated);
   } catch (err) {
     next(err);

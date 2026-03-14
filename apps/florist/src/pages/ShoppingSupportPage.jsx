@@ -24,11 +24,12 @@ export default function ShoppingSupportPage() {
   // ── Fetch active POs (same pattern as StockPickupPage) ──
   const fetchOrders = useCallback(async (poll = false) => {
     try {
-      const [sentRes, shoppingRes] = await Promise.all([
+      const [sentRes, shoppingRes, reviewRes] = await Promise.all([
         client.get('/stock-orders?status=Sent&include=lines'),
         client.get('/stock-orders?status=Shopping&include=lines'),
+        client.get('/stock-orders?status=Reviewing&include=lines'),
       ]);
-      const fresh = [...sentRes.data, ...shoppingRes.data];
+      const fresh = [...sentRes.data, ...shoppingRes.data, ...reviewRes.data];
 
       if (poll) {
         // Merge: replace lines that aren't being edited, keep focused ones intact
@@ -65,14 +66,27 @@ export default function ShoppingSupportPage() {
 
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
-  // Poll every 15s
+  // SSE listener for real-time updates from driver/owner + fallback poll every 30s
   useEffect(() => {
+    const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
+    const pin = client.defaults?.headers?.['X-Auth-PIN'] || '';
+    const source = new EventSource(`${backendUrl}/api/events${pin ? `?pin=${pin}` : ''}`);
+    source.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (['stock_order_line_updated', 'stock_review_ready', 'stock_evaluation_ready'].includes(data.type)) {
+          fetchOrders(true);
+        }
+      } catch {}
+    };
+    // Fallback poll every 30s in case SSE drops
     const interval = setInterval(() => {
       if (!document.hidden) fetchOrders(true);
-    }, 15000);
+    }, 30000);
     const onVisible = () => { if (!document.hidden) fetchOrders(true); };
     document.addEventListener('visibilitychange', onVisible);
     return () => {
+      source.close();
       clearInterval(interval);
       document.removeEventListener('visibilitychange', onVisible);
     };
@@ -114,6 +128,16 @@ export default function ShoppingSupportPage() {
       await client.patch(`/stock-orders/${orderId}`, {
         'Supplier Payments': JSON.stringify(payments),
       });
+    } catch {
+      showToast(t.error, 'error');
+    }
+  }
+
+  async function approveReview(orderId) {
+    try {
+      await client.post(`/stock-orders/${orderId}/approve-review`);
+      showToast(t.stockOrderApproved || 'Sent to florist for evaluation');
+      fetchOrders();
     } catch {
       showToast(t.error, 'error');
     }
@@ -169,11 +193,21 @@ export default function ShoppingSupportPage() {
                   <span className="text-xs font-semibold text-ios-tertiary uppercase">
                     PO #{order['Stock Order ID'] || '—'}
                   </span>
-                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                    order.Status === 'Shopping' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
-                  }`}>
-                    {order.Status}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
+                      order.Status === 'Shopping' ? 'bg-amber-100 text-amber-700' :
+                      order.Status === 'Reviewing' ? 'bg-orange-100 text-orange-700' :
+                      'bg-blue-100 text-blue-700'
+                    }`}>
+                      {order.Status}
+                    </span>
+                    {order.Status === 'Reviewing' && (
+                      <button
+                        onClick={() => approveReview(order.id)}
+                        className="px-3 py-1 rounded-xl bg-purple-600 text-white text-xs font-semibold active-scale"
+                      >{t.shopping.sendToFlorist || 'Send to florist'}</button>
+                    )}
+                  </div>
                 </div>
                 {order['Driver Name'] && (
                   <p className="text-xs text-ios-secondary -mt-1">
