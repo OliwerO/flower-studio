@@ -248,7 +248,9 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                   <input
                     type="number" min="1"
                     value={line.quantity}
-                    onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: Number(e.target.value) || 1 } : l))}
+                    onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
+                    onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
+                    onFocus={e => e.target.select()}
                     className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1"
                   />
                   <button
