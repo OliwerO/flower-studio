@@ -41,14 +41,25 @@ export default function Step2Bouquet({
   );
   const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
+  // Hide depleted dated batches (e.g. "Rose Red (14.Mar.)" at qty 0)
+  const visibleStock = useMemo(() => {
+    const dateBatchPattern = /\(\d{1,2}\.\w{3,4}\.?\)$/;
+    return stock.filter(s => {
+      const qty = Number(s['Current Quantity']) || 0;
+      const name = s['Display Name'] || '';
+      if (qty <= 0 && dateBatchPattern.test(name)) return false;
+      return true;
+    });
+  }, [stock]);
+
   const filteredStock = useMemo(() => {
     const q = flowerQuery.toLowerCase().trim();
-    if (!q) return stock;
-    return stock.filter(s =>
+    if (!q) return visibleStock;
+    return visibleStock.filter(s =>
       (s['Display Name'] || '').toLowerCase().includes(q) ||
       (s['Category'] || '').toLowerCase().includes(q)
     );
-  }, [stock, flowerQuery]);
+  }, [visibleStock, flowerQuery]);
 
   function addOne(stockItem) {
     onLinesChange(lines => {

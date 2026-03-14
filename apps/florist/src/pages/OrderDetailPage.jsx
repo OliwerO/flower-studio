@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
+import t from '../translations.js';
 
 const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
 
