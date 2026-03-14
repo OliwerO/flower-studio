@@ -85,6 +85,9 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
   const [removeIdx, setRemoveIdx] = useState(null);
+  const [addingFlower, setAddingFlower] = useState(false);
+  const [flowerSearch, setFlowerSearch] = useState('');
+  const [stockItems, setStockItems] = useState([]);
 
   const status     = order['Status'] || 'New';
   const styles     = STATUS_STYLES[status] || STATUS_STYLES['New'];
@@ -253,14 +256,20 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
                     {!isTerminal && !editingBouquet && (
-                      <button onClick={() => {
+                      <button onClick={async () => {
                         setEditLines(detail.orderLines.map(l => ({
                           id: l.id, stockItemId: l['Stock Item']?.[0] || null,
                           flowerName: l['Flower Name'], quantity: l.Quantity,
                           _originalQty: l.Quantity,
                         })));
                         setRemovedLines([]);
+                        setAddingFlower(false);
+                        setFlowerSearch('');
                         setEditingBouquet(true);
+                        // Lazy-load stock for the flower picker
+                        if (stockItems.length === 0) {
+                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                        }
                       }} className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
                     )}
                   </div>
@@ -276,6 +285,87 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                           <button onClick={() => setRemoveIdx(idx)} className="text-red-400 text-sm px-1">✕</button>
                         </div>
                       ))}
+
+                      {/* Add flower picker */}
+                      {!addingFlower ? (
+                        <button onClick={() => setAddingFlower(true)}
+                          className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg active:bg-brand-100"
+                        >+ {t.addFlower || 'Add flower'}</button>
+                      ) : (
+                        <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
+                          <input type="text" value={flowerSearch}
+                            onChange={e => setFlowerSearch(e.target.value)}
+                            placeholder={t.flowerSearch || 'Search...'}
+                            className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
+                            autoFocus />
+                          <div className="max-h-36 overflow-y-auto divide-y divide-gray-50">
+                            {/* Stock results — only items with qty > 0 */}
+                            {flowerSearch.length >= 1 && stockItems
+                              .filter(s => {
+                                const name = (s['Display Name'] || '').toLowerCase();
+                                const q = flowerSearch.toLowerCase();
+                                const qty = Number(s['Current Quantity']) || 0;
+                                // Hide depleted dated batches
+                                if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                                return name.includes(q) && !editLines.some(l => l.stockItemId === s.id);
+                              })
+                              .slice(0, 6)
+                              .map(s => (
+                                <button key={s.id} type="button"
+                                  onClick={() => {
+                                    setEditLines(p => [...p, {
+                                      id: null, stockItemId: s.id,
+                                      flowerName: s['Display Name'],
+                                      quantity: 1, _originalQty: 0,
+                                      costPricePerUnit: Number(s['Current Cost Price']) || 0,
+                                      sellPricePerUnit: Number(s['Current Sell Price']) || 0,
+                                    }]);
+                                    setFlowerSearch('');
+                                    setAddingFlower(false);
+                                  }}
+                                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 rounded"
+                                >
+                                  <span className="font-medium">{s['Display Name']}</span>
+                                  <span className="text-xs text-ios-tertiary ml-1">
+                                    ({Number(s['Current Quantity']) || 0} pcs)
+                                  </span>
+                                </button>
+                              ))}
+                            {/* Add unlisted flower */}
+                            {flowerSearch.length >= 2 && !stockItems.some(s =>
+                              (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
+                            ) && (
+                              <button type="button"
+                                onClick={async () => {
+                                  try {
+                                    const res = await client.post('/stock', {
+                                      displayName: flowerSearch.trim(), quantity: 0,
+                                    });
+                                    setEditLines(p => [...p, {
+                                      id: null, stockItemId: res.data.id,
+                                      flowerName: res.data['Display Name'],
+                                      quantity: 1, _originalQty: 0,
+                                      costPricePerUnit: 0, sellPricePerUnit: 0,
+                                    }]);
+                                  } catch {
+                                    setEditLines(p => [...p, {
+                                      id: null, stockItemId: null,
+                                      flowerName: flowerSearch.trim(),
+                                      quantity: 1, _originalQty: 0,
+                                      costPricePerUnit: 0, sellPricePerUnit: 0,
+                                    }]);
+                                  }
+                                  setFlowerSearch('');
+                                  setAddingFlower(false);
+                                }}
+                                className="w-full text-left px-2 py-1.5 text-sm text-brand-600 font-medium border-t border-gray-100"
+                              >+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</button>
+                            )}
+                          </div>
+                          <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
+                            className="text-xs text-ios-tertiary">{t.cancel}</button>
+                        </div>
+                      )}
 
                       {removeIdx != null && (
                         <div className="bg-amber-50 rounded-xl px-3 py-2 space-y-2">
