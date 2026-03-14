@@ -313,8 +313,10 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                               })
                               .slice(0, 6)
                               .map(s => (
-                                <button key={s.id} type="button"
-                                  onClick={() => {
+                                <div key={s.id}
+                                  onPointerDown={e => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
                                     setEditLines(p => [...p, {
                                       id: null, stockItemId: s.id,
                                       flowerName: s['Display Name'],
@@ -325,20 +327,22 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                                     setFlowerSearch('');
                                     setAddingFlower(false);
                                   }}
-                                  className="w-full text-left px-2 py-1.5 text-sm hover:bg-gray-50 rounded"
+                                  className="w-full text-left px-2 py-2.5 text-sm active:bg-gray-100 rounded cursor-pointer"
                                 >
                                   <span className="font-medium">{s['Display Name']}</span>
                                   <span className="text-xs text-ios-tertiary ml-1">
                                     ({Number(s['Current Quantity']) || 0} pcs)
                                   </span>
-                                </button>
+                                </div>
                               ))}
                             {/* Add unlisted flower */}
                             {flowerSearch.length >= 2 && !stockItems.some(s =>
                               (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
                             ) && (
-                              <button type="button"
-                                onClick={async () => {
+                              <div
+                                onPointerDown={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
                                   try {
                                     const res = await client.post('/stock', {
                                       displayName: flowerSearch.trim(), quantity: 0,
@@ -360,8 +364,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                                   setFlowerSearch('');
                                   setAddingFlower(false);
                                 }}
-                                className="w-full text-left px-2 py-1.5 text-sm text-brand-600 font-medium border-t border-gray-100"
-                              >+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</button>
+                                className="w-full text-left px-2 py-2.5 text-sm text-brand-600 font-medium border-t border-gray-100 cursor-pointer active:bg-brand-50 rounded"
+                              >+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</div>
                             )}
                           </div>
                           <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
