@@ -362,6 +362,82 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// PUT /api/orders/:id/lines — edit bouquet composition after order creation.
+// Handles add/remove/update lines with stock adjustments.
+// Body: { lines: [...], removedLines: [{ lineId, stockItemId, quantity, action: 'return'|'writeoff', reason? }] }
+// Editable at statuses: New, Accepted, In Preparation, Ready.
+// If owner edits while Ready → auto-revert to In Preparation.
+router.put('/:id/lines', async (req, res, next) => {
+  try {
+    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    const editableStatuses = ['New', 'Accepted', 'In Preparation', 'Ready'];
+    if (!editableStatuses.includes(order.Status)) {
+      return res.status(400).json({ error: `Cannot edit bouquet in "${order.Status}" status.` });
+    }
+
+    const { lines = [], removedLines = [] } = req.body;
+    const isOwner = req.role === 'owner';
+
+    // 1. Handle removed lines: return to stock or write off
+    for (const rem of removedLines) {
+      if (rem.stockItemId && rem.quantity > 0) {
+        if (rem.action === 'return') {
+          await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
+        } else if (rem.action === 'writeoff') {
+          // Log as stock loss but don't return to stock
+          await db.create(TABLES.STOCK_LOSS_LOG, {
+            'Stock Item': [rem.stockItemId],
+            Quantity: rem.quantity,
+            Reason: rem.reason || 'Bouquet edit',
+            Date: new Date().toISOString().split('T')[0],
+          }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message));
+        }
+      }
+      if (rem.lineId) {
+        await db.deleteRecord(TABLES.ORDER_LINES, rem.lineId).catch(() => {});
+      }
+    }
+
+    // 2. Handle new/updated lines
+    const createdLines = [];
+    for (const line of lines) {
+      if (line.id) {
+        // Existing line — update quantity (compute stock delta)
+        if (line._originalQty != null && line.quantity !== line._originalQty) {
+          const delta = line._originalQty - line.quantity;
+          if (line.stockItemId && !line.stockDeferred && delta !== 0) {
+            await db.atomicStockAdjust(line.stockItemId, delta);
+          }
+          await db.update(TABLES.ORDER_LINES, line.id, { Quantity: line.quantity });
+        }
+      } else {
+        // New line — create record + deduct stock
+        const created = await db.create(TABLES.ORDER_LINES, {
+          Order: [req.params.id],
+          ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
+          'Flower Name': line.flowerName,
+          Quantity: line.quantity,
+          'Cost Price Per Unit': line.costPricePerUnit || 0,
+          'Sell Price Per Unit': line.sellPricePerUnit || 0,
+        });
+        createdLines.push(created);
+        if (line.stockItemId && !line.stockDeferred) {
+          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        }
+      }
+    }
+
+    // 3. Auto-revert status if owner edits while Ready
+    if (isOwner && order.Status === 'Ready') {
+      await db.update(TABLES.ORDERS, req.params.id, { Status: 'In Preparation' });
+    }
+
+    res.json({ updated: true, createdLines });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Allowed status transitions — like a production routing sheet.
 // Simplified: removed "In Progress" as a required step — unnecessary click
 // without value added. Orders flow: New → Ready → Delivered/Picked Up.

@@ -61,6 +61,10 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
+  const [editingBouquet, setEditingBouquet] = useState(false);
+  const [editLines, setEditLines] = useState([]);
+  const [removedLines, setRemovedLines] = useState([]);
+  const [removeDialog, setRemoveDialog] = useState(null);
 
   useEffect(() => {
     if (!id) return;
@@ -92,6 +96,7 @@ export default function OrderDetailPage() {
   const price      = order?.['Price Override'] || order?.['Sell Total'];
   const isPaid     = order?.['Payment Status'] === 'Paid';
   const isDelivery = order?.['Delivery Type'] === 'Delivery';
+  const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(order?.Status);
 
   return (
     <div className="min-h-screen">
@@ -166,28 +171,108 @@ export default function OrderDetailPage() {
             {/* Order lines */}
             {order.orderLines?.length > 0 && (
               <div>
-                <p className="ios-label">Bouquet</p>
-                <div className="ios-card overflow-hidden divide-y divide-gray-100">
-                  {order.orderLines.map((line, i) => (
-                    <div key={i} className="flex items-center justify-between px-4 py-3">
-                      <div>
-                        <p className="text-sm font-medium text-ios-label">{line['Flower Name']}</p>
-                        <p className="text-xs text-ios-tertiary">
-                          {line['Sell Price Per Unit']} zł × {line['Quantity']}
+                <div className="flex items-center justify-between mb-1">
+                  <p className="ios-label !mb-0">{t.bouquetContents || 'Bouquet'}</p>
+                  {!isTerminal && !editingBouquet && (
+                    <button
+                      onClick={() => {
+                        setEditLines(order.orderLines.map(l => ({
+                          id: l.id, stockItemId: l['Stock Item']?.[0] || null,
+                          flowerName: l['Flower Name'], quantity: l.Quantity,
+                          _originalQty: l.Quantity,
+                        })));
+                        setRemovedLines([]);
+                        setEditingBouquet(true);
+                      }}
+                      className="text-xs text-brand-600 font-medium px-1"
+                    >{t.edit || 'Edit'}</button>
+                  )}
+                </div>
+
+                {editingBouquet ? (
+                  <div className="ios-card px-4 py-3 space-y-2">
+                    {editLines.map((line, idx) => (
+                      <div key={line.id || idx} className="flex items-center gap-2">
+                        <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
+                        <input
+                          type="number" min="1" value={line.quantity}
+                          onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: Number(e.target.value) || 1 } : l))}
+                          className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1.5"
+                        />
+                        <button onClick={() => setRemoveDialog(idx)} className="text-red-400 text-sm px-1">✕</button>
+                      </div>
+                    ))}
+
+                    {removeDialog != null && (
+                      <div className="bg-amber-50 rounded-xl px-3 py-2 space-y-2">
+                        <p className="text-sm text-amber-800">{editLines[removeDialog]?.flowerName}</p>
+                        <div className="flex gap-2">
+                          <button onClick={() => {
+                            const l = editLines[removeDialog];
+                            setRemovedLines(p => [...p, { lineId: l.id, stockItemId: l.stockItemId, quantity: l._originalQty, action: 'return' }]);
+                            setEditLines(p => p.filter((_, i) => i !== removeDialog));
+                            setRemoveDialog(null);
+                          }} className="flex-1 py-2 rounded-xl bg-green-600 text-white text-xs font-medium">
+                            {t.returnToStock || 'Return'}
+                          </button>
+                          <button onClick={() => {
+                            const l = editLines[removeDialog];
+                            setRemovedLines(p => [...p, { lineId: l.id, stockItemId: l.stockItemId, quantity: l._originalQty, action: 'writeoff', reason: 'Bouquet edit' }]);
+                            setEditLines(p => p.filter((_, i) => i !== removeDialog));
+                            setRemoveDialog(null);
+                          }} className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium">
+                            {t.writeOff || 'Write off'}
+                          </button>
+                        </div>
+                        <button onClick={() => setRemoveDialog(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-1">
+                      <button
+                        onClick={async () => {
+                          setSaving(true);
+                          try {
+                            await client.put(`/orders/${id}/lines`, { lines: editLines, removedLines });
+                            setEditingBouquet(false);
+                            const res = await client.get(`/orders/${id}`);
+                            setOrder(res.data);
+                            showToast(t.bouquetUpdated || 'Bouquet updated');
+                          } catch (err) {
+                            showToast(err.response?.data?.error || t.error || 'Error', 'error');
+                          } finally { setSaving(false); }
+                        }}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
+                      >{saving ? '...' : (t.save || 'Save')}</button>
+                      <button onClick={() => { setEditingBouquet(false); setRemoveDialog(null); }}
+                        className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
+                      >{t.cancel}</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="ios-card overflow-hidden divide-y divide-gray-100">
+                    {order.orderLines.map((line, i) => (
+                      <div key={i} className="flex items-center justify-between px-4 py-3">
+                        <div>
+                          <p className="text-sm font-medium text-ios-label">{line['Flower Name']}</p>
+                          <p className="text-xs text-ios-tertiary">
+                            {line['Sell Price Per Unit']} zł × {line['Quantity']}
+                          </p>
+                        </div>
+                        <p className="text-sm font-semibold text-brand-600">
+                          {(Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0)).toFixed(0)} zł
                         </p>
                       </div>
-                      <p className="text-sm font-semibold text-brand-600">
-                        {(Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0)).toFixed(0)} zł
-                      </p>
+                    ))}
+                    <div className="flex justify-between px-4 py-3 bg-brand-50/50">
+                      <span className="text-sm text-ios-tertiary">Total</span>
+                      <span className="text-sm font-bold text-brand-600">
+                        {price > 0 ? `${price} zł` : '—'}
+                      </span>
                     </div>
-                  ))}
-                  <div className="flex justify-between px-4 py-3 bg-brand-50/50">
-                    <span className="text-sm text-ios-tertiary">Total</span>
-                    <span className="text-sm font-bold text-brand-600">
-                      {price > 0 ? `${price} zł` : '—'}
-                    </span>
                   </div>
-                </div>
+                )}
               </div>
             )}
 

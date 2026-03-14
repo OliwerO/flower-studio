@@ -5,6 +5,7 @@
 // Cart lines show only sell-price math. Cost + margin appear in the totals summary.
 
 import { useState, useMemo } from 'react';
+import client from '../../api/client.js';
 import t from '../../translations.js';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
@@ -124,6 +125,8 @@ export default function Step2Bouquet({
   })();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
+  const [showCustomFlower, setShowCustomFlower] = useState(false);
+  const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
 
   // Use current stock prices for display totals (snapshot happens at submit)
   const costTotal = useMemo(
@@ -253,7 +256,20 @@ export default function Step2Bouquet({
         </div>
 
         <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-64 overflow-y-auto">
-          {filteredStock.length === 0 ? (
+          {/* Add unlisted flower — for flowers not yet in the stock catalog */}
+          {flowerQuery.length >= 2 && !stock.some(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase()) && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowCustomFlower(true);
+                setCustomFlower({ name: flowerQuery, supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+              }}
+              className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
+            >
+              <span className="text-sm font-medium text-indigo-700">+ {t.addNewFlower || 'Add new'} "{flowerQuery}"</span>
+            </button>
+          )}
+          {filteredStock.length === 0 && !showCustomFlower ? (
             <p className="text-ios-tertiary text-sm text-center py-8">{t.noStockFound}</p>
           ) : (
             filteredStock.map(s => {
@@ -292,6 +308,100 @@ export default function Step2Bouquet({
           )}
         </div>
       </div>
+
+      {/* ── Custom flower form — create new stock item + add to cart ── */}
+      {showCustomFlower && (
+        <div className="ios-card px-4 py-3 space-y-2">
+          <p className="text-sm font-semibold text-ios-label">{t.addNewFlower || 'Add new flower'}</p>
+          <input
+            value={customFlower.name}
+            onChange={e => setCustomFlower(p => ({ ...p, name: e.target.value }))}
+            placeholder={t.flowerName || 'Flower name'}
+            className="field-input w-full text-sm"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              value={customFlower.supplier}
+              onChange={e => setCustomFlower(p => ({ ...p, supplier: e.target.value }))}
+              placeholder={t.supplier || 'Supplier'}
+              className="field-input text-sm"
+            />
+            <input
+              type="number"
+              value={customFlower.lotSize}
+              onChange={e => setCustomFlower(p => ({ ...p, lotSize: e.target.value }))}
+              placeholder={t.lotSize || 'Lot size'}
+              className="field-input text-sm"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input
+              type="number"
+              value={customFlower.costPrice}
+              onChange={e => setCustomFlower(p => ({ ...p, costPrice: e.target.value }))}
+              placeholder={`${t.costPrice || 'Cost price'} (zł)`}
+              className="field-input text-sm"
+            />
+            <input
+              type="number"
+              value={customFlower.sellPrice}
+              onChange={e => setCustomFlower(p => ({ ...p, sellPrice: e.target.value }))}
+              placeholder={`${t.sellPrice || 'Sell price'} (zł)`}
+              className="field-input text-sm"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={async () => {
+                if (!customFlower.name.trim()) return;
+                try {
+                  const res = await client.post('/stock', {
+                    displayName: customFlower.name.trim(),
+                    supplier: customFlower.supplier || '',
+                    costPrice: Number(customFlower.costPrice) || 0,
+                    sellPrice: Number(customFlower.sellPrice) || 0,
+                    lotSize: Number(customFlower.lotSize) || 1,
+                    quantity: 0,
+                  });
+                  const newItem = res.data;
+                  addOne({
+                    id: newItem.id,
+                    'Display Name': newItem['Display Name'],
+                    'Current Cost Price': newItem['Current Cost Price'] || 0,
+                    'Current Sell Price': newItem['Current Sell Price'] || 0,
+                  });
+                  setShowCustomFlower(false);
+                  setFlowerQuery('');
+                  onStockRefresh();
+                } catch {
+                  // Fallback: add as text-only line (no stock record)
+                  onLinesChange(lines => [...lines, {
+                    stockItemId: null,
+                    flowerName: customFlower.name.trim(),
+                    quantity: 1,
+                    costPricePerUnit: Number(customFlower.costPrice) || 0,
+                    sellPricePerUnit: Number(customFlower.sellPrice) || 0,
+                    stockDeferred: isFutureOrder,
+                  }]);
+                  setShowCustomFlower(false);
+                  setFlowerQuery('');
+                }
+              }}
+              className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
+            >
+              {t.addToCart || 'Add to bouquet'}
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowCustomFlower(false)}
+              className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
+            >
+              {t.cancel}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ── Cart ── */}
       {orderLines.length > 0 && (

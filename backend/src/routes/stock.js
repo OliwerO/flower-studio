@@ -103,7 +103,7 @@ router.get('/velocity', async (req, res, next) => {
 // Body: { displayName, category, quantity, costPrice, sellPrice?, supplier?, unit? }
 router.post('/', async (req, res, next) => {
   try {
-    const { displayName, category, quantity, costPrice, sellPrice, supplier, unit } = req.body;
+    const { displayName, category, quantity, costPrice, sellPrice, supplier, unit, lotSize } = req.body;
     if (!displayName) return res.status(400).json({ error: 'displayName is required' });
 
     const fields = {
@@ -117,6 +117,7 @@ router.post('/', async (req, res, next) => {
     if (sellPrice)  fields['Current Sell Price'] = Number(sellPrice);
     if (supplier)   fields['Supplier'] = supplier;
     if (unit)       fields['Unit'] = unit;
+    if (lotSize)    fields['Lot Size'] = Number(lotSize);
 
     const item = await db.create(TABLES.STOCK, fields);
     res.status(201).json(item);

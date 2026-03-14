@@ -1,6 +1,7 @@
 // Step2Bouquet — catalog tap-to-add above, cart stepper below.
 
 import { useState, useMemo } from 'react';
+import client from '../../api/client.js';
 import t from '../../translations.js';
 
 export default function Step2Bouquet({
@@ -8,7 +9,6 @@ export default function Step2Bouquet({
   onChange, onLinesChange, requiredBy,
 }) {
   // Determine if the order is for a future date (not today).
-  // Future orders allow toggling between "use current stock" and "order new" per line.
   const isFutureOrder = (() => {
     if (!requiredBy) return false;
     const today = new Date().toISOString().split('T')[0];
@@ -16,8 +16,15 @@ export default function Step2Bouquet({
   })();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
+  const [showCustomFlower, setShowCustomFlower] = useState(false);
+  const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
 
-  // Use current stock prices for display totals (snapshot happens at submit)
+  // Stable key for lines: stockItemId or flowerName (for unlisted flowers)
+  function lineKey(l) { return l.stockItemId || l.flowerName; }
+  function matchesKey(l, key) {
+    return l.stockItemId === key || (!l.stockItemId && l.flowerName === key);
+  }
+
   const costTotal = useMemo(
     () => orderLines.reduce((s, l) => {
       const si = stock.find(x => x.id === l.stockItemId);
@@ -62,34 +69,31 @@ export default function Step2Bouquet({
     });
   }
 
-  function changeQty(stockItemId, delta) {
+  function changeQty(key, delta) {
     onLinesChange(lines =>
       lines
-        .map(l => l.stockItemId === stockItemId
-          ? { ...l, quantity: l.quantity + delta }
-          : l
-        )
+        .map(l => matchesKey(l, key) ? { ...l, quantity: l.quantity + delta } : l)
         .filter(l => l.quantity > 0)
     );
   }
 
-  function setQtyDirect(stockItemId, value) {
+  function setQtyDirect(key, value) {
     const n = parseInt(value, 10);
     if (isNaN(n) || n < 0) return;
     onLinesChange(lines =>
       n === 0
-        ? lines.filter(l => l.stockItemId !== stockItemId)
-        : lines.map(l => l.stockItemId === stockItemId ? { ...l, quantity: n } : l)
+        ? lines.filter(l => !matchesKey(l, key))
+        : lines.map(l => matchesKey(l, key) ? { ...l, quantity: n } : l)
     );
   }
 
-  function removeLine(stockItemId) {
-    onLinesChange(lines => lines.filter(l => l.stockItemId !== stockItemId));
+  function removeLine(key) {
+    onLinesChange(lines => lines.filter(l => !matchesKey(l, key)));
   }
 
-  function toggleDeferred(stockItemId) {
+  function toggleDeferred(key) {
     onLinesChange(lines =>
-      lines.map(l => l.stockItemId === stockItemId ? { ...l, stockDeferred: !l.stockDeferred } : l)
+      lines.map(l => matchesKey(l, key) ? { ...l, stockDeferred: !l.stockDeferred } : l)
     );
   }
 
@@ -133,7 +137,20 @@ export default function Step2Bouquet({
         </div>
 
         <div className="ios-card overflow-hidden divide-y divide-white/40 max-h-64 overflow-y-auto">
-          {filteredStock.length === 0 ? (
+          {/* Add unlisted flower option */}
+          {flowerQuery.length >= 2 && !stock.some(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase()) && (
+            <button
+              type="button"
+              onClick={() => {
+                setShowCustomFlower(true);
+                setCustomFlower({ name: flowerQuery, supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+              }}
+              className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
+            >
+              <span className="text-sm font-medium text-indigo-700">+ {t.addNewFlower || 'Add new'} "{flowerQuery}"</span>
+            </button>
+          )}
+          {filteredStock.length === 0 && !showCustomFlower ? (
             <p className="text-ios-tertiary text-sm text-center py-8">{t.noStockFound}</p>
           ) : (
             filteredStock.map(s => {
@@ -172,36 +189,94 @@ export default function Step2Bouquet({
         </div>
       </div>
 
+      {/* Custom flower form */}
+      {showCustomFlower && (
+        <div className="ios-card px-4 py-3 space-y-2">
+          <p className="text-sm font-semibold text-ios-label">{t.addNewFlower || 'Add new flower'}</p>
+          <input
+            value={customFlower.name}
+            onChange={e => setCustomFlower(p => ({ ...p, name: e.target.value }))}
+            placeholder={t.flowerName || 'Flower name'}
+            className="field-input w-full text-sm"
+          />
+          <div className="grid grid-cols-2 gap-2">
+            <input value={customFlower.supplier} onChange={e => setCustomFlower(p => ({ ...p, supplier: e.target.value }))}
+              placeholder={t.supplier || 'Supplier'} className="field-input text-sm" />
+            <input type="number" value={customFlower.lotSize} onChange={e => setCustomFlower(p => ({ ...p, lotSize: e.target.value }))}
+              placeholder={t.lotSize || 'Lot size'} className="field-input text-sm" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="number" value={customFlower.costPrice} onChange={e => setCustomFlower(p => ({ ...p, costPrice: e.target.value }))}
+              placeholder={`${t.costPrice || 'Cost price'} (zł)`} className="field-input text-sm" />
+            <input type="number" value={customFlower.sellPrice} onChange={e => setCustomFlower(p => ({ ...p, sellPrice: e.target.value }))}
+              placeholder={`${t.sellPrice || 'Sell price'} (zł)`} className="field-input text-sm" />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={async () => {
+                if (!customFlower.name.trim()) return;
+                try {
+                  const res = await client.post('/stock', {
+                    displayName: customFlower.name.trim(),
+                    supplier: customFlower.supplier || '',
+                    costPrice: Number(customFlower.costPrice) || 0,
+                    sellPrice: Number(customFlower.sellPrice) || 0,
+                    lotSize: Number(customFlower.lotSize) || 1,
+                    quantity: 0,
+                  });
+                  const newItem = res.data;
+                  addOne({ id: newItem.id, 'Display Name': newItem['Display Name'],
+                    'Current Cost Price': newItem['Current Cost Price'] || 0,
+                    'Current Sell Price': newItem['Current Sell Price'] || 0 });
+                  setShowCustomFlower(false);
+                  setFlowerQuery('');
+                  onStockRefresh();
+                } catch {
+                  onLinesChange(lines => [...lines, {
+                    stockItemId: null, flowerName: customFlower.name.trim(), quantity: 1,
+                    costPricePerUnit: Number(customFlower.costPrice) || 0,
+                    sellPricePerUnit: Number(customFlower.sellPrice) || 0,
+                    stockDeferred: isFutureOrder,
+                  }]);
+                  setShowCustomFlower(false);
+                  setFlowerQuery('');
+                }
+              }}
+              className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
+            >{t.addToCart || 'Add to bouquet'}</button>
+            <button type="button" onClick={() => setShowCustomFlower(false)}
+              className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
+            >{t.cancel}</button>
+          </div>
+        </div>
+      )}
+
       {/* Cart */}
       {orderLines.length > 0 && (
         <div>
           <p className="ios-label">{t.bouquetContents}</p>
           <div className="ios-card overflow-hidden divide-y divide-white/40">
             {orderLines.map(l => {
+              const key = lineKey(l);
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const availableQty = Number(stockItem?.['Current Quantity']) || 0;
               const overStock = l.stockItemId && !l.stockDeferred && l.quantity > availableQty;
-              // Always use current stock price for display (snapshot happens at submit)
               const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
               const lineSell  = sellPrice * Number(l.quantity);
               return (
-              <div key={l.stockItemId} className="px-4 py-3">
+              <div key={key} className="px-4 py-3">
                 <div className="flex items-center gap-3">
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-sm font-medium text-ios-label truncate">{l.flowerName}</span>
+                      {!l.stockItemId && (
+                        <span className="px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-indigo-100 text-indigo-600">NEW</span>
+                      )}
                       {isFutureOrder && (
-                        <button
-                          type="button"
-                          onClick={() => toggleDeferred(l.stockItemId)}
+                        <button type="button" onClick={() => toggleDeferred(key)}
                           className={`ml-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide transition-colors ${
-                            l.stockDeferred
-                              ? 'bg-blue-100 text-blue-700'
-                              : 'bg-green-100 text-green-700'
+                            l.stockDeferred ? 'bg-blue-100 text-blue-700' : 'bg-green-100 text-green-700'
                           }`}
-                        >
-                          {l.stockDeferred ? (t.orderNew || 'New') : (t.useStock || 'Stock')}
-                        </button>
+                        >{l.stockDeferred ? (t.orderNew || 'New') : (t.useStock || 'Stock')}</button>
                       )}
                     </div>
                     <div className="text-xs text-ios-tertiary">
@@ -209,26 +284,18 @@ export default function Step2Bouquet({
                     </div>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <button
-                      onClick={() => changeQty(l.stockItemId, -1)}
-                      className="w-8 h-8 rounded-full bg-white/60 text-ios-secondary text-xl font-bold
-                                 flex items-center justify-center active:bg-white"
+                    <button onClick={() => changeQty(key, -1)}
+                      className="w-8 h-8 rounded-full bg-white/60 text-ios-secondary text-xl font-bold flex items-center justify-center active:bg-white"
                     >−</button>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      value={l.quantity}
-                      onChange={e => setQtyDirect(l.stockItemId, e.target.value)}
+                    <input type="text" inputMode="numeric" pattern="[0-9]*"
+                      value={l.quantity} onChange={e => setQtyDirect(key, e.target.value)}
                       onFocus={e => e.target.select()}
                       className="w-9 text-center text-sm font-bold border border-white/50 rounded-xl py-1 bg-white/40 outline-none"
                     />
-                    <button
-                      onClick={() => changeQty(l.stockItemId, +1)}
-                      className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
-                                 flex items-center justify-center active:bg-brand-200"
+                    <button onClick={() => changeQty(key, +1)}
+                      className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold flex items-center justify-center active:bg-brand-200"
                     >+</button>
-                    <button onClick={() => removeLine(l.stockItemId)}
+                    <button onClick={() => removeLine(key)}
                             className="text-ios-tertiary text-base ml-1 active:text-ios-red px-1">
                       &#10005;
                     </button>
