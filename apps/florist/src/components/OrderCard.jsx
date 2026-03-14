@@ -81,10 +81,15 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
   const [detail, setDetail]       = useState(null);
   const [loading, setLoading]     = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [editingBouquet, setEditingBouquet] = useState(false);
+  const [editLines, setEditLines] = useState([]);
+  const [removedLines, setRemovedLines] = useState([]);
+  const [removeIdx, setRemoveIdx] = useState(null);
 
   const status     = order['Status'] || 'New';
   const styles     = STATUS_STYLES[status] || STATUS_STYLES['New'];
   const isDelivery = order['Delivery Type'] === 'Delivery';
+  const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
   const request    = order['Customer Request'] || '';
   const price      = order['Price Override'] || order['Sell Total'] || '';
   const isPaid     = order['Payment Status'] === 'Paid';
@@ -242,25 +247,98 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
             <p className="text-xs text-ios-tertiary text-center py-4">{t.errorLoadDetails}</p>
           ) : (
             <>
-              {/* Order lines */}
+              {/* Order lines — with inline edit capability */}
               {detail.orderLines?.length > 0 && (
                 <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelBouquet}</p>
-                  <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
-                    {detail.orderLines.map((line, i) => (
-                      <div key={i} className="flex items-center justify-between px-3 py-2">
-                        <div>
-                          <p className="text-sm font-medium text-ios-label">{line['Flower Name']}</p>
-                          <p className="text-xs text-ios-tertiary">
-                            {line['Sell Price Per Unit']} zł × {line['Quantity']}
+                  <div className="flex items-center justify-between mb-1">
+                    <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
+                    {!isTerminal && !editingBouquet && (
+                      <button onClick={() => {
+                        setEditLines(detail.orderLines.map(l => ({
+                          id: l.id, stockItemId: l['Stock Item']?.[0] || null,
+                          flowerName: l['Flower Name'], quantity: l.Quantity,
+                          _originalQty: l.Quantity,
+                        })));
+                        setRemovedLines([]);
+                        setEditingBouquet(true);
+                      }} className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
+                    )}
+                  </div>
+
+                  {editingBouquet ? (
+                    <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-2">
+                      {editLines.map((line, idx) => (
+                        <div key={line.id || idx} className="flex items-center gap-2">
+                          <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
+                          <input type="number" min="1" value={line.quantity}
+                            onChange={e => setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: Number(e.target.value) || 1 } : l))}
+                            className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1.5" />
+                          <button onClick={() => setRemoveIdx(idx)} className="text-red-400 text-sm px-1">✕</button>
+                        </div>
+                      ))}
+
+                      {removeIdx != null && (
+                        <div className="bg-amber-50 rounded-xl px-3 py-2 space-y-2">
+                          <p className="text-sm text-amber-800">{editLines[removeIdx]?.flowerName}</p>
+                          <div className="flex gap-2">
+                            <button onClick={() => {
+                              const l = editLines[removeIdx];
+                              setRemovedLines(p => [...p, { lineId: l.id, stockItemId: l.stockItemId, quantity: l._originalQty, action: 'return' }]);
+                              setEditLines(p => p.filter((_, i) => i !== removeIdx));
+                              setRemoveIdx(null);
+                            }} className="flex-1 py-2 rounded-xl bg-green-600 text-white text-xs font-medium">
+                              {t.returnToStock || 'Return'}
+                            </button>
+                            <button onClick={() => {
+                              const l = editLines[removeIdx];
+                              setRemovedLines(p => [...p, { lineId: l.id, stockItemId: l.stockItemId, quantity: l._originalQty, action: 'writeoff', reason: 'Bouquet edit' }]);
+                              setEditLines(p => p.filter((_, i) => i !== removeIdx));
+                              setRemoveIdx(null);
+                            }} className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium">
+                              {t.writeOff || 'Write off'}
+                            </button>
+                          </div>
+                          <button onClick={() => setRemoveIdx(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                        </div>
+                      )}
+
+                      <div className="flex gap-2 pt-1">
+                        <button onClick={async () => {
+                          setSaving(true);
+                          try {
+                            await client.put(`/orders/${order.id}/lines`, { lines: editLines, removedLines });
+                            setEditingBouquet(false);
+                            const res = await client.get(`/orders/${order.id}`);
+                            setDetail(res.data);
+                            showToast(t.bouquetUpdated || 'Bouquet updated');
+                          } catch (err) {
+                            showToast(err.response?.data?.error || t.updateError, 'error');
+                          } finally { setSaving(false); }
+                        }} disabled={saving}
+                          className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
+                        >{saving ? '...' : (t.save || 'Save')}</button>
+                        <button onClick={() => { setEditingBouquet(false); setRemoveIdx(null); }}
+                          className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
+                        >{t.cancel}</button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
+                      {detail.orderLines.map((line, i) => (
+                        <div key={i} className="flex items-center justify-between px-3 py-2">
+                          <div>
+                            <p className="text-sm font-medium text-ios-label">{line['Flower Name']}</p>
+                            <p className="text-xs text-ios-tertiary">
+                              {line['Sell Price Per Unit']} zł × {line['Quantity']}
+                            </p>
+                          </div>
+                          <p className="text-sm font-semibold text-brand-600">
+                            {(Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0)).toFixed(0)} zł
                           </p>
                         </div>
-                        <p className="text-sm font-semibold text-brand-600">
-                          {(Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0)).toFixed(0)} zł
-                        </p>
-                      </div>
-                    ))}
-                  </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
