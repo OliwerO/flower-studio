@@ -171,6 +171,8 @@ const en = {
 
   // Stock write-off
   writeOff:         'Write off',
+  returnToStock:    'Return to stock',
+  spareFlowersQuestion: 'What would you like to do with the spare flowers?',
   deadStems:        'dead',
   confirm:          'Confirm',
   writeOffError:    'Failed to write off stock.',
@@ -447,6 +449,8 @@ const ru = {
 
   // Stock write-off
   writeOff:         'Списание',
+  returnToStock:    'Вернуть на склад',
+  spareFlowersQuestion: 'Что сделать с лишними цветами?',
   deadStems:        'списано',
   confirm:          'Подтвердить',
   writeOffError:    'Не удалось списать.',

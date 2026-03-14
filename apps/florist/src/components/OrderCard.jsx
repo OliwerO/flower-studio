@@ -443,11 +443,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                         return totalReduced > 0 || removedLines.length > 0 ? (
                           <div className="bg-amber-50 rounded-xl px-3 py-3 space-y-2">
                             <p className="text-sm font-medium text-amber-800">
-                              {totalReduced > 0 && `${totalReduced} ${t.stemsReduced || 'stems reduced'}`}
-                              {totalReduced > 0 && removedLines.length > 0 && ' + '}
-                              {removedLines.length > 0 && `${removedLines.length} ${t.flowersRemoved || 'flowers removed'}`}
+                              {t.spareFlowersQuestion || 'What would you like to do with the spare flowers?'}
                             </p>
-                            <p className="text-xs text-amber-700">{t.returnOrWriteOff || 'Return to stock or write off?'}</p>
                             <div className="flex gap-2">
                               <button onClick={() => doSave('return')}
                                 className="flex-1 py-2.5 rounded-xl bg-green-600 text-white text-sm font-medium active-scale">

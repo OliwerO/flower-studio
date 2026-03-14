@@ -398,9 +398,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 return (totalReduced > 0 || removedLines.length > 0) ? (
                   <div className="bg-amber-50 rounded-xl px-4 py-3 space-y-2">
                     <p className="text-sm font-medium text-amber-800">
-                      {totalReduced > 0 && `${totalReduced} ${t.stemsReduced || 'stems reduced'}`}
-                      {totalReduced > 0 && removedLines.length > 0 && ' + '}
-                      {removedLines.length > 0 && `${removedLines.length} ${t.flowersRemoved || 'flowers removed'}`}
+                      {t.spareFlowersQuestion || 'What would you like to do with the spare flowers?'}
                     </p>
                     <div className="flex gap-2">
                       <button onClick={() => doSaveDashboard('return')}
