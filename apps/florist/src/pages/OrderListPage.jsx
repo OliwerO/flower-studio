@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
@@ -9,6 +9,7 @@ import DatePicker from '../components/DatePicker.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 import t from '../translations.js';
+import fmtDate from '../utils/formatDate.js';
 
 // Key for dismissing stock alerts per session
 const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
@@ -76,6 +77,8 @@ export default function OrderListPage() {
     () => sessionStorage.getItem(ALERTS_DISMISSED_KEY) === 'true'
   );
   // Config lists now handled inside OrderCard via useConfigLists hook
+  const [flowerNeeds, setFlowerNeeds] = useState(null);
+  const [showFlowerNeeds, setShowFlowerNeeds] = useState(false);
 
   // Track whether we've done the initial load (show spinner only on first load)
   const initialLoaded = useRef(false);
@@ -125,6 +128,54 @@ export default function OrderListPage() {
       .then(r => setDashData(r.data))
       .catch(() => {}); // non-critical — silently ignore
   }, [isOwner, date]);
+
+  // #36: Fetch flowers needed for today + tomorrow from order lines
+  useEffect(() => {
+    const today = todayISO();
+    const tmrw = new Date();
+    tmrw.setDate(tmrw.getDate() + 1);
+    const tomorrowISO = tmrw.toISOString().split('T')[0];
+
+    async function fetchFlowerNeeds() {
+      try {
+        // Fetch today's and tomorrow's non-cancelled orders
+        const [todayRes, tmrwRes] = await Promise.all([
+          client.get('/orders', { params: { dateFrom: today, dateTo: today } }),
+          client.get('/orders', { params: { dateFrom: tomorrowISO, dateTo: tomorrowISO } }),
+        ]);
+
+        function aggregateFlowers(orders) {
+          const map = {};
+          for (const o of orders) {
+            if (o.Status === 'Cancelled') continue;
+            const summary = o['Bouquet Summary'] || '';
+            // Bouquet Summary format: "5× Rose Red, 3× Tulip White"
+            const parts = summary.split(',').map(s => s.trim()).filter(Boolean);
+            for (const part of parts) {
+              const match = part.match(/^(\d+)\s*[×x]\s*(.+)$/i);
+              if (match) {
+                const qty = Number(match[1]);
+                const name = match[2].trim();
+                map[name] = (map[name] || 0) + qty;
+              }
+            }
+          }
+          return Object.entries(map)
+            .sort((a, b) => b[1] - a[1])
+            .map(([name, qty]) => `${qty}× ${name}`);
+        }
+
+        const todayFlowers = aggregateFlowers(todayRes.data);
+        const tmrwFlowers = aggregateFlowers(tmrwRes.data);
+        if (todayFlowers.length > 0 || tmrwFlowers.length > 0) {
+          setFlowerNeeds({ today: todayFlowers, tomorrow: tmrwFlowers });
+        }
+      } catch {
+        // non-critical
+      }
+    }
+    fetchFlowerNeeds();
+  }, []);
 
   // Check for pending stock evaluations (florist) or active shopping POs (owner)
   useEffect(() => {
@@ -244,6 +295,42 @@ export default function OrderListPage() {
               <span className="text-red-500">{t.owner.unpaidLabel}: {Math.round(dashData.unpaidAging?.today?.total || 0)} zł</span>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* #36 — Flowers needed today/tomorrow */}
+      {flowerNeeds && (flowerNeeds.today.length > 0 || flowerNeeds.tomorrow.length > 0) && (
+        <div className="px-4 pt-2 max-w-2xl mx-auto">
+          <button
+            onClick={() => setShowFlowerNeeds(v => !v)}
+            className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-2.5 text-left active-scale"
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.flowersNeeded}</span>
+              <span className="text-xs text-ios-tertiary">{showFlowerNeeds ? '▲' : '▼'}</span>
+            </div>
+            {!showFlowerNeeds && (
+              <p className="text-xs text-ios-secondary mt-1 line-clamp-1">
+                {flowerNeeds.today.length > 0 && `${t.flowersToday}: ${flowerNeeds.today.join(', ')}`}
+              </p>
+            )}
+            {showFlowerNeeds && (
+              <div className="mt-2 space-y-2">
+                {flowerNeeds.today.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-brand-600 mb-0.5">{t.flowersToday}</p>
+                    <p className="text-sm text-ios-label">{flowerNeeds.today.join(', ')}</p>
+                  </div>
+                )}
+                {flowerNeeds.tomorrow.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-purple-600 mb-0.5">{t.flowersTomorrow}</p>
+                    <p className="text-sm text-ios-label">{flowerNeeds.tomorrow.join(', ')}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </button>
         </div>
       )}
 

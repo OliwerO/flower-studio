@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import client from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 
@@ -23,6 +24,8 @@ export default function NewOrderPage() {
   const STEPS = [t.step1, t.step2, t.step3, t.step4];
   const navigate              = useNavigate();
   const location              = useLocation();
+  const { role }              = useAuth();
+  const isOwner               = role === 'owner';
   const { showToast }         = useToast();
   const [step, setStep]       = useState(0);
   const [form, setForm]       = useState(emptyForm);
@@ -299,6 +302,7 @@ export default function NewOrderPage() {
             orderLines={form.orderLines}
             priceOverride={form.priceOverride}
             stock={stock}
+            isOwner={isOwner}
             onStockRefresh={() => client.get('/stock').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
             onChange={updateForm}
             onLinesChange={updateLines}
@@ -311,6 +315,7 @@ export default function NewOrderPage() {
             form={form}
             orderTotal={orderTotal}
             deliveryFee={deliveryFee}
+            isOwner={isOwner}
             onEdit={setStep} onSubmit={handleSubmit} submitting={submitting}
           />
         )}

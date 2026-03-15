@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
+import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 
@@ -74,7 +75,7 @@ function Row({ label, value }) {
 }
 
 export default function OrderCard({ order, onOrderUpdated, isOwner }) {
-  const { paymentMethods: payMethods, timeSlots } = useConfigLists();
+  const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
   const [detail, setDetail]       = useState(null);
@@ -257,7 +258,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
         )}
       </div>
 
-      <p className="font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
+      <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
       {request && (
         <p className={`text-sm text-ios-tertiary mt-0.5 ${expanded ? '' : 'line-clamp-1'}`}>{request}</p>
       )}
@@ -266,8 +267,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
       )}
       {/* Show delivery/pickup date in overview — more actionable than order date */}
       {(order['Delivery Date'] || order['Required By']) && (
-        <p className="text-xs text-ios-tertiary mt-1">
-          {order['Delivery Date'] || order['Required By']}
+        <p className="text-sm text-ios-label font-semibold mt-1">
+          {fmtDate(order['Delivery Date'] || order['Required By'])}
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
@@ -280,6 +281,30 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
           <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-amber-50 to-transparent" />
         </div>
       )}
+
+      {/* #44 — Status transition button on collapsed card */}
+      {!expanded && !isTerminal && (() => {
+        const nextStatuses = ALLOWED_TRANSITIONS[currentStatus] || [];
+        // Pick the primary next action (first non-cancel transition)
+        const primary = nextStatuses.find(s => s !== 'Cancelled');
+        if (!primary) return null;
+        const labelMap = {
+          'Ready': t.markReady,
+          'Delivered': t.markDelivered,
+          'Picked Up': t.markPickedUp,
+        };
+        return (
+          <div className="mt-2 pt-2 border-t border-gray-100">
+            <button
+              onClick={e => { e.stopPropagation(); patch({ 'Status': primary }); }}
+              disabled={saving}
+              className="w-full py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale disabled:opacity-40"
+            >
+              {labelMap[primary] || primary}
+            </button>
+          </div>
+        );
+      })()}
 
       {/* ── Expanded details (inline, no overlays) ── */}
       {expanded && (
@@ -507,7 +532,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
               {/* Order date (shown in expanded view, not overview) */}
               {d['Order Date'] && (
                 <div className="bg-gray-50 rounded-xl px-3 py-1">
-                  <Row label={t.labelOrderDate} value={d['Order Date']} />
+                  <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />
                 </div>
               )}
 
@@ -554,6 +579,32 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                     <Row label={t.labelPhone}     value={detail.delivery['Recipient Phone']} />
                     <Row label={t.labelFee}       value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
                   </div>
+                </div>
+              )}
+
+              {/* #37 — Driver assignment for delivery orders */}
+              {isDelivery && detail?.delivery && drivers.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {drivers.map(driver => (
+                      <button
+                        key={driver}
+                        onClick={() => patchDelivery({ 'Assigned Driver': detail.delivery['Assigned Driver'] === driver ? '' : driver })}
+                        disabled={saving}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                          detail.delivery['Assigned Driver'] === driver
+                            ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                            : 'bg-gray-100 text-ios-secondary border-gray-200 hover:bg-gray-200'
+                        }`}
+                      >
+                        {driver}
+                      </button>
+                    ))}
+                  </div>
+                  {!detail.delivery['Assigned Driver'] && (
+                    <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
+                  )}
                 </div>
               )}
 

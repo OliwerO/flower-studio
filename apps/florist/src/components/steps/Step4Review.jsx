@@ -1,6 +1,7 @@
 // Step4Review — clean summary in iOS grouped-list style.
 
 import t from '../../translations.js';
+import fmtDate from '../../utils/formatDate.js';
 
 function Section({ title, stepIndex, onEdit, children }) {
   return (
@@ -28,7 +29,7 @@ function Row({ label, value }) {
   );
 }
 
-export default function Step4Review({ form, orderTotal, deliveryFee, onEdit, onSubmit, submitting }) {
+export default function Step4Review({ form, orderTotal, deliveryFee, isOwner, onEdit, onSubmit, submitting }) {
 
   return (
     <div className="flex flex-col gap-5 pb-36">
@@ -62,7 +63,7 @@ export default function Step4Review({ form, orderTotal, deliveryFee, onEdit, onS
             <Row label={t.recipientName}   value={form.recipientName} />
             <Row label={t.recipientPhone}  value={form.recipientPhone} />
             <Row label={t.deliveryAddress} value={form.deliveryAddress} />
-            <Row label={t.deliveryDate}    value={form.deliveryDate} />
+            <Row label={t.deliveryDate}    value={fmtDate(form.deliveryDate)} />
             <Row label={t.deliveryTime}    value={form.deliveryTime} />
             <Row label={t.cardText}        value={form.cardText} />
             <Row label={t.deliveryFee}     value={`${form.deliveryFee} zł`} />

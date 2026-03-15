@@ -115,7 +115,7 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFuture
 
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
-  onChange, onLinesChange, requiredBy,
+  onChange, onLinesChange, requiredBy, isOwner,
 }) {
   // Determine if the order is for a future date (not today).
   // Future orders allow toggling between "use current stock" and "order new" per line.
@@ -124,9 +124,10 @@ export default function Step2Bouquet({
     const today = new Date().toISOString().split('T')[0];
     return requiredBy > today;
   })();
-  const { suppliers: configSuppliers } = useConfigLists();
+  const { suppliers: configSuppliers, targetMarkup } = useConfigLists();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
+  const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
   const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
 
@@ -161,13 +162,18 @@ export default function Step2Bouquet({
   }, [stock]);
 
   const filteredStock = useMemo(() => {
+    let result = visibleStock;
+    // #39: Filter to show only in-stock items by default
+    if (!showOutOfStock) {
+      result = result.filter(s => (Number(s['Current Quantity']) || 0) > 0);
+    }
     const q = flowerQuery.toLowerCase().trim();
-    if (!q) return visibleStock;
-    return visibleStock.filter(s =>
+    if (!q) return result;
+    return result.filter(s =>
       (s['Display Name'] || '').toLowerCase().includes(q) ||
       (s['Category'] || '').toLowerCase().includes(q)
     );
-  }, [visibleStock, flowerQuery]);
+  }, [visibleStock, flowerQuery, showOutOfStock]);
 
   function addOne(stockItem) {
     onLinesChange(lines => {
@@ -251,9 +257,17 @@ export default function Step2Bouquet({
       <div>
         <div className="flex items-center justify-between mb-1.5 px-1">
           <p className="ios-label !px-0 !mb-0">{t.searchFlowers}</p>
-          <button onClick={onStockRefresh} className="text-xs text-brand-600 font-medium">
-            ↻ {t.refreshStock}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowOutOfStock(v => !v)}
+              className={`text-xs font-medium px-2 py-0.5 rounded-full ${showOutOfStock ? 'bg-gray-200 text-ios-label' : 'bg-brand-50 text-brand-600'}`}
+            >
+              {showOutOfStock ? t.showAll : t.inStockOnly}
+            </button>
+            <button onClick={onStockRefresh} className="text-xs text-brand-600 font-medium">
+              ↻ {t.refreshStock}
+            </button>
+          </div>
         </div>
 
         <div className="ios-card flex items-center px-4 gap-3 mb-2">
@@ -302,14 +316,15 @@ export default function Step2Bouquet({
                               ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
+                    <div className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
                       {s['Display Name']}
                     </div>
-                    <div className="text-xs text-ios-tertiary">
-                      {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
+                    <div className="text-sm text-ios-tertiary">
+                      <span className="font-bold text-brand-700">{Number(s['Current Sell Price']).toFixed(0)} zł</span>
+                      {isOwner && <span> · {Number(s['Current Cost Price']).toFixed(0)} zł {t.costPrice}</span>}
+                      <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
-                      {s['Last Restocked'] && <span className="text-ios-tertiary/70"> · {s['Last Restocked'].slice(5)}</span>}
                     </div>
                   </div>
                   {inCart && (
@@ -364,17 +379,32 @@ export default function Step2Bouquet({
             <input
               type="number"
               value={customFlower.costPrice}
-              onChange={e => setCustomFlower(p => ({ ...p, costPrice: e.target.value }))}
+              onChange={e => {
+                const cost = e.target.value;
+                const updates = { costPrice: cost };
+                // #40: Auto-suggest sell price = cost × targetMarkup
+                if (cost && targetMarkup && !customFlower.sellPrice) {
+                  updates.sellPrice = String(Math.round(Number(cost) * targetMarkup));
+                }
+                setCustomFlower(p => ({ ...p, ...updates }));
+              }}
               placeholder={`${t.costPrice || 'Cost price'} (zł)`}
               className="field-input text-sm"
             />
-            <input
-              type="number"
-              value={customFlower.sellPrice}
-              onChange={e => setCustomFlower(p => ({ ...p, sellPrice: e.target.value }))}
-              placeholder={`${t.sellPrice || 'Sell price'} (zł)`}
-              className="field-input text-sm"
-            />
+            <div className="flex flex-col">
+              <input
+                type="number"
+                value={customFlower.sellPrice}
+                onChange={e => setCustomFlower(p => ({ ...p, sellPrice: e.target.value }))}
+                placeholder={`${t.sellPrice || 'Sell price'} (zł)`}
+                className="field-input text-sm"
+              />
+              {customFlower.costPrice && targetMarkup && !customFlower.sellPrice && (
+                <span className="text-[10px] text-ios-tertiary mt-0.5">
+                  {t.suggestedSellPrice}: {Math.round(Number(customFlower.costPrice) * targetMarkup)} zł
+                </span>
+              )}
+            </div>
           </div>
           <div className="flex gap-2">
             <button
@@ -455,18 +485,18 @@ export default function Step2Bouquet({
             ))}
           </div>
 
-          {/* Totals — tap to toggle cost/margin visibility */}
+          {/* Totals — tap to toggle cost/margin visibility (owner only) */}
           <button
             key={`totals-${costTotal}-${sellTotal}`}
             type="button"
-            onClick={() => setShowCost(v => !v)}
+            onClick={() => isOwner && setShowCost(v => !v)}
             className="w-full mt-2 ios-card px-4 py-3 text-left active-scale transition-all"
           >
             <div className="flex items-center justify-between">
               <span className="text-sm text-ios-label font-semibold">{t.sellTotal}</span>
               <span className="text-base font-bold text-brand-600">{sellTotal.toFixed(0)} zł</span>
             </div>
-            {showCost && (
+            {isOwner && showCost && (
               <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-gray-100">
                 <span className="text-xs text-ios-tertiary">{t.costTotal}: (Margin: {margin}%)</span>
                 <span className="text-xs text-ios-tertiary font-medium">{costTotal.toFixed(0)} zł</span>

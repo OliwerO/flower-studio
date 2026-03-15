@@ -291,6 +291,21 @@ const en = {
   didYouMean:         'Did you mean',
   useThis:            'Use this',
   otherSupplier:      'Other',
+
+  // Block 5 — florist UX
+  flowersNeeded:      'Flowers needed',
+  flowersToday:       'Today',
+  flowersTomorrow:    'Tomorrow',
+  assignedDriver:     'Driver',
+  noDriver:           'Not assigned',
+  markReady:          'Mark Ready',
+  markDelivered:      'Mark Delivered',
+  markPickedUp:       'Mark Picked Up',
+  suggestedSellPrice: 'Suggested sell price',
+  showAll:            'Show all',
+  inStockOnly:        'In stock',
+  costPrice:          'Cost price',
+  sellPrice:          'Sell price',
 };
 
 const ru = {
@@ -581,6 +596,21 @@ const ru = {
   didYouMean:         'Вы имели в виду',
   useThis:            'Использовать',
   otherSupplier:      'Другой',
+
+  // Block 5 — florist UX
+  flowersNeeded:      'Нужные цветы',
+  flowersToday:       'Сегодня',
+  flowersTomorrow:    'Завтра',
+  assignedDriver:     'Водитель',
+  noDriver:           'Не назначен',
+  markReady:          'Готов',
+  markDelivered:      'Доставлен',
+  markPickedUp:       'Забран',
+  suggestedSellPrice: 'Рекомендуемая цена',
+  showAll:            'Все',
+  inStockOnly:        'В наличии',
+  costPrice:          'Себестоимость',
+  sellPrice:          'Цена продажи',
 };
 
 // ── Proxy-based dynamic translation ──
