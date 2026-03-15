@@ -29,7 +29,11 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
 
   // Select a customer and immediately advance to the next step
   function selectCustomer(c) {
-    const patch = { customerId: c.id, customerName: c['Name'] || c['Nickname'] || c['Phone'] };
+    const patch = {
+      customerId: c.id,
+      customerName: c['Name'] || c['Nickname'] || c['Phone'],
+      customerCommMethod: c['Communication method'] || '',
+    };
     onSelect(patch);  // onSelect updates form AND advances step
   }
 

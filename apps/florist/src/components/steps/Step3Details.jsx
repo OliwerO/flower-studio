@@ -81,18 +81,20 @@ export default function Step3Details({ form, onChange }) {
         <Pills
           value={form.source}
           onChange={val => onChange({ source: val })}
-          options={SOURCES.map(s => ({ value: s, label: SOURCE_LABELS[s] }))}
-        />
-      </SectionCard>
-
-      {/* Communication Method — how the customer contacted us */}
-      <SectionCard label={t.communicationMethod || 'Communication method'}>
-        <Pills
-          value={form.communicationMethod || ''}
-          onChange={val => onChange({ communicationMethod: val })}
           options={SOURCES.map(s => ({ value: s, label: SOURCE_LABELS[s] || s }))}
         />
       </SectionCard>
+
+      {/* Communication Method — only shown if customer doesn't already have one saved */}
+      {!form.customerCommMethod && (
+        <SectionCard label={t.communicationMethod}>
+          <Pills
+            value={form.communicationMethod || ''}
+            onChange={val => onChange({ communicationMethod: val })}
+            options={SOURCES.map(s => ({ value: s, label: SOURCE_LABELS[s] || s }))}
+          />
+        </SectionCard>
+      )}
 
       {/* Fulfillment */}
       <SectionCard label={t.deliveryType}>
