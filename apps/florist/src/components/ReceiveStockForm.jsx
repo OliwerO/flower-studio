@@ -81,6 +81,11 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
         sellPricePerUnit:  Number(sellPrice) || 0,
         notes:             '',
       });
+
+      // If genuinely new supplier, persist to settings so it's available everywhere
+      if (isNewSupplier && supplierValue && !configSuppliers.some(s => s.toLowerCase() === supplierValue.toLowerCase())) {
+        client.put('/settings/config', { suppliers: [...configSuppliers, supplierValue] }).catch(() => {});
+      }
     } catch (err) {
       console.error('ReceiveStockForm error:', err);
     } finally {
@@ -189,11 +194,31 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               + New
             </button>
           </div>
-          {isNewSupplier && (
-            <div className="ios-card mt-2 px-4 py-3">
-              <TextInput value={newSupplier} onChange={setNewSupplier} placeholder="Supplier name" />
-            </div>
-          )}
+          {isNewSupplier && (() => {
+            // Fuzzy-match: find existing suppliers similar to what user is typing
+            const trimmed = newSupplier.trim().toLowerCase();
+            const suggestion = trimmed.length >= 2
+              ? configSuppliers.find(s => {
+                  const sl = s.toLowerCase();
+                  return sl !== trimmed && (sl.startsWith(trimmed) || trimmed.startsWith(sl));
+                })
+              : null;
+            return (
+              <div className="ios-card mt-2 px-4 py-3 space-y-2">
+                <TextInput value={newSupplier} onChange={setNewSupplier} placeholder="Supplier name" />
+                {suggestion && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-amber-600">{t.didYouMean}: "{suggestion}"?</span>
+                    <button
+                      type="button"
+                      onClick={() => { setSupplierId(suggestion); setNewSupplier(''); }}
+                      className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full"
+                    >{t.useThis}</button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
         </div>
       )}
 

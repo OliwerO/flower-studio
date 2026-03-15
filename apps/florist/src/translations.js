@@ -280,6 +280,9 @@ const en = {
     notesHint:      'Note for driver or florist...',
     paidTo:         'Paid to',
   },
+  didYouMean:         'Did you mean',
+  useThis:            'Use this',
+  otherSupplier:      'Other',
 };
 
 const ru = {
@@ -559,6 +562,9 @@ const ru = {
     notesHint:      'Заметка для водителя или флориста...',
     paidTo:         'Оплачено',
   },
+  didYouMean:         'Вы имели в виду',
+  useThis:            'Использовать',
+  otherSupplier:      'Другой',
 };
 
 // ── Proxy-based dynamic translation ──

@@ -7,6 +7,7 @@
 import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
+import useConfigLists from '../../hooks/useConfigLists.js';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
@@ -123,6 +124,7 @@ export default function Step2Bouquet({
     const today = new Date().toISOString().split('T')[0];
     return requiredBy > today;
   })();
+  const { suppliers: configSuppliers } = useConfigLists();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
@@ -333,12 +335,14 @@ export default function Step2Bouquet({
             className="field-input w-full text-sm"
           />
           <div className="grid grid-cols-2 gap-2">
-            <input
+            <select
               value={customFlower.supplier}
               onChange={e => setCustomFlower(p => ({ ...p, supplier: e.target.value }))}
-              placeholder={t.supplier || 'Supplier'}
               className="field-input text-sm"
-            />
+            >
+              <option value="">{t.supplier || 'Supplier'}...</option>
+              {configSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
             <input
               type="number"
               value={customFlower.lotSize}

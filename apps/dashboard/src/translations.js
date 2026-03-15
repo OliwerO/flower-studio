@@ -503,6 +503,10 @@ const en = {
   dzTimeSlotsHint:          'Available time windows for customer selection',
   lotSize:                  'Lot Size',
   packs:                    'packs',
+  alreadyExists:            'Already exists',
+  similarTo:                'Similar to',
+  addAnyway:                'Add anyway?',
+  didYouMean:               'Did you mean',
 };
 
 const ru = {
@@ -1007,6 +1011,10 @@ const ru = {
   dzTimeSlotsHint:          'Доступные временные интервалы для выбора клиентом',
   lotSize:                  'Фасовка',
   packs:                    'уп.',
+  alreadyExists:            'Уже существует',
+  similarTo:                'Похоже на',
+  addAnyway:                'Добавить всё равно?',
+  didYouMean:               'Вы имели в виду',
 };
 
 // ── Proxy-based dynamic translation ──

@@ -50,18 +50,51 @@ function ConfigRow({ label, value, type = 'text', onSave, hint }) {
 }
 
 // ── Editable list (suppliers, categories, etc.) ──
+// Includes fuzzy-match duplicate detection — like a quality gate that catches
+// near-duplicate part numbers before they enter the parts catalog.
 function ListEditor({ label, items, onSave, hint }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(items);
   const [newItem, setNewItem] = useState('');
+  const [warning, setWarning] = useState(null); // { type: 'exact' | 'similar', match: string }
 
   useEffect(() => { setDraft(items); }, [items]);
 
-  function addItem() {
-    if (newItem.trim() && !draft.includes(newItem.trim())) {
-      setDraft([...draft, newItem.trim()]);
-      setNewItem('');
+  // Find exact or close matches among existing items
+  function findDuplicate(val) {
+    const trimmed = val.trim().toLowerCase();
+    if (!trimmed) return null;
+    for (const existing of draft) {
+      const ex = existing.toLowerCase();
+      if (ex === trimmed) return { type: 'exact', match: existing };
+      // Close match: one starts with the other, or differ only by whitespace/casing
+      if (ex.startsWith(trimmed) || trimmed.startsWith(ex)) {
+        return { type: 'similar', match: existing };
+      }
     }
+    return null;
+  }
+
+  function addItem(force = false) {
+    const trimmed = newItem.trim();
+    if (!trimmed) return;
+
+    if (!force) {
+      const dup = findDuplicate(trimmed);
+      if (dup) {
+        if (dup.type === 'exact') {
+          setWarning({ type: 'exact', match: dup.match });
+          return;
+        }
+        // Similar match — ask for confirmation
+        setWarning({ type: 'similar', match: dup.match });
+        return;
+      }
+    }
+
+    setDraft([...draft, trimmed]);
+    setNewItem('');
+    setWarning(null);
   }
 
   function removeItem(i) {
@@ -71,6 +104,7 @@ function ListEditor({ label, items, onSave, hint }) {
   function save() {
     onSave(draft);
     setEditing(false);
+    setWarning(null);
   }
 
   return (
@@ -88,7 +122,7 @@ function ListEditor({ label, items, onSave, hint }) {
         ) : (
           <div className="flex gap-1">
             <button onClick={save} className="text-xs text-white bg-brand-600 px-2 py-1 rounded-lg">{t.save}</button>
-            <button onClick={() => { setEditing(false); setDraft(items); }} className="text-xs text-gray-400">✕</button>
+            <button onClick={() => { setEditing(false); setDraft(items); setWarning(null); }} className="text-xs text-gray-400">✕</button>
           </div>
         )}
       </div>
@@ -103,16 +137,28 @@ function ListEditor({ label, items, onSave, hint }) {
         ))}
       </div>
       {editing && (
-        <div className="flex gap-1.5 mt-2">
-          <input
-            value={newItem}
-            onChange={e => setNewItem(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && addItem()}
-            placeholder={t.addItem + '...'}
-            className="flex-1 text-sm px-2 py-1 border rounded-lg"
-          />
-          <button onClick={addItem} className="text-xs bg-gray-200 px-2 py-1 rounded-lg">+</button>
-        </div>
+        <>
+          <div className="flex gap-1.5 mt-2">
+            <input
+              value={newItem}
+              onChange={e => { setNewItem(e.target.value); setWarning(null); }}
+              onKeyDown={e => e.key === 'Enter' && addItem()}
+              placeholder={t.addItem + '...'}
+              className="flex-1 text-sm px-2 py-1 border rounded-lg"
+            />
+            <button onClick={() => addItem()} className="text-xs bg-gray-200 px-2 py-1 rounded-lg">+</button>
+          </div>
+          {warning?.type === 'exact' && (
+            <p className="text-xs text-red-500 mt-1">{t.alreadyExists}: "{warning.match}"</p>
+          )}
+          {warning?.type === 'similar' && (
+            <div className="flex items-center gap-2 mt-1">
+              <p className="text-xs text-amber-600">{t.similarTo}: "{warning.match}". {t.addAnyway}</p>
+              <button onClick={() => addItem(true)} className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded">{t.confirm}</button>
+              <button onClick={() => setWarning(null)} className="text-xs text-gray-400">✕</button>
+            </div>
+          )}
+        </>
       )}
     </div>
   );

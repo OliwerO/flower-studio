@@ -30,7 +30,7 @@ const DELIVERY_TYPES = [
 ];
 
 export default function OrderDetailPanel({ orderId, onUpdate }) {
-  const { paymentMethods: pmList, orderSources: srcList } = useConfigLists();
+  const { paymentMethods: pmList, orderSources: srcList, timeSlots } = useConfigLists();
   const PAYMENT_METHODS = pmList.map(v => ({ value: v, label: v }));
   const SOURCES = srcList.map(v => ({ value: v, label: v }));
   const [driverNames, setDriverNames] = useState([]);
@@ -511,8 +511,17 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               onSave={v => patchDelivery({ 'Delivery Address': v })} disabled={saving} multiline />
             <EditableRow label={t.deliveryDate} value={o.delivery['Delivery Date'] || ''}
               onSave={v => patchDelivery({ 'Delivery Date': v || null })} disabled={saving} type="date" />
-            <EditableRow label={t.deliveryTime} value={o.delivery['Delivery Time']}
-              onSave={v => patchDelivery({ 'Delivery Time': v })} disabled={saving} />
+            <div className="flex items-start gap-3">
+              <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryTime}</span>
+              <div className="flex-1">
+                <Pills
+                  options={timeSlots.map(s => ({ value: s, label: s }))}
+                  value={o.delivery['Delivery Time'] || ''}
+                  onChange={v => patchDelivery({ 'Delivery Time': v })}
+                  disabled={saving}
+                />
+              </div>
+            </div>
             <EditableRow label={t.cardText} value={o.delivery['Greeting Card Text']}
               onSave={v => patchDelivery({ 'Greeting Card Text': v })} disabled={saving} multiline />
             <EditableRow label={t.deliveryFee} value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}

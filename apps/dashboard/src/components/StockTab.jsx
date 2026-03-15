@@ -13,7 +13,7 @@ import Pills from './Pills.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 
 export default function StockTab({ initialFilter }) {
-  const { suppliers: SUPPLIERS } = useConfigLists();
+  const { suppliers: SUPPLIERS, categories: CATEGORIES } = useConfigLists();
   const [stock, setStock]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
@@ -238,7 +238,7 @@ export default function StockTab({ initialFilter }) {
               onChange={e => setNewItem({ ...newItem, category: e.target.value })}
               className="field-input block w-32">
               <option value="">— Select —</option>
-              {['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'].map(c => (
+              {CATEGORIES.map(c => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
