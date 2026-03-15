@@ -108,6 +108,25 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
         );
       })()}
 
+      {/* Prominent contact info — quick access for calling/messaging */}
+      <div className="bg-white/40 rounded-xl px-4 py-3 flex flex-wrap items-center gap-4">
+        {cust.Phone && (
+          <a href={`tel:${cust.Phone.replace(/\s/g, '')}`} className="flex items-center gap-1.5 text-sm text-ios-blue font-medium active:underline">
+            <span>&#128241;</span> {cust.Phone}
+          </a>
+        )}
+        {cust.Email && (
+          <a href={`mailto:${cust.Email}`} className="flex items-center gap-1.5 text-sm text-ios-blue font-medium active:underline">
+            <span>&#9993;</span> {cust.Email}
+          </a>
+        )}
+        {cust.Link && (
+          <a href={cust.Link.startsWith('http') ? cust.Link : `https://instagram.com/${cust.Link.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1.5 text-sm text-ios-blue font-medium active:underline">
+            <span>&#127760;</span> {cust.Link}
+          </a>
+        )}
+      </div>
+
       {/* Contact info grid */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
         <EditableField label={t.name} value={cust.Name} field="Name" onSave={patchField} />
@@ -134,6 +153,10 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
             <option value="Rare">Rare</option>
             <option value="DO NOT CONTACT">DO NOT CONTACT</option>
           </select>
+          {/* Show auto-computed segment when no manual segment is set */}
+          {!cust.Segment && cust.computedSegment && (
+            <p className="text-[10px] text-ios-tertiary mt-1">Auto: {cust.computedSegment}</p>
+          )}
         </div>
       </div>
 
@@ -173,6 +196,43 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
         onSave={patchField}
         multiline
       />
+
+      {/* Flowers ordered — aggregated from all order bouquet summaries */}
+      {orders.length > 0 && (() => {
+        // Parse "5x Roses, 3x Tulips" from Bouquet Summary across all orders
+        const flowerMap = {};
+        for (const o of orders) {
+          const summary = o['Bouquet Summary'] || '';
+          if (!summary) continue;
+          for (const part of summary.split(',')) {
+            const match = part.trim().match(/^(\d+)\s*[x×]\s*(.+)$/i);
+            if (match) {
+              const qty = parseInt(match[1], 10);
+              const name = match[2].trim();
+              flowerMap[name] = (flowerMap[name] || 0) + qty;
+            }
+          }
+        }
+        const flowerList = Object.entries(flowerMap)
+          .sort(([,a], [,b]) => b - a)
+          .slice(0, 15);
+
+        if (flowerList.length === 0) return null;
+        return (
+          <div>
+            <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
+              {t.flowersOrdered || 'Flowers ordered'}
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {flowerList.map(([name, qty]) => (
+                <span key={name} className="text-xs bg-brand-50 text-brand-700 px-2.5 py-1 rounded-full font-medium">
+                  {qty}x {name}
+                </span>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Order history */}
       <div>

@@ -9,7 +9,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
   const [results, setResults]       = useState([]);
   const [searching, setSearching]   = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ Name: '', Phone: '', Nickname: '', Email: '' });
+  const [newCustomer, setNewCustomer] = useState({ Name: '', Phone: '', Nickname: '', Email: '', Link: '', Language: '', 'Home address': '', 'Sex/Business': '', 'Communication method': '' });
+  const [showExtra, setShowExtra] = useState(false);
   const [saving, setSaving]         = useState(false);
   const debounceRef                 = useRef(null);
 
@@ -159,6 +160,107 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
               </div>
             ))}
           </div>
+
+          {/* Optional extra fields — expandable */}
+          {!showExtra && (
+            <button
+              onClick={() => setShowExtra(true)}
+              className="mt-2 text-sm text-brand-600 font-medium px-1 active:underline"
+            >
+              + {t.moreFields || 'More fields'}
+            </button>
+          )}
+
+          {showExtra && (
+            <div className="ios-card overflow-hidden divide-y divide-ios-separator/40 mt-2">
+              {/* Link / Instagram */}
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.instagram || 'Instagram'}</span>
+                <input
+                  type="text"
+                  value={newCustomer.Link}
+                  onChange={e => setNewCustomer(p => ({ ...p, Link: e.target.value }))}
+                  placeholder="instagram.com/handle"
+                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
+                />
+              </div>
+
+              {/* Language — pill selector */}
+              <div className="px-4 py-3">
+                <span className="text-sm text-ios-tertiary">{t.language || 'Language'}</span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {['RU', 'UK', 'PL', 'EN', 'TR'].map(lang => (
+                    <button
+                      key={lang}
+                      type="button"
+                      onClick={() => setNewCustomer(p => ({ ...p, Language: p.Language === lang ? '' : lang }))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                        newCustomer.Language === lang
+                          ? 'bg-brand-600 text-white'
+                          : 'bg-gray-100 text-ios-secondary'
+                      }`}
+                    >
+                      {lang}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Home address */}
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.homeAddress || 'Address'}</span>
+                <input
+                  type="text"
+                  value={newCustomer['Home address']}
+                  onChange={e => setNewCustomer(p => ({ ...p, 'Home address': e.target.value }))}
+                  placeholder="ul. Florianska 10, Krakow"
+                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
+                />
+              </div>
+
+              {/* Sex/Business — pill selector */}
+              <div className="px-4 py-3">
+                <span className="text-sm text-ios-tertiary">{t.sex || 'Type'}</span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {[{ v: 'Female', l: t.female || 'Female' }, { v: 'Male', l: t.male || 'Male' }, { v: 'Business', l: t.business || 'Business' }].map(({ v, l }) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setNewCustomer(p => ({ ...p, 'Sex/Business': p['Sex/Business'] === v ? '' : v }))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                        newCustomer['Sex/Business'] === v
+                          ? 'bg-brand-600 text-white'
+                          : 'bg-gray-100 text-ios-secondary'
+                      }`}
+                    >
+                      {l}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Communication method — pill selector */}
+              <div className="px-4 py-3">
+                <span className="text-sm text-ios-tertiary">{t.communicationMethod}</span>
+                <div className="flex flex-wrap gap-2 mt-2">
+                  {['Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'In-store'].map(method => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setNewCustomer(p => ({ ...p, 'Communication method': p['Communication method'] === method ? '' : method }))}
+                      className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                        newCustomer['Communication method'] === method
+                          ? 'bg-brand-600 text-white'
+                          : 'bg-gray-100 text-ios-secondary'
+                      }`}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="flex gap-3 mt-3">
             <button

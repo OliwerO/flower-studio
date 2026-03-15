@@ -101,6 +101,10 @@ const en = {
   note:                 'Note',
   stockPickupAssigned:  'Stock pickup assigned',
 
+  // Sorting
+  assignedToMe:  'Mine',
+  unassigned:    'Unassigned',
+
   // General
   loading:       'Loading...',
   error:         'Something went wrong',
@@ -210,6 +214,10 @@ const ru = {
   no:                   'Нет',
   note:                 'Заметка',
   stockPickupAssigned:  'Назначена закупка',
+
+  // Sorting
+  assignedToMe:  'Мои',
+  unassigned:    'Без водителя',
 
   // General
   loading:       'Загрузка...',

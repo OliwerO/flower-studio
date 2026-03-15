@@ -107,21 +107,13 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
           </a>
         )}
 
-        {/* Order contents */}
-        {orderContents && (
-          <p className="text-xs text-ios-secondary line-clamp-2">🌸 {orderContents}</p>
-        )}
-
         {/* Special instructions */}
         {specialInstr && (
           <p className="text-xs text-ios-orange line-clamp-2">⚠ {specialInstr}</p>
         )}
 
-        {/* Fee + delivered timestamp */}
+        {/* Delivered timestamp */}
         <div className="flex items-center gap-3 text-xs text-ios-tertiary">
-          {fee != null && fee !== '' && (
-            <span>{t.fee}: {Number(fee).toFixed(0)} zł</span>
-          )}
           {isDone && deliveredAt && (
             <span className="text-emerald-600 font-medium">
               ✓ {new Date(deliveredAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

@@ -11,7 +11,7 @@ router.use(authorize('customers'));
 // Like an incoming inspection gate — rejects unauthorized parts.
 const CUSTOMERS_PATCH_ALLOWED = [
   'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
-  'Home address', 'Sex/Business', 'Notes / Preferences',
+  'Home address', 'Sex/Business', 'Notes / Preferences', 'Segment',
   'WhatsApp Contact', 'Default Delivery Address', 'Found us from',
   'Connected people', 'Key person 1', 'Key person 2',
   'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
@@ -201,6 +201,13 @@ router.get('/insights', async (req, res, next) => {
       rfmData = { summary: rfmSummary, revenue: rfmRevenue, byCustomer: rfmByCustomer };
     }
 
+    // Auto-compute segment based on order count (doesn't overwrite manual segments like "DO NOT CONTACT").
+    // Like an automatic quality classification gate: the label is computed from metrics, not from manual input.
+    for (const c of customers) {
+      const count = c['App Order Count'] || 0;
+      c.computedSegment = count >= 10 ? 'Constant' : count >= 2 ? 'Rare' : count >= 1 ? 'New' : null;
+    }
+
     res.json({
       segments,
       segmentRevenue,
@@ -220,6 +227,9 @@ router.get('/insights', async (req, res, next) => {
 router.get('/:id', async (req, res, next) => {
   try {
     const customer = await db.getById(TABLES.CUSTOMERS, req.params.id);
+    // Auto-compute segment from order count (read-only suggestion, not written to Airtable)
+    const count = customer['App Order Count'] || 0;
+    customer.computedSegment = count >= 10 ? 'Constant' : count >= 2 ? 'Rare' : count >= 1 ? 'New' : null;
     res.json(customer);
   } catch (err) {
     next(err);

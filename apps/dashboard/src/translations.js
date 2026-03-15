@@ -524,6 +524,17 @@ const en = {
   addAnyway:                'Add anyway?',
   didYouMean:               'Did you mean',
 
+  // CRM — expanded fields
+  flowersOrdered:           'Flowers ordered',
+  contactInfo:              'Contact info',
+  language:                 'Language',
+  homeAddress:              'Home address',
+  sex:                      'Type',
+  female:                   'Female',
+  male:                     'Male',
+  business:                 'Business',
+  moreFields:               'More fields',
+
   // Block 4 — Today/Tomorrow
   tomorrow:                 'Tomorrow',
   fulfillToday:             'To fulfill today',
@@ -1053,6 +1064,17 @@ const ru = {
   similarTo:                'Похоже на',
   addAnyway:                'Добавить всё равно?',
   didYouMean:               'Вы имели в виду',
+
+  // CRM — expanded fields
+  flowersOrdered:           'Заказанные цветы',
+  contactInfo:              'Контакты',
+  language:                 'Язык',
+  homeAddress:              'Домашний адрес',
+  sex:                      'Тип',
+  female:                   'Женщина',
+  male:                     'Мужчина',
+  business:                 'Бизнес',
+  moreFields:               'Ещё поля',
 
   // Block 4 — Today/Tomorrow
   tomorrow:                 'Завтра',

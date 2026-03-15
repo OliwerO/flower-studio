@@ -270,6 +270,16 @@ const en = {
   lotSize:            'Lot Size',
   packs:              'packs',
 
+  // CRM — expanded fields
+  language:           'Language',
+  homeAddress:        'Home address',
+  sex:                'Type',
+  female:             'Female',
+  male:               'Male',
+  business:           'Business',
+  moreFields:         'More fields',
+  instagram:          'Instagram',
+
   // Shopping support (owner)
   shopping: {
     title:          'Shopping Support',
@@ -577,6 +587,16 @@ const ru = {
   },
   lotSize:            'Фасовка',
   packs:              'уп.',
+
+  // CRM — expanded fields
+  language:           'Язык',
+  homeAddress:        'Домашний адрес',
+  sex:                'Тип',
+  female:             'Женщина',
+  male:               'Мужчина',
+  business:           'Бизнес',
+  moreFields:         'Ещё поля',
+  instagram:          'Instagram',
 
   // Shopping support (owner)
   shopping: {

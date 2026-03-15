@@ -116,16 +116,6 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
               </div>
             )}
 
-            {/* Fee + Payment */}
-            {fee != null && fee !== '' && (
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ios-tertiary">{t.fee}</span>
-                <span className="text-sm font-medium text-ios-label">
-                  {Number(fee).toFixed(0)} zł · {payment}
-                </span>
-              </div>
-            )}
-
             {/* Delivered at + result */}
             {isDone && deliveredAt && (
               <div className="flex items-center justify-between px-4 py-3">
@@ -156,16 +146,6 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
               {paymentStatus === 'Partial' && (
                 <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 text-amber-700">{t.partialBadge}</span>
               )}
-            </div>
-          )}
-
-          {/* Order contents */}
-          {orderContents && (
-            <div>
-              <p className="ios-label">{t.orderContents}</p>
-              <div className="ios-card px-4 py-3">
-                <p className="text-sm text-ios-label">🌸 {orderContents}</p>
-              </div>
             </div>
           )}
 
