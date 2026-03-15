@@ -15,7 +15,7 @@ const CUSTOMERS_PATCH_ALLOWED = [
   'WhatsApp Contact', 'Default Delivery Address', 'Found us from',
   'Connected people', 'Key person 1', 'Key person 2',
   'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
-  'Communication method',
+  'Communication method', 'Order Source',
 ];
 
 function pickAllowed(body, allowedFields) {

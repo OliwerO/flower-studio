@@ -309,11 +309,13 @@ router.post('/', async (req, res, next) => {
         });
       }
 
-      // 5. Update customer's Communication method if provided (non-blocking)
-      if (communicationMethod) {
-        db.update(TABLES.CUSTOMERS, customer, {
-          'Communication method': communicationMethod,
-        }).catch(err => console.error('[ORDER] Failed to update customer communication method:', err.message));
+      // 5. Update customer record with communication method + order source (non-blocking)
+      const customerPatch = {};
+      if (communicationMethod) customerPatch['Communication method'] = communicationMethod;
+      if (source) customerPatch['Order Source'] = source;
+      if (Object.keys(customerPatch).length > 0) {
+        db.update(TABLES.CUSTOMERS, customer, customerPatch)
+          .catch(err => console.error('[ORDER] Failed to update customer fields:', err.message));
       }
 
       // Broadcast new order to all connected SSE clients (florist + delivery + dashboard)
