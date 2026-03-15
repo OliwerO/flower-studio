@@ -216,8 +216,9 @@ export default function Step3Details({ form, onChange }) {
           value={form.paymentStatus}
           onChange={val => onChange({ paymentStatus: val, ...(val === 'Unpaid' ? { paymentMethod: '' } : {}) })}
           options={[
-            { value: 'Unpaid', label: t.paymentUnpaid },
-            { value: 'Paid',   label: t.paymentPaid },
+            { value: 'Unpaid',  label: t.paymentUnpaid },
+            { value: 'Paid',    label: t.paymentPaid },
+            { value: 'Partial', label: t.paymentPartial || 'Partial' },
           ]}
         />
       </SectionCard>

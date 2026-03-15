@@ -29,6 +29,7 @@ const ORDERS_PATCH_ALLOWED = [
   'Status', 'Payment Status', 'Payment Method', 'Price Override',
   'Notes Original', 'Greeting Card Text', 'Customer Request',
   'Delivery Type', 'Required By', 'Source', 'Delivery Fee', 'Delivery Time',
+  'Payment 1 Amount', 'Payment 1 Method', 'Payment 2 Amount', 'Payment 2 Method',
 ];
 
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram

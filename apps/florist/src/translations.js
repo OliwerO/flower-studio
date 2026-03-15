@@ -144,6 +144,14 @@ const en = {
   requiredBy:       'Required by (date/time)',
   deliveryFee:      'Delivery fee',
 
+  // Partial payment
+  partial:          'Partial',
+  payment1:         'Payment 1',
+  payment2:         'Payment 2',
+  remaining:        'Remaining',
+  paidAmount:       'Paid',
+  paymentPartial:   'Partial',
+
   // Step 4 — Review
   reviewTitle:      'Review order',
   edit:             'Edit',
@@ -425,6 +433,14 @@ const ru = {
   methodTransfer:   'Перевод',
   requiredBy:       'Нужен к (дата/время)',
   deliveryFee:      'Стоимость доставки',
+
+  // Partial payment
+  partial:          'Частично',
+  payment1:         'Оплата 1',
+  payment2:         'Оплата 2',
+  remaining:        'Остаток',
+  paidAmount:       'Оплачено',
+  paymentPartial:   'Частичная',
 
   // Step 4 — Review
   reviewTitle:      'Проверка заказа',

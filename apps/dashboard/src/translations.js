@@ -349,6 +349,13 @@ const en = {
   // Kanban
   statusDone:         'Done',
 
+  // Partial payment
+  payment1:           'Payment 1',
+  payment2:           'Payment 2',
+  remaining:          'Remaining',
+  paidAmount:         'Paid',
+  paymentPartial:     'Partial',
+
   // Order detail panel
   bouquetComposition: 'Bouquet composition',
   methodMbank:        'Mbank',
@@ -856,6 +863,13 @@ const ru = {
 
   // Kanban
   statusDone:         'Готово',
+
+  // Partial payment
+  payment1:           'Оплата 1',
+  payment2:           'Оплата 2',
+  remaining:          'Остаток',
+  paidAmount:         'Оплачено',
+  paymentPartial:     'Частичная',
 
   // Order detail panel
   bouquetComposition: 'Состав букета',

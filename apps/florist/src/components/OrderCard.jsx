@@ -96,6 +96,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const request    = order['Customer Request'] || '';
   const price      = order['Price Override'] || order['Sell Total'] || '';
   const isPaid     = order['Payment Status'] === 'Paid';
+  const isPartialPayment = order['Payment Status'] === 'Partial';
   const isWix      = order['Source'] === 'Wix';
   // Wix orders without a composed bouquet — florist needs to select actual flowers
   const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
@@ -196,7 +197,11 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const d = detail || order;
   const currentStatus = d['Status'] || 'New';
   const currentPaid   = d['Payment Status'] === 'Paid';
-  const currentPrice  = d['Price Override'] || d['Sell Total'] || price;
+  // Effective price: Price Override || (sell total + delivery fee)
+  const detailLineTotal = (detail?.orderLines || []).reduce((sum, l) =>
+    sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
+  const detailDeliveryFee = Number(d['Delivery Fee'] || detail?.delivery?.['Delivery Fee'] || 0);
+  const currentPrice = d['Price Override'] || (detailLineTotal > 0 ? detailLineTotal + detailDeliveryFee : (d['Sell Total'] || price) ) || 0;
 
   function statusLabel(s) {
     return STATUS_LABELS[s]?.() || s;
@@ -232,9 +237,10 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
             {isDelivery ? t.delivery : t.pickup}
           </span>
           <span className={`text-xs px-2.5 py-0.5 rounded-full ${
-            currentPaid ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-500'
+            currentPaid ? 'bg-green-50 text-green-700'
+              : (d['Payment Status'] === 'Partial' ? 'bg-orange-50 text-orange-600' : 'bg-red-50 text-red-500')
           }`}>
-            {currentPaid ? t.paid : t.unpaid}
+            {currentPaid ? t.paid : (d['Payment Status'] === 'Partial' ? (t.partial || 'Partial') : t.unpaid)}
           </span>
           {needsComposition && (
             <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-orange-100 text-orange-700">
@@ -642,16 +648,25 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 <div className="flex flex-col gap-2">
                   <Pills
                     value={d['Payment Status'] || 'Unpaid'}
-                    onChange={val => patch({
-                      'Payment Status': val,
-                      ...(val === 'Unpaid' ? { 'Payment Method': '' } : {}),
-                    })}
+                    onChange={val => {
+                      const updates = { 'Payment Status': val };
+                      if (val === 'Unpaid') {
+                        updates['Payment Method'] = '';
+                        updates['Payment 1 Amount'] = null;
+                        updates['Payment 1 Method'] = null;
+                        updates['Payment 2 Amount'] = null;
+                        updates['Payment 2 Method'] = null;
+                      }
+                      patch(updates);
+                    }}
                     disabled={saving}
                     options={[
-                      { value: 'Unpaid', label: t.unpaid },
-                      { value: 'Paid',   label: t.paid },
+                      { value: 'Unpaid',  label: t.unpaid },
+                      { value: 'Paid',    label: t.paid },
+                      { value: 'Partial', label: t.partial || 'Partial' },
                     ]}
                   />
+                  {/* Paid directly — single method */}
                   {currentPaid && (
                     <Pills
                       value={d['Payment Method'] || ''}
@@ -660,6 +675,90 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                       options={payMethods.map(m => ({ value: m, label: m }))}
                     />
                   )}
+                  {/* Partial payment flow */}
+                  {d['Payment Status'] === 'Partial' && (() => {
+                    const effPrice = currentPrice || 0;
+                    const p1Amt = Number(d['Payment 1 Amount'] || 0);
+                    const p1Mtd = d['Payment 1 Method'] || '';
+                    const hasP1 = p1Amt > 0 && p1Mtd;
+                    const rem = effPrice - p1Amt;
+                    return (
+                      <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-3">
+                        {effPrice > 0 && (
+                          <p className="text-xs text-ios-tertiary">
+                            {t.price || 'Total'}: <span className="font-semibold text-ios-label">{effPrice} zł</span>
+                          </p>
+                        )}
+                        {/* Payment 1 */}
+                        <div className="space-y-1.5">
+                          <p className="text-xs font-semibold text-ios-tertiary uppercase">{t.payment1}</p>
+                          <input
+                            type="number"
+                            value={d['Payment 1 Amount'] || ''}
+                            onChange={e => {
+                              const val = e.target.value === '' ? null : Number(e.target.value);
+                              setDetail(prev => prev ? { ...prev, 'Payment 1 Amount': val } : prev);
+                            }}
+                            placeholder="0"
+                            className="w-24 text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none"
+                            disabled={saving}
+                          />
+                          <Pills
+                            value={p1Mtd}
+                            onChange={v => {
+                              const amt = Number(detail?.['Payment 1 Amount'] || d['Payment 1 Amount'] || 0);
+                              if (amt > 0) {
+                                patch({ 'Payment 1 Amount': amt, 'Payment 1 Method': v });
+                              } else {
+                                setDetail(prev => prev ? { ...prev, 'Payment 1 Method': v } : prev);
+                              }
+                            }}
+                            disabled={saving}
+                            options={payMethods.map(m => ({ value: m, label: m }))}
+                          />
+                        </div>
+                        {/* Remaining + Payment 2 */}
+                        {hasP1 && (
+                          <div className="border-t border-gray-200 pt-2 space-y-1.5">
+                            <p className="text-xs text-ios-tertiary">
+                              {t.paidAmount}: <span className="text-green-600 font-medium">{p1Amt} zł</span>
+                              {' · '}
+                              {t.remaining}: <span className="text-orange-600 font-semibold">{rem > 0 ? rem : 0} zł</span>
+                            </p>
+                            {rem > 0 && (
+                              <div className="space-y-1.5">
+                                <p className="text-xs font-semibold text-ios-tertiary uppercase">{t.payment2}</p>
+                                <input
+                                  type="number"
+                                  value={d['Payment 2 Amount'] || rem || ''}
+                                  onChange={e => {
+                                    const val = e.target.value === '' ? null : Number(e.target.value);
+                                    setDetail(prev => prev ? { ...prev, 'Payment 2 Amount': val } : prev);
+                                  }}
+                                  placeholder={String(rem)}
+                                  className="w-24 text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none"
+                                  disabled={saving}
+                                />
+                                <Pills
+                                  value={d['Payment 2 Method'] || ''}
+                                  onChange={v => {
+                                    const amt = Number(detail?.['Payment 2 Amount'] || d['Payment 2 Amount'] || rem);
+                                    patch({
+                                      'Payment 2 Amount': amt,
+                                      'Payment 2 Method': v,
+                                      'Payment Status': 'Paid',
+                                    });
+                                  }}
+                                  disabled={saving}
+                                  options={payMethods.map(m => ({ value: m, label: m }))}
+                                />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 

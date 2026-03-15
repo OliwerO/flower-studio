@@ -147,7 +147,23 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
 
   const o = order;
   const isTerminal = o.Status === 'Delivered' || o.Status === 'Picked Up' || o.Status === 'Cancelled';
-  const showPaymentMethod = o['Payment Status'] === 'Paid' || o['Payment Status'] === 'Partial';
+  const showPaymentMethod = o['Payment Status'] === 'Paid';
+
+  // Effective price: Price Override || (line sell total + delivery fee)
+  // This is the "invoice total" — what the customer owes.
+  const lineTotal = (o.orderLines || []).reduce((sum, l) =>
+    sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
+  const deliveryFee = Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0);
+  const effectivePrice = o['Price Override'] || (lineTotal + deliveryFee) || 0;
+
+  // Partial payment state
+  const isPartial = o['Payment Status'] === 'Partial';
+  const p1Amount = Number(o['Payment 1 Amount'] || 0);
+  const p1Method = o['Payment 1 Method'] || '';
+  const p2Amount = Number(o['Payment 2 Amount'] || 0);
+  const p2Method = o['Payment 2 Method'] || '';
+  const hasP1 = p1Amount > 0 && p1Method;
+  const remainingAfterP1 = effectivePrice - p1Amount;
 
   return (
     <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/70 space-y-5">
@@ -199,15 +215,27 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
       </div>
 
       {/* Payment row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="space-y-3">
         <Section label={t.paymentStatus}>
           <Pills
             options={PAYMENT_STATUSES}
             value={o['Payment Status'] || 'Unpaid'}
-            onChange={v => patchOrder({ 'Payment Status': v, ...(v === 'Unpaid' ? { 'Payment Method': null } : {}) })}
+            onChange={v => {
+              const updates = { 'Payment Status': v };
+              if (v === 'Unpaid') {
+                updates['Payment Method'] = null;
+                updates['Payment 1 Amount'] = null;
+                updates['Payment 1 Method'] = null;
+                updates['Payment 2 Amount'] = null;
+                updates['Payment 2 Method'] = null;
+              }
+              patchOrder(updates);
+            }}
             disabled={saving}
           />
         </Section>
+
+        {/* Paid directly — single method picker */}
         {showPaymentMethod && (
           <Section label={t.paymentMethod}>
             <Pills
@@ -217,6 +245,102 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               disabled={saving}
             />
           </Section>
+        )}
+
+        {/* Partial payment flow — two-step split payment */}
+        {isPartial && (
+          <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-3">
+            {effectivePrice > 0 && (
+              <p className="text-xs text-ios-tertiary">
+                {t.price}: <span className="font-semibold text-ios-label">{effectivePrice.toFixed(0)} {t.zl}</span>
+              </p>
+            )}
+
+            {/* Payment 1 */}
+            <div className="space-y-2">
+              <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.payment1}</p>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={p1Amount || ''}
+                  onChange={e => {
+                    const val = e.target.value === '' ? null : Number(e.target.value);
+                    setOrder(prev => ({ ...prev, 'Payment 1 Amount': val }));
+                  }}
+                  placeholder="0"
+                  className="w-24 text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none"
+                  disabled={saving}
+                />
+                <span className="text-xs text-ios-tertiary">{t.zl}</span>
+              </div>
+              <Pills
+                options={PAYMENT_METHODS}
+                value={p1Method}
+                onChange={v => {
+                  const amt = Number(order['Payment 1 Amount'] || 0);
+                  if (amt > 0) {
+                    patchOrder({ 'Payment 1 Amount': amt, 'Payment 1 Method': v });
+                  } else {
+                    setOrder(prev => ({ ...prev, 'Payment 1 Method': v }));
+                  }
+                }}
+                disabled={saving}
+              />
+              {!hasP1 && p1Amount > 0 && p1Method && (
+                <button
+                  onClick={() => patchOrder({ 'Payment 1 Amount': p1Amount, 'Payment 1 Method': p1Method })}
+                  disabled={saving}
+                  className="text-xs text-brand-600 font-medium"
+                >{t.save}</button>
+              )}
+            </div>
+
+            {/* Remaining after Payment 1 */}
+            {hasP1 && (
+              <div className="border-t border-gray-100 pt-2 space-y-1">
+                <p className="text-xs text-ios-tertiary">
+                  {t.paidAmount}: <span className="font-medium text-ios-green">{p1Amount.toFixed(0)} {t.zl}</span>
+                  {' · '}
+                  {t.remaining}: <span className="font-semibold text-ios-orange">{remainingAfterP1.toFixed(0)} {t.zl}</span>
+                </p>
+              </div>
+            )}
+
+            {/* Payment 2 — only when P1 is saved */}
+            {hasP1 && remainingAfterP1 > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.payment2}</p>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    value={p2Amount || remainingAfterP1 || ''}
+                    onChange={e => {
+                      const val = e.target.value === '' ? null : Number(e.target.value);
+                      setOrder(prev => ({ ...prev, 'Payment 2 Amount': val }));
+                    }}
+                    placeholder={remainingAfterP1.toFixed(0)}
+                    className="w-24 text-sm border border-gray-200 rounded-lg px-3 py-1.5 outline-none"
+                    disabled={saving}
+                  />
+                  <span className="text-xs text-ios-tertiary">{t.zl}</span>
+                </div>
+                <Pills
+                  options={PAYMENT_METHODS}
+                  value={p2Method}
+                  onChange={v => {
+                    const amt = Number(order['Payment 2 Amount'] || remainingAfterP1);
+                    // When Payment 2 is entered, auto-complete to Paid
+                    patchOrder({
+                      'Payment 2 Amount': amt,
+                      'Payment 2 Method': v,
+                      'Payment Status': 'Paid',
+                    });
+                  }}
+                  disabled={saving}
+                />
+              </div>
+            )}
+          </div>
         )}
       </div>
 
@@ -232,18 +356,9 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           />
         </Section>
         <Section label={t.price}>
-          {(() => {
-            // Compute display price: same formula as analytics Effective Price
-            const lineTotal = (o.orderLines || []).reduce((sum, l) =>
-              sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
-            const deliveryFee = o.delivery?.['Delivery Fee'] || 0;
-            const displayPrice = o['Final Price'] || o['Price Override'] || (lineTotal + deliveryFee) || 0;
-            return (
-              <span className="text-sm font-semibold text-ios-label">
-                {displayPrice.toFixed(0)} {t.zl}
-              </span>
-            );
-          })()}
+          <span className="text-sm font-semibold text-ios-label">
+            {effectivePrice.toFixed(0)} {t.zl}
+          </span>
         </Section>
       </div>
 
