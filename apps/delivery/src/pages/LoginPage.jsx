@@ -1,5 +1,5 @@
 // LoginPage — PIN numpad for drivers.
-// After successful login, shows "Hello, Timur" greeting before navigating.
+// After successful login, shows "Hello, Piotr" greeting before navigating.
 // Same pattern as florist login, but stores driverName in auth context.
 
 import { useState } from 'react';

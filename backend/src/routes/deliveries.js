@@ -11,7 +11,7 @@ const DELIVERIES_PATCH_ALLOWED = [
   'Delivery Address', 'Recipient Name', 'Recipient Phone',
   'Delivery Date', 'Delivery Time', 'Assigned Driver', 'Status',
   'Driver Payment Status', 'Driver Notes', 'Delivered At', 'Delivery Fee',
-  'Delivery Result',
+  'Delivery Result', 'Delivery Method', 'Driver Payout', 'Taxi Cost',
 ];
 
 // SYNC: must match RESULTS in apps/delivery/src/components/DeliveryResultPicker.jsx
@@ -25,7 +25,7 @@ function pickAllowed(body, allowedFields) {
   return filtered;
 }
 
-// GET /api/deliveries?date=2025-01-15&status=Pending&driver=Timur
+// GET /api/deliveries?date=2025-01-15&status=Pending&driver=Piotr
 router.get('/', async (req, res, next) => {
   try {
     const { date, status, driver } = req.query;

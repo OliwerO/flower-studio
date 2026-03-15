@@ -599,16 +599,60 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         </div>
       )}
 
-      {/* Driver (for delivery orders) */}
-      {o['Delivery Type'] === 'Delivery' && (
-        <Section label={t.driver}>
-          <Pills
-            options={DRIVERS}
-            value={o.delivery?.['Assigned Driver'] || ''}
-            onChange={v => patchDelivery({ 'Assigned Driver': v })}
-            disabled={saving}
-          />
-        </Section>
+      {/* Delivery method + driver (for delivery orders) */}
+      {o['Delivery Type'] === 'Delivery' && o.delivery && (
+        <div className="space-y-3">
+          <Section label={t.deliveryMethod || 'Delivery method'}>
+            <Pills
+              options={[
+                { value: 'Driver',  label: t.deliveryMethodDriver || 'Driver' },
+                { value: 'Taxi',    label: t.deliveryMethodTaxi || 'Taxi' },
+                { value: 'Florist', label: t.deliveryMethodFlorist || 'Florist' },
+              ]}
+              value={o.delivery?.['Delivery Method'] || 'Driver'}
+              onChange={v => {
+                const patch = { 'Delivery Method': v };
+                if (v === 'Taxi') {
+                  patch['Assigned Driver'] = '';
+                  patch['Driver Payout'] = 0;
+                } else if (v === 'Florist') {
+                  patch['Assigned Driver'] = '';
+                  patch['Driver Payout'] = 0;
+                  patch['Taxi Cost'] = 0;
+                } else {
+                  patch['Taxi Cost'] = 0;
+                }
+                patchDelivery(patch);
+              }}
+              disabled={saving}
+            />
+          </Section>
+
+          {/* Driver picker — only when method is Driver */}
+          {(o.delivery?.['Delivery Method'] || 'Driver') === 'Driver' && (
+            <Section label={t.driver}>
+              <Pills
+                options={DRIVERS}
+                value={o.delivery?.['Assigned Driver'] || ''}
+                onChange={v => patchDelivery({ 'Assigned Driver': v })}
+                disabled={saving}
+              />
+            </Section>
+          )}
+
+          {/* Taxi cost — only when method is Taxi */}
+          {o.delivery?.['Delivery Method'] === 'Taxi' && (
+            <Section label={t.taxiCost || 'Taxi cost'}>
+              <InlineEdit
+                value={o.delivery['Taxi Cost'] ? String(o.delivery['Taxi Cost']) : ''}
+                type="number"
+                placeholder="0"
+                onSave={v => patchDelivery({ 'Taxi Cost': v ? Number(v) : 0 })}
+                disabled={saving}
+              />
+            </Section>
+          )}
+        </div>
       )}
 
       {/* Delivery info — all editable */}

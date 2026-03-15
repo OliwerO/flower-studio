@@ -21,7 +21,8 @@ const DEFAULTS = {
   stockCategories:    ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'],
   paymentMethods:     ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
   orderSources:       ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
-  driverCostPerDelivery: 0,
+  driverCostPerDelivery: 35,
+  driverCostPerPORun: 45,
   extraDrivers: [],
   storefrontCategories: {
     permanent: ['All Bouquets', 'Bestsellers'],

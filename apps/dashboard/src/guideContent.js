@@ -29,7 +29,7 @@ const en = {
         },
         {
           q: 'How do I assign a driver?',
-          a: 'In the Orders tab, expand a delivery order. You\'ll see driver pills (Timur, Nikita, Dmitri). Tap the desired driver to assign. You can reassign at any time before delivery.',
+          a: 'In the Orders tab, expand a delivery order. You\'ll see driver pills (Piotr, Nikita, Ilona). Tap the desired driver to assign. You can reassign at any time before delivery.',
         },
       ],
     },

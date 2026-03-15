@@ -35,6 +35,7 @@ export default function DayToDayTab({ onNavigate }) {
   const [kanbanOpen, setKanbanOpen] = useState(false);
   const [driverOfDay, setDriverOfDay] = useState(null);
   const [drivers, setDrivers]     = useState([]);
+  const [driverSectionOpen, setDriverSectionOpen] = useState(false);
   const [wixProducts, setWixProducts] = useState([]);
   const { showToast } = useToast();
 
@@ -158,35 +159,6 @@ export default function DayToDayTab({ onNavigate }) {
           onClick={() => nav('orders', { payment: 'Unpaid' })}
         />
       </div>
-
-      {/* Driver of the day — quick toggle for auto-assigning deliveries */}
-      {drivers.length > 0 && (
-        <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
-          <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
-            {t.driverOfDay}
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {drivers.map(name => (
-              <button
-                key={name}
-                onClick={() => handleDriverOfDay(driverOfDay === name ? null : name)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium transition-all active-scale ${
-                  driverOfDay === name
-                    ? 'bg-brand-600 text-white shadow-md'
-                    : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
-                }`}
-              >
-                {name}
-              </button>
-            ))}
-          </div>
-          {driverOfDay && (
-            <p className="text-xs text-ios-secondary mt-2">
-              {t.driverOfDayHint}
-            </p>
-          )}
-        </div>
-      )}
 
       {/* Unassigned deliveries — crisis alert */}
       {data.unassignedDeliveries?.length > 0 && (
@@ -445,6 +417,52 @@ export default function DayToDayTab({ onNavigate }) {
           </div>
         )}
       </div>
+
+      {/* Driver of the day — collapsed accordion, auto-assigns deliveries */}
+      {drivers.length > 0 && (
+        <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
+          <button
+            onClick={() => setDriverSectionOpen(!driverSectionOpen)}
+            className="w-full flex items-center justify-between"
+          >
+            <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
+              {t.driverOfDay}
+              {driverOfDay && (
+                <span className="ml-2 text-brand-600 normal-case font-medium">
+                  — {driverOfDay}
+                </span>
+              )}
+            </h3>
+            <span className="text-ios-tertiary text-sm">
+              {driverSectionOpen ? '▲' : '▼'}
+            </span>
+          </button>
+          {driverSectionOpen && (
+            <div className="mt-3">
+              <div className="flex flex-wrap gap-2">
+                {drivers.map(name => (
+                  <button
+                    key={name}
+                    onClick={() => handleDriverOfDay(driverOfDay === name ? null : name)}
+                    className={`px-4 py-2 rounded-xl text-sm font-medium transition-all active-scale ${
+                      driverOfDay === name
+                        ? 'bg-brand-600 text-white shadow-md'
+                        : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+                    }`}
+                  >
+                    {name}
+                  </button>
+                ))}
+              </div>
+              {driverOfDay && (
+                <p className="text-xs text-ios-secondary mt-2">
+                  {t.driverOfDayHint}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Flowers Needed — negative stock requiring purchase (bottom of page) */}
       {data.negativeStock?.length > 0 && (

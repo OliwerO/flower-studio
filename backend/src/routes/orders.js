@@ -306,6 +306,8 @@ router.post('/', async (req, res, next) => {
           'Delivery Time':   delivery.time || '',
           'Assigned Driver': delivery.driver || getDriverOfDay() || null,
           'Delivery Fee':      delivery.fee ?? getConfig('defaultDeliveryFee'),
+          'Delivery Method': 'Driver',
+          'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
           Status:              'Pending',
         });
       }
@@ -607,6 +609,8 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       'Delivery Time':    time || order['Delivery Time'] || '',
       'Assigned Driver':  driver || getDriverOfDay() || null,
       'Delivery Fee':     fee ?? getConfig('defaultDeliveryFee'),
+      'Delivery Method': 'Driver',
+      'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
       Status:             'Pending',
     });
 
