@@ -271,20 +271,21 @@ router.get('/', async (req, res, next) => {
         return { flower1, flower2, count };
       });
 
-    // ── Weekly rhythm — order count and avg revenue by day of week ──
-    // Send dayIndex only — frontend maps to localized day names via translations.js
+    // ── Weekly rhythm — order count and avg revenue by DELIVERY day ──
+    // Uses "Required By" (the date customers need flowers) instead of "Order Date"
+    // (when the order was placed). This shows the real demand pattern across the week.
     const dayMap = {};
     for (let i = 0; i < 7; i++) {
       dayMap[i] = { dayIndex: i, orderCount: 0, paidOrderCount: 0, paidRevenue: 0 };
     }
     for (const o of orders) {
-      if (!o['Order Date']) continue;
-      const dow = new Date(o['Order Date']).getDay();
+      if (!o['Required By']) continue;
+      const dow = new Date(o['Required By']).getDay();
       dayMap[dow].orderCount++;
     }
     for (const o of paidOrders) {
-      if (!o['Order Date']) continue;
-      const dow = new Date(o['Order Date']).getDay();
+      if (!o['Required By']) continue;
+      const dow = new Date(o['Required By']).getDay();
       dayMap[dow].paidOrderCount++;
       dayMap[dow].paidRevenue += o['Effective Price'] || 0;
     }
