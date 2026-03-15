@@ -132,7 +132,7 @@ export default function DaySummaryPage() {
                   <span className="text-ios-label">
                     #{o['App Order ID'] || '?'} — {o['Effective Price'] || o['Sell Total'] || 0} zł
                   </span>
-                  <span className="text-ios-tertiary">{o['Order Source'] || o.Source || ''}</span>
+                  <span className="text-ios-tertiary">{o.Source || ''}</span>
                 </div>
               ))}
             </div>

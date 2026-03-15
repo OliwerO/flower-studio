@@ -28,7 +28,7 @@ const VALID_PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
 const ORDERS_PATCH_ALLOWED = [
   'Status', 'Payment Status', 'Payment Method', 'Price Override',
   'Notes Original', 'Greeting Card Text', 'Customer Request',
-  'Delivery Type', 'Required By', 'Order Source', 'Delivery Fee', 'Delivery Time',
+  'Delivery Type', 'Required By', 'Source', 'Delivery Fee', 'Delivery Time',
 ];
 
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
@@ -38,9 +38,9 @@ router.get('/', async (req, res, next) => {
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
-    // "Other" in analytics means Order Source is blank/empty — match records with no source set.
-    if (source === 'Other') filters.push(`OR({Order Source} = 'Other', {Order Source} = BLANK())`);
-    else if (source)        filters.push(`{Order Source} = '${sanitizeFormulaValue(source)}'`);
+    // "Other" in analytics means Source is blank/empty — match records with no source set.
+    if (source === 'Other') filters.push(`OR({Source} = 'Other', {Source} = BLANK())`);
+    else if (source)        filters.push(`{Source} = '${sanitizeFormulaValue(source)}'`);
     if (deliveryType)     filters.push(`{Delivery Type} = '${sanitizeFormulaValue(deliveryType)}'`);
     if (paymentStatus)    filters.push(`{Payment Status} = '${sanitizeFormulaValue(paymentStatus)}'`);
     // "Not recorded" means orders where Payment Method is blank/empty
@@ -254,7 +254,7 @@ router.post('/', async (req, res, next) => {
       order = await db.create(TABLES.ORDERS, {
         Customer:         [customer],
         'Customer Request': customerRequest,
-        'Order Source':   source || null,
+        'Source':   source || null,
         'Delivery Type':  deliveryType,
         'Order Date':     new Date().toISOString().split('T')[0],
         'Required By':    requiredBy || delivery?.date || null,

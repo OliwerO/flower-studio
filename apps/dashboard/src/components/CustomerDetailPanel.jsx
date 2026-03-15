@@ -79,7 +79,7 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
         // Preferred source
         const sourceCounts = {};
         for (const o of orders) {
-          const src = o['Order Source'] || o.Source || 'Unknown';
+          const src = o.Source || 'Unknown';
           sourceCounts[src] = (sourceCounts[src] || 0) + 1;
         }
         const preferredSource = Object.entries(sourceCounts).sort(([,a],[,b]) => b - a)[0]?.[0] || '\u2014';

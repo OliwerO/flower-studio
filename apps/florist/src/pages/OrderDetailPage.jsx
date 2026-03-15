@@ -358,11 +358,11 @@ export default function OrderDetailPage() {
             </div>
 
             {/* Source + notes */}
-            {(order['Order Source'] || order['Source'] || order['Notes Original']) && (
+            {(order['Source'] || order['Notes Original']) && (
               <div>
                 <p className="ios-label">Info</p>
                 <div className="ios-card px-4 py-2">
-                  <Row label="Source" value={order['Order Source'] || order['Source']} />
+                  <Row label="Source" value={order['Source']} />
                   <Row label="Notes"  value={order['Notes Original']} />
                 </div>
               </div>

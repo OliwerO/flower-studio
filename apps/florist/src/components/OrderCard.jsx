@@ -96,7 +96,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const request    = order['Customer Request'] || '';
   const price      = order['Price Override'] || order['Sell Total'] || '';
   const isPaid     = order['Payment Status'] === 'Paid';
-  const isWix      = (order['Order Source'] || order['Source']) === 'Wix';
+  const isWix      = order['Source'] === 'Wix';
   // Wix orders without a composed bouquet — florist needs to select actual flowers
   const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
 

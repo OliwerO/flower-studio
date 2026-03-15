@@ -166,8 +166,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         <Section label={t.source}>
           <Pills
             options={SOURCES}
-            value={o['Order Source'] || o.Source}
-            onChange={v => patchOrder({ 'Order Source': v })}
+            value={o.Source}
+            onChange={v => patchOrder({ Source: v })}
             disabled={saving}
           />
         </Section>

@@ -153,7 +153,7 @@ export async function processWixOrder(payload) {
     const order = await db.create(TABLES.ORDERS, {
       Customer: [customerId],
       'Customer Request': customerRequest,
-      'Order Source': 'Wix',
+      Source: 'Wix',
       'Delivery Type': hasDelivery ? 'Delivery' : 'Pickup',
       'Order Date': new Date().toISOString().split('T')[0],
       'Notes Original': `Wix Order #${wixOrderId}`,
