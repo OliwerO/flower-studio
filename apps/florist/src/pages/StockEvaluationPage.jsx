@@ -1,7 +1,6 @@
 // StockEvaluationPage — florist quality inspection for incoming flowers.
 // After the driver returns from shopping, the florist physically checks each item:
-// accept good stems, write off damaged/wilted ones. Like a receiving inspection
-// gate on a production line — only quality-approved materials enter the warehouse.
+// accept good stems, write off damaged/wilted ones.
 
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -15,30 +14,20 @@ export default function StockEvaluationPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
-
-  // Per-line evaluation state: { [lineId]: { accepted, writeOff, reason, altAccepted, altWriteOff, altReason } }
   const [evalState, setEvalState] = useState({});
 
   const fetchOrders = useCallback(async () => {
     try {
-      // Single batch fetch with lines included — no N+1 calls
       const res = await client.get('/stock-orders?status=Evaluating&include=lines');
-      const withLines = res.data;
-      setOrders(withLines);
-
-      // Init eval state with defaults from driver data
+      setOrders(res.data);
       const initial = {};
-      for (const order of withLines) {
+      for (const order of res.data) {
         for (const line of order.lines) {
           const found = Number(line['Quantity Found']) || 0;
           const altFound = Number(line['Alt Quantity Found']) || 0;
           initial[line.id] = {
-            accepted: found,
-            writeOff: 0,
-            reason: 'Damaged',
-            altAccepted: altFound,
-            altWriteOff: 0,
-            altReason: 'Damaged',
+            accepted: found, writeOff: 0, reason: 'Damaged',
+            altAccepted: altFound, altWriteOff: 0, altReason: 'Damaged',
           };
         }
       }
@@ -53,13 +42,9 @@ export default function StockEvaluationPage() {
   useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
   function updateEval(lineId, patch) {
-    setEvalState(prev => ({
-      ...prev,
-      [lineId]: { ...prev[lineId], ...patch },
-    }));
+    setEvalState(prev => ({ ...prev, [lineId]: { ...prev[lineId], ...patch } }));
   }
 
-  // Auto-compute: accepted = found - writeOff
   function handleWriteOffChange(lineId, writeOff, field = 'writeOff') {
     const raw = Number(writeOff) || 0;
     if (field === 'writeOff') {
@@ -76,7 +61,6 @@ export default function StockEvaluationPage() {
   async function submitEvaluation(orderId) {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
-
     setSubmittingId(orderId);
     try {
       const evalLines = order.lines
@@ -93,7 +77,6 @@ export default function StockEvaluationPage() {
             altWriteOffReason: ev.altReason || 'Damaged',
           };
         });
-
       await client.post(`/stock-orders/${orderId}/evaluate`, { lines: evalLines });
       showToast(t.evaluationComplete, 'success');
       fetchOrders();
@@ -114,11 +97,10 @@ export default function StockEvaluationPage() {
 
   return (
     <div className="min-h-screen bg-ios-bg">
-      {/* Header */}
       <header className="glass-nav px-4 pt-3 pb-3 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
-          <button onClick={() => navigate('/orders')} className="text-brand-600 font-medium text-base">
-            ‹ {t.back || 'Back'}
+          <button onClick={() => navigate('/orders')} className="text-brand-600 font-medium text-sm">
+            ‹ {t.navOrders}
           </button>
           <h1 className="text-base font-semibold text-ios-label">{t.stockEvaluation}</h1>
           <span className="w-16" />
@@ -128,11 +110,11 @@ export default function StockEvaluationPage() {
       <main className="max-w-2xl mx-auto px-4 py-4 pb-32 space-y-6">
         {orders.length === 0 ? (
           <div className="text-center py-16">
-            <p className="text-ios-tertiary">{t.noOrders || 'Nothing to evaluate'}</p>
+            <p className="text-3xl mb-2">📦</p>
+            <p className="text-ios-tertiary text-sm">{t.nothingToEvaluate || 'No deliveries to evaluate'}</p>
           </div>
         ) : (
           orders.map(order => {
-            // Separate lines: found (for evaluation) vs not found (info only)
             const foundLines = order.lines.filter(l =>
               l['Driver Status'] === 'Found All' || l['Driver Status'] === 'Partial'
             );
@@ -148,107 +130,120 @@ export default function StockEvaluationPage() {
 
             return (
               <div key={order.id} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-ios-tertiary uppercase">
-                    PO #{order['Stock Order ID'] || '—'}
-                  </span>
+                {/* PO header */}
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-ios-tertiary uppercase">
+                      {order['Stock Order ID'] || 'PO'}
+                    </span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700">
+                      {t.stockEvaluation}
+                    </span>
+                  </div>
                   {order['Assigned Driver'] && (
-                    <span className="text-xs text-ios-secondary">{order['Assigned Driver']}</span>
+                    <span className="text-xs text-ios-secondary">
+                      {t.driver || 'Driver'}: {order['Assigned Driver']}
+                    </span>
                   )}
                 </div>
 
-                {/* Lines to evaluate — grouped by supplier */}
+                {/* Found lines grouped by supplier */}
                 {Object.entries(bySupplier).map(([supplier, lines]) => (
                   <div key={supplier} className="ios-card overflow-hidden">
-                    <div className="bg-brand-50 px-4 py-2">
-                      <span className="text-xs font-semibold text-brand-700 uppercase">{supplier}</span>
+                    {/* Supplier header */}
+                    <div className="bg-brand-50 px-4 py-2 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-brand-700">{supplier}</span>
+                      <span className="text-xs text-brand-500">{lines.length} {t.items || 'items'}</span>
                     </div>
+
                     <div className="divide-y divide-gray-100">
                       {lines.map(line => {
                         const ev = evalState[line.id] || {};
                         const found = Number(line['Quantity Found']) || 0;
+                        const needed = Number(line['Quantity Needed']) || 0;
+                        const costPrice = Number(line['Cost Price']) || 0;
+                        const lotSize = Number(line['Lot Size']) || 1;
                         const altFound = Number(line['Alt Quantity Found']) || 0;
                         const altSupplier = line['Alt Supplier'];
-
-                        const evalLotSize = Number(line['Lot Size']) || 1;
-
-                        const costPrice = Number(line['Cost Price']) || 0;
-                        const needed = Number(line['Quantity Needed']) || 0;
                         const altFlowerName = line['Alt Flower Name'] || '';
 
                         return (
-                          <div key={line.id} className="px-4 py-3 space-y-2">
-                            {/* Header with qty needed, found, cost */}
-                            <div className="flex items-center justify-between">
+                          <div key={line.id} className="px-4 py-3 space-y-3">
+                            {/* Flower info header */}
+                            <div className="flex items-start justify-between">
                               <div>
-                                <span className="text-sm font-medium text-ios-label">
-                                  {line['Flower Name']}
-                                  {evalLotSize > 1 && (
-                                    <span className="text-xs text-ios-tertiary ml-1">
-                                      ({t.lotSize}: {evalLotSize})
-                                    </span>
-                                  )}
-                                </span>
-                                {costPrice > 0 && (
-                                  <span className="text-xs text-ios-tertiary ml-2">{costPrice} zł/{t.unit || 'pc'}</span>
-                                )}
+                                <p className="text-sm font-semibold text-ios-label">{line['Flower Name']}</p>
+                                <div className="flex items-center gap-2 mt-0.5 text-xs text-ios-tertiary">
+                                  {lotSize > 1 && <span>{t.lotSize}: {lotSize}</span>}
+                                  {costPrice > 0 && <span>{costPrice} zł</span>}
+                                </div>
                               </div>
                               <div className="text-right">
-                                <div className="text-xs text-ios-tertiary">{t.qtyNeeded || 'Needed'}: {needed}</div>
-                                <div className="text-xs font-medium text-ios-label">{t.driverFound}: {found}</div>
+                                <p className="text-xs text-ios-tertiary">{t.qtyNeeded || 'Needed'}: {needed}</p>
+                                <p className="text-sm font-bold text-ios-label">{t.driverFound}: {found}</p>
                               </div>
                             </div>
 
-                            {/* Accept / write-off row */}
-                            <div className="flex items-center gap-3">
-                              <div className="flex-1">
-                                <label className="text-[11px] text-ios-tertiary">{t.accept}</label>
-                                <input
-                                  type="number"
-                                  value={ev.accepted ?? found}
-                                  onChange={e => {
-                                    const val = Math.max(0, Math.min(Number(e.target.value) || 0, found));
-                                    updateEval(line.id, { accepted: val, writeOff: Math.max(0, found - val) });
-                                  }}
-                                  className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
-                                  min="0" max={found}
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <label className="text-[11px] text-ios-tertiary">{t.writeOffQty}</label>
-                                <input
-                                  type="number"
-                                  value={ev.writeOff || 0}
-                                  onChange={e => handleWriteOffChange(line.id, e.target.value, 'writeOff')}
-                                  className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
-                                  min="0"
-                                />
-                              </div>
-                              <div className="flex-1">
-                                <label className="text-[11px] text-ios-tertiary">{t.writeOffReason || 'Reason'}</label>
-                                <select
-                                  value={ev.reason || 'Damaged'}
-                                  onChange={e => updateEval(line.id, { reason: e.target.value })}
-                                  className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
-                                >
-                                  <option value="Wilted">{t.reasonWilted}</option>
-                                  <option value="Damaged">{t.reasonDamaged}</option>
-                                </select>
-                              </div>
-                            </div>
-
-                            {/* Alt supplier/substitute row */}
-                            {altSupplier && altFound > 0 && (
-                              <div className="bg-indigo-50 rounded-lg px-3 py-2 space-y-1">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs font-medium text-indigo-700">
-                                    {altFlowerName
-                                      ? `↳ ${altFlowerName} (${altSupplier})`
-                                      : `+ ${altSupplier}`}: {altFound}
-                                  </span>
+                            {/* Accept / Write-off controls */}
+                            <div className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2">
+                              <div className="flex items-center gap-3">
+                                <div className="flex-1">
+                                  <label className="text-[10px] text-emerald-600 uppercase font-semibold mb-0.5 block">
+                                    ✓ {t.accept}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={ev.accepted ?? found}
+                                    onChange={e => {
+                                      const val = Math.max(0, Math.min(Number(e.target.value) || 0, found));
+                                      updateEval(line.id, { accepted: val, writeOff: Math.max(0, found - val) });
+                                    }}
+                                    className="w-full text-sm font-medium border border-emerald-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                                    min="0" max={found}
+                                  />
                                 </div>
+                                <div className="flex-1">
+                                  <label className="text-[10px] text-amber-600 uppercase font-semibold mb-0.5 block">
+                                    ✗ {t.writeOffQty}
+                                  </label>
+                                  <input
+                                    type="number"
+                                    value={ev.writeOff || 0}
+                                    onChange={e => handleWriteOffChange(line.id, e.target.value, 'writeOff')}
+                                    className="w-full text-sm font-medium border border-amber-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                                    min="0"
+                                  />
+                                </div>
+                                <div className="flex-1">
+                                  <label className="text-[10px] text-ios-tertiary uppercase font-semibold mb-0.5 block">
+                                    {t.reason || 'Reason'}
+                                  </label>
+                                  <select
+                                    value={ev.reason || 'Damaged'}
+                                    onChange={e => updateEval(line.id, { reason: e.target.value })}
+                                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                                  >
+                                    <option value="Wilted">{t.reasonWilted}</option>
+                                    <option value="Damaged">{t.reasonDamaged}</option>
+                                    <option value="Overstock">{t.reasonOverstock || 'Overstock'}</option>
+                                    <option value="Other">{t.reasonOther || 'Other'}</option>
+                                  </select>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* Alt supplier block — separate indigo section */}
+                            {altSupplier && altFound > 0 && (
+                              <div className="bg-indigo-50 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
+                                <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide">
+                                  ↳ {altFlowerName ? `${altFlowerName} — ${altSupplier}` : altSupplier}
+                                  <span className="ml-1 text-indigo-500 normal-case">({altFound} {t.delivered || 'delivered'})</span>
+                                </p>
                                 <div className="flex items-center gap-3">
                                   <div className="flex-1">
+                                    <label className="text-[10px] text-emerald-600 uppercase font-semibold mb-0.5 block">
+                                      ✓ {t.accept}
+                                    </label>
                                     <input
                                       type="number"
                                       value={ev.altAccepted ?? altFound}
@@ -256,27 +251,35 @@ export default function StockEvaluationPage() {
                                         const val = Math.max(0, Math.min(Number(e.target.value) || 0, altFound));
                                         updateEval(line.id, { altAccepted: val, altWriteOff: Math.max(0, altFound - val) });
                                       }}
-                                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                                      className="w-full text-sm font-medium border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
                                       min="0" max={altFound}
                                     />
                                   </div>
                                   <div className="flex-1">
+                                    <label className="text-[10px] text-amber-600 uppercase font-semibold mb-0.5 block">
+                                      ✗ {t.writeOffQty}
+                                    </label>
                                     <input
                                       type="number"
                                       value={ev.altWriteOff || 0}
                                       onChange={e => handleWriteOffChange(line.id, e.target.value, 'altWriteOff')}
-                                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                                      className="w-full text-sm font-medium border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
                                       min="0"
                                     />
                                   </div>
                                   <div className="flex-1">
+                                    <label className="text-[10px] text-ios-tertiary uppercase font-semibold mb-0.5 block">
+                                      {t.reason || 'Reason'}
+                                    </label>
                                     <select
                                       value={ev.altReason || 'Damaged'}
                                       onChange={e => updateEval(line.id, { altReason: e.target.value })}
-                                      className="w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                                      className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
                                     >
                                       <option value="Wilted">{t.reasonWilted}</option>
                                       <option value="Damaged">{t.reasonDamaged}</option>
+                                      <option value="Overstock">{t.reasonOverstock || 'Overstock'}</option>
+                                      <option value="Other">{t.reasonOther || 'Other'}</option>
                                     </select>
                                   </div>
                                 </div>
@@ -289,41 +292,48 @@ export default function StockEvaluationPage() {
                   </div>
                 ))}
 
-                {/* Not found lines — info only */}
+                {/* Not found lines */}
                 {notFoundLines.length > 0 && (
-                  <details className="ios-card overflow-hidden">
-                    <summary className="px-4 py-3 text-xs font-semibold text-ios-tertiary cursor-pointer">
-                      {t.notFoundByDriver} ({notFoundLines.length})
-                    </summary>
+                  <div className="ios-card overflow-hidden">
+                    <div className="bg-red-50 px-4 py-2">
+                      <span className="text-xs font-semibold text-red-600 uppercase">
+                        {t.notFoundByDriver} ({notFoundLines.length})
+                      </span>
+                    </div>
                     <div className="divide-y divide-gray-100">
                       {notFoundLines.map(line => {
                         const hasAlt = line['Alt Supplier'] && Number(line['Alt Quantity Found']) > 0;
                         return (
-                        <div key={line.id} className="px-4 py-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm text-ios-secondary">{line['Flower Name']}</span>
-                            <span className="text-xs text-ios-tertiary">{line.Notes || '—'}</span>
-                          </div>
-                          {hasAlt && (
-                            <div className="text-xs text-indigo-600 mt-1">
-                              ↳ {t.substitute || 'Substitute'}: {line['Alt Flower Name'] || '?'} ({line['Alt Supplier']}) × {line['Alt Quantity Found']}
+                          <div key={line.id} className="px-4 py-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-ios-secondary">{line['Flower Name']}</span>
+                              <span className="text-xs text-ios-tertiary">{Number(line['Quantity Needed']) || 0} {t.qtyNeeded || 'needed'}</span>
                             </div>
-                          )}
-                        </div>
+                            {line.Notes && (
+                              <p className="text-xs text-ios-tertiary mt-0.5">{line.Notes}</p>
+                            )}
+                            {hasAlt && (
+                              <div className="mt-1.5 bg-indigo-50 rounded-lg px-2.5 py-1.5 text-xs text-indigo-600">
+                                ↳ {line['Alt Flower Name'] || '?'} ({line['Alt Supplier']}) × {line['Alt Quantity Found']}
+                              </div>
+                            )}
+                          </div>
                         );
                       })}
                     </div>
-                  </details>
+                  </div>
                 )}
 
-                {/* Complete button */}
+                {/* Complete evaluation button */}
                 <button
                   onClick={() => submitEvaluation(order.id)}
                   disabled={submittingId === order.id || foundLines.length === 0}
                   className="w-full py-3.5 rounded-2xl bg-brand-600 text-white text-base font-semibold
                              disabled:opacity-30 active:bg-brand-700 transition-colors shadow-lg active-scale"
                 >
-                  {submittingId === order.id ? t.saving || 'Saving...' : t.completeEvaluation}
+                  {submittingId === order.id
+                    ? (t.saving || '...')
+                    : `${t.completeEvaluation} (${foundLines.length} ${t.items || 'items'})`}
                 </button>
               </div>
             );
