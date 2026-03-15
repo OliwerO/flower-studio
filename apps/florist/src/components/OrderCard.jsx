@@ -586,6 +586,39 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 );
               })()}
 
+              {/* Delivery type switch — allows changing Pickup↔Delivery after creation */}
+              {!isTerminal && (
+                <div>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.deliveryType || 'Delivery type'}</p>
+                  <Pills
+                    value={d['Delivery Type'] || 'Pickup'}
+                    onChange={async val => {
+                      if (val === 'Delivery' && d['Delivery Type'] === 'Pickup' && !detail?.delivery) {
+                        // Switching Pickup → Delivery: create delivery record on-the-fly
+                        setSaving(true);
+                        try {
+                          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
+                          setDetail(prev => ({ ...prev, 'Delivery Type': 'Delivery', delivery: res.data }));
+                          onOrderUpdated?.(order.id, { 'Delivery Type': 'Delivery' });
+                          showToast(t.updated, 'success');
+                        } catch (err) {
+                          showToast(err.response?.data?.error || t.updateError, 'error');
+                        } finally {
+                          setSaving(false);
+                        }
+                      } else {
+                        patch({ 'Delivery Type': val });
+                      }
+                    }}
+                    disabled={saving}
+                    options={[
+                      { value: 'Pickup',   label: t.pickup || 'Pickup' },
+                      { value: 'Delivery', label: t.delivery || 'Delivery' },
+                    ]}
+                  />
+                </div>
+              )}
+
               {/* Status controls */}
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelStatus}</p>

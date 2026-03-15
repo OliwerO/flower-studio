@@ -342,7 +342,16 @@ export default function Step2Bouquet({
             >
               <option value="">{t.supplier || 'Supplier'}...</option>
               {configSuppliers.map(s => <option key={s} value={s}>{s}</option>)}
+              <option value="__other__">{t.otherSupplier || 'Other'}...</option>
             </select>
+            {customFlower.supplier === '__other__' && (
+              <input
+                value={customFlower.customSupplier || ''}
+                onChange={e => setCustomFlower(p => ({ ...p, customSupplier: e.target.value }))}
+                placeholder={t.supplier || 'Supplier name'}
+                className="field-input text-sm col-span-2"
+              />
+            )}
             <input
               type="number"
               value={customFlower.lotSize}
@@ -372,10 +381,17 @@ export default function Step2Bouquet({
               type="button"
               onClick={async () => {
                 if (!customFlower.name.trim()) return;
+                const supplierValue = customFlower.supplier === '__other__'
+                  ? (customFlower.customSupplier || '').trim()
+                  : customFlower.supplier || '';
                 try {
+                  // If new supplier entered, persist to settings for future use
+                  if (customFlower.supplier === '__other__' && supplierValue && !configSuppliers.some(s => s.toLowerCase() === supplierValue.toLowerCase())) {
+                    client.put('/settings/config', { suppliers: [...configSuppliers, supplierValue] }).catch(() => {});
+                  }
                   const res = await client.post('/stock', {
                     displayName: customFlower.name.trim(),
-                    supplier: customFlower.supplier || '',
+                    supplier: supplierValue,
                     costPrice: Number(customFlower.costPrice) || 0,
                     sellPrice: Number(customFlower.sellPrice) || 0,
                     lotSize: Number(customFlower.lotSize) || 1,
