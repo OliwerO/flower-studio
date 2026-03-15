@@ -107,6 +107,8 @@ const en = {
   today:         'Today',
   lotSize:       'Lot Size',
   packs:         'packs',
+  lotsFound:     'Lots found',
+  totalStems:    'Total stems',
 };
 
 const ru = {
@@ -215,6 +217,8 @@ const ru = {
   today:         'Сегодня',
   lotSize:       'Фасовка',
   packs:         'уп.',
+  lotsFound:     'Упаковок найдено',
+  totalStems:    'Всего штук',
 };
 
 // ── Proxy-based dynamic translation ──

@@ -231,6 +231,8 @@ export default function StockPickupPage() {
 function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
   const [expanded, setExpanded] = useState(false);
   const [qtyFound, setQtyFound] = useState(line['Quantity Found'] || '');
+  const [lotsFound, setLotsFound] = useState('');
+  const [actualLotSize, setActualLotSize] = useState(lotSize);
   const [altFlowerName, setAltFlowerName] = useState(line['Alt Flower Name'] || '');
   const [altSupplier, setAltSupplier] = useState(line['Alt Supplier'] || '');
   const [altQty, setAltQty] = useState(line['Alt Quantity Found'] || '');
@@ -325,18 +327,73 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
       {/* Expanded details for Partial or Not Found */}
       {expanded && (status === 'Partial' || status === 'Not Found') && (
         <div className={`mt-1 rounded-xl p-3 space-y-3 ${status === 'Partial' ? 'bg-amber-50' : 'bg-red-50'}`}>
-          {/* Quantity found — only for Partial */}
+          {/* Quantity found — for Partial: lots-based entry */}
           {status === 'Partial' && (
-            <div>
-              <label className="text-xs text-ios-secondary font-medium block mb-1">{t.howManyFound}</label>
-              <input
-                type="number"
-                value={qtyFound}
-                onChange={e => setQtyFound(e.target.value)}
-                onBlur={saveDetails}
-                className="w-full text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                placeholder="0"
-              />
+            <div className="space-y-2">
+              {lotSize > 1 ? (
+                <>
+                  <div>
+                    <label className="text-xs text-ios-secondary font-medium block mb-1">
+                      {t.lotsFound || 'Lots found'} ({t.lotSize}: {actualLotSize})
+                    </label>
+                    <input
+                      type="number"
+                      value={lotsFound}
+                      onChange={e => {
+                        const lots = e.target.value;
+                        setLotsFound(lots);
+                        const stems = (Number(lots) || 0) * actualLotSize;
+                        setQtyFound(stems);
+                      }}
+                      onBlur={saveDetails}
+                      className="w-full text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                      placeholder="0"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1">
+                      <label className="text-xs text-ios-secondary font-medium block mb-1">
+                        = {t.totalStems || 'Total stems'}
+                      </label>
+                      <input
+                        type="number"
+                        value={qtyFound}
+                        onChange={e => setQtyFound(e.target.value)}
+                        onBlur={saveDetails}
+                        className="w-full text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                      />
+                    </div>
+                    <div className="w-24">
+                      <label className="text-xs text-ios-secondary font-medium block mb-1">
+                        {t.lotSize}
+                      </label>
+                      <input
+                        type="number"
+                        value={actualLotSize}
+                        onChange={e => {
+                          const newSize = Number(e.target.value) || 1;
+                          setActualLotSize(newSize);
+                          if (lotsFound) setQtyFound((Number(lotsFound) || 0) * newSize);
+                        }}
+                        onBlur={saveDetails}
+                        className="w-full text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-xs text-ios-secondary font-medium block mb-1">{t.howManyFound}</label>
+                  <input
+                    type="number"
+                    value={qtyFound}
+                    onChange={e => setQtyFound(e.target.value)}
+                    onBlur={saveDetails}
+                    className="w-full text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                    placeholder="0"
+                  />
+                </div>
+              )}
             </div>
           )}
 
