@@ -209,9 +209,9 @@ export default function ShoppingSupportPage() {
                     )}
                   </div>
                 </div>
-                {order['Driver Name'] && (
+                {order['Assigned Driver'] && (
                   <p className="text-xs text-ios-secondary -mt-1">
-                    {t.shopping.driver}: {order['Driver Name']}
+                    {t.shopping.driver}: {order['Assigned Driver']}
                   </p>
                 )}
 
@@ -299,6 +299,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
     altFlower:    line['Alt Flower Name'] || '',
     altSupplier:  line['Alt Supplier'] || '',
     altQty:       line['Alt Quantity Found'] ?? '',
+    altCost:      line['Alt Cost'] ?? '',
     notes:        line.Notes || '',
   });
 
@@ -343,13 +344,23 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
   }
 
   function handleStatusOverride(newStatus) {
-    const fields = { 'Driver Status': newStatus };
+    // Save any pending local edits before changing status
+    const pendingFields = {
+      'Quantity Found': Number(local.qtyFound) || 0,
+      'Cost Price': Number(local.costPrice) || 0,
+      'Alt Flower Name': local.altFlowerName || '',
+      'Alt Supplier': local.altSupplier || '',
+      'Alt Quantity Found': Number(local.altQty) || 0,
+      Notes: local.notes || '',
+      'Driver Status': newStatus,
+    };
     if (newStatus === 'Found All') {
       const fullQty = lots > 0 ? lots * lotSize : needed;
-      fields['Quantity Found'] = fullQty;
+      pendingFields['Quantity Found'] = fullQty;
       setLocal(prev => ({ ...prev, qtyFound: fullQty }));
     }
-    onUpdate(orderId, line.id, fields);
+    onBlurLine();
+    onUpdate(orderId, line.id, pendingFields);
   }
 
   return (
@@ -426,46 +437,70 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
           </div>
         </div>
 
-        {/* Alt Flower Name */}
-        <div>
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altFlower}</label>
-          <input
-            type="text"
-            value={local.altFlower}
-            onChange={e => handleChange('altFlower', e.target.value)}
-            onFocus={onFocus}
-            onBlur={() => handleBlur({ 'Alt Flower Name': local.altFlower })}
-            placeholder={t.shopping.altFlowerHint}
-            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-          />
-        </div>
-
-        {/* Alt Supplier + Alt Qty — side by side */}
-        <div className="flex gap-2">
-          <div className="flex-1">
-            <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altSupplier}</label>
-            <input
-              type="text"
-              value={local.altSupplier}
-              onChange={e => handleChange('altSupplier', e.target.value)}
-              onFocus={onFocus}
-              onBlur={() => handleBlur({ 'Alt Supplier': local.altSupplier })}
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-            />
+        {/* ── Alternative supplier block — separate visual section ── */}
+        {(local.altFlower || local.altSupplier || Number(local.altQty) > 0 || status === 'Partial' || status === 'Not Found') && (
+          <div className="bg-indigo-50 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
+            <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide">
+              {t.shopping.altSection || 'Alternative supplier'}
+            </p>
+            <div>
+              <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altFlower}</label>
+              <input
+                type="text"
+                value={local.altFlower}
+                onChange={e => handleChange('altFlower', e.target.value)}
+                onFocus={onFocus}
+                onBlur={() => handleBlur({ 'Alt Flower Name': local.altFlower })}
+                placeholder={t.shopping.altFlowerHint}
+                className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+              />
+            </div>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altSupplier}</label>
+                <input
+                  type="text"
+                  value={local.altSupplier}
+                  onChange={e => handleChange('altSupplier', e.target.value)}
+                  onFocus={onFocus}
+                  onBlur={() => handleBlur({ 'Alt Supplier': local.altSupplier })}
+                  className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                />
+              </div>
+              <div className="w-20">
+                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altQty}</label>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={local.altQty}
+                  onChange={e => handleChange('altQty', e.target.value)}
+                  onFocus={onFocus}
+                  onBlur={() => handleBlur({ 'Alt Quantity Found': Number(local.altQty) || 0 })}
+                  className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                />
+              </div>
+            </div>
+            {/* Pre-filled cost = known cost × alt qty (editable) */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altCost || 'Alt cost total'}</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    inputMode="decimal"
+                    value={local.altCost ?? (Number(local.costPrice || 0) * Number(local.altQty || 0) || '')}
+                    onChange={e => handleChange('altCost', e.target.value)}
+                    onFocus={onFocus}
+                    onBlur={() => handleBlur({ 'Alt Cost': local.altCost === '' ? '' : Number(local.altCost) || 0 })}
+                    placeholder={(Number(local.costPrice || 0) * Number(local.altQty || 0)).toFixed(0) || '0'}
+                    className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 pr-8 bg-white outline-none"
+                  />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ios-tertiary">zł</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="w-20">
-            <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altQty}</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={local.altQty}
-              onChange={e => handleChange('altQty', e.target.value)}
-              onFocus={onFocus}
-              onBlur={() => handleBlur({ 'Alt Quantity Found': Number(local.altQty) || 0 })}
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-            />
-          </div>
-        </div>
+        )}
 
         {/* Notes */}
         <div>

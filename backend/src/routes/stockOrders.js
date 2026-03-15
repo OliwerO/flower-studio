@@ -103,10 +103,19 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
 
     const today = new Date().toISOString().split('T')[0];
 
+    // Generate PO number: PO-YYYYMMDD-N (date prefix + sequence)
+    const existingPOs = await db.list(TABLES.STOCK_ORDERS, {
+      filterByFormula: `DATESTR({Created Date}) = '${today}'`,
+      fields: ['Created Date'],
+    });
+    const seq = existingPOs.length + 1;
+    const poNumber = `PO-${today.replace(/-/g, '')}-${seq}`;
+
     // Create the PO header — carry over driver selection from the form
     const orderFields = {
       Status: 'Draft',
       'Created Date': today,
+      'Stock Order ID': poNumber,
       Notes: notes || '',
     };
     if (driver) orderFields['Assigned Driver'] = driver;
@@ -181,7 +190,7 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
   try {
     const allowed = [
       'Driver Status', 'Quantity Found', 'Alt Supplier', 'Alt Quantity Found',
-      'Alt Flower Name', 'Cost Price', 'Sell Price',
+      'Alt Flower Name', 'Cost Price', 'Sell Price', 'Alt Cost',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
       'Flower Name', 'Supplier', 'Lot Size',
     ];

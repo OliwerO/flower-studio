@@ -45,7 +45,11 @@ export default function StockPickupPage() {
         if (data.type === 'stock_order_line_updated') fetchOrders();
       } catch {}
     };
-    return () => source.close();
+    // Fallback poll every 30s if SSE drops
+    const interval = setInterval(() => {
+      if (!document.hidden) fetchOrders();
+    }, 30000);
+    return () => { source.close(); clearInterval(interval); };
   }, [fetchOrders]);
 
   // Auto-save line update
