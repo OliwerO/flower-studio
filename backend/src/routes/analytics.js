@@ -188,14 +188,15 @@ router.get('/', async (req, res, next) => {
       : 0;
 
     // ── Source breakdown ──
+    // Supports both old 'Source' field and new 'Order Source' field for backwards compat
     const bySource = {};
     const revenueBySource = {};
     for (const o of orders) {
-      const src = o.Source || 'Other';
+      const src = o['Order Source'] || o.Source || 'Other';
       bySource[src] = (bySource[src] || 0) + 1;
     }
     for (const o of paidOrders) {
-      const src = o.Source || 'Other';
+      const src = o['Order Source'] || o.Source || 'Other';
       revenueBySource[src] = (revenueBySource[src] || 0) + (o['Effective Price'] || 0);
     }
 
@@ -381,12 +382,12 @@ router.get('/', async (req, res, next) => {
     // ── Source Efficiency ──
     const sourceEfficiency = {};
     for (const o of orders) {
-      const src = o.Source || 'Other';
+      const src = o['Order Source'] || o.Source || 'Other';
       if (!sourceEfficiency[src]) sourceEfficiency[src] = { source: src, orderCount: 0, revenue: 0, flowerCost: 0 };
       sourceEfficiency[src].orderCount++;
     }
     for (const o of paidOrders) {
-      const src = o.Source || 'Other';
+      const src = o['Order Source'] || o.Source || 'Other';
       if (!sourceEfficiency[src]) sourceEfficiency[src] = { source: src, orderCount: 0, revenue: 0, flowerCost: 0 };
       sourceEfficiency[src].revenue += o['Effective Price'] || 0;
       sourceEfficiency[src].flowerCost += o._cost || 0;

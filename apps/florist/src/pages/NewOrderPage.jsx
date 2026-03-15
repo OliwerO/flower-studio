@@ -153,16 +153,17 @@ export default function NewOrderPage() {
     setSubmitting(true);
     try {
       const body = {
-        customer:        form.customerId,
-        customerRequest: form.customerRequest,
-        source:          form.source,
-        deliveryType:    form.deliveryType,
-        requiredBy:      form.requiredBy || null,
-        notes:           form.notes,
-        paymentStatus:   form.paymentStatus,
-        paymentMethod:   form.paymentMethod,
-        priceOverride:   form.priceOverride ? Number(form.priceOverride) : null,
-        orderLines:      form.orderLines,
+        customer:            form.customerId,
+        customerRequest:     form.customerRequest,
+        source:              form.source,
+        communicationMethod: form.communicationMethod || null,
+        deliveryType:        form.deliveryType,
+        requiredBy:          form.requiredBy || null,
+        notes:               form.notes,
+        paymentStatus:       form.paymentStatus,
+        paymentMethod:       form.paymentMethod,
+        priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
+        orderLines:          form.orderLines,
       };
       // Card text + date/time apply to both delivery and pickup
       body.cardText = form.cardText || '';

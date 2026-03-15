@@ -8,6 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import DatePicker from './DatePicker.jsx';
+import useConfigLists from '../hooks/useConfigLists.js';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
@@ -29,9 +30,6 @@ const STATUS_LABELS = {
   'Picked Up':        () => t.statusPickedUp,
   'Cancelled':        () => t.statusCancelled,
 };
-
-const FALLBACK_PAY_METHODS = ['Cash', 'Card', 'Transfer'];
-const FALLBACK_TIME_SLOTS  = ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
 
 // Florist doesn't trigger "Out for Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
@@ -75,7 +73,8 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, timeSlots }) {
+export default function OrderCard({ order, onOrderUpdated, isOwner }) {
+  const { paymentMethods: payMethods, timeSlots } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
   const [detail, setDetail]       = useState(null);
@@ -97,7 +96,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
   const request    = order['Customer Request'] || '';
   const price      = order['Price Override'] || order['Sell Total'] || '';
   const isPaid     = order['Payment Status'] === 'Paid';
-  const isWix      = order['Source'] === 'Wix';
+  const isWix      = (order['Order Source'] || order['Source']) === 'Wix';
   // Wix orders without a composed bouquet — florist needs to select actual flowers
   const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
 
@@ -221,8 +220,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
       {/* ── Summary (always visible) ── */}
       <div className="flex items-start justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 flex-wrap">
-          {order['Order ID'] && (
-            <span className="text-[11px] font-mono text-ios-tertiary">#{order['Order ID']}</span>
+          {order['App Order ID'] && (
+            <span className="text-[11px] font-mono text-ios-tertiary">#{order['App Order ID']}</span>
           )}
           <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${styles.label}`}>
             {statusLabel(currentStatus)}
@@ -526,7 +525,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                     <div className="py-1">
                       <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {(timeSlots || FALLBACK_TIME_SLOTS).map(slot => (
+                        {timeSlots.map(slot => (
                           <button
                             key={slot}
                             onClick={() => patchDelivery({
@@ -625,7 +624,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, payMethods, 
                       value={d['Payment Method'] || ''}
                       onChange={val => patch({ 'Payment Method': val })}
                       disabled={saving}
-                      options={(payMethods || FALLBACK_PAY_METHODS).map(m => ({ value: m, label: m }))}
+                      options={payMethods.map(m => ({ value: m, label: m }))}
                     />
                   )}
                 </div>

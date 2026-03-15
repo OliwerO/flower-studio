@@ -114,6 +114,25 @@ router.get('/', async (req, res, next) => {
     // Unassigned deliveries: pending deliveries with no driver assigned
     const unassignedDeliveries = deliveries.filter(d => !d['Assigned Driver'] && d.Status !== 'Delivered');
 
+    // Bulk-fetch order lines for unpaid orders to calculate accurate sell totals.
+    // Can't rely on 'Sell Price Total' rollup — it may be stale after price edits.
+    const unpaidLineIds = unpaidOrders.flatMap(o => o['Order Lines'] || []);
+    const unpaidLines = unpaidLineIds.length > 0
+      ? await db.list(TABLES.ORDER_LINES, {
+          filterByFormula: `OR(${unpaidLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+          fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
+          maxRecords: 1000,
+        }).catch(() => [])
+      : [];
+    const unpaidTotalByOrder = {};
+    for (const line of unpaidLines) {
+      const oid = line.Order?.[0];
+      if (oid) {
+        unpaidTotalByOrder[oid] = (unpaidTotalByOrder[oid] || 0)
+          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
+      }
+    }
+
     // Unpaid orders aging: group by how old they are relative to today
     const todayMs = new Date(today).getTime();
     const DAY_MS = 86400000;
@@ -127,7 +146,7 @@ router.get('/', async (req, res, next) => {
     for (const o of unpaidOrders) {
       const orderDateMs = o['Order Date'] ? new Date(o['Order Date']).getTime() : todayMs;
       const daysOld = Math.floor((todayMs - orderDateMs) / DAY_MS);
-      const sellTotal = Number(o['Sell Price Total'] || 0);
+      const sellTotal = unpaidTotalByOrder[o.id] || 0;
       const delFee = Number(o['Delivery Fee'] || 0);
       const effectivePrice = o['Final Price'] ?? o['Price Override'] ?? (sellTotal + delFee);
       const amt = Number(effectivePrice) || 0;

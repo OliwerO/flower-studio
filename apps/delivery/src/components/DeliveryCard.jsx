@@ -63,9 +63,14 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
           </div>
         )}
 
-        {/* Top row: recipient + time badge + payment badge */}
+        {/* Top row: recipient + order ID + time badge + payment badge */}
         <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-ios-label truncate flex-1">{recipient}</h3>
+          <div className="flex items-center gap-2 flex-1 min-w-0">
+            {d['App Order ID'] && (
+              <span className="text-[11px] font-mono text-ios-tertiary shrink-0">#{d['App Order ID']}</span>
+            )}
+            <h3 className="text-sm font-semibold text-ios-label truncate">{recipient}</h3>
+          </div>
           <div className="flex items-center gap-1.5 shrink-0">
             {paymentBadge()}
             {time && (

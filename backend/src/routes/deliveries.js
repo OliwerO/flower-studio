@@ -48,7 +48,7 @@ router.get('/', async (req, res, next) => {
     if (orderIds.length > 0) {
       const orders = await db.list(TABLES.ORDERS, {
         filterByFormula: `OR(${orderIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text'],
+        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID'],
       });
       const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
       const customers = customerIds.length > 0
@@ -76,6 +76,7 @@ router.get('/', async (req, res, next) => {
           d['Order Contents'] = order['Customer Request'] || '';
           d['Payment Status'] = order['Payment Status'] || '';
           d['Special Instructions'] = order['Notes Translated'] || '';
+          d['App Order ID'] = order['App Order ID'] || '';
           if (!d['Greeting Card Text']) {
             d['Greeting Card Text'] = order['Greeting Card Text'] || '';
           }

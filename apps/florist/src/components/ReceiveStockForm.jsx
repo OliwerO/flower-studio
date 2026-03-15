@@ -4,11 +4,10 @@
 import { useState } from 'react';
 import client from '../api/client.js';
 import t from '../translations.js';
+import useConfigLists from '../hooks/useConfigLists.js';
 
-const CATEGORIES = ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'];
 const NEW_ITEM_VALUE = '__new__';
 const NEW_SUPPLIER_VALUE = '__new_supplier__';
-const FALLBACK_SUPPLIERS = ['Stojek', 'Stefan', 'Mateusz', '4f', 'Other'];
 
 function Row({ label, children }) {
   return (
@@ -32,6 +31,7 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
 }
 
 export default function ReceiveStockForm({ stock, onSave, onCancel }) {
+  const { categories: CATEGORIES, suppliers: configSuppliers } = useConfigLists();
   const [stockItemId, setStockItemId] = useState('');
   const [newName, setNewName]         = useState('');
   const [newCategory, setNewCategory] = useState('Other');
@@ -42,10 +42,10 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
   const [newSupplier, setNewSupplier] = useState('');
   const [saving, setSaving]           = useState(false);
 
-  // Unique supplier names from existing stock items + fallback list
+  // Unique supplier names from existing stock items + config list
   const knownSuppliers = [...new Set([
     ...stock.map(s => s['Supplier']).filter(Boolean),
-    ...FALLBACK_SUPPLIERS,
+    ...configSuppliers,
   ])];
 
   const isNewSupplier = supplierId === NEW_SUPPLIER_VALUE;

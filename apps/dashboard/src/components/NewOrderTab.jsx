@@ -50,18 +50,19 @@ export default function NewOrderTab({ onNavigate }) {
     setSubmitting(true);
     try {
       const body = {
-        customer:        form.customerId,
-        customerRequest: form.customerRequest,
-        source:          form.source,
-        deliveryType:    form.deliveryType,
-        requiredBy:      form.deliveryDate || null,
-        deliveryTime:    form.deliveryTime || '',
-        cardText:        form.cardText || '',
-        notes:           form.notes,
-        paymentStatus:   form.paymentStatus,
-        paymentMethod:   form.paymentMethod,
-        priceOverride:   form.priceOverride ? Number(form.priceOverride) : null,
-        orderLines:      form.orderLines,
+        customer:            form.customerId,
+        customerRequest:     form.customerRequest,
+        source:              form.source,
+        communicationMethod: form.communicationMethod || null,
+        deliveryType:        form.deliveryType,
+        requiredBy:          form.deliveryDate || null,
+        deliveryTime:        form.deliveryTime || '',
+        cardText:            form.cardText || '',
+        notes:               form.notes,
+        paymentStatus:       form.paymentStatus,
+        paymentMethod:       form.paymentMethod,
+        priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
+        orderLines:          form.orderLines,
       };
       if (form.deliveryType === 'Delivery') {
         body.delivery = {

@@ -70,9 +70,12 @@ function KanbanCard({ order, onClick }) {
       className="bg-white rounded-xl shadow-sm px-3 py-2.5 cursor-pointer
                  hover:shadow-md transition-all active-scale"
     >
-      {/* Customer name + price */}
+      {/* Customer name + Order ID + price */}
       <div className="flex items-center justify-between">
         <span className="text-xs font-semibold text-ios-label truncate">
+          {order['App Order ID'] && (
+            <span className="text-[10px] font-mono text-ios-tertiary mr-1">#{order['App Order ID']}</span>
+          )}
           {order['Customer Name'] || '—'}
         </span>
         <span className="text-[11px] font-medium text-ios-secondary">

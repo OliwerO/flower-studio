@@ -5,7 +5,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from '../services/notifications.js';
 import { notifyNewOrder } from '../services/telegram.js';
-import { getDriverOfDay, getConfig } from './settings.js';
+import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -22,13 +22,13 @@ function pickAllowed(body, allowedFields) {
   return filtered;
 }
 
-const VALID_SOURCES = ['Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'In-store', 'Other'];
+// Source validation removed — sources are now dynamic from Settings tab.
 const VALID_PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
 
 const ORDERS_PATCH_ALLOWED = [
   'Status', 'Payment Status', 'Payment Method', 'Price Override',
   'Notes Original', 'Greeting Card Text', 'Customer Request',
-  'Delivery Type', 'Required By', 'Source', 'Delivery Fee',
+  'Delivery Type', 'Required By', 'Order Source', 'Delivery Fee', 'Delivery Time',
 ];
 
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
@@ -38,9 +38,9 @@ router.get('/', async (req, res, next) => {
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
-    // "Other" in analytics means Source is blank/empty — match records with no Source set.
-    if (source === 'Other') filters.push(`OR({Source} = 'Other', {Source} = BLANK())`);
-    else if (source)        filters.push(`{Source} = '${sanitizeFormulaValue(source)}'`);
+    // "Other" in analytics means Order Source is blank/empty — match records with no source set.
+    if (source === 'Other') filters.push(`OR({Order Source} = 'Other', {Order Source} = BLANK())`);
+    else if (source)        filters.push(`{Order Source} = '${sanitizeFormulaValue(source)}'`);
     if (deliveryType)     filters.push(`{Delivery Type} = '${sanitizeFormulaValue(deliveryType)}'`);
     if (paymentStatus)    filters.push(`{Payment Status} = '${sanitizeFormulaValue(paymentStatus)}'`);
     // "Not recorded" means orders where Payment Method is blank/empty
@@ -195,6 +195,7 @@ router.post('/', async (req, res, next) => {
       customer,         // Airtable customer record ID
       customerRequest,
       source,
+      communicationMethod,  // how the customer contacted us (Instagram, WhatsApp, etc.)
       deliveryType,
       orderLines = [],  // [{ stockItemId, flowerName, quantity, costPricePerUnit, sellPricePerUnit }]
       delivery,         // { address, recipientName, recipientPhone, date, time, cardText, driverId, fee }
@@ -232,9 +233,7 @@ router.post('/', async (req, res, next) => {
     if (priceOverride !== undefined && priceOverride !== null && (typeof priceOverride !== 'number' || priceOverride < 0)) {
       return res.status(400).json({ error: 'priceOverride must be a number >= 0 if provided.' });
     }
-    if (source && !VALID_SOURCES.includes(source)) {
-      return res.status(400).json({ error: `source must be one of: ${VALID_SOURCES.join(', ')}` });
-    }
+    // Source validation is no longer hardcoded — dynamic from Settings.
     if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
       return res.status(400).json({ error: `paymentStatus must be one of: ${VALID_PAYMENT_STATUSES.join(', ')}` });
     }
@@ -246,20 +245,27 @@ router.post('/', async (req, res, next) => {
     let createdDelivery = null;
 
     try {
+      // 0. Generate sequential Order ID (YYYYMM-NNN)
+      const appOrderId = await generateOrderId();
+
       // 1. Create the parent order record
+      // For pickups, store the time slot directly on the order (no delivery record exists).
+      // For deliveries, time goes to both the order and the delivery record.
       order = await db.create(TABLES.ORDERS, {
         Customer:         [customer],
         'Customer Request': customerRequest,
-        Source:           source,
+        'Order Source':   source || null,
         'Delivery Type':  deliveryType,
         'Order Date':     new Date().toISOString().split('T')[0],
         'Required By':    requiredBy || delivery?.date || null,
         'Notes Original':     notes || '',
         'Greeting Card Text': cardText || delivery?.cardText || '',
+        'Delivery Time':      deliveryTime || delivery?.time || '',
         'Payment Status':     paymentStatus || 'Unpaid',
         'Payment Method':     paymentMethod || null,
         'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
         'Price Override':     priceOverride || null,
+        'App Order ID':       appOrderId,
         Status:               'New',
         'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
       });
@@ -301,6 +307,13 @@ router.post('/', async (req, res, next) => {
           'Delivery Fee':      delivery.fee ?? getConfig('defaultDeliveryFee'),
           Status:              'Pending',
         });
+      }
+
+      // 5. Update customer's Communication method if provided (non-blocking)
+      if (communicationMethod) {
+        db.update(TABLES.CUSTOMERS, customer, {
+          'Communication method': communicationMethod,
+        }).catch(err => console.error('[ORDER] Failed to update customer communication method:', err.message));
       }
 
       // Broadcast new order to all connected SSE clients (florist + delivery + dashboard)
@@ -568,5 +581,42 @@ router.post('/:id/cancel-with-return', async (req, res, next) => {
   }
 });
 
+
+// POST /api/orders/:id/convert-to-delivery — creates a delivery record when switching from Pickup to Delivery.
+// Like adding a shipping label to a package that was originally set for counter pickup.
+router.post('/:id/convert-to-delivery', async (req, res, next) => {
+  try {
+    const order = await db.getById(TABLES.ORDERS, req.params.id);
+
+    // Check if delivery record already exists
+    if (order['Deliveries']?.length > 0) {
+      return res.status(400).json({ error: 'Delivery record already exists for this order.' });
+    }
+
+    const { address, recipientName, recipientPhone, date, time, fee, driver } = req.body;
+
+    const delivery = await db.create(TABLES.DELIVERIES, {
+      'Linked Order':     [req.params.id],
+      'Delivery Address': address || '',
+      'Recipient Name':   recipientName || '',
+      'Recipient Phone':  recipientPhone || '',
+      'Delivery Date':    date || order['Required By'] || null,
+      'Delivery Time':    time || order['Delivery Time'] || '',
+      'Assigned Driver':  driver || getDriverOfDay() || null,
+      'Delivery Fee':     fee ?? getConfig('defaultDeliveryFee'),
+      Status:             'Pending',
+    });
+
+    // Update order to Delivery type + set delivery fee
+    await db.update(TABLES.ORDERS, req.params.id, {
+      'Delivery Type': 'Delivery',
+      'Delivery Fee':  fee ?? getConfig('defaultDeliveryFee'),
+    });
+
+    res.status(201).json(delivery);
+  } catch (err) {
+    next(err);
+  }
+});
 
 export default router;

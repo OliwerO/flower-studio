@@ -15,6 +15,7 @@ const CUSTOMERS_PATCH_ALLOWED = [
   'WhatsApp Contact', 'Default Delivery Address', 'Found us from',
   'Connected people', 'Key person 1', 'Key person 2',
   'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
+  'Communication method',
 ];
 
 function pickAllowed(body, allowedFields) {
@@ -137,7 +138,7 @@ router.get('/insights', async (req, res, next) => {
     // Acquisition source distribution — where customers come from
     const acquisitionBySource = {};
     for (const c of customers) {
-      const src = c.Source || 'Unknown';
+      const src = c['Communication method'] || c.Source || 'Unknown';
       acquisitionBySource[src] = (acquisitionBySource[src] || 0) + 1;
     }
 

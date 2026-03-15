@@ -7,8 +7,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-
-const PAY_METHODS = ['Cash', 'Card', 'Transfer'];
+import useConfigLists from '../hooks/useConfigLists.js';
 
 // Florist flow: New → Ready → Delivered/Picked Up.
 // "Out for Delivery" is set automatically by drivers — florists don't need that button.
@@ -57,6 +56,7 @@ export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { paymentMethods } = useConfigLists();
 
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -351,18 +351,18 @@ export default function OrderDetailPage() {
                     value={order['Payment Method'] || ''}
                     onChange={val => patch({ 'Payment Method': val })}
                     disabled={saving}
-                    options={PAY_METHODS.map(m => ({ value: m, label: m }))}
+                    options={paymentMethods.map(m => ({ value: m, label: m }))}
                   />
                 )}
               </div>
             </div>
 
             {/* Source + notes */}
-            {(order['Source'] || order['Notes Original']) && (
+            {(order['Order Source'] || order['Source'] || order['Notes Original']) && (
               <div>
                 <p className="ios-label">Info</p>
                 <div className="ios-card px-4 py-2">
-                  <Row label="Source" value={order['Source']} />
+                  <Row label="Source" value={order['Order Source'] || order['Source']} />
                   <Row label="Notes"  value={order['Notes Original']} />
                 </div>
               </div>

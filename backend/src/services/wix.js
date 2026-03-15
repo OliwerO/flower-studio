@@ -8,6 +8,7 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logWebhookEvent } from './webhookLog.js';
+import { generateOrderId } from '../routes/settings.js';
 
 
 /**
@@ -103,7 +104,7 @@ export async function processWixOrder(payload) {
         Name: customerName,
         Phone: customerPhone || '',
         Email: customerEmail || '',
-        Source: 'Wix',
+        'Communication method': 'Wix',
       });
       customerId = newCustomer.id;
       log('4-CREATE', `New customer created: ${newCustomer.id}`);
@@ -148,10 +149,11 @@ export async function processWixOrder(payload) {
       || 0;
 
     // 8. Create the App Order
+    const appOrderId = await generateOrderId();
     const order = await db.create(TABLES.ORDERS, {
       Customer: [customerId],
       'Customer Request': customerRequest,
-      Source: 'Wix',
+      'Order Source': 'Wix',
       'Delivery Type': hasDelivery ? 'Delivery' : 'Pickup',
       'Order Date': new Date().toISOString().split('T')[0],
       'Notes Original': `Wix Order #${wixOrderId}`,
@@ -159,6 +161,7 @@ export async function processWixOrder(payload) {
       'Payment Status': 'Paid',
       'Payment Method': 'Wix Online',
       'Price Override': totalPrice > 0 ? totalPrice : null,
+      'App Order ID': appOrderId,
       Status: 'New',
       'Created By': 'Wix Webhook',
       'Wix Order ID': wixOrderId,

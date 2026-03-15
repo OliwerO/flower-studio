@@ -1,7 +1,8 @@
 // useConfigLists — single source of truth for all dynamic config lists.
 // Fetches suppliers, categories, payment methods, order sources, and time slots
 // from backend settings. Falls back to hardcoded defaults if API fails.
-// Module-level cache ensures only 1 API call per session.
+// Module-level cache ensures only 1 API call per session, no matter how many
+// components use the hook — like a shared parts catalog for the whole factory floor.
 
 import { useState, useEffect } from 'react';
 import client from '../api/client.js';
@@ -21,6 +22,7 @@ export default function useConfigLists() {
 
   useEffect(() => {
     if (cached) return;
+    // Fetch both endpoints in parallel — lists + config (for time slots)
     Promise.all([
       client.get('/settings/lists').catch(() => ({ data: {} })),
       client.get('/settings').catch(() => ({ data: {} })),

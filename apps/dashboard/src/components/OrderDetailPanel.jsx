@@ -166,8 +166,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         <Section label={t.source}>
           <Pills
             options={SOURCES}
-            value={o.Source}
-            onChange={v => patchOrder({ Source: v })}
+            value={o['Order Source'] || o.Source}
+            onChange={v => patchOrder({ 'Order Source': v })}
             disabled={saving}
           />
         </Section>
@@ -175,7 +175,24 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           <Pills
             options={DELIVERY_TYPES}
             value={o['Delivery Type']}
-            onChange={v => patchOrder({ 'Delivery Type': v })}
+            onChange={async v => {
+              if (v === 'Delivery' && o['Delivery Type'] === 'Pickup' && !o.delivery) {
+                // Switching from Pickup to Delivery — create delivery record on-the-fly
+                setSaving(true);
+                try {
+                  const res = await client.post(`/orders/${orderId}/convert-to-delivery`, {});
+                  setOrder(prev => ({ ...prev, 'Delivery Type': 'Delivery', delivery: res.data }));
+                  showToast(t.orderUpdated);
+                  onUpdate();
+                } catch (err) {
+                  showToast(err.response?.data?.error || t.error, 'error');
+                } finally {
+                  setSaving(false);
+                }
+              } else {
+                patchOrder({ 'Delivery Type': v });
+              }
+            }}
             disabled={saving}
           />
         </Section>

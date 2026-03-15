@@ -246,6 +246,55 @@ export function getConfig(key) {
 }
 
 /**
+ * Generate next App Order ID in YYYYMM-NNN format.
+ * Counter stored in APP_CONFIG under key 'orderCounters'.
+ * Like a sequential work order numbering system — each month resets the sequence.
+ */
+export async function generateOrderId() {
+  const now = new Date();
+  const monthKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+  // Load counter from Airtable
+  let counters = {};
+  try {
+    if (TABLES.APP_CONFIG) {
+      const rows = await db.list(TABLES.APP_CONFIG, {
+        filterByFormula: "{Key} = 'orderCounters'",
+        maxRecords: 1,
+      });
+      if (rows.length > 0) {
+        counters = JSON.parse(rows[0].Value || '{}');
+        const current = (counters[monthKey] || 0) + 1;
+        counters[monthKey] = current;
+        await db.update(TABLES.APP_CONFIG, rows[0].id, {
+          Value: JSON.stringify(counters),
+        });
+        return `${monthKey}-${String(current).padStart(3, '0')}`;
+      }
+    }
+  } catch (err) {
+    console.error('[ORDER-ID] Counter error:', err.message);
+  }
+
+  // Fallback: create counter row or use timestamp-based ID
+  try {
+    if (TABLES.APP_CONFIG) {
+      counters[monthKey] = 1;
+      await db.create(TABLES.APP_CONFIG, {
+        Key: 'orderCounters',
+        Value: JSON.stringify(counters),
+      });
+      return `${monthKey}-001`;
+    }
+  } catch (err) {
+    console.error('[ORDER-ID] Counter create error:', err.message);
+  }
+
+  // Last resort fallback
+  return `${monthKey}-${String(Date.now() % 1000).padStart(3, '0')}`;
+}
+
+/**
  * Returns the currently active seasonal category based on config rules.
  * Priority: manual override > auto-schedule by date > null (none active).
  */

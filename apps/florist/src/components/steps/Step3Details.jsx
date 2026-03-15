@@ -1,13 +1,8 @@
 // Step3Details — consistent pill-button selectors throughout, matching Order Source style.
 
-import { useState, useEffect } from 'react';
-import client from '../../api/client.js';
 import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
-
-const SOURCES     = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
-const FALLBACK_PAY_METHODS = ['Cash', 'Card', 'Transfer'];
-const FALLBACK_TIME_SLOTS  = ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'];
+import useConfigLists from '../../hooks/useConfigLists.js';
 
 function getSourceLabels() {
   return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
@@ -75,34 +70,27 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
 
 export default function Step3Details({ form, onChange }) {
   const SOURCE_LABELS = getSourceLabels();
+  const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots } = useConfigLists();
   const set = key => val => onChange({ [key]: val });
-
-  // Fetch config lists from backend (time slots, payment methods)
-  const [timeSlots, setTimeSlots] = useState(FALLBACK_TIME_SLOTS);
-  const [payMethods, setPayMethods] = useState(FALLBACK_PAY_METHODS);
-
-  useEffect(() => {
-    client.get('/settings/lists')
-      .then(r => {
-        if (r.data.paymentMethods?.length) setPayMethods(r.data.paymentMethods);
-      })
-      .catch(() => {});
-    client.get('/settings')
-      .then(r => {
-        if (r.data.config?.deliveryTimeSlots?.length) setTimeSlots(r.data.config.deliveryTimeSlots);
-      })
-      .catch(() => {});
-  }, []);
 
   return (
     <div className="flex flex-col gap-6">
 
-      {/* Source */}
+      {/* Order Source — where the order came from */}
       <SectionCard label={t.source}>
         <Pills
           value={form.source}
           onChange={val => onChange({ source: val })}
           options={SOURCES.map(s => ({ value: s, label: SOURCE_LABELS[s] }))}
+        />
+      </SectionCard>
+
+      {/* Communication Method — how the customer contacted us */}
+      <SectionCard label={t.communicationMethod || 'Communication method'}>
+        <Pills
+          value={form.communicationMethod || ''}
+          onChange={val => onChange({ communicationMethod: val })}
+          options={SOURCES.map(s => ({ value: s, label: SOURCE_LABELS[s] || s }))}
         />
       </SectionCard>
 

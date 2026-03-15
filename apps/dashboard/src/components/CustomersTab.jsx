@@ -286,7 +286,7 @@ export default function CustomersTab({ initialFilter }) {
               </span>
               {cust.Nickname && cust.Name && (
                 <span className="text-xs text-ios-tertiary w-28 truncate">
-                  @{cust.Nickname}
+                  @{cust.Nickname.replace(/^@/, '')}
                 </span>
               )}
               <span className="text-xs text-ios-secondary w-28 truncate">
