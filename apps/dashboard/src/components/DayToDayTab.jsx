@@ -27,6 +27,88 @@ const ALL_STATUSES = [
   { key: 'Cancelled',        color: 'text-rose-600' },
 ];
 
+// Delivery type icon helper
+function deliveryIcon(type) {
+  if (type === 'Delivery') return '🚗';
+  if (type === 'Pickup') return '🏪';
+  return '—';
+}
+
+// Tomorrow section — shows next day's orders with prep priority flags
+function TomorrowSection({ orders, onNavigate }) {
+  const [open, setOpen] = useState(true);
+
+  // Sort by time slot chronologically
+  const sorted = [...orders].sort((a, b) => {
+    const ta = (a['Delivery Time'] || '').split('-')[0] || 'zzz';
+    const tb = (b['Delivery Time'] || '').split('-')[0] || 'zzz';
+    return ta.localeCompare(tb);
+  });
+
+  return (
+    <div className="bg-white rounded-2xl shadow-sm px-4 py-3">
+      <button
+        onClick={() => setOpen(!open)}
+        className="w-full flex items-center justify-between"
+      >
+        <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
+          {t.tomorrow}
+          <span className="ml-2 text-ios-secondary font-normal normal-case">
+            ({orders.length})
+          </span>
+        </h3>
+        <span className="text-ios-tertiary text-sm">{open ? '▲' : '▼'}</span>
+      </button>
+      {open && (
+        <div className="mt-3">
+          {sorted.length === 0 ? (
+            <p className="text-sm text-ios-tertiary py-2">{t.nothingTomorrow}</p>
+          ) : (
+            <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
+              {sorted.map(order => {
+                const isPrepPriority = (order['Line Count'] || 0) > 3;
+                const summary = order['Customer Request'] || order['Line Summary'] || '';
+                return (
+                  <div
+                    key={order.id}
+                    onClick={() => onNavigate('orders', { orderId: order.id })}
+                    className={`flex items-center gap-3 px-4 py-2.5 cursor-pointer hover:bg-gray-100 transition-colors ${
+                      isPrepPriority ? 'border-l-4 border-amber-400' : ''
+                    }`}
+                  >
+                    <span className="text-base shrink-0">{deliveryIcon(order['Delivery Type'])}</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-ios-label truncate">
+                          {order['Customer Name'] || '—'}
+                        </span>
+                        {order['App Order ID'] && (
+                          <span className="text-[10px] text-ios-tertiary">#{order['App Order ID']}</span>
+                        )}
+                        {isPrepPriority && (
+                          <span className="text-[10px] font-semibold text-amber-600 bg-amber-100 rounded-full px-1.5 py-0.5">
+                            {t.prepPriority}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-xs text-ios-secondary truncate">{summary}</p>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs text-brand-600 font-medium">
+                        {order['Delivery Time'] || '—'}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function DayToDayTab({ onNavigate }) {
   const [data, setData]           = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -115,9 +197,17 @@ export default function DayToDayTab({ onNavigate }) {
   }
 
   // Compute paid/unpaid totals from recent orders (use Effective Price computed by backend)
+  // Revenue still uses recentOrders (orders by Order Date); fulfillToday is for operational display
   const paidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Paid');
   const unpaidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Unpaid');
   const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
+
+  // Sort helper: chronological by time slot start (e.g. "10:00-12:00" → "10:00")
+  const sortByTimeSlot = (a, b) => {
+    const ta = (a['Delivery Time'] || '').split('-')[0] || 'zzz';
+    const tb = (b['Delivery Time'] || '').split('-')[0] || 'zzz';
+    return ta.localeCompare(tb);
+  };
 
   // Build status counts map with all statuses (fill zeros)
   const statusCounts = {};
@@ -167,7 +257,7 @@ export default function DayToDayTab({ onNavigate }) {
             {t.unassignedDeliveries} ({data.unassignedDeliveries.length})
           </h3>
           <div className="space-y-1">
-            {data.unassignedDeliveries.map(d => (
+            {[...data.unassignedDeliveries].sort(sortByTimeSlot).map(d => (
               <div key={d.id}
                 onClick={() => nav('orders', { orderId: d['Linked Order']?.[0] || d.id })}
                 className="flex items-center justify-between text-sm cursor-pointer hover:bg-rose-100/50 rounded-lg px-2 py-1 transition-colors">
@@ -210,10 +300,10 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
 
         {/* Kanban board — slides open below the status counts */}
-        {kanbanOpen && data.recentOrders?.length > 0 && (
+        {kanbanOpen && (data.fulfillToday || data.recentOrders)?.length > 0 && (
           <div className="mt-4 pt-3 border-t border-gray-100">
             <KanbanBoard
-              orders={data.recentOrders}
+              orders={data.fulfillToday || data.recentOrders}
               onOrderClick={(order) => nav('orders', { orderId: order.id })}
             />
           </div>
@@ -227,7 +317,7 @@ export default function DayToDayTab({ onNavigate }) {
             {t.pendingDeliveries}
           </h3>
           <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
-            {data.pendingDeliveries.map(d => {
+            {[...data.pendingDeliveries].sort(sortByTimeSlot).map(d => {
               const customerName = d['Customer Name'] || '—';
               const recipientName = d['Recipient Name'] || '—';
               // Only show "from → for" when customer differs from recipient (gift orders)
@@ -417,6 +507,9 @@ export default function DayToDayTab({ onNavigate }) {
           </div>
         )}
       </div>
+
+      {/* Tomorrow — orders due tomorrow, collapsible, expanded by default */}
+      <TomorrowSection orders={data.tomorrowOrders || []} onNavigate={nav} />
 
       {/* Driver of the day — collapsed accordion, auto-assigns deliveries */}
       {drivers.length > 0 && (

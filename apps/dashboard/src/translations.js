@@ -519,6 +519,12 @@ const en = {
   similarTo:                'Similar to',
   addAnyway:                'Add anyway?',
   didYouMean:               'Did you mean',
+
+  // Block 4 — Today/Tomorrow
+  tomorrow:                 'Tomorrow',
+  fulfillToday:             'To fulfill today',
+  prepPriority:             'Prep priority',
+  nothingTomorrow:          'No orders for tomorrow',
 };
 
 const ru = {
@@ -1039,6 +1045,12 @@ const ru = {
   similarTo:                'Похоже на',
   addAnyway:                'Добавить всё равно?',
   didYouMean:               'Вы имели в виду',
+
+  // Block 4 — Today/Tomorrow
+  tomorrow:                 'Завтра',
+  fulfillToday:             'На сегодня',
+  prepPriority:             'Приоритет подготовки',
+  nothingTomorrow:          'Нет заказов на завтра',
 };
 
 // ── Proxy-based dynamic translation ──

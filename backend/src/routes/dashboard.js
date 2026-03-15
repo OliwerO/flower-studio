@@ -13,7 +13,9 @@ router.get('/', async (req, res, next) => {
     // Accept optional ?date= param, default to today
     const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
 
-    const [orders, ordersDueToday, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
+    const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().split('T')[0];
+
+    const [orders, ordersDueToday, fulfillToday, tomorrowOrders, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
       // Today's orders (by Order Date — for revenue, status breakdown)
       db.list(TABLES.ORDERS, {
         filterByFormula: `DATESTR({Order Date}) = '${today}'`,
@@ -24,6 +26,18 @@ router.get('/', async (req, res, next) => {
         filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != 'Cancelled')`,
         fields: ['Required By', 'Status'],
         maxRecords: 200,
+      }).catch(() => []),
+      // Orders to fulfill today: Required By = today, not cancelled (full data for display)
+      db.list(TABLES.ORDERS, {
+        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != 'Cancelled')`,
+        sort: [{ field: 'Required By', direction: 'asc' }],
+        maxRecords: 200,
+      }).catch(() => []),
+      // Tomorrow's orders: Required By = tomorrow, not finished
+      db.list(TABLES.ORDERS, {
+        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != 'Cancelled', {Status} != 'Delivered', {Status} != 'Picked Up')`,
+        fields: ['Customer', 'Required By', 'Status', 'Delivery Type', 'Order Lines', 'Customer Request', 'App Order ID', 'Delivery Time'],
+        maxRecords: 100,
       }).catch(() => []),
       // Today's pending deliveries (all statuses — we filter below)
       db.list(TABLES.DELIVERIES, {
@@ -98,6 +112,86 @@ router.get('/', async (req, res, next) => {
       order['Effective Price'] = order['Final Price']
         ?? order['Price Override']
         ?? ((order['Sell Total'] || 0) + deliveryFee);
+    }
+
+    // Enrich fulfillToday orders with customer names + effective prices
+    // (reuse the same customerMap + totalByOrder if they overlap, fetch missing)
+    const fulfillCustIds = [...new Set(fulfillToday.flatMap(o => o.Customer || []).filter(id => !customerMap[id]))];
+    const fulfillLineIds = fulfillToday.flatMap(o => o['Order Lines'] || []).filter(id => !allLineIds.includes(id));
+
+    const [extraFulfillCusts, extraFulfillLines] = await Promise.all([
+      fulfillCustIds.length > 0
+        ? db.list(TABLES.CUSTOMERS, {
+            filterByFormula: `OR(${fulfillCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Name', 'Nickname'],
+          })
+        : [],
+      fulfillLineIds.length > 0
+        ? db.list(TABLES.ORDER_LINES, {
+            filterByFormula: `OR(${fulfillLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Order', 'Sell Price Per Unit', 'Quantity', 'Flower Name'],
+            maxRecords: 1000,
+          })
+        : [],
+    ]);
+    for (const c of extraFulfillCusts) customerMap[c.id] = c;
+    for (const line of extraFulfillLines) {
+      const oid = line.Order?.[0];
+      if (oid) {
+        totalByOrder[oid] = (totalByOrder[oid] || 0)
+          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
+      }
+    }
+
+    for (const order of fulfillToday) {
+      const custId = order.Customer?.[0];
+      order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      if (!order['Price Override'] && totalByOrder[order.id] != null) {
+        order['Sell Total'] = totalByOrder[order.id];
+      }
+      const deliveryFee = Number(order['Delivery Fee'] || 0);
+      order['Effective Price'] = order['Final Price']
+        ?? order['Price Override']
+        ?? ((order['Sell Total'] || 0) + deliveryFee);
+    }
+
+    // Enrich tomorrowOrders with customer names + order line summaries
+    const tmrwCustIds = [...new Set(tomorrowOrders.flatMap(o => o.Customer || []).filter(id => !customerMap[id]))];
+    const tmrwLineIds = tomorrowOrders.flatMap(o => o['Order Lines'] || []);
+
+    const [extraTmrwCusts, tmrwLines] = await Promise.all([
+      tmrwCustIds.length > 0
+        ? db.list(TABLES.CUSTOMERS, {
+            filterByFormula: `OR(${tmrwCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Name', 'Nickname'],
+          })
+        : [],
+      tmrwLineIds.length > 0
+        ? db.list(TABLES.ORDER_LINES, {
+            filterByFormula: `OR(${tmrwLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Order', 'Flower Name', 'Quantity'],
+            maxRecords: 500,
+          })
+        : [],
+    ]);
+    for (const c of extraTmrwCusts) customerMap[c.id] = c;
+
+    // Build line summaries per order for tomorrow
+    const tmrwLineSummary = {};
+    for (const line of tmrwLines) {
+      const oid = line.Order?.[0];
+      if (!oid) continue;
+      if (!tmrwLineSummary[oid]) tmrwLineSummary[oid] = { items: [], count: 0 };
+      tmrwLineSummary[oid].items.push(`${line['Flower Name'] || '?'} ×${line.Quantity || 1}`);
+      tmrwLineSummary[oid].count++;
+    }
+
+    for (const order of tomorrowOrders) {
+      const custId = order.Customer?.[0];
+      order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      const summary = tmrwLineSummary[order.id];
+      order['Line Summary'] = summary ? summary.items.join(', ') : '';
+      order['Line Count'] = summary ? summary.count : 0;
     }
 
     // Order count by status
@@ -364,6 +458,8 @@ router.get('/', async (req, res, next) => {
       lowStockAlerts: lowStock,
       negativeStock,
       recentOrders: orders.slice(0, 10),
+      fulfillToday,
+      tomorrowOrders,
     });
   } catch (err) {
     next(err);
