@@ -257,6 +257,30 @@ export default function ShoppingSupportPage() {
                     </div>
                   </div>
                 ))}
+                {/* Driver payment for this PO */}
+                <div className="ios-card px-4 py-3">
+                  <label className="text-xs text-ios-secondary mb-1 block">
+                    {t.shopping.driverPayment || 'Driver payment'}
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      value={order['Driver Payment'] ?? ''}
+                      onChange={e => setOrders(prev => prev.map(o => o.id === order.id ? { ...o, 'Driver Payment': e.target.value } : o))}
+                      onBlur={async () => {
+                        try {
+                          await client.patch(`/stock-orders/${order.id}`, {
+                            'Driver Payment': Number(order['Driver Payment']) || 0,
+                          });
+                        } catch { showToast(t.error, 'error'); }
+                      }}
+                      placeholder="0"
+                      className="flex-1 text-sm font-medium border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                    />
+                    <span className="text-sm text-ios-tertiary">zł</span>
+                  </div>
+                </div>
               </div>
             );
           })

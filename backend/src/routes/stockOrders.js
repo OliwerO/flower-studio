@@ -16,7 +16,7 @@ const VALID_STATUSES = ['Draft', 'Sent', 'Shopping', 'Reviewing', 'Evaluating', 
 
 const ALLOWED_TRANSITIONS = {
   'Draft': ['Sent'],
-  'Sent': ['Shopping', 'Draft'],
+  'Sent': ['Shopping', 'Reviewing', 'Draft'],
   'Shopping': ['Reviewing'],
   'Reviewing': ['Evaluating'],
   'Evaluating': ['Eval Error', 'Complete'],
@@ -145,10 +145,14 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
   }
 });
 
-// PATCH /api/stock-orders/:id — update PO header (owner only)
-router.patch('/:id', authorize('stock-orders', ['owner']), async (req, res, next) => {
+// PATCH /api/stock-orders/:id — update PO header
+// Owner can update all fields; driver can only update Supplier Payments
+router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
   try {
-    const allowed = ['Status', 'Notes', 'Assigned Driver', 'Supplier Payments'];
+    const isOwner = req.role === 'owner';
+    const allowed = isOwner
+      ? ['Status', 'Notes', 'Assigned Driver', 'Supplier Payments', 'Driver Payment']
+      : ['Supplier Payments'];
     const fields = {};
     for (const key of allowed) {
       if (key in req.body) fields[key] = req.body[key];
@@ -269,6 +273,10 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
 // Goes to Reviewing first (owner can adjust), then owner or auto → Evaluating
 router.post('/:id/driver-complete', authorize('stock-orders'), async (req, res, next) => {
   try {
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (!['Sent', 'Shopping'].includes(po.Status)) {
+      return res.status(400).json({ error: `PO is "${po.Status}", cannot complete shopping.` });
+    }
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
       Status: 'Reviewing',
     });

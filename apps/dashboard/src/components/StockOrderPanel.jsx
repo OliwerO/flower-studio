@@ -414,43 +414,93 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                       </div>
                     </>
                   ) : (
-                    /* Non-draft POs: read-only lines */
-                    expandedLines.map(line => {
-                      const lineLotSize = Number(line['Lot Size']) || 1;
-                      const lineNeeded = Number(line['Quantity Needed']) || 0;
-                      const lineLots = lineLotSize > 1 ? Math.ceil(lineNeeded / lineLotSize) : 0;
-                      return (
-                        <div key={line.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
-                          <div>
-                            <span className="font-medium text-ios-label">{line['Flower Name']}</span>
-                            <span className="text-xs text-ios-tertiary ml-2">{line.Supplier}</span>
-                          </div>
-                          <div className="flex items-center gap-3 text-xs">
-                            <span>
-                              {t.qtyNeeded}: {lineNeeded}
-                              {lineLots > 0 && (
-                                <span className="ml-1 text-ios-secondary">
-                                  → {lineLots} × {lineLotSize}
+                    /* Non-draft POs: detailed line view with driver results */
+                    <>
+                      {expandedLines.map(line => {
+                        const lineLotSize = Number(line['Lot Size']) || 1;
+                        const lineNeeded = Number(line['Quantity Needed']) || 0;
+                        const lineLots = lineLotSize > 1 ? Math.ceil(lineNeeded / lineLotSize) : 0;
+                        const costPrice = Number(line['Cost Price']) || 0;
+                        const qtyFound = line['Quantity Found'];
+                        const altName = line['Alt Flower Name'];
+                        const altSupplier = line['Alt Supplier'];
+                        const altQty = Number(line['Alt Quantity Found']) || 0;
+                        return (
+                          <div key={line.id} className="bg-gray-50 rounded-lg px-3 py-2 text-sm space-y-1">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <span className="font-medium text-ios-label">{line['Flower Name']}</span>
+                                <span className="text-xs text-ios-tertiary ml-2">{line.Supplier}</span>
+                              </div>
+                              {line['Driver Status'] && line['Driver Status'] !== 'Pending' && (
+                                <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                                  line['Driver Status'] === 'Found All' ? 'bg-emerald-100 text-emerald-700' :
+                                  line['Driver Status'] === 'Partial' ? 'bg-amber-100 text-amber-700' :
+                                  'bg-red-100 text-red-700'
+                                }`}>
+                                  {line['Driver Status']}
                                 </span>
                               )}
-                            </span>
-                            {line['Driver Status'] && line['Driver Status'] !== 'Pending' && (
-                              <span className={`px-2 py-0.5 rounded-full font-medium ${
-                                line['Driver Status'] === 'Found All' ? 'bg-emerald-100 text-emerald-700' :
-                                line['Driver Status'] === 'Partial' ? 'bg-amber-100 text-amber-700' :
-                                'bg-red-100 text-red-700'
-                              }`}>
-                                {line['Driver Status']}
-                                {line['Quantity Found'] != null && ` (${line['Quantity Found']})`}
-                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 text-xs text-ios-secondary">
+                              <span>{t.qtyNeeded}: {lineNeeded}{lineLots > 0 && ` (${lineLots}×${lineLotSize})`}</span>
+                              {qtyFound != null && <span>{t.found || 'Found'}: {qtyFound}</span>}
+                              {costPrice > 0 && <span>{costPrice} zł/{t.unit || 'pc'}</span>}
+                            </div>
+                            {(altName || altSupplier) && altQty > 0 && (
+                              <div className="text-xs text-indigo-600">
+                                ↳ {altName || '?'} ({altSupplier}) × {altQty}
+                              </div>
                             )}
                             {line['Quantity Accepted'] != null && (
-                              <span className="text-emerald-600">✓ {line['Quantity Accepted']}</span>
+                              <div className="text-xs text-emerald-600">✓ {t.accepted || 'Accepted'}: {line['Quantity Accepted']}</div>
                             )}
                           </div>
-                        </div>
-                      );
-                    })
+                        );
+                      })}
+
+                      {/* Supplier + driver payments for Shopping/Reviewing POs */}
+                      {['Shopping', 'Reviewing'].includes(order.Status) && (() => {
+                        let payments = {};
+                        try { payments = JSON.parse(order['Supplier Payments'] || '{}'); } catch {}
+                        const suppliers = [...new Set(expandedLines.map(l => l.Supplier).filter(Boolean))];
+                        return (
+                          <div className="space-y-2 pt-2 border-t border-gray-100">
+                            {suppliers.map(sup => (
+                              <div key={sup} className="flex items-center gap-2">
+                                <span className="text-xs text-ios-secondary w-28 truncate">{t.paidTo || 'Paid'} {sup}:</span>
+                                <input type="number" value={payments[sup] ?? ''}
+                                  onChange={e => {
+                                    const val = e.target.value;
+                                    const updated = { ...payments, [sup]: val === '' ? '' : Number(val) || 0 };
+                                    setOrders(prev => prev.map(o => o.id === order.id ? { ...o, 'Supplier Payments': JSON.stringify(updated) } : o));
+                                  }}
+                                  onBlur={async () => {
+                                    try {
+                                      const current = orders.find(o => o.id === order.id);
+                                      await client.patch(`/stock-orders/${order.id}`, { 'Supplier Payments': current['Supplier Payments'] });
+                                    } catch { showToast(t.error, 'error'); }
+                                  }}
+                                  className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1 text-right" />
+                                <span className="text-xs text-ios-tertiary">zł</span>
+                              </div>
+                            ))}
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-ios-secondary w-28">{t.driverPayment || 'Driver payment'}:</span>
+                              <input type="number" value={order['Driver Payment'] ?? ''}
+                                onChange={e => setOrders(prev => prev.map(o => o.id === order.id ? { ...o, 'Driver Payment': e.target.value } : o))}
+                                onBlur={async () => {
+                                  try {
+                                    await client.patch(`/stock-orders/${order.id}`, { 'Driver Payment': Number(order['Driver Payment']) || 0 });
+                                  } catch { showToast(t.error, 'error'); }
+                                }}
+                                className="w-20 text-sm border border-gray-200 rounded-lg px-2 py-1 text-right" />
+                              <span className="text-xs text-ios-tertiary">zł</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </>
                   )}
                 </div>
               )}
