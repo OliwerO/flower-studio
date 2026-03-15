@@ -225,6 +225,7 @@ export default function StockEvaluationPage() {
                                   >
                                     <option value="Wilted">{t.reasonWilted}</option>
                                     <option value="Damaged">{t.reasonDamaged}</option>
+                                    <option value="Arrived Broken">{t.arrivedBroken || 'Arrived Broken'}</option>
                                     <option value="Overstock">{t.reasonOverstock || 'Overstock'}</option>
                                     <option value="Other">{t.reasonOther || 'Other'}</option>
                                   </select>

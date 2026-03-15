@@ -18,9 +18,7 @@ export default function StockTab({ initialFilter }) {
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [showReceive, setShowReceive] = useState(false);
-  const [showAddItem, setShowAddItem] = useState(false);
   const [showPurchaseOrders, setShowPurchaseOrders] = useState(initialFilter?.action === 'createPO');
-  const [newItem, setNewItem]       = useState({ displayName: '', category: '', quantity: 0, costPrice: 0, sellPrice: 0, supplier: '', unit: 'Stems' });
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [velocity, setVelocity]     = useState({});
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
@@ -128,19 +126,6 @@ export default function StockTab({ initialFilter }) {
     }
   }
 
-  async function createItem() {
-    if (!newItem.displayName) return;
-    try {
-      await client.post('/stock', newItem);
-      showToast(t.itemCreated);
-      setNewItem({ displayName: '', category: '', quantity: 0, costPrice: 0, sellPrice: 0, supplier: '', unit: 'Stems' });
-      setShowAddItem(false);
-      fetchStock();
-    } catch {
-      showToast(t.error, 'error');
-    }
-  }
-
   // Client-side search
   let filtered = search
     ? stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(search.toLowerCase()))
@@ -209,12 +194,6 @@ export default function StockTab({ initialFilter }) {
             {t.stockOrders || 'Purchase Orders'}
           </button>
           <button
-            onClick={() => setShowAddItem(!showAddItem)}
-            className="px-3 py-1.5 rounded-xl bg-brand-100 text-brand-700 text-xs font-semibold"
-          >
-            {t.addItem}
-          </button>
-          <button
             onClick={() => setShowReceive(!showReceive)}
             className="px-3 py-1.5 rounded-xl bg-ios-green/15 text-ios-green text-xs font-semibold"
           >
@@ -222,70 +201,6 @@ export default function StockTab({ initialFilter }) {
           </button>
         </div>
       </div>
-
-      {/* Add item form */}
-      {showAddItem && (
-        <div className="glass-card px-4 py-3 flex flex-wrap items-end gap-3">
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.stockName}</label>
-            <input value={newItem.displayName}
-              onChange={e => setNewItem({ ...newItem, displayName: e.target.value })}
-              className="field-input block w-40" />
-          </div>
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.category}</label>
-            <select value={newItem.category}
-              onChange={e => setNewItem({ ...newItem, category: e.target.value })}
-              className="field-input block w-32">
-              <option value="">— Select —</option>
-              {CATEGORIES.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.quantity}</label>
-            <input type="number" value={newItem.quantity}
-              onChange={e => setNewItem({ ...newItem, quantity: Number(e.target.value) })}
-              className="field-input block w-20" />
-          </div>
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.costPrice}</label>
-            <input type="number" value={newItem.costPrice}
-              onChange={e => setNewItem({ ...newItem, costPrice: Number(e.target.value) })}
-              className="field-input block w-20" />
-          </div>
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.sellPrice}</label>
-            <input type="number" value={newItem.sellPrice}
-              onChange={e => setNewItem({ ...newItem, sellPrice: Number(e.target.value) })}
-              className="field-input block w-20" />
-          </div>
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.supplier}</label>
-            <select value={newItem.supplier}
-              onChange={e => setNewItem({ ...newItem, supplier: e.target.value })}
-              className="field-input block w-28">
-              <option value="">— Select —</option>
-              {SUPPLIERS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-          </div>
-          <div>
-            <label className="text-xs text-ios-tertiary">{t.unit || 'Unit'}</label>
-            <select value={newItem.unit}
-              onChange={e => setNewItem({ ...newItem, unit: e.target.value })}
-              className="field-input block w-24">
-              {['Stems', 'Bunches', 'Pots', 'Pieces'].map(u => (
-                <option key={u} value={u}>{u}</option>
-              ))}
-            </select>
-          </div>
-          <button onClick={createItem} disabled={!newItem.displayName}
-            className="px-3 py-1.5 rounded-xl bg-brand-600 text-white text-xs font-semibold disabled:opacity-50">
-            {t.save}
-          </button>
-        </div>
-      )}
 
       {/* Receive stock form */}
       {showReceive && (
@@ -412,6 +327,7 @@ export default function StockTab({ initialFilter }) {
                       <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
                       <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
                       <th className="text-left px-3 py-2 font-medium">{t.reason}</th>
+                      <th className="text-right px-3 py-2 font-medium">{t.daysSurvived}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -424,9 +340,13 @@ export default function StockTab({ initialFilter }) {
                           <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
                             e.Reason === 'Wilted' ? 'bg-yellow-100 text-yellow-800' :
                             e.Reason === 'Damaged' ? 'bg-red-100 text-red-700' :
+                            e.Reason === 'Arrived Broken' ? 'bg-orange-100 text-orange-700' :
                             e.Reason === 'Overstock' ? 'bg-blue-100 text-blue-700' :
                             'bg-gray-100 text-gray-600'
                           }`}>{e.Reason}</span>
+                        </td>
+                        <td className="px-3 py-1.5 text-xs text-right text-ios-tertiary">
+                          {e['Days Survived'] != null ? e['Days Survived'] : '—'}
                         </td>
                       </tr>
                     ))}
@@ -458,6 +378,7 @@ export default function StockTab({ initialFilter }) {
                 <th className="text-right px-3 py-2 font-medium">{t.sellPrice}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.markup}</th>
                 <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
+                <th className="text-left px-3 py-2 font-medium">{t.farmer}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.lotSize}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.threshold}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.daysOfSupplyHeader}</th>
@@ -550,6 +471,14 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, su
             </div>
           )}
         </td>
+        {/* Editable farmer */}
+        <td className="px-3 py-2">
+          <InlineEdit
+            value={item.Farmer || ''}
+            placeholder="—"
+            onSave={v => onPatch(item.id, { Farmer: v || '' })}
+          />
+        </td>
         {/* Editable lot size */}
         <td className="px-3 py-2 text-right">
           <InlineEdit
@@ -601,7 +530,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, su
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={showWaste ? 11 : 10} className="px-3 py-2">
+          <td colSpan={showWaste ? 12 : 11} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}
@@ -611,6 +540,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, su
                 <option value="">{t.reason}</option>
                 <option value="Wilted">{t.reasonWilted || 'Wilted'}</option>
                 <option value="Damaged">{t.reasonDamaged || 'Broken at delivery'}</option>
+                <option value="Arrived Broken">{t.arrivedBroken || 'Arrived Broken'}</option>
               </select>
               <button
                 onClick={() => { onWriteOff(item.id, woQty, woReason); setShowWo(false); setWoQty(1); setWoReason(''); }}

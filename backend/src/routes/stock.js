@@ -10,7 +10,7 @@ router.use(authorize('stock'));
 const STOCK_PATCH_ALLOWED = [
   'Display Name', 'Purchase Name', 'Category', 'Current Quantity', 'Unit',
   'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
-  'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size',
+  'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size', 'Farmer',
 ];
 
 function pickAllowed(body, allowedFields) {
@@ -103,7 +103,7 @@ router.get('/velocity', async (req, res, next) => {
 // Body: { displayName, category, quantity, costPrice, sellPrice?, supplier?, unit? }
 router.post('/', async (req, res, next) => {
   try {
-    const { displayName, category, quantity, costPrice, sellPrice, supplier, unit, lotSize } = req.body;
+    const { displayName, category, quantity, costPrice, sellPrice, supplier, unit, lotSize, farmer } = req.body;
     if (!displayName) return res.status(400).json({ error: 'displayName is required' });
 
     const fields = {
@@ -118,6 +118,7 @@ router.post('/', async (req, res, next) => {
     if (supplier)   fields['Supplier'] = supplier;
     if (unit)       fields['Unit'] = unit;
     if (lotSize)    fields['Lot Size'] = Number(lotSize);
+    if (farmer)     fields['Farmer'] = farmer;
 
     const item = await db.create(TABLES.STOCK, fields);
     res.status(201).json(item);
@@ -220,13 +221,25 @@ router.post('/:id/write-off', async (req, res, next) => {
 
     // Also log to Stock Loss Log table for analytics breakdown
     if (TABLES.STOCK_LOSS_LOG && actualWriteOff > 0) {
-      const lossReason = (reason === 'Wilted' || reason === 'Damaged') ? reason : 'Other';
+      const lossReason = (reason === 'Wilted' || reason === 'Damaged' || reason === 'Arrived Broken') ? reason : 'Other';
+
+      // Auto-calculate Days Survived for wilted flowers:
+      // how many days the flower lasted from last restock to write-off date
+      let daysSurvived = null;
+      if (reason === 'Wilted' && item['Last Restocked']) {
+        const restocked = new Date(item['Last Restocked']);
+        const now = new Date();
+        daysSurvived = Math.round((now.getTime() - restocked.getTime()) / 86400000);
+        if (daysSurvived < 0) daysSurvived = null; // sanity check
+      }
+
       db.create(TABLES.STOCK_LOSS_LOG, {
         Date: new Date().toISOString().split('T')[0],
         'Stock Item': [req.params.id],
         Quantity: actualWriteOff,
         Reason: lossReason,
         Notes: reason && reason !== lossReason ? reason : '',
+        'Days Survived': daysSurvived,
       }).catch(err => console.error('[STOCK] Failed to log to Stock Loss Log:', err.message));
     }
 

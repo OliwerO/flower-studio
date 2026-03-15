@@ -429,7 +429,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             Date: today,
             'Stock Item': [stockItemId],
             Quantity: totalWriteOff,
-            Reason: reason === 'Wilted' || reason === 'Damaged' ? reason : 'Other',
+            Reason: reason === 'Wilted' || reason === 'Damaged' || reason === 'Arrived Broken' ? reason : 'Other',
             Notes: `PO evaluation write-off`,
           }).catch(err => console.error('[STOCK-ORDER] Failed to log write-off:', err.message));
         }

@@ -188,6 +188,9 @@ const en = {
   writeOffReason:   'Select reason',
   reasonWilted:     'Wilted',
   reasonDamaged:    'Broken at delivery',
+  arrivedBroken:    'Arrived Broken',
+  daysSurvived:     'Days survived',
+  farmer:           'Farmer',
   editStock:        'Edit stock',
   doneEditing:      'Done',
 
@@ -493,6 +496,9 @@ const ru = {
   writeOffReason:   'Выберите причину',
   reasonWilted:     'Завяли',
   reasonDamaged:    'Сломаны при доставке',
+  arrivedBroken:    'Пришли сломанные',
+  daysSurvived:     'Дней прожили',
+  farmer:           'Фермер',
   editStock:        'Редактировать склад',
   doneEditing:      'Готово',
 

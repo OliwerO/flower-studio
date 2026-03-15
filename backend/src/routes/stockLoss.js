@@ -9,7 +9,7 @@ import { TABLES } from '../config/airtable.js';
 const router = Router();
 router.use(authorize('orders')); // florists + owner can log waste
 
-const VALID_REASONS = ['Wilted', 'Damaged', 'Overstock', 'Other'];
+const VALID_REASONS = ['Wilted', 'Damaged', 'Arrived Broken', 'Overstock', 'Other'];
 
 // GET /api/stock-loss?from=2026-01-01&to=2026-03-31
 // Enriches each entry with flower name + supplier from the linked Stock record.
