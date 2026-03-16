@@ -20,6 +20,24 @@ function currentMonth() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
+// Calculate total hours from time windows: [{ from: "10:30", to: "15:30" }, ...]
+function calcTotalHours(windows) {
+  let total = 0;
+  for (const w of windows) {
+    if (!w.from || !w.to) continue;
+    const [fh, fm] = w.from.split(':').map(Number);
+    const [th, tm] = w.to.split(':').map(Number);
+    const diff = (th * 60 + tm) - (fh * 60 + fm);
+    if (diff > 0) total += diff / 60;
+  }
+  return Math.round(total * 100) / 100;
+}
+
+// Format time windows as readable string: "10:30-15:30, 16:30-18:30"
+function windowsToString(windows) {
+  return windows.filter(w => w.from && w.to).map(w => `${w.from}-${w.to}`).join(', ');
+}
+
 // ── Florist view: hour logging form + personal history ──
 function FloristHoursForm() {
   const { showToast } = useToast();
@@ -28,17 +46,32 @@ function FloristHoursForm() {
 
   const [name, setName] = useState('');
   const [date, setDate] = useState(todayISO());
-  const [hours, setHours] = useState('');
+  const [windows, setWindows] = useState([{ from: '', to: '' }]);
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
 
+  const totalHours = calcTotalHours(windows);
+  const hasValidWindow = windows.some(w => w.from && w.to);
+
+  function updateWindow(idx, field, value) {
+    setWindows(prev => prev.map((w, i) => i === idx ? { ...w, [field]: value } : w));
+  }
+
+  function addWindow() {
+    setWindows(prev => [...prev, { from: '', to: '' }]);
+  }
+
+  function removeWindow(idx) {
+    setWindows(prev => prev.length <= 1 ? prev : prev.filter((_, i) => i !== idx));
+  }
+
   const fetchEntries = useCallback(async () => {
     if (!name) return;
     setLoadingEntries(true);
     try {
-      const month = date.slice(0, 7); // YYYY-MM
+      const month = date.slice(0, 7);
       const res = await client.get('/florist-hours', { params: { month, name } });
       setEntries(res.data);
     } catch {
@@ -52,17 +85,17 @@ function FloristHoursForm() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!name || !hours) return;
+    if (!name || !hasValidWindow || totalHours <= 0) return;
     setSubmitting(true);
     try {
       await client.post('/florist-hours', {
         name,
         date,
-        hours: Number(hours),
-        notes: notes || '',
+        hours: totalHours,
+        notes: [windowsToString(windows), notes].filter(Boolean).join(' | '),
       });
       showToast(t.success, 'success');
-      setHours('');
+      setWindows([{ from: '', to: '' }]);
       setNotes('');
       fetchEntries();
     } catch {
@@ -75,7 +108,7 @@ function FloristHoursForm() {
   return (
     <div className="space-y-5">
       {/* Log form */}
-      <form onSubmit={handleSubmit} className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-4 overflow-visible">
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-4">
         <h2 className="text-sm font-bold text-ios-label dark:text-dark-label uppercase tracking-wide">{t.logHours}</h2>
 
         {/* Name dropdown */}
@@ -91,30 +124,56 @@ function FloristHoursForm() {
           </select>
         </div>
 
-        {/* Date */}
-        <div className="overflow-visible">
+        {/* Date — use text display to avoid native date picker overflow */}
+        <div>
           <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.labelDate}</label>
           <input
             type="date"
             value={date}
             onChange={e => setDate(e.target.value)}
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
+            className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm appearance-none"
+            style={{ WebkitAppearance: 'none' }}
           />
         </div>
 
-        {/* Hours */}
+        {/* Time windows — from/to pairs */}
         <div>
-          <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.hoursWorked}</label>
-          <input
-            type="number"
-            step="0.5"
-            min="0"
-            max="24"
-            value={hours}
-            onChange={e => setHours(e.target.value)}
-            placeholder="8"
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
-          />
+          <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2 block">
+            {t.workingHours || 'Working hours'}
+          </label>
+          <div className="space-y-2">
+            {windows.map((w, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  type="time"
+                  value={w.from}
+                  onChange={e => updateWindow(idx, 'from', e.target.value)}
+                  className="flex-1 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
+                />
+                <span className="text-ios-tertiary text-sm">→</span>
+                <input
+                  type="time"
+                  value={w.to}
+                  onChange={e => updateWindow(idx, 'to', e.target.value)}
+                  className="flex-1 border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
+                />
+                {windows.length > 1 && (
+                  <button type="button" onClick={() => removeWindow(idx)}
+                    className="text-red-400 text-sm px-1 active-scale">✕</button>
+                )}
+              </div>
+            ))}
+            <button type="button" onClick={addWindow}
+              className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-xl active:bg-brand-100 active-scale"
+            >+ {t.addWindow || 'Add time window'}</button>
+          </div>
+          {/* Auto-calculated total */}
+          {totalHours > 0 && (
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-ios-tertiary">{t.totalHours}:</span>
+              <span className="text-sm font-bold text-brand-600">{totalHours}h</span>
+            </div>
+          )}
         </div>
 
         {/* Notes */}
@@ -124,13 +183,14 @@ function FloristHoursForm() {
             value={notes}
             onChange={e => setNotes(e.target.value)}
             rows={2}
+            placeholder={t.optional || 'Optional'}
             className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm resize-none"
           />
         </div>
 
         <button
           type="submit"
-          disabled={!name || !hours || submitting}
+          disabled={!name || !hasValidWindow || totalHours <= 0 || submitting}
           className="w-full bg-brand-600 text-white font-semibold py-3 rounded-xl active-scale disabled:opacity-50"
         >
           {submitting ? t.saving : t.logHours}
