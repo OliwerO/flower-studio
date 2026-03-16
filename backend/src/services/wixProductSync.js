@@ -597,13 +597,14 @@ export async function runPush() {
           if (seasonalProductIds.length > 0) {
             await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
           }
-          const plTitle = seasonal.translations?.pl?.title;
-          const plDesc = seasonal.translations?.pl?.description;
-          console.log(`[PUSH] Seasonal title=${plTitle}, desc=${plDesc?.slice(0, 50)}...`);
-          if (plTitle || plDesc) {
+          // Push EN translation as primary (Wix site is English)
+          const enTitle = seasonal.translations?.en?.title;
+          const enDesc = seasonal.translations?.en?.description;
+          console.log(`[PUSH] Seasonal title=${enTitle}, desc=${enDesc?.slice(0, 50)}...`);
+          if (enTitle || enDesc) {
             await updateWixCategory(seasonalWixId, {
-              name: plTitle || seasonal.name,
-              description: plDesc || '',
+              name: enTitle || seasonal.name,
+              description: enDesc || '',
             });
           }
           stats.categoriesSynced++;
