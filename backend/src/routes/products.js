@@ -86,8 +86,11 @@ Return ONLY valid JSON with this exact structure (no markdown fences):
     const translations = JSON.parse(raw);
     res.json(translations);
   } catch (err) {
-    console.error('[TRANSLATE] Error:', err.message);
-    next(err);
+    console.error('[TRANSLATE] Error:', err.status, err.message, err.error?.message);
+    res.status(err.status || 500).json({
+      error: 'Translation failed',
+      detail: err.message,
+    });
   }
 });
 
