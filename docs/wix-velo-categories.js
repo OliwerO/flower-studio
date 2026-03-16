@@ -1,22 +1,18 @@
 // ────────────────────────────────────────────────────────────
-// Wix Velo — Multilingual Category Display
+// Wix Velo — Multilingual Seasonal Category + Nav Menu
 // ────────────────────────────────────────────────────────────
 //
-// WHERE TO PUT THIS:
-//   Wix Editor → Dev Mode → Public & Backend → masterPage.js
-//   (runs on every page, so the seasonal category name is always correct)
+// FILE 1: public/blossomCategories.js
+//   Wix Editor → Dev Mode → Public & Backend → blossomCategories.js
+//
+// FILE 2: masterPage.js (usage example at bottom)
+//   Wix Editor → Dev Mode → Site → masterPage.js
 //
 // WHAT IT DOES:
-//   1. Fetches category data from your backend's public API
-//   2. Detects the visitor's current language
-//   3. Updates category text elements with the correct translation
-//
-// PREREQUISITES:
-//   - Enable Wix Multilingual in your Wix dashboard
-//   - Create text elements on your category pages with these IDs:
-//     #seasonalCategoryTitle   — the category heading
-//     #seasonalCategoryDesc    — the category description
-//   - These can be on a dynamic category page or a static section
+//   1. Fetches category data from the Blossom backend
+//   2. Detects the visitor's language
+//   3. Returns translated category name (CAPS for nav) + description
+//   4. masterPage.js updates the nav menu text on every page load
 //
 // ────────────────────────────────────────────────────────────
 
@@ -25,89 +21,89 @@ import wixWindowFrontend from 'wix-window-frontend';
 
 const API_BASE = 'https://flower-studio-backend-production.up.railway.app';
 
-// Map Wix language codes to our translation keys
-// Wix uses 'en', 'pl', 'ru', 'uk' — same as ours
 function getCurrentLang() {
   try {
-    return wixWindowFrontend.multilingual.currentLanguage || 'pl';
+    return wixWindowFrontend.multilingual.currentLanguage || 'en';
   } catch {
-    return 'pl'; // default to Polish if multilingual not enabled
+    return 'en';
   }
 }
 
-/**
- * Fetch category data from the Blossom backend.
- * Cached for the page session — no extra API calls on navigation.
- */
-let _categoryCache = null;
+let _cache = null;
 
 async function getCategories() {
-  if (_categoryCache) return _categoryCache;
-
+  if (_cache) return _cache;
   try {
-    const res = await fetch(`${API_BASE}/api/public/categories`, {
-      method: 'GET',
-    });
-    if (res.ok) {
-      _categoryCache = await res.json();
-    }
+    const res = await fetch(`${API_BASE}/api/public/categories`, { method: 'GET' });
+    if (res.ok) _cache = await res.json();
   } catch (err) {
-    console.error('Failed to fetch categories:', err);
+    console.error('[Blossom] Failed to fetch categories:', err);
   }
-
-  return _categoryCache;
+  return _cache;
 }
 
 /**
- * Get the translated title for the active seasonal category.
- * Falls back: translation → original name → 'Seasonal'
+ * Get the seasonal category name for the NAV MENU — always CAPS.
+ * e.g., "SPRING", "WIOSNA", "ВЕСНА" depending on visitor language.
+ */
+export async function getSeasonalMenuLabel() {
+  const data = await getCategories();
+  if (!data?.seasonal?.name) return 'SEASONAL';
+  const lang = getCurrentLang();
+  const title = data.seasonal.translations?.[lang]?.title
+    || data.seasonal.translations?.en?.title
+    || data.seasonal.name;
+  return title.toUpperCase();
+}
+
+/**
+ * Get the seasonal category title (normal case, for page headings).
  */
 export async function getSeasonalTitle() {
   const data = await getCategories();
   if (!data?.seasonal?.name) return 'Seasonal';
-
   const lang = getCurrentLang();
-  const translated = data.seasonal.translations?.[lang]?.title;
-  if (translated) return translated;
-
-  // Fallback: PL translation → original name
-  return data.seasonal.translations?.pl?.title || data.seasonal.name;
+  return data.seasonal.translations?.[lang]?.title
+    || data.seasonal.translations?.en?.title
+    || data.seasonal.name;
 }
 
 /**
- * Get the translated description for the active seasonal category.
+ * Get the seasonal category description (translated).
  */
 export async function getSeasonalDescription() {
   const data = await getCategories();
   if (!data?.seasonal) return '';
-
   const lang = getCurrentLang();
-  const translated = data.seasonal.translations?.[lang]?.description;
-  if (translated) return translated;
-
-  // Fallback: PL translation → base description
-  return data.seasonal.translations?.pl?.description || data.seasonal.description || '';
+  return data.seasonal.translations?.[lang]?.description
+    || data.seasonal.translations?.en?.description
+    || data.seasonal.description || '';
 }
 
 /**
- * Get full category info (for building nav menus or repeaters).
+ * Get all translations for the seasonal category.
+ * Returns { en: { title, description }, pl: {...}, ru: {...}, uk: {...} }
+ */
+export async function getSeasonalTranslations() {
+  const data = await getCategories();
+  return data?.seasonal?.translations || {};
+}
+
+/**
+ * Get full category structure with translations applied.
  */
 export async function getAllCategories() {
   const data = await getCategories();
   if (!data) return { permanent: [], seasonal: null, auto: [] };
-
   const lang = getCurrentLang();
-
   return {
     permanent: data.permanent || [],
     seasonal: data.seasonal ? {
-      name: data.seasonal.translations?.[lang]?.title
-        || data.seasonal.translations?.pl?.title
-        || data.seasonal.name,
+      name: data.seasonal.translations?.[lang]?.title || data.seasonal.name,
+      menuLabel: (data.seasonal.translations?.[lang]?.title || data.seasonal.name).toUpperCase(),
       slug: data.seasonal.slug,
-      description: data.seasonal.translations?.[lang]?.description
-        || data.seasonal.translations?.pl?.description
-        || data.seasonal.description || '',
+      description: data.seasonal.translations?.[lang]?.description || data.seasonal.description || '',
+      translations: data.seasonal.translations || {},
     } : null,
     auto: data.auto || [],
   };
@@ -115,29 +111,33 @@ export async function getAllCategories() {
 
 
 // ────────────────────────────────────────────────────────────
-// USAGE EXAMPLE — put this in your page code (e.g., Category page)
+// MASTER PAGE CODE — paste this into masterPage.js
 // ────────────────────────────────────────────────────────────
 //
-// import { getSeasonalTitle, getSeasonalDescription } from 'public/categories.js';
+// import { getSeasonalMenuLabel, getSeasonalTitle, getSeasonalDescription }
+//   from 'public/blossomCategories.js';
 //
 // $w.onReady(async function () {
-//   const title = await getSeasonalTitle();
-//   const desc = await getSeasonalDescription();
-//
-//   $w('#seasonalCategoryTitle').text = title;
-//   $w('#seasonalCategoryDesc').text = desc;
+//   // Update the seasonal nav menu item text (CAPS)
+//   // Replace #seasonalMenuText with your actual element ID
+//   try {
+//     const menuLabel = await getSeasonalMenuLabel();
+//     $w('#seasonalMenuText').text = menuLabel;
+//   } catch (e) { console.error('Menu update failed:', e); }
 // });
 //
 // ────────────────────────────────────────────────────────────
-// NAV MENU EXAMPLE — update the seasonal nav item text
+// CATEGORY PAGE CODE — paste into the seasonal category page
 // ────────────────────────────────────────────────────────────
 //
-// Put in masterPage.js to update nav on every page:
-//
-// import { getSeasonalTitle } from 'public/categories.js';
+// import { getSeasonalTitle, getSeasonalDescription }
+//   from 'public/blossomCategories.js';
 //
 // $w.onReady(async function () {
-//   const title = await getSeasonalTitle();
-//   // If your nav menu has a repeater or text element for seasonal:
-//   $w('#seasonalNavLabel').text = title;
+//   const [title, desc] = await Promise.all([
+//     getSeasonalTitle(),
+//     getSeasonalDescription(),
+//   ]);
+//   $w('#categoryTitle').text = title;
+//   $w('#categoryDescription').text = desc;
 // });

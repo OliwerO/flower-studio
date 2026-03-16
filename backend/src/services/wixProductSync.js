@@ -452,7 +452,7 @@ export async function runPull() {
  * Pushes prices, visibility, stock, and category assignments to Wix.
  */
 export async function runPush() {
-  const stats = { pricesSynced: 0, stockSynced: 0, visibilitySynced: 0, categoriesSynced: 0, errors: [] };
+  const stats = { pricesSynced: 0, stockSynced: 0, categoriesSynced: 0, errors: [] };
 
   try {
     console.log('[PUSH] Fetching current Wix state for comparison...');
@@ -486,70 +486,26 @@ export async function runPush() {
       }
     }
 
-    // ── Visibility ──────────────────────────────────────
-    // Fetch ALL products (not just active) — inactive products need to be hidden on Wix
-    const allVisibilityRows = await db.list(TABLES.PRODUCT_CONFIG, {
-      fields: ['Wix Product ID', 'Visible in Wix'],
+    // ── Availability (inventory-based) ─────────────────
+    // Active checkbox controls per-variant availability on Wix:
+    // Active = true → inventory 999 (available to buy)
+    // Active = false/undefined → inventory 0 (out of stock on Wix)
+    // We don't track real inventory in Wix — just available/not-available.
+    const allVariantRows = await db.list(TABLES.PRODUCT_CONFIG, {
+      fields: ['Wix Product ID', 'Wix Variant ID', 'Active'],
     });
 
-    const wixVisibilityMap = new Map();
-    for (const product of wixProducts) {
-      wixVisibilityMap.set(product.id, product.visible !== false);
-    }
-
-    // Product is visible if ANY variant has Visible in Wix = true
-    const productVisibility = new Map();
-    for (const row of allVisibilityRows) {
+    for (const row of allVariantRows) {
       const pid = row['Wix Product ID'];
-      if (!pid) continue;
-      const current = productVisibility.get(pid) || false;
-      productVisibility.set(pid, current || (row['Visible in Wix'] === true));
-    }
-
-    for (const [pid, shouldBeVisible] of productVisibility) {
-      const currentlyVisible = wixVisibilityMap.get(pid);
-      if (currentlyVisible !== undefined && currentlyVisible !== shouldBeVisible) {
-        try {
-          await updateWixProductVisibility(pid, shouldBeVisible);
-          stats.visibilitySynced++;
-        } catch (err) {
-          stats.errors.push(`Visibility ${pid}: ${err.message}`);
-        }
-      }
-    }
-
-    // ── Stock ───────────────────────────────────────────
-    const stockConfigRows = await db.list(TABLES.PRODUCT_CONFIG, {
-      filterByFormula: '{Active} = TRUE()',
-      fields: ['Wix Product ID', 'Wix Variant ID', 'Key Flower', 'Min Stems'],
-    });
-
-    const stockRows = await db.list(TABLES.STOCK, {
-      filterByFormula: '{Active} = TRUE()',
-      fields: ['Display Name', 'Current Quantity'],
-    });
-    const stockByName = Object.fromEntries(
-      stockRows.map(s => [s['Display Name'], Number(s['Current Quantity'] || 0)])
-    );
-    const stockById = Object.fromEntries(
-      stockRows.map(s => [s.id, { name: s['Display Name'], qty: Number(s['Current Quantity'] || 0) }])
-    );
-
-    for (const row of stockConfigRows) {
-      const keyFlower = row['Key Flower'];
-      if (!keyFlower) continue;
-      let stockQty = 0;
-      if (Array.isArray(keyFlower) && keyFlower.length > 0) {
-        const item = stockById[keyFlower[0]];
-        stockQty = item ? item.qty : 0;
-      } else if (typeof keyFlower === 'string') {
-        stockQty = stockByName[keyFlower] || 0;
-      }
+      const vid = row['Wix Variant ID'];
+      if (!pid || !vid) continue;
+      const shouldBeAvailable = row['Active'] === true;
+      const targetQty = shouldBeAvailable ? 999 : 0;
       try {
-        await updateWixInventory(row['Wix Product ID'], row['Wix Variant ID'], stockQty);
+        await updateWixInventory(pid, vid, targetQty);
         stats.stockSynced++;
       } catch (err) {
-        stats.errors.push(`Stock ${row['Wix Product ID']}/${row['Wix Variant ID']}: ${err.message}`);
+        stats.errors.push(`Availability ${pid}/${vid}: ${err.message}`);
       }
     }
 
