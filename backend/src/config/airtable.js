@@ -21,6 +21,7 @@ export const TABLES = {
   PRODUCT_CONFIG:  process.env.AIRTABLE_PRODUCT_CONFIG_TABLE,
   SYNC_LOG:        process.env.AIRTABLE_SYNC_LOG_TABLE,
   APP_CONFIG:      process.env.AIRTABLE_APP_CONFIG_TABLE,
+  FLORIST_HOURS:   process.env.AIRTABLE_FLORIST_HOURS_TABLE,
 };
 
 export default base;
