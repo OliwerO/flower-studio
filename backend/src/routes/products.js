@@ -82,8 +82,10 @@ Return ONLY valid JSON with this exact structure (no markdown fences):
       }],
     });
 
-    const raw = response.content[0].text.trim();
-    const translations = JSON.parse(raw);
+    const raw = response.content[0].text || '';
+    // Strip markdown fences if the model wraps in ```json
+    const jsonStr = raw.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    const translations = JSON.parse(jsonStr);
     res.json(translations);
   } catch (err) {
     console.error('[TRANSLATE] Error:', err.status, err.message, err.error?.message);
