@@ -182,10 +182,35 @@ async function updateWixCategory(id, { name, description }) {
 
 /**
  * Assign products to a Wix collection.
- * Replaces all existing products in the collection.
+ * Adds products first, then removes ones that shouldn't be there.
+ * Order matters — add before remove to avoid emptying the category
+ * if the add API call fails.
  */
 async function setWixCategoryProducts(collectionId, productIds) {
-  // First remove all existing products from the collection
+  // Step 1: Add products to collection (Wix deduplicates)
+  if (productIds.length > 0) {
+    // Wix API accepts max ~100 product IDs per call
+    for (let i = 0; i < productIds.length; i += 100) {
+      const batch = productIds.slice(i, i + 100);
+      const res = await fetch(
+        `${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds`,
+        {
+          method: 'POST',
+          headers: wixHeaders(),
+          body: JSON.stringify({ productIds: batch }),
+        }
+      );
+
+      if (!res.ok) {
+        const text = await res.text();
+        console.error(`[SYNC] Add to collection failed: ${text}`);
+        // Don't proceed to remove if add failed — protect existing state
+        throw new Error(`Wix category product assignment failed: ${text}`);
+      }
+    }
+  }
+
+  // Step 2: Remove products that shouldn't be in this collection
   try {
     const existing = await fetch(`${WIX_API_URL}/stores/v1/products/query`, {
       method: 'POST',
@@ -201,7 +226,6 @@ async function setWixCategoryProducts(collectionId, productIds) {
     if (existing.ok) {
       const data = await existing.json();
       const existingIds = (data.products || []).map(p => p.id);
-      // Remove products no longer in the set
       const toRemove = existingIds.filter(id => !productIds.includes(id));
       for (const pid of toRemove) {
         await fetch(`${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds/${pid}`, {
@@ -212,23 +236,6 @@ async function setWixCategoryProducts(collectionId, productIds) {
     }
   } catch (err) {
     console.warn(`[SYNC] Could not clean old category products: ${err.message}`);
-  }
-
-  // Add products to collection
-  if (productIds.length > 0) {
-    const res = await fetch(
-      `${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds`,
-      {
-        method: 'POST',
-        headers: wixHeaders(),
-        body: JSON.stringify({ productIds }),
-      }
-    );
-
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`Wix category product assignment failed: ${text}`);
-    }
   }
 }
 
@@ -496,7 +503,7 @@ export async function runPush() {
       const pid = row['Wix Product ID'];
       if (!pid) continue;
       const current = productVisibility.get(pid) || false;
-      productVisibility.set(pid, current || (row['Visible in Wix'] !== false));
+      productVisibility.set(pid, current || (row['Visible in Wix'] === true));
     }
 
     for (const [pid, shouldBeVisible] of productVisibility) {
@@ -579,17 +586,20 @@ export async function runPush() {
       // Seasonal category
       const seasonal = getActiveSeasonalCategory();
       const seasonalWixId = catMap['seasonal'];
+      console.log(`[PUSH] Seasonal: active=${seasonal?.name}, wixId=${seasonalWixId}`);
       if (seasonal && seasonalWixId) {
         const seasonalProductIds = [...new Set(
           allConfigRows.filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
             .map(r => r['Wix Product ID']).filter(Boolean)
         )];
+        console.log(`[PUSH] Seasonal "${seasonal.name}": ${seasonalProductIds.length} products`);
         try {
           if (seasonalProductIds.length > 0) {
             await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
           }
           const plTitle = seasonal.translations?.pl?.title;
           const plDesc = seasonal.translations?.pl?.description;
+          console.log(`[PUSH] Seasonal title=${plTitle}, desc=${plDesc?.slice(0, 50)}...`);
           if (plTitle || plDesc) {
             await updateWixCategory(seasonalWixId, {
               name: plTitle || seasonal.name,
