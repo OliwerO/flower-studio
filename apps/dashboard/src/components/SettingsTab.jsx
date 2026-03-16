@@ -575,8 +575,8 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
               <button onClick={saveSeasonal} className="text-xs text-white bg-brand-600 px-3 py-1 rounded-lg">{t.save}</button>
               <button onClick={() => setEditingSeasonal(null)} className="text-xs text-gray-400">✕</button>
             </div>
-            {/* Translation preview tabs */}
-            {draft.translations && Object.keys(draft.translations).length > 0 && (
+            {/* Translation tabs — always shown so existing translations are visible */}
+            {(
               <div className="border border-gray-100 rounded-lg overflow-hidden">
                 <div className="flex border-b border-gray-100">
                   {['en', 'pl', 'ru', 'uk'].map(lang => (
@@ -586,7 +586,7 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
                       className={`flex-1 text-xs py-1.5 font-medium ${
                         transLang === lang ? 'bg-brand-50 text-brand-700 border-b-2 border-brand-600' : 'text-gray-400'
                       }`}
-                    >{lang.toUpperCase()}</button>
+                    >{lang.toUpperCase()}{lang === 'pl' ? ' (Wix)' : ''}</button>
                   ))}
                 </div>
                 <div className="p-2 space-y-1">

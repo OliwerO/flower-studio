@@ -52,7 +52,7 @@ export default function ProductsTab() {
 
   // Filter
   const filtered = grouped.filter(g => {
-    if (filter === 'review') return g.variants.every(v => !v['Active']);
+    if (filter === 'review') return g.variants.every(v => !v['Active']) && !g.variants.some(v => v['Category']?.length > 0);
     if (filter === 'active') return g.variants.some(v => v['Active']);
     if (filter === 'inactive') return g.variants.every(v => !v['Active']);
     if (filter === 'today') return g.variants.some(v => v['Active'] && Number(v['Lead Time Days'] ?? 1) === 0);
@@ -63,7 +63,10 @@ export default function ProductsTab() {
     return g.name.toLowerCase().includes(s);
   });
 
-  const needsReview = grouped.filter(g => g.variants.every(v => !v['Active'])).length;
+  // "Needs review" = inactive AND no categories assigned (never configured by owner)
+  const needsReview = grouped.filter(g =>
+    g.variants.every(v => !v['Active']) && !g.variants.some(v => v['Category']?.length > 0)
+  ).length;
 
   async function handlePull() {
     setPulling(true);
