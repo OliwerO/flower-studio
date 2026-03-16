@@ -85,6 +85,12 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-2">
           <button
+            onClick={() => window.location.reload()}
+            className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-gray-500
+                       hover:bg-gray-200 transition-colors flex items-center justify-center"
+            title={t.refresh}
+          >&#x21bb;</button>
+          <button
             onClick={() => setShowHelp(true)}
             className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-gray-500
                        hover:bg-gray-200 transition-colors flex items-center justify-center"
