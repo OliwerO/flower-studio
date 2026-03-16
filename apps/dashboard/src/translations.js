@@ -517,6 +517,8 @@ const en = {
   sfTranslating:            'Translating...',
   sfTranslated:             'Translated',
   sfTranslations:           'Translations',
+  sfAuto:                   'Auto (system-generated)',
+  sfAutoHint:               'System categories — edit translations only',
 
   // Delivery zones
   dzTitle:                  'Delivery zones',
@@ -1077,6 +1079,8 @@ const ru = {
   sfTranslating:            'Переводим...',
   sfTranslated:             'Переведено',
   sfTranslations:           'Переводы',
+  sfAuto:                   'Авто (системные)',
+  sfAutoHint:               'Системные категории — только редактирование переводов',
 
   // Delivery zones
   dzTitle:                  'Зоны доставки',

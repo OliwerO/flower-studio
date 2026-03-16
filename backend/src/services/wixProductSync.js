@@ -261,7 +261,7 @@ async function fetchWixData() {
   try {
     wixCategories = await fetchWixCategories();
     const sc = getConfig('storefrontCategories') || {};
-    const ourNames = [...(sc.permanent || []), ...(sc.seasonal || []).map(s => s.name)];
+    const ourNames = [...(sc.permanent || []).map(p => typeof p === 'string' ? p : p.name), ...(sc.seasonal || []).map(s => s.name)];
     for (const wc of wixCategories) {
       const match = ourNames.find(n =>
         n.toLowerCase().replace(/[^a-z0-9]+/g, '-') === wc.slug
@@ -531,7 +531,8 @@ export async function runPush() {
       const sc = getConfig('storefrontCategories') || {};
 
       // Permanent categories
-      for (const catName of (sc.permanent || [])) {
+      for (const catEntry of (sc.permanent || [])) {
+        const catName = typeof catEntry === 'string' ? catEntry : catEntry.name;
         const slug = catName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const wixCatId = catMap[slug];
         if (!wixCatId) continue;

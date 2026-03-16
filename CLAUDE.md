@@ -1,95 +1,58 @@
-# Flower Studio Management App — CLAUDE.md
+# Flower Studio — CLAUDE.md
 
-## Project Overview
+Web app for **Blossom**, a flower studio in Krakow. Manages orders, inventory, CRM, deliveries, and owner analytics. Replaces multi-spreadsheet workflow.
 
-Web app replacing multi-spreadsheet workflow for **Blossom**, a flower studio in Krakow. Manages orders (6 channels), flower inventory, customer CRM (extends existing Airtable base with ~1,059 B2C clients), deliveries, and owner dashboards.
+## Users & Devices
+- 1 owner (desktop) · 2–4 florists (tablet/phone) · 2 drivers (phone)
+- UI language: **Russian** — all visible strings via `t.xxx` from `translations.js`
 
-**Users:** 1 owner (desktop), 2–4 florists (tablet/phone), 2 delivery drivers (phone).
-**UI language:** Russian. Data arrives in RU/UK/PL/EN/TR — auto-translate to Russian via Claude API.
+## Stack
+- **DB:** Airtable (extend existing base — never replace)
+- **Backend:** Node.js + Express, hosted on Railway
+- **Frontend:** 3 React apps (Vite + Tailwind) on Vercel: `apps/florist`, `apps/delivery`, `apps/dashboard`
+- **Auth:** Stateless PIN via `X-Auth-PIN` header (Owner → all, Florist → orders/stock, Driver → deliveries)
+- **Real-time:** SSE via `GET /api/events`
 
----
-
-## Technical Stack
-
-| Layer | Technology |
-|-------|-----------|
-| Database | Airtable (existing base — extend, don't replace) |
-| Backend | Node.js + Express |
-| Frontend | 3 React apps (Vite + Tailwind): florist, delivery, dashboard |
-| Translation | Anthropic Claude API (Haiku) |
-| Hosting | Vercel (frontends), Railway (backend) |
-| Auth | Stateless PIN per role via `X-Auth-PIN` header |
-
----
-
-## Build Phase Status
-
-| Phase | Status | Description |
-|-------|--------|-------------|
-| 1 | Done | Backend scaffold + Airtable CRUD |
-| 2 | Done | Florist app — bouquet builder + order form |
-| 3 | Done | Delivery app — driver task board |
-| 4 | Done | Wix webhook — full pipeline + logging + dedup |
-| 5 | Done | Translation integration (Claude Haiku) |
-| 6 | Done | Owner dashboard — day-to-day operations |
-| 7 | Done | Owner dashboard — financial KPIs |
-| 8 | Done | SSE notifications (florist + dashboard) |
-| 9 | Not started | Polish + testing + deployment |
-| 10 | Future | Excel migration script |
-
----
-
-## Airtable Schema (compact reference)
-
-**Existing table — DO NOT delete fields:**
-- **Clients (B2C) - MASTER**: Nickname, Name, Segment, Link, Source, Language, Phone, Email, Home address, Sex/Business, Orders (legacy), Key persons, Campaigns, etc.
-- **Orders (LEGACY)**: Read-only archive. DO NOT WRITE.
-
-**App tables (created by us):**
-- **App Orders**: Order ID (auto), Customer (link), Customer Request, Order Date, Required By, Source, Order Lines (link), Flowers Cost Total (rollup), Sell Price Total (rollup), Delivery Fee, Price Override, Final Price (formula), Delivery Type, Payment Status, Payment Method (optional), Notes Original, Notes Translated, Greeting Card Text, Status (New/Accepted/In Preparation/Ready/Out for Delivery/Delivered/Picked Up/Cancelled), Assigned Delivery (link), Wix Order ID, Created By
-- **Order Lines**: Order (link), Stock Item (link, may be empty), Flower Name, Quantity, Cost Price Per Unit (snapshot), Sell Price Per Unit (snapshot), Line Cost (formula), Line Sell Price (formula)
-- **Stock**: Display Name, Purchase Name, Category, Current Quantity, Unit, Current Cost Price, Current Sell Price, Markup Factor (formula), Supplier, Reorder Threshold, Last Restocked, Dead/Unsold Stems, Active (checkbox), Order Lines (link)
-- **Deliveries**: Linked Order, Customer Name (lookup), Delivery Address, Recipient Name, Recipient Phone, Customer Phone (lookup), Order Contents (lookup), Special Instructions (lookup), Greeting Card Text (lookup), Delivery Date, Delivery Time (freetext), Assigned Driver, Status (Pending/Out for Delivery/Delivered), Delivery Fee, Driver Payment Status, Driver Notes, Delivered At
-- **Stock Purchases**: Purchase Date, Supplier, Flower (link), Quantity Purchased, Price Per Unit, Total Cost (formula), Notes
-
----
-
-## Key Technical Decisions
-
-- **Price snapshotting:** Order Lines COPY cost/sell prices at creation (not live lookups) — preserves historical margins
-- **Airtable rate limit:** 5 req/sec — use p-queue for concurrency control
-- **Airtable filtering:** Always use `filterByFormula` server-side, never fetch-all-then-filter
-- **Bouquet builder perf:** Pre-fetch all active stock on load (<200 items), client-side search, API only on submit
-- **Customer search formula:** `OR(SEARCH(LOWER(query), LOWER(Name)), SEARCH(LOWER(query), LOWER(Nickname)), SEARCH(query, Phone), SEARCH(LOWER(query), LOWER(Link)), SEARCH(LOWER(query), LOWER(Email)))`
-- **Order creation:** Multi-step (Order → Lines → Delivery → Stock updates) — sequential with error recovery
-- **Status workflows:** Delivery: New→Accepted→In Preparation→Ready→Out for Delivery→Delivered. Pickup: skips last two, ends with Picked Up. Cancellation does NOT auto-return stock.
-- **PIN auth:** `X-Auth-PIN` header, stateless. Owner=all, Florist=orders+customers+stock, Driver=deliveries only.
-- **Responsive targets:** Florist=iPad (768px+), Delivery=iPhone (375px), Dashboard=desktop (1024px+)
-
----
+## Monorepo Layout
+```
+backend/          → Express API + Airtable services
+apps/florist/     → Bouquet builder, order form, stock (iPad 768px+)
+apps/delivery/    → Driver task board, map, PO shopping (iPhone 375px)
+apps/dashboard/   → Owner KPIs, settings, products (Desktop 1024px+)
+```
+Each sub-directory has its own CLAUDE.md with domain-specific rules.
 
 ## Coding Standards
+- ES modules, `async/await`, no callbacks
+- Express routes = thin controllers; business logic in `services/`
+- Functional React + hooks, Context + useReducer for state
+- Tailwind utility classes only — no custom CSS files
+- Prices in PLN, display as "zł", store as numbers
+- Comments in English, UI text in Russian via `t.xxx`
+- `console.error` for caught errors; user-facing Russian toasts in UI
 
-- ES modules (`import/export`), `async/await` only
-- Express routes thin — business logic in service files
-- Functional React + hooks, React Context + useReducer for global state
-- Tailwind utility classes only, no custom CSS
-- All UI text in Russian via `translations.js` (`t.orders.title`, etc.)
-- Comments in English
-- Prices in PLN, display with "zł", store as numbers
-- Console.error for caught errors, user-friendly Russian toasts in UI
+## Airtable Rules (CRITICAL)
+- Rate limit: **5 req/sec** — always use `p-queue` for concurrency
+- **Always** use `filterByFormula` server-side, never fetch-all-then-filter
+- Price snapshotting: Order Lines COPY cost/sell prices at creation time
+- Field names: match exactly what's in Airtable (case-sensitive)
+- `typecast: true` on create/update calls
+- Stock can go negative — this is intentional (triggers PO demand signals)
 
----
+## Status Workflows
+- **Delivery:** New → Accepted → In Preparation → Ready → Out for Delivery → Delivered
+- **Pickup:** New → Accepted → In Preparation → Ready → Picked Up
+- **PO:** Draft → Sent → Shopping → Reviewing → Evaluating → Complete
+- Cancellation does NOT auto-return stock
 
-## Environment Variables
+## Key Files
+- `BACKLOG.md` — feature tracking, open items, known issues
+- `CHANGELOG.md` — all changes, schema diffs, go-live checklist
+- `backend/src/services/airtable.js` — core CRUD with rate limiting
+- `backend/src/routes/` — all API endpoints
 
-```
-AIRTABLE_API_KEY, AIRTABLE_BASE_ID
-AIRTABLE_ORDERS_TABLE, AIRTABLE_ORDER_LINES_TABLE, AIRTABLE_CUSTOMERS_TABLE
-AIRTABLE_STOCK_TABLE, AIRTABLE_DELIVERIES_TABLE, AIRTABLE_STOCK_PURCHASES_TABLE
-AIRTABLE_LEGACY_ORDERS_TABLE (read-only)
-ANTHROPIC_API_KEY
-WIX_WEBHOOK_SECRET
-PIN_OWNER, PIN_FLORIST, PIN_DRIVER
-PORT=3001, NODE_ENV
-```
+## Workflow Rules
+- Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
+- Check off completed items in `BACKLOG.md`
+- Create a git branch per feature/fix
+- Test against dev base (`.env.dev`), never production (`.env`)

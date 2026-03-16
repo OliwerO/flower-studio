@@ -175,19 +175,35 @@ router.get('/delivery-pricing', (_req, res) => {
 
 // ── GET /api/public/categories ─────────────────────────────
 // Category structure for Wix nav — permanent + active seasonal + auto.
+// Returns a slug-keyed `categoryMap` so Velo can look up any category's translations.
 router.get('/categories', (_req, res) => {
   const sc = getConfig('storefrontCategories') || {};
   const seasonal = getActiveSeasonalCategory();
 
   const permanent = sc.permanent || [];
+  const auto = sc.auto || [];
   const allSeasonal = (sc.seasonal || []).map(s => s.name);
-  const auto = ['Available Today'];
-  const all = [...permanent, ...(seasonal ? [seasonal.name] : []), ...auto];
-  // allCategories: every possible category (for dashboard product assignment)
-  const allCategories = [...new Set([...permanent, ...allSeasonal, ...auto])];
+
+  // Flat name lists (backward compat for product assignment / nav rendering)
+  const permanentNames = permanent.map(p => typeof p === 'string' ? p : p.name);
+  const autoNames = auto.map(a => typeof a === 'string' ? a : a.name);
+  const all = [...permanentNames, ...(seasonal ? [seasonal.name] : []), ...autoNames];
+  const allCategories = [...new Set([...permanentNames, ...allSeasonal, ...autoNames])];
+
+  // Slug-keyed lookup — Velo reads current URL slug, matches to category translations
+  const categoryMap = {};
+  for (const p of permanent) {
+    if (typeof p === 'object') categoryMap[p.slug] = { name: p.name, slug: p.slug, description: p.description || '', translations: p.translations || {} };
+  }
+  for (const a of auto) {
+    if (typeof a === 'object') categoryMap[a.slug] = { name: a.name, slug: a.slug, description: a.description || '', translations: a.translations || {} };
+  }
+  for (const s of sc.seasonal || []) {
+    categoryMap[s.slug] = { name: s.name, slug: s.slug, description: s.description || '', translations: s.translations || {} };
+  }
 
   res.json({
-    permanent,
+    permanent: permanentNames,
     seasonal: seasonal
       ? {
           name: seasonal.name,
@@ -196,9 +212,10 @@ router.get('/categories', (_req, res) => {
           translations: seasonal.translations || {},
         }
       : { active: null, slug: null },
-    auto,
+    auto: autoNames,
     all,
     allCategories,
+    categoryMap,
   });
 });
 

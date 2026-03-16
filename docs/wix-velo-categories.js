@@ -1,5 +1,5 @@
 // ────────────────────────────────────────────────────────────
-// Wix Velo — Multilingual Seasonal Category + Nav Menu
+// Wix Velo — Multilingual Category Translations
 // ────────────────────────────────────────────────────────────
 //
 // FILE 1: public/blossomCategories.js
@@ -8,11 +8,15 @@
 // FILE 2: masterPage.js (usage example at bottom)
 //   Wix Editor → Dev Mode → Site → masterPage.js
 //
+// FILE 3: Category Page code (usage example at bottom)
+//   Wix Editor → Dev Mode → Page Code → Category Page
+//
 // WHAT IT DOES:
-//   1. Fetches category data from the Blossom backend
+//   1. Fetches category data from the Blossom backend (all categories)
 //   2. Detects the visitor's language
-//   3. Returns translated category name (CAPS for nav) + description
-//   4. masterPage.js updates the nav menu text on every page load
+//   3. Returns translated name + description for any category by slug
+//   4. masterPage.js updates the seasonal nav menu text
+//   5. Category Page code matches URL slug → shows translated title/desc
 //
 // ────────────────────────────────────────────────────────────
 
@@ -42,6 +46,31 @@ async function getCategories() {
   return _cache;
 }
 
+// ── Helper: apply language to a category object ──
+function applyLang(cat, lang) {
+  if (!cat) return null;
+  const t = cat.translations || {};
+  return {
+    name: (t[lang] && t[lang].title) || (t.en && t.en.title) || cat.name,
+    menuLabel: ((t[lang] && t[lang].title) || (t.en && t.en.title) || cat.name).toUpperCase(),
+    description: (t[lang] && t[lang].description) || (t.en && t.en.description) || cat.description || '',
+    slug: cat.slug,
+  };
+}
+
+/**
+ * Look up ANY category by its URL slug and return translated name + description.
+ * Works for permanent, seasonal, and auto categories.
+ * @param {string} slug  e.g. 'all-bouquets', 'spring', 'available-today'
+ */
+export async function getCategoryBySlug(slug) {
+  const data = await getCategories();
+  if (!data?.categoryMap || !slug) return null;
+  const cat = data.categoryMap[slug.toLowerCase()];
+  if (!cat) return null;
+  return applyLang(cat, getCurrentLang());
+}
+
 /**
  * Get the seasonal category name for the NAV MENU — always CAPS.
  * e.g., "SPRING", "WIOSNA", "ВЕСНА" depending on visitor language.
@@ -49,11 +78,8 @@ async function getCategories() {
 export async function getSeasonalMenuLabel() {
   const data = await getCategories();
   if (!data?.seasonal?.name) return 'SEASONAL';
-  const lang = getCurrentLang();
-  const title = data.seasonal.translations?.[lang]?.title
-    || data.seasonal.translations?.en?.title
-    || data.seasonal.name;
-  return title.toUpperCase();
+  const result = applyLang(data.seasonal, getCurrentLang());
+  return result.menuLabel;
 }
 
 /**
@@ -62,10 +88,8 @@ export async function getSeasonalMenuLabel() {
 export async function getSeasonalTitle() {
   const data = await getCategories();
   if (!data?.seasonal?.name) return 'Seasonal';
-  const lang = getCurrentLang();
-  return data.seasonal.translations?.[lang]?.title
-    || data.seasonal.translations?.en?.title
-    || data.seasonal.name;
+  const result = applyLang(data.seasonal, getCurrentLang());
+  return result.name;
 }
 
 /**
@@ -74,38 +98,28 @@ export async function getSeasonalTitle() {
 export async function getSeasonalDescription() {
   const data = await getCategories();
   if (!data?.seasonal) return '';
-  const lang = getCurrentLang();
-  return data.seasonal.translations?.[lang]?.description
-    || data.seasonal.translations?.en?.description
-    || data.seasonal.description || '';
+  const result = applyLang(data.seasonal, getCurrentLang());
+  return result.description;
 }
 
 /**
- * Get all translations for the seasonal category.
- * Returns { en: { title, description }, pl: {...}, ru: {...}, uk: {...} }
- */
-export async function getSeasonalTranslations() {
-  const data = await getCategories();
-  return data?.seasonal?.translations || {};
-}
-
-/**
- * Get full category structure with translations applied.
+ * Get full category structure with translations applied for current language.
  */
 export async function getAllCategories() {
   const data = await getCategories();
   if (!data) return { permanent: [], seasonal: null, auto: [] };
   const lang = getCurrentLang();
+
   return {
-    permanent: data.permanent || [],
-    seasonal: data.seasonal ? {
-      name: data.seasonal.translations?.[lang]?.title || data.seasonal.name,
-      menuLabel: (data.seasonal.translations?.[lang]?.title || data.seasonal.name).toUpperCase(),
-      slug: data.seasonal.slug,
-      description: data.seasonal.translations?.[lang]?.description || data.seasonal.description || '',
-      translations: data.seasonal.translations || {},
-    } : null,
-    auto: data.auto || [],
+    permanent: (data.permanent || []).map(name => {
+      const cat = data.categoryMap?.[name.toLowerCase().replace(/[^a-z0-9]+/g, '-')];
+      return cat ? applyLang(cat, lang) : { name, menuLabel: name.toUpperCase(), slug: '', description: '' };
+    }),
+    seasonal: data.seasonal?.slug ? applyLang(data.seasonal, lang) : null,
+    auto: (data.auto || []).map(name => {
+      const cat = data.categoryMap?.[name.toLowerCase().replace(/[^a-z0-9]+/g, '-')];
+      return cat ? applyLang(cat, lang) : { name, menuLabel: name.toUpperCase(), slug: '', description: '' };
+    }),
   };
 }
 
@@ -114,12 +128,9 @@ export async function getAllCategories() {
 // MASTER PAGE CODE — paste this into masterPage.js
 // ────────────────────────────────────────────────────────────
 //
-// import { getSeasonalMenuLabel, getSeasonalTitle, getSeasonalDescription }
-//   from 'public/blossomCategories.js';
+// import { getSeasonalMenuLabel } from 'public/blossomCategories.js';
 //
 // $w.onReady(async function () {
-//   // Update the seasonal nav menu item text (CAPS)
-//   // Replace #seasonalMenuText with your actual element ID
 //   try {
 //     const menuLabel = await getSeasonalMenuLabel();
 //     $w('#seasonalMenuText').text = menuLabel;
@@ -127,17 +138,37 @@ export async function getAllCategories() {
 // });
 //
 // ────────────────────────────────────────────────────────────
-// CATEGORY PAGE CODE — paste into the seasonal category page
+// CATEGORY PAGE CODE — works for ALL category pages
 // ────────────────────────────────────────────────────────────
 //
-// import { getSeasonalTitle, getSeasonalDescription }
-//   from 'public/blossomCategories.js';
+// import { getCategoryBySlug } from 'public/blossomCategories.js';
+// import wixLocationFrontend from 'wix-location-frontend';
 //
 // $w.onReady(async function () {
-//   const [title, desc] = await Promise.all([
-//     getSeasonalTitle(),
-//     getSeasonalDescription(),
-//   ]);
-//   $w('#categoryTitle').text = title;
-//   $w('#categoryDescription').text = desc;
+//   try {
+//     var path = wixLocationFrontend.path || [];
+//     var slug = (path[path.length - 1] || '').toLowerCase();
+//
+//     var cat = await getCategoryBySlug(slug);
+//     if (!cat) {
+//       $w('#text25').collapse();
+//       $w('#Section1RegularSubtitle1').collapse();
+//       return;
+//     }
+//
+//     function applyText() {
+//       $w('#text25').text = cat.name;
+//       $w('#Section1RegularSubtitle1').text = cat.description;
+//       $w('#text25').expand(); $w('#text25').show();
+//       $w('#Section1RegularSubtitle1').expand(); $w('#Section1RegularSubtitle1').show();
+//       try { $w('#Section1Regular').expand(); $w('#Section1Regular').show(); } catch(e) {}
+//     }
+//     applyText();
+//     setTimeout(applyText, 500);
+//     setTimeout(applyText, 1500);
+//
+//     console.log('[CategoryPage] slug=' + slug + ' title=' + cat.name);
+//   } catch (err) {
+//     console.error('[CategoryPage]', err.message);
+//   }
 // });

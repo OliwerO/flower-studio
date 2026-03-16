@@ -26,13 +26,19 @@ const DEFAULTS = {
   floristNames: ['Anya', 'Daria'],
   extraDrivers: [],
   storefrontCategories: {
-    permanent: ['All Bouquets', 'Bestsellers'],
+    permanent: [
+      { name: 'All Bouquets', slug: 'all-bouquets', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+      { name: 'Bestsellers',  slug: 'bestsellers',  description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+    ],
     seasonal: [
       { name: "Valentine's Day", slug: 'valentines-day', from: '01-25', to: '02-15', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
       { name: "Women's Day",     slug: 'womens-day',     from: '02-25', to: '03-10', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
       { name: "Mother's Day",    slug: 'mothers-day',    from: '04-20', to: '05-26', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
       { name: 'Easter',          slug: 'easter',         from: '03-28', to: '04-15', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
       { name: 'Christmas',       slug: 'christmas',      from: '12-01', to: '12-26', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+    ],
+    auto: [
+      { name: 'Available Today', slug: 'available-today', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
     ],
     autoSchedule: true,
     manualOverride: null,
@@ -79,6 +85,8 @@ async function loadConfig() {
         config = deepMerge(DEFAULTS, parsed);
         // Migrate: normalize seasonal dates to MM-DD format
         migrateSeasonalDates();
+        // Migrate: convert permanent/auto from string arrays to object arrays
+        migrateCategoryObjects();
       }
       console.log('[SETTINGS] Config loaded from Airtable');
     } else {
@@ -166,6 +174,51 @@ function migrateSeasonalDates() {
   if (changed) {
     saveConfig().catch(err =>
       console.error('[SETTINGS] Date migration save failed:', err.message)
+    );
+  }
+}
+
+/**
+ * Migrate permanent and auto categories from plain string arrays to
+ * object arrays with slug, description, and translations.
+ * Backward-compat: stored Airtable config may still have the old format.
+ */
+function migrateCategoryObjects() {
+  const sc = config.storefrontCategories;
+  if (!sc) return;
+  const emptyTranslations = { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } };
+  let changed = false;
+
+  // Permanent: string[] → object[]
+  if (Array.isArray(sc.permanent) && sc.permanent.length > 0 && typeof sc.permanent[0] === 'string') {
+    sc.permanent = sc.permanent.map(name => ({
+      name,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, ''),
+      description: '',
+      translations: JSON.parse(JSON.stringify(emptyTranslations)),
+    }));
+    changed = true;
+    console.log('[SETTINGS] Migrated permanent categories to object format');
+  }
+
+  // Auto: missing or string[]
+  if (!sc.auto) {
+    sc.auto = DEFAULTS.storefrontCategories.auto;
+    changed = true;
+  } else if (Array.isArray(sc.auto) && sc.auto.length > 0 && typeof sc.auto[0] === 'string') {
+    sc.auto = sc.auto.map(name => ({
+      name,
+      slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, ''),
+      description: '',
+      translations: JSON.parse(JSON.stringify(emptyTranslations)),
+    }));
+    changed = true;
+    console.log('[SETTINGS] Migrated auto categories to object format');
+  }
+
+  if (changed) {
+    saveConfig().catch(err =>
+      console.error('[SETTINGS] Category migration save failed:', err.message)
     );
   }
 }
