@@ -331,7 +331,8 @@ export async function runSync() {
         const existing = existingMap.get(key);
 
         if (!existing) {
-          // New variant — create with safe defaults (Active=false, LT=1)
+          // New variant — mirror Wix visibility as Active state
+          const wixVisible = product.visible !== false;
           try {
             const newRow = {
               'Product Name': productName,
@@ -342,8 +343,8 @@ export async function runSync() {
               'Image URL': imageUrl,
               'Price': Number(variantPrice) || 0,
               'Lead Time Days': 1,
-              'Active': false,
-              'Visible in Wix': product.visible !== false,
+              'Active': wixVisible,
+              'Visible in Wix': wixVisible,
               'Product Type': productType,
               'Min Stems': productType === 'mono' ? parseMinStems(variantName) : 0,
             };
@@ -357,10 +358,14 @@ export async function runSync() {
             stats.errors.push(`Create ${productName}/${variantName}: ${err.message}`);
           }
         } else {
-          // Existing variant — update Wix-owned fields if changed
+          // Existing variant — sync Wix-owned fields
+          const wixVisible = product.visible !== false;
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
+          // Sync visibility state from Wix → dashboard (Wix is source of truth on pull)
+          if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
+          if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
           // Import categories from Wix if not yet assigned in Airtable
           const existingCats = parseCategoryField(existing['Category']);
           if (existingCats.length === 0 && importedCategories.length > 0) {
