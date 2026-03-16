@@ -87,19 +87,28 @@ async function updateWixVariantPrice(productId, variantId, price) {
  * Update Wix inventory for a product variant.
  * Uses the Wix Inventory API to push stock quantities.
  */
+/**
+ * Update a variant's availability on Wix using untracked inventory.
+ * trackQuantity=false means we just toggle inStock on/off — no real
+ * inventory counting. Like a simple "available / sold out" switch.
+ */
 async function updateWixInventory(productId, variantId, quantity) {
+  const inStock = quantity > 0;
+
+  // Wix Inventory v2 endpoint — update by product ID
   const res = await fetch(
-    `${WIX_API_URL}/stores/v1/inventoryItems/product/${productId}/updateVariantsInventory`,
+    `${WIX_API_URL}/stores/v2/inventoryItems/product/${productId}`,
     {
-      method: 'POST',
+      method: 'PATCH',
       headers: wixHeaders(),
       body: JSON.stringify({
-        inventoryItems: [{
-          variantId,
-          trackQuantity: true,
-          quantity,
-          inStock: quantity > 0,
-        }],
+        inventoryItem: {
+          trackQuantity: false,
+          variants: [{
+            variantId,
+            inStock,
+          }],
+        },
       }),
     }
   );
