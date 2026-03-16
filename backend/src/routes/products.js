@@ -33,66 +33,11 @@ router.post('/sync', async (req, res, next) => {
   }
 });
 
-// ── GET /api/products — list all Product Config rows ──
-router.get('/', async (req, res, next) => {
-  try {
-    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
-      sort: [
-        { field: 'Product Name', direction: 'asc' },
-        { field: 'Sort Order', direction: 'asc' },
-      ],
-    });
-    res.json(rows);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── PATCH /api/products/:id — update a Product Config row ──
-// Owner can edit: Price, Lead Time Days, Active, Visible in Wix,
-// Category, Key Flower, Product Type, Min Stems, Available From/To
-const EDITABLE_FIELDS = [
-  'Price', 'Lead Time Days', 'Active', 'Visible in Wix',
-  'Category', 'Key Flower', 'Product Type', 'Min Stems',
-  'Sort Order', 'Available From', 'Available To',
-];
-
-router.patch('/:id', async (req, res, next) => {
-  try {
-    const updates = {};
-    for (const key of Object.keys(req.body)) {
-      if (EDITABLE_FIELDS.includes(key)) {
-        updates[key] = req.body[key];
-      }
-    }
-
-    if (Object.keys(updates).length === 0) {
-      return res.status(400).json({ error: 'No valid fields to update.' });
-    }
-
-    const updated = await db.update(TABLES.PRODUCT_CONFIG, req.params.id, updates);
-    res.json(updated);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// ── GET /api/products/sync-log — recent sync history ──
-router.get('/sync-log', async (req, res, next) => {
-  try {
-    const logs = await db.list(TABLES.SYNC_LOG, {
-      sort: [{ field: 'Timestamp', direction: 'desc' }],
-      maxRecords: 20,
-    });
-    res.json(logs);
-  } catch (err) {
-    next(err);
-  }
-});
-
 // ── POST /api/products/translate — translate text to 4 languages ──
 // Like a multilingual label printer: feed it one text, get back 4 versions
 // for the Wix storefront (EN/PL/RU/UK).
+// IMPORTANT: must be defined BEFORE /:id route, otherwise Express matches
+// "translate" as a record ID parameter.
 const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
 
 router.post('/translate', async (req, res, next) => {
@@ -124,6 +69,63 @@ Return ONLY valid JSON with this exact structure (no markdown fences):
     res.json(translations);
   } catch (err) {
     console.error('[TRANSLATE] Error:', err.message);
+    next(err);
+  }
+});
+
+// ── GET /api/products — list all Product Config rows ──
+router.get('/', async (req, res, next) => {
+  try {
+    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
+      sort: [
+        { field: 'Product Name', direction: 'asc' },
+        { field: 'Sort Order', direction: 'asc' },
+      ],
+    });
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── GET /api/products/sync-log — recent sync history ──
+router.get('/sync-log', async (req, res, next) => {
+  try {
+    const logs = await db.list(TABLES.SYNC_LOG, {
+      sort: [{ field: 'Timestamp', direction: 'desc' }],
+      maxRecords: 20,
+    });
+    res.json(logs);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── PATCH /api/products/:id — update a Product Config row ──
+// Owner can edit: Price, Lead Time Days, Active, Visible in Wix,
+// Category, Key Flower, Product Type, Min Stems, Available From/To
+const EDITABLE_FIELDS = [
+  'Price', 'Lead Time Days', 'Active', 'Visible in Wix',
+  'Category', 'Key Flower', 'Product Type', 'Min Stems',
+  'Sort Order', 'Available From', 'Available To',
+];
+
+router.patch('/:id', async (req, res, next) => {
+  try {
+    const updates = {};
+    for (const key of Object.keys(req.body)) {
+      if (EDITABLE_FIELDS.includes(key)) {
+        updates[key] = req.body[key];
+      }
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update.' });
+    }
+
+    const updated = await db.update(TABLES.PRODUCT_CONFIG, req.params.id, updates);
+    res.json(updated);
+  } catch (err) {
     next(err);
   }
 });

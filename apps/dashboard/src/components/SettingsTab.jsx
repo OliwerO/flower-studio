@@ -402,7 +402,9 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
     if (i === 'new') {
       setDraft({ name: '', slug: '', from: '', to: '', description: '', translations: {} });
     } else {
-      setDraft({ ...sc.seasonal[i] });
+      // Convert internal MM-DD to display DD-MM for editing
+      const entry = sc.seasonal[i];
+      setDraft({ ...entry, from: toDisplay(entry.from), to: toDisplay(entry.to) });
     }
     setEditingSeasonal(i);
   }
@@ -433,17 +435,24 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
     setTranslating(false);
   }
 
-  // Normalize date input to MM-DD format.
-  // Accepts: MM-DD, DD-MM, DD.MM, MM.DD — auto-detects by checking if first part > 12.
-  function normalizeMMDD(val) {
-    if (!val) return val;
-    const clean = val.replace(/\./g, '-');
+  // Internal storage: MM-DD (for correct string comparison).
+  // Display format: DD-MM (European, what the user expects).
+  function toInternal(ddmm) {
+    if (!ddmm) return ddmm;
+    const clean = ddmm.replace(/\./g, '-');
     const parts = clean.split('-');
     if (parts.length !== 2) return clean;
     const [a, b] = parts.map(p => p.trim().padStart(2, '0'));
-    // If first part > 12, it must be DD-MM → swap to MM-DD
+    // If first part > 12, it's DD-MM → swap to MM-DD
     if (Number(a) > 12) return `${b}-${a}`;
-    return `${a}-${b}`;
+    // Ambiguous (both ≤ 12): assume user entered DD-MM → swap
+    return `${b}-${a}`;
+  }
+  function toDisplay(mmdd) {
+    if (!mmdd) return '';
+    const parts = mmdd.split('-');
+    if (parts.length !== 2) return mmdd;
+    return `${parts[1]}-${parts[0]}`; // MM-DD → DD-MM
   }
 
   function saveSeasonal() {
@@ -452,8 +461,8 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
     const entry = {
       ...draft,
       slug,
-      from: normalizeMMDD(draft.from),
-      to: normalizeMMDD(draft.to),
+      from: toInternal(draft.from),
+      to: toInternal(draft.to),
     };
     const updated = [...(sc.seasonal || [])];
     if (editingSeasonal === 'new') {
@@ -509,7 +518,7 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
               }`}>
                 <span className="flex-1 font-medium text-gray-700">{s.name}</span>
                 {s.description && <span className="text-xs text-gray-400 truncate max-w-[120px]" title={s.description}>{s.description}</span>}
-                <span className="text-xs text-gray-400">{s.from} → {s.to}</span>
+                <span className="text-xs text-gray-400">{toDisplay(s.from)} → {toDisplay(s.to)}</span>
                 {s.translations?.pl?.title && <span className="text-xs text-blue-500 font-medium">{t.sfTranslated}</span>}
                 {isActive && <span className="text-xs text-green-600 font-medium">{t.sfLive}</span>}
                 <button onClick={() => startEdit(i)} className="text-xs text-brand-600">{t.edit}</button>
@@ -535,14 +544,14 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
               <input
                 value={draft.from}
                 onChange={e => setDraft({ ...draft, from: e.target.value })}
-                placeholder="MM-DD"
+                placeholder="DD-MM"
                 className="w-20 text-sm px-2 py-1 border rounded-lg"
               />
               <label className="text-xs text-gray-500">{t.sfTo}:</label>
               <input
                 value={draft.to}
                 onChange={e => setDraft({ ...draft, to: e.target.value })}
-                placeholder="MM-DD"
+                placeholder="DD-MM"
                 className="w-20 text-sm px-2 py-1 border rounded-lg"
               />
             </div>
