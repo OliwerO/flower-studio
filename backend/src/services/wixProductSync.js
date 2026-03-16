@@ -249,6 +249,7 @@ export async function runSync() {
     deactivated: 0,
     pricesSynced: 0,
     stockSynced: 0,
+    visibilitySynced: 0,
     categoriesSynced: 0,
     errors: [],
   };
@@ -423,6 +424,35 @@ export async function runSync() {
           stats.pricesSynced++;
         } catch (err) {
           stats.errors.push(`Price sync ${key}: ${err.message}`);
+        }
+      }
+    }
+
+    // ── Phase 2b: Push visibility changes to Wix ──────
+    // If the owner toggled "Visible in Wix" in the dashboard, push that to the storefront.
+    const wixVisibilityMap = new Map();
+    for (const product of wixProducts) {
+      wixVisibilityMap.set(product.id, product.visible !== false);
+    }
+
+    // Group config rows by product ID to determine product-level visibility
+    // (a product is visible if ANY of its active variants are marked visible)
+    const productVisibility = new Map();
+    for (const row of configRows) {
+      const pid = row['Wix Product ID'];
+      if (!pid) continue;
+      const current = productVisibility.get(pid) || false;
+      productVisibility.set(pid, current || (row['Visible in Wix'] !== false));
+    }
+
+    for (const [pid, shouldBeVisible] of productVisibility) {
+      const currentlyVisible = wixVisibilityMap.get(pid);
+      if (currentlyVisible !== undefined && currentlyVisible !== shouldBeVisible) {
+        try {
+          await updateWixProductVisibility(pid, shouldBeVisible);
+          stats.visibilitySynced++;
+        } catch (err) {
+          stats.errors.push(`Visibility ${pid}: ${err.message}`);
         }
       }
     }

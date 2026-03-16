@@ -77,6 +77,8 @@ async function loadConfig() {
         const parsed = JSON.parse(stored);
         // Deep merge: defaults + stored values (stored wins)
         config = deepMerge(DEFAULTS, parsed);
+        // Migrate: normalize seasonal dates to MM-DD format
+        migrateSeasonalDates();
       }
       console.log('[SETTINGS] Config loaded from Airtable');
     } else {
@@ -131,6 +133,41 @@ function deepMerge(target, source) {
     }
   }
   return result;
+}
+
+/**
+ * Normalize seasonal dates to MM-DD format.
+ * Handles DD-MM, DD.MM, MM.DD — auto-detects by checking if first part > 12.
+ */
+function normalizeMMDD(val) {
+  if (!val) return val;
+  const clean = val.replace(/\./g, '-');
+  const parts = clean.split('-');
+  if (parts.length !== 2) return clean;
+  const [a, b] = parts.map(p => p.trim().padStart(2, '0'));
+  if (Number(a) > 12) return `${b}-${a}`;
+  return `${a}-${b}`;
+}
+
+function migrateSeasonalDates() {
+  const sc = config.storefrontCategories;
+  if (!sc?.seasonal) return;
+  let changed = false;
+  for (const entry of sc.seasonal) {
+    const newFrom = normalizeMMDD(entry.from);
+    const newTo = normalizeMMDD(entry.to);
+    if (newFrom !== entry.from || newTo !== entry.to) {
+      console.log(`[SETTINGS] Migrating dates for "${entry.name}": ${entry.from}→${newFrom}, ${entry.to}→${newTo}`);
+      entry.from = newFrom;
+      entry.to = newTo;
+      changed = true;
+    }
+  }
+  if (changed) {
+    saveConfig().catch(err =>
+      console.error('[SETTINGS] Date migration save failed:', err.message)
+    );
+  }
 }
 
 // Load config on startup

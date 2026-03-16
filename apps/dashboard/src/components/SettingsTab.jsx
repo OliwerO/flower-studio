@@ -433,10 +433,28 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
     setTranslating(false);
   }
 
+  // Normalize date input to MM-DD format.
+  // Accepts: MM-DD, DD-MM, DD.MM, MM.DD — auto-detects by checking if first part > 12.
+  function normalizeMMDD(val) {
+    if (!val) return val;
+    const clean = val.replace(/\./g, '-');
+    const parts = clean.split('-');
+    if (parts.length !== 2) return clean;
+    const [a, b] = parts.map(p => p.trim().padStart(2, '0'));
+    // If first part > 12, it must be DD-MM → swap to MM-DD
+    if (Number(a) > 12) return `${b}-${a}`;
+    return `${a}-${b}`;
+  }
+
   function saveSeasonal() {
     if (!draft.name || !draft.from || !draft.to) return;
     const slug = draft.slug || draft.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-    const entry = { ...draft, slug };
+    const entry = {
+      ...draft,
+      slug,
+      from: normalizeMMDD(draft.from),
+      to: normalizeMMDD(draft.to),
+    };
     const updated = [...(sc.seasonal || [])];
     if (editingSeasonal === 'new') {
       updated.push(entry);
