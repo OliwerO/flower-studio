@@ -8,6 +8,7 @@ import { authorize } from '../middleware/auth.js';
 import { runSync } from '../services/wixProductSync.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
 
@@ -84,6 +85,39 @@ router.get('/sync-log', async (req, res, next) => {
       maxRecords: 20,
     });
     res.json(logs);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── POST /api/products/translate — translate text to 4 languages ──
+// Like a multilingual label printer: feed it one text, get back 4 versions
+// for the Wix storefront (EN/PL/RU/UK).
+router.post('/translate', async (req, res, next) => {
+  try {
+    const { text, type } = req.body;
+    if (!text) return res.status(400).json({ error: 'text is required' });
+
+    const anthropic = new Anthropic();
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      messages: [{
+        role: 'user',
+        content: `Translate the following flower shop ${type || 'text'} into 4 languages.
+The store is a flower studio in Krakow, Poland. Keep the tone warm and professional.
+For descriptions, keep them concise (1-2 sentences max).
+
+Text to translate: "${text}"
+
+Return ONLY valid JSON with this exact structure (no markdown fences):
+{"en": "English translation", "pl": "Polish translation", "ru": "Russian translation", "uk": "Ukrainian translation"}`,
+      }],
+    });
+
+    const raw = response.content[0].text.trim();
+    const translations = JSON.parse(raw);
+    res.json(translations);
   } catch (err) {
     next(err);
   }

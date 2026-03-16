@@ -28,14 +28,15 @@ const DEFAULTS = {
   storefrontCategories: {
     permanent: ['All Bouquets', 'Bestsellers'],
     seasonal: [
-      { name: "Valentine's Day", slug: 'valentines-day', from: '01-25', to: '02-15' },
-      { name: "Women's Day",     slug: 'womens-day',     from: '02-25', to: '03-10' },
-      { name: "Mother's Day",    slug: 'mothers-day',    from: '04-20', to: '05-26' },
-      { name: 'Easter',          slug: 'easter',         from: '03-28', to: '04-15' },
-      { name: 'Christmas',       slug: 'christmas',      from: '12-01', to: '12-26' },
+      { name: "Valentine's Day", slug: 'valentines-day', from: '01-25', to: '02-15', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+      { name: "Women's Day",     slug: 'womens-day',     from: '02-25', to: '03-10', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+      { name: "Mother's Day",    slug: 'mothers-day',    from: '04-20', to: '05-26', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+      { name: 'Easter',          slug: 'easter',         from: '03-28', to: '04-15', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+      { name: 'Christmas',       slug: 'christmas',      from: '12-01', to: '12-26', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
     ],
     autoSchedule: true,
     manualOverride: null,
+    wixCategoryMap: {},
   },
   deliveryZones: [
     { id: 1, name: 'Central Krakow', fee: 35, postcodes: ['30-0', '30-1', '31-0'] },
@@ -248,6 +249,13 @@ export function getConfig(key) {
   return config[key];
 }
 
+export function updateConfig(key, value) {
+  config[key] = value;
+  saveConfig().catch(err =>
+    console.error('[SETTINGS] Background save failed:', err.message)
+  );
+}
+
 /**
  * Generate next App Order ID in YYYYMM-NNN format.
  * Counter stored in APP_CONFIG under key 'orderCounters'.
@@ -306,7 +314,11 @@ export function getActiveSeasonalCategory() {
 
   if (sc.manualOverride) {
     const forced = sc.seasonal.find(s => s.slug === sc.manualOverride);
-    if (forced) return { name: forced.name, slug: forced.slug };
+    if (forced) return {
+      name: forced.name, slug: forced.slug,
+      description: forced.description || '',
+      translations: forced.translations || {},
+    };
   }
 
   if (sc.autoSchedule) {
@@ -314,7 +326,11 @@ export function getActiveSeasonalCategory() {
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
     for (const s of sc.seasonal) {
       if (mmdd >= s.from && mmdd <= s.to) {
-        return { name: s.name, slug: s.slug };
+        return {
+          name: s.name, slug: s.slug,
+          description: s.description || '',
+          translations: s.translations || {},
+        };
       }
     }
   }

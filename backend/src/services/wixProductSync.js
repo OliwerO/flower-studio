@@ -9,6 +9,7 @@
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sendAlert } from './telegram.js';
+import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -130,6 +131,107 @@ async function updateWixProductVisibility(productId, visible) {
   }
 }
 
+// ── Wix Category API helpers ──────────────────────────────
+// Category management — like reassigning products between
+// different aisles (departments) in a retail store.
+
+/**
+ * Fetch all Wix Store collections (categories).
+ * Returns array of { id, name, slug }.
+ */
+async function fetchWixCategories() {
+  const res = await fetch(`${WIX_API_URL}/stores/v1/collections/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { paging: { limit: 100 } } }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix categories fetch failed ${res.status}: ${text}`);
+  }
+
+  const data = await res.json();
+  return (data.collections || []).map(c => ({
+    id: c.id,
+    name: c.name,
+    slug: c.slug || '',
+    description: c.description || '',
+  }));
+}
+
+/**
+ * Update a Wix collection's name and description.
+ */
+async function updateWixCategory(id, { name, description }) {
+  const updates = {};
+  if (name) updates.name = name;
+  if (description !== undefined) updates.description = description;
+
+  const res = await fetch(`${WIX_API_URL}/stores/v1/collections/${id}`, {
+    method: 'PATCH',
+    headers: wixHeaders(),
+    body: JSON.stringify({ collection: updates }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix category update failed for ${id}: ${text}`);
+  }
+}
+
+/**
+ * Assign products to a Wix collection.
+ * Replaces all existing products in the collection.
+ */
+async function setWixCategoryProducts(collectionId, productIds) {
+  // First remove all existing products from the collection
+  try {
+    const existing = await fetch(`${WIX_API_URL}/stores/v1/products/query`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({
+        query: {
+          filter: JSON.stringify({ collections: { $hasSome: [collectionId] } }),
+          paging: { limit: 100 },
+        },
+      }),
+    });
+
+    if (existing.ok) {
+      const data = await existing.json();
+      const existingIds = (data.products || []).map(p => p.id);
+      // Remove products no longer in the set
+      const toRemove = existingIds.filter(id => !productIds.includes(id));
+      for (const pid of toRemove) {
+        await fetch(`${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds/${pid}`, {
+          method: 'DELETE',
+          headers: wixHeaders(),
+        });
+      }
+    }
+  } catch (err) {
+    console.warn(`[SYNC] Could not clean old category products: ${err.message}`);
+  }
+
+  // Add products to collection
+  if (productIds.length > 0) {
+    const res = await fetch(
+      `${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds`,
+      {
+        method: 'POST',
+        headers: wixHeaders(),
+        body: JSON.stringify({ productIds }),
+      }
+    );
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Wix category product assignment failed: ${text}`);
+    }
+  }
+}
+
 // ── Main sync job ──────────────────────────────────────────
 
 /**
@@ -147,6 +249,7 @@ export async function runSync() {
     deactivated: 0,
     pricesSynced: 0,
     stockSynced: 0,
+    categoriesSynced: 0,
     errors: [],
   };
 
@@ -335,6 +438,162 @@ export async function runSync() {
       }
     }
 
+    // ── Phase 4: Wix category sync ────────────────────────
+    // Like reorganizing store aisles: move products to the right
+    // department shelves and update the seasonal display.
+    try {
+      console.log('[SYNC] Phase 4: syncing categories...');
+      const wixCategories = await fetchWixCategories();
+      const catMap = {};
+      for (const c of wixCategories) {
+        catMap[c.slug] = c.id;
+      }
+
+      // Store the discovered mapping in config + backfill descriptions from Wix
+      const sc = { ...(getConfig('storefrontCategories') || {}) };
+      sc.wixCategoryMap = catMap;
+
+      // Backfill: if our seasonal entries have empty descriptions,
+      // import what's currently in Wix so the owner doesn't lose existing content.
+      // Like taking inventory of what's already on the shelf before reorganizing.
+      const wixSeasonalCat = wixCategories.find(c => c.slug === 'seasonal');
+      if (wixSeasonalCat) {
+        const seasonal = getActiveSeasonalCategory();
+        if (seasonal) {
+          const idx = (sc.seasonal || []).findIndex(s => s.slug === seasonal.slug);
+          if (idx >= 0) {
+            const entry = sc.seasonal[idx];
+            // Only backfill if our description is empty and Wix has one
+            if (!entry.description && wixSeasonalCat.description) {
+              entry.description = wixSeasonalCat.description;
+              console.log(`[SYNC] Imported description from Wix for "${seasonal.name}"`);
+            }
+            // Backfill PL translation from Wix name/description if empty
+            if (!entry.translations) entry.translations = {};
+            if (!entry.translations.pl) entry.translations.pl = {};
+            if (!entry.translations.pl.title && wixSeasonalCat.name) {
+              entry.translations.pl.title = wixSeasonalCat.name;
+            }
+            if (!entry.translations.pl.description && wixSeasonalCat.description) {
+              entry.translations.pl.description = wixSeasonalCat.description;
+            }
+          }
+        }
+      }
+
+      // Persist updated config (wixCategoryMap + any backfilled descriptions)
+      updateConfig('storefrontCategories', sc);
+
+      // Re-fetch all active product config rows with category info
+      const allConfigRows = await db.list(TABLES.PRODUCT_CONFIG, {
+        filterByFormula: '{Active} = TRUE()',
+        fields: [
+          'Wix Product ID', 'Category', 'Lead Time Days', 'Key Flower',
+          'Min Stems', 'Product Type',
+        ],
+      });
+
+      // 4b. Sync permanent categories (All Bouquets, Bestsellers)
+      const permanentCats = sc.permanent || [];
+      for (const catName of permanentCats) {
+        const slug = catName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+        const wixCatId = catMap[slug];
+        if (!wixCatId) continue;
+
+        const productIds = [...new Set(
+          allConfigRows
+            .filter(r => parseCategoryField(r['Category']).includes(catName))
+            .map(r => r['Wix Product ID'])
+            .filter(Boolean)
+        )];
+
+        // Only reassign if products are actually tagged — don't wipe existing Wix category
+        if (productIds.length === 0) {
+          console.log(`[SYNC] Skipping ${catName}: no products tagged`);
+          continue;
+        }
+        try {
+          await setWixCategoryProducts(wixCatId, productIds);
+          stats.categoriesSynced++;
+        } catch (err) {
+          stats.errors.push(`Category ${catName}: ${err.message}`);
+        }
+      }
+
+      // 4c. Sync seasonal category
+      const seasonal = getActiveSeasonalCategory();
+      const seasonalWixId = catMap['seasonal'];
+      if (seasonal && seasonalWixId) {
+        // Collect products tagged with the active seasonal category name
+        const seasonalProductIds = [...new Set(
+          allConfigRows
+            .filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
+            .map(r => r['Wix Product ID'])
+            .filter(Boolean)
+        )];
+
+        try {
+          // Only reassign products if some are tagged
+          if (seasonalProductIds.length > 0) {
+            await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
+          }
+          // Only update name/description if translations have been filled in
+          const plTitle = seasonal.translations?.pl?.title;
+          const plDesc = seasonal.translations?.pl?.description;
+          if (plTitle || plDesc) {
+            await updateWixCategory(seasonalWixId, {
+              name: plTitle || seasonal.name,
+              description: plDesc || '',
+            });
+          }
+          stats.categoriesSynced++;
+        } catch (err) {
+          stats.errors.push(`Seasonal sync: ${err.message}`);
+        }
+      }
+
+      // 4d. Sync "Available Today" — lead time 0 + in stock
+      const availTodayId = catMap['available-today'];
+      if (availTodayId) {
+        // Load stock for inStock check
+        const stockCheck = await db.list(TABLES.STOCK, {
+          filterByFormula: '{Active} = TRUE()',
+          fields: ['Display Name', 'Current Quantity'],
+        });
+        const stockLookup = Object.fromEntries(
+          stockCheck.map(s => [s['Display Name'], Number(s['Current Quantity'] || 0)])
+        );
+        const stockByRecId = Object.fromEntries(
+          stockCheck.map(s => [s.id, Number(s['Current Quantity'] || 0)])
+        );
+
+        const availProductIds = [...new Set(
+          allConfigRows
+            .filter(r => {
+              if (Number(r['Lead Time Days'] ?? 1) !== 0) return false;
+              const kf = r['Key Flower'];
+              let qty = 0;
+              if (Array.isArray(kf) && kf.length > 0) qty = stockByRecId[kf[0]] || 0;
+              else if (typeof kf === 'string') qty = stockLookup[kf] || 0;
+              const minStems = Number(r['Min Stems'] || 0);
+              return minStems > 0 ? qty >= minStems : qty > 0;
+            })
+            .map(r => r['Wix Product ID'])
+            .filter(Boolean)
+        )];
+
+        try {
+          await setWixCategoryProducts(availTodayId, availProductIds);
+          stats.categoriesSynced++;
+        } catch (err) {
+          stats.errors.push(`Available Today: ${err.message}`);
+        }
+      }
+    } catch (err) {
+      stats.errors.push(`Category phase: ${err.message}`);
+      console.error('[SYNC] Category sync error:', err);
+    }
+
     console.log('[SYNC] Complete:', JSON.stringify(stats));
   } catch (err) {
     stats.errors.push(`Fatal: ${err.message}`);
@@ -393,4 +652,11 @@ function detectProductType(variants) {
 function parseMinStems(name) {
   const n = parseInt(name, 10);
   return isNaN(n) ? 0 : n;
+}
+
+/** Parse Airtable multi-select Category field (array or comma-string) */
+function parseCategoryField(val) {
+  if (!val) return [];
+  if (Array.isArray(val)) return val;
+  return val.split(',').map(s => s.trim()).filter(Boolean);
 }

@@ -394,15 +394,43 @@ function StockLossSection() {
 function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
   const sc = cfg.storefrontCategories || {};
   const [editingSeasonal, setEditingSeasonal] = useState(null); // index or 'new'
-  const [draft, setDraft] = useState({ name: '', slug: '', from: '', to: '' });
+  const [draft, setDraft] = useState({ name: '', slug: '', from: '', to: '', description: '', translations: {} });
+  const [translating, setTranslating] = useState(false);
+  const [transLang, setTransLang] = useState('en'); // active preview tab
 
   function startEdit(i) {
     if (i === 'new') {
-      setDraft({ name: '', slug: '', from: '', to: '' });
+      setDraft({ name: '', slug: '', from: '', to: '', description: '', translations: {} });
     } else {
       setDraft({ ...sc.seasonal[i] });
     }
     setEditingSeasonal(i);
+  }
+
+  async function translateDraft() {
+    if (!draft.name && !draft.description) return;
+    setTranslating(true);
+    try {
+      const trans = { ...(draft.translations || {}) };
+      // Translate title
+      if (draft.name) {
+        const titleRes = await client.post('/products/translate', { text: draft.name, type: 'title' });
+        for (const lang of ['en', 'pl', 'ru', 'uk']) {
+          trans[lang] = { ...(trans[lang] || {}), title: titleRes.data[lang] || '' };
+        }
+      }
+      // Translate description
+      if (draft.description) {
+        const descRes = await client.post('/products/translate', { text: draft.description, type: 'description' });
+        for (const lang of ['en', 'pl', 'ru', 'uk']) {
+          trans[lang] = { ...(trans[lang] || {}), description: descRes.data[lang] || '' };
+        }
+      }
+      setDraft(d => ({ ...d, translations: trans }));
+    } catch (err) {
+      console.error('Translation failed:', err);
+    }
+    setTranslating(false);
   }
 
   function saveSeasonal() {
@@ -460,7 +488,9 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
                 isActive ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'
               }`}>
                 <span className="flex-1 font-medium text-gray-700">{s.name}</span>
+                {s.description && <span className="text-xs text-gray-400 truncate max-w-[120px]" title={s.description}>{s.description}</span>}
                 <span className="text-xs text-gray-400">{s.from} → {s.to}</span>
+                {s.translations?.pl?.title && <span className="text-xs text-blue-500 font-medium">{t.sfTranslated}</span>}
                 {isActive && <span className="text-xs text-green-600 font-medium">{t.sfLive}</span>}
                 <button onClick={() => startEdit(i)} className="text-xs text-brand-600">{t.edit}</button>
                 <button onClick={() => removeSeasonal(i)} className="text-xs text-red-400 hover:text-red-600">✕</button>
@@ -495,9 +525,70 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
                 placeholder="MM-DD"
                 className="w-20 text-sm px-2 py-1 border rounded-lg"
               />
+            </div>
+            {/* Description textarea */}
+            <textarea
+              value={draft.description || ''}
+              onChange={e => setDraft({ ...draft, description: e.target.value })}
+              placeholder={t.sfDescriptionHint}
+              rows={2}
+              className="w-full text-sm px-2 py-1 border rounded-lg resize-none"
+            />
+            {/* Translate button */}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={translateDraft}
+                disabled={translating || (!draft.name && !draft.description)}
+                className="text-xs text-white bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 px-3 py-1 rounded-lg"
+              >
+                {translating ? t.sfTranslating : t.sfTranslate}
+              </button>
               <button onClick={saveSeasonal} className="text-xs text-white bg-brand-600 px-3 py-1 rounded-lg">{t.save}</button>
               <button onClick={() => setEditingSeasonal(null)} className="text-xs text-gray-400">✕</button>
             </div>
+            {/* Translation preview tabs */}
+            {draft.translations && Object.keys(draft.translations).length > 0 && (
+              <div className="border border-gray-100 rounded-lg overflow-hidden">
+                <div className="flex border-b border-gray-100">
+                  {['en', 'pl', 'ru', 'uk'].map(lang => (
+                    <button
+                      key={lang}
+                      onClick={() => setTransLang(lang)}
+                      className={`flex-1 text-xs py-1.5 font-medium ${
+                        transLang === lang ? 'bg-brand-50 text-brand-700 border-b-2 border-brand-600' : 'text-gray-400'
+                      }`}
+                    >{lang.toUpperCase()}</button>
+                  ))}
+                </div>
+                <div className="p-2 space-y-1">
+                  <input
+                    value={draft.translations[transLang]?.title || ''}
+                    onChange={e => setDraft(d => ({
+                      ...d,
+                      translations: {
+                        ...d.translations,
+                        [transLang]: { ...(d.translations[transLang] || {}), title: e.target.value },
+                      },
+                    }))}
+                    placeholder="Title"
+                    className="w-full text-xs px-2 py-1 border rounded"
+                  />
+                  <textarea
+                    value={draft.translations[transLang]?.description || ''}
+                    onChange={e => setDraft(d => ({
+                      ...d,
+                      translations: {
+                        ...d.translations,
+                        [transLang]: { ...(d.translations[transLang] || {}), description: e.target.value },
+                      },
+                    }))}
+                    placeholder="Description"
+                    rows={2}
+                    className="w-full text-xs px-2 py-1 border rounded resize-none"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -654,7 +745,7 @@ function DeliveryZonesSection({ config: cfg, onUpdate }) {
         label={t.dzTimeSlots}
         items={cfg.deliveryTimeSlots || []}
         hint={t.dzTimeSlotsHint}
-        onSave={v => onUpdate({ deliveryTimeSlots: v })}
+        onSave={v => onUpdate({ deliveryTimeSlots: [...v].sort() })}
       />
     </Section>
   );

@@ -188,7 +188,14 @@ router.get('/categories', (_req, res) => {
 
   res.json({
     permanent,
-    seasonal: seasonal || { active: null, slug: null },
+    seasonal: seasonal
+      ? {
+          name: seasonal.name,
+          slug: seasonal.slug,
+          description: seasonal.description || '',
+          translations: seasonal.translations || {},
+        }
+      : { active: null, slug: null },
     auto,
     all,
     allCategories,

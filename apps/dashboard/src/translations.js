@@ -505,6 +505,12 @@ const en = {
   sfManualOverride:         'Manual override',
   sfManualOverrideHint:     'Force a specific seasonal category regardless of schedule',
   sfNone:                   'None (use auto)',
+  sfDescription:            'Description',
+  sfDescriptionHint:        'Category description shown on the storefront',
+  sfTranslate:              'Translate',
+  sfTranslating:            'Translating...',
+  sfTranslated:             'Translated',
+  sfTranslations:           'Translations',
 
   // Delivery zones
   dzTitle:                  'Delivery zones',
@@ -1053,6 +1059,12 @@ const ru = {
   sfManualOverride:         'Ручное переключение',
   sfManualOverrideHint:     'Принудительно выбрать сезонную категорию вне расписания',
   sfNone:                   'Нет (авто)',
+  sfDescription:            'Описание',
+  sfDescriptionHint:        'Описание категории на витрине',
+  sfTranslate:              'Перевести',
+  sfTranslating:            'Переводим...',
+  sfTranslated:             'Переведено',
+  sfTranslations:           'Переводы',
 
   // Delivery zones
   dzTitle:                  'Зоны доставки',
