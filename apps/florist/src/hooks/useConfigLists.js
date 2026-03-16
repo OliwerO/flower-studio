@@ -15,6 +15,7 @@ const DEFAULTS = {
   timeSlots:      ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
   drivers:        [],
   targetMarkup:   2.2,
+  floristNames:   ['Anya', 'Daria'],
 };
 
 let cached = null;
@@ -35,6 +36,7 @@ export default function useConfigLists() {
         timeSlots: settingsRes.data.config?.deliveryTimeSlots || DEFAULTS.timeSlots,
         drivers: settingsRes.data.drivers || DEFAULTS.drivers,
         targetMarkup: settingsRes.data.config?.targetMarkup || DEFAULTS.targetMarkup,
+        floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
       };
       setLists(cached);
     });

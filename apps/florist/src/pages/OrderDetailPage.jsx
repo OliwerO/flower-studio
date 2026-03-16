@@ -123,7 +123,7 @@ export default function OrderDetailPage() {
       </header>
 
       {/* Content */}
-      <div className="px-4 py-4 max-w-2xl mx-auto flex flex-col gap-5 pb-20">
+      <div className="px-4 py-4 max-w-2xl mx-auto flex flex-col gap-5 pb-24">
 
         {loading ? (
           <div className="flex justify-center py-20">

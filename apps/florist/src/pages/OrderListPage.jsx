@@ -2,12 +2,10 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
-import { useTheme } from '../context/ThemeContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
-import HelpPanel from '../components/HelpPanel.jsx';
 import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 
@@ -56,8 +54,7 @@ function todayISO() {
 
 export default function OrderListPage() {
   const navigate         = useNavigate();
-  const { logout, role } = useAuth();
-  const { dark, toggle: toggleDark } = useTheme();
+  const { role } = useAuth();
   const isOwner = role === 'owner';
   const [orders, setOrders]         = useState([]);
   const [loading, setLoading]       = useState(true);
@@ -65,7 +62,7 @@ export default function OrderListPage() {
   const [status, setStatus]         = useState('');
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
-  const [showHelp, setShowHelp]     = useState(false);
+
 
   // Stock evaluation pending count (florist) / shopping POs count (owner)
   const [evalCount, setEvalCount] = useState(0);
@@ -207,44 +204,7 @@ export default function OrderListPage() {
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <img src="/logo.png" alt="Blossom" className="h-7" />
           <div className="flex items-center gap-2">
-            <button
-              onClick={toggleDark}
-              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 dark:bg-dark-elevated text-ios-secondary
-                         hover:bg-gray-200 active-scale flex items-center justify-center"
-              title={dark ? 'Light mode' : 'Dark mode'}
-            >{dark ? '☀️' : '🌙'}</button>
-            <button
-              onClick={() => setShowHelp(true)}
-              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 dark:bg-dark-elevated text-ios-secondary
-                         hover:bg-gray-200 active-scale flex items-center justify-center"
-            >?</button>
             <LangToggle />
-            {isOwner && (
-              <button
-                onClick={() => navigate('/shopping-support')}
-                className="text-brand-600 text-sm font-medium w-8 h-8 rounded-full bg-brand-50 active:bg-brand-100 flex items-center justify-center"
-                title={t.shopping.title}
-              >🛒</button>
-            )}
-            {isOwner && (
-              <button
-                onClick={() => navigate('/day-summary')}
-                className="text-brand-600 text-sm font-medium w-8 h-8 rounded-full bg-brand-50 active:bg-brand-100 flex items-center justify-center"
-                title={t.owner.daySummary}
-              >📊</button>
-            )}
-            <button
-              onClick={() => navigate('/stock')}
-              className="text-brand-600 text-sm font-medium px-3 py-1.5 rounded-full bg-brand-50 active:bg-brand-100"
-            >
-              {t.navStock}
-            </button>
-            <button
-              onClick={logout}
-              className="text-ios-tertiary text-sm px-2 py-1.5"
-            >
-              {t.logout}
-            </button>
           </div>
         </div>
       </header>
@@ -425,7 +385,7 @@ export default function OrderListPage() {
       {fabOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setFabOpen(false)} />
       )}
-      <div className="fixed bottom-8 right-5 z-50 flex flex-col items-end gap-3">
+      <div className="fixed bottom-20 right-5 z-50 flex flex-col items-end gap-3">
         {fabOpen && (
           <>
             {/* Paste import option */}
@@ -468,8 +428,6 @@ export default function OrderListPage() {
         />
       )}
 
-      {/* Help panel */}
-      {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
   );
 }

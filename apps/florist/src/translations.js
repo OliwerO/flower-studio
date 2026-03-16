@@ -319,6 +319,27 @@ const en = {
   inStockOnly:        'In stock',
   costPrice:          'Cost price',
   sellPrice:          'Sell price',
+
+  // Bottom nav tabs
+  tabOrders:          'Orders',
+  tabStock:           'Stock',
+  tabHours:           'Hours',
+  tabShopping:        'Shopping',
+  tabMore:            'More',
+
+  // Florist hours
+  floristHours:       'Florist Hours',
+  logHours:           'Log hours',
+  selectName:         'Your name',
+  hoursWorked:        'Hours worked',
+  deliveryCount:      'Deliveries',
+  monthlySummary:     'Monthly summary',
+  totalHours:         'Total hours',
+  totalDays:          'Days worked',
+  totalPay:           'Total pay',
+  noEntries:          'No entries this month',
+  daySummary:         'Day summary',
+  help:               'Help',
 };
 
 const ru = {
@@ -637,6 +658,27 @@ const ru = {
   inStockOnly:        'В наличии',
   costPrice:          'Себестоимость',
   sellPrice:          'Цена продажи',
+
+  // Bottom nav tabs
+  tabOrders:          'Заказы',
+  tabStock:           'Склад',
+  tabHours:           'Часы',
+  tabShopping:        'Закупки',
+  tabMore:            'Ещё',
+
+  // Florist hours
+  floristHours:       'Часы флористов',
+  logHours:           'Записать часы',
+  selectName:         'Ваше имя',
+  hoursWorked:        'Часов отработано',
+  deliveryCount:      'Доставки',
+  monthlySummary:     'Итого за месяц',
+  totalHours:         'Всего часов',
+  totalDays:          'Дней отработано',
+  totalPay:           'Итого к оплате',
+  noEntries:          'Нет записей за этот месяц',
+  daySummary:         'Итог дня',
+  help:               'Помощь',
 };
 
 // ── Proxy-based dynamic translation ──

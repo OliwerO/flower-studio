@@ -23,6 +23,7 @@ const DEFAULTS = {
   orderSources:       ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
   driverCostPerDelivery: 35,
   driverCostPerPORun: 45,
+  floristNames: ['Anya', 'Daria'],
   extraDrivers: [],
   storefrontCategories: {
     permanent: ['All Bouquets', 'Bestsellers'],
@@ -232,6 +233,7 @@ router.get('/lists', authorize('orders'), (req, res) => {
     categories:     config.stockCategories,
     paymentMethods: config.paymentMethods,
     orderSources:   config.orderSources,
+    floristNames:   config.floristNames,
   });
 });
 

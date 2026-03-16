@@ -12,6 +12,7 @@ const DEFAULTS = {
   paymentMethods: ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
   orderSources:   ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
   timeSlots:      ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+  floristNames:   ['Anya', 'Daria'],
 };
 
 let cached = null;
@@ -29,6 +30,7 @@ export default function useConfigLists() {
         ...DEFAULTS,
         ...listsRes.data,
         timeSlots: settingsRes.data.config?.deliveryTimeSlots || DEFAULTS.timeSlots,
+        floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
       };
       setLists(cached);
     });

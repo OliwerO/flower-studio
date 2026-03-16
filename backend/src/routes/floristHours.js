@@ -8,7 +8,8 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
-router.use(authorize('admin'));
+// GET + POST open to both owner and florist (orders resource covers both roles).
+// PATCH + DELETE restricted to owner (admin resource) — see per-route guards below.
 
 const PATCH_ALLOWED = [
   'Name', 'Date', 'Hours', 'Hourly Rate', 'Bonus', 'Deduction', 'Notes', 'Delivery Count',
@@ -23,7 +24,7 @@ function pickAllowed(body, allowedFields) {
 }
 
 // GET /api/florist-hours?month=2026-03&name=Anya
-router.get('/', async (req, res, next) => {
+router.get('/', authorize('orders'), async (req, res, next) => {
   try {
     const { month, name } = req.query;
     const filters = [];
@@ -57,7 +58,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // POST /api/florist-hours — log a new entry
-router.post('/', async (req, res, next) => {
+router.post('/', authorize('orders'), async (req, res, next) => {
   try {
     const { name, date, hours, hourlyRate, bonus, deduction, notes, deliveryCount } = req.body;
 
@@ -82,8 +83,8 @@ router.post('/', async (req, res, next) => {
   }
 });
 
-// PATCH /api/florist-hours/:id — edit an entry
-router.patch('/:id', async (req, res, next) => {
+// PATCH /api/florist-hours/:id — edit an entry (owner only)
+router.patch('/:id', authorize('admin'), async (req, res, next) => {
   try {
     const safeFields = pickAllowed(req.body, PATCH_ALLOWED);
     // Convert numeric fields
@@ -100,8 +101,8 @@ router.patch('/:id', async (req, res, next) => {
   }
 });
 
-// DELETE /api/florist-hours/:id — remove an entry
-router.delete('/:id', async (req, res, next) => {
+// DELETE /api/florist-hours/:id — remove an entry (owner only)
+router.delete('/:id', authorize('admin'), async (req, res, next) => {
   try {
     await db.deleteRecord(TABLES.FLORIST_HOURS, req.params.id);
     res.json({ deleted: true });
@@ -112,7 +113,7 @@ router.delete('/:id', async (req, res, next) => {
 
 // GET /api/florist-hours/summary?month=2026-03
 // Payroll summary: per florist totals for the month
-router.get('/summary', async (req, res, next) => {
+router.get('/summary', authorize('orders'), async (req, res, next) => {
   try {
     const { month } = req.query;
     if (!month) return res.status(400).json({ error: 'month param required (YYYY-MM)' });

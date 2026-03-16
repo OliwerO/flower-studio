@@ -18,7 +18,9 @@ import StockPanelPage       from './pages/StockPanelPage.jsx';
 import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
 import DaySummaryPage          from './pages/DaySummaryPage.jsx';
 import ShoppingSupportPage     from './pages/ShoppingSupportPage.jsx';
+import FloristHoursPage        from './pages/FloristHoursPage.jsx';
 import Toast                   from './components/Toast.jsx';
+import BottomNav               from './components/BottomNav.jsx';
 
 // PrivateRoute — like a badge-reader gate. Redirects to /login if no PIN in context.
 function PrivateRoute({ children }) {
@@ -43,6 +45,17 @@ function FloristRoute({ children }) {
   return children;
 }
 
+// Layout — wraps authenticated pages with the bottom tab bar.
+// Like mounting the factory floor signage above every workstation.
+function Layout({ children }) {
+  return (
+    <>
+      {children}
+      <BottomNav />
+    </>
+  );
+}
+
 export default function App() {
   const { pin } = useAuth();
 
@@ -65,31 +78,35 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
 
         <Route path="/orders" element={
-          <PrivateRoute><OrderListPage /></PrivateRoute>
+          <PrivateRoute><Layout><OrderListPage /></Layout></PrivateRoute>
         } />
 
         <Route path="/orders/new" element={
-          <PrivateRoute><NewOrderPage /></PrivateRoute>
+          <PrivateRoute><Layout><NewOrderPage /></Layout></PrivateRoute>
         } />
 
         <Route path="/orders/:id" element={
-          <PrivateRoute><OrderDetailPage /></PrivateRoute>
+          <PrivateRoute><Layout><OrderDetailPage /></Layout></PrivateRoute>
         } />
 
         <Route path="/stock" element={
-          <PrivateRoute><StockPanelPage /></PrivateRoute>
+          <PrivateRoute><Layout><StockPanelPage /></Layout></PrivateRoute>
         } />
 
         <Route path="/stock-evaluation" element={
-          <FloristRoute><StockEvaluationPage /></FloristRoute>
+          <FloristRoute><Layout><StockEvaluationPage /></Layout></FloristRoute>
         } />
 
         <Route path="/shopping-support" element={
-          <OwnerRoute><ShoppingSupportPage /></OwnerRoute>
+          <OwnerRoute><Layout><ShoppingSupportPage /></Layout></OwnerRoute>
         } />
 
         <Route path="/day-summary" element={
-          <OwnerRoute><DaySummaryPage /></OwnerRoute>
+          <OwnerRoute><Layout><DaySummaryPage /></Layout></OwnerRoute>
+        } />
+
+        <Route path="/hours" element={
+          <PrivateRoute><Layout><FloristHoursPage /></Layout></PrivateRoute>
         } />
 
         {/* Default: send logged-in users to orders, others to login */}
