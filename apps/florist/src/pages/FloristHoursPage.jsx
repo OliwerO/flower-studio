@@ -30,7 +30,6 @@ function FloristHoursForm() {
   const [date, setDate] = useState(todayISO());
   const [hours, setHours] = useState('');
   const [notes, setNotes] = useState('');
-  const [deliveries, setDeliveries] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [entries, setEntries] = useState([]);
   const [loadingEntries, setLoadingEntries] = useState(false);
@@ -61,12 +60,10 @@ function FloristHoursForm() {
         date,
         hours: Number(hours),
         notes: notes || '',
-        deliveryCount: deliveries ? Number(deliveries) : 0,
       });
       showToast(t.success, 'success');
       setHours('');
       setNotes('');
-      setDeliveries('');
       fetchEntries();
     } catch {
       showToast(t.error, 'error');
@@ -78,7 +75,7 @@ function FloristHoursForm() {
   return (
     <div className="space-y-5">
       {/* Log form */}
-      <form onSubmit={handleSubmit} className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-4">
+      <form onSubmit={handleSubmit} className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-4 overflow-visible">
         <h2 className="text-sm font-bold text-ios-label dark:text-dark-label uppercase tracking-wide">{t.logHours}</h2>
 
         {/* Name dropdown */}
@@ -95,7 +92,7 @@ function FloristHoursForm() {
         </div>
 
         {/* Date */}
-        <div>
+        <div className="overflow-visible">
           <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.labelDate}</label>
           <input
             type="date"
@@ -116,19 +113,6 @@ function FloristHoursForm() {
             value={hours}
             onChange={e => setHours(e.target.value)}
             placeholder="8"
-            className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
-          />
-        </div>
-
-        {/* Deliveries */}
-        <div>
-          <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.deliveryCount}</label>
-          <input
-            type="number"
-            min="0"
-            value={deliveries}
-            onChange={e => setDeliveries(e.target.value)}
-            placeholder="0"
             className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
           />
         </div>
@@ -175,9 +159,6 @@ function FloristHoursForm() {
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-brand-600">{entry.Hours}h</p>
-                    {(entry['Delivery Count'] || 0) > 0 && (
-                      <p className="text-xs text-ios-tertiary">{entry['Delivery Count']} {t.deliveryCount.toLowerCase()}</p>
-                    )}
                   </div>
                 </div>
               ))}
@@ -220,7 +201,7 @@ function OwnerHoursSummary() {
 
   function startEdit(entry) {
     setEditingId(entry.id);
-    setEditData({ Hours: entry.Hours, Notes: entry.Notes || '', 'Delivery Count': entry['Delivery Count'] || 0 });
+    setEditData({ Hours: entry.Hours, Notes: entry.Notes || '' });
   }
 
   async function saveEdit(id) {
@@ -247,7 +228,7 @@ function OwnerHoursSummary() {
   return (
     <div className="space-y-5">
       {/* Month picker */}
-      <div className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 px-4 py-3">
+      <div className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 px-4 py-3 overflow-visible">
         <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.monthlySummary}</label>
         <input
           type="month"
@@ -277,10 +258,6 @@ function OwnerHoursSummary() {
                     <div>
                       <p className="text-xs text-ios-tertiary">{t.totalDays}</p>
                       <p className="font-semibold">{s.days}</p>
-                    </div>
-                    <div>
-                      <p className="text-xs text-ios-tertiary">{t.deliveryCount}</p>
-                      <p className="font-semibold">{s.deliveries || 0}</p>
                     </div>
                     <div>
                       <p className="text-xs text-ios-tertiary">{t.totalPay}</p>
@@ -315,13 +292,6 @@ function OwnerHoursSummary() {
                             placeholder="Hours"
                           />
                           <input
-                            type="number"
-                            value={editData['Delivery Count']}
-                            onChange={e => setEditData(d => ({ ...d, 'Delivery Count': Number(e.target.value) }))}
-                            className="w-20 border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
-                            placeholder="Del."
-                          />
-                          <input
                             value={editData.Notes}
                             onChange={e => setEditData(d => ({ ...d, Notes: e.target.value }))}
                             className="flex-1 border border-gray-200 rounded-lg px-2 py-1.5 text-sm"
@@ -344,9 +314,6 @@ function OwnerHoursSummary() {
                         <div className="flex items-center gap-3">
                           <div className="text-right">
                             <p className="text-sm font-semibold text-brand-600">{entry.Hours}h</p>
-                            {(entry['Delivery Count'] || 0) > 0 && (
-                              <p className="text-xs text-ios-tertiary">{entry['Delivery Count']} del.</p>
-                            )}
                           </div>
                           <button onClick={() => startEdit(entry)} className="text-xs text-brand-600 active-scale">{t.edit}</button>
                           <button onClick={() => deleteEntry(entry.id)} className="text-xs text-red-500 active-scale">✕</button>

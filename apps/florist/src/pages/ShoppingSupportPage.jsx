@@ -152,14 +152,14 @@ export default function ShoppingSupportPage() {
   }
 
   return (
-    <div className="min-h-screen bg-ios-bg">
+    <div className="min-h-screen bg-ios-bg dark:bg-dark-bg dark:text-dark-label">
       {/* Header — compact for phone */}
       <header className="glass-nav px-4 py-3 sticky top-0 z-10">
         <div className="flex items-center justify-between">
           <button onClick={() => navigate('/orders')} className="text-brand-600 font-medium text-sm">
             ‹ {t.navOrders}
           </button>
-          <h1 className="text-base font-semibold text-ios-label">{t.shopping.title}</h1>
+          <h1 className="text-base font-semibold text-ios-label dark:text-dark-label">{t.shopping.title}</h1>
           <button
             onClick={() => fetchOrders()}
             className="text-brand-600 text-sm font-medium"
@@ -218,12 +218,12 @@ export default function ShoppingSupportPage() {
                 {Object.entries(bySupplier).map(([supplier, lines]) => (
                   <div key={supplier} className="ios-card overflow-hidden">
                     {/* Supplier header */}
-                    <div className="bg-brand-50 px-4 py-2">
+                    <div className="bg-brand-50 dark:bg-brand-900/30 px-4 py-2">
                       <span className="text-sm font-semibold text-brand-700">{supplier}</span>
                     </div>
 
                     {/* Lines */}
-                    <div className="divide-y divide-gray-100">
+                    <div className="divide-y divide-gray-100 dark:divide-gray-600">
                       {lines.map(line => (
                         <ShoppingLineItem
                           key={line.id}
@@ -238,7 +238,7 @@ export default function ShoppingSupportPage() {
                     </div>
 
                     {/* Per-supplier payment */}
-                    <div className="px-4 py-3 bg-gray-50">
+                    <div className="px-4 py-3 bg-gray-50 dark:bg-gray-700">
                       <label className="text-xs text-ios-secondary mb-1 block">
                         {t.shopping.paidTo} {supplier}
                       </label>
@@ -250,7 +250,7 @@ export default function ShoppingSupportPage() {
                           onChange={e => setLocalPayment(order.id, supplier, e.target.value)}
                           onBlur={() => saveSupplierPayment(order.id, supplier)}
                           placeholder="0"
-                          className="flex-1 text-sm font-medium border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                          className="flex-1 text-sm font-medium border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
                         />
                         <span className="text-sm text-ios-tertiary">zł</span>
                       </div>
@@ -276,7 +276,7 @@ export default function ShoppingSupportPage() {
                         } catch { showToast(t.error, 'error'); }
                       }}
                       placeholder="0"
-                      className="flex-1 text-sm font-medium border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                      className="flex-1 text-sm font-medium border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
                     />
                     <span className="text-sm text-ios-tertiary">zł</span>
                   </div>
@@ -368,7 +368,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
       {/* Line header: flower name + qty + saving indicator */}
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-ios-label truncate">{line['Flower Name']}</p>
+          <p className="text-sm font-semibold text-ios-label dark:text-dark-label truncate">{line['Flower Name']}</p>
           <p className="text-xs text-ios-tertiary">
             {t.shopping.need}: {needed}
             {lots > 0 && ` — ${lots} ${t.packs} × ${lotSize}`}
@@ -396,7 +396,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                   s === 'Partial' ? 'bg-amber-500 text-white' :
                   s === 'Not Found' ? 'bg-red-500 text-white' :
                   'bg-gray-400 text-white'
-                : 'bg-gray-100 text-ios-secondary'
+                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
             }`}
           >
             {s === 'Found All' ? '✓' : s === 'Partial' ? '½' : s === 'Not Found' ? '✗' : '⏳'}
@@ -417,7 +417,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
               onChange={e => handleChange('qtyFound', e.target.value)}
               onFocus={onFocus}
               onBlur={() => handleBlur({ 'Quantity Found': Number(local.qtyFound) || 0 })}
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+              className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
             />
           </div>
           <div className="flex-1">
@@ -430,7 +430,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                 onChange={e => handleChange('costPrice', e.target.value)}
                 onFocus={onFocus}
                 onBlur={() => handleBlur({ 'Cost Price': local.costPrice === '' ? '' : Number(local.costPrice) || 0 })}
-                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 pr-8 bg-white outline-none"
+                className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 pr-8 bg-white dark:bg-dark-elevated outline-none"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ios-tertiary">zł</span>
             </div>
@@ -439,7 +439,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
 
         {/* ── Alternative supplier block — separate visual section ── */}
         {(local.altFlower || local.altSupplier || Number(local.altQty) > 0 || status === 'Partial' || status === 'Not Found') && (
-          <div className="bg-indigo-50 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
+          <div className="bg-indigo-50 dark:bg-indigo-900/30 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100 dark:border-indigo-700">
             <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide">
               {t.shopping.altSection || 'Alternative supplier'}
             </p>
@@ -452,7 +452,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                 onFocus={onFocus}
                 onBlur={() => handleBlur({ 'Alt Flower Name': local.altFlower })}
                 placeholder={t.shopping.altFlowerHint}
-                className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
               />
             </div>
             <div className="flex gap-2">
@@ -464,7 +464,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                   onChange={e => handleChange('altSupplier', e.target.value)}
                   onFocus={onFocus}
                   onBlur={() => handleBlur({ 'Alt Supplier': local.altSupplier })}
-                  className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                  className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
                 />
               </div>
               <div className="w-20">
@@ -476,7 +476,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                   onChange={e => handleChange('altQty', e.target.value)}
                   onFocus={onFocus}
                   onBlur={() => handleBlur({ 'Alt Quantity Found': Number(local.altQty) || 0 })}
-                  className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                  className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
                 />
               </div>
             </div>
@@ -493,7 +493,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                     onFocus={onFocus}
                     onBlur={() => handleBlur({ 'Alt Cost': local.altCost === '' ? '' : Number(local.altCost) || 0 })}
                     placeholder={(Number(local.costPrice || 0) * Number(local.altQty || 0)).toFixed(0) || '0'}
-                    className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 pr-8 bg-white outline-none"
+                    className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 pr-8 bg-white dark:bg-dark-elevated outline-none"
                   />
                   <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ios-tertiary">zł</span>
                 </div>
@@ -512,7 +512,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
             onFocus={onFocus}
             onBlur={() => handleBlur({ Notes: local.notes })}
             placeholder={t.shopping.notesHint}
-            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
           />
         </div>
       </div>
