@@ -19,6 +19,8 @@ export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMes
       return;
     }
 
+    // Use only fields that are safe with typecast:true (auto-creates missing fields).
+    // Keep it simple — Wix Order ID + Status + timestamp + optional details.
     const fields = {
       'Wix Order ID': wixOrderId || 'unknown',
       Status: status,
@@ -26,13 +28,10 @@ export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMes
     };
 
     if (appOrderId) {
-      fields['App Order'] = [appOrderId];
+      fields['App Order ID'] = appOrderId; // text, not link — avoids field type mismatch
     }
     if (errorMessage) {
-      fields['Error Message'] = errorMessage.slice(0, 1000); // Airtable single-line limit
-    }
-    if (rawPayload) {
-      fields['Raw Payload'] = JSON.stringify(rawPayload).slice(0, 10000);
+      fields['Error'] = errorMessage.slice(0, 1000);
     }
 
     await db.create(TABLES.WEBHOOK_LOG, fields);
