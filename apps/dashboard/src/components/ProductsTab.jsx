@@ -475,7 +475,10 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
         <input
           type="checkbox"
           checked={active}
-          onChange={e => onUpdate(variant.id, 'Active', e.target.checked)}
+          onChange={e => {
+            onUpdate(variant.id, 'Active', e.target.checked);
+            onUpdate(variant.id, 'Visible in Wix', e.target.checked);
+          }}
           className="w-4 h-4 rounded border-gray-300 text-brand-600 focus:ring-brand-500"
         />
       </td>
