@@ -93,12 +93,16 @@ router.get('/sync-log', async (req, res, next) => {
 // ── POST /api/products/translate — translate text to 4 languages ──
 // Like a multilingual label printer: feed it one text, get back 4 versions
 // for the Wix storefront (EN/PL/RU/UK).
+const anthropic = process.env.ANTHROPIC_API_KEY ? new Anthropic() : null;
+
 router.post('/translate', async (req, res, next) => {
   try {
+    if (!anthropic) {
+      return res.status(400).json({ error: 'ANTHROPIC_API_KEY not configured.' });
+    }
     const { text, type } = req.body;
     if (!text) return res.status(400).json({ error: 'text is required' });
 
-    const anthropic = new Anthropic();
     const response = await anthropic.messages.create({
       model: 'claude-haiku-4-5-20251001',
       max_tokens: 1024,
@@ -119,6 +123,7 @@ Return ONLY valid JSON with this exact structure (no markdown fences):
     const translations = JSON.parse(raw);
     res.json(translations);
   } catch (err) {
+    console.error('[TRANSLATE] Error:', err.message);
     next(err);
   }
 });

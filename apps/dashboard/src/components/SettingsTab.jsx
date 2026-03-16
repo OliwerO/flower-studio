@@ -443,6 +443,8 @@ function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
     } else {
       updated[editingSeasonal] = entry;
     }
+    // Sort by start date so categories display chronologically
+    updated.sort((a, b) => a.from.localeCompare(b.from));
     onUpdate({ storefrontCategories: { ...sc, seasonal: updated } });
     setEditingSeasonal(null);
   }

@@ -259,11 +259,31 @@ export async function runSync() {
     const wixProducts = await fetchAllWixProducts();
     console.log(`[SYNC] Found ${wixProducts.length} products in Wix`);
 
+    // Fetch Wix categories early — needed for both Phase 1 (import) and Phase 4 (sync)
+    let wixCategoryIdToName = {};
+    try {
+      const wixCategories = await fetchWixCategories();
+      // Build id→name map so we can tag products with our category names
+      // Match Wix collection names to our config category names
+      const sc = getConfig('storefrontCategories') || {};
+      const ourNames = [...(sc.permanent || []), ...(sc.seasonal || []).map(s => s.name)];
+      for (const wc of wixCategories) {
+        // Match by slug or by name (case-insensitive)
+        const match = ourNames.find(n =>
+          n.toLowerCase().replace(/[^a-z0-9]+/g, '-') === wc.slug
+          || n.toLowerCase() === wc.name.toLowerCase()
+        );
+        if (match) wixCategoryIdToName[wc.id] = match;
+      }
+    } catch (err) {
+      console.warn('[SYNC] Could not fetch Wix categories for import:', err.message);
+    }
+
     // Load existing Product Config rows from Airtable
     const existingRows = await db.list(TABLES.PRODUCT_CONFIG, {
       fields: [
         'Product Name', 'Variant Name', 'Wix Product ID', 'Wix Variant ID',
-        'Image URL', 'Price', 'Active', 'Visible in Wix',
+        'Image URL', 'Price', 'Active', 'Visible in Wix', 'Category',
       ],
     });
 
@@ -289,6 +309,12 @@ export async function runSync() {
       // Detect product type from variant naming pattern
       const productType = detectProductType(variants);
 
+      // Resolve Wix collection IDs to our category names
+      const wixCollectionIds = product.collectionIds || [];
+      const importedCategories = wixCollectionIds
+        .map(id => wixCategoryIdToName[id])
+        .filter(Boolean);
+
       for (let i = 0; i < variants.length; i++) {
         const variant = variants[i];
         const variantId = variant.id;
@@ -306,7 +332,7 @@ export async function runSync() {
         if (!existing) {
           // New variant — create with safe defaults (Active=false, LT=1)
           try {
-            await db.create(TABLES.PRODUCT_CONFIG, {
+            const newRow = {
               'Product Name': productName,
               'Variant Name': variantName,
               'Sort Order': i + 1,
@@ -319,7 +345,12 @@ export async function runSync() {
               'Visible in Wix': product.visible !== false,
               'Product Type': productType,
               'Min Stems': productType === 'mono' ? parseMinStems(variantName) : 0,
-            });
+            };
+            // Import category assignments from Wix collections
+            if (importedCategories.length > 0) {
+              newRow['Category'] = importedCategories;
+            }
+            await db.create(TABLES.PRODUCT_CONFIG, newRow);
             stats.new++;
           } catch (err) {
             stats.errors.push(`Create ${productName}/${variantName}: ${err.message}`);
@@ -329,6 +360,11 @@ export async function runSync() {
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
+          // Import categories from Wix if not yet assigned in Airtable
+          const existingCats = parseCategoryField(existing['Category']);
+          if (existingCats.length === 0 && importedCategories.length > 0) {
+            updates['Category'] = importedCategories;
+          }
 
           if (Object.keys(updates).length > 0) {
             try {
