@@ -9,6 +9,7 @@ import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logWebhookEvent } from './webhookLog.js';
 import { generateOrderId } from '../routes/settings.js';
+import { checkOversell } from './oversellCheck.js';
 
 
 /**
@@ -222,6 +223,20 @@ export async function processWixOrder(payload) {
       } else {
         log('7-STOCK', `No stock match for "${productName}" — text-only line`);
       }
+    }
+
+    // 9b. Oversell check — compare ordered quantities against stock.
+    // Doesn't block the order; just sends a Telegram alert if stock is short.
+    // Like a post-shipment quality gate: the order ships, but if we're short
+    // on materials, the production manager gets a heads-up to call the customer.
+    try {
+      const createdLines = await db.list(TABLES.ORDER_LINES, {
+        filterByFormula: `SEARCH('${sanitizeFormulaValue(order.id)}', ARRAYJOIN({Order}))`,
+        fields: ['Stock Item', 'Quantity', 'Flower Name'],
+      });
+      await checkOversell(order.id, createdLines, customerName, customerPhone);
+    } catch (oversellErr) {
+      console.error('[WIX] Oversell check failed (non-blocking):', oversellErr.message);
     }
 
     // 10. Create delivery record if shipping address present

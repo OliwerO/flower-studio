@@ -83,6 +83,33 @@ async function updateWixVariantPrice(productId, variantId, price) {
 }
 
 /**
+ * Update Wix inventory for a product variant.
+ * Uses the Wix Inventory API to push stock quantities.
+ */
+async function updateWixInventory(productId, variantId, quantity) {
+  const res = await fetch(
+    `${WIX_API_URL}/stores/v1/inventoryItems/product/${productId}/updateVariantsInventory`,
+    {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({
+        inventoryItems: [{
+          variantId,
+          trackQuantity: true,
+          quantity,
+          inStock: quantity > 0,
+        }],
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix inventory update failed for ${productId}/${variantId}: ${text}`);
+  }
+}
+
+/**
  * Update Wix product visibility (hide/show).
  */
 async function updateWixProductVisibility(productId, visible) {
@@ -258,6 +285,53 @@ export async function runSync() {
         } catch (err) {
           stats.errors.push(`Price sync ${key}: ${err.message}`);
         }
+      }
+    }
+
+    // ── Phase 3: Push stock quantities to Wix ──────────
+    // For each active product variant with a linked Key Flower,
+    // push the current stock quantity so Wix shows accurate availability.
+    const stockConfigRows = await db.list(TABLES.PRODUCT_CONFIG, {
+      filterByFormula: '{Active} = TRUE()',
+      fields: [
+        'Wix Product ID', 'Wix Variant ID', 'Key Flower', 'Min Stems',
+      ],
+    });
+
+    // Load stock quantities for linked Key Flower items
+    const stockRows = await db.list(TABLES.STOCK, {
+      filterByFormula: '{Active} = TRUE()',
+      fields: ['Display Name', 'Current Quantity'],
+    });
+    const stockByName = Object.fromEntries(
+      stockRows.map(s => [s['Display Name'], Number(s['Current Quantity'] || 0)])
+    );
+
+    // Also build a lookup by record ID for linked fields
+    const stockById = Object.fromEntries(
+      stockRows.map(s => [s.id, { name: s['Display Name'], qty: Number(s['Current Quantity'] || 0) }])
+    );
+
+    for (const row of stockConfigRows) {
+      const keyFlower = row['Key Flower'];
+      if (!keyFlower) continue;
+
+      // Key Flower can be a linked record (array of IDs) or a text name
+      let stockQty = 0;
+      if (Array.isArray(keyFlower) && keyFlower.length > 0) {
+        const item = stockById[keyFlower[0]];
+        stockQty = item ? item.qty : 0;
+      } else if (typeof keyFlower === 'string') {
+        stockQty = stockByName[keyFlower] || 0;
+      }
+
+      try {
+        await updateWixInventory(
+          row['Wix Product ID'], row['Wix Variant ID'], stockQty
+        );
+        stats.stockSynced++;
+      } catch (err) {
+        stats.errors.push(`Stock sync ${row['Wix Product ID']}/${row['Wix Variant ID']}: ${err.message}`);
       }
     }
 
