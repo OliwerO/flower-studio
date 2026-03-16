@@ -64,7 +64,11 @@ router.post('/wix', verifyWixSignature, (req, res) => {
   res.sendStatus(200); // acknowledge immediately — never make Wix wait
 
   const payload = req.body;
-  console.log('[WEBHOOK] Wix order received:', JSON.stringify(payload, null, 2).slice(0, 500));
+  // Log top-level keys + data keys for debugging payload structure
+  const topKeys = Object.keys(payload || {});
+  const dataKeys = payload?.data ? Object.keys(payload.data) : [];
+  console.log(`[WEBHOOK] Wix payload received — top: [${topKeys.join(',')}], data: [${dataKeys.join(',')}]`);
+  console.log('[WEBHOOK] Wix order detail:', JSON.stringify(payload, null, 2).slice(0, 1000));
 
   // Process async — errors are caught and logged inside processWixOrder
   processWixOrder(payload).catch(err => {

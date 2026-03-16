@@ -25,10 +25,12 @@ export async function processWixOrder(payload) {
   const log = (step, msg) => console.log(`[WIX] ${step}: ${msg}`);
 
   try {
-    // 1. Parse — Wix sends different payload shapes depending on the event.
-    //    We handle the common "order created" format.
-    const wixOrder = payload?.data?.order || payload?.order || payload;
-    const wixOrderId = wixOrder?.id || wixOrder?.number?.toString() || '';
+    // 1. Parse — Wix Automations sends different payload shapes than Wix Webhooks.
+    //    Automations: { data: { id, lineItems, ... } }
+    //    Webhooks:    { data: { order: { id, lineItems, ... } } }
+    //    Direct:      { id, lineItems, ... }
+    const wixOrder = payload?.data?.order || payload?.data || payload?.order || payload;
+    const wixOrderId = wixOrder?.id || wixOrder?.orderId || wixOrder?.number?.toString() || wixOrder?.cartId || '';
 
     if (!wixOrderId) {
       log('SKIP', 'No Wix Order ID found in payload');
