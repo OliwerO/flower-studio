@@ -11,7 +11,7 @@ router.use(authorize('customers'));
 // Like an incoming inspection gate — rejects unauthorized parts.
 const CUSTOMERS_PATCH_ALLOWED = [
   'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
-  'Home address', 'Sex/Business', 'Notes / Preferences', 'Segment',
+  'Home address', 'Sex / Business', 'Notes / Preferences', 'Segment',
   'WhatsApp Contact', 'Default Delivery Address', 'Found us from',
   'Connected people', 'Key person 1', 'Key person 2',
   'Key person 1 (important DATE)', 'Key person 2 (important DATE)',

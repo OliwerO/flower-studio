@@ -9,7 +9,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
   const [results, setResults]       = useState([]);
   const [searching, setSearching]   = useState(false);
   const [showCreate, setShowCreate] = useState(false);
-  const [newCustomer, setNewCustomer] = useState({ Name: '', Phone: '', Nickname: '', Email: '', Link: '', Language: '', 'Home address': '', 'Sex/Business': '', 'Communication method': '' });
+  const [newCustomer, setNewCustomer] = useState({ Name: '', Phone: '', Nickname: '', Email: '', Link: '', Language: '', 'Home address': '', 'Sex / Business': '', 'Communication method': '' });
   const [showExtra, setShowExtra] = useState(false);
   const [saving, setSaving]         = useState(false);
   const debounceRef                 = useRef(null);
@@ -218,7 +218,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                 />
               </div>
 
-              {/* Sex/Business — pill selector */}
+              {/* Sex / Business — pill selector */}
               <div className="px-4 py-3">
                 <span className="text-sm text-ios-tertiary">{t.sex || 'Type'}</span>
                 <div className="flex flex-wrap gap-2 mt-2">
@@ -226,9 +226,9 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                     <button
                       key={v}
                       type="button"
-                      onClick={() => setNewCustomer(p => ({ ...p, 'Sex/Business': p['Sex/Business'] === v ? '' : v }))}
+                      onClick={() => setNewCustomer(p => ({ ...p, 'Sex / Business': p['Sex / Business'] === v ? '' : v }))}
                       className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
-                        newCustomer['Sex/Business'] === v
+                        newCustomer['Sex / Business'] === v
                           ? 'bg-brand-600 text-white'
                           : 'bg-gray-100 text-ios-secondary'
                       }`}
