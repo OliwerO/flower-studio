@@ -87,7 +87,12 @@ export default function ProductsTab() {
     try {
       const res = await client.post('/products/push');
       const s = res.data;
-      showToast(`${t.prodPushDone}: ${s.pricesSynced} ${t.prodPriceSyncs}, ${s.stockSynced} ${t.prodStockSyncs}`, 'success');
+      const parts = [];
+      if (s.pricesSynced) parts.push(`${s.pricesSynced} ${t.prodPriceSyncs}`);
+      if (s.visibilitySynced) parts.push(`${s.visibilitySynced} ${t.prodVisibility}`);
+      if (s.stockSynced) parts.push(`${s.stockSynced} ${t.prodStockSyncs}`);
+      if (s.categoriesSynced) parts.push(`${s.categoriesSynced} ${t.prodCategorySyncs}`);
+      showToast(`${t.prodPushDone}${parts.length ? ': ' + parts.join(', ') : ''}`, 'success');
       fetchProducts();
     } catch {
       showToast(t.prodSyncFailed, 'error');
@@ -125,7 +130,7 @@ export default function ProductsTab() {
       <div className="flex items-center justify-between mb-4">
         <div>
           <h2 className="text-xl font-bold text-gray-900">{t.tabProducts}</h2>
-          {syncLog && <SyncStatus log={syncLog} />}
+          {syncHistory.length > 0 && <SyncStatus logs={syncHistory} />}
         </div>
         <div className="flex gap-2">
           <button
@@ -488,24 +493,37 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
 
 // ── Sync status badge ──
 
-function SyncStatus({ log }) {
-  const ts = new Date(log['Timestamp']);
-  const ago = Math.round((Date.now() - ts.getTime()) / 60000);
-  const status = log['Status'];
+function SyncStatus({ logs }) {
+  const lastPull = logs.find(l => l['Status']?.includes('pull'));
+  const lastPush = logs.find(l => l['Status']?.includes('push'));
+  // Fallback to latest log if no direction tag (legacy entries)
+  const latest = logs[0];
 
-  let color = 'text-green-600';
-  let icon = '\u2713';
-  if (status === 'failed') { color = 'text-red-500'; icon = '\u2717'; }
-  else if (ago > 360) { color = 'text-red-500'; icon = '\u26A0'; }
-  else if (ago > 60) { color = 'text-amber-500'; icon = '\u26A0'; }
+  function formatAgo(log) {
+    if (!log) return null;
+    const ago = Math.round((Date.now() - new Date(log['Timestamp']).getTime()) / 60000);
+    const failed = log['Status']?.includes('failed');
+    let color = 'text-green-600';
+    if (failed) color = 'text-red-500';
+    else if (ago > 360) color = 'text-red-500';
+    else if (ago > 60) color = 'text-amber-500';
+    const timeStr = ago < 60 ? `${ago}m` : `${Math.round(ago / 60)}h`;
+    return { color, timeStr, failed };
+  }
 
-  const timeStr = ago < 60
-    ? `${ago}m ${t.prodAgo}`
-    : `${Math.round(ago / 60)}h ${t.prodAgo}`;
+  const pull = formatAgo(lastPull);
+  const push = formatAgo(lastPush);
+
+  // If no direction-tagged entries, show legacy format
+  if (!pull && !push && latest) {
+    const f = formatAgo(latest);
+    return <span className={`text-xs ${f.color}`}>{f.failed ? '\u2717' : '\u2713'} {t.prodLastSync}: {f.timeStr} {t.prodAgo}</span>;
+  }
 
   return (
-    <span className={`text-xs ${color}`}>
-      {icon} {t.prodLastSync}: {timeStr}
+    <span className="text-xs text-gray-500 flex gap-3">
+      {pull && <span className={pull.color}>{pull.failed ? '\u2717' : '\u2193'} Pull: {pull.timeStr} {t.prodAgo}</span>}
+      {push && <span className={push.color}>{push.failed ? '\u2717' : '\u2191'} Push: {push.timeStr} {t.prodAgo}</span>}
     </span>
   );
 }

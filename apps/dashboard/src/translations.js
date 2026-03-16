@@ -254,6 +254,8 @@ const en = {
   prodDeactivated:      'deactivated',
   prodPriceSyncs:       'prices synced',
   prodStockSyncs:       'stock synced',
+  prodVisibility:       'visibility',
+  prodCategorySyncs:    'categories',
   prodErrors:           'errors',
   prodNoSyncLog:        'No sync history yet',
 
@@ -812,6 +814,8 @@ const ru = {
   prodDeactivated:      'деактивировано',
   prodPriceSyncs:       'цен синхр.',
   prodStockSyncs:       'остатков синхр.',
+  prodVisibility:       'видимость',
+  prodCategorySyncs:    'категорий',
   prodErrors:           'ошибок',
   prodNoSyncLog:        'Нет истории синхронизаций',
 

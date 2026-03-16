@@ -265,8 +265,7 @@ async function logSync(direction, stats) {
   try {
     await db.create(TABLES.SYNC_LOG, {
       'Timestamp': new Date().toISOString(),
-      'Status': stats.errors.length > 0 ? 'failed' : 'success',
-      'Direction': direction,
+      'Status': stats.errors.length > 0 ? 'failed' : `success (${direction})`,
       'New Products': stats.new || 0,
       'Updated': stats.updated || 0,
       'Deactivated': stats.deactivated || 0,
@@ -481,13 +480,19 @@ export async function runPush() {
     }
 
     // ── Visibility ──────────────────────────────────────
+    // Fetch ALL products (not just active) — inactive products need to be hidden on Wix
+    const allVisibilityRows = await db.list(TABLES.PRODUCT_CONFIG, {
+      fields: ['Wix Product ID', 'Visible in Wix'],
+    });
+
     const wixVisibilityMap = new Map();
     for (const product of wixProducts) {
       wixVisibilityMap.set(product.id, product.visible !== false);
     }
 
+    // Product is visible if ANY variant has Visible in Wix = true
     const productVisibility = new Map();
-    for (const row of configRows) {
+    for (const row of allVisibilityRows) {
       const pid = row['Wix Product ID'];
       if (!pid) continue;
       const current = productVisibility.get(pid) || false;
