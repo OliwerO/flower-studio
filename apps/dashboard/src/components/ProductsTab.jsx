@@ -15,7 +15,8 @@ export default function ProductsTab() {
   const [stock, setStock] = useState([]);
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const [pushing, setPushing] = useState(false);
   const [syncLog, setSyncLog] = useState(null);
   const [syncHistory, setSyncHistory] = useState([]);
   const [filter, setFilter] = useState('all');
@@ -64,17 +65,31 @@ export default function ProductsTab() {
 
   const needsReview = grouped.filter(g => g.variants.every(v => !v['Active'])).length;
 
-  async function handleSync() {
-    setSyncing(true);
+  async function handlePull() {
+    setPulling(true);
     try {
-      const res = await client.post('/products/sync');
+      const res = await client.post('/products/pull');
       const s = res.data;
-      showToast(`${t.prodSyncDone}: ${s.new} ${t.prodNew}, ${s.updated} ${t.prodUpdated}`, 'success');
+      showToast(`${t.prodPullDone}: ${s.new} ${t.prodNew}, ${s.updated} ${t.prodUpdated}`, 'success');
       fetchProducts();
     } catch {
       showToast(t.prodSyncFailed, 'error');
     } finally {
-      setSyncing(false);
+      setPulling(false);
+    }
+  }
+
+  async function handlePush() {
+    setPushing(true);
+    try {
+      const res = await client.post('/products/push');
+      const s = res.data;
+      showToast(`${t.prodPushDone}: ${s.pricesSynced} ${t.prodPriceSyncs}, ${s.stockSynced} ${t.prodStockSyncs}`, 'success');
+      fetchProducts();
+    } catch {
+      showToast(t.prodSyncFailed, 'error');
+    } finally {
+      setPushing(false);
     }
   }
 
@@ -109,14 +124,24 @@ export default function ProductsTab() {
           <h2 className="text-xl font-bold text-gray-900">{t.tabProducts}</h2>
           {syncLog && <SyncStatus log={syncLog} />}
         </div>
-        <button
-          onClick={handleSync}
-          disabled={syncing}
-          className="px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium
-                     hover:bg-brand-700 disabled:opacity-50 transition-colors"
-        >
-          {syncing ? t.prodSyncing : t.prodSyncFromWix}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={handlePull}
+            disabled={pulling || pushing}
+            className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium
+                       hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            {pulling ? t.prodSyncing : t.prodPullFromWix}
+          </button>
+          <button
+            onClick={handlePush}
+            disabled={pulling || pushing}
+            className="px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium
+                       hover:bg-brand-700 disabled:opacity-50 transition-colors"
+          >
+            {pushing ? t.prodSyncing : t.prodPushToWix}
+          </button>
+        </div>
       </div>
 
       {/* Review banner */}

@@ -5,7 +5,7 @@
 
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import { runSync } from '../services/wixProductSync.js';
+import { runSync, runPull, runPush } from '../services/wixProductSync.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import Anthropic from '@anthropic-ai/sdk';
@@ -18,19 +18,37 @@ router.use(authorize('admin'));
 // ── POST /api/products/sync — trigger Wix ↔ Airtable sync ──
 // Like pressing "refresh supplier catalog" — pulls new products from Wix,
 // pushes our prices back. Returns a summary of what changed.
-router.post('/sync', async (req, res, next) => {
-  try {
-    if (!process.env.WIX_API_KEY || !process.env.WIX_SITE_ID) {
-      return res.status(400).json({
-        error: 'Wix API credentials not configured. Set WIX_API_KEY and WIX_SITE_ID.',
-      });
-    }
+function requireWixCreds(_req, res, next) {
+  if (!process.env.WIX_API_KEY || !process.env.WIX_SITE_ID) {
+    return res.status(400).json({
+      error: 'Wix API credentials not configured. Set WIX_API_KEY and WIX_SITE_ID.',
+    });
+  }
+  next();
+}
 
+// POST /api/products/pull — import from Wix → dashboard
+router.post('/pull', requireWixCreds, async (req, res, next) => {
+  try {
+    const stats = await runPull();
+    res.json(stats);
+  } catch (err) { next(err); }
+});
+
+// POST /api/products/push — export from dashboard → Wix
+router.post('/push', requireWixCreds, async (req, res, next) => {
+  try {
+    const stats = await runPush();
+    res.json(stats);
+  } catch (err) { next(err); }
+});
+
+// POST /api/products/sync — full bidirectional (legacy, still works)
+router.post('/sync', requireWixCreds, async (req, res, next) => {
+  try {
     const stats = await runSync();
     res.json(stats);
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 // ── POST /api/products/translate — translate text to 4 languages ──

@@ -232,55 +232,75 @@ async function setWixCategoryProducts(collectionId, productIds) {
   }
 }
 
-// ── Main sync job ──────────────────────────────────────────
+// ── Sync jobs ──────────────────────────────────────────────
 
 /**
- * Run a full bidirectional sync between Wix and Airtable.
- *
- * Phase 1 (Wix → Airtable): Pull new/changed products from Wix
- * Phase 2 (Airtable → Wix): Push prices and stock to Wix
- *
- * Returns a summary object for logging/display.
+ * Shared helper: fetch Wix products + build category name map.
  */
-export async function runSync() {
-  const stats = {
-    new: 0,
-    updated: 0,
-    deactivated: 0,
-    pricesSynced: 0,
-    stockSynced: 0,
-    visibilitySynced: 0,
-    categoriesSynced: 0,
-    errors: [],
-  };
+async function fetchWixData() {
+  const wixProducts = await fetchAllWixProducts();
+
+  let wixCategoryIdToName = {};
+  let wixCategories = [];
+  try {
+    wixCategories = await fetchWixCategories();
+    const sc = getConfig('storefrontCategories') || {};
+    const ourNames = [...(sc.permanent || []), ...(sc.seasonal || []).map(s => s.name)];
+    for (const wc of wixCategories) {
+      const match = ourNames.find(n =>
+        n.toLowerCase().replace(/[^a-z0-9]+/g, '-') === wc.slug
+        || n.toLowerCase() === wc.name.toLowerCase()
+      );
+      if (match) wixCategoryIdToName[wc.id] = match;
+    }
+  } catch (err) {
+    console.warn('[SYNC] Could not fetch Wix categories:', err.message);
+  }
+
+  return { wixProducts, wixCategories, wixCategoryIdToName };
+}
+
+/** Write a sync log entry to Airtable + alert on failure. */
+async function logSync(direction, stats) {
+  try {
+    await db.create(TABLES.SYNC_LOG, {
+      'Timestamp': new Date().toISOString(),
+      'Status': stats.errors.length > 0 ? 'failed' : 'success',
+      'Direction': direction,
+      'New Products': stats.new || 0,
+      'Updated': stats.updated || 0,
+      'Deactivated': stats.deactivated || 0,
+      'Price Syncs': stats.pricesSynced || 0,
+      'Stock Syncs': stats.stockSynced || 0,
+      'Error Message': stats.errors.join('\n') || '',
+    });
+  } catch (err) {
+    console.error('[SYNC] Failed to write sync log:', err.message);
+  }
+
+  if (stats.errors.length > 0) {
+    const errorSummary = stats.errors.slice(0, 5).join('\n');
+    await sendAlert(
+      `SYNC ${direction.toUpperCase()} FAILED\n\n`
+      + `Errors: ${stats.errors.length}\n\n${errorSummary}`
+      + (stats.errors.length > 5 ? `\n...and ${stats.errors.length - 5} more` : '')
+    );
+  }
+}
+
+/**
+ * Pull from Wix → Airtable.
+ * Imports products, visibility, categories, prices from the Wix storefront.
+ */
+export async function runPull() {
+  const stats = { new: 0, updated: 0, deactivated: 0, errors: [] };
 
   try {
-    // ── Phase 1: Wix → Airtable (pull) ──────────────────
-    console.log('[SYNC] Fetching products from Wix...');
-    const wixProducts = await fetchAllWixProducts();
-    console.log(`[SYNC] Found ${wixProducts.length} products in Wix`);
+    console.log('[PULL] Fetching products from Wix...');
+    const { wixProducts, wixCategories, wixCategoryIdToName } = await fetchWixData();
+    console.log(`[PULL] Found ${wixProducts.length} products in Wix`);
 
-    // Fetch Wix categories early — needed for both Phase 1 (import) and Phase 4 (sync)
-    let wixCategoryIdToName = {};
-    try {
-      const wixCategories = await fetchWixCategories();
-      // Build id→name map so we can tag products with our category names
-      // Match Wix collection names to our config category names
-      const sc = getConfig('storefrontCategories') || {};
-      const ourNames = [...(sc.permanent || []), ...(sc.seasonal || []).map(s => s.name)];
-      for (const wc of wixCategories) {
-        // Match by slug or by name (case-insensitive)
-        const match = ourNames.find(n =>
-          n.toLowerCase().replace(/[^a-z0-9]+/g, '-') === wc.slug
-          || n.toLowerCase() === wc.name.toLowerCase()
-        );
-        if (match) wixCategoryIdToName[wc.id] = match;
-      }
-    } catch (err) {
-      console.warn('[SYNC] Could not fetch Wix categories for import:', err.message);
-    }
-
-    // Load existing Product Config rows from Airtable
+    // Load existing Product Config rows
     const existingRows = await db.list(TABLES.PRODUCT_CONFIG, {
       fields: [
         'Product Name', 'Variant Name', 'Wix Product ID', 'Wix Variant ID',
@@ -288,51 +308,40 @@ export async function runSync() {
       ],
     });
 
-    // Index existing rows by "productId::variantId" for fast lookup
     const existingMap = new Map();
     for (const row of existingRows) {
       const key = `${row['Wix Product ID']}::${row['Wix Variant ID']}`;
       existingMap.set(key, row);
     }
 
-    // Track which Wix IDs we see (for deactivation check)
     const seenKeys = new Set();
 
     for (const product of wixProducts) {
       const productId = product.id;
       const productName = product.name || '';
       const imageUrl = product.media?.mainMedia?.image?.url || '';
-
-      // Skip extras (products without variants or with specific collections)
       const variants = product.variants || [];
       if (variants.length === 0) continue;
 
-      // Detect product type from variant naming pattern
       const productType = detectProductType(variants);
+      const wixVisible = product.visible !== false;
 
-      // Resolve Wix collection IDs to our category names
-      const wixCollectionIds = product.collectionIds || [];
-      const importedCategories = wixCollectionIds
+      const importedCategories = (product.collectionIds || [])
         .map(id => wixCategoryIdToName[id])
         .filter(Boolean);
 
       for (let i = 0; i < variants.length; i++) {
         const variant = variants[i];
         const variantId = variant.id;
-        // Variant name: join all choice values (e.g., "S", "M", "51")
         const variantName = Object.values(variant.choices || {}).join(' / ') || `Variant ${i + 1}`;
         const variantPrice = variant.variant?.priceData?.price
-          || variant.variant?.priceData?.discountedPrice
-          || 0;
+          || variant.variant?.priceData?.discountedPrice || 0;
 
         const key = `${productId}::${variantId}`;
         seenKeys.add(key);
-
         const existing = existingMap.get(key);
 
         if (!existing) {
-          // New variant — mirror Wix visibility as Active state
-          const wixVisible = product.visible !== false;
           try {
             const newRow = {
               'Product Name': productName,
@@ -348,30 +357,22 @@ export async function runSync() {
               'Product Type': productType,
               'Min Stems': productType === 'mono' ? parseMinStems(variantName) : 0,
             };
-            // Import category assignments from Wix collections
-            if (importedCategories.length > 0) {
-              newRow['Category'] = importedCategories;
-            }
+            if (importedCategories.length > 0) newRow['Category'] = importedCategories;
             await db.create(TABLES.PRODUCT_CONFIG, newRow);
             stats.new++;
           } catch (err) {
             stats.errors.push(`Create ${productName}/${variantName}: ${err.message}`);
           }
         } else {
-          // Existing variant — sync Wix-owned fields
-          const wixVisible = product.visible !== false;
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
-          // Sync visibility state from Wix → dashboard (Wix is source of truth on pull)
           if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
-          // Import categories from Wix if not yet assigned in Airtable
           const existingCats = parseCategoryField(existing['Category']);
           if (existingCats.length === 0 && importedCategories.length > 0) {
             updates['Category'] = importedCategories;
           }
-
           if (Object.keys(updates).length > 0) {
             try {
               await db.update(TABLES.PRODUCT_CONFIG, existing.id, updates);
@@ -397,16 +398,66 @@ export async function runSync() {
       }
     }
 
-    // ── Phase 2: Airtable → Wix (push prices) ──────────
-    // Re-fetch to get latest prices (including any just-created rows)
+    // Backfill seasonal descriptions from Wix
+    try {
+      const sc = { ...(getConfig('storefrontCategories') || {}) };
+      const catMap = {};
+      for (const c of wixCategories) catMap[c.slug] = c.id;
+      sc.wixCategoryMap = catMap;
+
+      const wixSeasonalCat = wixCategories.find(c => c.slug === 'seasonal');
+      if (wixSeasonalCat) {
+        const seasonal = getActiveSeasonalCategory();
+        if (seasonal) {
+          const idx = (sc.seasonal || []).findIndex(s => s.slug === seasonal.slug);
+          if (idx >= 0) {
+            const entry = sc.seasonal[idx];
+            if (!entry.description && wixSeasonalCat.description) {
+              entry.description = wixSeasonalCat.description;
+            }
+            if (!entry.translations) entry.translations = {};
+            if (!entry.translations.pl) entry.translations.pl = {};
+            if (!entry.translations.pl.title && wixSeasonalCat.name) {
+              entry.translations.pl.title = wixSeasonalCat.name;
+            }
+            if (!entry.translations.pl.description && wixSeasonalCat.description) {
+              entry.translations.pl.description = wixSeasonalCat.description;
+            }
+          }
+        }
+      }
+      updateConfig('storefrontCategories', sc);
+    } catch (err) {
+      console.warn('[PULL] Category backfill error:', err.message);
+    }
+
+    console.log('[PULL] Complete:', JSON.stringify(stats));
+  } catch (err) {
+    stats.errors.push(`Fatal: ${err.message}`);
+    console.error('[PULL] Fatal error:', err);
+  }
+
+  await logSync('pull', stats);
+  return stats;
+}
+
+/**
+ * Push from Airtable → Wix.
+ * Pushes prices, visibility, stock, and category assignments to Wix.
+ */
+export async function runPush() {
+  const stats = { pricesSynced: 0, stockSynced: 0, visibilitySynced: 0, categoriesSynced: 0, errors: [] };
+
+  try {
+    console.log('[PUSH] Fetching current Wix state for comparison...');
+    const { wixProducts, wixCategories } = await fetchWixData();
+
+    // ── Prices ──────────────────────────────────────────
     const configRows = await db.list(TABLES.PRODUCT_CONFIG, {
       filterByFormula: '{Active} = TRUE()',
-      fields: [
-        'Wix Product ID', 'Wix Variant ID', 'Price', 'Visible in Wix',
-      ],
+      fields: ['Wix Product ID', 'Wix Variant ID', 'Price', 'Visible in Wix'],
     });
 
-    // Build a map of Wix variant prices for comparison
     const wixPriceMap = new Map();
     for (const product of wixProducts) {
       for (const variant of (product.variants || [])) {
@@ -419,29 +470,22 @@ export async function runSync() {
       const key = `${row['Wix Product ID']}::${row['Wix Variant ID']}`;
       const airtablePrice = Number(row['Price'] || 0);
       const wixPrice = wixPriceMap.get(key);
-
-      // Push price to Wix if it differs
       if (wixPrice !== undefined && Math.abs(airtablePrice - wixPrice) > 0.01) {
         try {
-          await updateWixVariantPrice(
-            row['Wix Product ID'], row['Wix Variant ID'], airtablePrice
-          );
+          await updateWixVariantPrice(row['Wix Product ID'], row['Wix Variant ID'], airtablePrice);
           stats.pricesSynced++;
         } catch (err) {
-          stats.errors.push(`Price sync ${key}: ${err.message}`);
+          stats.errors.push(`Price ${key}: ${err.message}`);
         }
       }
     }
 
-    // ── Phase 2b: Push visibility changes to Wix ──────
-    // If the owner toggled "Visible in Wix" in the dashboard, push that to the storefront.
+    // ── Visibility ──────────────────────────────────────
     const wixVisibilityMap = new Map();
     for (const product of wixProducts) {
       wixVisibilityMap.set(product.id, product.visible !== false);
     }
 
-    // Group config rows by product ID to determine product-level visibility
-    // (a product is visible if ANY of its active variants are marked visible)
     const productVisibility = new Map();
     for (const row of configRows) {
       const pid = row['Wix Product ID'];
@@ -462,17 +506,12 @@ export async function runSync() {
       }
     }
 
-    // ── Phase 3: Push stock quantities to Wix ──────────
-    // For each active product variant with a linked Key Flower,
-    // push the current stock quantity so Wix shows accurate availability.
+    // ── Stock ───────────────────────────────────────────
     const stockConfigRows = await db.list(TABLES.PRODUCT_CONFIG, {
       filterByFormula: '{Active} = TRUE()',
-      fields: [
-        'Wix Product ID', 'Wix Variant ID', 'Key Flower', 'Min Stems',
-      ],
+      fields: ['Wix Product ID', 'Wix Variant ID', 'Key Flower', 'Min Stems'],
     });
 
-    // Load stock quantities for linked Key Flower items
     const stockRows = await db.list(TABLES.STOCK, {
       filterByFormula: '{Active} = TRUE()',
       fields: ['Display Name', 'Current Quantity'],
@@ -480,8 +519,6 @@ export async function runSync() {
     const stockByName = Object.fromEntries(
       stockRows.map(s => [s['Display Name'], Number(s['Current Quantity'] || 0)])
     );
-
-    // Also build a lookup by record ID for linked fields
     const stockById = Object.fromEntries(
       stockRows.map(s => [s.id, { name: s['Display Name'], qty: Number(s['Current Quantity'] || 0) }])
     );
@@ -489,8 +526,6 @@ export async function runSync() {
     for (const row of stockConfigRows) {
       const keyFlower = row['Key Flower'];
       if (!keyFlower) continue;
-
-      // Key Flower can be a linked record (array of IDs) or a text name
       let stockQty = 0;
       if (Array.isArray(keyFlower) && keyFlower.length > 0) {
         const item = stockById[keyFlower[0]];
@@ -498,91 +533,36 @@ export async function runSync() {
       } else if (typeof keyFlower === 'string') {
         stockQty = stockByName[keyFlower] || 0;
       }
-
       try {
-        await updateWixInventory(
-          row['Wix Product ID'], row['Wix Variant ID'], stockQty
-        );
+        await updateWixInventory(row['Wix Product ID'], row['Wix Variant ID'], stockQty);
         stats.stockSynced++;
       } catch (err) {
-        stats.errors.push(`Stock sync ${row['Wix Product ID']}/${row['Wix Variant ID']}: ${err.message}`);
+        stats.errors.push(`Stock ${row['Wix Product ID']}/${row['Wix Variant ID']}: ${err.message}`);
       }
     }
 
-    // ── Phase 4: Wix category sync ────────────────────────
-    // Like reorganizing store aisles: move products to the right
-    // department shelves and update the seasonal display.
+    // ── Categories ──────────────────────────────────────
     try {
-      console.log('[SYNC] Phase 4: syncing categories...');
-      const wixCategories = await fetchWixCategories();
       const catMap = {};
-      for (const c of wixCategories) {
-        catMap[c.slug] = c.id;
-      }
+      for (const c of wixCategories) catMap[c.slug] = c.id;
 
-      // Store the discovered mapping in config + backfill descriptions from Wix
-      const sc = { ...(getConfig('storefrontCategories') || {}) };
-      sc.wixCategoryMap = catMap;
-
-      // Backfill: if our seasonal entries have empty descriptions,
-      // import what's currently in Wix so the owner doesn't lose existing content.
-      // Like taking inventory of what's already on the shelf before reorganizing.
-      const wixSeasonalCat = wixCategories.find(c => c.slug === 'seasonal');
-      if (wixSeasonalCat) {
-        const seasonal = getActiveSeasonalCategory();
-        if (seasonal) {
-          const idx = (sc.seasonal || []).findIndex(s => s.slug === seasonal.slug);
-          if (idx >= 0) {
-            const entry = sc.seasonal[idx];
-            // Only backfill if our description is empty and Wix has one
-            if (!entry.description && wixSeasonalCat.description) {
-              entry.description = wixSeasonalCat.description;
-              console.log(`[SYNC] Imported description from Wix for "${seasonal.name}"`);
-            }
-            // Backfill PL translation from Wix name/description if empty
-            if (!entry.translations) entry.translations = {};
-            if (!entry.translations.pl) entry.translations.pl = {};
-            if (!entry.translations.pl.title && wixSeasonalCat.name) {
-              entry.translations.pl.title = wixSeasonalCat.name;
-            }
-            if (!entry.translations.pl.description && wixSeasonalCat.description) {
-              entry.translations.pl.description = wixSeasonalCat.description;
-            }
-          }
-        }
-      }
-
-      // Persist updated config (wixCategoryMap + any backfilled descriptions)
-      updateConfig('storefrontCategories', sc);
-
-      // Re-fetch all active product config rows with category info
       const allConfigRows = await db.list(TABLES.PRODUCT_CONFIG, {
         filterByFormula: '{Active} = TRUE()',
-        fields: [
-          'Wix Product ID', 'Category', 'Lead Time Days', 'Key Flower',
-          'Min Stems', 'Product Type',
-        ],
+        fields: ['Wix Product ID', 'Category', 'Lead Time Days', 'Key Flower', 'Min Stems'],
       });
 
-      // 4b. Sync permanent categories (All Bouquets, Bestsellers)
-      const permanentCats = sc.permanent || [];
-      for (const catName of permanentCats) {
+      const sc = getConfig('storefrontCategories') || {};
+
+      // Permanent categories
+      for (const catName of (sc.permanent || [])) {
         const slug = catName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
         const wixCatId = catMap[slug];
         if (!wixCatId) continue;
-
         const productIds = [...new Set(
-          allConfigRows
-            .filter(r => parseCategoryField(r['Category']).includes(catName))
-            .map(r => r['Wix Product ID'])
-            .filter(Boolean)
+          allConfigRows.filter(r => parseCategoryField(r['Category']).includes(catName))
+            .map(r => r['Wix Product ID']).filter(Boolean)
         )];
-
-        // Only reassign if products are actually tagged — don't wipe existing Wix category
-        if (productIds.length === 0) {
-          console.log(`[SYNC] Skipping ${catName}: no products tagged`);
-          continue;
-        }
+        if (productIds.length === 0) continue;
         try {
           await setWixCategoryProducts(wixCatId, productIds);
           stats.categoriesSynced++;
@@ -591,24 +571,18 @@ export async function runSync() {
         }
       }
 
-      // 4c. Sync seasonal category
+      // Seasonal category
       const seasonal = getActiveSeasonalCategory();
       const seasonalWixId = catMap['seasonal'];
       if (seasonal && seasonalWixId) {
-        // Collect products tagged with the active seasonal category name
         const seasonalProductIds = [...new Set(
-          allConfigRows
-            .filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
-            .map(r => r['Wix Product ID'])
-            .filter(Boolean)
+          allConfigRows.filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
+            .map(r => r['Wix Product ID']).filter(Boolean)
         )];
-
         try {
-          // Only reassign products if some are tagged
           if (seasonalProductIds.length > 0) {
             await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
           }
-          // Only update name/description if translations have been filled in
           const plTitle = seasonal.translations?.pl?.title;
           const plDesc = seasonal.translations?.pl?.description;
           if (plTitle || plDesc) {
@@ -619,14 +593,13 @@ export async function runSync() {
           }
           stats.categoriesSynced++;
         } catch (err) {
-          stats.errors.push(`Seasonal sync: ${err.message}`);
+          stats.errors.push(`Seasonal: ${err.message}`);
         }
       }
 
-      // 4d. Sync "Available Today" — lead time 0 + in stock
+      // Available Today
       const availTodayId = catMap['available-today'];
       if (availTodayId) {
-        // Load stock for inStock check
         const stockCheck = await db.list(TABLES.STOCK, {
           filterByFormula: '{Active} = TRUE()',
           fields: ['Display Name', 'Current Quantity'],
@@ -637,22 +610,17 @@ export async function runSync() {
         const stockByRecId = Object.fromEntries(
           stockCheck.map(s => [s.id, Number(s['Current Quantity'] || 0)])
         );
-
         const availProductIds = [...new Set(
-          allConfigRows
-            .filter(r => {
-              if (Number(r['Lead Time Days'] ?? 1) !== 0) return false;
-              const kf = r['Key Flower'];
-              let qty = 0;
-              if (Array.isArray(kf) && kf.length > 0) qty = stockByRecId[kf[0]] || 0;
-              else if (typeof kf === 'string') qty = stockLookup[kf] || 0;
-              const minStems = Number(r['Min Stems'] || 0);
-              return minStems > 0 ? qty >= minStems : qty > 0;
-            })
-            .map(r => r['Wix Product ID'])
-            .filter(Boolean)
+          allConfigRows.filter(r => {
+            if (Number(r['Lead Time Days'] ?? 1) !== 0) return false;
+            const kf = r['Key Flower'];
+            let qty = 0;
+            if (Array.isArray(kf) && kf.length > 0) qty = stockByRecId[kf[0]] || 0;
+            else if (typeof kf === 'string') qty = stockLookup[kf] || 0;
+            const minStems = Number(r['Min Stems'] || 0);
+            return minStems > 0 ? qty >= minStems : qty > 0;
+          }).map(r => r['Wix Product ID']).filter(Boolean)
         )];
-
         try {
           await setWixCategoryProducts(availTodayId, availProductIds);
           stats.categoriesSynced++;
@@ -662,43 +630,27 @@ export async function runSync() {
       }
     } catch (err) {
       stats.errors.push(`Category phase: ${err.message}`);
-      console.error('[SYNC] Category sync error:', err);
     }
 
-    console.log('[SYNC] Complete:', JSON.stringify(stats));
+    console.log('[PUSH] Complete:', JSON.stringify(stats));
   } catch (err) {
     stats.errors.push(`Fatal: ${err.message}`);
-    console.error('[SYNC] Fatal error:', err);
+    console.error('[PUSH] Fatal error:', err);
   }
 
-  // Log to Sync Log table
-  try {
-    await db.create(TABLES.SYNC_LOG, {
-      'Timestamp': new Date().toISOString(),
-      'Status': stats.errors.length > 0 ? 'failed' : 'success',
-      'New Products': stats.new,
-      'Updated': stats.updated,
-      'Deactivated': stats.deactivated,
-      'Price Syncs': stats.pricesSynced,
-      'Stock Syncs': stats.stockSynced,
-      'Error Message': stats.errors.join('\n') || '',
-    });
-  } catch (err) {
-    console.error('[SYNC] Failed to write sync log:', err.message);
-  }
-
-  // Send Telegram alert on sync failure
-  if (stats.errors.length > 0) {
-    const errorSummary = stats.errors.slice(0, 5).join('\n');
-    await sendAlert(
-      `SYNC FAILED\n\n`
-      + `New: ${stats.new}, Updated: ${stats.updated}, Errors: ${stats.errors.length}\n\n`
-      + `${errorSummary}`
-      + (stats.errors.length > 5 ? `\n...and ${stats.errors.length - 5} more` : '')
-    );
-  }
-
+  await logSync('push', stats);
   return stats;
+}
+
+/** Legacy: run full bidirectional sync (pull then push). */
+export async function runSync() {
+  const pullStats = await runPull();
+  const pushStats = await runPush();
+  return {
+    ...pullStats,
+    ...pushStats,
+    errors: [...pullStats.errors, ...pushStats.errors],
+  };
 }
 
 // ── Helpers ────────────────────────────────────────────────
