@@ -245,6 +245,13 @@ const en = {
   prodNotMapped:        'Not mapped to stock',
   prodLastSync:         'Last sync',
   prodAgo:              'ago',
+  prodSyncLog:          'Sync history',
+  prodNewProducts:      'new',
+  prodDeactivated:      'deactivated',
+  prodPriceSyncs:       'prices synced',
+  prodStockSyncs:       'stock synced',
+  prodErrors:           'errors',
+  prodNoSyncLog:        'No sync history yet',
 
   // Financial KPIs tab
   tabFinancial:     'Financial',
@@ -786,6 +793,13 @@ const ru = {
   prodNotMapped:        'Не привязан к складу',
   prodLastSync:         'Последняя синхронизация',
   prodAgo:              'назад',
+  prodSyncLog:          'История синхронизаций',
+  prodNewProducts:      'новых',
+  prodDeactivated:      'деактивировано',
+  prodPriceSyncs:       'цен синхр.',
+  prodStockSyncs:       'остатков синхр.',
+  prodErrors:           'ошибок',
+  prodNoSyncLog:        'Нет истории синхронизаций',
 
   // Financial KPIs tab
   tabFinancial:     'Финансы',
