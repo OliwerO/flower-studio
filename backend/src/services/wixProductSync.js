@@ -361,7 +361,7 @@ export async function runPull() {
     for (const product of wixProducts) {
       const productId = product.id;
       const productName = product.name || '';
-      const productDescription = product.description || '';
+      const productDescription = stripHtml(product.description || '');
       const imageUrl = product.media?.mainMedia?.image?.url || '';
       const variants = product.variants || [];
       if (variants.length === 0) continue;
@@ -679,7 +679,7 @@ export async function runPush() {
         const enTitle = translations?.en?.title;
         const enDesc = translations?.en?.description || row['Description'] || '';
         if (enTitle || enDesc) {
-          descByProduct.set(pid, { name: enTitle, description: enDesc });
+          descByProduct.set(pid, { name: enTitle, description: textToHtml(enDesc) });
         }
       }
 
@@ -747,4 +747,27 @@ function parseCategoryField(val) {
   if (!val) return [];
   if (Array.isArray(val)) return val;
   return val.split(',').map(s => s.trim()).filter(Boolean);
+}
+
+/** Strip HTML tags → plain text. Converts <p>, <br> to newlines. */
+function stripHtml(html) {
+  if (!html) return '';
+  return html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>\s*<p[^>]*>/gi, '\n\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/** Plain text → HTML paragraphs for Wix. */
+function textToHtml(text) {
+  if (!text) return '';
+  return text.split(/\n\n+/).map(p =>
+    '<p>' + p.replace(/\n/g, '<br>') + '</p>'
+  ).join('');
 }
