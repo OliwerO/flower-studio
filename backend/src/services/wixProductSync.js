@@ -400,7 +400,6 @@ export async function runPull() {
               'Product Type': productType,
               'Min Stems': productType === 'mono' ? parseMinStems(variantName) : 0,
             };
-            if (productDescription) newRow['Description'] = productDescription;
             if (importedCategories.length > 0) newRow['Category'] = importedCategories;
             await db.create(TABLES.PRODUCT_CONFIG, newRow);
             stats.new++;
@@ -416,9 +415,6 @@ export async function runPull() {
           const existingCats = parseCategoryField(existing['Category']);
           if (existingCats.length === 0 && importedCategories.length > 0) {
             updates['Category'] = importedCategories;
-          }
-          if (!existing['Description'] && productDescription) {
-            updates['Description'] = productDescription;
           }
           if (Object.keys(updates).length > 0) {
             try {
