@@ -9,6 +9,7 @@ import { getBackupDriverName, setBackupDriverName } from '../services/driverStat
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { sendAlert } from '../services/telegram.js';
 
 const router = Router();
 
@@ -229,6 +230,47 @@ function migrateCategoryObjects() {
 // Load config on startup
 loadConfig();
 
+// ── Available Today cutoff reminder ─────────────────────────
+// Checks every minute. Once per day, after cutoff, if there are still
+// active Available Today products, sends a Telegram reminder to the owner.
+let cutoffReminderSentDate = null;
+
+setInterval(async () => {
+  try {
+    if (!configLoaded) return;
+    const cutoff = config.availableTodayCutoff || '18:00';
+    const tz = config.availableTodayTimezone || 'Europe/Warsaw';
+    const now = new Date();
+    const timeStr = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+    }).format(now);
+    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+
+    if (timeStr < cutoff) return; // not past cutoff yet
+    if (cutoffReminderSentDate === todayStr) return; // already sent today
+
+    // Check if any active products with lead time 0 exist
+    if (!TABLES.PRODUCT_CONFIG) return;
+    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
+      filterByFormula: "AND({Active} = TRUE(), {Lead Time Days} = 0)",
+      maxRecords: 1,
+      fields: ['Product Name'],
+    });
+
+    if (rows.length > 0) {
+      await sendAlert(
+        `⏰ Available Today reminder\n\n`
+        + `It's past ${cutoff} — you still have products marked as Available Today.\n`
+        + `Deactivate them in the dashboard if they're no longer available.`
+      );
+      cutoffReminderSentDate = todayStr;
+      console.log('[SETTINGS] Cutoff reminder sent');
+    }
+  } catch (err) {
+    console.error('[SETTINGS] Cutoff reminder error:', err.message);
+  }
+}, 60_000); // check every minute
+
 // ── Daily settings (auto-reset at midnight) ─────────────────
 const daily = {
   driverOfDay:  null,
@@ -399,28 +441,18 @@ export async function generateOrderId() {
 }
 
 /**
- * Check if the "Available Today" category should be visible on the storefront.
- * Two conditions must be met:
- * 1. Current local time (in configured timezone) is before the cutoff
- * 2. At least one product qualifies (passed as argument — caller checks stock/lead time)
- *
- * Like a factory shift schedule: after the last shift ends (cutoff),
- * the "same-day dispatch" service window closes automatically.
+ * Check if current time in the configured timezone is past the cutoff.
+ * Used for reminder logic — NOT for auto-hiding (owner controls visibility).
  */
-export function isAvailableTodayCategoryActive(hasAvailableProducts = true) {
+export function isPastCutoff() {
   const cutoff = config.availableTodayCutoff || '18:00';
   const tz = config.availableTodayTimezone || 'Europe/Warsaw';
-
-  // Get current HH:MM in the configured timezone using native Intl API
   const now = new Date();
   const timeStr = new Intl.DateTimeFormat('en-GB', {
     hour: '2-digit', minute: '2-digit',
     hour12: false, timeZone: tz,
   }).format(now);
-  // timeStr = "14:30" style
-
-  const beforeCutoff = timeStr < cutoff;
-  return beforeCutoff && hasAvailableProducts;
+  return timeStr >= cutoff;
 }
 
 /**

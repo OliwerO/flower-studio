@@ -22,28 +22,22 @@ export default function ProductsTab() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState(null);
-  const [cutoffInfo, setCutoffInfo] = useState({ cutoffActive: true, cutoffTime: '18:00' });
   const { showToast } = useToast();
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const [prodRes, stockRes, logRes, catRes, settingsRes] = await Promise.all([
+      const [prodRes, stockRes, logRes, catRes] = await Promise.all([
         client.get('/products'),
         client.get('/stock?includeEmpty=true'),
         client.get('/products/sync-log'),
         client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
-        client.get('/settings').catch(() => ({ data: { config: {} } })),
       ]);
       setProducts(prodRes.data);
       setStock(stockRes.data);
       setSyncLog(logRes.data?.[0] || null);
       setSyncHistory(logRes.data || []);
       setCategories(catRes.data?.allCategories || catRes.data?.all || []);
-      setCutoffInfo({
-        cutoffActive: catRes.data?.cutoffActive !== false,
-        cutoffTime: settingsRes.data?.config?.availableTodayCutoff || '18:00',
-      });
     } catch {
       showToast(t.error, 'error');
     } finally {
@@ -189,7 +183,6 @@ export default function ProductsTab() {
       <AvailableTodayBanner
         products={availableTodayProducts}
         onFilter={() => setFilter('today')}
-        cutoffInfo={cutoffInfo}
       />
 
       {/* Review banner */}
@@ -833,9 +826,7 @@ function SyncLogSection({ logs }) {
 // Shows which products will appear in the Wix "Available Today" collection after next push.
 // Think of it as a live preview of the storefront's same-day delivery section.
 
-function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
-  const { cutoffActive = true, cutoffTime = '18:00' } = cutoffInfo;
-
+function AvailableTodayBanner({ products, onFilter }) {
   if (products.length === 0) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
@@ -846,26 +837,17 @@ function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
   }
 
   return (
-    <div className={`${cutoffActive ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'} border rounded-xl px-4 py-3 mb-4`}>
+    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4">
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-lg">⚡</span>
-          <span className={`text-sm font-medium ${cutoffActive ? 'text-green-800' : 'text-amber-800'}`}>
+          <span className="text-sm font-medium text-green-800">
             {t.prodAvailTodayBanner}: {products.length}
-          </span>
-          <span className={`text-xs px-2 py-0.5 rounded-full ${
-            cutoffActive
-              ? 'text-green-600 bg-green-100'
-              : 'text-amber-600 bg-amber-100'
-          }`}>
-            {cutoffActive ? `${t.prodCutoffLive} ${cutoffTime}` : `${t.prodCutoffHidden} ${cutoffTime}`}
           </span>
         </div>
         <button
           onClick={onFilter}
-          className={`text-xs font-medium px-3 py-1 rounded-full ${
-            cutoffActive ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-amber-700 bg-amber-100 hover:bg-amber-200'
-          }`}
+          className="text-xs font-medium px-3 py-1 rounded-full text-green-700 bg-green-100 hover:bg-green-200"
         >
           {t.prodFilterToday}
         </button>
@@ -878,7 +860,7 @@ function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
             .filter(p => p > 0);
           const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
           return (
-            <div key={g.wixProductId} className={`flex items-center gap-1.5 bg-white rounded-lg px-2 py-1 border ${cutoffActive ? 'border-green-100' : 'border-amber-100'}`}>
+            <div key={g.wixProductId} className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1 border border-green-100">
               {g.imageUrl && <img src={g.imageUrl} alt="" className="w-5 h-5 rounded object-cover" />}
               <span className="text-xs font-medium text-gray-700">{g.name}</span>
               {minPrice > 0 && <span className="text-xs text-gray-400">{t.fromPrice} {minPrice} zł</span>}
@@ -886,7 +868,7 @@ function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
           );
         })}
       </div>
-      <p className={`text-xs mt-1.5 ${cutoffActive ? 'text-green-600' : 'text-amber-600'}`}>{t.prodAvailTodayHint}</p>
+      <p className="text-xs mt-1.5 text-green-600">{t.prodAvailTodayHint}</p>
     </div>
   );
 }

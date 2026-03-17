@@ -9,7 +9,7 @@
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sendAlert } from './telegram.js';
-import { getActiveSeasonalCategory, getConfig, updateConfig, isAvailableTodayCategoryActive } from '../routes/settings.js';
+import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -611,18 +611,10 @@ export async function runPush() {
         }
       }
 
-      // Available Today — check cutoff before populating.
-      // Past cutoff = empty the collection on Wix (zero products assigned).
+      // Available Today — populate with qualifying products (lead time 0 + stock).
+      // Owner manually controls when to deactivate — no automatic cutoff.
       const availTodayId = catMap['available-today'];
-      if (availTodayId && !isAvailableTodayCategoryActive()) {
-        try {
-          await setWixCategoryProducts(availTodayId, []);
-          console.log('[PUSH] Available Today: past cutoff — emptied collection');
-          stats.categoriesSynced++;
-        } catch (err) {
-          stats.errors.push(`Available Today (cutoff): ${err.message}`);
-        }
-      } else if (availTodayId) {
+      if (availTodayId) {
         const stockCheck = await db.list(TABLES.STOCK, {
           filterByFormula: '{Active} = TRUE()',
           fields: ['Display Name', 'Current Quantity'],

@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { getConfig, getActiveSeasonalCategory, isAvailableTodayCategoryActive } from './settings.js';
+import { getConfig, getActiveSeasonalCategory } from './settings.js';
 
 const router = Router();
 
@@ -132,14 +132,6 @@ router.get('/products', cached('products', async () => {
     });
   }
 
-  // If past cutoff, override availableToday to false on all products
-  const cutoffActive = isAvailableTodayCategoryActive(
-    products.some(p => p.availableToday)
-  );
-  if (!cutoffActive) {
-    for (const p of products) p.availableToday = false;
-  }
-
   // Collect all categories that have at least one active product
   const activeCats = [...new Set(products.flatMap(p => p.category))];
 
@@ -147,8 +139,6 @@ router.get('/products', cached('products', async () => {
     categories: activeCats,
     seasonalCategory: seasonal,
     products,
-    availableTodayCutoff: getConfig('availableTodayCutoff') || '18:00',
-    cutoffActive,
     updatedAt: new Date().toISOString(),
   };
 }));
@@ -219,17 +209,8 @@ router.get('/categories', (_req, res) => {
   const seasonal = getActiveSeasonalCategory();
 
   const permanent = sc.permanent || [];
-  let auto = sc.auto || [];
+  const auto = sc.auto || [];
   const allSeasonal = (sc.seasonal || []).map(s => s.name);
-
-  // Check if "Available Today" should be hidden (past cutoff or no products)
-  const cutoffActive = isAvailableTodayCategoryActive();
-  if (!cutoffActive) {
-    auto = auto.filter(a => {
-      const name = typeof a === 'string' ? a : a.name;
-      return name !== 'Available Today';
-    });
-  }
 
   // Flat name lists (backward compat for product assignment / nav rendering)
   const permanentNames = permanent.map(p => typeof p === 'string' ? p : p.name);
@@ -263,7 +244,6 @@ router.get('/categories', (_req, res) => {
     all,
     allCategories,
     categoryMap,
-    cutoffActive,
   });
 });
 
