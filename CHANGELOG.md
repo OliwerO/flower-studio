@@ -23,6 +23,7 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-12 | Order Lines | New field: `Stock Deferred` (Checkbox) | ❌ |
 | 2026-03-13 | Stock Orders | **New table** — PO header (Status, Supplier, Driver, Notes, Supplier Payments) | ❌ |
 | 2026-03-13 | Stock Order Lines | **New table** — PO lines (Stock Item, Qty Needed, Lot Size, Driver Status, Eval Status, Price Needs Review) | ❌ |
+| 2026-03-17 | Product Config | New fields: `Description` (Long text), `Translations` (Long text/JSON) | ✅ Already created |
 
 ---
 
@@ -147,6 +148,20 @@ Changes made to the **dev base** that must be replicated in **production** befor
 - Block B: Add unlisted flowers to bouquet builder (creates stock record with optional supplier/cost/sell/lot), edit bouquet after order creation with return-to-stock or write-off choice, auto-revert Ready→In Preparation on owner edit (`38f894e`)
 - Block C: Driver PO UX overhaul (bigger buttons, always visible, status switchable), live SSE sync between owner and driver, new Reviewing status (Shopping→Reviewing→Evaluating), owner approve-review step, florist evaluation shows cost price/qty needed/alt flower names (`4c8af85`)
 - Block D: Florist app dark mode — system preference + manual toggle, iOS-style dark palette, ThemeContext with localStorage persistence (`259c67f`)
+
+### 2026-03-17
+
+**Available Today + Product Descriptions + Wix Push Fixes**
+- Available Today infrastructure: cutoff config (18:00 default), smart time slots in order forms, Telegram reminder at cutoff (`60f77ce`, `51c4cea`)
+- Available Today category: requires explicit Category assignment + lead time 0 + stock check for Wix push (`c18b5cc`)
+- Product descriptions: pull from Wix (HTML→plain text), edit in dashboard, translate to 4 languages via Claude Haiku, push to Wix (plain text→HTML) (`d98e7cd`, `fb02012`, `2f0f3d0`)
+- ProductDescriptionEditor component: inline description editing with language tabs (EN/PL/RU/UK) matching category translation pattern (`d98e7cd`)
+- Smart time slots: both dashboard + florist order forms gray out past delivery slots when date=today, auto-clear invalid selection on date change (`60f77ce`)
+- Settings: Available Today cutoff time + slot lead time controls in Settings tab (`60f77ce`)
+- Fix: Wix variant price push — endpoint changed from `/variants/{id}` to `/variants` with ID in body (`60f77ce`)
+- Fix: Airtable Description/Translations fields must exist before read/write (`854cb2d`, `c09ad81`, `afdf501`)
+- Wix setup: owner created "Available Today" category + page in Wix Editor
+- Airtable: Description + Translations fields added to Product Config table
 
 ---
 
