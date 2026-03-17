@@ -258,6 +258,12 @@ const en = {
   prodCategorySyncs:    'categories',
   prodErrors:           'errors',
   prodNoSyncLog:        'No sync history yet',
+  prodAvailTodayBanner: 'Available today on Wix',
+  prodAvailTodayNone:   'No products qualify for same-day delivery',
+  prodAvailTodayHint:   'Active, lead time = 0, sufficient stock',
+  prodHasTranslations:  'Translated',
+  prodStockOk:          'In stock',
+  prodNoStock:          'No stock',
 
   // Financial KPIs tab
   tabFinancial:     'Financial',
@@ -518,7 +524,7 @@ const en = {
   sfTranslated:             'Translated',
   sfTranslations:           'Translations',
   sfAuto:                   'Auto (system-generated)',
-  sfAutoHint:               'System categories — edit translations only',
+  sfAutoHint:               'System categories — edit description and translations',
 
   // Delivery zones
   dzTitle:                  'Delivery zones',
@@ -820,6 +826,12 @@ const ru = {
   prodCategorySyncs:    'категорий',
   prodErrors:           'ошибок',
   prodNoSyncLog:        'Нет истории синхронизаций',
+  prodAvailTodayBanner: 'Доступно сегодня на Wix',
+  prodAvailTodayNone:   'Нет товаров для доставки сегодня',
+  prodAvailTodayHint:   'Активен, срок = 0, достаточно на складе',
+  prodHasTranslations:  'Переведено',
+  prodStockOk:          'Есть на складе',
+  prodNoStock:          'Нет на складе',
 
   // Financial KPIs tab
   tabFinancial:     'Финансы',
@@ -1080,7 +1092,7 @@ const ru = {
   sfTranslated:             'Переведено',
   sfTranslations:           'Переводы',
   sfAuto:                   'Авто (системные)',
-  sfAutoHint:               'Системные категории — только редактирование переводов',
+  sfAutoHint:               'Системные категории — описание и переводы',
 
   // Delivery zones
   dzTitle:                  'Зоны доставки',

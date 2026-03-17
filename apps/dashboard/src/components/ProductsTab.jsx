@@ -47,15 +47,38 @@ export default function ProductsTab() {
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
 
+  const [catFilter, setCatFilter] = useState('');
+
+  const stockMap = Object.fromEntries(stock.map(s => [s.id, s]));
+
   // Group variants by Wix Product ID
   const grouped = groupByProduct(products);
+
+  // Check if a variant qualifies for "Available Today" (matches backend push logic)
+  function isAvailableToday(variant) {
+    if (!variant['Active']) return false;
+    if (Number(variant['Lead Time Days'] ?? 1) !== 0) return false;
+    const keyFlower = variant['Key Flower'];
+    const stockId = Array.isArray(keyFlower) ? keyFlower[0] : keyFlower;
+    if (!stockId) return true; // no key flower = no stock constraint
+    const si = stockMap[stockId];
+    if (!si) return false;
+    const minStems = Number(variant['Min Stems'] || 0);
+    return Number(si['Current Quantity'] || 0) >= minStems;
+  }
 
   // Filter
   const filtered = grouped.filter(g => {
     if (filter === 'review') return g.variants.every(v => !v['Active']) && !g.variants.some(v => v['Category']?.length > 0);
     if (filter === 'active') return g.variants.some(v => v['Active']);
     if (filter === 'inactive') return g.variants.every(v => !v['Active']);
-    if (filter === 'today') return g.variants.some(v => v['Active'] && Number(v['Lead Time Days'] ?? 1) === 0);
+    if (filter === 'today') return g.variants.some(v => isAvailableToday(v));
+    return true;
+  }).filter(g => {
+    if (catFilter) {
+      const cats = parseCats(g.variants[0]?.['Category']);
+      if (!cats.includes(catFilter)) return false;
+    }
     return true;
   }).filter(g => {
     if (!search) return true;
@@ -67,6 +90,11 @@ export default function ProductsTab() {
   const needsReview = grouped.filter(g =>
     g.variants.every(v => !v['Active']) && !g.variants.some(v => v['Category']?.length > 0)
   ).length;
+
+  // Available today count (for banner)
+  const availableTodayProducts = grouped.filter(g =>
+    g.variants.some(v => isAvailableToday(v))
+  );
 
   async function handlePull() {
     setPulling(true);
@@ -120,7 +148,6 @@ export default function ProductsTab() {
     }
   }
 
-  const stockMap = Object.fromEntries(stock.map(s => [s.id, s]));
   // Show all stock items for Key Flower mapping (not just active/in-stock ones)
   const stockList = stock;
 
@@ -151,6 +178,12 @@ export default function ProductsTab() {
           </button>
         </div>
       </div>
+
+      {/* Available Today banner */}
+      <AvailableTodayBanner
+        products={availableTodayProducts}
+        onFilter={() => setFilter('today')}
+      />
 
       {/* Review banner */}
       {needsReview > 0 && (
@@ -188,6 +221,19 @@ export default function ProductsTab() {
             </button>
           ))}
         </div>
+        {/* Category chip filter */}
+        {categories.length > 0 && (
+          <select
+            value={catFilter}
+            onChange={e => setCatFilter(e.target.value)}
+            className="border border-gray-200 rounded-xl px-2 py-1.5 text-xs text-gray-600"
+          >
+            <option value="">{t.category}: {t.prodFilterAll}</option>
+            {categories.map(cat => (
+              <option key={cat} value={cat}>{cat}</option>
+            ))}
+          </select>
+        )}
         <input
           type="text"
           placeholder={t.search}
@@ -242,6 +288,23 @@ function ProductCard({ group, stockMap, stockList, categories, expanded, onToggl
   const productType = group.variants[0]?.['Product Type'] || 'mix';
   const currentCats = parseCats(group.variants[0]?.['Category']);
 
+  // Stock status: check if key flower has sufficient stock for at least one variant
+  const hasStock = anyActive && group.variants.some(v => {
+    if (!v['Active']) return false;
+    const kf = v['Key Flower'];
+    const sid = Array.isArray(kf) ? kf[0] : kf;
+    if (!sid) return true;
+    const si = stockMap[sid];
+    if (!si) return false;
+    return Number(si['Current Quantity'] || 0) >= Number(v['Min Stems'] || 0);
+  });
+
+  // Translation status: check if Wix product has translations set
+  const wixTrans = group.variants[0]?.['Translations'];
+  const hasTranslations = wixTrans && typeof wixTrans === 'object'
+    ? Object.keys(wixTrans).length > 0
+    : Boolean(wixTrans);
+
   return (
     <div className={`bg-white rounded-2xl border ${anyActive ? 'border-gray-200' : 'border-amber-200'} shadow-sm overflow-hidden`}>
       {/* Header row */}
@@ -256,12 +319,24 @@ function ProductCard({ group, stockMap, stockList, categories, expanded, onToggl
         )}
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <span className="font-medium text-sm text-gray-900 truncate">{group.name}</span>
             <span className="text-xs text-gray-400">({productType})</span>
             {!allActive && (
               <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">
                 {t.prodNew}
+              </span>
+            )}
+            {anyActive && (
+              <span className={`text-xs px-2 py-0.5 rounded-full ${
+                hasStock ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'
+              }`}>
+                {hasStock ? t.prodStockOk : t.prodNoStock}
+              </span>
+            )}
+            {hasTranslations && (
+              <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">
+                {t.prodHasTranslations}
               </span>
             )}
           </div>
@@ -590,6 +665,57 @@ function SyncLogSection({ logs }) {
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Available Today banner ──
+// Shows which products will appear in the Wix "Available Today" collection after next push.
+// Think of it as a live preview of the storefront's same-day delivery section.
+
+function AvailableTodayBanner({ products, onFilter }) {
+  if (products.length === 0) {
+    return (
+      <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
+        <span className="text-lg">📦</span>
+        <span className="text-sm text-gray-500">{t.prodAvailTodayNone}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4">
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2">
+          <span className="text-lg">⚡</span>
+          <span className="text-sm font-medium text-green-800">
+            {t.prodAvailTodayBanner}: {products.length}
+          </span>
+        </div>
+        <button
+          onClick={onFilter}
+          className="text-xs text-green-700 font-medium px-3 py-1 rounded-full bg-green-100 hover:bg-green-200"
+        >
+          {t.prodFilterToday}
+        </button>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {products.map(g => {
+          const prices = g.variants
+            .filter(v => v['Active'] && Number(v['Lead Time Days'] ?? 1) === 0)
+            .map(v => Number(v['Price'] || 0))
+            .filter(p => p > 0);
+          const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+          return (
+            <div key={g.wixProductId} className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1 border border-green-100">
+              {g.imageUrl && <img src={g.imageUrl} alt="" className="w-5 h-5 rounded object-cover" />}
+              <span className="text-xs font-medium text-gray-700">{g.name}</span>
+              {minPrice > 0 && <span className="text-xs text-gray-400">{t.fromPrice} {minPrice} zł</span>}
+            </div>
+          );
+        })}
+      </div>
+      <p className="text-xs text-green-600 mt-1.5">{t.prodAvailTodayHint}</p>
     </div>
   );
 }

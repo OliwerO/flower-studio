@@ -5,3 +5,15 @@ node_modules/
 dist/
 .DS_Store
 *.log
+
+# Claude Code local config (machine-specific, not for git)
+.claude/settings.local.json
+.claude/agents/
+.claude/commands/
+.claude/plans/
+
+# Temp files
+tmp/
+tmp_*.json
+*.backup
+C\357\200\272*
