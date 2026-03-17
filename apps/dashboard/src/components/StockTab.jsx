@@ -9,18 +9,14 @@ import t from '../translations.js';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';
-import Pills from './Pills.jsx';
-import useConfigLists from '../hooks/useConfigLists.js';
 
 export default function StockTab({ initialFilter }) {
-  const { suppliers: SUPPLIERS, categories: CATEGORIES } = useConfigLists();
   const [stock, setStock]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [showReceive, setShowReceive] = useState(false);
   const [showPurchaseOrders, setShowPurchaseOrders] = useState(initialFilter?.action === 'createPO');
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
-  const [velocity, setVelocity]     = useState({});
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const { showToast } = useToast();
 
@@ -79,7 +75,6 @@ export default function StockTab({ initialFilter }) {
   }
 
   useEffect(() => {
-    client.get('/stock/velocity').then(r => setVelocity(r.data)).catch(() => {});
     fetchLossLog();
   }, []);
 
@@ -142,14 +137,6 @@ export default function StockTab({ initialFilter }) {
       && s['Last Restocked']
       && new Date(s['Last Restocked']).getTime() < fourteenDaysAgo
     );
-  }
-
-  // Group by category
-  const grouped = {};
-  for (const item of filtered) {
-    const cat = item.Category || 'Other';
-    if (!grouped[cat]) grouped[cat] = [];
-    grouped[cat].push(item);
   }
 
   return (
@@ -361,14 +348,9 @@ export default function StockTab({ initialFilter }) {
         );
       })()}
 
-      {/* ── Stock table grouped by category (all/slow views) ── */}
-      {view !== 'waste' && !loading && Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b)).map(([cat, items]) => (
-        <div key={cat} className="glass-card overflow-hidden">
-          <div className="px-4 py-2 bg-brand-50/40 border-b border-white/40">
-            <h3 className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
-              {cat} ({items.length})
-            </h3>
-          </div>
+      {/* ── Stock table — flat compact view (all/slow/negative views) ── */}
+      {view !== 'waste' && !loading && (
+        <div className="glass-card overflow-hidden">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
@@ -376,66 +358,73 @@ export default function StockTab({ initialFilter }) {
                 <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.costPrice}</th>
                 <th className="text-right px-3 py-2 font-medium">{t.sellPrice}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.markup}</th>
-                <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
-                <th className="text-left px-3 py-2 font-medium">{t.farmer}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.lotSize}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.threshold}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.daysOfSupplyHeader}</th>
                 <th className="text-right px-3 py-2 font-medium w-36"></th>
               </tr>
             </thead>
             <tbody>
-              {items.map(item => (
+              {filtered.map(item => (
                 <StockRow
                   key={item.id}
                   item={item}
-                  showWaste={false}
                   onAdjust={adjustQty}
                   onWriteOff={writeOff}
                   onPatch={patchStock}
-                  velocity={velocity[item.id]}
-                  suppliers={SUPPLIERS}
                 />
               ))}
             </tbody>
+            {/* Totals row */}
+            {filtered.length > 0 && (
+              <tfoot>
+                <tr className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold">
+                  <td className="px-3 py-2 text-xs text-ios-label uppercase tracking-wide">
+                    {t.total || 'Total'} ({filtered.length})
+                  </td>
+                  <td className="px-3 py-2 text-right text-ios-label">
+                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
+                  </td>
+                  <td className="px-3 py-2 text-right text-ios-label">
+                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(0)} {t.zl}
+                  </td>
+                  <td className="px-3 py-2 text-right text-ios-label">
+                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(0)} {t.zl}
+                  </td>
+                  <td></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
-      ))}
+      )}
     </div>
   );
 }
 
-// Individual stock row with inline editing
-function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, suppliers = [] }) {
+// Individual stock row — compact: name, qty, cost, sell, actions
+function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
   const [showWo, setShowWo]     = useState(false);
-  const [editSupplier, setEditSupplier] = useState(false);
 
   const qty = item['Current Quantity'] || 0;
   const threshold = item['Reorder Threshold'] || 0;
-  const lotSize = item['Lot Size'] || 1;
   const isLow = qty > 0 && qty <= threshold;
   const isZero = qty === 0;
   const isNegative = qty < 0;
   const cost = item['Current Cost Price'] || 0;
   const sell = item['Current Sell Price'] || 0;
-  const markupPct = cost > 0 && sell > 0 ? ((sell / cost - 1) * 100).toFixed(0) : '—';
-  const dead = item['Dead/Unsold Stems'] || 0;
   const rowColor = isNegative ? 'bg-red-50' : isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
 
   return (
     <>
       <tr className={`border-b border-gray-100 ${rowColor}`}>
-        <td className="px-3 py-2 text-ios-label font-medium">{item['Display Name']}</td>
-        <td className={`px-3 py-2 text-right font-semibold ${
+        <td className="px-3 py-1.5 text-ios-label font-medium text-sm">{item['Display Name']}</td>
+        <td className={`px-3 py-1.5 text-right font-semibold ${
           isNegative ? 'text-red-600 font-bold' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
           {qty}
         </td>
         {/* Editable cost price */}
-        <td className="px-3 py-2 text-right">
+        <td className="px-3 py-1.5 text-right">
           <InlineEdit
             value={cost > 0 ? String(cost.toFixed(0)) : ''}
             type="number"
@@ -444,7 +433,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, su
           />
         </td>
         {/* Editable sell price */}
-        <td className="px-3 py-2 text-right">
+        <td className="px-3 py-1.5 text-right">
           <InlineEdit
             value={sell > 0 ? String(sell.toFixed(0)) : ''}
             type="number"
@@ -452,70 +441,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, su
             onSave={v => onPatch(item.id, { 'Current Sell Price': v ? Number(v) : 0 })}
           />
         </td>
-        <td className="px-3 py-2 text-right text-ios-tertiary">{markupPct === '—' ? '—' : `${markupPct}%`}</td>
-        {/* Editable supplier */}
-        <td className="px-3 py-2 relative">
-          <span
-            onClick={() => setEditSupplier(!editSupplier)}
-            className="text-ios-tertiary cursor-pointer hover:bg-gray-100 rounded px-1 -mx-1 transition-colors text-sm"
-          >
-            {item.Supplier || '—'}
-          </span>
-          {editSupplier && (
-            <div className="absolute left-0 top-full z-20 mt-1 bg-white rounded-xl border border-gray-200 shadow-lg p-2">
-              <Pills
-                options={suppliers.map(s => ({ value: s, label: s }))}
-                value={item.Supplier || ''}
-                onChange={v => { onPatch(item.id, { Supplier: v }); setEditSupplier(false); }}
-              />
-            </div>
-          )}
-        </td>
-        {/* Editable farmer */}
-        <td className="px-3 py-2">
-          <InlineEdit
-            value={item.Farmer || ''}
-            placeholder="—"
-            onSave={v => onPatch(item.id, { Farmer: v || '' })}
-          />
-        </td>
-        {/* Editable lot size */}
-        <td className="px-3 py-2 text-right">
-          <InlineEdit
-            value={lotSize > 1 ? String(lotSize) : ''}
-            type="number"
-            placeholder="1"
-            onSave={v => onPatch(item.id, { 'Lot Size': v ? Number(v) : 1 })}
-          />
-        </td>
-        {/* Editable threshold */}
-        <td className="px-3 py-2 text-right">
-          <InlineEdit
-            value={threshold > 0 ? String(threshold) : ''}
-            type="number"
-            placeholder="—"
-            onSave={v => onPatch(item.id, { 'Reorder Threshold': v ? Number(v) : 0 })}
-          />
-        </td>
-        {/* Days of supply — qty / avg daily usage */}
-        <td className="px-3 py-2 text-right">
-          {velocity ? (
-            <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-              velocity.avgDailyUsage === 0 ? 'bg-gray-100 text-ios-tertiary'
-              : qty / velocity.avgDailyUsage < 2 ? 'bg-rose-100 text-rose-600'
-              : qty / velocity.avgDailyUsage < 5 ? 'bg-amber-100 text-amber-600'
-              : 'bg-emerald-100 text-emerald-600'
-            }`}>
-              {velocity.avgDailyUsage > 0 ? Math.round(qty / velocity.avgDailyUsage) : '—'}
-            </span>
-          ) : (
-            <span className="text-xs text-ios-tertiary">—</span>
-          )}
-        </td>
-        {showWaste && (
-          <td className="px-3 py-2 text-right text-ios-red font-medium">{dead}</td>
-        )}
-        <td className="px-3 py-2 text-right">
+        <td className="px-3 py-1.5 text-right">
           <div className="flex items-center justify-end gap-1">
             <button onClick={() => onAdjust(item.id, -1)}
               className="w-7 h-7 rounded-lg bg-gray-100 text-ios-label text-sm hover:bg-gray-200">−</button>
@@ -530,7 +456,7 @@ function StockRow({ item, showWaste, onAdjust, onWriteOff, onPatch, velocity, su
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={showWaste ? 12 : 11} className="px-3 py-2">
+          <td colSpan={5} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}

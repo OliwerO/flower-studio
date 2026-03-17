@@ -13,6 +13,7 @@ const DEFAULTS = {
   orderSources:   ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
   timeSlots:      ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
   floristNames:   ['Anya', 'Daria'],
+  targetMarkup:   2.2,
 };
 
 let cached = null;
@@ -31,6 +32,7 @@ export default function useConfigLists() {
         ...listsRes.data,
         timeSlots: settingsRes.data.config?.deliveryTimeSlots || DEFAULTS.timeSlots,
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
+        targetMarkup: settingsRes.data.config?.targetMarkup || DEFAULTS.targetMarkup,
         slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
       };
       setLists(cached);
