@@ -17,7 +17,7 @@ const STATUS_COLORS = {
 };
 
 export default function StockOrderPanel({ negativeStock, stock, autoCreate, onClose }) {
-  const { suppliers: SUPPLIERS } = useConfigLists();
+  const { suppliers: SUPPLIERS, targetMarkup } = useConfigLists();
   const { showToast } = useToast();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -70,27 +70,22 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       const lotSize = Number(si?.['Lot Size']) || 0;
       const rawQty = Math.abs(item.qty);
       const quantity = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
+      const si = (stock || []).find(s => s.id === item.id);
+      const cost = si ? (Number(si['Current Cost Price']) || 0) : 0;
+      const sell = si ? (Number(si['Current Sell Price']) || 0) : 0;
       return {
         stockItemId: item.id,
         flowerName: item.name,
         quantity,
         lotSize,
-        supplier: item.supplier || '',
-        costPrice: 0,
-        sellPrice: 0,
+        supplier: item.supplier || si?.Supplier || '',
+        costPrice: cost > 0 ? String(cost) : '',
+        sellPrice: sell > 0 ? String(sell) : '',
+        sellPriceManual: sell > 0,
+        farmer: si?.Farmer || '',
         notes: '',
       };
     });
-
-    // Enrich cost/sell from stock data
-    for (const line of lines) {
-      const si = (stock || []).find(s => s.id === line.stockItemId);
-      if (si) {
-        line.costPrice = Number(si['Current Cost Price']) || 0;
-        line.sellPrice = Number(si['Current Sell Price']) || 0;
-        line.supplier = line.supplier || si.Supplier || '';
-      }
-    }
 
     setFormLines(lines.length > 0 ? lines : [emptyLine()]);
     setFormNotes('');
@@ -99,7 +94,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   }
 
   function emptyLine() {
-    return { stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, supplier: '', costPrice: 0, sellPrice: 0, notes: '' };
+    return { stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false, farmer: '', notes: '' };
   }
 
   function updateFormLine(idx, patch) {
@@ -110,16 +105,34 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     setFormLines(prev => prev.filter((_, i) => i !== idx));
   }
 
-  // Stock search for adding lines
+  // Stock search for adding lines — auto-fill cost/sell/farmer from stock data
   function handleStockSelect(idx, stockItem) {
+    const cost = Number(stockItem['Current Cost Price']) || 0;
+    const sell = Number(stockItem['Current Sell Price']) || 0;
     updateFormLine(idx, {
       stockItemId: stockItem.id,
       flowerName: stockItem['Display Name'],
       lotSize: Number(stockItem['Lot Size']) || 0,
-      costPrice: Number(stockItem['Current Cost Price']) || 0,
-      sellPrice: Number(stockItem['Current Sell Price']) || 0,
+      costPrice: cost > 0 ? String(cost) : '',
+      sellPrice: sell > 0 ? String(sell) : (cost > 0 && targetMarkup ? String(Math.round(cost * targetMarkup)) : ''),
+      sellPriceManual: sell > 0,
       supplier: stockItem.Supplier || '',
+      farmer: stockItem.Farmer || '',
     });
+  }
+
+  // Auto-calculate sell price when cost changes (unless manually overridden)
+  function handleLineCostChange(idx, value) {
+    const patch = { costPrice: value };
+    const line = formLines[idx];
+    if (!line.sellPriceManual && value && targetMarkup) {
+      patch.sellPrice = String(Math.round(Number(value) * targetMarkup));
+    }
+    updateFormLine(idx, patch);
+  }
+
+  function handleLineSellChange(idx, value) {
+    updateFormLine(idx, { sellPrice: value, sellPriceManual: true });
   }
 
   async function createPO() {
@@ -129,7 +142,11 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       await client.post('/stock-orders', {
         notes: formNotes,
         driver: formDriver,
-        lines: formLines.filter(l => l.flowerName),
+        lines: formLines.filter(l => l.flowerName).map(l => ({
+          ...l,
+          costPrice: Number(l.costPrice) || 0,
+          sellPrice: Number(l.sellPrice) || 0,
+        })),
       });
       showToast(t.stockOrderCreated);
       setShowForm(false);
@@ -240,53 +257,117 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
               {lines.map(line => {
                 const ls = Number(line.lotSize) || 0;
                 const lotsNeeded = ls > 1 ? Math.ceil((line.quantity || 0) / ls) : 0;
+                const lineCost = Number(line.costPrice) || 0;
+                const lineSell = Number(line.sellPrice) || 0;
+                const lineQty = Number(line.quantity) || 0;
+                const lineMarkup = lineCost > 0 && lineSell > 0 ? (lineSell / lineCost).toFixed(1) : null;
                 return (
-                <div key={line._idx} className="flex items-center gap-2 px-3 py-2 border-t border-gray-100">
-                  <div className="flex-1 min-w-0">
-                    <StockSearchInput
-                      stock={stock}
-                      value={line.flowerName}
-                      onChange={val => updateFormLine(line._idx, { flowerName: val, stockItemId: '' })}
-                      onSelect={item => handleStockSelect(line._idx, item)}
-                    />
-                  </div>
-                  <input
-                    type="number"
-                    value={line.quantity}
-                    onChange={e => updateFormLine(line._idx, { quantity: Number(e.target.value) })}
-                    className="field-input w-16 text-center"
-                    min="1"
-                    title={t.quantity}
-                  />
-                  {/* Lot size — editable so owner can set it at PO creation time */}
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
+                <div key={line._idx} className="px-3 py-2 border-t border-gray-100 space-y-2">
+                  {/* Row 1: Item + Qty + Lot + Supplier + Remove */}
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <StockSearchInput
+                        stock={stock}
+                        value={line.flowerName}
+                        onChange={val => updateFormLine(line._idx, { flowerName: val, stockItemId: '' })}
+                        onSelect={item => handleStockSelect(line._idx, item)}
+                      />
+                    </div>
                     <input
                       type="number"
-                      value={line.lotSize || ''}
-                      onChange={e => updateFormLine(line._idx, { lotSize: Number(e.target.value) || 0 })}
-                      className="field-input w-14 text-center text-xs"
-                      min="0"
-                      placeholder="—"
+                      value={line.quantity}
+                      onChange={e => updateFormLine(line._idx, { quantity: Number(e.target.value) })}
+                      className="field-input w-16 text-center"
+                      min="1"
+                      title={t.quantity}
+                      placeholder={t.quantity}
                     />
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
+                      <input
+                        type="number"
+                        value={line.lotSize || ''}
+                        onChange={e => updateFormLine(line._idx, { lotSize: Number(e.target.value) || 0 })}
+                        className="field-input w-14 text-center text-xs"
+                        min="0"
+                        placeholder="—"
+                      />
+                    </div>
+                    {lotsNeeded > 0 && (
+                      <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
+                        = {lotsNeeded} × {ls}
+                      </span>
+                    )}
+                    <select
+                      value={line.supplier}
+                      onChange={e => updateFormLine(line._idx, { supplier: e.target.value })}
+                      className="field-input w-28"
+                    >
+                      <option value="">—</option>
+                      {SUPPLIERS.map(s => <option key={s} value={s}>{s}</option>)}
+                    </select>
+                    <button
+                      onClick={() => removeFormLine(line._idx)}
+                      className="text-ios-red text-sm px-1"
+                    >✕</button>
                   </div>
-                  {lotsNeeded > 0 && (
-                    <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
-                      = {lotsNeeded} × {ls}
-                    </span>
-                  )}
-                  <select
-                    value={line.supplier}
-                    onChange={e => updateFormLine(line._idx, { supplier: e.target.value })}
-                    className="field-input w-28"
-                  >
-                    <option value="">—</option>
-                    {SUPPLIERS.map(s => <option key={s} value={s}>{s}</option>)}
-                  </select>
-                  <button
-                    onClick={() => removeFormLine(line._idx)}
-                    className="text-ios-red text-sm px-1"
-                  >✕</button>
+                  {/* Row 2: Cost + Sell + Markup + Farmer + Notes */}
+                  <div className="flex items-center gap-2 pl-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-ios-tertiary">{t.costPrice}:</span>
+                      <input
+                        type="number" step="0.01"
+                        value={line.costPrice}
+                        onChange={e => handleLineCostChange(line._idx, e.target.value)}
+                        className="field-input w-20 text-sm text-right"
+                        placeholder="0"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-ios-tertiary">{t.sellPrice}:</span>
+                      <input
+                        type="number" step="0.01"
+                        value={line.sellPrice}
+                        onChange={e => handleLineSellChange(line._idx, e.target.value)}
+                        className="field-input w-20 text-sm text-right"
+                        placeholder={lineCost && targetMarkup ? String(Math.round(lineCost * targetMarkup)) : '0'}
+                      />
+                    </div>
+                    {lineMarkup && (
+                      <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+                        Number(lineMarkup) >= targetMarkup
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-amber-100 text-amber-700'
+                      }`}>
+                        ×{lineMarkup}
+                      </span>
+                    )}
+                    {lineQty > 0 && lineCost > 0 && (
+                      <span className="text-xs text-ios-tertiary whitespace-nowrap">
+                        = {(lineQty * lineCost).toFixed(0)} {t.zl}
+                      </span>
+                    )}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-ios-tertiary">{t.farmer}:</span>
+                      <input
+                        type="text"
+                        value={line.farmer || ''}
+                        onChange={e => updateFormLine(line._idx, { farmer: e.target.value })}
+                        className="field-input w-28 text-sm"
+                        placeholder="—"
+                      />
+                    </div>
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <span className="text-[10px] text-ios-tertiary">{t.notes}:</span>
+                      <input
+                        type="text"
+                        value={line.notes || ''}
+                        onChange={e => updateFormLine(line._idx, { notes: e.target.value })}
+                        className="field-input w-full text-sm"
+                        placeholder="—"
+                      />
+                    </div>
+                  </div>
                 </div>
               );})}
             </div>
@@ -298,6 +379,20 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
           >
             + {t.addLine}
           </button>
+
+          {/* Grand total */}
+          {(() => {
+            const grandCost = formLines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.costPrice) || 0), 0);
+            const grandSell = formLines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.sellPrice) || 0), 0);
+            return grandCost > 0 ? (
+              <div className="flex items-center gap-4 text-sm px-1">
+                <span className="text-ios-tertiary">{t.costTotal}: <span className="font-semibold text-ios-label">{grandCost.toFixed(0)} {t.zl}</span></span>
+                {grandSell > 0 && (
+                  <span className="text-ios-tertiary">{t.sellTotal}: <span className="font-semibold text-ios-green">{grandSell.toFixed(0)} {t.zl}</span></span>
+                )}
+              </div>
+            ) : null;
+          })()}
 
           {/* Notes + driver + actions */}
           <div className="flex flex-wrap gap-3 items-end">
@@ -388,6 +483,8 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                           orderId={order.id}
                           onUpdate={(lineId, fields) => updateDraftLine(order.id, lineId, fields)}
                           onRemove={(lineId) => removeDraftLine(order.id, lineId)}
+                          targetMarkup={targetMarkup}
+                          suppliers={SUPPLIERS}
                         />
                       ))}
                       <button
@@ -599,24 +696,54 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
   );
 }
 
-// Inline editor for a single Draft PO line — flower search, qty, supplier, cost/sell.
+// Inline editor for a single Draft PO line — flower search, qty, cost, sell, supplier, farmer, notes.
 // Auto-saves on blur so changes persist immediately without a "save" button.
-function DraftLineEditor({ line, stock, onUpdate, onRemove }) {
+function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
   const [qty, setQty] = useState(line['Quantity Needed'] || 1);
+  const [costPrice, setCostPrice] = useState(line['Cost Price'] || '');
+  const [sellPrice, setSellPrice] = useState(line['Sell Price'] || '');
+  const [sellPriceManual, setSellPriceManual] = useState(Number(line['Sell Price']) > 0);
+  const [farmer, setFarmer] = useState(line.Farmer || '');
+  const [notes, setNotes] = useState(line.Notes || '');
+
+  const cost = Number(costPrice) || 0;
+  const sell = Number(sellPrice) || 0;
+  const computedMarkup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
 
   function handleStockSelect(item) {
+    const itemCost = Number(item['Current Cost Price']) || 0;
+    const itemSell = Number(item['Current Sell Price']) || 0;
+    setCostPrice(itemCost > 0 ? String(itemCost) : '');
+    setSellPrice(itemSell > 0 ? String(itemSell) : (itemCost > 0 && targetMarkup ? String(Math.round(itemCost * targetMarkup)) : ''));
+    setSellPriceManual(itemSell > 0);
+    setFarmer(item.Farmer || '');
     onUpdate(line.id, {
       'Flower Name': item['Display Name'],
       Supplier: item.Supplier || '',
-      'Cost Price': Number(item['Current Cost Price']) || 0,
-      'Sell Price': Number(item['Current Sell Price']) || 0,
+      'Cost Price': itemCost,
+      'Sell Price': itemSell || (itemCost > 0 && targetMarkup ? Math.round(itemCost * targetMarkup) : 0),
       'Lot Size': Number(item['Lot Size']) || 0,
       'Quantity Needed': qty,
+      Farmer: item.Farmer || '',
     });
+  }
+
+  function handleCostChange(value) {
+    setCostPrice(value);
+    if (!sellPriceManual && value && targetMarkup) {
+      const auto = String(Math.round(Number(value) * targetMarkup));
+      setSellPrice(auto);
+    }
+  }
+
+  function handleSellChange(value) {
+    setSellPrice(value);
+    setSellPriceManual(true);
   }
 
   return (
     <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
+      {/* Row 1: Item + Qty + Supplier + Remove */}
       <div className="flex items-center gap-2">
         <div className="flex-1">
           <StockSearchInput
@@ -633,13 +760,78 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove }) {
           onBlur={() => onUpdate(line.id, { 'Quantity Needed': qty })}
           className="field-input w-16 text-sm text-center"
           min="1"
+          placeholder={t.quantity}
         />
+        <select
+          value={line.Supplier || ''}
+          onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
+          className="field-input w-28 text-sm"
+        >
+          <option value="">—</option>
+          {(suppliers || []).map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
         <button
           onClick={() => onRemove(line.id)}
           className="text-red-400 hover:text-red-600 text-sm px-1"
         >
           ✕
         </button>
+      </div>
+      {/* Row 2: Cost + Sell + Markup + Farmer + Notes */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-ios-tertiary">{t.costPrice}:</span>
+          <input
+            type="number" step="0.01"
+            value={costPrice}
+            onChange={e => handleCostChange(e.target.value)}
+            onBlur={() => onUpdate(line.id, { 'Cost Price': Number(costPrice) || 0, 'Sell Price': Number(sellPrice) || 0 })}
+            className="field-input w-20 text-sm text-right"
+            placeholder="0"
+          />
+        </div>
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-ios-tertiary">{t.sellPrice}:</span>
+          <input
+            type="number" step="0.01"
+            value={sellPrice}
+            onChange={e => handleSellChange(e.target.value)}
+            onBlur={() => onUpdate(line.id, { 'Sell Price': Number(sellPrice) || 0 })}
+            className="field-input w-20 text-sm text-right"
+            placeholder={cost && targetMarkup ? String(Math.round(cost * targetMarkup)) : '0'}
+          />
+        </div>
+        {computedMarkup && (
+          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+            Number(computedMarkup) >= targetMarkup
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-amber-100 text-amber-700'
+          }`}>
+            ×{computedMarkup}
+          </span>
+        )}
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-ios-tertiary">{t.farmer}:</span>
+          <input
+            type="text"
+            value={farmer}
+            onChange={e => setFarmer(e.target.value)}
+            onBlur={() => onUpdate(line.id, { Farmer: farmer })}
+            className="field-input w-28 text-sm"
+            placeholder="—"
+          />
+        </div>
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          <span className="text-[10px] text-ios-tertiary">{t.notes}:</span>
+          <input
+            type="text"
+            value={notes}
+            onChange={e => setNotes(e.target.value)}
+            onBlur={() => onUpdate(line.id, { Notes: notes })}
+            className="field-input w-full text-sm"
+            placeholder="—"
+          />
+        </div>
       </div>
       {line['Lot Size'] > 1 && (
         <div className="text-[11px] text-ios-tertiary">
