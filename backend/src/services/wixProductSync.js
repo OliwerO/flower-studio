@@ -626,12 +626,15 @@ export async function runPush() {
         const stockByRecId = Object.fromEntries(
           stockCheck.map(s => [s.id, Number(s['Current Quantity'] || 0)])
         );
-        const leadTimeZero = allConfigRows.filter(r => Number(r['Lead Time Days'] ?? 1) === 0);
-        console.log(`[PUSH] Lead time 0 variants: ${leadTimeZero.length} (${leadTimeZero.map(r => r['Wix Product ID']).join(', ')})`);
+        // Must have "Available Today" in Category field + lead time 0 + stock
+        const availCandidates = allConfigRows.filter(r => {
+          const cats = parseCategoryField(r['Category']);
+          return cats.includes('Available Today') && Number(r['Lead Time Days'] ?? 1) === 0;
+        });
+        console.log(`[PUSH] Available Today candidates (category + lt=0): ${availCandidates.length}`);
         const availProductIds = [...new Set(
-          leadTimeZero.filter(r => {
+          availCandidates.filter(r => {
             const kf = r['Key Flower'];
-            // No key flower mapped = no stock constraint, qualifies
             if (!kf || (Array.isArray(kf) && kf.length === 0)) return true;
             let qty = 0;
             if (Array.isArray(kf) && kf.length > 0) qty = stockByRecId[kf[0]] || 0;
@@ -640,7 +643,7 @@ export async function runPush() {
             return minStems > 0 ? qty >= minStems : qty > 0;
           }).map(r => r['Wix Product ID']).filter(Boolean)
         )];
-        console.log(`[PUSH] Available Today products: ${availProductIds.length}`);
+        console.log(`[PUSH] Available Today products (after stock check): ${availProductIds.length}`);
         try {
           await setWixCategoryProducts(availTodayId, availProductIds);
           stats.categoriesSynced++;
