@@ -142,6 +142,31 @@ async function updateWixProductVisibility(productId, visible) {
   }
 }
 
+/**
+ * Update Wix product content (name, description).
+ * Only sends fields that are provided — won't overwrite with empty values.
+ */
+async function updateWixProductContent(productId, { name, description }) {
+  const product = {};
+  if (name) product.name = name;
+  if (description !== undefined) product.description = description;
+  if (Object.keys(product).length === 0) return;
+
+  const res = await fetch(
+    `${WIX_API_URL}/stores/v1/products/${productId}`,
+    {
+      method: 'PATCH',
+      headers: wixHeaders(),
+      body: JSON.stringify({ product }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix product content update failed for ${productId}: ${text}`);
+  }
+}
+
 // ── Wix Category API helpers ──────────────────────────────
 // Category management — like reassigning products between
 // different aisles (departments) in a retail store.
@@ -623,6 +648,48 @@ export async function runPush() {
       }
     } catch (err) {
       stats.errors.push(`Category phase: ${err.message}`);
+    }
+
+    // ── Product Descriptions ────────────────────────────
+    // Push EN name + description from Translations field to Wix.
+    // Like updating product labels on the showroom shelf.
+    try {
+      const descRows = await db.list(TABLES.PRODUCT_CONFIG, {
+        filterByFormula: '{Active} = TRUE()',
+        fields: ['Wix Product ID', 'Description', 'Translations'],
+      });
+
+      // Group by product — one description per Wix product
+      const descByProduct = new Map();
+      for (const row of descRows) {
+        const pid = row['Wix Product ID'];
+        if (!pid || descByProduct.has(pid)) continue;
+        const rawTrans = row['Translations'];
+        let translations = {};
+        if (rawTrans && typeof rawTrans === 'string') {
+          try { translations = JSON.parse(rawTrans); } catch { /* skip */ }
+        } else if (rawTrans && typeof rawTrans === 'object') {
+          translations = rawTrans;
+        }
+        const enTitle = translations?.en?.title;
+        const enDesc = translations?.en?.description || row['Description'] || '';
+        if (enTitle || enDesc) {
+          descByProduct.set(pid, { name: enTitle, description: enDesc });
+        }
+      }
+
+      let descSynced = 0;
+      for (const [productId, content] of descByProduct) {
+        try {
+          await updateWixProductContent(productId, content);
+          descSynced++;
+        } catch (err) {
+          stats.errors.push(`Description ${productId}: ${err.message}`);
+        }
+      }
+      if (descSynced > 0) console.log(`[PUSH] Descriptions synced: ${descSynced}`);
+    } catch (err) {
+      stats.errors.push(`Description phase: ${err.message}`);
     }
 
     console.log('[PUSH] Complete:', JSON.stringify(stats));

@@ -418,6 +418,12 @@ function ProductCard({ group, stockMap, stockList, categories, expanded, onToggl
             onUpdateAll={onUpdateAll}
           />
 
+          {/* Description + translations */}
+          <ProductDescriptionEditor
+            group={group}
+            onUpdateAll={onUpdateAll}
+          />
+
           {/* Variant rows */}
           <div className="overflow-x-auto mt-3">
             <table className="w-full text-sm">
@@ -449,6 +455,153 @@ function ProductCard({ group, stockMap, stockList, categories, expanded, onToggl
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Product description + translations ──
+
+function ProductDescriptionEditor({ group, onUpdateAll }) {
+  const [editing, setEditing] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [transLang, setTransLang] = useState('en');
+
+  // Read current values from first variant (product-level field)
+  const rawTrans = group.variants[0]?.['Translations'];
+  let translations = {};
+  if (rawTrans && typeof rawTrans === 'string') {
+    try { translations = JSON.parse(rawTrans); } catch { /* skip */ }
+  } else if (rawTrans && typeof rawTrans === 'object') {
+    translations = rawTrans;
+  }
+  const description = group.variants[0]?.['Description'] || '';
+
+  const [draft, setDraft] = useState({ description, translations });
+
+  // Sync draft when group changes (e.g. after save)
+  useEffect(() => {
+    const raw = group.variants[0]?.['Translations'];
+    let t = {};
+    if (raw && typeof raw === 'string') { try { t = JSON.parse(raw); } catch {} }
+    else if (raw && typeof raw === 'object') t = raw;
+    setDraft({ description: group.variants[0]?.['Description'] || '', translations: t });
+  }, [group.variants[0]?.['Description'], group.variants[0]?.['Translations']]);
+
+  async function handleTranslate() {
+    setTranslating(true);
+    try {
+      const trans = { ...(draft.translations || {}) };
+      // Translate product name
+      if (group.name) {
+        const titleRes = await client.post('/products/translate', { text: group.name, type: 'title' });
+        for (const lang of ['en', 'pl', 'ru', 'uk']) {
+          trans[lang] = { ...(trans[lang] || {}), title: titleRes.data[lang] || '' };
+        }
+      }
+      // Translate description
+      if (draft.description) {
+        const descRes = await client.post('/products/translate', { text: draft.description, type: 'description' });
+        for (const lang of ['en', 'pl', 'ru', 'uk']) {
+          trans[lang] = { ...(trans[lang] || {}), description: descRes.data[lang] || '' };
+        }
+      }
+      setDraft(d => ({ ...d, translations: trans }));
+    } catch (err) {
+      console.error('Translation failed:', err);
+    }
+    setTranslating(false);
+  }
+
+  function handleSave() {
+    onUpdateAll(group, 'Description', draft.description);
+    onUpdateAll(group, 'Translations', JSON.stringify(draft.translations));
+    setEditing(false);
+  }
+
+  const hasAnyTranslation = Object.values(translations).some(
+    l => l?.title || l?.description
+  );
+
+  if (!editing) {
+    return (
+      <div className="flex items-center gap-2 text-xs py-2 border-b border-gray-100">
+        <span className="text-gray-500">{t.prodDescription}:</span>
+        <span className="text-gray-600 truncate max-w-[300px]">
+          {description || translations?.en?.description || '—'}
+        </span>
+        {hasAnyTranslation && (
+          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{t.prodHasTranslations}</span>
+        )}
+        <button
+          onClick={() => setEditing(true)}
+          className="text-xs text-brand-600 font-medium ml-auto"
+        >{t.edit}</button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="py-2 border-b border-gray-100 space-y-2">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-500 font-medium">{t.prodDescription}</span>
+        <button
+          onClick={handleTranslate}
+          disabled={translating || (!group.name && !draft.description)}
+          className="text-xs text-white bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 px-3 py-1 rounded-lg ml-auto"
+        >
+          {translating ? t.prodTranslating : t.prodTranslate}
+        </button>
+        <button onClick={handleSave} className="text-xs text-white bg-brand-600 px-3 py-1 rounded-lg">{t.save}</button>
+        <button onClick={() => setEditing(false)} className="text-xs text-gray-400">✕</button>
+      </div>
+      <textarea
+        value={draft.description || ''}
+        onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
+        placeholder={t.prodDescriptionHint}
+        rows={2}
+        className="w-full text-sm px-2 py-1 border rounded-lg resize-none"
+      />
+      {/* Language tabs */}
+      <div className="border border-gray-100 rounded-lg overflow-hidden">
+        <div className="flex border-b border-gray-100">
+          {['en', 'pl', 'ru', 'uk'].map(lang => (
+            <button
+              key={lang}
+              onClick={() => setTransLang(lang)}
+              className={`flex-1 text-xs py-1.5 font-medium ${
+                transLang === lang ? 'bg-brand-50 text-brand-700 border-b-2 border-brand-600' : 'text-gray-400'
+              }`}
+            >{lang.toUpperCase()}{lang === 'en' ? ' (Wix)' : ''}</button>
+          ))}
+        </div>
+        <div className="p-2 space-y-1">
+          <input
+            value={draft.translations[transLang]?.title || ''}
+            onChange={e => setDraft(d => ({
+              ...d,
+              translations: {
+                ...d.translations,
+                [transLang]: { ...(d.translations[transLang] || {}), title: e.target.value },
+              },
+            }))}
+            placeholder="Title"
+            className="w-full text-xs px-2 py-1 border rounded"
+          />
+          <textarea
+            value={draft.translations[transLang]?.description || ''}
+            onChange={e => setDraft(d => ({
+              ...d,
+              translations: {
+                ...d.translations,
+                [transLang]: { ...(d.translations[transLang] || {}), description: e.target.value },
+              },
+            }))}
+            placeholder="Description"
+            rows={2}
+            className="w-full text-xs px-2 py-1 border rounded resize-none"
+          />
+        </div>
+      </div>
     </div>
   );
 }

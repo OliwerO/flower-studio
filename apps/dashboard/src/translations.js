@@ -266,6 +266,11 @@ const en = {
   prodNoStock:          'No stock',
   prodCutoffLive:       'LIVE until',
   prodCutoffHidden:     'HIDDEN (past cutoff)',
+  prodDescription:      'Description',
+  prodDescriptionHint:  'Product description for the storefront',
+  prodTranslate:        'Translate',
+  prodTranslating:      'Translating...',
+  prodTranslations:     'Translations',
 
   // Financial KPIs tab
   tabFinancial:     'Financial',
@@ -841,6 +846,11 @@ const ru = {
   prodNoStock:          'Нет на складе',
   prodCutoffLive:       'АКТИВНО до',
   prodCutoffHidden:     'СКРЫТО (после отсечки)',
+  prodDescription:      'Описание',
+  prodDescriptionHint:  'Описание товара для витрины',
+  prodTranslate:        'Перевести',
+  prodTranslating:      'Переводим...',
+  prodTranslations:     'Переводы',
 
   // Financial KPIs tab
   tabFinancial:     'Финансы',

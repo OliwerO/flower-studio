@@ -131,6 +131,7 @@ const EDITABLE_FIELDS = [
   'Price', 'Lead Time Days', 'Active', 'Visible in Wix',
   'Category', 'Key Flower', 'Product Type', 'Min Stems',
   'Sort Order', 'Available From', 'Available To',
+  'Description', 'Translations',
 ];
 
 router.patch('/:id', async (req, res, next) => {
