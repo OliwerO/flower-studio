@@ -52,6 +52,9 @@ const DEFAULTS = {
   freeDeliveryThreshold: 300,
   expressSurcharge: 20,
   deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+  availableTodayCutoff: '18:00',
+  availableTodayTimezone: 'Europe/Warsaw',
+  slotLeadTimeMinutes: 30,
 };
 
 // ── In-memory config (loaded from Airtable on startup) ──────
@@ -393,6 +396,31 @@ export async function generateOrderId() {
 
   // Last resort fallback
   return `${monthKey}-${String(Date.now() % 1000).padStart(3, '0')}`;
+}
+
+/**
+ * Check if the "Available Today" category should be visible on the storefront.
+ * Two conditions must be met:
+ * 1. Current local time (in configured timezone) is before the cutoff
+ * 2. At least one product qualifies (passed as argument — caller checks stock/lead time)
+ *
+ * Like a factory shift schedule: after the last shift ends (cutoff),
+ * the "same-day dispatch" service window closes automatically.
+ */
+export function isAvailableTodayCategoryActive(hasAvailableProducts = true) {
+  const cutoff = config.availableTodayCutoff || '18:00';
+  const tz = config.availableTodayTimezone || 'Europe/Warsaw';
+
+  // Get current HH:MM in the configured timezone using native Intl API
+  const now = new Date();
+  const timeStr = new Intl.DateTimeFormat('en-GB', {
+    hour: '2-digit', minute: '2-digit',
+    hour12: false, timeZone: tz,
+  }).format(now);
+  // timeStr = "14:30" style
+
+  const beforeCutoff = timeStr < cutoff;
+  return beforeCutoff && hasAvailableProducts;
 }
 
 /**

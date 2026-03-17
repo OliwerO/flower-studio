@@ -264,6 +264,8 @@ const en = {
   prodHasTranslations:  'Translated',
   prodStockOk:          'In stock',
   prodNoStock:          'No stock',
+  prodCutoffLive:       'LIVE until',
+  prodCutoffHidden:     'HIDDEN (past cutoff)',
 
   // Financial KPIs tab
   tabFinancial:     'Financial',
@@ -539,6 +541,11 @@ const en = {
   dzExpressSurchargeHint:   'Extra fee for same-day delivery (zl)',
   dzTimeSlots:              'Delivery time slots',
   dzTimeSlotsHint:          'Available time windows for customer selection',
+  settingsAvailCutoff:      'Available Today cutoff',
+  settingsAvailCutoffHint:  'Hide "Available Today" on the storefront after this time (local Krakow time)',
+  settingsSlotLeadTime:     'Time slot lead time (min)',
+  settingsSlotLeadTimeHint: 'Buffer before a delivery slot becomes unavailable (e.g. 30 = can\'t pick 14:00 slot after 13:30)',
+  settingsAvailableToday:   'Available Today',
   deliveryMethod:           'Delivery method',
   deliveryMethodDriver:     'Driver',
   deliveryMethodTaxi:       'Taxi',
@@ -832,6 +839,8 @@ const ru = {
   prodHasTranslations:  'Переведено',
   prodStockOk:          'Есть на складе',
   prodNoStock:          'Нет на складе',
+  prodCutoffLive:       'АКТИВНО до',
+  prodCutoffHidden:     'СКРЫТО (после отсечки)',
 
   // Financial KPIs tab
   tabFinancial:     'Финансы',
@@ -1107,6 +1116,11 @@ const ru = {
   dzExpressSurchargeHint:   'Доплата за доставку в тот же день (zl)',
   dzTimeSlots:              'Окна доставки',
   dzTimeSlotsHint:          'Доступные временные интервалы для выбора клиентом',
+  settingsAvailCutoff:      'Отсечка «Доступно сегодня»',
+  settingsAvailCutoffHint:  'Скрыть «Доступно сегодня» на витрине после этого времени (время Кракова)',
+  settingsSlotLeadTime:     'Запас времени для слота (мин)',
+  settingsSlotLeadTimeHint: 'Буфер до недоступности слота (напр. 30 = нельзя выбрать 14:00 после 13:30)',
+  settingsAvailableToday:   'Доступно сегодня',
   deliveryMethod:           'Способ доставки',
   deliveryMethodDriver:     'Водитель',
   deliveryMethodTaxi:       'Такси',

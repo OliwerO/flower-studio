@@ -22,22 +22,28 @@ export default function ProductsTab() {
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState(null);
+  const [cutoffInfo, setCutoffInfo] = useState({ cutoffActive: true, cutoffTime: '18:00' });
   const { showToast } = useToast();
 
   const fetchProducts = useCallback(async () => {
     setLoading(true);
     try {
-      const [prodRes, stockRes, logRes, catRes] = await Promise.all([
+      const [prodRes, stockRes, logRes, catRes, settingsRes] = await Promise.all([
         client.get('/products'),
         client.get('/stock?includeEmpty=true'),
         client.get('/products/sync-log'),
         client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
+        client.get('/settings').catch(() => ({ data: { config: {} } })),
       ]);
       setProducts(prodRes.data);
       setStock(stockRes.data);
       setSyncLog(logRes.data?.[0] || null);
       setSyncHistory(logRes.data || []);
       setCategories(catRes.data?.allCategories || catRes.data?.all || []);
+      setCutoffInfo({
+        cutoffActive: catRes.data?.cutoffActive !== false,
+        cutoffTime: settingsRes.data?.config?.availableTodayCutoff || '18:00',
+      });
     } catch {
       showToast(t.error, 'error');
     } finally {
@@ -183,6 +189,7 @@ export default function ProductsTab() {
       <AvailableTodayBanner
         products={availableTodayProducts}
         onFilter={() => setFilter('today')}
+        cutoffInfo={cutoffInfo}
       />
 
       {/* Review banner */}
@@ -673,12 +680,18 @@ function SyncLogSection({ logs }) {
 // Shows which products will appear in the Wix "Available Today" collection after next push.
 // Think of it as a live preview of the storefront's same-day delivery section.
 
-function AvailableTodayBanner({ products, onFilter }) {
-  if (products.length === 0) {
+function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
+  const { cutoffActive = true, cutoffTime = '18:00' } = cutoffInfo;
+
+  if (!cutoffActive || products.length === 0) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
         <span className="text-lg">📦</span>
-        <span className="text-sm text-gray-500">{t.prodAvailTodayNone}</span>
+        <span className="text-sm text-gray-500">
+          {!cutoffActive
+            ? `${t.prodAvailTodayBanner} — ${t.prodCutoffHidden} ${cutoffTime}`
+            : t.prodAvailTodayNone}
+        </span>
       </div>
     );
   }
@@ -690,6 +703,9 @@ function AvailableTodayBanner({ products, onFilter }) {
           <span className="text-lg">⚡</span>
           <span className="text-sm font-medium text-green-800">
             {t.prodAvailTodayBanner}: {products.length}
+          </span>
+          <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
+            {t.prodCutoffLive} {cutoffTime}
           </span>
         </div>
         <button

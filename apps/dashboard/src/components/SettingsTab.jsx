@@ -992,6 +992,29 @@ export default function SettingsTab() {
       {/* Delivery Zones */}
       <DeliveryZonesSection config={config} onUpdate={updateConfig} />
 
+      {/* Available Today — cutoff time and slot lead time */}
+      <Section title={t.settingsAvailableToday}>
+        <div className="flex items-center justify-between py-3 border-b border-gray-100">
+          <div>
+            <span className="text-sm font-medium text-gray-700">{t.settingsAvailCutoff}</span>
+            <p className="text-xs text-gray-400 mt-0.5">{t.settingsAvailCutoffHint}</p>
+          </div>
+          <input
+            type="time"
+            value={config.availableTodayCutoff || '18:00'}
+            onChange={e => updateConfig({ availableTodayCutoff: e.target.value })}
+            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5"
+          />
+        </div>
+        <ConfigRow
+          label={t.settingsSlotLeadTime}
+          value={config.slotLeadTimeMinutes || 30}
+          type="number"
+          hint={t.settingsSlotLeadTimeHint}
+          onSave={v => updateConfig({ slotLeadTimeMinutes: v })}
+        />
+      </Section>
+
       {/* Marketing Spend */}
       <MarketingSpendSection sources={config.orderSources} />
 

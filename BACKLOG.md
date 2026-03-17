@@ -149,6 +149,9 @@ Features and improvements tracked against original build phases.
 - [ ] **Backup strategy** — scheduled Airtable data export
 - [ ] **Error monitoring** — Sentry or similar for production error tracking
 - [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
+  - [ ] Restrict same-day delivery slots to "Available Today" bouquets only (Velo checkout logic)
+  - [ ] Hide "Available Today" nav item via Velo when `/api/public/categories` omits it (post-cutoff)
+  - [ ] Use `filteredTimeSlots` from `/api/public/delivery-pricing?date=` for Wix checkout time picker
 
 ### Known Issues (from PO system audit)
 - [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage

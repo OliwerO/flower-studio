@@ -37,6 +37,7 @@ export default function useConfigLists() {
         drivers: settingsRes.data.drivers || DEFAULTS.drivers,
         targetMarkup: settingsRes.data.config?.targetMarkup || DEFAULTS.targetMarkup,
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
+        slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
       };
       setLists(cached);
     });

@@ -4,6 +4,7 @@
 import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
+import { getAvailableSlots } from '../../utils/timeSlots.js';
 
 function getSourceLabels() {
   return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
@@ -77,8 +78,16 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
 export default function Step3Details({ form, onChange }) {
   const SOURCE_LABELS = getSourceLabels();
   const METHOD_LABELS = getMethodLabels();
-  const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots } = useConfigLists();
+  const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots, slotLeadTimeMinutes } = useConfigLists();
+  const smartSlots = getAvailableSlots(timeSlots, form.deliveryDate, slotLeadTimeMinutes);
   const set = key => val => onChange({ [key]: val });
+
+  // When date changes, clear time slot if it's no longer available
+  function handleDateChange(val) {
+    const slots = getAvailableSlots(timeSlots, val, slotLeadTimeMinutes);
+    const currentStillAvailable = slots.find(s => s.slot === form.deliveryTime)?.available;
+    onChange({ deliveryDate: val, ...(form.deliveryTime && !currentStillAvailable ? { deliveryTime: '' } : {}) });
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -123,7 +132,7 @@ export default function Step3Details({ form, onChange }) {
             <div className="flex-1">
               <DatePicker
                 value={form.deliveryDate}
-                onChange={val => onChange({ deliveryDate: val })}
+                onChange={handleDateChange}
                 placeholder={t.optional}
               />
             </div>
@@ -131,14 +140,17 @@ export default function Step3Details({ form, onChange }) {
           <div className="px-4 py-3.5">
             <span className="text-sm text-ios-tertiary mb-2 block">{t.deliveryTime}</span>
             <div className="flex flex-wrap gap-2">
-              {timeSlots.map(slot => (
+              {smartSlots.map(({ slot, available }) => (
                 <button
                   key={slot}
-                  onClick={() => onChange({ deliveryTime: form.deliveryTime === slot ? '' : slot })}
+                  onClick={() => available && onChange({ deliveryTime: form.deliveryTime === slot ? '' : slot })}
+                  disabled={!available}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors ${
-                    form.deliveryTime === slot
-                      ? 'bg-brand-600 text-white shadow-sm'
-                      : 'bg-white/50 text-ios-secondary border border-white/60 active:bg-white/70'
+                    !available
+                      ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border border-gray-200'
+                      : form.deliveryTime === slot
+                        ? 'bg-brand-600 text-white shadow-sm'
+                        : 'bg-white/50 text-ios-secondary border border-white/60 active:bg-white/70'
                   }`}
                 >
                   {slot}

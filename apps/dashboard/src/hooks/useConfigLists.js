@@ -31,6 +31,7 @@ export default function useConfigLists() {
         ...listsRes.data,
         timeSlots: settingsRes.data.config?.deliveryTimeSlots || DEFAULTS.timeSlots,
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
+        slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
       };
       setLists(cached);
     });

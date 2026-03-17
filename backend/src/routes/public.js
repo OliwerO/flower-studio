@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { getConfig, getActiveSeasonalCategory } from './settings.js';
+import { getConfig, getActiveSeasonalCategory, isAvailableTodayCategoryActive } from './settings.js';
 
 const router = Router();
 
@@ -132,6 +132,14 @@ router.get('/products', cached('products', async () => {
     });
   }
 
+  // If past cutoff, override availableToday to false on all products
+  const cutoffActive = isAvailableTodayCategoryActive(
+    products.some(p => p.availableToday)
+  );
+  if (!cutoffActive) {
+    for (const p of products) p.availableToday = false;
+  }
+
   // Collect all categories that have at least one active product
   const activeCats = [...new Set(products.flatMap(p => p.category))];
 
@@ -139,6 +147,8 @@ router.get('/products', cached('products', async () => {
     categories: activeCats,
     seasonalCategory: seasonal,
     products,
+    availableTodayCutoff: getConfig('availableTodayCutoff') || '18:00',
+    cutoffActive,
     updatedAt: new Date().toISOString(),
   };
 }));
@@ -163,12 +173,40 @@ router.get('/stock-availability', cached('stock', async () => {
 
 // ── GET /api/public/delivery-pricing ───────────────────────
 // Zone-based delivery fees — consumed by Wix Shipping Rates SPI.
-router.get('/delivery-pricing', (_req, res) => {
+// Optional ?date=YYYY-MM-DD — if today, filters out past time slots.
+router.get('/delivery-pricing', (req, res) => {
+  const timeSlots = getConfig('deliveryTimeSlots') || [];
+  const tz = getConfig('availableTodayTimezone') || 'Europe/Warsaw';
+  const leadMin = getConfig('slotLeadTimeMinutes') || 30;
+  const dateParam = req.query.date;
+
+  // Check if requested date is today (in configured timezone)
+  const nowLocal = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date());
+  const isSameDay = dateParam === nowLocal;
+
+  let filteredTimeSlots = timeSlots;
+  if (isSameDay) {
+    const nowTime = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+    }).format(new Date()); // "14:30"
+    const [nowH, nowM] = nowTime.split(':').map(Number);
+    const nowMinutes = nowH * 60 + nowM + leadMin;
+
+    filteredTimeSlots = timeSlots.filter(slot => {
+      const startTime = slot.split('-')[0]; // "14:00" from "14:00-16:00"
+      const [h, m] = startTime.split(':').map(Number);
+      return h * 60 + m > nowMinutes;
+    });
+  }
+
   res.json({
     zones: getConfig('deliveryZones') || [],
     freeDeliveryThreshold: getConfig('freeDeliveryThreshold') || 0,
     expressSurcharge: getConfig('expressSurcharge') || 0,
-    timeSlots: getConfig('deliveryTimeSlots') || [],
+    timeSlots,
+    filteredTimeSlots,
+    isSameDay,
+    slotLeadTimeMinutes: leadMin,
     currency: 'PLN',
   });
 });
@@ -181,8 +219,17 @@ router.get('/categories', (_req, res) => {
   const seasonal = getActiveSeasonalCategory();
 
   const permanent = sc.permanent || [];
-  const auto = sc.auto || [];
+  let auto = sc.auto || [];
   const allSeasonal = (sc.seasonal || []).map(s => s.name);
+
+  // Check if "Available Today" should be hidden (past cutoff or no products)
+  const cutoffActive = isAvailableTodayCategoryActive();
+  if (!cutoffActive) {
+    auto = auto.filter(a => {
+      const name = typeof a === 'string' ? a : a.name;
+      return name !== 'Available Today';
+    });
+  }
 
   // Flat name lists (backward compat for product assignment / nav rendering)
   const permanentNames = permanent.map(p => typeof p === 'string' ? p : p.name);
@@ -216,6 +263,7 @@ router.get('/categories', (_req, res) => {
     all,
     allCategories,
     categoryMap,
+    cutoffActive,
   });
 });
 
