@@ -836,34 +836,36 @@ function SyncLogSection({ logs }) {
 function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
   const { cutoffActive = true, cutoffTime = '18:00' } = cutoffInfo;
 
-  if (!cutoffActive || products.length === 0) {
+  if (products.length === 0) {
     return (
       <div className="bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 mb-4 flex items-center gap-3">
         <span className="text-lg">📦</span>
-        <span className="text-sm text-gray-500">
-          {!cutoffActive
-            ? `${t.prodAvailTodayBanner} — ${t.prodCutoffHidden} ${cutoffTime}`
-            : t.prodAvailTodayNone}
-        </span>
+        <span className="text-sm text-gray-500">{t.prodAvailTodayNone}</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-green-50 border border-green-200 rounded-xl px-4 py-3 mb-4">
+    <div className={`${cutoffActive ? 'bg-green-50 border-green-200' : 'bg-amber-50 border-amber-200'} border rounded-xl px-4 py-3 mb-4`}>
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <span className="text-lg">⚡</span>
-          <span className="text-sm font-medium text-green-800">
+          <span className={`text-sm font-medium ${cutoffActive ? 'text-green-800' : 'text-amber-800'}`}>
             {t.prodAvailTodayBanner}: {products.length}
           </span>
-          <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
-            {t.prodCutoffLive} {cutoffTime}
+          <span className={`text-xs px-2 py-0.5 rounded-full ${
+            cutoffActive
+              ? 'text-green-600 bg-green-100'
+              : 'text-amber-600 bg-amber-100'
+          }`}>
+            {cutoffActive ? `${t.prodCutoffLive} ${cutoffTime}` : `${t.prodCutoffHidden} ${cutoffTime}`}
           </span>
         </div>
         <button
           onClick={onFilter}
-          className="text-xs text-green-700 font-medium px-3 py-1 rounded-full bg-green-100 hover:bg-green-200"
+          className={`text-xs font-medium px-3 py-1 rounded-full ${
+            cutoffActive ? 'text-green-700 bg-green-100 hover:bg-green-200' : 'text-amber-700 bg-amber-100 hover:bg-amber-200'
+          }`}
         >
           {t.prodFilterToday}
         </button>
@@ -876,7 +878,7 @@ function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
             .filter(p => p > 0);
           const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
           return (
-            <div key={g.wixProductId} className="flex items-center gap-1.5 bg-white rounded-lg px-2 py-1 border border-green-100">
+            <div key={g.wixProductId} className={`flex items-center gap-1.5 bg-white rounded-lg px-2 py-1 border ${cutoffActive ? 'border-green-100' : 'border-amber-100'}`}>
               {g.imageUrl && <img src={g.imageUrl} alt="" className="w-5 h-5 rounded object-cover" />}
               <span className="text-xs font-medium text-gray-700">{g.name}</span>
               {minPrice > 0 && <span className="text-xs text-gray-400">{t.fromPrice} {minPrice} zł</span>}
@@ -884,7 +886,7 @@ function AvailableTodayBanner({ products, onFilter, cutoffInfo = {} }) {
           );
         })}
       </div>
-      <p className="text-xs text-green-600 mt-1.5">{t.prodAvailTodayHint}</p>
+      <p className={`text-xs mt-1.5 ${cutoffActive ? 'text-green-600' : 'text-amber-600'}`}>{t.prodAvailTodayHint}</p>
     </div>
   );
 }
