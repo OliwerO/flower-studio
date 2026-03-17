@@ -346,7 +346,7 @@ export async function runPull() {
     const existingRows = await db.list(TABLES.PRODUCT_CONFIG, {
       fields: [
         'Product Name', 'Variant Name', 'Wix Product ID', 'Wix Variant ID',
-        'Image URL', 'Price', 'Active', 'Visible in Wix', 'Category', 'Description',
+        'Image URL', 'Price', 'Active', 'Visible in Wix', 'Category',
       ],
     });
 
