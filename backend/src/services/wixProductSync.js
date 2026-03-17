@@ -364,6 +364,10 @@ export async function runPull() {
       const productDescription = stripHtml(product.description || '');
       const imageUrl = product.media?.mainMedia?.image?.url || '';
       const variants = product.variants || [];
+      if (productName.includes('Mix of the day') || productName.includes('mix of the day')) {
+        console.log(`[PULL] "${productName}": ${variants.length} variants, ids: ${variants.map(v => v.id).join(', ')}`);
+        if (variants[0]) console.log(`[PULL]   variant[0] keys:`, Object.keys(variants[0]).join(', '));
+      }
       if (variants.length === 0) continue;
 
       const productType = detectProductType(variants);
