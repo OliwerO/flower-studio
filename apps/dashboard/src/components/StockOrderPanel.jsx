@@ -70,7 +70,6 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       const lotSize = Number(si?.['Lot Size']) || 0;
       const rawQty = Math.abs(item.qty);
       const quantity = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
-      const si = (stock || []).find(s => s.id === item.id);
       const cost = si ? (Number(si['Current Cost Price']) || 0) : 0;
       const sell = si ? (Number(si['Current Sell Price']) || 0) : 0;
       return {
