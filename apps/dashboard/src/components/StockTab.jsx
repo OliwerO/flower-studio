@@ -428,10 +428,10 @@ export default function StockTab({ initialFilter }) {
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
                   </td>
                   <td className="px-2 py-2 text-right text-ios-label">
-                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(0)} {t.zl}
+                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
                   <td className="px-2 py-2 text-right text-ios-label">
-                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(0)} {t.zl}
+                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
                   <td colSpan={7}></td>
                 </tr>
@@ -476,7 +476,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
         </td>
         <td className="px-2 py-1.5 text-right">
           <InlineEdit
-            value={cost > 0 ? String(cost.toFixed(0)) : ''}
+            value={cost > 0 ? String(cost.toFixed(2)) : ''}
             type="number"
             placeholder="—"
             onSave={v => onPatch(item.id, { 'Current Cost Price': v ? Number(v) : 0 })}
@@ -484,7 +484,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
         </td>
         <td className="px-2 py-1.5 text-right">
           <InlineEdit
-            value={sell > 0 ? String(sell.toFixed(0)) : ''}
+            value={sell > 0 ? String(sell.toFixed(2)) : ''}
             type="number"
             placeholder="—"
             onSave={v => onPatch(item.id, { 'Current Sell Price': v ? Number(v) : 0 })}
