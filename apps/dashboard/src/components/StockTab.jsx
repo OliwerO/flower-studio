@@ -121,9 +121,19 @@ export default function StockTab({ initialFilter }) {
     }
   }
 
+  const [sortCol, setSortCol] = useState('lastRestocked');
+  const [sortAsc, setSortAsc] = useState(false);
+
+  function toggleSort(col) {
+    if (sortCol === col) setSortAsc(!sortAsc);
+    else { setSortCol(col); setSortAsc(col === 'name'); }
+  }
+
   // Client-side search
   let filtered = search
-    ? stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(search.toLowerCase()))
+    ? stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(search.toLowerCase())
+        || (s.Supplier || '').toLowerCase().includes(search.toLowerCase())
+        || (s.Farmer || '').toLowerCase().includes(search.toLowerCase()))
     : stock;
 
   // View filters (waste view uses lossLog instead of stock table)
@@ -137,6 +147,24 @@ export default function StockTab({ initialFilter }) {
       && s['Last Restocked']
       && new Date(s['Last Restocked']).getTime() < fourteenDaysAgo
     );
+  }
+
+  // Sort
+  const sortFns = {
+    name: (a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''),
+    qty: (a, b) => (a['Current Quantity'] || 0) - (b['Current Quantity'] || 0),
+    cost: (a, b) => (a['Current Cost Price'] || 0) - (b['Current Cost Price'] || 0),
+    sell: (a, b) => (a['Current Sell Price'] || 0) - (b['Current Sell Price'] || 0),
+    supplier: (a, b) => (a.Supplier || '').localeCompare(b.Supplier || ''),
+    lastRestocked: (a, b) => {
+      const da = a['Last Restocked'] ? new Date(a['Last Restocked']).getTime() : 0;
+      const db = b['Last Restocked'] ? new Date(b['Last Restocked']).getTime() : 0;
+      return da - db;
+    },
+  };
+  if (sortFns[sortCol]) {
+    const fn = sortFns[sortCol];
+    filtered = [...filtered].sort((a, b) => sortAsc ? fn(a, b) : fn(b, a));
   }
 
   return (
@@ -348,17 +376,35 @@ export default function StockTab({ initialFilter }) {
         );
       })()}
 
-      {/* ── Stock table — flat compact view (all/slow/negative views) ── */}
+      {/* ── Stock table — flat sortable view (all/slow/negative views) ── */}
       {view !== 'waste' && !loading && (
-        <div className="glass-card overflow-hidden">
-          <table className="w-full text-sm">
+        <div className="glass-card overflow-x-auto">
+          <table className="w-full text-sm whitespace-nowrap">
             <thead>
-              <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
-                <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.costPrice}</th>
-                <th className="text-right px-3 py-2 font-medium">{t.sellPrice}</th>
-                <th className="text-right px-3 py-2 font-medium w-36"></th>
+              <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
+                {[
+                  { key: 'name',           label: t.stockName, align: 'left' },
+                  { key: 'qty',            label: t.quantity, align: 'right' },
+                  { key: 'cost',           label: t.costPrice, align: 'right' },
+                  { key: 'sell',           label: t.sellPrice, align: 'right' },
+                  { key: null,             label: t.markup, align: 'right' },
+                  { key: 'supplier',       label: t.supplier, align: 'left' },
+                  { key: null,             label: t.farmer, align: 'left' },
+                  { key: null,             label: t.lotSize, align: 'right' },
+                  { key: null,             label: t.threshold || 'Threshold', align: 'right' },
+                  { key: 'lastRestocked',  label: t.daysInStock || 'Days in stock', align: 'right' },
+                  { key: null,             label: '', align: 'right' },
+                ].map((col, i) => (
+                  <th key={i}
+                    onClick={col.key ? () => toggleSort(col.key) : undefined}
+                    className={`px-2 py-2 font-medium ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.key ? 'cursor-pointer hover:text-ios-label select-none' : ''}`}
+                  >
+                    {col.label}
+                    {col.key && sortCol === col.key && (
+                      <span className="ml-0.5">{sortAsc ? '↑' : '↓'}</span>
+                    )}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
@@ -372,23 +418,22 @@ export default function StockTab({ initialFilter }) {
                 />
               ))}
             </tbody>
-            {/* Totals row */}
             {filtered.length > 0 && (
               <tfoot>
-                <tr className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold">
-                  <td className="px-3 py-2 text-xs text-ios-label uppercase tracking-wide">
+                <tr className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold text-xs">
+                  <td className="px-2 py-2 text-ios-label uppercase tracking-wide">
                     {t.total || 'Total'} ({filtered.length})
                   </td>
-                  <td className="px-3 py-2 text-right text-ios-label">
+                  <td className="px-2 py-2 text-right text-ios-label text-base">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
                   </td>
-                  <td className="px-3 py-2 text-right text-ios-label">
+                  <td className="px-2 py-2 text-right text-ios-label">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(0)} {t.zl}
                   </td>
-                  <td className="px-3 py-2 text-right text-ios-label">
+                  <td className="px-2 py-2 text-right text-ios-label">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(0)} {t.zl}
                   </td>
-                  <td></td>
+                  <td colSpan={7}></td>
                 </tr>
               </tfoot>
             )}
@@ -399,7 +444,7 @@ export default function StockTab({ initialFilter }) {
   );
 }
 
-// Individual stock row — compact: name, qty, cost, sell, actions
+// Individual stock row — flat: name, qty, cost, sell, markup, supplier, farmer, lot, threshold, days in stock, actions
 function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
@@ -412,19 +457,24 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   const isNegative = qty < 0;
   const cost = item['Current Cost Price'] || 0;
   const sell = item['Current Sell Price'] || 0;
+  const markup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
+  const lotSize = item['Lot Size'] || '';
+  const lastRestocked = item['Last Restocked'];
+  const daysInStock = lastRestocked
+    ? Math.floor((Date.now() - new Date(lastRestocked).getTime()) / 86400000)
+    : null;
   const rowColor = isNegative ? 'bg-red-50' : isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
 
   return (
     <>
-      <tr className={`border-b border-gray-100 ${rowColor}`}>
-        <td className="px-3 py-1.5 text-ios-label font-medium text-sm">{item['Display Name']}</td>
-        <td className={`px-3 py-1.5 text-right font-semibold ${
-          isNegative ? 'text-red-600 font-bold' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
+      <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
+        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{item['Display Name']}</td>
+        <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
+          isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
           {qty}
         </td>
-        {/* Editable cost price */}
-        <td className="px-3 py-1.5 text-right">
+        <td className="px-2 py-1.5 text-right">
           <InlineEdit
             value={cost > 0 ? String(cost.toFixed(0)) : ''}
             type="number"
@@ -432,8 +482,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
             onSave={v => onPatch(item.id, { 'Current Cost Price': v ? Number(v) : 0 })}
           />
         </td>
-        {/* Editable sell price */}
-        <td className="px-3 py-1.5 text-right">
+        <td className="px-2 py-1.5 text-right">
           <InlineEdit
             value={sell > 0 ? String(sell.toFixed(0)) : ''}
             type="number"
@@ -441,14 +490,32 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
             onSave={v => onPatch(item.id, { 'Current Sell Price': v ? Number(v) : 0 })}
           />
         </td>
-        <td className="px-3 py-1.5 text-right">
+        <td className="px-2 py-1.5 text-right">
+          {markup && (
+            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+              Number(markup) >= 2.0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+            }`}>×{markup}</span>
+          )}
+        </td>
+        <td className="px-2 py-1.5 text-xs text-ios-secondary">{item.Supplier || '—'}</td>
+        <td className="px-2 py-1.5 text-xs text-ios-secondary">{item.Farmer || '—'}</td>
+        <td className="px-2 py-1.5 text-right text-xs text-ios-tertiary tabular-nums">{lotSize || '—'}</td>
+        <td className="px-2 py-1.5 text-right text-xs text-ios-tertiary tabular-nums">{threshold || '—'}</td>
+        <td className={`px-2 py-1.5 text-right text-xs tabular-nums ${
+          daysInStock != null && daysInStock > 7 ? 'text-ios-orange font-medium' :
+          daysInStock != null && daysInStock > 14 ? 'text-ios-red font-semibold' :
+          'text-ios-tertiary'
+        }`}>
+          {daysInStock != null ? daysInStock : '—'}
+        </td>
+        <td className="px-2 py-1.5 text-right">
           <div className="flex items-center justify-end gap-1">
             <button onClick={() => onAdjust(item.id, -1)}
-              className="w-7 h-7 rounded-lg bg-gray-100 text-ios-label text-sm hover:bg-gray-200">−</button>
+              className="w-6 h-6 rounded bg-gray-100 text-ios-label text-xs hover:bg-gray-200">−</button>
             <button onClick={() => onAdjust(item.id, 1)}
-              className="w-7 h-7 rounded-lg bg-gray-100 text-ios-label text-sm hover:bg-gray-200">+</button>
+              className="w-6 h-6 rounded bg-gray-100 text-ios-label text-xs hover:bg-gray-200">+</button>
             <button onClick={() => setShowWo(!showWo)}
-              className="ml-1 px-2 py-1 rounded-lg bg-ios-red/10 text-ios-red text-xs hover:bg-ios-red/20">
+              className="ml-0.5 px-1.5 py-0.5 rounded bg-ios-red/10 text-ios-red text-[10px] hover:bg-ios-red/20">
               {t.writeOff}
             </button>
           </div>
@@ -456,7 +523,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={5} className="px-3 py-2">
+          <td colSpan={11} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}
