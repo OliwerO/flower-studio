@@ -393,6 +393,7 @@ export default function StockTab({ initialFilter }) {
                   { key: null,             label: t.lotSize, align: 'right' },
                   { key: null,             label: t.threshold || 'Threshold', align: 'right' },
                   { key: 'lastRestocked',  label: t.daysInStock || 'Days in stock', align: 'right' },
+                  { key: null,             label: t.receivedDate || 'Received', align: 'right' },
                   { key: null,             label: '', align: 'right' },
                 ].map((col, i) => (
                   <th key={i}
@@ -433,7 +434,7 @@ export default function StockTab({ initialFilter }) {
                   <td className="px-2 py-2 text-right text-ios-label">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
-                  <td colSpan={7}></td>
+                  <td colSpan={8}></td>
                 </tr>
               </tfoot>
             )}
@@ -508,6 +509,9 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
         }`}>
           {daysInStock != null ? daysInStock : '—'}
         </td>
+        <td className="px-2 py-1.5 text-right text-xs text-ios-tertiary tabular-nums">
+          {lastRestocked ? new Date(lastRestocked).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' }) : '—'}
+        </td>
         <td className="px-2 py-1.5 text-right">
           <div className="flex items-center justify-end gap-1">
             <button onClick={() => onAdjust(item.id, -1)}
@@ -523,7 +527,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={11} className="px-3 py-2">
+          <td colSpan={12} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" min="1" value={woQty}
                 onChange={e => setWoQty(Number(e.target.value))}
