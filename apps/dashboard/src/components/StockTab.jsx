@@ -164,7 +164,13 @@ export default function StockTab({ initialFilter }) {
   };
   if (sortFns[sortCol]) {
     const fn = sortFns[sortCol];
-    filtered = [...filtered].sort((a, b) => sortAsc ? fn(a, b) : fn(b, a));
+    filtered = [...filtered].sort((a, b) => {
+      // Always show negative stock on top regardless of sort column
+      const aNeg = (a['Current Quantity'] || 0) < 0 ? 1 : 0;
+      const bNeg = (b['Current Quantity'] || 0) < 0 ? 1 : 0;
+      if (aNeg !== bNeg) return bNeg - aNeg;
+      return sortAsc ? fn(a, b) : fn(b, a);
+    });
   }
 
   return (
@@ -384,6 +390,7 @@ export default function StockTab({ initialFilter }) {
               <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
                 {[
                   { key: 'name',           label: t.stockName, align: 'left' },
+                  { key: 'lastRestocked',  label: t.receivedDate || 'Received', align: 'right' },
                   { key: 'qty',            label: t.quantity, align: 'right' },
                   { key: 'cost',           label: t.costPrice, align: 'right' },
                   { key: 'sell',           label: t.sellPrice, align: 'right' },
@@ -392,7 +399,6 @@ export default function StockTab({ initialFilter }) {
                   { key: null,             label: t.farmer, align: 'left' },
                   { key: null,             label: t.lotSize, align: 'right' },
                   { key: null,             label: t.threshold || 'Threshold', align: 'right' },
-                  { key: 'lastRestocked',  label: t.receivedDate || 'Received', align: 'right' },
                   { key: null,             label: '', align: 'right' },
                 ].map((col, i) => (
                   <th key={i}
@@ -469,6 +475,22 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
     <>
       <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
         <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{item['Display Name']}</td>
+        <td className="px-2 py-1.5 text-right text-xs tabular-nums">
+          {lastRestocked ? (
+            <div>
+              <span className={
+                daysInStock != null && daysInStock > 14 ? 'text-ios-red font-semibold' :
+                daysInStock != null && daysInStock > 7 ? 'text-ios-orange font-medium' :
+                'text-ios-tertiary'
+              }>
+                {daysInStock != null ? `${daysInStock}d` : ''}
+              </span>
+              <span className="text-ios-tertiary ml-1">
+                {new Date(lastRestocked).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
+              </span>
+            </div>
+          ) : '—'}
+        </td>
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
           isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
@@ -499,23 +521,21 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
         </td>
         <td className="px-2 py-1.5 text-xs text-ios-secondary">{item.Supplier || '—'}</td>
         <td className="px-2 py-1.5 text-xs text-ios-secondary">{item.Farmer || '—'}</td>
-        <td className="px-2 py-1.5 text-right text-xs text-ios-tertiary tabular-nums">{lotSize || '—'}</td>
-        <td className="px-2 py-1.5 text-right text-xs text-ios-tertiary tabular-nums">{threshold || '—'}</td>
-        <td className="px-2 py-1.5 text-right text-xs tabular-nums">
-          {lastRestocked ? (
-            <div>
-              <span className={
-                daysInStock != null && daysInStock > 14 ? 'text-ios-red font-semibold' :
-                daysInStock != null && daysInStock > 7 ? 'text-ios-orange font-medium' :
-                'text-ios-tertiary'
-              }>
-                {daysInStock != null ? `${daysInStock}d` : ''}
-              </span>
-              <span className="text-ios-tertiary ml-1">
-                {new Date(lastRestocked).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
-              </span>
-            </div>
-          ) : '—'}
+        <td className="px-2 py-1.5 text-right">
+          <InlineEdit
+            value={lotSize ? String(lotSize) : ''}
+            type="number"
+            placeholder="—"
+            onSave={v => onPatch(item.id, { 'Lot Size': v ? Number(v) : 0 })}
+          />
+        </td>
+        <td className="px-2 py-1.5 text-right">
+          <InlineEdit
+            value={threshold ? String(threshold) : ''}
+            type="number"
+            placeholder="—"
+            onSave={v => onPatch(item.id, { 'Reorder Threshold': v ? Number(v) : 0 })}
+          />
         </td>
         <td className="px-2 py-1.5 text-right">
           <div className="flex items-center justify-end gap-1">

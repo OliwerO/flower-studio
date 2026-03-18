@@ -12,17 +12,24 @@
 export function getAvailableSlots(allSlots, selectedDate, leadMinutes = 30) {
   if (!allSlots || allSlots.length === 0) return [];
 
+  // Sort slots in ascending order by start time
+  const sorted = [...allSlots].sort((a, b) => {
+    const [ah, am] = a.split('-')[0].split(':').map(Number);
+    const [bh, bm] = b.split('-')[0].split(':').map(Number);
+    return (ah * 60 + am) - (bh * 60 + bm);
+  });
+
   const today = new Date().toISOString().split('T')[0];
   const isToday = selectedDate === today;
 
   if (!isToday) {
-    return allSlots.map(slot => ({ slot, available: true }));
+    return sorted.map(slot => ({ slot, available: true }));
   }
 
   const now = new Date();
   const nowMinutes = now.getHours() * 60 + now.getMinutes() + leadMinutes;
 
-  return allSlots.map(slot => {
+  return sorted.map(slot => {
     const startTime = slot.split('-')[0]; // "14:00" from "14:00-16:00"
     const [h, m] = startTime.split(':').map(Number);
     const slotMinutes = h * 60 + m;
