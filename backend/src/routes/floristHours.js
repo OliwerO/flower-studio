@@ -13,7 +13,7 @@ const router = Router();
 // PATCH + DELETE restricted to owner (admin resource) — see per-route guards below.
 
 const PATCH_ALLOWED = [
-  'Name', 'Date', 'Hours', 'Hourly Rate', 'Bonus', 'Deduction', 'Notes', 'Delivery Count',
+  'Name', 'Date', 'Hours', 'Hourly Rate', 'Rate Type', 'Bonus', 'Deduction', 'Notes', 'Delivery Count',
 ];
 
 function pickAllowed(body, allowedFields) {
@@ -61,13 +61,13 @@ router.get('/', authorize('orders'), async (req, res, next) => {
 // POST /api/florist-hours — log a new entry
 router.post('/', authorize('orders'), async (req, res, next) => {
   try {
-    const { name, date, hours, hourlyRate, bonus, deduction, notes, deliveryCount } = req.body;
+    const { name, date, hours, hourlyRate, rateType, bonus, deduction, notes, deliveryCount } = req.body;
 
     if (!name || !date) {
       return res.status(400).json({ error: 'name and date are required.' });
     }
 
-    const record = await db.create(TABLES.FLORIST_HOURS, {
+    const fields = {
       Name:             name,
       Date:             date,
       Hours:            Number(hours) || 0,
@@ -76,7 +76,10 @@ router.post('/', authorize('orders'), async (req, res, next) => {
       Deduction:        Number(deduction) || 0,
       Notes:            notes || '',
       'Delivery Count': Number(deliveryCount) || 0,
-    });
+    };
+    if (rateType) fields['Rate Type'] = rateType;
+
+    const record = await db.create(TABLES.FLORIST_HOURS, fields);
 
     res.status(201).json(record);
   } catch (err) {
@@ -134,16 +137,29 @@ router.get('/summary', authorize('orders'), async (req, res, next) => {
     const byName = {};
     for (const r of records) {
       const n = r.Name || 'Unknown';
-      if (!byName[n]) byName[n] = { name: n, totalHours: 0, totalPay: 0, totalBonus: 0, totalDeduction: 0, deliveries: 0, days: 0 };
-      byName[n].totalHours += Number(r.Hours || 0);
+      if (!byName[n]) byName[n] = { name: n, totalHours: 0, totalPay: 0, totalBonus: 0, totalDeduction: 0, deliveries: 0, days: 0, byRateType: {} };
+      const hours = Number(r.Hours || 0);
+      byName[n].totalHours += hours;
       const recordRate = Number(r['Hourly Rate'] || 0);
-      const rate = recordRate > 0 ? recordRate : (configuredRates[n] || 0);
-      const pay = (Number(r.Hours || 0) * rate) + Number(r.Bonus || 0) - Number(r.Deduction || 0);
+      const rateType = r['Rate Type'] || '';
+      // Fallback: check per-type rate, then flat legacy rate
+      const floristRates = configuredRates[n];
+      const fallbackRate = typeof floristRates === 'object' && rateType
+        ? (floristRates[rateType] || 0)
+        : (typeof floristRates === 'number' ? floristRates : 0);
+      const rate = recordRate > 0 ? recordRate : fallbackRate;
+      const pay = (hours * rate) + Number(r.Bonus || 0) - Number(r.Deduction || 0);
       byName[n].totalPay += pay;
       byName[n].totalBonus += Number(r.Bonus || 0);
       byName[n].totalDeduction += Number(r.Deduction || 0);
       byName[n].deliveries += Number(r['Delivery Count'] || 0);
       byName[n].days++;
+      // Track hours per rate type
+      if (rateType) {
+        if (!byName[n].byRateType[rateType]) byName[n].byRateType[rateType] = { hours: 0, pay: 0 };
+        byName[n].byRateType[rateType].hours += hours;
+        byName[n].byRateType[rateType].pay += hours * rate;
+      }
     }
 
     res.json({

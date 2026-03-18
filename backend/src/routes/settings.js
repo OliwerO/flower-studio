@@ -25,6 +25,7 @@ const DEFAULTS = {
   driverCostPerDelivery: 35,
   driverCostPerPORun: 45,
   floristNames: ['Anya', 'Daria'],
+  rateTypes: ['Standard', 'Wedding', 'Holidays'],
   floristRates: {},
   extraDrivers: [],
   storefrontCategories: {
@@ -92,6 +93,8 @@ async function loadConfig() {
         migrateSeasonalDates();
         // Migrate: convert permanent/auto from string arrays to object arrays
         migrateCategoryObjects();
+        // Migrate: floristRates from flat { name: number } to { name: { type: number } }
+        migrateFloristRates();
       }
       console.log('[SETTINGS] Config loaded from Airtable');
     } else {
@@ -224,6 +227,30 @@ function migrateCategoryObjects() {
   if (changed) {
     saveConfig().catch(err =>
       console.error('[SETTINGS] Category migration save failed:', err.message)
+    );
+  }
+}
+
+/**
+ * Migrate floristRates from flat format { name: number } to
+ * per-type format { name: { type: number } }.
+ * Old single rate becomes the first rateType (Standard).
+ */
+function migrateFloristRates() {
+  const rates = config.floristRates;
+  if (!rates || typeof rates !== 'object') return;
+  let changed = false;
+  const defaultType = (config.rateTypes && config.rateTypes[0]) || 'Standard';
+  for (const name of Object.keys(rates)) {
+    if (typeof rates[name] === 'number') {
+      rates[name] = { [defaultType]: rates[name] };
+      changed = true;
+    }
+  }
+  if (changed) {
+    console.log('[SETTINGS] Migrated floristRates to per-type format');
+    saveConfig().catch(err =>
+      console.error('[SETTINGS] FloristRates migration save failed:', err.message)
     );
   }
 }
@@ -371,6 +398,7 @@ router.get('/lists', authorize('orders'), (req, res) => {
     paymentMethods: config.paymentMethods,
     orderSources:   config.orderSources,
     floristNames:   config.floristNames,
+    rateTypes:      config.rateTypes,
     floristRates:   config.floristRates,
   });
 });

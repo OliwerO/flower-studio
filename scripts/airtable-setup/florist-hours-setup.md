@@ -22,6 +22,7 @@ After import, adjust the field types:
 | **Date** | Date | Format: YYYY-MM-DD |
 | **Hours** | Number (1 decimal) | e.g., 8.0, 6.5 |
 | **Hourly Rate** | Number (2 decimals) | zl per hour, e.g., 28.50 |
+| **Rate Type** | Single line text | Rate category name (e.g., Standard, Wedding, Holidays). Set by florist when logging hours. |
 | **Bonus** | Number (2 decimals) | Extra pay for that day (e.g., holiday bonus). Default: 0 |
 | **Deduction** | Number (2 decimals) | Deductions (e.g., advance taken). Default: 0 |
 | **Total Pay** | Formula | `{Hours} * {Hourly Rate} + {Bonus} - {Deduction}` |

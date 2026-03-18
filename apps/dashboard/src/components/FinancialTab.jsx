@@ -118,13 +118,21 @@ export default function FinancialTab({ onNavigate }) {
       const byName = {};
       for (const r of results) {
         for (const f of r.florists) {
-          if (!byName[f.name]) byName[f.name] = { name: f.name, totalHours: 0, totalPay: 0, totalBonus: 0, totalDeduction: 0, deliveries: 0, days: 0 };
+          if (!byName[f.name]) byName[f.name] = { name: f.name, totalHours: 0, totalPay: 0, totalBonus: 0, totalDeduction: 0, deliveries: 0, days: 0, byRateType: {} };
           byName[f.name].totalHours += f.totalHours;
           byName[f.name].totalPay += f.totalPay;
           byName[f.name].totalBonus += f.totalBonus;
           byName[f.name].totalDeduction += f.totalDeduction;
           byName[f.name].deliveries += f.deliveries;
           byName[f.name].days += f.days;
+          // Merge rate type breakdown across months
+          if (f.byRateType) {
+            for (const [type, data] of Object.entries(f.byRateType)) {
+              if (!byName[f.name].byRateType[type]) byName[f.name].byRateType[type] = { hours: 0, pay: 0 };
+              byName[f.name].byRateType[type].hours += data.hours;
+              byName[f.name].byRateType[type].pay += data.pay;
+            }
+          }
         }
       }
       setHoursSummary(Object.values(byName));
@@ -418,6 +426,7 @@ export default function FinancialTab({ onNavigate }) {
                     <th className="text-left px-3 py-2 font-medium">{t.floristNames}</th>
                     <th className="text-right px-3 py-2 font-medium">{t.daysWorked}</th>
                     <th className="text-right px-3 py-2 font-medium">{t.totalHours}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t.rateType}</th>
                     <th className="text-right px-3 py-2 font-medium">{t.bonus}</th>
                     <th className="text-right px-3 py-2 font-medium">{t.deduction}</th>
                     <th className="text-right px-3 py-2 font-medium">{t.totalPay}</th>
@@ -429,6 +438,13 @@ export default function FinancialTab({ onNavigate }) {
                       <td className="px-3 py-2 font-medium text-ios-label">{f.name}</td>
                       <td className="px-3 py-2 text-right text-ios-secondary">{f.days}</td>
                       <td className="px-3 py-2 text-right text-ios-secondary">{f.totalHours.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right text-ios-secondary text-[11px]">
+                        {f.byRateType && Object.keys(f.byRateType).length > 0
+                          ? Object.entries(f.byRateType).map(([type, data]) => (
+                              <div key={type}>{type}: {data.hours.toFixed(1)}h</div>
+                            ))
+                          : '—'}
+                      </td>
                       <td className="px-3 py-2 text-right text-ios-secondary">{f.totalBonus > 0 ? `+${f.totalBonus.toFixed(0)} ${t.zl}` : '—'}</td>
                       <td className="px-3 py-2 text-right text-ios-secondary">{f.totalDeduction > 0 ? `-${f.totalDeduction.toFixed(0)} ${t.zl}` : '—'}</td>
                       <td className="px-3 py-2 text-right font-medium text-brand-700">{f.totalPay.toFixed(0)} {t.zl}</td>

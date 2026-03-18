@@ -24,6 +24,7 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-13 | Stock Orders | **New table** — PO header (Status, Supplier, Driver, Notes, Supplier Payments) | ❌ |
 | 2026-03-13 | Stock Order Lines | **New table** — PO lines (Stock Item, Qty Needed, Lot Size, Driver Status, Eval Status, Price Needs Review) | ❌ |
 | 2026-03-17 | Product Config | New fields: `Description` (Long text), `Translations` (Long text/JSON) | ✅ Already created |
+| 2026-03-18 | Florist Hours | New field: `Rate Type` (Single line text) — stores rate type name per entry | ❌ |
 
 ---
 

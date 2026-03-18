@@ -43,9 +43,11 @@ function FloristHoursForm() {
   const { showToast } = useToast();
   const lists = useConfigLists();
   const names = lists.floristNames || ['Anya', 'Daria'];
+  const rateTypes = lists.rateTypes || ['Standard', 'Wedding', 'Holidays'];
   const rates = lists.floristRates || {};
 
   const [name, setName] = useState('');
+  const [rateType, setRateType] = useState(rateTypes[0] || 'Standard');
   const [date, setDate] = useState(todayISO());
   const [windows, setWindows] = useState([{ from: '', to: '' }]);
   const [notes, setNotes] = useState('');
@@ -89,11 +91,15 @@ function FloristHoursForm() {
     if (!name || !hasValidWindow || totalHours <= 0) return;
     setSubmitting(true);
     try {
+      // Look up per-florist, per-type rate (new format: { name: { type: rate } })
+      const floristRates = rates[name];
+      const hourlyRate = typeof floristRates === 'object' ? (floristRates[rateType] || 0) : (floristRates || 0);
       await client.post('/florist-hours', {
         name,
         date,
         hours: totalHours,
-        hourlyRate: rates[name] || 0,
+        hourlyRate,
+        rateType,
         notes: [windowsToString(windows), notes].filter(Boolean).join(' | '),
       });
       showToast(t.success, 'success');
@@ -136,6 +142,25 @@ function FloristHoursForm() {
             className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm appearance-none"
             style={{ WebkitAppearance: 'none' }}
           />
+        </div>
+
+        {/* Rate type selector */}
+        <div>
+          <label className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.rateType}</label>
+          <div className="flex gap-2">
+            {rateTypes.map(rt => (
+              <button
+                key={rt}
+                type="button"
+                onClick={() => setRateType(rt)}
+                className={`flex-1 py-2.5 text-sm font-medium rounded-xl border transition-colors ${
+                  rateType === rt
+                    ? 'bg-brand-600 text-white border-brand-600'
+                    : 'bg-white dark:bg-dark-elevated text-ios-label dark:text-dark-label border-gray-200 dark:border-gray-600'
+                }`}
+              >{rt}</button>
+            ))}
+          </div>
         </div>
 
         {/* Time windows — from/to pairs */}
@@ -217,7 +242,12 @@ function FloristHoursForm() {
                 <div key={entry.id} className="px-4 py-3 flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium text-ios-label dark:text-dark-label">{entry.Date}</p>
-                    {entry.Notes && <p className="text-xs text-ios-tertiary mt-0.5">{entry.Notes}</p>}
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {entry['Rate Type'] && (
+                        <span className="text-[10px] font-medium bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded-md">{entry['Rate Type']}</span>
+                      )}
+                      {entry.Notes && <span className="text-xs text-ios-tertiary">{entry.Notes}</span>}
+                    </div>
                   </div>
                   <div className="text-right">
                     <p className="text-sm font-semibold text-brand-600">{entry.Hours}h</p>
@@ -371,7 +401,12 @@ function OwnerHoursSummary() {
                           <p className="text-sm font-medium text-ios-label dark:text-dark-label">
                             {entry.Name} — {entry.Date}
                           </p>
-                          {entry.Notes && <p className="text-xs text-ios-tertiary mt-0.5">{entry.Notes}</p>}
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {entry['Rate Type'] && (
+                              <span className="text-[10px] font-medium bg-brand-50 text-brand-700 px-1.5 py-0.5 rounded-md">{entry['Rate Type']}</span>
+                            )}
+                            {entry.Notes && <span className="text-xs text-ios-tertiary">{entry.Notes}</span>}
+                          </div>
                         </div>
                         <div className="flex items-center gap-3">
                           <div className="text-right">
