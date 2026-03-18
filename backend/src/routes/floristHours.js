@@ -6,6 +6,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { getConfig } from './settings.js';
 
 const router = Router();
 // GET + POST open to both owner and florist (orders resource covers both roles).
@@ -128,13 +129,16 @@ router.get('/summary', authorize('orders'), async (req, res, next) => {
       sort: [{ field: 'Date', direction: 'asc' }],
     });
 
-    // Aggregate by name
+    // Aggregate by name — use configured rate as fallback for records without one
+    const configuredRates = getConfig('floristRates') || {};
     const byName = {};
     for (const r of records) {
       const n = r.Name || 'Unknown';
       if (!byName[n]) byName[n] = { name: n, totalHours: 0, totalPay: 0, totalBonus: 0, totalDeduction: 0, deliveries: 0, days: 0 };
       byName[n].totalHours += Number(r.Hours || 0);
-      const pay = (Number(r.Hours || 0) * Number(r['Hourly Rate'] || 0)) + Number(r.Bonus || 0) - Number(r.Deduction || 0);
+      const recordRate = Number(r['Hourly Rate'] || 0);
+      const rate = recordRate > 0 ? recordRate : (configuredRates[n] || 0);
+      const pay = (Number(r.Hours || 0) * rate) + Number(r.Bonus || 0) - Number(r.Deduction || 0);
       byName[n].totalPay += pay;
       byName[n].totalBonus += Number(r.Bonus || 0);
       byName[n].totalDeduction += Number(r.Deduction || 0);
