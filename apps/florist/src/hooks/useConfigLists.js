@@ -8,8 +8,8 @@ import { useState, useEffect } from 'react';
 import client from '../api/client.js';
 
 const DEFAULTS = {
-  suppliers:      ['Stojek', '4f', 'Stefan', 'Mateusz', 'Other'],
-  categories:     ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'],
+  suppliers:      ['4f', 'Mateusz', 'Other', 'Stefan', 'Stojek'],
+  categories:     ['Accessories', 'Greenery', 'Other', 'Roses', 'Seasonal', 'Tulips'],
   paymentMethods: ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
   orderSources:   ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
   timeSlots:      ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
@@ -30,7 +30,7 @@ export default function useConfigLists() {
       client.get('/settings/lists').catch(() => ({ data: {} })),
       client.get('/settings').catch(() => ({ data: {} })),
     ]).then(([listsRes, settingsRes]) => {
-      cached = {
+      const merged = {
         ...DEFAULTS,
         ...listsRes.data,
         timeSlots: settingsRes.data.config?.deliveryTimeSlots || DEFAULTS.timeSlots,
@@ -39,6 +39,9 @@ export default function useConfigLists() {
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
         slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
       };
+      if (merged.categories) merged.categories = [...merged.categories].sort((a, b) => a.localeCompare(b));
+      if (merged.suppliers) merged.suppliers = [...merged.suppliers].sort((a, b) => a.localeCompare(b));
+      cached = merged;
       setLists(cached);
     });
   }, []);

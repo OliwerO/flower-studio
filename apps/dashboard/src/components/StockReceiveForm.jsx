@@ -151,7 +151,7 @@ export default function StockReceiveForm({ stock, onDone }) {
           <select value={itemId} onChange={e => handleItemChange(e.target.value)}
             className="field-input block w-full">
             <option value="">— {t.search} —</option>
-            {stock.map(s => (
+            {[...stock].sort((a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || '')).map(s => (
               <option key={s.id} value={s.id}>{s['Display Name']}</option>
             ))}
             <option value={NEW_ITEM_VALUE}>+ {t.addItem}</option>
