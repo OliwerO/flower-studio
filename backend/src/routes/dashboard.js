@@ -56,7 +56,7 @@ router.get('/', async (req, res, next) => {
       // Active stock items with negative quantity
       db.list(TABLES.STOCK, {
         filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < 0)`,
-        fields: ['Display Name', 'Current Quantity', 'Supplier', 'Order Lines'],
+        fields: ['Display Name', 'Purchase Name', 'Current Quantity', 'Supplier', 'Order Lines'],
       }).catch(() => []),
       // Customers with key person dates set for upcoming reminders
       // Wrapped in catch — these fields may not exist in all Airtable bases
@@ -404,13 +404,29 @@ router.get('/', async (req, res, next) => {
         }
       }
 
-      negativeStock = negativeStockItems.map(s => ({
-        id: s.id,
-        name: s['Display Name'],
-        qty: s['Current Quantity'],
-        neededBy: neededByMap[s.id] || null,
-        supplier: s.Supplier || null,
-      }));
+      // Group negative stock by Purchase Name (flower type) so batches merge into one demand line.
+      // Like aggregating material demand across warehouse bins in MRP.
+      const groupMap = new Map();
+      for (const s of negativeStockItems) {
+        const groupKey = s['Purchase Name'] || s['Display Name'];
+        if (!groupMap.has(groupKey)) {
+          groupMap.set(groupKey, {
+            id: s.id,          // primary batch ID (for PO linking)
+            batchIds: [],      // all batch IDs in this group
+            name: groupKey,    // clean flower type name (no date suffix)
+            qty: 0,
+            neededBy: null,
+            supplier: s.Supplier || null,
+          });
+        }
+        const group = groupMap.get(groupKey);
+        group.qty += s['Current Quantity'];
+        group.batchIds.push(s.id);
+        const nb = neededByMap[s.id];
+        if (nb && (!group.neededBy || nb < group.neededBy)) group.neededBy = nb;
+        if (!group.supplier && s.Supplier) group.supplier = s.Supplier;
+      }
+      negativeStock = [...groupMap.values()];
       negativeStock.sort((a, b) => {
         if (a.neededBy && b.neededBy) return a.neededBy.localeCompare(b.neededBy);
         if (a.neededBy) return -1;
@@ -419,17 +435,18 @@ router.get('/', async (req, res, next) => {
     }
 
     // Merge deferred demand into negativeStock list.
-    // Items already negative get their deferred qty added; new deferred-only items are appended.
+    // Match by batch ID (deferred items reference specific stock records within a group).
     for (const [stockId, demand] of Object.entries(deferredDemand)) {
-      const existing = negativeStock.find(s => s.id === stockId);
+      const existing = negativeStock.find(s => s.id === stockId || s.batchIds?.includes(stockId));
       if (existing) {
-        existing.deferredQty = demand.qty;
+        existing.deferredQty = (existing.deferredQty || 0) + demand.qty;
         if (demand.neededBy && (!existing.neededBy || demand.neededBy < existing.neededBy)) {
           existing.neededBy = demand.neededBy;
         }
       } else {
         negativeStock.push({
           id: stockId,
+          batchIds: [stockId],
           name: demand.name,
           qty: 0,  // not negative in stock, but has deferred demand
           deferredQty: demand.qty,
