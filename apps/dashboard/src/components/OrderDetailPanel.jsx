@@ -410,25 +410,66 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
             )}
           </div>
 
-          {editingBouquet ? (
+          {editingBouquet ? (() => {
+            // Running totals — same as new order wizard
+            const editCostTotal = editLines.reduce((s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0);
+            const editSellTotal = editLines.reduce((s, l) => s + Number(l.sellPricePerUnit || 0) * Number(l.quantity || 0), 0);
+            const editMargin = editSellTotal > 0 ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
+            // Detect quantity reductions that need stock decision (only for lines that had stock before)
+            const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
+            // removedLines that already have explicit actions from the remove dialog
+            const hasExplicitRemovals = removedLines.some(r => r.lineId);
+            // Only lines with quantity reductions (not full removals) need a global stock decision
+            const needsStockDecision = hasReductions && !stockAction;
+            return (
             <div className="space-y-2">
-              {editLines.map((line, idx) => (
-                <div key={line.id || idx} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
-                  <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
-                  <input
-                    type="number" min="1"
-                    value={line.quantity}
-                    onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
-                    onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
-                    onFocus={e => e.target.select()}
-                    className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1"
-                  />
-                  <button
-                    onClick={() => setShowRemoveDialog(idx)}
-                    className="text-red-400 hover:text-red-600 text-sm px-1"
-                  >✕</button>
+              {/* Edit lines with sell price × qty like the order wizard */}
+              {editLines.map((line, idx) => {
+                const lineSell = Number(line.sellPricePerUnit || 0) * Number(line.quantity || 0);
+                const { name: parsedName, batch } = parseBatchName(line.flowerName);
+                return (
+                <div key={line.id || idx} className="bg-gray-50 rounded-lg px-3 py-2">
+                  <div className="flex items-center gap-2">
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium text-ios-label truncate block">
+                        {parsedName}
+                        {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
+                      </span>
+                      <span className="text-xs text-ios-tertiary">
+                        {Number(line.sellPricePerUnit || 0).toFixed(0)} {t.zl} × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} {t.zl}</strong>
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: Math.max(1, (Number(l.quantity) || 1) - 1) } : l))}
+                        className="w-7 h-7 rounded-full bg-white text-ios-secondary text-lg font-bold flex items-center justify-center">−</button>
+                      <input type="number" min="1" value={line.quantity}
+                        onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
+                        onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
+                        onFocus={e => e.target.select()}
+                        className="w-10 text-center text-sm font-bold border border-gray-200 rounded-lg py-1" />
+                      <button onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: (Number(l.quantity) || 0) + 1 } : l))}
+                        className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold flex items-center justify-center">+</button>
+                    </div>
+                    <button onClick={() => setShowRemoveDialog(idx)}
+                      className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
+                  </div>
                 </div>
-              ))}
+                );
+              })}
+
+              {/* Sell total + cost + margin — like order wizard */}
+              {editLines.length > 0 && (
+                <div className="bg-white rounded-xl border border-gray-100 px-3 py-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
+                    <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} {t.zl}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-50">
+                    <span className="text-xs text-ios-tertiary">{t.costTotal} · {t.markup}: {editMargin}%</span>
+                    <span className="text-xs text-ios-tertiary font-medium">{editCostTotal.toFixed(0)} {t.zl}</span>
+                  </div>
+                </div>
+              )}
 
               {/* Add flower picker — shows stock catalog immediately */}
               {!addingFlower ? (
@@ -442,7 +483,6 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                     placeholder={t.flowerSearch}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
                     autoFocus />
-                  {/* Stock catalog header */}
                   <div className="flex items-center text-[10px] text-ios-tertiary uppercase tracking-wide px-2 pt-1">
                     <span className="flex-1">{t.flowers}</span>
                     <span className="w-14 text-right">{t.costPrice}</span>
@@ -464,7 +504,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                         const qty = Number(s['Current Quantity']) || 0;
                         const cost = Number(s['Current Cost Price']) || 0;
                         const sell = Number(s['Current Sell Price']) || 0;
-                        const { name: flowerName, batch } = parseBatchName(s['Display Name']);
+                        const { name: fn, batch } = parseBatchName(s['Display Name']);
                         return (
                           <button key={s.id} type="button"
                             onClick={() => {
@@ -476,12 +516,10 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                               }]);
                               setFlowerSearch('');
                             }}
-                            className={`w-full flex items-center px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${
-                              qty <= 0 ? 'bg-amber-50/50' : ''
-                            }`}
+                            className={`w-full flex items-center px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${qty <= 0 ? 'bg-amber-50/50' : ''}`}
                           >
                             <span className="flex-1 font-medium text-left truncate">
-                              {flowerName}
+                              {fn}
                               {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
                             </span>
                             <span className="w-14 text-right text-xs text-ios-tertiary">{cost > 0 ? cost.toFixed(0) : '—'}</span>
@@ -528,10 +566,10 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                   <div className="grid grid-cols-2 gap-2">
                     <input type="number" value={newFlowerForm.lotSize}
                       onChange={e => setNewFlowerForm(p => ({ ...p, lotSize: e.target.value }))}
-                      placeholder={t.lotSize || 'Lot size'} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+                      placeholder={t.lotSize} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
                     <input type="text" value={newFlowerForm.supplier}
                       onChange={e => setNewFlowerForm(p => ({ ...p, supplier: e.target.value }))}
-                      placeholder={t.supplier || 'Supplier'} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+                      placeholder={t.supplier} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
                   </div>
                   <div className="flex gap-2">
                     <button type="button"
@@ -619,22 +657,22 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 );
               })()}
 
-              {/* Stock action dialog — when quantities decreased */}
+              {/* Stock action dialog — ONLY for quantity reductions (not full removals, those are handled above) */}
               {stockAction === 'pending' && (() => {
                 const reduced = editLines.filter(l => l._originalQty > 0 && l.quantity < l._originalQty);
                 const totalReduced = reduced.reduce((s, l) => s + (l._originalQty - l.quantity), 0);
-                return (totalReduced > 0 || removedLines.length > 0) ? (
+                return totalReduced > 0 ? (
                   <div className="bg-amber-50 rounded-xl px-4 py-3 space-y-2">
                     <p className="text-sm font-medium text-amber-800">
-                      {t.spareFlowersQuestion || 'What would you like to do with the spare flowers?'}
+                      {t.spareFlowersQuestion}
                     </p>
                     <div className="flex gap-2">
                       <button onClick={() => doSaveDashboard('return')}
                         className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-medium">
-                        {t.returnToStock || 'Return to stock'}</button>
+                        {t.returnToStock}</button>
                       <button onClick={() => doSaveDashboard('writeoff')}
                         className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-sm font-medium">
-                        {t.writeOff || 'Write off'}</button>
+                        {t.writeOff}</button>
                     </div>
                     <button onClick={() => setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
                   </div>
@@ -644,8 +682,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => {
-                    const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
-                    if ((hasReductions || removedLines.length > 0) && stockAction !== 'pending') {
+                    const hasQtyReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
+                    if (hasQtyReductions && stockAction !== 'pending') {
                       setStockAction('pending');
                       return;
                     }
@@ -660,6 +698,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 >{t.cancel}</button>
               </div>
             </div>
+            );
+          })()
           ) : (
             <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
               <table className="w-full text-sm">
