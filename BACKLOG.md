@@ -154,6 +154,10 @@ Features and improvements tracked against original build phases.
   - [ ] Use `filteredTimeSlots` from `/api/public/delivery-pricing?date=` for Wix checkout time picker
 
 ### Known Issues (from PO system audit)
+- [x] **Hardcoded strings in OrderDetailPanel** — bouquet editing buttons now use `t.xxx` translations (EN+RU)
 - [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
+
+### Open Investigation (2026-03-18)
+- [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.

@@ -163,6 +163,21 @@ Changes made to the **dev base** that must be replicated in **production** befor
 - Wix setup: owner created "Available Today" category + page in Wix Editor
 - Airtable: Description + Translations fields added to Product Config table
 
+### 2026-03-18
+
+**Bouquet Editing Overhaul + Batch Grouping + Translation Fixes**
+- Kanban board fix: expand/collapse wasn't working due to truthy empty array (`173ae09`)
+- Sell price auto-calc: entering cost price auto-fills sell using `targetMarkup` (×2.2) — dashboard OrderDetailPanel, dashboard Step2Bouquet, florist Step2Bouquet (`173ae09`)
+- Bouquet edit UX: now matches new order wizard — per-line sell price × qty, running sell/cost totals with margin, +/− stepper buttons (`840b950`)
+- Stock picker in bouquet edit: shows stock catalog immediately (no typing required) — dashboard shows cost/sell/qty, florist shows sell/qty only (`173ae09`)
+- Batch grouping: negative stock in "Flowers Needed" section now grouped by `Purchase Name` (flower type), not by individual batch. "Tulip Red" + "Tulip Red (14.Mar.)" merge into one demand line (`173ae09`)
+- Batch date tags: date suffixes like `(14.Mar.)` shown as subtle gray tags in stock pickers instead of embedded in flower name — all 4 bouquet builder views (`173ae09`)
+- "Add flower" feature added to florist bouquet edit mode (was missing entirely) (`173ae09`)
+- "Adjust PO" option: when removing flowers with negative stock, offers "Adjust purchase order" instead of "Write off" (`173ae09`)
+- Double question fix: remove dialog and save dialog no longer both ask return/write-off for the same flowers (`840b950`)
+- Missing translations: 8 keys added to dashboard + florist (EN+RU): editBouquet, addFlower, saveBouquet, bouquetUpdated, addToCart, returnOrWriteOff, adjustPO, notReceivedYet (`173ae09`)
+- Backend logging: stock deduction during bouquet edits now logs to console for debugging (`840b950`)
+
 ---
 
 ## Go-Live Checklist
