@@ -16,6 +16,7 @@ const DEFAULTS = {
   drivers:        [],
   targetMarkup:   2.2,
   floristNames:   ['Anya', 'Daria'],
+  floristRates:   {},
 };
 
 let cached = null;
@@ -37,6 +38,7 @@ export default function useConfigLists() {
         drivers: settingsRes.data.drivers || DEFAULTS.drivers,
         targetMarkup: settingsRes.data.config?.targetMarkup || DEFAULTS.targetMarkup,
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
+        floristRates: listsRes.data.floristRates || DEFAULTS.floristRates,
         slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
       };
       if (merged.categories) merged.categories = [...merged.categories].sort((a, b) => a.localeCompare(b));

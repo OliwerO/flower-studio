@@ -43,6 +43,7 @@ function FloristHoursForm() {
   const { showToast } = useToast();
   const lists = useConfigLists();
   const names = lists.floristNames || ['Anya', 'Daria'];
+  const rates = lists.floristRates || {};
 
   const [name, setName] = useState('');
   const [date, setDate] = useState(todayISO());
@@ -92,6 +93,7 @@ function FloristHoursForm() {
         name,
         date,
         hours: totalHours,
+        hourlyRate: rates[name] || 0,
         notes: [windowsToString(windows), notes].filter(Boolean).join(' | '),
       });
       showToast(t.success, 'success');

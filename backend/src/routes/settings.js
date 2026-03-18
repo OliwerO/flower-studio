@@ -25,6 +25,7 @@ const DEFAULTS = {
   driverCostPerDelivery: 35,
   driverCostPerPORun: 45,
   floristNames: ['Anya', 'Daria'],
+  floristRates: {},
   extraDrivers: [],
   storefrontCategories: {
     permanent: [
@@ -370,6 +371,7 @@ router.get('/lists', authorize('orders'), (req, res) => {
     paymentMethods: config.paymentMethods,
     orderSources:   config.orderSources,
     floristNames:   config.floristNames,
+    floristRates:   config.floristRates,
   });
 });
 

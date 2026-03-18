@@ -829,6 +829,61 @@ function DeliveryZonesSection({ config: cfg, onUpdate }) {
   );
 }
 
+// ── Per-florist hourly rate editor ──
+function FloristRatesEditor({ names, rates, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(rates);
+
+  useEffect(() => { setDraft(rates); }, [rates]);
+
+  function save() {
+    onSave(draft);
+    setEditing(false);
+  }
+
+  return (
+    <div className="py-3 border-b border-gray-100 last:border-0">
+      <div className="flex items-center justify-between mb-2">
+        <div>
+          <span className="text-sm font-medium text-gray-700">{t.floristRates}</span>
+          <p className="text-xs text-gray-400 mt-0.5">{t.floristRatesHint}</p>
+        </div>
+        {!editing ? (
+          <button
+            onClick={() => setEditing(true)}
+            className="text-xs text-brand-600 font-medium hover:bg-brand-50 px-2 py-1 rounded-lg"
+          >{t.edit}</button>
+        ) : (
+          <div className="flex gap-1">
+            <button onClick={save} className="text-xs text-white bg-brand-600 px-2 py-1 rounded-lg">{t.save}</button>
+            <button onClick={() => { setEditing(false); setDraft(rates); }} className="text-xs text-gray-400">✕</button>
+          </div>
+        )}
+      </div>
+      <div className="space-y-1.5">
+        {names.map(name => (
+          <div key={name} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-xl text-sm border border-gray-100">
+            <span className="flex-1 font-medium text-gray-700">{name}</span>
+            {editing ? (
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={draft[name] || ''}
+                onChange={e => setDraft(d => ({ ...d, [name]: Number(e.target.value) || 0 }))}
+                placeholder="0"
+                className="w-20 text-sm px-2 py-1 border rounded-lg text-right"
+              />
+            ) : (
+              <span className="text-sm text-gray-500">{rates[name] ? `${rates[name]} zł/h` : '—'}</span>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Main SettingsTab ──
 export default function SettingsTab() {
   const [config, setConfig] = useState(null);
@@ -989,6 +1044,11 @@ export default function SettingsTab() {
           items={config.floristNames || []}
           hint={t.floristNamesHint}
           onSave={v => updateConfig({ floristNames: v })}
+        />
+        <FloristRatesEditor
+          names={config.floristNames || []}
+          rates={config.floristRates || {}}
+          onSave={v => updateConfig({ floristRates: v })}
         />
       </Section>
 
