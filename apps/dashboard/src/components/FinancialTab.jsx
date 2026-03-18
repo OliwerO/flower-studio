@@ -62,12 +62,14 @@ export default function FinancialTab({ onNavigate }) {
   const [customTo, setCustomTo]   = useState('');
   const [data, setData]           = useState(null);
   const [loading, setLoading]     = useState(true);
+  const [hoursSummary, setHoursSummary] = useState(null);
   // Default most sections collapsed — only Revenue & Costs expand on load.
   // Prevents information overload (40+ KPIs visible at once).
   const [collapsed, setCollapsed] = useState({
     delivery: true, customers: true, products: true,
     pairings: true, prepTime: true, suppliers: true, stockLoss: true,
     sourceEfficiency: true, payment: true, completion: true,
+    floristHours: true,
   });
   const { showToast } = useToast();
 
@@ -96,7 +98,43 @@ export default function FinancialTab({ onNavigate }) {
     }
   }, [range, showToast]);
 
+  // Fetch florist hours summary for each month in range
+  const fetchHours = useCallback(async () => {
+    try {
+      // Build list of YYYY-MM months covered by the date range
+      const months = [];
+      const start = new Date(range.from + 'T00:00:00');
+      const end = new Date(range.to + 'T00:00:00');
+      const cur = new Date(start.getFullYear(), start.getMonth(), 1);
+      while (cur <= end) {
+        const mm = `${cur.getFullYear()}-${String(cur.getMonth() + 1).padStart(2, '0')}`;
+        months.push(mm);
+        cur.setMonth(cur.getMonth() + 1);
+      }
+      const results = await Promise.all(
+        months.map(m => client.get('/florist-hours/summary', { params: { month: m } }).then(r => r.data))
+      );
+      // Merge across months
+      const byName = {};
+      for (const r of results) {
+        for (const f of r.florists) {
+          if (!byName[f.name]) byName[f.name] = { name: f.name, totalHours: 0, totalPay: 0, totalBonus: 0, totalDeduction: 0, deliveries: 0, days: 0 };
+          byName[f.name].totalHours += f.totalHours;
+          byName[f.name].totalPay += f.totalPay;
+          byName[f.name].totalBonus += f.totalBonus;
+          byName[f.name].totalDeduction += f.totalDeduction;
+          byName[f.name].deliveries += f.deliveries;
+          byName[f.name].days += f.days;
+        }
+      }
+      setHoursSummary(Object.values(byName));
+    } catch {
+      setHoursSummary(null);
+    }
+  }, [range]);
+
   useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { fetchHours(); }, [fetchHours]);
 
   if (loading) return <DashboardSkeleton />;
 
@@ -362,6 +400,47 @@ export default function FinancialTab({ onNavigate }) {
           </div>
           <p className="text-[10px] text-ios-tertiary mt-2 italic">{t.addDriverCosts}</p>
         </div>
+      </Section>
+
+      {/* ── Florist Hours Overview ── */}
+      <Section title={t.floristHours} sectionKey="floristHours" collapsed={collapsed} onToggle={toggle}>
+        {hoursSummary && hoursSummary.length > 0 ? (
+          <>
+            <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mb-4">
+              <KPI label={t.totalHours} value={hoursSummary.reduce((s, f) => s + f.totalHours, 0).toFixed(1)} />
+              <KPI label={t.totalPay} value={`${hoursSummary.reduce((s, f) => s + f.totalPay, 0).toFixed(0)} ${t.zl}`} color="text-brand-700" />
+              <KPI label={t.daysWorked} value={hoursSummary.reduce((s, f) => s + f.days, 0)} />
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-xs text-ios-tertiary border-b border-gray-100">
+                    <th className="text-left px-3 py-2 font-medium">{t.floristNames}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t.daysWorked}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t.totalHours}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t.bonus}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t.deduction}</th>
+                    <th className="text-right px-3 py-2 font-medium">{t.totalPay}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {hoursSummary.map(f => (
+                    <tr key={f.name} className="border-b border-gray-50">
+                      <td className="px-3 py-2 font-medium text-ios-label">{f.name}</td>
+                      <td className="px-3 py-2 text-right text-ios-secondary">{f.days}</td>
+                      <td className="px-3 py-2 text-right text-ios-secondary">{f.totalHours.toFixed(1)}</td>
+                      <td className="px-3 py-2 text-right text-ios-secondary">{f.totalBonus > 0 ? `+${f.totalBonus.toFixed(0)} ${t.zl}` : '—'}</td>
+                      <td className="px-3 py-2 text-right text-ios-secondary">{f.totalDeduction > 0 ? `-${f.totalDeduction.toFixed(0)} ${t.zl}` : '—'}</td>
+                      <td className="px-3 py-2 text-right font-medium text-brand-700">{f.totalPay.toFixed(0)} {t.zl}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        ) : (
+          <p className="text-ios-tertiary text-sm italic">{t.noHoursData}</p>
+        )}
       </Section>
 
       {/* ── Prep time (cycle time from Accepted → Ready) ── */}

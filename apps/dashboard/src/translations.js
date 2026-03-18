@@ -576,6 +576,19 @@ const en = {
   business:                 'Business',
   moreFields:               'More fields',
 
+  // Florist Hours (Financial tab + Settings)
+  floristHours:             'Florist hours',
+  floristNames:             'Florist names',
+  floristNamesHint:         'Names available in hour tracking dropdown',
+  totalHours:               'Total hours',
+  totalPay:                 'Total pay',
+  daysWorked:               'Days worked',
+  noHoursData:              'No hour logs for this period',
+  hourlyRate:               'Hourly rate',
+  bonus:                    'Bonus',
+  deduction:                'Deduction',
+  deliveries:               'Deliveries',
+
   // Block 4 — Today/Tomorrow
   tomorrow:                 'Tomorrow',
   fulfillToday:             'To fulfill today',
@@ -1157,6 +1170,19 @@ const ru = {
   male:                     'Мужчина',
   business:                 'Бизнес',
   moreFields:               'Ещё поля',
+
+  // Florist Hours (Financial tab + Settings)
+  floristHours:             'Часы флористов',
+  floristNames:             'Имена флористов',
+  floristNamesHint:         'Имена, доступные в выпадающем списке учёта часов',
+  totalHours:               'Всего часов',
+  totalPay:                 'Итого к оплате',
+  daysWorked:               'Дней отработано',
+  noHoursData:              'Нет записей за этот период',
+  hourlyRate:               'Ставка/час',
+  bonus:                    'Бонус',
+  deduction:                'Вычет',
+  deliveries:               'Доставки',
 
   // Block 4 — Today/Tomorrow
   tomorrow:                 'Завтра',

@@ -984,6 +984,12 @@ export default function SettingsTab() {
           items={config.orderSources}
           onSave={v => updateConfig({ orderSources: v })}
         />
+        <ListEditor
+          label={t.floristNames}
+          items={config.floristNames || []}
+          hint={t.floristNamesHint}
+          onSave={v => updateConfig({ floristNames: v })}
+        />
       </Section>
 
       {/* Storefront Categories */}
