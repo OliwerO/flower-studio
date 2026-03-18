@@ -30,6 +30,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   const [formLines, setFormLines] = useState([]);
   const [formNotes, setFormNotes] = useState('');
   const [formDriver, setFormDriver] = useState('Nikita');
+  const [formPlannedDate, setFormPlannedDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   // Separate driver state for expanded/existing POs (keyed by PO id)
@@ -89,6 +90,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     setFormLines(lines.length > 0 ? lines : [emptyLine()]);
     setFormNotes('');
     setFormDriver('Nikita');
+    setFormPlannedDate('');
     setShowForm(true);
   }
 
@@ -141,6 +143,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       await client.post('/stock-orders', {
         notes: formNotes,
         driver: formDriver,
+        plannedDate: formPlannedDate || null,
         lines: formLines.filter(l => l.flowerName).map(l => ({
           ...l,
           costPrice: Number(l.costPrice) || 0,
@@ -343,7 +346,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                     )}
                     {lineQty > 0 && lineCost > 0 && (
                       <span className="text-xs text-ios-tertiary whitespace-nowrap">
-                        = {(lineQty * lineCost).toFixed(0)} {t.zl}
+                        = {((ls > 1 ? Math.ceil(lineQty / ls) * ls : lineQty) * lineCost).toFixed(0)} {t.zl}
                       </span>
                     )}
                     <div className="flex items-center gap-1">
@@ -379,10 +382,20 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
             + {t.addLine}
           </button>
 
-          {/* Grand total */}
+          {/* Grand total — uses lot-rounded quantities for cost calculation */}
           {(() => {
-            const grandCost = formLines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.costPrice) || 0), 0);
-            const grandSell = formLines.reduce((sum, l) => sum + (Number(l.quantity) || 0) * (Number(l.sellPrice) || 0), 0);
+            const grandCost = formLines.reduce((sum, l) => {
+              const qty = Number(l.quantity) || 0;
+              const ls = Number(l.lotSize) || 0;
+              const effectiveQty = ls > 1 ? Math.ceil(qty / ls) * ls : qty;
+              return sum + effectiveQty * (Number(l.costPrice) || 0);
+            }, 0);
+            const grandSell = formLines.reduce((sum, l) => {
+              const qty = Number(l.quantity) || 0;
+              const ls = Number(l.lotSize) || 0;
+              const effectiveQty = ls > 1 ? Math.ceil(qty / ls) * ls : qty;
+              return sum + effectiveQty * (Number(l.sellPrice) || 0);
+            }, 0);
             return grandCost > 0 ? (
               <div className="flex items-center gap-4 text-sm px-1">
                 <span className="text-ios-tertiary">{t.costTotal}: <span className="font-semibold text-ios-label">{grandCost.toFixed(0)} {t.zl}</span></span>
@@ -393,7 +406,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
             ) : null;
           })()}
 
-          {/* Notes + driver + actions */}
+          {/* Notes + driver + planned date + actions */}
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex-1 min-w-[200px]">
               <label className="text-xs text-ios-tertiary">{t.stockOrderNotes}</label>
@@ -402,6 +415,15 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                 onChange={e => setFormNotes(e.target.value)}
                 className="field-input w-full"
                 rows={2}
+              />
+            </div>
+            <div>
+              <label className="text-xs text-ios-tertiary">{t.plannedDate || 'Planned date'}</label>
+              <input
+                type="date"
+                value={formPlannedDate}
+                onChange={e => setFormPlannedDate(e.target.value)}
+                className="field-input block w-36"
               />
             </div>
             <div>
@@ -459,6 +481,11 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                   </span>
                   {order['Assigned Driver'] && (
                     <span className="text-xs text-ios-secondary">{order['Assigned Driver']}</span>
+                  )}
+                  {order['Planned Date'] && (
+                    <span className="text-xs text-blue-600 font-medium">
+                      {t.plannedDate || 'Planned'}: {order['Planned Date']}
+                    </span>
                   )}
                 </div>
                 <span className="text-xs text-ios-tertiary">{order['Created Date']}</span>

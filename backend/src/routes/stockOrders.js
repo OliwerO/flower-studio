@@ -92,7 +92,7 @@ router.get('/:id', authorize('stock-orders'), async (req, res, next) => {
 // Body: { notes, lines: [{ stockItemId, flowerName, quantity, supplier, costPrice, sellPrice }] }
 router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
-    const { notes, lines, driver } = req.body;
+    const { notes, lines, driver, plannedDate } = req.body;
 
     if (!Array.isArray(lines) || lines.length === 0) {
       return res.status(400).json({ error: 'PO must include at least one line.' });
@@ -119,6 +119,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       Notes: notes || '',
     };
     if (driver) orderFields['Assigned Driver'] = driver;
+    if (plannedDate) orderFields['Planned Date'] = plannedDate;
 
     const order = await db.create(TABLES.STOCK_ORDERS, orderFields);
 
@@ -133,7 +134,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
           lotSize = Number(stockItem['Lot Size']) || 0;
         } catch { /* stock item may have been deleted */ }
       }
-      const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, {
+      const lineFields = {
         'Stock Orders': [order.id],
         ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
         'Flower Name': line.flowerName || '',
@@ -143,8 +144,10 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
         Supplier: line.supplier || '',
         'Cost Price': Number(line.costPrice) || 0,
         'Sell Price': Number(line.sellPrice) || 0,
-        Notes: line.notes || '',
-      });
+      };
+      if (line.farmer) lineFields.Farmer = line.farmer;
+      if (line.notes) lineFields.Notes = line.notes;
+      const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, lineFields);
       createdLines.push(lineRec);
     }
 
@@ -160,7 +163,7 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
   try {
     const isOwner = req.role === 'owner';
     const allowed = isOwner
-      ? ['Status', 'Notes', 'Assigned Driver', 'Supplier Payments', 'Driver Payment']
+      ? ['Status', 'Notes', 'Assigned Driver', 'Supplier Payments', 'Driver Payment', 'Planned Date']
       : ['Supplier Payments'];
     const fields = {};
     for (const key of allowed) {

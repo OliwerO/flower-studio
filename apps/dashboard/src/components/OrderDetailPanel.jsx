@@ -47,6 +47,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
+  const [newFlowerForm, setNewFlowerForm] = useState(null); // { name, costPrice, sellPrice, lotSize, supplier }
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -466,20 +467,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                       (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
                     ) && (
                       <button type="button"
-                        onClick={async () => {
-                          try {
-                            const res = await client.post('/stock', { displayName: flowerSearch.trim(), quantity: 0 });
-                            setEditLines(p => [...p, {
-                              id: null, stockItemId: res.data.id, flowerName: res.data['Display Name'],
-                              quantity: 1, _originalQty: 0, costPricePerUnit: 0, sellPricePerUnit: 0,
-                            }]);
-                          } catch {
-                            setEditLines(p => [...p, {
-                              id: null, stockItemId: null, flowerName: flowerSearch.trim(),
-                              quantity: 1, _originalQty: 0, costPricePerUnit: 0, sellPricePerUnit: 0,
-                            }]);
-                          }
-                          setFlowerSearch('');
+                        onClick={() => {
+                          setNewFlowerForm({ name: flowerSearch.trim(), costPrice: '', sellPrice: '', lotSize: '', supplier: '' });
                           setAddingFlower(false);
                         }}
                         className="w-full text-left px-2 py-1.5 text-sm text-brand-600 font-medium border-t border-gray-100"
@@ -488,6 +477,64 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                   </div>
                   <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
                     className="text-xs text-ios-tertiary">{t.cancel}</button>
+                </div>
+              )}
+
+              {/* New flower form — cost, sell, lot size, supplier */}
+              {newFlowerForm && (
+                <div className="bg-indigo-50 rounded-xl px-4 py-3 space-y-2">
+                  <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower || 'Add new flower'}: {newFlowerForm.name}</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="number" step="0.01" value={newFlowerForm.costPrice}
+                      onChange={e => setNewFlowerForm(p => ({ ...p, costPrice: e.target.value }))}
+                      placeholder={t.costPrice || 'Cost price'} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+                    <input type="number" step="0.01" value={newFlowerForm.sellPrice}
+                      onChange={e => setNewFlowerForm(p => ({ ...p, sellPrice: e.target.value }))}
+                      placeholder={t.sellPrice || 'Sell price'} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="number" value={newFlowerForm.lotSize}
+                      onChange={e => setNewFlowerForm(p => ({ ...p, lotSize: e.target.value }))}
+                      placeholder={t.lotSize || 'Lot size'} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+                    <input type="text" value={newFlowerForm.supplier}
+                      onChange={e => setNewFlowerForm(p => ({ ...p, supplier: e.target.value }))}
+                      placeholder={t.supplier || 'Supplier'} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="button"
+                      onClick={async () => {
+                        try {
+                          const res = await client.post('/stock', {
+                            displayName: newFlowerForm.name,
+                            costPrice: Number(newFlowerForm.costPrice) || 0,
+                            sellPrice: Number(newFlowerForm.sellPrice) || 0,
+                            lotSize: Number(newFlowerForm.lotSize) || 1,
+                            supplier: newFlowerForm.supplier || '',
+                            quantity: 0,
+                          });
+                          setEditLines(p => [...p, {
+                            id: null, stockItemId: res.data.id, flowerName: res.data['Display Name'],
+                            quantity: 1, _originalQty: 0,
+                            costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
+                            sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
+                          }]);
+                        } catch {
+                          setEditLines(p => [...p, {
+                            id: null, stockItemId: null, flowerName: newFlowerForm.name,
+                            quantity: 1, _originalQty: 0,
+                            costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
+                            sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
+                          }]);
+                        }
+                        setNewFlowerForm(null);
+                        setFlowerSearch('');
+                      }}
+                      className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold"
+                    >{t.addToCart || 'Add to bouquet'}</button>
+                    <button type="button" onClick={() => setNewFlowerForm(null)}
+                      className="px-4 py-2 rounded-xl bg-gray-100 text-ios-secondary text-sm"
+                    >{t.cancel}</button>
+                  </div>
                 </div>
               )}
 

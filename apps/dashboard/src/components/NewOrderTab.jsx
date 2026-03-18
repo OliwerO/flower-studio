@@ -85,6 +85,11 @@ export default function NewOrderTab({ onNavigate }) {
       } else {
         showToast(t.orderSubmitted, 'success');
       }
+      // Reset form so a subsequent "New Order" starts fresh
+      setForm(emptyForm);
+      setStep(0);
+      // Refresh stock to reflect deductions (negative stock)
+      client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(console.error);
       // Navigate to orders tab to see the new order
       onNavigate?.({ tab: 'orders' });
     } catch (err) {
