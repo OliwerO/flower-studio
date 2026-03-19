@@ -37,15 +37,19 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
     }
   }
 
+  const isNeg = qty < 0;
+  const rowBg = isNeg ? 'bg-red-50' : isOut ? 'bg-ios-red/5' : isLow ? 'bg-ios-orange/5' : '';
+
   return (
-    <div>
+    <div className={rowBg}>
       <div className="flex items-center gap-3 px-4 py-3">
         <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
 
         <div className="flex-1 min-w-0">
           <p className="text-sm font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</p>
           <p className="text-xs text-ios-tertiary">
-            {item['Current Cost Price'] || 0} zł cost · {item['Current Sell Price'] || 0} zł sell
+            <span className="font-bold text-brand-700">{Number(item['Current Sell Price'] || 0).toFixed(0)} zł</span>
+            {item.Supplier && <span> · {item.Supplier}</span>}
             {dead > 0 && <span className="text-ios-red"> · {dead} {t.deadStems}</span>}
           </p>
         </div>

@@ -198,6 +198,16 @@ const en = {
   farmer:           'Farmer',
   editStock:        'Edit stock',
   doneEditing:      'Done',
+  searchStock:      'Search by name or supplier...',
+  sortByName:       'Name',
+  sortByQty:        'Qty',
+  sortBySell:       'Price',
+  sortBySupplier:   'Supplier',
+  viewAll:          'All',
+  viewNegative:     'Negative',
+  viewLow:          'Low',
+  viewSlowMovers:   'Slow',
+  stems:            'pcs',
 
   // Stock deferred (future orders)
   useStock:              'Stock',
@@ -576,6 +586,16 @@ const ru = {
   farmer:           'Фермер',
   editStock:        'Редактировать склад',
   doneEditing:      'Готово',
+  searchStock:      'Поиск по названию или поставщику...',
+  sortByName:       'Имя',
+  sortByQty:        'Кол-во',
+  sortBySell:       'Цена',
+  sortBySupplier:   'Поставщик',
+  viewAll:          'Все',
+  viewNegative:     'Минус',
+  viewLow:          'Мало',
+  viewSlowMovers:   'Давно',
+  stems:            'шт',
 
   // Stock deferred (future orders)
   useStock:              'Со склада',
