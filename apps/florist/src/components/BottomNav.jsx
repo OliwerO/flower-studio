@@ -48,12 +48,21 @@ export default function BottomNav() {
     }
   }
 
-  function hardRefresh() {
-    // Clear module-level caches (useConfigLists etc.)
+  async function hardRefresh() {
+    // 1. Clear all Cache Storage (Vite precache, Vercel edge cache, etc.)
     if ('caches' in window) {
-      caches.keys().then(names => names.forEach(n => caches.delete(n)));
+      const names = await caches.keys();
+      await Promise.all(names.map(n => caches.delete(n)));
     }
-    window.location.reload(true);
+    // 2. Unregister any service workers
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(regs.map(r => r.unregister()));
+    }
+    // 3. Clear localStorage/sessionStorage caches
+    try { sessionStorage.clear(); } catch {}
+    // 4. Navigate with cache-busting query to force fresh asset fetch
+    window.location.href = window.location.pathname + '?_cb=' + Date.now();
   }
 
   // "More" menu items differ by role
