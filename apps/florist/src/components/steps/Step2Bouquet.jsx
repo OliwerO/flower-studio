@@ -8,6 +8,7 @@ import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
+import { renderStockName } from '../../utils/stockName.jsx';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
@@ -317,7 +318,7 @@ export default function Step2Bouquet({
                 >
                   <div className="flex-1 min-w-0">
                     <div className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                      {s['Display Name']}
+                      {renderStockName(s['Display Name'])}
                     </div>
                     <div className="text-sm text-ios-tertiary">
                       <span className="font-bold text-brand-700">{Number(s['Current Sell Price']).toFixed(0)} zł</span>

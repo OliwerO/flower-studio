@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
+import { renderStockName } from '../utils/stockName.jsx';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';
@@ -474,7 +475,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   return (
     <>
       <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
-        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{item['Display Name']}</td>
+        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{renderStockName(item['Display Name'])}</td>
         <td className="px-2 py-1.5 text-right text-xs tabular-nums">
           {lastRestocked ? (
             <div>

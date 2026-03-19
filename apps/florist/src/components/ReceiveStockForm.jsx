@@ -3,6 +3,7 @@
 
 import { useState } from 'react';
 import client from '../api/client.js';
+import { renderStockName } from '../utils/stockName.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 
@@ -108,7 +109,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
                 stockItemId === s.id ? 'bg-brand-50' : 'active:bg-ios-fill'
               }`}
             >
-              <span className="text-base text-ios-label">{s['Display Name']}</span>
+              <span className="text-base text-ios-label">{renderStockName(s['Display Name'])}</span>
               {stockItemId === s.id && <span className="text-brand-600 text-lg">✓</span>}
             </button>
           ))}
