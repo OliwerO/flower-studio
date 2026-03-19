@@ -16,6 +16,7 @@ const DEFAULTS = {
   drivers:        [],
   targetMarkup:   2.2,
   floristNames:   ['Anya', 'Daria'],
+  rateTypes:      ['Standard', 'Wedding', 'Holidays'],
   floristRates:   {},
 };
 
@@ -38,6 +39,7 @@ export default function useConfigLists() {
         drivers: settingsRes.data.drivers || DEFAULTS.drivers,
         targetMarkup: settingsRes.data.config?.targetMarkup || DEFAULTS.targetMarkup,
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
+        rateTypes: listsRes.data.rateTypes || DEFAULTS.rateTypes,
         floristRates: listsRes.data.floristRates || DEFAULTS.floristRates,
         slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
       };

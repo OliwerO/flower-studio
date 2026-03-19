@@ -8,6 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
+import { renderStockName } from '../utils/stockName.jsx';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 
@@ -397,7 +398,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                                   }}
                                   className="w-full text-left px-2 py-2.5 text-sm active:bg-gray-100 rounded cursor-pointer"
                                 >
-                                  <span className="font-medium">{s['Display Name']}</span>
+                                  <span className="font-medium">{renderStockName(s['Display Name'])}</span>
                                   <span className="text-xs text-ios-tertiary ml-1">
                                     ({Number(s['Current Quantity']) || 0} pcs)
                                   </span>
