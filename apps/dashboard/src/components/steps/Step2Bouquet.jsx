@@ -4,7 +4,7 @@ import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName } from '../../utils/stockName.jsx';
+import { renderStockName } from '@flower-studio/shared';
 
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,

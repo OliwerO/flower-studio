@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import t from '../translations.js';
-import { renderStockName } from '../utils/stockName.jsx';
+import { renderStockName } from '@flower-studio/shared';
 
 /**
  * StockItem — a single row in the stock panel.

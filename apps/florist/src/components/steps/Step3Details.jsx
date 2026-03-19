@@ -3,7 +3,7 @@
 import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { getAvailableSlots } from '../../utils/timeSlots.js';
+import { getAvailableSlots } from '@flower-studio/shared';
 
 function getSourceLabels() {
   return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
