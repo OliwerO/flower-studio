@@ -533,10 +533,20 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={11} className="px-3 py-2">
+          <td colSpan={10} className="px-3 py-2">
             <div className="flex items-center gap-2">
-              <input type="number" min="1" value={woQty}
-                onChange={e => setWoQty(Number(e.target.value))}
+              <input type="number" inputMode="numeric" min="1" value={woQty}
+                onFocus={e => e.target.select()}
+                onChange={e => {
+                  const raw = e.target.value;
+                  if (raw === '') { setWoQty(''); return; }
+                  const n = parseInt(raw, 10);
+                  if (!isNaN(n) && n >= 0) setWoQty(n);
+                }}
+                onBlur={() => {
+                  const n = Number(woQty);
+                  if (!n || n < 1) setWoQty(1);
+                }}
                 className="field-input w-16" />
               <select value={woReason} onChange={e => setWoReason(e.target.value)}
                 className="field-input flex-1">
