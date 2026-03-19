@@ -161,3 +161,72 @@ Features and improvements tracked against original build phases.
 
 ### Open Investigation (2026-03-18)
 - [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
+
+---
+
+## Improvement Project — Code Quality & Reliability (2026-03-19)
+
+Structured improvements to make the codebase more maintainable, reliable, and safe.
+Keeping Airtable as the database. Ordered by impact × effort — do the cheap wins first.
+
+### Wave 1 — Security & Crash Prevention (do first)
+
+- [ ] **Fix SSE timing-unsafe PIN check** — `events.js` line 23 uses `allPins.includes(pin)` instead of `timingSafeEqual`. Extract shared `safeEqual()` to `backend/src/utils/auth.js`, use it in `middleware/auth.js`, `routes/auth.js`, and `routes/events.js`
+- [ ] **Add `unhandledRejection` handler** — `backend/src/index.js` currently handles SIGTERM but not unhandled promise rejections. Add handler to log + exit cleanly
+- [ ] **Add React Error Boundaries** — one per app wrapping the root. Catches component crashes, shows "something went wrong" instead of white screen. 3 small files
+- [ ] **Fix dashboard `Promise.all` inconsistency** — `routes/dashboard.js` has partial `.catch(() => [])` coverage. Some queries missing catch = one failure kills entire dashboard load
+
+### Wave 2 — Extract Shared Packages (biggest maintainability win)
+
+Create `packages/shared/` in the monorepo with these modules (all currently duplicated):
+
+- [ ] **`packages/shared/api/client.js`** — single API client (currently 3 identical copies in `apps/*/src/api/client.js`). Accept position config via param
+- [ ] **`packages/shared/components/Toast.jsx`** — single Toast component (3 copies, only CSS position differs). Accept `position` prop
+- [ ] **`packages/shared/context/ToastContext.jsx`** — identical in all 3 apps, zero changes needed
+- [ ] **`packages/shared/context/LanguageContext.jsx`** — nearly identical in all 3 apps, minor CSS diff in LangToggle
+- [ ] **`packages/shared/context/AuthContext.jsx`** — florist/dashboard identical, delivery adds `driverName`. Support via optional field
+- [ ] **`packages/shared/utils/stockName.jsx`** — identical in florist + dashboard (50 lines × 2)
+- [ ] **`packages/shared/utils/formatDate.js`** — identical in florist + dashboard
+- [ ] **`packages/shared/utils/timeSlots.js`** — identical in florist + dashboard (39 lines × 2)
+- [ ] **Wire up monorepo workspace** — add `packages/shared` to root `package.json` workspaces, update Vite configs for aliasing
+
+### Wave 3 — Backend Consolidation
+
+- [ ] **Extract `pickAllowed()` to `backend/src/utils/fields.js`** — currently duplicated in 5 route files (stock, deliveries, orders, floristHours, customers). Same 6-line function × 5
+- [ ] **Extract `safeEqual()` to `backend/src/utils/auth.js`** — duplicated in `middleware/auth.js` + `routes/auth.js`. (Partially done if Wave 1 SSE fix is completed first)
+- [ ] **Validate env vars on startup** — add required env var check in `index.js` before server starts. Currently no validation = silent failures when vars are missing
+- [ ] **Batch OR formulas for large queries** — `orders.js` builds OR formulas with unbounded ID lists. Airtable has ~16KB formula limit. Add batching like `analytics.js` already does (lines 93-107)
+
+### Wave 4 — Component Decomposition (large components)
+
+- [ ] **Split `OrderCard.jsx` (838 lines, 13 useState hooks)** — break into: OrderCardSummary (~150), OrderCardExpanded (~300), BouquetEditor (~200), StockActionPanel (~150)
+- [ ] **Split `SettingsTab.jsx` (1172 lines)** — break into: DeliveryZoneEditor, DriverSettings, CategoryEditor, TimeSlotSettings, SettingsTab wrapper (~200 lines each)
+- [ ] **Deduplicate `OrderDetailPanel.jsx` (914 lines)** — shares ~70% logic with OrderCard.jsx. Extract shared order display/edit logic, compose differently per app
+- [ ] **Split `ProductsTab.jsx` (899 lines)** — product list, product editor, category manager as separate components
+
+### Wave 5 — Testing Foundation
+
+- [ ] **Add ESLint config** — enforce import consistency, unused vars, hook rules. Catches bugs at write time
+- [ ] **Backend unit tests** — priority targets: `safeEqual`, `sanitizeFormulaValue`, `atomicStockAdjust`, `pickAllowed`, order rollback logic
+- [ ] **Frontend component tests** — Toast, AuthContext, useNotifications (small, isolated, high value)
+- [ ] **API integration tests** — order creation + stock deduction, delivery status cascade, PIN auth flow. Use dev base
+- [ ] **CI pipeline** — GitHub Actions: lint → test → build. Blocks broken code from deploying
+
+### Wave 6 — Reliability & Observability
+
+- [ ] **Error monitoring (Sentry)** — add to all 3 frontend apps + backend. Quick setup, huge value for catching production issues
+- [ ] **Structured logging** — replace `console.error` with structured logger (pino). Add request IDs for tracing
+- [ ] **SSE connection limits** — cap max connections per client in `notifications.js` to prevent memory exhaustion
+- [ ] **Config shallow copy fix** — `settings.js` line 64 does `{ ...DEFAULTS }` (shallow). Nested mutations leak across requests. Use `structuredClone()` or deep merge
+- [ ] **Order creation rollback hardening** — if rollback itself fails, log to dead-letter table for manual cleanup
+
+### Progress Tracking
+
+| Wave | Items | Status | Impact |
+|------|-------|--------|--------|
+| 1 — Security & Crashes | 4 | Not started | Prevents data loss + exploits |
+| 2 — Shared Packages | 9 | Not started | Halves maintenance burden |
+| 3 — Backend Consolidation | 4 | Not started | Cleaner, safer backend |
+| 4 — Component Decomposition | 4 | Not started | Enables testing + reuse |
+| 5 — Testing Foundation | 5 | Not started | Catches bugs before users |
+| 6 — Reliability | 5 | Not started | Production confidence |
