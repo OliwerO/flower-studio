@@ -3,15 +3,11 @@ import t from '../translations.js';
 import { renderStockName } from '../utils/stockName.jsx';
 
 /**
- * StockItem — a single row in the stock panel.
+ * StockItem — a single compact row in the stock panel.
  *
  * Two modes controlled by the `editMode` prop:
  *   false (default) → write-off only (florist day-to-day: report dead stems)
  *   true            → +/− adjust buttons (owner manual corrections)
- *
- * Think of it like a warehouse floor:
- *   - Workers report scrap (write-off)
- *   - Only the manager can manually override inventory counts (edit mode)
  */
 export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
   const qty       = item['Current Quantity'] || 0;
@@ -37,68 +33,66 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
     }
   }
 
+  const isNeg = qty < 0;
+  const rowBg = isNeg ? 'bg-red-50' : isOut ? 'bg-ios-red/5' : isLow ? 'bg-ios-orange/5' : '';
+
   return (
-    <div>
-      <div className="flex items-center gap-3 px-4 py-3">
-        <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+    <div className={rowBg}>
+      <div className="flex items-center gap-2 px-3 py-2">
+        <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</p>
-          <p className="text-xs text-ios-tertiary">
-            {item['Current Cost Price'] || 0} zł cost · {item['Current Sell Price'] || 0} zł sell
-            {dead > 0 && <span className="text-ios-red"> · {dead} {t.deadStems}</span>}
-          </p>
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13px] font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</span>
+            <span className="text-[11px] text-ios-tertiary shrink-0">
+              <span className="font-semibold text-brand-700">{Number(item['Current Sell Price'] || 0).toFixed(0)}zł</span>
+              {item.Supplier && <span> · {item.Supplier}</span>}
+              {dead > 0 && <span className="text-ios-red"> · {dead}✗</span>}
+            </span>
+          </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex items-center gap-1.5 shrink-0">
           {editMode ? (
-            /* ── Owner edit mode: +/− adjust buttons ── */
             <>
               <button
                 onPointerDown={() => onAdjust(-1)}
-                className="w-8 h-8 rounded-full bg-ios-fill2 text-ios-secondary text-xl font-bold
+                className="w-7 h-7 rounded-full bg-ios-fill2 text-ios-secondary text-lg font-bold
                            flex items-center justify-center active:bg-ios-separator active-scale"
-              >
-                −
-              </button>
-              <span className={`w-8 text-center font-bold text-sm ${qtyColor}`}>{qty}</span>
+              >−</button>
+              <span className={`w-7 text-center font-bold text-[13px] ${qtyColor}`}>{qty}</span>
               <button
                 onPointerDown={() => onAdjust(+1)}
-                className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 text-xl font-bold
+                className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold
                            flex items-center justify-center active:bg-brand-200 active-scale"
-              >
-                +
-              </button>
+              >+</button>
             </>
           ) : (
-            /* ── Default mode: quantity display + write-off toggle ── */
             <>
-              <span className={`w-8 text-center font-bold text-sm ${qtyColor}`}>{qty}</span>
+              <span className={`w-7 text-center font-bold text-[13px] ${qtyColor}`}>{qty}</span>
               {qty > 0 && (
                 <button
                   onClick={() => setShowWriteOff(!showWriteOff)}
-                  className={`w-8 h-8 rounded-full text-sm flex items-center justify-center active-scale transition-colors ${
+                  className={`w-7 h-7 rounded-full text-xs flex items-center justify-center active-scale transition-colors ${
                     showWriteOff ? 'bg-red-100 text-red-600' : 'bg-ios-fill2 text-ios-tertiary'
                   }`}
                   title={t.writeOff}
-                >
-                  🗑
-                </button>
+                >🗑</button>
               )}
             </>
           )}
         </div>
       </div>
 
-      {/* Write-off inline form — only in default (non-edit) mode */}
+      {/* Write-off inline form */}
       {showWriteOff && !editMode && (
-        <div className="px-4 pb-3 pt-0 ml-5 space-y-2">
-          <div className="flex items-center gap-3">
-            <span className="text-xs text-ios-red font-medium shrink-0">{t.writeOff}:</span>
-            <div className="flex items-center gap-1.5">
+        <div className="px-3 pb-2 pt-0 ml-4 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] text-ios-red font-medium shrink-0">{t.writeOff}:</span>
+            <div className="flex items-center gap-1">
               <button
                 onClick={() => setWriteOffQty(q => Math.max(1, q - 1))}
-                className="w-7 h-7 rounded-full bg-red-50 text-red-600 text-lg font-bold flex items-center justify-center active-scale"
+                className="w-6 h-6 rounded-full bg-red-50 text-red-600 text-base font-bold flex items-center justify-center active-scale"
               >−</button>
               <input
                 type="number"
@@ -118,31 +112,26 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
                   if (!n || n < 1) setWriteOffQty(1);
                   else if (n > qty) setWriteOffQty(qty);
                 }}
-                className="w-10 text-center text-sm font-bold border border-red-200 rounded-lg py-1 bg-white outline-none"
+                className="w-9 text-center text-xs font-bold border border-red-200 rounded-lg py-0.5 bg-white outline-none"
               />
               <button
                 onClick={() => setWriteOffQty(q => Math.min(qty, q + 1))}
-                className="w-7 h-7 rounded-full bg-red-50 text-red-600 text-lg font-bold flex items-center justify-center active-scale"
+                className="w-6 h-6 rounded-full bg-red-50 text-red-600 text-base font-bold flex items-center justify-center active-scale"
               >+</button>
             </div>
             <button
               onClick={handleWriteOff}
-              className="px-3 py-1.5 rounded-full bg-red-500 text-white text-xs font-semibold active:bg-red-600 active-scale"
-            >
-              {t.confirm}
-            </button>
+              className="px-2.5 py-1 rounded-full bg-red-500 text-white text-[11px] font-semibold active:bg-red-600 active-scale"
+            >{t.confirm}</button>
             <button
               onClick={() => { setShowWriteOff(false); setWriteOffQty(1); setReason(''); }}
-              className="text-xs text-ios-tertiary"
-            >
-              {t.cancel}
-            </button>
+              className="text-[11px] text-ios-tertiary"
+            >{t.cancel}</button>
           </div>
-          {/* Reason selector */}
           <select
             value={reason}
             onChange={e => setReason(e.target.value)}
-            className="w-full text-sm border border-red-100 rounded-lg px-3 py-1.5 bg-white outline-none text-ios-label"
+            className="w-full text-xs border border-red-100 rounded-lg px-2 py-1 bg-white outline-none text-ios-label"
           >
             <option value="">{t.writeOffReason}</option>
             <option value="Wilted">{t.reasonWilted || 'Wilted'}</option>

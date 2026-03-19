@@ -90,9 +90,11 @@ const en = {
   customerName:     'Name',
   customerPhone:    'Phone',
   customerNickname: 'Nickname / Instagram',
+  nickname:         'Nickname',
   customerEmail:    'Email',
   saveCustomer:     'Save customer',
   customerRequired: 'Please select or create a customer.',
+  budget:           'Budget',
 
   // Step 2 — Bouquet
   customerRequest:  'Customer request (description)',
@@ -198,6 +200,16 @@ const en = {
   farmer:           'Farmer',
   editStock:        'Edit stock',
   doneEditing:      'Done',
+  searchStock:      'Search by name or supplier...',
+  sortByName:       'Name',
+  sortByQty:        'Qty',
+  sortBySell:       'Price',
+  sortBySupplier:   'Supplier',
+  viewAll:          'All',
+  viewNegative:     'Negative',
+  viewLow:          'Low',
+  viewSlowMovers:   'Slow',
+  stems:            'pcs',
 
   // Stock deferred (future orders)
   useStock:              'Stock',
@@ -468,9 +480,11 @@ const ru = {
   customerName:     'Имя',
   customerPhone:    'Телефон',
   customerNickname: 'Ник / Instagram',
+  nickname:         'Ник',
   customerEmail:    'Email',
   saveCustomer:     'Сохранить клиента',
   customerRequired: 'Выберите или создайте клиента.',
+  budget:           'Бюджет',
 
   // Step 2 — Bouquet
   customerRequest:  'Запрос клиента (описание)',
@@ -576,6 +590,16 @@ const ru = {
   farmer:           'Фермер',
   editStock:        'Редактировать склад',
   doneEditing:      'Готово',
+  searchStock:      'Поиск по названию или поставщику...',
+  sortByName:       'Имя',
+  sortByQty:        'Кол-во',
+  sortBySell:       'Цена',
+  sortBySupplier:   'Поставщик',
+  viewAll:          'Все',
+  viewNegative:     'Минус',
+  viewLow:          'Мало',
+  viewSlowMovers:   'Давно',
+  stems:            'шт',
 
   // Stock deferred (future orders)
   useStock:              'Со склада',

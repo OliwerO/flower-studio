@@ -75,6 +75,7 @@ export default function OrderDetailPage() {
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
+  const [editBudget, setEditBudget] = useState('');
 
   useEffect(() => {
     if (!id) return;
@@ -196,6 +197,7 @@ export default function OrderDetailPage() {
                         setRemovedLines([]);
                         setAddingFlower(false);
                         setFlowerSearch('');
+                        setEditBudget(order['Price Override'] ? String(order['Price Override']) : '');
                         setEditingBouquet(true);
                         if (stockItems.length === 0) {
                           client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
@@ -249,15 +251,37 @@ export default function OrderDetailPage() {
                       );
                     })}
 
-                    {/* Running sell total */}
-                    {editLines.length > 0 && (
-                      <div className="bg-white rounded-xl border border-gray-100 px-3 py-2">
+                    {/* Budget + running sell total */}
+                    {editLines.length > 0 && (() => {
+                      const budgetNum = Number(editBudget) || 0;
+                      const delta = budgetNum ? editSellTotal - budgetNum : 0;
+                      const overBudget = delta > 0;
+                      const underBudget = delta < 0;
+                      return (
+                      <div className="bg-white rounded-xl border border-gray-100 px-3 py-2 space-y-1.5">
                         <div className="flex items-center justify-between">
                           <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
                           <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} zł</span>
                         </div>
-                      </div>
-                    )}
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-ios-tertiary shrink-0">{t.budget}:</span>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            value={editBudget}
+                            onChange={e => setEditBudget(e.target.value)}
+                            placeholder={editSellTotal > 0 ? String(Math.round(editSellTotal)) : '0'}
+                            className="flex-1 text-sm font-medium border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
+                          />
+                          <span className="text-xs text-ios-tertiary shrink-0">zł</span>
+                          {budgetNum > 0 && (
+                            <span className={`text-xs font-bold shrink-0 ${overBudget ? 'text-red-500' : underBudget ? 'text-green-600' : 'text-ios-tertiary'}`}>
+                              {overBudget ? '+' : ''}{delta.toFixed(0)} zł
+                            </span>
+                          )}
+                        </div>
+                      </div>);
+                    })()}
 
                     {/* Add flower picker — shows stock with sell price and quantity */}
                     {!addingFlower ? (
@@ -371,6 +395,11 @@ export default function OrderDetailPage() {
                           setSaving(true);
                           try {
                             await client.put(`/orders/${id}/lines`, { lines: editLines, removedLines });
+                            // Save budget as Price Override if set
+                            const budgetVal = Number(editBudget) || 0;
+                            if (budgetVal > 0) {
+                              await client.patch(`/orders/${id}`, { 'Price Override': budgetVal });
+                            }
                             setEditingBouquet(false);
                             setAddingFlower(false);
                             setFlowerSearch('');
