@@ -4,12 +4,7 @@ import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-
-// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
-function parseBatchName(displayName) {
-  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
-  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
-}
+import { renderStockName } from '../../utils/stockName.jsx';
 
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
@@ -188,7 +183,7 @@ export default function Step2Bouquet({
                 >
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                      {(() => { const { name, batch } = parseBatchName(s['Display Name']); return (<>{name}{batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 dark:bg-gray-700 rounded px-1 py-0.5">{batch}</span>}</>); })()}
+                      {renderStockName(s['Display Name'], s['Last Restocked'])}
                     </div>
                     <div className="text-xs text-ios-tertiary">
                       {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs

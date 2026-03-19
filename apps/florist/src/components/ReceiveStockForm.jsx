@@ -109,7 +109,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
                 stockItemId === s.id ? 'bg-brand-50' : 'active:bg-ios-fill'
               }`}
             >
-              <span className="text-base text-ios-label">{renderStockName(s['Display Name'])}</span>
+              <span className="text-base text-ios-label">{renderStockName(s['Display Name'], s['Last Restocked'])}</span>
               {stockItemId === s.id && <span className="text-brand-600 text-lg">✓</span>}
             </button>
           ))}

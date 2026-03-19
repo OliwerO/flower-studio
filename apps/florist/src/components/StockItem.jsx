@@ -42,7 +42,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
         <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-ios-label truncate">{renderStockName(item['Display Name'])}</p>
+          <p className="text-sm font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</p>
           <p className="text-xs text-ios-tertiary">
             {item['Current Cost Price'] || 0} zł cost · {item['Current Sell Price'] || 0} zł sell
             {dead > 0 && <span className="text-ios-red"> · {dead} {t.deadStems}</span>}
