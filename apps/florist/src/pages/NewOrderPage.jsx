@@ -323,7 +323,7 @@ export default function NewOrderPage() {
 
       {/* Next button — steps 1 and 2 only (step 0 auto-advances, step 3 has its own submit) */}
       {step >= 1 && step < 3 && (
-        <div className="fixed bottom-0 left-0 right-0 glass-bar px-4 py-4 pb-6">
+        <div className="fixed bottom-16 left-0 right-0 glass-bar px-4 py-4 pb-6 z-20">
           <div className="max-w-2xl mx-auto">
             <button
               onClick={handleNext}

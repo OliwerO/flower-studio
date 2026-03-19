@@ -83,6 +83,16 @@ export default function StockPanelPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-5 pb-28">
 
+        {/* Owner: Purchase Orders button */}
+        {role === 'owner' && (
+          <button
+            onClick={() => navigate('/purchase-orders')}
+            className="w-full mb-3 h-12 rounded-2xl bg-indigo-600 text-white text-base font-semibold shadow-sm active:bg-indigo-700 active-scale"
+          >
+            {t.po?.title || 'Purchase Orders'}
+          </button>
+        )}
+
         {/* Receive stock */}
         <button
           onClick={() => setShowReceive(!showReceive)}
