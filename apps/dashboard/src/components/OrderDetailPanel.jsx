@@ -700,7 +700,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
             </div>
             );
           })()
-          ) : (
+          : (
             <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
               <table className="w-full text-sm">
                 <thead>
