@@ -122,7 +122,7 @@ export default function StockTab({ initialFilter }) {
     }
   }
 
-  const [sortCol, setSortCol] = useState('lastRestocked');
+  const [sortCol, setSortCol] = useState('name');
   const [sortAsc, setSortAsc] = useState(false);
 
   function toggleSort(col) {
@@ -391,7 +391,6 @@ export default function StockTab({ initialFilter }) {
               <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
                 {[
                   { key: 'name',           label: t.stockName, align: 'left' },
-                  { key: 'lastRestocked',  label: t.receivedDate || 'Received', align: 'right' },
                   { key: 'qty',            label: t.quantity, align: 'right' },
                   { key: 'cost',           label: t.costPrice, align: 'right' },
                   { key: 'sell',           label: t.sellPrice, align: 'right' },
@@ -440,7 +439,7 @@ export default function StockTab({ initialFilter }) {
                   <td className="px-2 py-2 text-right text-ios-label">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
-                  <td colSpan={7}></td>
+                  <td colSpan={6}></td>
                 </tr>
               </tfoot>
             )}
@@ -467,31 +466,12 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   const markup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
   const lotSize = item['Lot Size'] || '';
   const lastRestocked = item['Last Restocked'];
-  const daysInStock = lastRestocked
-    ? Math.floor((Date.now() - new Date(lastRestocked).getTime()) / 86400000)
-    : null;
   const rowColor = isNegative ? 'bg-red-50' : isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
 
   return (
     <>
       <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
-        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{renderStockName(item['Display Name'])}</td>
-        <td className="px-2 py-1.5 text-right text-xs tabular-nums">
-          {lastRestocked ? (
-            <div>
-              <span className={
-                daysInStock != null && daysInStock > 14 ? 'text-ios-red font-semibold' :
-                daysInStock != null && daysInStock > 7 ? 'text-ios-orange font-medium' :
-                'text-ios-tertiary'
-              }>
-                {daysInStock != null ? `${daysInStock}d` : ''}
-              </span>
-              <span className="text-ios-tertiary ml-1">
-                {new Date(lastRestocked).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })}
-              </span>
-            </div>
-          ) : '—'}
-        </td>
+        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{renderStockName(item['Display Name'], lastRestocked)}</td>
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
           isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
@@ -553,10 +533,20 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={11} className="px-3 py-2">
+          <td colSpan={10} className="px-3 py-2">
             <div className="flex items-center gap-2">
-              <input type="number" min="1" value={woQty}
-                onChange={e => setWoQty(Number(e.target.value))}
+              <input type="number" inputMode="numeric" min="1" value={woQty}
+                onFocus={e => e.target.select()}
+                onChange={e => {
+                  const raw = e.target.value;
+                  if (raw === '') { setWoQty(''); return; }
+                  const n = parseInt(raw, 10);
+                  if (!isNaN(n) && n >= 0) setWoQty(n);
+                }}
+                onBlur={() => {
+                  const n = Number(woQty);
+                  if (!n || n < 1) setWoQty(1);
+                }}
                 className="field-input w-16" />
               <select value={woReason} onChange={e => setWoReason(e.target.value)}
                 className="field-input flex-1">

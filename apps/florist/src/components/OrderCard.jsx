@@ -398,7 +398,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                                   }}
                                   className="w-full text-left px-2 py-2.5 text-sm active:bg-gray-100 rounded cursor-pointer"
                                 >
-                                  <span className="font-medium">{renderStockName(s['Display Name'])}</span>
+                                  <span className="font-medium">{renderStockName(s['Display Name'], s['Last Restocked'])}</span>
                                   <span className="text-xs text-ios-tertiary ml-1">
                                     ({Number(s['Current Quantity']) || 0} pcs)
                                   </span>

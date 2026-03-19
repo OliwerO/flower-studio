@@ -28,8 +28,9 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
   const qtyColor = isOut ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label';
 
   function handleWriteOff() {
-    if (writeOffQty > 0 && writeOffQty <= qty) {
-      onWriteOff(writeOffQty, reason.trim());
+    const n = Number(writeOffQty);
+    if (n > 0 && n <= qty) {
+      onWriteOff(n, reason.trim());
       setShowWriteOff(false);
       setWriteOffQty(1);
       setReason('');
@@ -42,7 +43,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
         <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
 
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-ios-label truncate">{renderStockName(item['Display Name'])}</p>
+          <p className="text-sm font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</p>
           <p className="text-xs text-ios-tertiary">
             {item['Current Cost Price'] || 0} zł cost · {item['Current Sell Price'] || 0} zł sell
             {dead > 0 && <span className="text-ios-red"> · {dead} {t.deadStems}</span>}
@@ -101,12 +102,21 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
               >−</button>
               <input
                 type="number"
+                inputMode="numeric"
                 value={writeOffQty}
                 min={1}
                 max={qty}
+                onFocus={e => e.target.select()}
                 onChange={e => {
-                  const n = parseInt(e.target.value, 10);
-                  if (!isNaN(n) && n >= 1 && n <= qty) setWriteOffQty(n);
+                  const raw = e.target.value;
+                  if (raw === '') { setWriteOffQty(''); return; }
+                  const n = parseInt(raw, 10);
+                  if (!isNaN(n) && n >= 0) setWriteOffQty(n);
+                }}
+                onBlur={() => {
+                  const n = Number(writeOffQty);
+                  if (!n || n < 1) setWriteOffQty(1);
+                  else if (n > qty) setWriteOffQty(qty);
                 }}
                 className="w-10 text-center text-sm font-bold border border-red-200 rounded-lg py-1 bg-white outline-none"
               />
