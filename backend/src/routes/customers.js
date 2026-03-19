@@ -3,12 +3,11 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { pickAllowed } from '../utils/fields.js';
 
 const router = Router();
 router.use(authorize('customers'));
 
-// Field whitelisting — only approved fields pass through on updates.
-// Like an incoming inspection gate — rejects unauthorized parts.
 const CUSTOMERS_PATCH_ALLOWED = [
   'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
   'Home address', 'Sex / Business', 'Notes / Preferences', 'Segment',
@@ -17,14 +16,6 @@ const CUSTOMERS_PATCH_ALLOWED = [
   'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
   'Communication method', 'Order Source',
 ];
-
-function pickAllowed(body, allowedFields) {
-  const filtered = {};
-  for (const key of allowedFields) {
-    if (key in body) filtered[key] = body[key];
-  }
-  return filtered;
-}
 
 // GET /api/customers?search=anna
 // Searches across Name, Nickname, Phone, Instagram (Link), Email

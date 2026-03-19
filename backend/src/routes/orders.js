@@ -6,21 +6,11 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from '../services/notifications.js';
 import { notifyNewOrder } from '../services/telegram.js';
 import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
+import { pickAllowed } from '../utils/fields.js';
+import { listByIds } from '../utils/batchQuery.js';
 
 const router = Router();
 router.use(authorize('orders'));
-
-// --- Helpers ---
-
-// Filters an object to only include keys present in the allowedFields array.
-// Like an incoming goods inspection gate — only approved parts get through.
-function pickAllowed(body, allowedFields) {
-  const filtered = {};
-  for (const key of allowedFields) {
-    if (key in body) filtered[key] = body[key];
-  }
-  return filtered;
-}
 
 // Source validation removed — sources are now dynamic from Settings tab.
 const VALID_PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
@@ -68,25 +58,16 @@ router.get('/', async (req, res, next) => {
     const allDeliveryIds = orders.flatMap(o => o['Deliveries'] || []);
 
     const [allLines, allCustomers, allDeliveries] = await Promise.all([
-      allLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity', 'Flower Name'],
-            maxRecords: 1000,
-          })
-        : [],
-      uniqueCustomerIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${uniqueCustomerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          })
-        : [],
-      allDeliveryIds.length > 0
-        ? db.list(TABLES.DELIVERIES, {
-            filterByFormula: `OR(${allDeliveryIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Delivery Date', 'Delivery Time'],
-          })
-        : [],
+      listByIds(TABLES.ORDER_LINES, allLineIds, {
+        fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity', 'Flower Name'],
+        maxRecords: 1000,
+      }),
+      listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
+        fields: ['Name', 'Nickname'],
+      }),
+      listByIds(TABLES.DELIVERIES, allDeliveryIds, {
+        fields: ['Delivery Date', 'Delivery Time'],
+      }),
     ]);
 
     // Index customers and deliveries by ID
@@ -160,12 +141,7 @@ router.get('/:id', async (req, res, next) => {
     const deliveryId = order['Deliveries']?.[0];
 
     const [orderLines, customer, delivery] = await Promise.all([
-      // Bulk-fetch all order lines with OR formula (1 call instead of N)
-      lineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${lineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          })
-        : Promise.resolve([]),
+      listByIds(TABLES.ORDER_LINES, lineIds),
       // Fetch customer (1 call)
       custId
         ? db.getById(TABLES.CUSTOMERS, custId).catch(() => null)
@@ -593,9 +569,7 @@ router.post('/:id/cancel-with-return', async (req, res, next) => {
     let returnedItems = [];
 
     if (lineIds.length > 0) {
-      const lines = await db.list(TABLES.ORDER_LINES, {
-        filterByFormula: `OR(${lineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-      });
+      const lines = await listByIds(TABLES.ORDER_LINES, lineIds);
 
       // Return stock for each line that has a linked stock item
       for (const line of lines) {

@@ -1,16 +1,8 @@
 import { Router } from 'express';
-import crypto from 'node:crypto';
 import rateLimit from 'express-rate-limit';
+import { safeEqual } from '../utils/auth.js';
 
 const router = Router();
-
-function safeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
 
 const PINS = {
   owner:   process.env.PIN_OWNER,

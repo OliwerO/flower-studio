@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { pickAllowed } from '../utils/fields.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -16,14 +17,6 @@ const DELIVERIES_PATCH_ALLOWED = [
 
 // SYNC: must match RESULTS in apps/delivery/src/components/DeliveryResultPicker.jsx
 const VALID_DELIVERY_RESULTS = ['Success', 'Not Home', 'Wrong Address', 'Refused', 'Incomplete'];
-
-function pickAllowed(body, allowedFields) {
-  const filtered = {};
-  for (const key of allowedFields) {
-    if (key in body) filtered[key] = body[key];
-  }
-  return filtered;
-}
 
 // GET /api/deliveries?date=2025-01-15&status=Pending&driver=Piotr
 router.get('/', async (req, res, next) => {

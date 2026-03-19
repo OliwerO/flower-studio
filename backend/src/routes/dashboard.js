@@ -20,7 +20,7 @@ router.get('/', async (req, res, next) => {
       db.list(TABLES.ORDERS, {
         filterByFormula: `DATESTR({Order Date}) = '${today}'`,
         sort: [{ field: 'Order Date', direction: 'desc' }],
-      }),
+      }).catch(() => []),
       // Orders due today (by Required By — for "planned today" count)
       db.list(TABLES.ORDERS, {
         filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != 'Cancelled')`,
@@ -42,17 +42,17 @@ router.get('/', async (req, res, next) => {
       // Today's pending deliveries (all statuses — we filter below)
       db.list(TABLES.DELIVERIES, {
         filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != 'Delivered')`,
-      }),
+      }).catch(() => []),
       // Stock items below reorder threshold
       db.list(TABLES.STOCK, {
         filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < {Reorder Threshold})`,
         sort: [{ field: 'Current Quantity', direction: 'asc' }],
-      }),
+      }).catch(() => []),
       // All unpaid/partial non-cancelled orders for aging calculation
       // Don't restrict fields — 'Final Price' is a formula field that may not exist in all bases
       db.list(TABLES.ORDERS, {
         filterByFormula: `AND(OR({Payment Status} = 'Unpaid', {Payment Status} = 'Partial'), {Status} != 'Cancelled')`,
-      }),
+      }).catch(() => []),
       // Active stock items with negative quantity
       db.list(TABLES.STOCK, {
         filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < 0)`,
@@ -76,14 +76,14 @@ router.get('/', async (req, res, next) => {
         ? db.list(TABLES.CUSTOMERS, {
             filterByFormula: `OR(${uniqueCustomerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
             fields: ['Name', 'Nickname'],
-          })
+          }).catch(() => [])
         : [],
       allLineIds.length > 0
         ? db.list(TABLES.ORDER_LINES, {
             filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
             fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
             maxRecords: 1000,
-          })
+          }).catch(() => [])
         : [],
     ]);
 
@@ -124,14 +124,14 @@ router.get('/', async (req, res, next) => {
         ? db.list(TABLES.CUSTOMERS, {
             filterByFormula: `OR(${fulfillCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
             fields: ['Name', 'Nickname'],
-          })
+          }).catch(() => [])
         : [],
       fulfillLineIds.length > 0
         ? db.list(TABLES.ORDER_LINES, {
             filterByFormula: `OR(${fulfillLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
             fields: ['Order', 'Sell Price Per Unit', 'Quantity', 'Flower Name'],
             maxRecords: 1000,
-          })
+          }).catch(() => [])
         : [],
     ]);
     for (const c of extraFulfillCusts) customerMap[c.id] = c;
@@ -164,14 +164,14 @@ router.get('/', async (req, res, next) => {
         ? db.list(TABLES.CUSTOMERS, {
             filterByFormula: `OR(${tmrwCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
             fields: ['Name', 'Nickname'],
-          })
+          }).catch(() => [])
         : [],
       tmrwLineIds.length > 0
         ? db.list(TABLES.ORDER_LINES, {
             filterByFormula: `OR(${tmrwLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
             fields: ['Order', 'Flower Name', 'Quantity'],
             maxRecords: 500,
-          })
+          }).catch(() => [])
         : [],
     ]);
     for (const c of extraTmrwCusts) customerMap[c.id] = c;

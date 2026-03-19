@@ -26,6 +26,14 @@ import productRoutes       from './routes/products.js';
 import stockOrderRoutes    from './routes/stockOrders.js';
 import floristHoursRoutes from './routes/floristHours.js';
 
+// Validate required env vars on startup — fail early instead of silently breaking at runtime.
+const REQUIRED_ENV = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'PIN_OWNER', 'PIN_FLORIST'];
+const missing = REQUIRED_ENV.filter(key => !process.env[key]);
+if (missing.length > 0) {
+  console.error(`[FATAL] Missing required environment variables: ${missing.join(', ')}`);
+  process.exit(1);
+}
+
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
 
@@ -101,4 +109,14 @@ process.on('SIGTERM', () => {
     console.log('[SHUTDOWN] Server closed');
     process.exit(0);
   });
+});
+
+process.on('unhandledRejection', (reason) => {
+  console.error('[FATAL] Unhandled promise rejection:', reason);
+  server.close(() => process.exit(1));
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('[FATAL] Uncaught exception:', err);
+  server.close(() => process.exit(1));
 });
