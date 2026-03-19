@@ -3,7 +3,7 @@
 // No overlays, no fixed positioning — just normal DOM flow. Like flipping
 // a kanban card over to see the full work order on the back.
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -11,6 +11,7 @@ import fmtDate from '../utils/formatDate.js';
 import { renderStockName } from '../utils/stockName.jsx';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
+import { useOrderEditing } from '@flower-studio/shared';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
@@ -82,14 +83,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const [detail, setDetail]       = useState(null);
   const [loading, setLoading]     = useState(false);
   const [saving, setSaving]       = useState(false);
-  const [editingBouquet, setEditingBouquet] = useState(false);
-  const [editLines, setEditLines] = useState([]);
-  const [removedLines, setRemovedLines] = useState([]);
-  const [removeIdx, setRemoveIdx] = useState(null);
-  const [stockAction, setStockAction] = useState(null); // null | 'pending' — shown before save when qty reduced
-  const [addingFlower, setAddingFlower] = useState(false);
-  const [flowerSearch, setFlowerSearch] = useState('');
-  const [stockItems, setStockItems] = useState([]);
+  const editing = useOrderEditing({ orderId: order.id, apiClient: client, showToast, t });
 
   const status     = order['Status'] || 'New';
   const styles     = STATUS_STYLES[status] || STATUS_STYLES['New'];
@@ -158,41 +152,10 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
     }
   }
 
-  // Save bouquet edits — action is 'return', 'writeoff', or null (no stock changes needed)
+  // Save bouquet edits — delegates to shared hook
   async function doSave(action) {
-    setSaving(true);
-    try {
-      // For qty-reduced lines, add stock adjustment entries to removedLines
-      const finalRemoved = [...removedLines];
-      if (action) {
-        for (const line of editLines) {
-          if (line._originalQty > 0 && line.quantity < line._originalQty) {
-            const delta = line._originalQty - line.quantity;
-            finalRemoved.push({
-              lineId: null, // not removing the line, just reducing qty
-              stockItemId: line.stockItemId,
-              quantity: delta,
-              action,
-              reason: action === 'writeoff' ? 'Bouquet edit' : undefined,
-            });
-          }
-        }
-        // Ensure fully removed lines also have the chosen action
-        for (const rem of finalRemoved) {
-          if (!rem.action) rem.action = action;
-        }
-      }
-      await client.put(`/orders/${order.id}/lines`, { lines: editLines, removedLines: finalRemoved });
-      setEditingBouquet(false);
-      setStockAction(null);
-      const res = await client.get(`/orders/${order.id}`);
-      setDetail(res.data);
-      showToast(t.bouquetUpdated || 'Bouquet updated');
-    } catch (err) {
-      showToast(err.response?.data?.error || t.updateError, 'error');
-    } finally {
-      setSaving(false);
-    }
+    const refreshed = await editing.doSave(action);
+    if (refreshed) setDetail(refreshed);
   }
 
   // Use detail data if loaded, otherwise fall back to list data
@@ -324,77 +287,48 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
-                    {!isTerminal && !editingBouquet && (
-                      <button onClick={async () => {
-                        setEditLines(detail.orderLines.map(l => ({
-                          id: l.id, stockItemId: l['Stock Item']?.[0] || null,
-                          flowerName: l['Flower Name'], quantity: l.Quantity,
-                          _originalQty: l.Quantity,
-                        })));
-                        setRemovedLines([]);
-                        setAddingFlower(false);
-                        setFlowerSearch('');
-                        setEditingBouquet(true);
-                        // Lazy-load stock for the flower picker
-                        if (stockItems.length === 0) {
-                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
-                        }
-                      }} className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
+                    {!isTerminal && !editing.editingBouquet && (
+                      <button onClick={() => editing.startEditing(detail.orderLines)}
+                        className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
                     )}
                   </div>
 
-                  {editingBouquet ? (
+                  {editing.editingBouquet ? (
                     <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-2">
-                      {editLines.map((line, idx) => (
+                      {editing.editLines.map((line, idx) => (
                         <div key={line.id || idx} className="flex items-center gap-2">
                           <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
                           <input type="number" min="1" value={line.quantity}
-                            onChange={e => setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
-                            onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
+                            onChange={e => editing.updateLineQty(idx, e.target.value)}
+                            onBlur={() => editing.commitLineQty(idx)}
                             onFocus={e => e.target.select()}
                             className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1.5" />
-                          <button onClick={() => setRemoveIdx(idx)} className="text-red-400 text-sm px-1">✕</button>
+                          <button onClick={() => editing.setRemoveDialogIdx(idx)} className="text-red-400 text-sm px-1">✕</button>
                         </div>
                       ))}
 
                       {/* Add flower picker */}
-                      {!addingFlower ? (
-                        <button onClick={() => setAddingFlower(true)}
+                      {!editing.addingFlower ? (
+                        <button onClick={() => editing.setAddingFlower(true)}
                           className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg active:bg-brand-100"
                         >+ {t.addFlower || 'Add flower'}</button>
                       ) : (
                         <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
-                          <input type="text" value={flowerSearch}
-                            onChange={e => setFlowerSearch(e.target.value)}
+                          <input type="text" value={editing.flowerSearch}
+                            onChange={e => editing.setFlowerSearch(e.target.value)}
                             placeholder={t.flowerSearch || 'Search...'}
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
                             autoFocus />
                           <div className="max-h-36 overflow-y-auto divide-y divide-gray-50">
                             {/* Stock results — only items with qty > 0 */}
-                            {flowerSearch.length >= 1 && stockItems
-                              .filter(s => {
-                                const name = (s['Display Name'] || '').toLowerCase();
-                                const q = flowerSearch.toLowerCase();
-                                const qty = Number(s['Current Quantity']) || 0;
-                                // Hide depleted dated batches
-                                if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
-                                return name.includes(q) && !editLines.some(l => l.stockItemId === s.id);
-                              })
+                            {editing.flowerSearch.length >= 1 && editing.getFilteredStock(editing.flowerSearch)
                               .slice(0, 6)
                               .map(s => (
                                 <div key={s.id}
                                   onPointerDown={e => {
                                     e.preventDefault();
                                     e.stopPropagation();
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: s.id,
-                                      flowerName: s['Display Name'],
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: Number(s['Current Cost Price']) || 0,
-                                      sellPricePerUnit: Number(s['Current Sell Price']) || 0,
-                                    }]);
-                                    setFlowerSearch('');
-                                    setAddingFlower(false);
+                                    editing.addFlowerFromStock(s);
                                   }}
                                   className="w-full text-left px-2 py-2.5 text-sm active:bg-gray-100 rounded cursor-pointer"
                                 >
@@ -405,73 +339,46 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                                 </div>
                               ))}
                             {/* Add unlisted flower */}
-                            {flowerSearch.length >= 2 && !stockItems.some(s =>
-                              (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
+                            {editing.flowerSearch.length >= 2 && !editing.stockItems.some(s =>
+                              (s['Display Name'] || '').toLowerCase() === editing.flowerSearch.toLowerCase()
                             ) && (
                               <div
-                                onPointerDown={async (e) => {
+                                onPointerDown={e => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  try {
-                                    const res = await client.post('/stock', {
-                                      displayName: flowerSearch.trim(), quantity: 0,
-                                    });
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: res.data.id,
-                                      flowerName: res.data['Display Name'],
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: 0, sellPricePerUnit: 0,
-                                    }]);
-                                  } catch {
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: null,
-                                      flowerName: flowerSearch.trim(),
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: 0, sellPricePerUnit: 0,
-                                    }]);
-                                  }
-                                  setFlowerSearch('');
-                                  setAddingFlower(false);
+                                  editing.addNewFlowerQuick(editing.flowerSearch);
                                 }}
                                 className="w-full text-left px-2 py-2.5 text-sm text-brand-600 font-medium border-t border-gray-100 cursor-pointer active:bg-brand-50 rounded"
-                              >+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</div>
+                              >+ {t.addNewFlower || 'Add new'} "{editing.flowerSearch}"</div>
                             )}
                           </div>
-                          <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
+                          <button onClick={() => { editing.setAddingFlower(false); editing.setFlowerSearch(''); }}
                             className="text-xs text-ios-tertiary">{t.cancel}</button>
                         </div>
                       )}
 
-                      {removeIdx != null && (
+                      {editing.removeDialogIdx != null && (
                         <div className="bg-amber-50 rounded-xl px-3 py-2 space-y-2">
-                          <p className="text-sm text-amber-800">{editLines[removeIdx]?.flowerName}</p>
+                          <p className="text-sm text-amber-800">{editing.removeDialogLine?.flowerName}</p>
                           <div className="flex gap-2">
-                            <button onClick={() => {
-                              const l = editLines[removeIdx];
-                              setRemovedLines(p => [...p, { lineId: l.id, stockItemId: l.stockItemId, quantity: l._originalQty, action: 'return' }]);
-                              setEditLines(p => p.filter((_, i) => i !== removeIdx));
-                              setRemoveIdx(null);
-                            }} className="flex-1 py-2 rounded-xl bg-green-600 text-white text-xs font-medium">
+                            <button onClick={() => editing.confirmRemoveLine('return')}
+                              className="flex-1 py-2 rounded-xl bg-green-600 text-white text-xs font-medium">
                               {t.returnToStock || 'Return'}
                             </button>
-                            <button onClick={() => {
-                              const l = editLines[removeIdx];
-                              setRemovedLines(p => [...p, { lineId: l.id, stockItemId: l.stockItemId, quantity: l._originalQty, action: 'writeoff', reason: 'Bouquet edit' }]);
-                              setEditLines(p => p.filter((_, i) => i !== removeIdx));
-                              setRemoveIdx(null);
-                            }} className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium">
+                            <button onClick={() => editing.confirmRemoveLine('writeoff')}
+                              className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-xs font-medium">
                               {t.writeOff || 'Write off'}
                             </button>
                           </div>
-                          <button onClick={() => setRemoveIdx(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                          <button onClick={() => editing.setRemoveDialogIdx(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
                         </div>
                       )}
 
                       {/* Stock action dialog — shown when Save is tapped and quantities decreased */}
-                      {stockAction === 'pending' && (() => {
-                        const reduced = editLines.filter(l => l._originalQty > 0 && l.quantity < l._originalQty);
+                      {editing.stockAction === 'pending' && (() => {
+                        const reduced = editing.editLines.filter(l => l._originalQty > 0 && l.quantity < l._originalQty);
                         const totalReduced = reduced.reduce((s, l) => s + (l._originalQty - l.quantity), 0);
-                        return totalReduced > 0 || removedLines.length > 0 ? (
+                        return totalReduced > 0 || editing.removedLines.length > 0 ? (
                           <div className="bg-amber-50 rounded-xl px-3 py-3 space-y-2">
                             <p className="text-sm font-medium text-amber-800">
                               {t.spareFlowersQuestion || 'What would you like to do with the spare flowers?'}
@@ -486,26 +393,19 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                                 {t.writeOff || 'Write off'}
                               </button>
                             </div>
-                            <button onClick={() => setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                            <button onClick={() => editing.setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
                           </div>
                         ) : null;
                       })()}
 
                       <div className="flex gap-2 pt-1">
                         <button onClick={() => {
-                          // Check if any quantities decreased or lines removed
-                          const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
-                          const hasRemovals = removedLines.length > 0;
-                          if ((hasReductions || hasRemovals) && stockAction !== 'pending') {
-                            setStockAction('pending');
-                            return;
-                          }
-                          // No reductions — save directly (additions or no changes)
-                          doSave(null);
-                        }} disabled={saving}
+                          const result = editing.handleSaveClick();
+                          if (result) result.then(data => { if (data) setDetail(data); });
+                        }} disabled={saving || editing.saving}
                           className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
-                        >{saving ? '...' : (t.save || 'Save')}</button>
-                        <button onClick={() => { setEditingBouquet(false); setRemoveIdx(null); setStockAction(null); }}
+                        >{saving || editing.saving ? '...' : (t.save || 'Save')}</button>
+                        <button onClick={() => editing.cancelEditing()}
                           className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
                         >{t.cancel}</button>
                       </div>

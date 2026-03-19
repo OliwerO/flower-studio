@@ -179,14 +179,27 @@ const en = {
   newItemName:      'Flower name',
   newItemCategory:  'Category',
 
-  // Stock write-off
+  // Stock write-off / bouquet editing
   writeOff:         'Write off',
   returnToStock:    'Return to stock',
+  returnOrWriteOff: 'Return to stock or write off?',
+  adjustPO:         'Adjust purchase order',
+  notReceivedYet:   'Not received yet — adjust purchase order?',
   spareFlowersQuestion: 'What would you like to do with the spare flowers?',
   editBouquet:      'Edit bouquet',
   addFlower:        'Add flower',
+  addNewFlower:     'Add new',
+  addToCart:        'Add to bouquet',
   saveBouquet:      'Save bouquet',
   bouquetUpdated:   'Bouquet updated',
+  markup:           'Markup',
+
+  // Delivery method
+  deliveryMethod:           'Delivery method',
+  deliveryMethodDriver:     'Driver',
+  deliveryMethodTaxi:       'Taxi',
+  deliveryMethodFlorist:    'Florist',
+  taxiCost:                 'Taxi cost',
   deadStems:        'dead',
   confirm:          'Confirm',
   writeOffError:    'Failed to write off stock.',
@@ -526,14 +539,27 @@ const ru = {
   newItemName:      'Название цветка',
   newItemCategory:  'Категория',
 
-  // Stock write-off
+  // Stock write-off / bouquet editing
   writeOff:         'Списание',
   returnToStock:    'Вернуть на склад',
+  returnOrWriteOff: 'Вернуть на склад или списать?',
+  adjustPO:         'Скорректировать закупку',
+  notReceivedYet:   'Ещё не получено — скорректировать закупку?',
   spareFlowersQuestion: 'Что сделать с лишними цветами?',
   editBouquet:      'Редактировать букет',
   addFlower:        'Добавить цветок',
+  addNewFlower:     'Добавить новый',
+  addToCart:        'Добавить в букет',
   saveBouquet:      'Сохранить букет',
   bouquetUpdated:   'Букет обновлён',
+  markup:           'Наценка',
+
+  // Delivery method
+  deliveryMethod:           'Способ доставки',
+  deliveryMethodDriver:     'Водитель',
+  deliveryMethodTaxi:       'Такси',
+  deliveryMethodFlorist:    'Флорист',
+  taxiCost:                 'Стоимость такси',
   deadStems:        'списано',
   confirm:          'Подтвердить',
   writeOffError:    'Не удалось списать.',

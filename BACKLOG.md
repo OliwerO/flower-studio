@@ -188,7 +188,9 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 - [ ] **`packages/shared/utils/stockName.jsx`** — identical in florist + dashboard (50 lines × 2)
 - [ ] **`packages/shared/utils/formatDate.js`** — identical in florist + dashboard
 - [ ] **`packages/shared/utils/timeSlots.js`** — identical in florist + dashboard (39 lines × 2)
-- [ ] **Wire up monorepo workspace** — add `packages/shared` to root `package.json` workspaces, update Vite configs for aliasing
+- [x] **Wire up monorepo workspace** — add `packages/shared` to root `package.json` workspaces, update Vite configs for aliasing
+- [x] **`packages/shared/hooks/useOrderEditing.js`** — shared bouquet editing hook used by OrderCard (florist) and OrderDetailPanel (dashboard)
+- [x] **`packages/shared/utils/parseBatchName.js`** — shared utility, replaces 4 inline copies across florist + dashboard
 
 ### Wave 3 — Backend Consolidation
 
@@ -225,7 +227,7 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 | Wave | Items | Status | Impact |
 |------|-------|--------|--------|
 | 1 — Security & Crashes | 4 | Not started | Prevents data loss + exploits |
-| 2 — Shared Packages | 9 | Not started | Halves maintenance burden |
+| 2 — Shared Packages | 11 | In progress (3/11) | Halves maintenance burden |
 | 3 — Backend Consolidation | 4 | Not started | Cleaner, safer backend |
 | 4 — Component Decomposition | 4 | Not started | Enables testing + reuse |
 | 5 — Testing Foundation | 5 | Not started | Catches bugs before users |

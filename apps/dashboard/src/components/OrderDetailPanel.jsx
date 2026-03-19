@@ -8,12 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-
-// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
-function parseBatchName(displayName) {
-  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
-  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
-}
+import { useOrderEditing, parseBatchName } from '@flower-studio/shared';
 
 const STATUSES = [
   { value: 'New',              label: t.statusNew,       activeClass: 'bg-indigo-600 text-white shadow-sm' },
@@ -45,16 +40,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
-  const [editingBouquet, setEditingBouquet] = useState(false);
-  const [editLines, setEditLines] = useState([]);
-  const [removedLines, setRemovedLines] = useState([]);
-  const [showRemoveDialog, setShowRemoveDialog] = useState(null);
-  const [stockAction, setStockAction] = useState(null);
-  const [addingFlower, setAddingFlower] = useState(false);
-  const [flowerSearch, setFlowerSearch] = useState('');
-  const [stockItems, setStockItems] = useState([]);
-  const [newFlowerForm, setNewFlowerForm] = useState(null); // { name, costPrice, sellPrice, lotSize, supplier }
   const { showToast } = useToast();
+  const editing = useOrderEditing({ orderId, apiClient: client, showToast, t });
 
   useEffect(() => {
     async function load() {
@@ -91,32 +78,10 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   }
 
   async function doSaveDashboard(action) {
-    setSaving(true);
-    try {
-      const finalRemoved = [...removedLines];
-      if (action) {
-        for (const line of editLines) {
-          if (line._originalQty > 0 && line.quantity < line._originalQty) {
-            finalRemoved.push({
-              lineId: null, stockItemId: line.stockItemId,
-              quantity: line._originalQty - line.quantity,
-              action, reason: action === 'writeoff' ? 'Bouquet edit' : undefined,
-            });
-          }
-        }
-        for (const rem of finalRemoved) { if (!rem.action) rem.action = action; }
-      }
-      await client.put(`/orders/${orderId}/lines`, { lines: editLines, removedLines: finalRemoved });
-      setEditingBouquet(false);
-      setStockAction(null);
-      const res = await client.get(`/orders/${orderId}`);
-      setOrder(res.data);
-      showToast(t.bouquetUpdated);
+    const refreshed = await editing.doSave(action);
+    if (refreshed) {
+      setOrder(refreshed);
       onUpdate();
-    } catch (err) {
-      showToast(err.response?.data?.error || t.error, 'error');
-    } finally {
-      setSaving(false);
     }
   }
 
@@ -387,40 +352,19 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
             <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
               {t.bouquetComposition}
             </p>
-            {!isTerminal && !editingBouquet && (
+            {!isTerminal && !editing.editingBouquet && (
               <button
-                onClick={() => {
-                  setEditLines(o.orderLines.map(l => ({
-                    id: l.id, stockItemId: l['Stock Item']?.[0] || null,
-                    flowerName: l['Flower Name'], quantity: l.Quantity,
-                    _originalQty: l.Quantity,
-                    costPricePerUnit: l['Cost Price Per Unit'] || 0,
-                    sellPricePerUnit: l['Sell Price Per Unit'] || 0,
-                  })));
-                  setRemovedLines([]);
-                  setAddingFlower(false);
-                  setFlowerSearch('');
-                  setEditingBouquet(true);
-                  if (stockItems.length === 0) {
-                    client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
-                  }
-                }}
+                onClick={() => editing.startEditing(o.orderLines)}
                 className="text-xs text-brand-600 font-medium"
               >{t.editBouquet}</button>
             )}
           </div>
 
-          {editingBouquet ? (() => {
-            // Running totals — same as new order wizard
-            const editCostTotal = editLines.reduce((s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0);
-            const editSellTotal = editLines.reduce((s, l) => s + Number(l.sellPricePerUnit || 0) * Number(l.quantity || 0), 0);
-            const editMargin = editSellTotal > 0 ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
-            // Detect quantity reductions that need stock decision (only for lines that had stock before)
-            const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
-            // removedLines that already have explicit actions from the remove dialog
-            const hasExplicitRemovals = removedLines.some(r => r.lineId);
-            // Only lines with quantity reductions (not full removals) need a global stock decision
-            const needsStockDecision = hasReductions && !stockAction;
+          {editing.editingBouquet ? (() => {
+            const { editLines, editCostTotal, editSellTotal, editMargin,
+                    addingFlower, flowerSearch, stockItems, newFlowerForm,
+                    removeDialogIdx, removeDialogLine, removeDialogIsNegativeStock,
+                    stockAction } = editing;
             return (
             <div className="space-y-2">
               {/* Edit lines with sell price × qty like the order wizard */}
@@ -440,17 +384,17 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                       </span>
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
-                      <button onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: Math.max(1, (Number(l.quantity) || 1) - 1) } : l))}
+                      <button onClick={() => editing.decrementQty(idx)}
                         className="w-7 h-7 rounded-full bg-white text-ios-secondary text-lg font-bold flex items-center justify-center">−</button>
                       <input type="number" min="1" value={line.quantity}
-                        onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
-                        onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
+                        onChange={e => editing.updateLineQty(idx, e.target.value)}
+                        onBlur={() => editing.commitLineQty(idx)}
                         onFocus={e => e.target.select()}
                         className="w-10 text-center text-sm font-bold border border-gray-200 rounded-lg py-1" />
-                      <button onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: (Number(l.quantity) || 0) + 1 } : l))}
+                      <button onClick={() => editing.incrementQty(idx)}
                         className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold flex items-center justify-center">+</button>
                     </div>
-                    <button onClick={() => setShowRemoveDialog(idx)}
+                    <button onClick={() => editing.setRemoveDialogIdx(idx)}
                       className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>
                   </div>
                 </div>
@@ -473,13 +417,13 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
 
               {/* Add flower picker — shows stock catalog immediately */}
               {!addingFlower ? (
-                <button onClick={() => setAddingFlower(true)}
+                <button onClick={() => editing.setAddingFlower(true)}
                   className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg hover:bg-brand-100"
                 >+ {t.addFlower}</button>
               ) : (
                 <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
                   <input type="text" value={flowerSearch}
-                    onChange={e => setFlowerSearch(e.target.value)}
+                    onChange={e => editing.setFlowerSearch(e.target.value)}
                     placeholder={t.flowerSearch}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
                     autoFocus />
@@ -490,15 +434,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                     <span className="w-12 text-right">{t.quantity}</span>
                   </div>
                   <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
-                    {stockItems
-                      .filter(s => {
-                        const name = (s['Display Name'] || '').toLowerCase();
-                        const qty = Number(s['Current Quantity']) || 0;
-                        if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
-                        if (editLines.some(l => l.stockItemId === s.id)) return false;
-                        if (flowerSearch) return name.includes(flowerSearch.toLowerCase());
-                        return true;
-                      })
+                    {editing.getFilteredStock(flowerSearch)
                       .slice(0, 20)
                       .map(s => {
                         const qty = Number(s['Current Quantity']) || 0;
@@ -507,15 +443,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                         const { name: fn, batch } = parseBatchName(s['Display Name']);
                         return (
                           <button key={s.id} type="button"
-                            onClick={() => {
-                              setEditLines(p => [...p, {
-                                id: null, stockItemId: s.id, flowerName: s['Display Name'],
-                                quantity: 1, _originalQty: 0,
-                                costPricePerUnit: cost,
-                                sellPricePerUnit: sell,
-                              }]);
-                              setFlowerSearch('');
-                            }}
+                            onClick={() => editing.addFlowerFromStock(s)}
                             className={`w-full flex items-center px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${qty <= 0 ? 'bg-amber-50/50' : ''}`}
                           >
                             <span className="flex-1 font-medium text-left truncate">
@@ -532,15 +460,12 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                       (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
                     ) && (
                       <button type="button"
-                        onClick={() => {
-                          setNewFlowerForm({ name: flowerSearch.trim(), costPrice: '', sellPrice: '', lotSize: '', supplier: '' });
-                          setAddingFlower(false);
-                        }}
+                        onClick={() => editing.openNewFlowerForm(flowerSearch.trim())}
                         className="w-full text-left px-2 py-1.5 text-sm text-brand-600 font-medium border-t border-gray-100"
                       >+ {t.addNewFlower} "{flowerSearch}"</button>
                     )}
                   </div>
-                  <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
+                  <button onClick={() => { editing.setAddingFlower(false); editing.setFlowerSearch(''); }}
                     className="text-xs text-ios-tertiary">{t.cancel}</button>
                 </div>
               )}
@@ -553,56 +478,30 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                     <input type="number" step="0.01" value={newFlowerForm.costPrice}
                       onChange={e => {
                         const cost = e.target.value;
-                        setNewFlowerForm(p => ({
+                        editing.setNewFlowerForm(p => ({
                           ...p, costPrice: cost,
                           sellPrice: cost && targetMarkup ? String(Math.round(Number(cost) * targetMarkup)) : p.sellPrice,
                         }));
                       }}
                       placeholder={t.costPrice} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
                     <input type="number" step="0.01" value={newFlowerForm.sellPrice}
-                      onChange={e => setNewFlowerForm(p => ({ ...p, sellPrice: e.target.value }))}
+                      onChange={e => editing.setNewFlowerForm(p => ({ ...p, sellPrice: e.target.value }))}
                       placeholder={t.sellPrice} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     <input type="number" value={newFlowerForm.lotSize}
-                      onChange={e => setNewFlowerForm(p => ({ ...p, lotSize: e.target.value }))}
+                      onChange={e => editing.setNewFlowerForm(p => ({ ...p, lotSize: e.target.value }))}
                       placeholder={t.lotSize} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
                     <input type="text" value={newFlowerForm.supplier}
-                      onChange={e => setNewFlowerForm(p => ({ ...p, supplier: e.target.value }))}
+                      onChange={e => editing.setNewFlowerForm(p => ({ ...p, supplier: e.target.value }))}
                       placeholder={t.supplier} className="text-sm border border-gray-200 rounded-lg px-2 py-1.5" />
                   </div>
                   <div className="flex gap-2">
                     <button type="button"
-                      onClick={async () => {
-                        try {
-                          const res = await client.post('/stock', {
-                            displayName: newFlowerForm.name,
-                            costPrice: Number(newFlowerForm.costPrice) || 0,
-                            sellPrice: Number(newFlowerForm.sellPrice) || 0,
-                            lotSize: Number(newFlowerForm.lotSize) || 1,
-                            supplier: newFlowerForm.supplier || '',
-                            quantity: 0,
-                          });
-                          setEditLines(p => [...p, {
-                            id: null, stockItemId: res.data.id, flowerName: res.data['Display Name'],
-                            quantity: 1, _originalQty: 0,
-                            costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
-                            sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
-                          }]);
-                        } catch {
-                          setEditLines(p => [...p, {
-                            id: null, stockItemId: null, flowerName: newFlowerForm.name,
-                            quantity: 1, _originalQty: 0,
-                            costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
-                            sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
-                          }]);
-                        }
-                        setNewFlowerForm(null);
-                        setFlowerSearch('');
-                      }}
+                      onClick={() => editing.addNewFlower()}
                       className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold"
                     >{t.addToCart}</button>
-                    <button type="button" onClick={() => setNewFlowerForm(null)}
+                    <button type="button" onClick={() => editing.setNewFlowerForm(null)}
                       className="px-4 py-2 rounded-xl bg-gray-100 text-ios-secondary text-sm"
                     >{t.cancel}</button>
                   </div>
@@ -610,47 +509,30 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               )}
 
               {/* Remove dialog — return to stock, write off, or adjust PO */}
-              {showRemoveDialog != null && (() => {
-                const line = editLines[showRemoveDialog];
-                const si = stockItems.find(s => s.id === line?.stockItemId);
-                const currentQty = Number(si?.['Current Quantity'] ?? 0);
-                const isNegativeStock = currentQty < 0;
+              {removeDialogIdx != null && (() => {
                 return (
-                  <div className={`${isNegativeStock ? 'bg-blue-50' : 'bg-amber-50'} rounded-xl px-4 py-3 space-y-2`}>
-                    <p className={`text-sm font-medium ${isNegativeStock ? 'text-blue-800' : 'text-amber-800'}`}>
-                      {line?.flowerName}: {isNegativeStock ? t.notReceivedYet : t.returnOrWriteOff}
+                  <div className={`${removeDialogIsNegativeStock ? 'bg-blue-50' : 'bg-amber-50'} rounded-xl px-4 py-3 space-y-2`}>
+                    <p className={`text-sm font-medium ${removeDialogIsNegativeStock ? 'text-blue-800' : 'text-amber-800'}`}>
+                      {removeDialogLine?.flowerName}: {removeDialogIsNegativeStock ? t.notReceivedYet : t.returnOrWriteOff}
                     </p>
                     <div className="flex gap-2">
                       <button
-                        onClick={() => {
-                          setRemovedLines(prev => [...prev, { lineId: line.id, stockItemId: line.stockItemId, quantity: line._originalQty, action: 'return' }]);
-                          setEditLines(prev => prev.filter((_, i) => i !== showRemoveDialog));
-                          setShowRemoveDialog(null);
-                        }}
+                        onClick={() => editing.confirmRemoveLine('return')}
                         className="flex-1 py-2 rounded-xl bg-green-600 text-white text-sm font-medium"
                       >{t.returnToStock}</button>
-                      {isNegativeStock ? (
+                      {removeDialogIsNegativeStock ? (
                         <button
-                          onClick={() => {
-                            setRemovedLines(prev => [...prev, { lineId: line.id, stockItemId: line.stockItemId, quantity: line._originalQty, action: 'return' }]);
-                            setEditLines(prev => prev.filter((_, i) => i !== showRemoveDialog));
-                            setShowRemoveDialog(null);
-                            showToast(t.adjustPO, 'info');
-                          }}
+                          onClick={() => { editing.confirmRemoveLine('return'); showToast(t.adjustPO, 'info'); }}
                           className="flex-1 py-2 rounded-xl bg-blue-600 text-white text-sm font-medium"
                         >{t.adjustPO}</button>
                       ) : (
                         <button
-                          onClick={() => {
-                            setRemovedLines(prev => [...prev, { lineId: line.id, stockItemId: line.stockItemId, quantity: line._originalQty, action: 'writeoff', reason: 'Bouquet edit' }]);
-                            setEditLines(prev => prev.filter((_, i) => i !== showRemoveDialog));
-                            setShowRemoveDialog(null);
-                          }}
+                          onClick={() => editing.confirmRemoveLine('writeoff')}
                           className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-sm font-medium"
                         >{t.writeOff}</button>
                       )}
                     </div>
-                    <button onClick={() => setShowRemoveDialog(null)} className="text-xs text-ios-tertiary">
+                    <button onClick={() => editing.setRemoveDialogIdx(null)} className="text-xs text-ios-tertiary">
                       {t.cancel}
                     </button>
                   </div>
@@ -674,7 +556,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                         className="flex-1 py-2 rounded-xl bg-amber-600 text-white text-sm font-medium">
                         {t.writeOff}</button>
                     </div>
-                    <button onClick={() => setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
+                    <button onClick={() => editing.setStockAction(null)} className="text-xs text-ios-tertiary">{t.cancel}</button>
                   </div>
                 ) : null;
               })()}
@@ -682,18 +564,17 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               <div className="flex gap-2 pt-1">
                 <button
                   onClick={() => {
-                    const hasQtyReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
-                    if (hasQtyReductions && stockAction !== 'pending') {
-                      setStockAction('pending');
+                    if (editing.hasReductions && stockAction !== 'pending') {
+                      editing.setStockAction('pending');
                       return;
                     }
                     doSaveDashboard(null);
                   }}
-                  disabled={saving}
+                  disabled={saving || editing.saving}
                   className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold"
-                >{saving ? '...' : t.saveBouquet}</button>
+                >{saving || editing.saving ? '...' : t.saveBouquet}</button>
                 <button
-                  onClick={() => { setEditingBouquet(false); setShowRemoveDialog(null); setStockAction(null); }}
+                  onClick={() => editing.cancelEditing()}
                   className="px-4 py-2 rounded-xl bg-gray-100 text-ios-secondary text-sm"
                 >{t.cancel}</button>
               </div>
@@ -738,12 +619,12 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
       {/* Delivery method + driver (for delivery orders) */}
       {o['Delivery Type'] === 'Delivery' && o.delivery && (
         <div className="space-y-3">
-          <Section label={t.deliveryMethod || 'Delivery method'}>
+          <Section label={t.deliveryMethod}>
             <Pills
               options={[
-                { value: 'Driver',  label: t.deliveryMethodDriver || 'Driver' },
-                { value: 'Taxi',    label: t.deliveryMethodTaxi || 'Taxi' },
-                { value: 'Florist', label: t.deliveryMethodFlorist || 'Florist' },
+                { value: 'Driver',  label: t.deliveryMethodDriver },
+                { value: 'Taxi',    label: t.deliveryMethodTaxi },
+                { value: 'Florist', label: t.deliveryMethodFlorist },
               ]}
               value={o.delivery?.['Delivery Method'] || 'Driver'}
               onChange={v => {
@@ -778,7 +659,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
 
           {/* Taxi cost — only when method is Taxi */}
           {o.delivery?.['Delivery Method'] === 'Taxi' && (
-            <Section label={t.taxiCost || 'Taxi cost'}>
+            <Section label={t.taxiCost}>
               <InlineEdit
                 value={o.delivery['Taxi Cost'] ? String(o.delivery['Taxi Cost']) : ''}
                 type="number"

@@ -1,0 +1,10 @@
+{
+  "name": "@flower-studio/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "index.js",
+  "peerDependencies": {
+    "react": "^18.0.0"
+  }
+}
