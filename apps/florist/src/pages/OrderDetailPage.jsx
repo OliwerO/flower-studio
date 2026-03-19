@@ -8,12 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-
-// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
-function parseBatchName(displayName) {
-  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
-  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
-}
+import { parseBatchName } from '@flower-studio/shared';
 
 // Florist flow: New → Ready → Delivered/Picked Up.
 // "Out for Delivery" is set automatically by drivers — florists don't need that button.

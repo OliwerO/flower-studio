@@ -179,6 +179,17 @@ Changes made to the **dev base** that must be replicated in **production** befor
 - Missing translations: 8 keys added to dashboard + florist (EN+RU): editBouquet, addFlower, saveBouquet, bouquetUpdated, addToCart, returnOrWriteOff, adjustPO, notReceivedYet (`173ae09`)
 - Backend logging: stock deduction during bouquet edits now logs to console for debugging (`840b950`)
 
+### 2026-03-19
+
+**Wave 2 — Shared Packages (partial)**
+- Created `packages/shared/` monorepo workspace with `@flower-studio/shared` package
+- Extracted `useOrderEditing` hook — shared bouquet editing state + business logic, used by both florist `OrderCard` and dashboard `OrderDetailPanel`. Eliminates ~200 lines of duplicated state management + save logic
+- Extracted `parseBatchName` utility — replaces 4 inline copies across florist + dashboard
+- Added new translation keys: `returnOrWriteOff`, `adjustPO`, `notReceivedYet`, `addNewFlower`, `addToCart`, `markup`, `deliveryMethod`, `deliveryMethodDriver/Taxi/Florist`, `taxiCost`
+- Dashboard `OrderDetailPanel`: removed inline editing state (8 useState hooks), replaced with shared hook
+- Florist `OrderCard`: removed inline editing state (7 useState hooks), replaced with shared hook
+- Florist `OrderDetailPage`: replaced inline `parseBatchName` with shared import
+
 ---
 
 ## Go-Live Checklist
