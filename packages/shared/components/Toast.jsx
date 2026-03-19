@@ -1,10 +1,9 @@
 // Toast — notification popup. Position varies per app:
 // florist: bottom-24, delivery: bottom-6, dashboard: bottom-8
+// Receives toast + dismiss as props to avoid context identity issues
+// when used across workspace packages.
 
-import { useToast } from '../context/ToastContext.jsx';
-
-export default function Toast({ position = 'bottom-8' }) {
-  const { toast, dismiss } = useToast();
+export default function Toast({ toast, dismiss, position = 'bottom-8' }) {
   if (!toast) return null;
 
   const isError = toast.type === 'error';

@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react';
 // This way the browser thinks everything is on the same origin — no CORS issues.
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     port: 5173,
     proxy: {

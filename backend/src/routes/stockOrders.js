@@ -170,6 +170,10 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
       if (key in req.body) fields[key] = req.body[key];
     }
 
+    if (Object.keys(fields).length === 0) {
+      return res.json(await db.getById(TABLES.STOCK_ORDERS, req.params.id));
+    }
+
     if (fields.Status) {
       const current = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
       const valid = ALLOWED_TRANSITIONS[current.Status];
@@ -195,11 +199,14 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       'Driver Status', 'Quantity Found', 'Alt Supplier', 'Alt Quantity Found',
       'Alt Flower Name', 'Cost Price', 'Sell Price', 'Alt Cost',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
-      'Flower Name', 'Supplier', 'Lot Size',
+      'Flower Name', 'Supplier', 'Lot Size', 'Farmer',
     ];
     const fields = {};
     for (const key of allowed) {
       if (key in req.body) fields[key] = req.body[key];
+    }
+    if (Object.keys(fields).length === 0) {
+      return res.json(await db.getById(TABLES.STOCK_ORDER_LINES, req.params.lineId));
     }
     const updated = await db.update(TABLES.STOCK_ORDER_LINES, req.params.lineId, fields);
 

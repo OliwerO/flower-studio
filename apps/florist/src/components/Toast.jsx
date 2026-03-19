@@ -1,3 +1,6 @@
-// Re-export shared Toast with florist-specific position (above tab bar)
+import { useToast } from '../context/ToastContext.jsx';
 import { Toast as SharedToast } from '@flower-studio/shared';
-export default function Toast() { return <SharedToast position="bottom-24" />; }
+export default function Toast() {
+  const { toast, dismiss } = useToast();
+  return <SharedToast toast={toast} dismiss={dismiss} position="bottom-24" />;
+}
