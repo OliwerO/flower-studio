@@ -432,7 +432,8 @@ router.put('/:id/lines', async (req, res, next) => {
           // Only auto-adjust stock if the frontend didn't already send an explicit action
           const delta = line._originalQty - line.quantity;
           if (line.stockItemId && !line.stockDeferred && delta !== 0 && !explicitStockIds.has(line.stockItemId)) {
-            await db.atomicStockAdjust(line.stockItemId, delta);
+            const adj = await db.atomicStockAdjust(line.stockItemId, delta);
+            console.log(`[BOUQUET-EDIT] Stock adjusted: ${line.flowerName} delta ${delta} (${adj.previousQty} → ${adj.newQty})`);
           }
           await db.update(TABLES.ORDER_LINES, line.id, { Quantity: line.quantity });
         }
@@ -448,7 +449,10 @@ router.put('/:id/lines', async (req, res, next) => {
         });
         createdLines.push(created);
         if (line.stockItemId && !line.stockDeferred) {
-          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+          const adj = await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+          console.log(`[BOUQUET-EDIT] Stock deducted: ${line.flowerName} qty -${line.quantity} (${adj.previousQty} → ${adj.newQty})`);
+        } else {
+          console.log(`[BOUQUET-EDIT] Stock NOT deducted for ${line.flowerName}: stockItemId=${line.stockItemId}, stockDeferred=${line.stockDeferred}`);
         }
       }
     }

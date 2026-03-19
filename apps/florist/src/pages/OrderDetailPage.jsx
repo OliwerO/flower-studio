@@ -9,6 +9,12 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 
+// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
+function parseBatchName(displayName) {
+  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
+  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
+}
+
 // Florist flow: New → Ready → Delivered/Picked Up.
 // "Out for Delivery" is set automatically by drivers — florists don't need that button.
 const ALLOWED_TRANSITIONS = {
@@ -66,6 +72,9 @@ export default function OrderDetailPage() {
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
   const [removeDialog, setRemoveDialog] = useState(null);
+  const [addingFlower, setAddingFlower] = useState(false);
+  const [flowerSearch, setFlowerSearch] = useState('');
+  const [stockItems, setStockItems] = useState([]);
 
   useEffect(() => {
     if (!id) return;
@@ -181,12 +190,18 @@ export default function OrderDetailPage() {
                           id: l.id, stockItemId: l['Stock Item']?.[0] || null,
                           flowerName: l['Flower Name'], quantity: l.Quantity,
                           _originalQty: l.Quantity,
+                          sellPricePerUnit: l['Sell Price Per Unit'] || 0,
                         })));
                         setRemovedLines([]);
+                        setAddingFlower(false);
+                        setFlowerSearch('');
                         setEditingBouquet(true);
+                        if (stockItems.length === 0) {
+                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                        }
                       }}
                       className="text-xs text-brand-600 font-medium px-1"
-                    >{t.edit || 'Edit'}</button>
+                    >{t.editBouquet}</button>
                   )}
                 </div>
 
@@ -203,6 +218,68 @@ export default function OrderDetailPage() {
                         <button onClick={() => setRemoveDialog(idx)} className="text-red-400 text-sm px-1">✕</button>
                       </div>
                     ))}
+
+                    {/* Add flower picker — shows stock with sell price and quantity */}
+                    {!addingFlower ? (
+                      <button onClick={() => setAddingFlower(true)}
+                        className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg"
+                      >+ {t.addFlower}</button>
+                    ) : (
+                      <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
+                        <input type="text" value={flowerSearch}
+                          onChange={e => setFlowerSearch(e.target.value)}
+                          placeholder={t.flowerSearch}
+                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
+                          autoFocus />
+                        {/* Column headers */}
+                        <div className="flex items-center text-[10px] text-ios-tertiary uppercase tracking-wide px-2 pt-1">
+                          <span className="flex-1">{t.flowers}</span>
+                          <span className="w-14 text-right">{t.sellPrice}</span>
+                          <span className="w-12 text-right">{t.quantity}</span>
+                        </div>
+                        <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
+                          {stockItems
+                            .filter(s => {
+                              const name = (s['Display Name'] || '').toLowerCase();
+                              const qty = Number(s['Current Quantity']) || 0;
+                              if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                              if (editLines.some(l => l.stockItemId === s.id)) return false;
+                              if (flowerSearch) return name.includes(flowerSearch.toLowerCase());
+                              return true;
+                            })
+                            .slice(0, 20)
+                            .map(s => {
+                              const qty = Number(s['Current Quantity']) || 0;
+                              const sell = Number(s['Current Sell Price']) || 0;
+                              const { name: flowerName, batch } = parseBatchName(s['Display Name']);
+                              return (
+                                <button key={s.id} type="button"
+                                  onClick={() => {
+                                    setEditLines(p => [...p, {
+                                      id: null, stockItemId: s.id, flowerName: s['Display Name'],
+                                      quantity: 1, _originalQty: 0,
+                                      sellPricePerUnit: sell,
+                                    }]);
+                                    setFlowerSearch('');
+                                  }}
+                                  className={`w-full flex items-center px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${
+                                    qty <= 0 ? 'bg-amber-50/50' : ''
+                                  }`}
+                                >
+                                  <span className="flex-1 font-medium text-left truncate">
+                                    {flowerName}
+                                    {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
+                                  </span>
+                                  <span className="w-14 text-right text-xs text-ios-secondary">{sell > 0 ? `${sell.toFixed(0)}` : '—'}</span>
+                                  <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
+                                </button>
+                              );
+                            })}
+                        </div>
+                        <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
+                          className="text-xs text-ios-tertiary">{t.cancel}</button>
+                      </div>
+                    )}
 
                     {removeDialog != null && (
                       <div className="bg-amber-50 rounded-xl px-3 py-2 space-y-2">
@@ -236,17 +313,20 @@ export default function OrderDetailPage() {
                           try {
                             await client.put(`/orders/${id}/lines`, { lines: editLines, removedLines });
                             setEditingBouquet(false);
+                            setAddingFlower(false);
+                            setFlowerSearch('');
+                            setRemoveDialog(null);
                             const res = await client.get(`/orders/${id}`);
                             setOrder(res.data);
-                            showToast(t.bouquetUpdated || 'Bouquet updated');
+                            showToast(t.bouquetUpdated);
                           } catch (err) {
-                            showToast(err.response?.data?.error || t.error || 'Error', 'error');
+                            showToast(err.response?.data?.error || t.error, 'error');
                           } finally { setSaving(false); }
                         }}
                         disabled={saving}
                         className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
-                      >{saving ? '...' : (t.save || 'Save')}</button>
-                      <button onClick={() => { setEditingBouquet(false); setRemoveDialog(null); }}
+                      >{saving ? '...' : t.saveBouquet}</button>
+                      <button onClick={() => { setEditingBouquet(false); setRemoveDialog(null); setAddingFlower(false); setFlowerSearch(''); }}
                         className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
                       >{t.cancel}</button>
                     </div>

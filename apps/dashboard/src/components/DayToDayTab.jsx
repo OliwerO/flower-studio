@@ -300,10 +300,10 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
 
         {/* Kanban board — slides open below the status counts */}
-        {kanbanOpen && (data.fulfillToday || data.recentOrders)?.length > 0 && (
+        {kanbanOpen && (
           <div className="mt-4 pt-3 border-t border-gray-100">
             <KanbanBoard
-              orders={data.fulfillToday || data.recentOrders}
+              orders={data.fulfillToday?.length ? data.fulfillToday : (data.recentOrders || [])}
               onOrderClick={(order) => nav('orders', { orderId: order.id })}
             />
           </div>

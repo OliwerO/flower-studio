@@ -3,6 +3,13 @@
 import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
+import useConfigLists from '../../hooks/useConfigLists.js';
+
+// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
+function parseBatchName(displayName) {
+  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
+  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
+}
 
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
@@ -14,6 +21,7 @@ export default function Step2Bouquet({
     const today = new Date().toISOString().split('T')[0];
     return requiredBy > today;
   })();
+  const { targetMarkup } = useConfigLists();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
@@ -180,7 +188,7 @@ export default function Step2Bouquet({
                 >
                   <div className="flex-1 min-w-0">
                     <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                      {s['Display Name']}
+                      {(() => { const { name, batch } = parseBatchName(s['Display Name']); return (<>{name}{batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 dark:bg-gray-700 rounded px-1 py-0.5">{batch}</span>}</>); })()}
                     </div>
                     <div className="text-xs text-ios-tertiary">
                       {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
@@ -217,10 +225,16 @@ export default function Step2Bouquet({
               placeholder={t.lotSize || 'Lot size'} className="field-input text-sm" />
           </div>
           <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={customFlower.costPrice} onChange={e => setCustomFlower(p => ({ ...p, costPrice: e.target.value }))}
-              placeholder={`${t.costPrice || 'Cost price'} (zł)`} className="field-input text-sm" />
+            <input type="number" value={customFlower.costPrice} onChange={e => {
+                const cost = e.target.value;
+                setCustomFlower(p => ({
+                  ...p, costPrice: cost,
+                  sellPrice: cost && targetMarkup ? String(Math.round(Number(cost) * targetMarkup)) : p.sellPrice,
+                }));
+              }}
+              placeholder={`${t.costPrice} (zł)`} className="field-input text-sm" />
             <input type="number" value={customFlower.sellPrice} onChange={e => setCustomFlower(p => ({ ...p, sellPrice: e.target.value }))}
-              placeholder={`${t.sellPrice || 'Sell price'} (zł)`} className="field-input text-sm" />
+              placeholder={`${t.sellPrice} (zł)`} className="field-input text-sm" />
           </div>
           <div className="flex gap-2">
             <button type="button" onClick={async () => {
