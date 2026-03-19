@@ -153,8 +153,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       showToast(t.stockOrderCreated);
       setShowForm(false);
       fetchOrders();
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('PO create failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
     } finally {
       setSubmitting(false);
     }
@@ -164,11 +165,11 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   async function updateDraftLine(orderId, lineId, fields) {
     try {
       await client.patch(`/stock-orders/${orderId}/lines/${lineId}`, fields);
-      // Refresh expanded lines
       const res = await client.get(`/stock-orders/${orderId}`);
       setExpandedLines(res.data.lines || []);
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('PO line update failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
@@ -176,8 +177,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     try {
       await client.delete(`/stock-orders/${orderId}/lines/${lineId}`);
       setExpandedLines(prev => prev.filter(l => l.id !== lineId));
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('PO line remove failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
@@ -187,8 +189,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
         flowerName: '', quantity: 1,
       });
       setExpandedLines(prev => [...prev, line.data]);
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('PO line add failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
@@ -198,8 +201,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       await client.post(`/stock-orders/${orderId}/send`, { driverName });
       showToast(t.stockOrderSentMsg);
       fetchOrders();
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('PO send failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
@@ -212,8 +216,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
       const res = await client.get(`/stock-orders/${orderId}`);
       setExpandedLines(res.data.lines || []);
       setExpandedId(orderId);
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('PO expand failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 

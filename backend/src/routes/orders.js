@@ -271,7 +271,25 @@ router.post('/', async (req, res, next) => {
         'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
       });
 
-      // 2. Create order line records (one per flower) — prices are snapshotted here
+      // 2a. Auto-match lines without stockItemId to existing stock by name.
+      // Handles text imports and other flows that may not resolve stock links.
+      const unmatchedLines = orderLines.filter(l => !l.stockItemId && l.flowerName);
+      if (unmatchedLines.length > 0) {
+        const allStock = await db.list(TABLES.STOCK, {
+          filterByFormula: '{Active} = TRUE()',
+          fields: ['Display Name'],
+        });
+        const byName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
+        for (const line of unmatchedLines) {
+          const match = byName.get((line.flowerName || '').toLowerCase());
+          if (match) {
+            line.stockItemId = match.id;
+            console.log(`[ORDER] Auto-matched "${line.flowerName}" to stock ${match.id}`);
+          }
+        }
+      }
+
+      // 2b. Create order line records (one per flower) — prices are snapshotted here
       const createdLines = [];
       for (const line of orderLines) {
         const created = await db.create(TABLES.ORDER_LINES, {
@@ -423,7 +441,24 @@ router.put('/:id/lines', async (req, res, next) => {
       removedLines.filter(r => !r.lineId && r.stockItemId).map(r => r.stockItemId)
     );
 
-    // 2. Handle new/updated lines
+    // 2a. Auto-match new lines without stockItemId to existing stock by name.
+    const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
+    if (newUnmatched.length > 0) {
+      const allStock = await db.list(TABLES.STOCK, {
+        filterByFormula: '{Active} = TRUE()',
+        fields: ['Display Name'],
+      });
+      const byName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
+      for (const line of newUnmatched) {
+        const match = byName.get((line.flowerName || '').toLowerCase());
+        if (match) {
+          line.stockItemId = match.id;
+          console.log(`[BOUQUET-EDIT] Auto-matched "${line.flowerName}" to stock ${match.id}`);
+        }
+      }
+    }
+
+    // 2b. Handle new/updated lines
     const createdLines = [];
     for (const line of lines) {
       if (line.id) {

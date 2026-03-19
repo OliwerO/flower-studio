@@ -5,6 +5,9 @@ import react from '@vitejs/plugin-react';
 // Proxies API calls to the same backend on port 3001.
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
   server: {
     port: 5174,
     proxy: {

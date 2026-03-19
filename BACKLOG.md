@@ -160,7 +160,7 @@ Features and improvements tracked against original build phases.
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
 
 ### Open Investigation (2026-03-18)
-- [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
+- [x] **Bouquet edit stock deduction** — Root cause found: multiple paths could create order lines without stockItemId (text imports with no stock match, failed new-flower creates). Fixed by: (1) auto-matching unlinked lines to stock by name at order creation and bouquet edit time, (2) loading stock with `includeEmpty=true` in bouquet editing picker so all flowers are visible.
 
 ---
 
@@ -181,13 +181,13 @@ Keeping Airtable as the database. Ordered by impact × effort — do the cheap w
 Create `packages/shared/` in the monorepo with these modules (all currently duplicated):
 
 - [ ] **`packages/shared/api/client.js`** — single API client (currently 3 identical copies in `apps/*/src/api/client.js`). Accept position config via param
-- [ ] **`packages/shared/components/Toast.jsx`** — single Toast component (3 copies, only CSS position differs). Accept `position` prop
-- [ ] **`packages/shared/context/ToastContext.jsx`** — identical in all 3 apps, zero changes needed
+- [x] **`packages/shared/components/Toast.jsx`** — single Toast component with `position` prop, local wrappers in each app
+- [x] **`packages/shared/context/ToastContext.jsx`** — shared context, local re-exports in each app
 - [ ] **`packages/shared/context/LanguageContext.jsx`** — nearly identical in all 3 apps, minor CSS diff in LangToggle
 - [ ] **`packages/shared/context/AuthContext.jsx`** — florist/dashboard identical, delivery adds `driverName`. Support via optional field
-- [ ] **`packages/shared/utils/stockName.jsx`** — identical in florist + dashboard (50 lines × 2)
-- [ ] **`packages/shared/utils/formatDate.js`** — identical in florist + dashboard
-- [ ] **`packages/shared/utils/timeSlots.js`** — identical in florist + dashboard (39 lines × 2)
+- [x] **`packages/shared/utils/stockName.jsx`** — shared renderStockName, consumers updated in both apps
+- [ ] **`packages/shared/utils/formatDate.js`** — only used in florist (not a dedup win yet)
+- [x] **`packages/shared/utils/timeSlots.js`** — shared getAvailableSlots, consumers updated in both apps
 - [x] **Wire up monorepo workspace** — add `packages/shared` to root `package.json` workspaces, update Vite configs for aliasing
 - [x] **`packages/shared/hooks/useOrderEditing.js`** — shared bouquet editing hook used by OrderCard (florist) and OrderDetailPanel (dashboard)
 - [x] **`packages/shared/utils/parseBatchName.js`** — shared utility, replaces 4 inline copies across florist + dashboard
@@ -227,7 +227,7 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 | Wave | Items | Status | Impact |
 |------|-------|--------|--------|
 | 1 — Security & Crashes | 4 | Not started | Prevents data loss + exploits |
-| 2 — Shared Packages | 11 | In progress (3/11) | Halves maintenance burden |
+| 2 — Shared Packages | 11 | In progress (7/11) | Halves maintenance burden |
 | 3 — Backend Consolidation | 4 | Not started | Cleaner, safer backend |
 | 4 — Component Decomposition | 4 | Not started | Enables testing + reuse |
 | 5 — Testing Foundation | 5 | Not started | Catches bugs before users |

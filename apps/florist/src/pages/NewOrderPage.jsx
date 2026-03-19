@@ -259,7 +259,7 @@ export default function NewOrderPage() {
             </span>
             <button
               onClick={() => {
-                client.get('/stock')
+                client.get('/stock?includeEmpty=true')
                   .then(r => { setStock(r.data); setStockError(false); })
                   .catch(() => showToast(t.stockLoadError || 'Still unable to load stock', 'error'));
               }}
@@ -303,7 +303,7 @@ export default function NewOrderPage() {
             priceOverride={form.priceOverride}
             stock={stock}
             isOwner={isOwner}
-            onStockRefresh={() => client.get('/stock').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
+            onStockRefresh={() => client.get('/stock?includeEmpty=true').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={form.deliveryDate || form.requiredBy}

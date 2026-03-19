@@ -8,10 +8,9 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
-import { renderStockName } from '../utils/stockName.jsx';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { useOrderEditing } from '@flower-studio/shared';
+import { useOrderEditing, renderStockName } from '@flower-studio/shared';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },

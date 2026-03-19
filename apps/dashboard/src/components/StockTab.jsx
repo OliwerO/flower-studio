@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import { renderStockName } from '../utils/stockName.jsx';
+import { renderStockName } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';

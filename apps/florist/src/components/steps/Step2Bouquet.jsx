@@ -8,7 +8,7 @@ import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName } from '../../utils/stockName.jsx';
+import { renderStockName } from '@flower-studio/shared';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station

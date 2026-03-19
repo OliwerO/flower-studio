@@ -195,7 +195,7 @@ export default function OrderDetailPage() {
                         setEditBudget(order['Price Override'] ? String(order['Price Override']) : '');
                         setEditingBouquet(true);
                         if (stockItems.length === 0) {
-                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
                         }
                       }}
                       className="text-xs text-brand-600 font-medium px-1"

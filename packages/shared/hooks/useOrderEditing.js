@@ -43,7 +43,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setNewFlowerForm(null);
     setEditingBouquet(true);
     if (stockItems.length === 0) {
-      apiClient.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+      apiClient.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
     }
   }
 
