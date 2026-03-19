@@ -48,16 +48,26 @@ export default function BottomNav() {
     }
   }
 
+  function hardRefresh() {
+    // Clear module-level caches (useConfigLists etc.)
+    if ('caches' in window) {
+      caches.keys().then(names => names.forEach(n => caches.delete(n)));
+    }
+    window.location.reload(true);
+  }
+
   // "More" menu items differ by role
   const moreItems = isOwner
     ? [
         { label: t.daySummary,    action: () => navigate('/day-summary') },
         { label: t.floristHours,  action: () => navigate('/hours') },
         { label: t.help,          action: () => navigate('/orders') }, // Help handled by HelpPanel on OrderListPage
+        { label: `↻ ${t.refresh}`, action: hardRefresh },
         { label: t.logout,        action: logout, destructive: true },
       ]
     : [
         { label: t.stockEvaluation || 'Stock Evaluation', action: () => navigate('/stock-evaluation') },
+        { label: `↻ ${t.refresh}`, action: hardRefresh },
         { label: t.logout,        action: logout, destructive: true },
       ];
 
