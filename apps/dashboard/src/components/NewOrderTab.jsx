@@ -162,7 +162,7 @@ export default function NewOrderTab({ onNavigate }) {
             orderLines={form.orderLines}
             priceOverride={form.priceOverride}
             stock={stock}
-            onStockRefresh={() => client.get('/stock').then(r => setStock(r.data))}
+            onStockRefresh={() => client.get('/stock?includeEmpty=true').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={form.deliveryDate}

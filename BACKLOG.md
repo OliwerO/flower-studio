@@ -160,7 +160,7 @@ Features and improvements tracked against original build phases.
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
 
 ### Open Investigation (2026-03-18)
-- [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
+- [x] **Bouquet edit stock deduction** — Root cause found: multiple paths could create order lines without stockItemId (text imports with no stock match, failed new-flower creates). Fixed by: (1) auto-matching unlinked lines to stock by name at order creation and bouquet edit time, (2) loading stock with `includeEmpty=true` in bouquet editing picker so all flowers are visible.
 
 ---
 
