@@ -85,7 +85,12 @@ export default function DashboardPage() {
 
         <div className="flex items-center gap-2">
           <button
-            onClick={() => window.location.reload()}
+            onClick={async () => {
+              if ('caches' in window) { const n = await caches.keys(); await Promise.all(n.map(k => caches.delete(k))); }
+              if ('serviceWorker' in navigator) { const r = await navigator.serviceWorker.getRegistrations(); await Promise.all(r.map(s => s.unregister())); }
+              try { sessionStorage.clear(); } catch {}
+              window.location.href = window.location.pathname + '?_cb=' + Date.now();
+            }}
             className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-gray-500
                        hover:bg-gray-200 transition-colors flex items-center justify-center"
             title={t.refresh}

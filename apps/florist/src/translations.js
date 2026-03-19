@@ -346,6 +346,7 @@ const en = {
   totalPay:           'Total pay',
   noEntries:          'No entries this month',
   daySummary:         'Day summary',
+  refresh:            'Refresh',
   help:               'Help',
 };
 
@@ -692,6 +693,7 @@ const ru = {
   totalPay:           'Итого к оплате',
   noEntries:          'Нет записей за этот месяц',
   daySummary:         'Итог дня',
+  refresh:            'Обновить',
   help:               'Помощь',
 };
 
