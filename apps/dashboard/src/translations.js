@@ -31,6 +31,8 @@ const en = {
   // Orders tab
   allStatuses:      'All',
   statusNew:        'New',
+  statusAccepted:   'Accepted',
+  statusInPreparation: 'In Preparation',
   statusReady:      'Ready',
   statusOutForDel:  'Out for Delivery',
   statusDelivered:  'Delivered',
@@ -641,6 +643,8 @@ const ru = {
   // Orders tab
   allStatuses:      'Все',
   statusNew:        'Новый',
+  statusAccepted:   'Accepted',
+  statusInPreparation: 'В подготовке',
   statusReady:      'Готов',
   statusOutForDel:  'В доставке',
   statusDelivered:  'Доставлен',
