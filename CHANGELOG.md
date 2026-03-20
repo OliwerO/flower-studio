@@ -28,6 +28,23 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-03-20 — Florist Display Restructure + Stock Shortfall Warnings
+
+### Backend
+- `GET /api/orders` — new `activeOnly` query param: returns all non-terminal orders (excludes Delivered/Picked Up/Cancelled), sorted by Required By ascending (earliest needed first)
+- `GET /api/stock/committed` — new endpoint: aggregates committed (deferred) quantities per stock item from future orders (Required By > today). Returns `{ stockId: { committed, orders } }`
+- `POST /api/stock/:id/write-off` — removed `Math.min` cap: write-offs can now bring stock negative (intentional, signals demand gap for future orders)
+
+### Florist App
+- **Order list default view**: changed from date-filtered (today) to "Active" mode showing all non-terminal orders sorted by earliest needed. Calendar filter moved to "Completed" tab.
+- **View mode toggle**: "Active" (default) vs "Completed" tabs. Active shows non-terminal orders. Completed shows past orders with date picker.
+- **Stock shortfall banner**: red warning banner on order list when any stock item has effective < 0 (current qty - committed from future orders)
+- **Order card shortage indicators**: individual cards show red badges for flowers that have stock shortfalls
+- **Stock panel**: shows committed quantities and effective stock per item. New "Shortfall" view filter with badge count. Orange background for items with shortfalls.
+- **Flowers needed**: now computed from loaded orders instead of separate API calls
+
+---
+
 ## Environment / Config Changes
 
 | Date | File | Change | Go-Live Impact |

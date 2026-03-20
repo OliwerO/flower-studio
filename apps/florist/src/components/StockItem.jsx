@@ -9,10 +9,13 @@ import { renderStockName } from '@flower-studio/shared';
  *   false (default) → write-off only (florist day-to-day: report dead stems)
  *   true            → +/− adjust buttons (owner manual corrections)
  */
-export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
+export default function StockItem({ item, editMode, onAdjust, onWriteOff, committedData }) {
   const qty       = item['Current Quantity'] || 0;
   const dead      = item['Dead/Unsold Stems'] || 0;
   const threshold = item['Reorder Threshold'] || 5;
+  const committed = committedData?.committed || 0;
+  const effective = qty - committed;
+  const hasShortfall = committed > 0 && effective < 0;
   const isLow     = qty > 0 && qty <= threshold;
   const isOut     = qty <= 0;
 
@@ -25,7 +28,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
 
   function handleWriteOff() {
     const n = Number(writeOffQty);
-    if (n > 0 && n <= qty) {
+    if (n > 0) {
       onWriteOff(n, reason.trim());
       setShowWriteOff(false);
       setWriteOffQty(1);
@@ -34,7 +37,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
   }
 
   const isNeg = qty < 0;
-  const rowBg = isNeg ? 'bg-red-50' : isOut ? 'bg-ios-red/5' : isLow ? 'bg-ios-orange/5' : '';
+  const rowBg = isNeg ? 'bg-red-50' : hasShortfall ? 'bg-orange-50' : isOut ? 'bg-ios-red/5' : isLow ? 'bg-ios-orange/5' : '';
 
   return (
     <div className={rowBg}>
@@ -50,6 +53,17 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
               {dead > 0 && <span className="text-ios-red"> · {dead}✗</span>}
             </span>
           </div>
+          {committed > 0 && (
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <span className="text-[10px] text-ios-tertiary">{t.committed}: {committed}</span>
+              <span className={`text-[10px] font-semibold ${hasShortfall ? 'text-red-600' : 'text-green-600'}`}>
+                {t.effectiveStock}: {effective}
+              </span>
+              {hasShortfall && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">{t.shortage}</span>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
@@ -70,7 +84,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
           ) : (
             <>
               <span className={`w-7 text-center font-bold text-[13px] ${qtyColor}`}>{qty}</span>
-              {qty > 0 && (
+              {(qty > 0 || hasShortfall) && (
                 <button
                   onClick={() => setShowWriteOff(!showWriteOff)}
                   className={`w-7 h-7 rounded-full text-xs flex items-center justify-center active-scale transition-colors ${
