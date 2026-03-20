@@ -376,11 +376,9 @@ const en = {
   effectiveStock:     'Effective',
   shortage:           'Shortage',
   viewShortfall:      'Shortfall',
+  noCommitments:      'No orders using this flower',
 
   // Block 5 — florist UX
-  flowersNeeded:      'Flowers needed',
-  flowersToday:       'Today',
-  flowersTomorrow:    'Tomorrow',
   assignedDriver:     'Driver',
   noDriver:           'Not assigned',
   markReady:          'Mark Ready',
@@ -790,11 +788,9 @@ const ru = {
   effectiveStock:     'Остаток',
   shortage:           'Нехватка',
   viewShortfall:      'Нехватка',
+  noCommitments:      'Нет заказов с этим цветком',
 
   // Block 5 — florist UX
-  flowersNeeded:      'Нужные цветы',
-  flowersToday:       'Сегодня',
-  flowersTomorrow:    'Завтра',
   assignedDriver:     'Водитель',
   noDriver:           'Не назначен',
   markReady:          'Готов',

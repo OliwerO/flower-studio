@@ -7,7 +7,6 @@ import OrderCard from '../components/OrderCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
 import t from '../translations.js';
-import fmtDate from '../utils/formatDate.js';
 
 // Key for dismissing stock alerts per session
 const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
@@ -96,10 +95,6 @@ export default function OrderListPage() {
   const [alertsDismissed, setAlertsDismissed] = useState(
     () => sessionStorage.getItem(ALERTS_DISMISSED_KEY) === 'true'
   );
-  // Config lists now handled inside OrderCard via useConfigLists hook
-  const [flowerNeeds, setFlowerNeeds] = useState(null);
-  const [showFlowerNeeds, setShowFlowerNeeds] = useState(false);
-
   // Track whether we've done the initial load (show spinner only on first load)
   const initialLoaded = useRef(false);
 
@@ -191,52 +186,6 @@ export default function OrderListPage() {
     fetchShortfalls();
   }, [orders]); // re-fetch when orders change
 
-  // #36: Compute flowers needed from loaded orders (grouped by today/tomorrow/later)
-  useEffect(() => {
-    if (orders.length === 0) { setFlowerNeeds(null); return; }
-    const today = todayISO();
-    const tmrw = new Date();
-    tmrw.setDate(tmrw.getDate() + 1);
-    const tomorrowISO = tmrw.toISOString().split('T')[0];
-
-    function aggregateFlowers(filtered) {
-      const map = {};
-      for (const o of filtered) {
-        if (o.Status === 'Cancelled') continue;
-        const summary = o['Bouquet Summary'] || '';
-        const parts = summary.split(',').map(s => s.trim()).filter(Boolean);
-        for (const part of parts) {
-          const match = part.match(/^(\d+)\s*[×x]\s*(.+)$/i);
-          if (match) {
-            const qty = Number(match[1]);
-            const name = match[2].trim();
-            map[name] = (map[name] || 0) + qty;
-          }
-        }
-      }
-      return Object.entries(map)
-        .sort((a, b) => b[1] - a[1])
-        .map(([name, qty]) => `${qty}× ${name}`);
-    }
-
-    const todayOrders = orders.filter(o => {
-      const d = o['Delivery Date'] || o['Required By'];
-      return d === today;
-    });
-    const tmrwOrders = orders.filter(o => {
-      const d = o['Delivery Date'] || o['Required By'];
-      return d === tomorrowISO;
-    });
-
-    const todayFlowers = aggregateFlowers(todayOrders);
-    const tmrwFlowers = aggregateFlowers(tmrwOrders);
-    if (todayFlowers.length > 0 || tmrwFlowers.length > 0) {
-      setFlowerNeeds({ today: todayFlowers, tomorrow: tmrwFlowers });
-    } else {
-      setFlowerNeeds(null);
-    }
-  }, [orders]);
-
   // Check for pending stock evaluations (florist) or active shopping POs (owner)
   useEffect(() => {
     if (isOwner) {
@@ -318,42 +267,6 @@ export default function OrderListPage() {
               <span className="text-red-500">{t.owner.unpaidLabel}: {Math.round(dashData.unpaidAging?.today?.total || 0)} zł</span>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* #36 — Flowers needed today/tomorrow */}
-      {flowerNeeds && (flowerNeeds.today.length > 0 || flowerNeeds.tomorrow.length > 0) && (
-        <div className="px-4 pt-2 max-w-2xl mx-auto">
-          <button
-            onClick={() => setShowFlowerNeeds(v => !v)}
-            className="w-full bg-white rounded-2xl shadow-sm border border-gray-100 px-4 py-2.5 text-left active-scale"
-          >
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.flowersNeeded}</span>
-              <span className="text-xs text-ios-tertiary">{showFlowerNeeds ? '▲' : '▼'}</span>
-            </div>
-            {!showFlowerNeeds && (
-              <p className="text-xs text-ios-secondary mt-1 line-clamp-1">
-                {flowerNeeds.today.length > 0 && `${t.flowersToday}: ${flowerNeeds.today.join(', ')}`}
-              </p>
-            )}
-            {showFlowerNeeds && (
-              <div className="mt-2 space-y-2">
-                {flowerNeeds.today.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-brand-600 mb-0.5">{t.flowersToday}</p>
-                    <p className="text-sm text-ios-label">{flowerNeeds.today.join(', ')}</p>
-                  </div>
-                )}
-                {flowerNeeds.tomorrow.length > 0 && (
-                  <div>
-                    <p className="text-xs font-semibold text-purple-600 mb-0.5">{t.flowersTomorrow}</p>
-                    <p className="text-sm text-ios-label">{flowerNeeds.tomorrow.join(', ')}</p>
-                  </div>
-                )}
-              </div>
-            )}
-          </button>
         </div>
       )}
 
