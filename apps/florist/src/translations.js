@@ -28,8 +28,6 @@ const en = {
 
   // Order statuses (display labels — API values stay English)
   statusNew:            'New',
-  statusAccepted:       'Accepted',
-  statusInPreparation:  'In Preparation',
   statusInProgress:     'In Progress',
   statusReady:          'Ready',
   statusOutForDelivery: 'Out for Delivery',
@@ -384,8 +382,6 @@ const en = {
   // Block 5 — florist UX
   assignedDriver:     'Driver',
   noDriver:           'Not assigned',
-  markAccepted:       'Accept',
-  markInPreparation:  'Start Preparation',
   markReady:          'Mark Ready',
   markDelivered:      'Mark Delivered',
   markPickedUp:       'Mark Picked Up',
@@ -445,8 +441,6 @@ const ru = {
 
   // Order statuses (display labels — API values stay English)
   statusNew:            'Новый',
-  statusAccepted:       'Принят',
-  statusInPreparation:  'Готовится',
   statusInProgress:     'В работе',
   statusReady:          'Готов',
   statusOutForDelivery: 'В доставке',
@@ -801,8 +795,6 @@ const ru = {
   // Block 5 — florist UX
   assignedDriver:     'Водитель',
   noDriver:           'Не назначен',
-  markAccepted:       'Принять',
-  markInPreparation:  'Начать подготовку',
   markReady:          'Готов',
   markDelivered:      'Доставлен',
   markPickedUp:       'Забран',

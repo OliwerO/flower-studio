@@ -15,7 +15,7 @@ const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
 const VIEW_MODES = { ACTIVE: 'active', COMPLETED: 'completed' };
 
 // Status filters for active view (non-terminal statuses)
-const ACTIVE_STATUSES = ['', 'New', 'Accepted', 'In Preparation', 'Ready', 'Out for Delivery'];
+const ACTIVE_STATUSES = ['', 'New', 'Ready', 'Out for Delivery'];
 
 // Status filters for completed view
 const COMPLETED_STATUSES = ['', 'Delivered', 'Picked Up', 'Cancelled'];
@@ -24,8 +24,6 @@ const COMPLETED_STATUSES = ['', 'Delivered', 'Picked Up', 'Cancelled'];
 function statusLabel(s) {
   const map = {
     'New':              () => t.statusNew,
-    'Accepted':         () => t.statusAccepted,
-    'In Preparation':   () => t.statusInPreparation,
     'In Progress':      () => t.statusInProgress,
     'Ready':            () => t.statusReady,
     'Out for Delivery': () => t.statusOutForDelivery,
@@ -39,13 +37,12 @@ function statusLabel(s) {
 // Priority order: actionable statuses first, completed/cancelled last
 const STATUS_PRIORITY = {
   'New': 0,
-  'Accepted': 1,
-  'In Preparation': 2,
-  'Ready': 3,
-  'Out for Delivery': 4,
-  'Delivered': 5,
-  'Picked Up': 6,
-  'Cancelled': 7,
+  'In Progress': 1,
+  'Ready': 2,
+  'Out for Delivery': 3,
+  'Delivered': 4,
+  'Picked Up': 5,
+  'Cancelled': 6,
 };
 
 function sortByStatus(orders) {
