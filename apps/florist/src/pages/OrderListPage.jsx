@@ -12,7 +12,14 @@ import fmtDate from '../utils/formatDate.js';
 // Key for dismissing stock alerts per session
 const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
 
-const STATUSES = ['', 'New', 'Ready', 'Delivered', 'Picked Up', 'Cancelled'];
+// View modes: 'active' (default) shows non-terminal orders, 'completed' shows past orders
+const VIEW_MODES = { ACTIVE: 'active', COMPLETED: 'completed' };
+
+// Status filters for active view (non-terminal statuses)
+const ACTIVE_STATUSES = ['', 'New', 'Ready', 'Out for Delivery'];
+
+// Status filters for completed view
+const COMPLETED_STATUSES = ['', 'Delivered', 'Picked Up', 'Cancelled'];
 
 // Map Airtable status values → translated display labels
 function statusLabel(s) {
@@ -48,6 +55,19 @@ function sortByStatus(orders) {
   });
 }
 
+// Sort by Required By / Delivery Date ascending (earliest needed first),
+// then by status priority within same date
+function sortByEarliestNeeded(orders) {
+  return [...orders].sort((a, b) => {
+    const dateA = a['Delivery Date'] || a['Required By'] || '9999-12-31';
+    const dateB = b['Delivery Date'] || b['Required By'] || '9999-12-31';
+    if (dateA !== dateB) return dateA.localeCompare(dateB);
+    const pa = STATUS_PRIORITY[a['Status']] ?? 99;
+    const pb = STATUS_PRIORITY[b['Status']] ?? 99;
+    return pa - pb;
+  });
+}
+
 function todayISO() {
   return new Date().toISOString().split('T')[0];
 }
@@ -58,11 +78,14 @@ export default function OrderListPage() {
   const isOwner = role === 'owner';
   const [orders, setOrders]         = useState([]);
   const [loading, setLoading]       = useState(true);
-  const [date, setDate]             = useState(todayISO());
+  const [viewMode, setViewMode]     = useState(VIEW_MODES.ACTIVE);
+  const [date, setDate]             = useState(''); // only used in completed view
   const [status, setStatus]         = useState('');
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
 
+  // Stock shortfall data: { stockId: { committed, name, currentQty, effective, orders } }
+  const [stockShortfalls, setStockShortfalls] = useState({});
 
   // Stock evaluation pending count (florist) / shopping POs count (owner)
   const [evalCount, setEvalCount] = useState(0);
@@ -85,9 +108,16 @@ export default function OrderListPage() {
     try {
       const params = {};
       if (status) params.status = status;
-      // forDate: unified filter — shows orders placed on OR due on this date.
-      // Matches what the dashboard shows (created today + fulfill today).
-      if (date) params.forDate = date;
+
+      if (viewMode === VIEW_MODES.ACTIVE) {
+        // Active view: all non-terminal orders, sorted by earliest needed
+        params.activeOnly = true;
+      } else {
+        // Completed view: use date filter to browse past orders
+        if (date) params.forDate = date;
+        // If no specific status selected in completed view, exclude active statuses
+        if (!status) params.excludeCancelled = false; // show all including cancelled
+      }
       const res = await client.get('/orders', { params });
       // Merge: update existing orders in place, add new ones, remove deleted.
       // This preserves React state (expanded cards, scroll position).
@@ -107,7 +137,7 @@ export default function OrderListPage() {
     } finally {
       setLoading(false);
     }
-  }, [date, status]);
+  }, [viewMode, date, status]);
 
   useEffect(() => {
     initialLoaded.current = false;
@@ -123,58 +153,89 @@ export default function OrderListPage() {
   // Owner: fetch dashboard data for today's summary + stock alerts
   useEffect(() => {
     if (!isOwner) return;
-    client.get('/dashboard', { params: { date: date || todayISO() } })
+    client.get('/dashboard', { params: { date: todayISO() } })
       .then(r => setDashData(r.data))
       .catch(() => {}); // non-critical — silently ignore
-  }, [isOwner, date]);
+  }, [isOwner]);
 
-  // #36: Fetch flowers needed for today + tomorrow from order lines
+  // Fetch committed stock data for shortfall warnings
   useEffect(() => {
+    async function fetchShortfalls() {
+      try {
+        const [stockRes, committedRes] = await Promise.all([
+          client.get('/stock'),
+          client.get('/stock/committed'),
+        ]);
+        const stockMap = {};
+        for (const s of stockRes.data) stockMap[s.id] = s;
+
+        const shortfalls = {};
+        for (const [stockId, data] of Object.entries(committedRes.data)) {
+          const item = stockMap[stockId];
+          if (!item) continue;
+          const currentQty = Number(item['Current Quantity'] || 0);
+          const effective = currentQty - data.committed;
+          shortfalls[stockId] = {
+            committed: data.committed,
+            name: item['Display Name'] || '?',
+            currentQty,
+            effective,
+            orders: data.orders,
+          };
+        }
+        setStockShortfalls(shortfalls);
+      } catch {
+        // non-critical
+      }
+    }
+    fetchShortfalls();
+  }, [orders]); // re-fetch when orders change
+
+  // #36: Compute flowers needed from loaded orders (grouped by today/tomorrow/later)
+  useEffect(() => {
+    if (orders.length === 0) { setFlowerNeeds(null); return; }
     const today = todayISO();
     const tmrw = new Date();
     tmrw.setDate(tmrw.getDate() + 1);
     const tomorrowISO = tmrw.toISOString().split('T')[0];
 
-    async function fetchFlowerNeeds() {
-      try {
-        // Fetch today's and tomorrow's non-cancelled orders (unified date filter)
-        const [todayRes, tmrwRes] = await Promise.all([
-          client.get('/orders', { params: { forDate: today } }),
-          client.get('/orders', { params: { forDate: tomorrowISO } }),
-        ]);
-
-        function aggregateFlowers(orders) {
-          const map = {};
-          for (const o of orders) {
-            if (o.Status === 'Cancelled') continue;
-            const summary = o['Bouquet Summary'] || '';
-            // Bouquet Summary format: "5× Rose Red, 3× Tulip White"
-            const parts = summary.split(',').map(s => s.trim()).filter(Boolean);
-            for (const part of parts) {
-              const match = part.match(/^(\d+)\s*[×x]\s*(.+)$/i);
-              if (match) {
-                const qty = Number(match[1]);
-                const name = match[2].trim();
-                map[name] = (map[name] || 0) + qty;
-              }
-            }
+    function aggregateFlowers(filtered) {
+      const map = {};
+      for (const o of filtered) {
+        if (o.Status === 'Cancelled') continue;
+        const summary = o['Bouquet Summary'] || '';
+        const parts = summary.split(',').map(s => s.trim()).filter(Boolean);
+        for (const part of parts) {
+          const match = part.match(/^(\d+)\s*[×x]\s*(.+)$/i);
+          if (match) {
+            const qty = Number(match[1]);
+            const name = match[2].trim();
+            map[name] = (map[name] || 0) + qty;
           }
-          return Object.entries(map)
-            .sort((a, b) => b[1] - a[1])
-            .map(([name, qty]) => `${qty}× ${name}`);
         }
-
-        const todayFlowers = aggregateFlowers(todayRes.data);
-        const tmrwFlowers = aggregateFlowers(tmrwRes.data);
-        if (todayFlowers.length > 0 || tmrwFlowers.length > 0) {
-          setFlowerNeeds({ today: todayFlowers, tomorrow: tmrwFlowers });
-        }
-      } catch {
-        // non-critical
       }
+      return Object.entries(map)
+        .sort((a, b) => b[1] - a[1])
+        .map(([name, qty]) => `${qty}× ${name}`);
     }
-    fetchFlowerNeeds();
-  }, []);
+
+    const todayOrders = orders.filter(o => {
+      const d = o['Delivery Date'] || o['Required By'];
+      return d === today;
+    });
+    const tmrwOrders = orders.filter(o => {
+      const d = o['Delivery Date'] || o['Required By'];
+      return d === tomorrowISO;
+    });
+
+    const todayFlowers = aggregateFlowers(todayOrders);
+    const tmrwFlowers = aggregateFlowers(tmrwOrders);
+    if (todayFlowers.length > 0 || tmrwFlowers.length > 0) {
+      setFlowerNeeds({ today: todayFlowers, tomorrow: tmrwFlowers });
+    } else {
+      setFlowerNeeds(null);
+    }
+  }, [orders]);
 
   // Check for pending stock evaluations (florist) or active shopping POs (owner)
   useEffect(() => {
@@ -297,32 +358,63 @@ export default function OrderListPage() {
       )}
 
       {/* Filters */}
-      <div className="px-4 py-3 max-w-2xl mx-auto flex gap-2 items-center flex-wrap">
-        <div className="bg-white rounded-full border border-ios-separator shadow-sm px-3 h-9 flex items-center">
-          <DatePicker
-            value={date}
-            onChange={setDate}
-            placeholder="Date"
-          />
-        </div>
-        <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1 overflow-x-auto">
-          {STATUSES.map(s => (
+      <div className="px-4 py-3 max-w-2xl mx-auto flex flex-col gap-2">
+        {/* View mode toggle: Active / Completed */}
+        <div className="flex gap-2 items-center">
+          <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1">
             <button
-              key={s}
-              onClick={() => setStatus(s)}
-              className={`px-3 h-7 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
-                status === s
+              onClick={() => { setViewMode(VIEW_MODES.ACTIVE); setStatus(''); }}
+              className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                viewMode === VIEW_MODES.ACTIVE
                   ? 'bg-brand-600 text-white'
                   : 'text-ios-secondary active:bg-ios-fill'
               }`}
             >
-              {s ? statusLabel(s) : t.allStatuses}
+              {t.activeOrders}
             </button>
-          ))}
+            <button
+              onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(todayISO()); }}
+              className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                viewMode === VIEW_MODES.COMPLETED
+                  ? 'bg-brand-600 text-white'
+                  : 'text-ios-secondary active:bg-ios-fill'
+              }`}
+            >
+              {t.completedOrders}
+            </button>
+          </div>
+          <button onClick={fetchOrders} className="h-9 w-9 rounded-full bg-white border border-ios-separator shadow-sm flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
+            ↻
+          </button>
         </div>
-        <button onClick={fetchOrders} className="h-9 w-9 rounded-full bg-white border border-ios-separator shadow-sm flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
-          ↻
-        </button>
+
+        {/* Status sub-filters + date picker for completed view */}
+        <div className="flex gap-2 items-center flex-wrap">
+          {viewMode === VIEW_MODES.COMPLETED && (
+            <div className="bg-white rounded-full border border-ios-separator shadow-sm px-3 h-9 flex items-center">
+              <DatePicker
+                value={date}
+                onChange={setDate}
+                placeholder="Date"
+              />
+            </div>
+          )}
+          <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1 overflow-x-auto">
+            {(viewMode === VIEW_MODES.ACTIVE ? ACTIVE_STATUSES : COMPLETED_STATUSES).map(s => (
+              <button
+                key={s}
+                onClick={() => setStatus(s)}
+                className={`px-3 h-7 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
+                  status === s
+                    ? 'bg-brand-600 text-white'
+                    : 'text-ios-secondary active:bg-ios-fill'
+                }`}
+              >
+                {s ? statusLabel(s) : t.allStatuses}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       {/* Owner: Stock alerts banner */}
@@ -356,6 +448,36 @@ export default function OrderListPage() {
         </div>
       )}
 
+      {/* Stock shortfall warning banner */}
+      {(() => {
+        const shortfallItems = Object.values(stockShortfalls).filter(s => s.effective < 0);
+        if (shortfallItems.length === 0) return null;
+        return (
+          <div className="px-4 pt-2 max-w-2xl mx-auto">
+            <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-3">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-semibold text-red-800 uppercase tracking-wide">{t.stockShortfall}</span>
+              </div>
+              <div className="flex flex-col gap-1">
+                {shortfallItems
+                  .sort((a, b) => a.effective - b.effective)
+                  .map((item, i) => (
+                    <button
+                      key={i}
+                      onClick={() => navigate('/stock')}
+                      className="text-left text-xs py-0.5 active-scale"
+                    >
+                      <span className="text-red-600">
+                        {item.name}: {item.currentQty} {t.stems} ({t.committed}: {item.committed}, {t.effectiveStock}: {item.effective})
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* List */}
       <main className="px-4 pb-28 max-w-2xl mx-auto">
         {loading ? (
@@ -369,11 +491,12 @@ export default function OrderListPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-2.5 mt-1">
-            {sortByStatus(orders).map(order => (
+            {(viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(orders) : sortByStatus(orders)).map(order => (
               <OrderCard
                 key={order.id}
                 order={order}
                 isOwner={isOwner}
+                stockShortfalls={stockShortfalls}
                 onOrderUpdated={(id, patch) => {
                   setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
                 }}

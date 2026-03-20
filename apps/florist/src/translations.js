@@ -366,6 +366,17 @@ const en = {
   useThis:            'Use this',
   otherSupplier:      'Other',
 
+  // View modes
+  activeOrders:       'Active',
+  completedOrders:    'Completed',
+
+  // Stock shortfall
+  stockShortfall:     'Stock Shortfall',
+  committed:          'Committed',
+  effectiveStock:     'Effective',
+  shortage:           'Shortage',
+  viewShortfall:      'Shortfall',
+
   // Block 5 — florist UX
   flowersNeeded:      'Flowers needed',
   flowersToday:       'Today',
@@ -768,6 +779,17 @@ const ru = {
   didYouMean:         'Вы имели в виду',
   useThis:            'Использовать',
   otherSupplier:      'Другой',
+
+  // View modes
+  activeOrders:       'Активные',
+  completedOrders:    'Завершённые',
+
+  // Stock shortfall
+  stockShortfall:     'Нехватка на складе',
+  committed:          'Забронировано',
+  effectiveStock:     'Остаток',
+  shortage:           'Нехватка',
+  viewShortfall:      'Нехватка',
 
   // Block 5 — florist UX
   flowersNeeded:      'Нужные цветы',

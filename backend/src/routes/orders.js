@@ -25,9 +25,10 @@ const ORDERS_PATCH_ALLOWED = [
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram&forDate=2025-01-15
 // forDate: unified date filter — returns orders placed on OR due on that date (OR logic).
 // dateFrom/dateTo: legacy Order Date range filter (AND logic).
+// activeOnly: returns all non-terminal orders (excludes Delivered, Picked Up, Cancelled), sorted by Required By asc.
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming } = req.query;
+    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming, activeOnly } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -41,10 +42,14 @@ router.get('/', async (req, res, next) => {
     else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
     if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
 
-    // "upcoming" mode: today + future by delivery/pickup date.
-    // Fetch broadly (Order Date >= 90 days ago) — post-enrichment filter
-    // narrows to orders with delivery date >= today or no delivery date.
-    if (upcoming) {
+    // "activeOnly" mode: all non-terminal orders — florist's default view.
+    // Excludes Delivered, Picked Up, Cancelled. No date restriction.
+    if (activeOnly) {
+      filters.push(`AND({Status} != 'Delivered', {Status} != 'Picked Up', {Status} != 'Cancelled')`);
+    } else if (upcoming) {
+      // "upcoming" mode: today + future by delivery/pickup date.
+      // Fetch broadly (Order Date >= 90 days ago) — post-enrichment filter
+      // narrows to orders with delivery date >= today or no delivery date.
       const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
       filters.push(`NOT(IS_BEFORE({Order Date}, '${cutoff}'))`);
     } else if (forDate) {
@@ -65,9 +70,14 @@ router.get('/', async (req, res, next) => {
       ? `AND(${filters.join(', ')})`
       : '';
 
+    // activeOnly mode: sort by Required By ascending (earliest needed first)
+    const sortFields = activeOnly
+      ? [{ field: 'Required By', direction: 'asc' }]
+      : [{ field: 'Order Date', direction: 'desc' }];
+
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula,
-      sort: [{ field: 'Order Date', direction: 'desc' }],
+      sort: sortFields,
       maxRecords: 200,
     });
 
