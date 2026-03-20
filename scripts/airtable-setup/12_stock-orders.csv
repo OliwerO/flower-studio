@@ -1,7 +1,7 @@
-Status,Created Date,Notes,Assigned Driver
-Draft,2026-03-13,Seed row - delete after import,Nikita
-Sent,2026-03-12,Seed row - delete after import,Timur
-Shopping,2026-03-11,Seed row - delete after import,Dmitri
-Evaluating,2026-03-10,Seed row - delete after import,Nikita
-Eval Error,2026-03-09,Seed row - delete after import,Timur
-Complete,2026-03-08,Seed row - delete after import,Dmitri
+Status,Created Date,Notes,Assigned Driver,Stock Order ID,Planned Date,Supplier Payments,Driver Payment
+Draft,2026-03-13,Seed row - delete after import,Nikita,PO-20260313-1,,,
+Sent,2026-03-12,Seed row - delete after import,Timur,PO-20260312-1,,,
+Shopping,2026-03-11,Seed row - delete after import,Dmitri,PO-20260311-1,,,
+Evaluating,2026-03-10,Seed row - delete after import,Nikita,PO-20260310-1,,,
+Eval Error,2026-03-09,Seed row - delete after import,Timur,PO-20260309-1,,,
+Complete,2026-03-08,Seed row - delete after import,Dmitri,PO-20260308-1,,,

@@ -1,5 +1,5 @@
-Flower Name,Quantity Needed,Lot Size,Driver Status,Supplier,Cost Price,Sell Price,Notes,Quantity Found,Quantity Accepted,Write Off Qty,Eval Status,Price Needs Review,Alt Supplier,Alt Quantity Found,Alt Flower Name
-Seed Rose Red,25,25,Pending,Stojek,8,18,,,,,,false,,,
-Seed Eucalyptus,10,10,Found All,Mateusz,4,8,,10,10,0,Processed,false,,,
-Seed Tulip,20,10,Partial,Stefan,5,12,,15,12,3,Processed,false,,,
-Seed Gypsophila,30,15,Not Found,Mateusz,6,14,,0,,,,,4f,20,Baby Breath
+Flower Name,Quantity Needed,Lot Size,Driver Status,Supplier,Cost Price,Sell Price,Notes,Quantity Found,Quantity Accepted,Write Off Qty,Eval Status,Price Needs Review,Alt Supplier,Alt Quantity Found,Alt Flower Name,Alt Cost,Farmer
+Seed Rose Red,25,25,Pending,Stojek,8,18,,,,,,false,,,,0,
+Seed Eucalyptus,10,10,Found All,Mateusz,4,8,,10,10,0,Processed,false,,,,0,
+Seed Tulip,20,10,Partial,Stefan,5,12,,15,12,3,Processed,false,,,,0,
+Seed Gypsophila,30,15,Not Found,Mateusz,6,14,,0,,,,,4f,20,Baby Breath,0,

@@ -111,33 +111,17 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
     const seq = existingPOs.length + 1;
     const poNumber = `PO-${today.replace(/-/g, '')}-${seq}`;
 
-    // Create the PO header — only include fields that exist in Airtable.
-    // 'Stock Order ID' and 'Planned Date' may not exist in all bases, so
-    // we attempt creation and fall back without them if Airtable rejects.
+    // Create the PO header
     const orderFields = {
       Status: 'Draft',
       'Created Date': today,
+      'Stock Order ID': poNumber,
       Notes: notes || '',
     };
     if (driver) orderFields['Assigned Driver'] = driver;
+    if (plannedDate) orderFields['Planned Date'] = plannedDate;
 
-    // Optional fields — may not exist in Airtable yet
-    const optionalHeaderFields = {};
-    optionalHeaderFields['Stock Order ID'] = poNumber;
-    if (plannedDate) optionalHeaderFields['Planned Date'] = plannedDate;
-
-    let order;
-    try {
-      order = await db.create(TABLES.STOCK_ORDERS, { ...orderFields, ...optionalHeaderFields });
-    } catch (headerErr) {
-      // Retry without optional fields if Airtable rejects unknown field names
-      if (headerErr.message?.includes('UNKNOWN_FIELD_NAME') || headerErr.statusCode === 422) {
-        console.error('[STOCK-ORDER] Retrying PO header without optional fields:', headerErr.message);
-        order = await db.create(TABLES.STOCK_ORDERS, orderFields);
-      } else {
-        throw headerErr;
-      }
-    }
+    const order = await db.create(TABLES.STOCK_ORDERS, orderFields);
 
     // Create lines — use lot size from the PO form (owner can set/override),
     // falling back to the stock item's configured lot size, then 1.
@@ -161,26 +145,11 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
         'Cost Price': Number(line.costPrice) || 0,
         'Sell Price': Number(line.sellPrice) || 0,
       };
-
-      // Optional fields — may not exist in all Airtable bases
       if (line.farmer) lineFields.Farmer = line.farmer;
       if (line.notes) lineFields.Notes = line.notes;
 
-      try {
-        const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, lineFields);
-        createdLines.push(lineRec);
-      } catch (lineErr) {
-        // If optional fields cause rejection, retry without them
-        if (lineErr.message?.includes('UNKNOWN_FIELD_NAME') || lineErr.statusCode === 422) {
-          console.error('[STOCK-ORDER] Retrying line without optional fields:', lineErr.message);
-          delete lineFields.Farmer;
-          delete lineFields.Notes;
-          const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, lineFields);
-          createdLines.push(lineRec);
-        } else {
-          throw lineErr;
-        }
-      }
+      const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, lineFields);
+      createdLines.push(lineRec);
     }
 
     res.status(201).json({ ...order, lines: createdLines });
