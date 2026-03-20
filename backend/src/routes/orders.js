@@ -82,7 +82,7 @@ router.get('/', async (req, res, next) => {
         fields: ['Name', 'Nickname'],
       }),
       listByIds(TABLES.DELIVERIES, allDeliveryIds, {
-        fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver'],
+        fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver', 'Delivery Method', 'Status'],
       }),
     ]);
 
@@ -138,6 +138,7 @@ router.get('/', async (req, res, next) => {
         order['Delivery Time'] = d['Delivery Time'] || null;
         order['Delivery Address'] = d['Delivery Address'] || '';
         order['Assigned Driver'] = d['Assigned Driver'] || '';
+        order['Delivery Method'] = d['Delivery Method'] || 'Driver';
         order['Delivery Fee'] = Number(d['Delivery Fee'] || 0);
       }
 
@@ -555,6 +556,20 @@ router.patch('/:id', async (req, res, next) => {
       ...(newStatus ? { Status: newStatus } : {}),
       ...timestamps,
     });
+
+    // Cascade Order → Delivery status sync.
+    // Mirrors the Delivery → Order cascade in deliveries.js.
+    // Without this, marking "Delivered" from dashboard leaves the delivery record stale.
+    if (newStatus && ['Out for Delivery', 'Delivered'].includes(newStatus)) {
+      const deliveryId = order['Deliveries']?.[0];
+      if (deliveryId) {
+        const deliveryPatch = { Status: newStatus };
+        if (newStatus === 'Delivered') {
+          deliveryPatch['Delivered At'] = new Date().toISOString();
+        }
+        await db.update(TABLES.DELIVERIES, deliveryId, deliveryPatch).catch(() => {});
+      }
+    }
 
     // Broadcast status changes that other apps care about
     if (newStatus === 'Ready') {

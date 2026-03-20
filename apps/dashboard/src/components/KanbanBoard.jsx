@@ -55,6 +55,7 @@ function KanbanCard({ order, onClick }) {
   const isDelivery = order['Delivery Type'] === 'Delivery';
   const isPaid = order['Payment Status'] === 'Paid';
   const price = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
+  const deliveryMethod = order['Delivery Method'] || 'Driver';
 
   // Bouquet summary: "3× Rose Red, 2× Tulip Pink"
   const bouquet = order['Bouquet Summary'] || order['Customer Request'] || '—';
@@ -97,11 +98,14 @@ function KanbanCard({ order, onClick }) {
         )}
       </div>
 
-      {/* Driver + payment badges */}
+      {/* Driver/method + payment badges */}
       <div className="flex items-center justify-between mt-1">
         <div className="flex items-center gap-1.5">
           {driver && (
             <span className="text-[10px] text-ios-tertiary">{driver}</span>
+          )}
+          {isDelivery && !driver && deliveryMethod !== 'Driver' && (
+            <span className="text-[10px] text-ios-tertiary">{deliveryMethod === 'Florist' ? t.deliveryMethodFlorist : deliveryMethod === 'Taxi' ? t.deliveryMethodTaxi : ''}</span>
           )}
         </div>
         {!isPaid && (
