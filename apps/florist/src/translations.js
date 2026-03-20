@@ -218,11 +218,12 @@ const en = {
   sortByQty:        'Qty',
   sortBySell:       'Price',
   sortBySupplier:   'Supplier',
+  sortByReceived:   'Date',
   viewAll:          'All',
   viewNegative:     'Negative',
   viewLow:          'Low',
   viewSlowMovers:   'Slow',
-  stems:            'pcs',
+  stems:            'stems',
 
   // Stock deferred (future orders)
   useStock:              'Stock',
@@ -631,11 +632,12 @@ const ru = {
   sortByQty:        'Кол-во',
   sortBySell:       'Цена',
   sortBySupplier:   'Поставщик',
+  sortByReceived:   'Дата',
   viewAll:          'Все',
   viewNegative:     'Минус',
   viewLow:          'Мало',
   viewSlowMovers:   'Давно',
-  stems:            'шт',
+  stems:            'стеблей',
 
   // Stock deferred (future orders)
   useStock:              'Со склада',
