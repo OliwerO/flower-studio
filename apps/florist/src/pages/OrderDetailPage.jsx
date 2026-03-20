@@ -507,9 +507,10 @@ export default function OrderDetailPage() {
                   options={[
                     { value: 'Unpaid', label: 'Unpaid' },
                     { value: 'Paid',   label: 'Paid' },
+                    { value: 'Partial', label: t.paymentPartial || 'Partial' },
                   ]}
                 />
-                {isPaid && (
+                {(isPaid || order['Payment Status'] === 'Partial') && (
                   <Pills
                     value={order['Payment Method'] || ''}
                     onChange={val => patch({ 'Payment Method': val })}
