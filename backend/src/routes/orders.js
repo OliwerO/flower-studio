@@ -438,12 +438,12 @@ router.post('/', async (req, res, next) => {
 // PUT /api/orders/:id/lines — edit bouquet composition after order creation.
 // Handles add/remove/update lines with stock adjustments.
 // Body: { lines: [...], removedLines: [{ lineId, stockItemId, quantity, action: 'return'|'writeoff', reason? }] }
-// Editable at statuses: New, Accepted, In Preparation, Ready.
-// If owner edits while Ready → auto-revert to In Preparation.
+// Editable at statuses: New, Ready.
+// If owner edits while Ready → auto-revert to New.
 router.put('/:id/lines', async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.ORDERS, req.params.id);
-    const editableStatuses = ['New', 'Accepted', 'In Preparation', 'Ready'];
+    const editableStatuses = ['New', 'Ready'];
     if (!editableStatuses.includes(order.Status)) {
       return res.status(400).json({ error: `Cannot edit bouquet in "${order.Status}" status.` });
     }
@@ -531,7 +531,7 @@ router.put('/:id/lines', async (req, res, next) => {
 
     // 3. Auto-revert status if owner edits while Ready
     if (isOwner && order.Status === 'Ready') {
-      await db.update(TABLES.ORDERS, req.params.id, { Status: 'In Preparation' });
+      await db.update(TABLES.ORDERS, req.params.id, { Status: 'New' });
     }
 
     res.json({ updated: true, createdLines });
@@ -540,13 +540,10 @@ router.put('/:id/lines', async (req, res, next) => {
   }
 });
 
-// Allowed status transitions — like a production routing sheet.
-// Simplified: removed "In Progress" as a required step — unnecessary click
-// without value added. Orders flow: New → Ready → Delivered/Picked Up.
+// Allowed status transitions — orders flow: New → Ready → Delivered/Picked Up.
 // "In Progress" kept as legacy exit only (for orders already in that state).
 const ALLOWED_TRANSITIONS = {
-  'New':              ['Accepted', 'Ready', 'Cancelled'],
-  'Accepted':         ['Ready', 'Cancelled'],
+  'New':              ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],          // legacy — still allow exit
   'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
   'Out for Delivery': ['Delivered', 'Cancelled'],       // driver is en route
@@ -580,10 +577,8 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Record prep timestamps for cycle-time analysis.
-    // "Accepted" = work starts (like punching in at a workstation).
     // "Ready" = work complete (like scanning finished goods).
     const timestamps = {};
-    if (newStatus === 'Accepted') timestamps['Prep Started At'] = new Date().toISOString();
     if (newStatus === 'Ready') timestamps['Prep Ready At'] = new Date().toISOString();
 
     const order = await db.update(TABLES.ORDERS, req.params.id, {
