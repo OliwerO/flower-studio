@@ -137,15 +137,24 @@ export default function StockPanelPage() {
       );
     }
 
-    // Sort — negative items always pinned to top
+    // Sort — negative and shortfall items always pinned to top
     const sortFn = SORT_FNS[sortKey] || SORT_FNS.name;
     const sorted = [...items].sort((a, b) => {
       const aNeg = (Number(a['Current Quantity']) || 0) < 0;
       const bNeg = (Number(b['Current Quantity']) || 0) < 0;
       if (aNeg !== bNeg) return aNeg ? -1 : 1;
+      const aShort = hasShortfall(a);
+      const bShort = hasShortfall(b);
+      if (aShort !== bShort) return aShort ? -1 : 1;
       const cmp = sortFn(a, b);
       return sortAsc ? cmp : -cmp;
     });
+
+    function hasShortfall(s) {
+      const cd = committedMap[s.id];
+      if (!cd) return false;
+      return (Number(s['Current Quantity'] || 0) - cd.committed) < 0;
+    }
 
     return sorted;
   }, [stock, search, sortKey, sortAsc, view, committedMap]);
