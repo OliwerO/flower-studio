@@ -64,7 +64,7 @@ function TomorrowSection({ orders, onNavigate }) {
           {sorted.length === 0 ? (
             <p className="text-sm text-ios-tertiary py-2">{t.nothingTomorrow}</p>
           ) : (
-            <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
+            <div className={`bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100${sorted.length > 10 ? ' max-h-[480px] overflow-y-auto' : ''}`}>
               {sorted.map(order => {
                 const isPrepPriority = (order['Line Count'] || 0) > 3;
                 const summary = order['Customer Request'] || order['Line Summary'] || '';
