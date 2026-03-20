@@ -479,7 +479,11 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, stockShortfa
                     <div className="py-1">
                       <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {timeSlots.map(slot => (
+                        {[...timeSlots].sort((a, b) => {
+                          const [ah, am] = a.split('-')[0].split(':').map(Number);
+                          const [bh, bm] = b.split('-')[0].split(':').map(Number);
+                          return (ah * 60 + am) - (bh * 60 + bm);
+                        }).map(slot => (
                           <button
                             key={slot}
                             onClick={() => patchDelivery({
