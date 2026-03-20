@@ -12,6 +12,7 @@ import { useOrderEditing, parseBatchName } from '@flower-studio/shared';
 
 const STATUSES = [
   { value: 'New',              label: t.statusNew,       activeClass: 'bg-indigo-600 text-white shadow-sm' },
+  { value: 'Accepted',         label: t.statusAccepted || 'Accepted', activeClass: 'bg-violet-600 text-white shadow-sm' },
   { value: 'Ready',            label: t.statusReady,     activeClass: 'bg-amber-600 text-white shadow-sm' },
   { value: 'Out for Delivery', label: t.statusOutForDel, activeClass: 'bg-sky-600 text-white shadow-sm' },
   { value: 'Delivered',        label: t.statusDelivered, activeClass: 'bg-emerald-600 text-white shadow-sm' },
