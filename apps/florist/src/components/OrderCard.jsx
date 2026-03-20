@@ -14,6 +14,8 @@ import { useOrderEditing, renderStockName } from '@flower-studio/shared';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
+  'Accepted':         { label: 'bg-blue-50 text-blue-600' },
+  'In Preparation':   { label: 'bg-orange-50 text-orange-600' },
   'In Progress':      { label: 'bg-orange-50 text-orange-600' },
   'Ready':            { label: 'bg-amber-50 text-amber-700' },
   'Out for Delivery': { label: 'bg-sky-50 text-sky-700' },
@@ -25,6 +27,8 @@ const STATUS_STYLES = {
 // Map Airtable status values → translation keys
 const STATUS_LABELS = {
   'New':              () => t.statusNew,
+  'Accepted':         () => t.statusAccepted,
+  'In Preparation':   () => t.statusInPreparation,
   'In Progress':      () => t.statusInProgress,
   'Ready':            () => t.statusReady,
   'Out for Delivery': () => t.statusOutForDelivery,
@@ -35,7 +39,9 @@ const STATUS_LABELS = {
 
 // Florist doesn't trigger "Out for Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
-  'New':              ['Ready', 'Cancelled'],
+  'New':              ['Accepted', 'Ready', 'Cancelled'],
+  'Accepted':         ['In Preparation', 'Ready', 'Cancelled'],
+  'In Preparation':   ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],
   'Ready':            ['Delivered', 'Picked Up', 'Cancelled'],
   'Out for Delivery': ['Delivered', 'Cancelled'],
@@ -275,6 +281,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, stockShortfa
         const primary = nextStatuses.find(s => s !== 'Cancelled');
         if (!primary) return null;
         const labelMap = {
+          'Accepted': t.markAccepted,
+          'In Preparation': t.markInPreparation,
           'Ready': t.markReady,
           'Delivered': t.markDelivered,
           'Picked Up': t.markPickedUp,

@@ -15,7 +15,7 @@ const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
 const VIEW_MODES = { ACTIVE: 'active', COMPLETED: 'completed' };
 
 // Status filters for active view (non-terminal statuses)
-const ACTIVE_STATUSES = ['', 'New', 'Ready', 'Out for Delivery'];
+const ACTIVE_STATUSES = ['', 'New', 'Accepted', 'In Preparation', 'Ready', 'Out for Delivery'];
 
 // Status filters for completed view
 const COMPLETED_STATUSES = ['', 'Delivered', 'Picked Up', 'Cancelled'];
@@ -24,6 +24,8 @@ const COMPLETED_STATUSES = ['', 'Delivered', 'Picked Up', 'Cancelled'];
 function statusLabel(s) {
   const map = {
     'New':              () => t.statusNew,
+    'Accepted':         () => t.statusAccepted,
+    'In Preparation':   () => t.statusInPreparation,
     'In Progress':      () => t.statusInProgress,
     'Ready':            () => t.statusReady,
     'Out for Delivery': () => t.statusOutForDelivery,
@@ -108,10 +110,9 @@ export default function OrderListPage() {
         // Active view: all non-terminal orders, sorted by earliest needed
         params.activeOnly = true;
       } else {
-        // Completed view: use date filter to browse past orders
+        // Completed view: terminal orders (last 30 days by default)
+        params.completedOnly = true;
         if (date) params.forDate = date;
-        // If no specific status selected in completed view, exclude active statuses
-        if (!status) params.excludeCancelled = false; // show all including cancelled
       }
       const res = await client.get('/orders', { params });
       // Merge: update existing orders in place, add new ones, remove deleted.
@@ -286,7 +287,7 @@ export default function OrderListPage() {
               {t.activeOrders}
             </button>
             <button
-              onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(todayISO()); }}
+              onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); }}
               className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
                 viewMode === VIEW_MODES.COMPLETED
                   ? 'bg-brand-600 text-white'
@@ -304,12 +305,20 @@ export default function OrderListPage() {
         {/* Status sub-filters + date picker for completed view */}
         <div className="flex gap-2 items-center flex-wrap">
           {viewMode === VIEW_MODES.COMPLETED && (
-            <div className="bg-white rounded-full border border-ios-separator shadow-sm px-3 h-9 flex items-center">
-              <DatePicker
-                value={date}
-                onChange={setDate}
-                placeholder="Date"
-              />
+            <div className="flex items-center gap-1.5">
+              <div className="bg-white rounded-full border border-ios-separator shadow-sm px-3 h-9 flex items-center">
+                <DatePicker
+                  value={date}
+                  onChange={setDate}
+                  placeholder={t.filterByDate || 'Filter by date'}
+                />
+              </div>
+              {date && (
+                <button
+                  onClick={() => setDate('')}
+                  className="text-xs text-ios-tertiary bg-white rounded-full border border-ios-separator shadow-sm px-2 h-9 flex items-center active-scale"
+                >✕</button>
+              )}
             </div>
           )}
           <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1 overflow-x-auto">

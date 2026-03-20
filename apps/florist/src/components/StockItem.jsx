@@ -60,11 +60,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <span className="text-[13px] font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</span>
-            <span className="text-[11px] text-ios-tertiary shrink-0">
-              <span className="font-semibold text-brand-700">{Number(item['Current Sell Price'] || 0).toFixed(0)}zł</span>
-              {item.Supplier && <span> · {item.Supplier}</span>}
-              {dead > 0 && <span className="text-ios-red"> · {dead}✗</span>}
-            </span>
+            {dead > 0 && <span className="text-[11px] text-ios-red shrink-0">{dead}✗</span>}
           </div>
         </div>
 
@@ -120,6 +116,12 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
               {t.effectiveStock}: {effective}
             </span>
           </div>
+          {(item.Supplier || item['Current Sell Price']) && (
+            <div className="flex items-center gap-2 text-[10px] text-ios-tertiary mb-1">
+              {item['Current Sell Price'] > 0 && <span className="font-semibold text-brand-700">{Number(item['Current Sell Price']).toFixed(0)}zł</span>}
+              {item.Supplier && <span>{item.Supplier}</span>}
+            </div>
+          )}
           <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden">
             {(committedData?.orders || []).map((o, i) => (
               <div key={i} className="flex items-center justify-between px-2.5 py-1.5">
@@ -143,7 +145,13 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
 
       {/* Expanded: no commitments message */}
       {expanded && !editMode && committed === 0 && (
-        <div className="px-3 pb-2 ml-4">
+        <div className="px-3 pb-2 ml-4 space-y-1">
+          {(item.Supplier || item['Current Sell Price']) && (
+            <div className="flex items-center gap-2 text-[10px] text-ios-tertiary">
+              {item['Current Sell Price'] > 0 && <span className="font-semibold text-brand-700">{Number(item['Current Sell Price']).toFixed(0)}zł</span>}
+              {item.Supplier && <span>{item.Supplier}</span>}
+            </div>
+          )}
           <p className="text-[10px] text-ios-tertiary">{t.noCommitments}</p>
         </div>
       )}

@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 
 // English month and day names
 const MONTHS = [
@@ -41,26 +42,14 @@ function buildCalendar(year, month) {
 /**
  * DatePicker - custom iOS-style calendar dropdown.
  *
- * What: replaces native <input type="date"> with an English, styled calendar
- * matching the liquid-glass design language.
- *
- * Why custom: native date picker renders in OS locale (German on this machine),
- * looks inconsistent across browsers, and cannot be styled to match glass aesthetic.
- *
- * Trade-offs:
- *  + Consistent look across all devices and locales
- *  + English text regardless of OS language
- *  - More code to maintain than a native input
- *  - No native swipe/scroll gestures (acceptable on tablet)
- *
- * Props:
- *   value        - YYYY-MM-DD string (or empty)
- *   onChange      - callback receiving YYYY-MM-DD string
- *   placeholder   - optional display text when no date selected
+ * Uses a portal to render the calendar at the body level,
+ * preventing clipping by parent overflow:hidden containers.
  */
 export default function DatePicker({ value, onChange, placeholder = 'Select date' }) {
   const [open, setOpen] = useState(false);
-  const ref = useRef(null);
+  const triggerRef = useRef(null);
+  const calRef = useRef(null);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
 
   // Which month the calendar currently shows
   const initial = toDateParts(value);
@@ -74,11 +63,29 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
     if (p) { setViewYear(p.year); setViewMonth(p.month); }
   }, [value]);
 
+  // Position the calendar dropdown relative to the trigger button
+  const updatePosition = useCallback(() => {
+    if (!triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const calHeight = 320; // approximate calendar height
+    const calWidth = 288; // w-72 = 18rem = 288px
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openAbove = spaceBelow < calHeight && rect.top > calHeight;
+
+    setPos({
+      top: openAbove ? rect.top - calHeight - 8 : rect.bottom + 8,
+      left: Math.max(8, Math.min(rect.right - calWidth, window.innerWidth - calWidth - 8)),
+    });
+  }, []);
+
   // Close on outside click
   useEffect(() => {
     if (!open) return;
+    updatePosition();
     function handleClick(e) {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+      if (triggerRef.current?.contains(e.target)) return;
+      if (calRef.current?.contains(e.target)) return;
+      setOpen(false);
     }
     document.addEventListener('mousedown', handleClick);
     document.addEventListener('touchstart', handleClick);
@@ -86,7 +93,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
       document.removeEventListener('mousedown', handleClick);
       document.removeEventListener('touchstart', handleClick);
     };
-  }, [open]);
+  }, [open, updatePosition]);
 
   const cells = useMemo(() => buildCalendar(viewYear, viewMonth), [viewYear, viewMonth]);
 
@@ -108,8 +115,8 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
   }
 
   return (
-    <div className="relative" ref={ref}>
-      {/* Trigger button - styled to match TextInput rows in Step3Details */}
+    <div className="relative" ref={triggerRef}>
+      {/* Trigger button */}
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
@@ -123,9 +130,13 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
         </svg>
       </button>
 
-      {/* Calendar dropdown */}
-      {open && (
-        <div className="absolute right-0 top-full mt-2 z-50 w-72 bg-white rounded-2xl p-3 shadow-lg border border-gray-200">
+      {/* Calendar dropdown — rendered via portal to avoid overflow clipping */}
+      {open && createPortal(
+        <div
+          ref={calRef}
+          className="fixed z-[9999] w-72 bg-white rounded-2xl p-3 shadow-lg border border-gray-200"
+          style={{ top: pos.top, left: pos.left }}
+        >
           {/* Month/Year header with navigation arrows */}
           <div className="flex items-center justify-between mb-2">
             <button
@@ -190,7 +201,8 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
               );
             })}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
