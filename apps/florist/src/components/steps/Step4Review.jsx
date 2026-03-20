@@ -89,7 +89,7 @@ export default function Step4Review({ form, orderTotal, deliveryFee, isOwner, on
       </div>
 
       {/* Submit */}
-      <div className="fixed bottom-0 left-0 right-0 glass-bar px-4 py-4 pb-6">
+      <div className="fixed bottom-16 left-0 right-0 glass-bar px-4 py-4 pb-6 z-20">
         <div className="max-w-2xl mx-auto">
           <button
             onClick={onSubmit}

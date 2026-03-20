@@ -286,13 +286,22 @@ export default function Step2Bouquet({
         </div>
 
         <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-64 overflow-y-auto">
-          {/* Add unlisted flower — for flowers not yet in the stock catalog */}
-          {flowerQuery.length >= 2 && !stock.some(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase()) && (
+          {/* Add unlisted flower — for flowers not yet in the stock catalog.
+              Check against filteredStock (not full stock) so out-of-stock flowers
+              hidden by the "In stock only" filter still show the "Add new" option. */}
+          {flowerQuery.length >= 2 && !filteredStock.some(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase()) && (
             <button
               type="button"
               onClick={() => {
-                setShowCustomFlower(true);
-                setCustomFlower({ name: flowerQuery, supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+                // If an exact match exists in stock but is just out of stock, add it directly
+                const existing = stock.find(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase());
+                if (existing) {
+                  addOne(existing);
+                  setFlowerQuery('');
+                } else {
+                  setShowCustomFlower(true);
+                  setCustomFlower({ name: flowerQuery, supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+                }
               }}
               className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
             >

@@ -79,6 +79,19 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
         </div>
       </div>
 
+      {/* Create new — always visible as a default action */}
+      {!showCreate && (
+        <button
+          onClick={() => setShowCreate(true)}
+          className="ios-card px-4 py-3.5 flex items-center gap-3 w-full active:bg-ios-fill active-scale"
+        >
+          <div className="w-8 h-8 rounded-full bg-ios-green flex items-center justify-center shrink-0">
+            <span className="text-white text-lg font-semibold leading-none">+</span>
+          </div>
+          <span className="text-ios-label font-medium">{t.createNew}</span>
+        </button>
+      )}
+
       {/* Search results */}
       {searching && (
         <p className="text-ios-tertiary text-sm text-center py-4">{t.loading}</p>
@@ -113,19 +126,6 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
         </div>
       )}
 
-      {/* Create new — only visible after a search with no results */}
-      {!showCreate && query.length >= 2 && !searching && results.length === 0 && (
-        <button
-          onClick={() => setShowCreate(true)}
-          className="ios-card px-4 py-3.5 flex items-center gap-3 w-full active:bg-ios-fill active-scale"
-        >
-          <div className="w-8 h-8 rounded-full bg-ios-green flex items-center justify-center shrink-0">
-            <span className="text-white text-lg font-semibold leading-none">+</span>
-          </div>
-          <span className="text-ios-label font-medium">{t.createNew}</span>
-        </button>
-      )}
-
       {showCreate && (
         <div>
           <p className="ios-label">{t.createNew}</p>
@@ -133,7 +133,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
             {[
               { key: 'Name',     label: t.customerName,     type: 'text',  placeholder: 'Anna Kowalska', required: true },
               { key: 'Phone',    label: t.customerPhone,    type: 'tel',   placeholder: '+48 000 000 000' },
-              { key: 'Nickname', label: t.customerNickname, type: 'text',  placeholder: '@instagram' },
+              { key: 'Nickname', label: t.nickname || 'Nickname', type: 'text',  placeholder: 'Anya' },
+              { key: 'Link',     label: 'Instagram',        type: 'text',  placeholder: '@handle' },
               { key: 'Email',    label: t.customerEmail,    type: 'email', placeholder: 'anna@email.com' },
             ].map(({ key, label, type, placeholder, required }) => (
               <div key={key} className="px-4 py-3">
@@ -173,18 +174,6 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
 
           {showExtra && (
             <div className="ios-card overflow-hidden divide-y divide-ios-separator/40 mt-2">
-              {/* Link / Instagram */}
-              <div className="flex items-center px-4 py-3 gap-3">
-                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.instagram || 'Instagram'}</span>
-                <input
-                  type="text"
-                  value={newCustomer.Link}
-                  onChange={e => setNewCustomer(p => ({ ...p, Link: e.target.value }))}
-                  placeholder="instagram.com/handle"
-                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
-                />
-              </div>
-
               {/* Language — pill selector */}
               <div className="px-4 py-3">
                 <span className="text-sm text-ios-tertiary">{t.language || 'Language'}</span>

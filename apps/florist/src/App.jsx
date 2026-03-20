@@ -18,6 +18,7 @@ import StockPanelPage       from './pages/StockPanelPage.jsx';
 import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
 import DaySummaryPage          from './pages/DaySummaryPage.jsx';
 import ShoppingSupportPage     from './pages/ShoppingSupportPage.jsx';
+import PurchaseOrderPage       from './pages/PurchaseOrderPage.jsx';
 import FloristHoursPage        from './pages/FloristHoursPage.jsx';
 import Toast                   from './components/Toast.jsx';
 import BottomNav               from './components/BottomNav.jsx';
@@ -99,6 +100,10 @@ export default function App() {
 
         <Route path="/shopping-support" element={
           <OwnerRoute><Layout><ShoppingSupportPage /></Layout></OwnerRoute>
+        } />
+
+        <Route path="/purchase-orders" element={
+          <OwnerRoute><Layout><PurchaseOrderPage /></Layout></OwnerRoute>
         } />
 
         <Route path="/day-summary" element={
