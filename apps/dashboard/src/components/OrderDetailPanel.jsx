@@ -10,14 +10,15 @@ import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 import { useOrderEditing, parseBatchName } from '@flower-studio/shared';
 
-const STATUSES = [
-  { value: 'New',              label: t.statusNew,       activeClass: 'bg-indigo-600 text-white shadow-sm' },
-  { value: 'Accepted',         label: t.statusAccepted || 'Accepted', activeClass: 'bg-violet-600 text-white shadow-sm' },
-  { value: 'Ready',            label: t.statusReady,     activeClass: 'bg-amber-600 text-white shadow-sm' },
-  { value: 'Out for Delivery', label: t.statusOutForDel, activeClass: 'bg-sky-600 text-white shadow-sm' },
-  { value: 'Delivered',        label: t.statusDelivered, activeClass: 'bg-emerald-600 text-white shadow-sm' },
-  { value: 'Picked Up',        label: t.statusPickedUp,  activeClass: 'bg-teal-600 text-white shadow-sm' },
-  { value: 'Cancelled',        label: t.statusCancelled, activeClass: 'bg-rose-600 text-white shadow-sm' },
+const BASE_STATUSES = [
+  { value: 'New',              label: t.statusNew,            activeClass: 'bg-indigo-600 text-white shadow-sm' },
+  { value: 'Accepted',         label: t.statusAccepted,       activeClass: 'bg-violet-600 text-white shadow-sm', wixOnly: true },
+  { value: 'In Preparation',   label: t.statusInPreparation,  activeClass: 'bg-blue-600 text-white shadow-sm' },
+  { value: 'Ready',            label: t.statusReady,          activeClass: 'bg-amber-600 text-white shadow-sm' },
+  { value: 'Out for Delivery', label: t.statusOutForDel,      activeClass: 'bg-sky-600 text-white shadow-sm' },
+  { value: 'Delivered',        label: t.statusDelivered,      activeClass: 'bg-emerald-600 text-white shadow-sm' },
+  { value: 'Picked Up',        label: t.statusPickedUp,       activeClass: 'bg-teal-600 text-white shadow-sm' },
+  { value: 'Cancelled',        label: t.statusCancelled,      activeClass: 'bg-rose-600 text-white shadow-sm' },
 ];
 
 const PAYMENT_STATUSES = [
@@ -120,6 +121,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
 
   const o = order;
   const isTerminal = o.Status === 'Delivered' || o.Status === 'Picked Up' || o.Status === 'Cancelled';
+  const isWix = o.Source === 'Wix';
+  const STATUSES = BASE_STATUSES.filter(s => !s.wixOnly || isWix || s.value === o.Status);
   const showPaymentMethod = o['Payment Status'] === 'Paid';
 
   // Effective price: Price Override || (line sell total + delivery fee)

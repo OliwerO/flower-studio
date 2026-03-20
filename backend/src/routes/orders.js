@@ -82,7 +82,7 @@ router.get('/', async (req, res, next) => {
         fields: ['Name', 'Nickname'],
       }),
       listByIds(TABLES.DELIVERIES, allDeliveryIds, {
-        fields: ['Delivery Date', 'Delivery Time'],
+        fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver'],
       }),
     ]);
 
@@ -130,12 +130,21 @@ router.get('/', async (req, res, next) => {
         order['Bouquet Summary'] = lines.map(l => `${l.qty}× ${l.name}`).join(', ');
       }
 
-      // Attach delivery date/time for display in the order list row
+      // Attach delivery fields for display in order list / kanban
       const delivId = order['Deliveries']?.[0];
       if (delivId && deliveryMap[delivId]) {
-        order['Delivery Date'] = deliveryMap[delivId]['Delivery Date'] || null;
-        order['Delivery Time'] = deliveryMap[delivId]['Delivery Time'] || null;
+        const d = deliveryMap[delivId];
+        order['Delivery Date'] = d['Delivery Date'] || null;
+        order['Delivery Time'] = d['Delivery Time'] || null;
+        order['Delivery Address'] = d['Delivery Address'] || '';
+        order['Assigned Driver'] = d['Assigned Driver'] || '';
+        order['Delivery Fee'] = Number(d['Delivery Fee'] || 0);
       }
+
+      // Compute Final Price = Price Override || (Sell Total + Delivery Fee)
+      const sellTotal = order['Sell Total'] || totalByOrder[order.id] || 0;
+      const delivFee = Number(order['Delivery Fee'] || 0);
+      order['Final Price'] = order['Price Override'] || (sellTotal + delivFee) || 0;
     }
 
     res.json(orders);
