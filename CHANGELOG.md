@@ -21,8 +21,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-11 | Sync Log | New table for Wix ↔ Airtable sync history | ❌ |
 | 2026-03-12 | Stock | New fields: `Lot Size` (Number, default 1) | ❌ |
 | 2026-03-12 | Order Lines | New field: `Stock Deferred` (Checkbox) | ❌ |
-| 2026-03-13 | Stock Orders | **New table** — PO header (Status, Created Date, Notes, Assigned Driver, Stock Order ID, Planned Date, Supplier Payments, Driver Payment). Also needs link field `Order Lines` → Stock Order Lines | ❌ |
-| 2026-03-13 | Stock Order Lines | **New table** — PO lines (Flower Name, Quantity Needed, Lot Size, Driver Status, Supplier, Cost Price, Sell Price, Notes, Quantity Found, Quantity Accepted, Write Off Qty, Eval Status, Price Needs Review, Alt Supplier, Alt Quantity Found, Alt Flower Name, Alt Cost, Farmer). Also needs link fields: `Stock Orders` → Stock Orders, `Stock Item` → Stock | ❌ |
+| 2026-03-13 | Stock Orders | **New table** — PO header (Status, Created Date, Notes, Assigned Driver, Stock Order ID, Planned Date, Supplier Payments, Driver Payment). Link fields already exist: `Order Lines` → Stock Order Lines | ❌ |
+| 2026-03-13 | Stock Order Lines | **New table** — PO lines (Flower Name, Quantity Needed, Lot Size, Driver Status, Supplier, Cost Price, Sell Price, Notes, Quantity Found, Quantity Accepted, Write Off Qty, Eval Status, Price Needs Review, Alt Supplier, Alt Quantity Found, Alt Flower Name, Alt Cost, Farmer). Link fields already exist: `Stock Orders` → Stock Orders, `Stock Item` → Stock | ❌ |
 | 2026-03-17 | Product Config | New fields: `Description` (Long text), `Translations` (Long text/JSON) | ✅ Already created |
 | 2026-03-18 | Florist Hours | New field: `Rate Type` (Single line text) — stores rate type name per entry | ❌ |
 
@@ -195,8 +195,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 ## Go-Live Checklist
 
 - [ ] Create all new Airtable tables in production (Webhook Log, Marketing Spend, Stock Loss Log, App Settings, Product Config, Sync Log, Stock Orders, Stock Order Lines)
-- [ ] **Stock Orders table — add missing fields:** `Stock Order ID` (Single line text), `Planned Date` (Date), `Supplier Payments` (Number), `Driver Payment` (Number). Also create link field `Order Lines` → Stock Order Lines
-- [ ] **Stock Order Lines table — add missing fields:** `Farmer` (Single line text), `Alt Cost` (Number). Also create link fields: `Stock Orders` → Stock Orders, `Stock Item` → Stock
+- [ ] **Stock Orders table — add missing fields:** `Stock Order ID` (Single line text), `Planned Date` (Date), `Supplier Payments` (Number), `Driver Payment` (Number). Link fields already exist.
+- [ ] **Stock Order Lines table — add missing fields:** `Farmer` (Single line text), `Alt Cost` (Number). Link fields already exist.
 - [ ] Add new fields to existing tables (Stock: Lot Size, Farmer; Order Lines: Stock Deferred)
 - [ ] Apply all schema changes from "Schema Changes" table above to production base
 - [ ] Set all new env vars in Railway (per-driver PINs, Wix API, Telegram, PO table IDs)
