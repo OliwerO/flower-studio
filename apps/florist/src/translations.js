@@ -369,6 +369,7 @@ const en = {
   // View modes
   activeOrders:       'Active',
   completedOrders:    'Completed',
+  filterByDate:       'Filter by date',
 
   // Stock shortfall
   stockShortfall:     'Stock Shortfall',
@@ -781,6 +782,7 @@ const ru = {
   // View modes
   activeOrders:       'Активные',
   completedOrders:    'Завершённые',
+  filterByDate:       'По дате',
 
   // Stock shortfall
   stockShortfall:     'Нехватка на складе',

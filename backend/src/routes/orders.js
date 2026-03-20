@@ -28,7 +28,7 @@ const ORDERS_PATCH_ALLOWED = [
 // activeOnly: returns all non-terminal orders (excludes Delivered, Picked Up, Cancelled), sorted by Required By asc.
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming, activeOnly } = req.query;
+    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming, activeOnly, completedOnly } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -46,6 +46,13 @@ router.get('/', async (req, res, next) => {
     // Excludes Delivered, Picked Up, Cancelled. No date restriction.
     if (activeOnly) {
       filters.push(`AND({Status} != 'Delivered', {Status} != 'Picked Up', {Status} != 'Cancelled')`);
+    } else if (completedOnly) {
+      // Terminal orders only. If no date filter, show last 30 days.
+      filters.push(`OR({Status} = 'Delivered', {Status} = 'Picked Up', {Status} = 'Cancelled')`);
+      if (!forDate && !dateFrom) {
+        const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+        filters.push(`NOT(IS_BEFORE({Required By}, '${cutoff}'))`);
+      }
     } else if (upcoming) {
       // "upcoming" mode: today + future by delivery/pickup date.
       // Fetch broadly (Order Date >= 90 days ago) — post-enrichment filter
@@ -73,7 +80,9 @@ router.get('/', async (req, res, next) => {
     // activeOnly mode: sort by Required By ascending (earliest needed first)
     const sortFields = activeOnly
       ? [{ field: 'Required By', direction: 'asc' }]
-      : [{ field: 'Order Date', direction: 'desc' }];
+      : completedOnly
+        ? [{ field: 'Required By', direction: 'desc' }]
+        : [{ field: 'Order Date', direction: 'desc' }];
 
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula,

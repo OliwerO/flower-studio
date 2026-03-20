@@ -32,15 +32,18 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ### Backend
 - `GET /api/orders` — new `activeOnly` query param: returns all non-terminal orders (excludes Delivered/Picked Up/Cancelled), sorted by Required By ascending (earliest needed first)
+- `GET /api/orders` — new `completedOnly` query param: returns terminal orders (Delivered/Picked Up/Cancelled), last 30 days by default, sorted by Required By descending
 - `GET /api/stock/committed` — new endpoint: aggregates committed (deferred) quantities per stock item from future orders (Required By > today). Returns `{ stockId: { committed, orders } }`
 - `POST /api/stock/:id/write-off` — removed `Math.min` cap: write-offs can now bring stock negative (intentional, signals demand gap for future orders)
 
 ### Florist App
 - **Order list default view**: changed from date-filtered (today) to "Active" mode showing all non-terminal orders sorted by earliest needed. Calendar filter moved to "Completed" tab.
-- **View mode toggle**: "Active" (default) vs "Completed" tabs. Active shows non-terminal orders. Completed shows past orders with date picker.
+- **View mode toggle**: "Active" (default) vs "Completed" tabs. Active shows non-terminal orders. Completed shows last 30 days of terminal orders with optional date filter.
+- **Status workflow**: added Accepted and In Preparation statuses with proper transitions, action buttons, styles, and translations (EN/RU)
 - **Stock shortfall banner**: red warning banner on order list when any stock item has effective < 0 (current qty - committed from future orders)
 - **Order card shortage indicators**: individual cards show red badges for flowers that have stock shortfalls
-- **Stock panel**: shows committed quantities and effective stock per item. New "Shortfall" view filter with badge count. Orange background for items with shortfalls.
+- **Stock panel**: shows committed quantities and effective stock per item. New "Shortfall" view filter with badge count. Supplier/price moved from collapsed row to expandable section for cleaner UI.
+- **DatePicker**: calendar dropdown now uses portal rendering to prevent clipping by parent overflow containers
 - **Flowers needed**: now computed from loaded orders instead of separate API calls
 
 ---
