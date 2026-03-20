@@ -5,7 +5,7 @@
 //         (runs against the env configured in .env / .env.dev)
 
 import 'dotenv/config';
-import db from '../src/services/airtable.js';
+import * as db from '../src/services/airtable.js';
 import { TABLES } from '../src/config/airtable.js';
 
 const STUCK_STATUSES = ['In Preparation', 'Accepted'];
