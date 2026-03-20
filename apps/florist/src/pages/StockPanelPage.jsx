@@ -13,6 +13,7 @@ const SORT_OPTIONS = [
   { key: 'qty',      label: () => t.sortByQty },
   { key: 'sell',     label: () => t.sortBySell },
   { key: 'supplier', label: () => t.sortBySupplier },
+  { key: 'received', label: () => t.sortByReceived || 'Date' },
 ];
 
 const VIEW_OPTIONS = [
@@ -27,6 +28,7 @@ const SORT_FNS = {
   qty:      (a, b) => (Number(a['Current Quantity']) || 0) - (Number(b['Current Quantity']) || 0),
   sell:     (a, b) => (Number(a['Current Sell Price']) || 0) - (Number(b['Current Sell Price']) || 0),
   supplier: (a, b) => (a.Supplier || '').localeCompare(b.Supplier || ''),
+  received: (a, b) => (a['Last Restocked'] || '').localeCompare(b['Last Restocked'] || ''),
 };
 
 export default function StockPanelPage() {

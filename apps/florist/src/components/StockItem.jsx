@@ -42,14 +42,13 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff }) {
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-1.5">
-            <span className="text-[13px] font-medium text-ios-label truncate">{renderStockName(item['Display Name'], item['Last Restocked'])}</span>
-            <span className="text-[11px] text-ios-tertiary shrink-0">
-              <span className="font-semibold text-brand-700">{Number(item['Current Sell Price'] || 0).toFixed(0)}zł</span>
-              {item.Supplier && <span> · {item.Supplier}</span>}
-              {dead > 0 && <span className="text-ios-red"> · {dead}✗</span>}
-            </span>
+          <div className="flex items-start gap-1.5 flex-wrap">
+            <span className="text-[13px] font-medium text-ios-label break-words">{renderStockName(item['Display Name'], item['Last Restocked'])}</span>
           </div>
+          <span className="text-[11px] text-ios-tertiary">
+            <span className="font-semibold text-brand-700">{Number(item['Current Sell Price'] || 0).toFixed(0)}zł</span>
+            {item.Supplier && <span> · {item.Supplier}</span>}
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5 shrink-0">
