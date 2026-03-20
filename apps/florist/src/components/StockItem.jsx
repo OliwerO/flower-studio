@@ -119,12 +119,6 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
               {t.effectiveStock}: {effective}
             </span>
           </div>
-          {(item.Supplier || item['Current Sell Price']) && (
-            <div className="flex items-center gap-2 text-[10px] text-ios-tertiary mb-1">
-              {item['Current Sell Price'] > 0 && <span className="font-semibold text-brand-700">{Number(item['Current Sell Price']).toFixed(0)}zł</span>}
-              {item.Supplier && <span>{item.Supplier}</span>}
-            </div>
-          )}
           <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden">
             {(committedData?.orders || []).map((o, i) => (
               <div key={i} className="flex items-center justify-between px-2.5 py-1.5">
@@ -148,13 +142,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
 
       {/* Expanded: no commitments message */}
       {expanded && !editMode && committed === 0 && (
-        <div className="px-3 pb-2 ml-4 space-y-1">
-          {(item.Supplier || item['Current Sell Price']) && (
-            <div className="flex items-center gap-2 text-[10px] text-ios-tertiary">
-              {item['Current Sell Price'] > 0 && <span className="font-semibold text-brand-700">{Number(item['Current Sell Price']).toFixed(0)}zł</span>}
-              {item.Supplier && <span>{item.Supplier}</span>}
-            </div>
-          )}
+        <div className="px-3 pb-2 ml-4">
           <p className="text-[10px] text-ios-tertiary">{t.noCommitments}</p>
         </div>
       )}
