@@ -27,7 +27,7 @@ const ORDERS_PATCH_ALLOWED = [
 // dateFrom/dateTo: legacy Order Date range filter (AND logic).
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled } = req.query;
+    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -41,10 +41,14 @@ router.get('/', async (req, res, next) => {
     else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
     if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
 
-    // forDate: unified date filter — Order Date = date OR Required By = date.
-    // This ensures orders placed today AND orders due today both appear,
-    // matching what the dashboard shows. Uses DATESTR for timezone-safe matching.
-    if (forDate) {
+    // "upcoming" mode: today + future by delivery/pickup date.
+    // Fetch broadly (Order Date >= 90 days ago) — post-enrichment filter
+    // narrows to orders with delivery date >= today or no delivery date.
+    if (upcoming) {
+      const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+      filters.push(`NOT(IS_BEFORE({Order Date}, '${cutoff}'))`);
+    } else if (forDate) {
+      // forDate: unified date filter — Order Date = date OR Required By = date.
       const d = sanitizeFormulaValue(forDate);
       filters.push(`OR(DATESTR({Order Date}) = '${d}', DATESTR({Required By}) = '${d}')`);
     } else {
@@ -146,6 +150,18 @@ router.get('/', async (req, res, next) => {
       const sellTotal = order['Sell Total'] || totalByOrder[order.id] || 0;
       const delivFee = Number(order['Delivery Fee'] || 0);
       order['Final Price'] = order['Price Override'] || (sellTotal + delivFee) || 0;
+    }
+
+    // Post-enrichment filter for "upcoming": keep orders with delivery/pickup
+    // date >= today, OR orders with no delivery date at all (unscheduled).
+    if (upcoming) {
+      const today = new Date().toISOString().split('T')[0];
+      const result = orders.filter(o => {
+        const dd = o['Delivery Date'] || o['Required By'];
+        if (!dd) return true;                      // no date → show it
+        return dd >= today;                        // today or future
+      });
+      return res.json(result);
     }
 
     res.json(orders);
