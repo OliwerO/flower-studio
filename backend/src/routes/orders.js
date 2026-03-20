@@ -22,10 +22,12 @@ const ORDERS_PATCH_ALLOWED = [
   'Payment 1 Amount', 'Payment 1 Method', 'Payment 2 Amount', 'Payment 2 Method',
 ];
 
-// GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram
+// GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram&forDate=2025-01-15
+// forDate: unified date filter — returns orders placed on OR due on that date (OR logic).
+// dateFrom/dateTo: legacy Order Date range filter (AND logic).
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled } = req.query;
+    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -38,8 +40,22 @@ router.get('/', async (req, res, next) => {
     if (paymentMethod === 'Not recorded') filters.push(`OR({Payment Method} = BLANK(), {Payment Method} = '')`);
     else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
     if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
-    if (dateFrom)         filters.push(`NOT(IS_BEFORE({Order Date}, '${sanitizeFormulaValue(dateFrom)}'))`);
-    if (dateTo)           filters.push(`NOT(IS_AFTER({Order Date}, '${sanitizeFormulaValue(dateTo)}'))`);
+
+    // forDate: unified date filter — Order Date = date OR Required By = date.
+    // This ensures orders placed today AND orders due today both appear,
+    // matching what the dashboard shows. Uses DATESTR for timezone-safe matching.
+    if (forDate) {
+      const d = sanitizeFormulaValue(forDate);
+      filters.push(`OR(DATESTR({Order Date}) = '${d}', DATESTR({Required By}) = '${d}')`);
+    } else {
+      // Legacy date range filters on Order Date
+      if (dateFrom && dateTo && dateFrom === dateTo) {
+        filters.push(`DATESTR({Order Date}) = '${sanitizeFormulaValue(dateFrom)}'`);
+      } else {
+        if (dateFrom) filters.push(`NOT(IS_BEFORE({Order Date}, '${sanitizeFormulaValue(dateFrom)}'))`);
+        if (dateTo)   filters.push(`NOT(IS_AFTER({Order Date}, '${sanitizeFormulaValue(dateTo)}'))`);
+      }
+    }
 
     const filterByFormula = filters.length
       ? `AND(${filters.join(', ')})`
