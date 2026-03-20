@@ -85,7 +85,9 @@ export default function OrderListPage() {
     try {
       const params = {};
       if (status) params.status = status;
-      if (date)   { params.dateFrom = date; params.dateTo = date; }
+      // forDate: unified filter — shows orders placed on OR due on this date.
+      // Matches what the dashboard shows (created today + fulfill today).
+      if (date) params.forDate = date;
       const res = await client.get('/orders', { params });
       // Merge: update existing orders in place, add new ones, remove deleted.
       // This preserves React state (expanded cards, scroll position).
@@ -135,10 +137,10 @@ export default function OrderListPage() {
 
     async function fetchFlowerNeeds() {
       try {
-        // Fetch today's and tomorrow's non-cancelled orders
+        // Fetch today's and tomorrow's non-cancelled orders (unified date filter)
         const [todayRes, tmrwRes] = await Promise.all([
-          client.get('/orders', { params: { dateFrom: today, dateTo: today } }),
-          client.get('/orders', { params: { dateFrom: tomorrowISO, dateTo: tomorrowISO } }),
+          client.get('/orders', { params: { forDate: today } }),
+          client.get('/orders', { params: { forDate: tomorrowISO } }),
         ]);
 
         function aggregateFlowers(orders) {

@@ -57,6 +57,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-05 | `backend/src/routes/orders.js` | Status transition validation + stock rollback on cancel | Keep |
 | 2026-03-05 | `apps/florist/src/components/OrderDetailSheet.jsx` | Only show allowed next statuses, added "Picked Up" | Keep |
 | 2026-03-05 | `backend/src/routes/orders.js` | Fixed field name `Assigned Delivery` → `Deliveries` (matches actual Airtable field) | Keep — same field name in production |
+| 2026-03-20 | `backend/src/routes/orders.js` | Added `forDate` query param: unified OR filter on Order Date + Required By. Uses DATESTR() for timezone-safe matching. | Keep — fixes cross-app data consistency |
+| 2026-03-20 | `apps/florist/src/pages/OrderListPage.jsx` | Florist now uses `forDate` to show orders placed on OR due on selected date, matching dashboard view | Keep |
 
 ---
 
