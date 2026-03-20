@@ -205,140 +205,159 @@ export default function OrderDetailPage() {
 
                 {editingBouquet ? (() => {
                   const editSellTotal = editLines.reduce((s, l) => s + Number(l.sellPricePerUnit || 0) * Number(l.quantity || 0), 0);
+                  const budgetNum = Number(editBudget) || 0;
+                  const delta = budgetNum ? editSellTotal - budgetNum : 0;
+                  const overBudget = delta > 0;
+                  const underBudget = delta < 0;
+
+                  // Filter stock catalog for the tap-to-add list
+                  const catalogItems = stockItems.filter(s => {
+                    const qty = Number(s['Current Quantity']) || 0;
+                    if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                    if (flowerSearch) {
+                      const name = (s['Display Name'] || '').toLowerCase();
+                      return name.includes(flowerSearch.toLowerCase());
+                    }
+                    return qty > 0; // default: show only in-stock
+                  });
+
+                  function addFromCatalog(s) {
+                    const existing = editLines.findIndex(l => l.stockItemId === s.id);
+                    if (existing >= 0) {
+                      setEditLines(p => p.map((l, i) => i === existing ? { ...l, quantity: (Number(l.quantity) || 0) + 1 } : l));
+                    } else {
+                      setEditLines(p => [...p, {
+                        id: null, stockItemId: s.id, flowerName: s['Display Name'],
+                        quantity: 1, _originalQty: 0,
+                        costPricePerUnit: Number(s['Current Cost Price']) || 0,
+                        sellPricePerUnit: Number(s['Current Sell Price']) || 0,
+                      }]);
+                    }
+                  }
 
                   return (
-                  <div className="ios-card px-4 py-3 space-y-2">
-                    {/* Edit lines with stepper + pricing */}
-                    {editLines.map((line, idx) => {
-                      const lineSell = Number(line.sellPricePerUnit || 0) * Number(line.quantity || 0);
-                      const { name: parsedName, batch } = parseBatchName(line.flowerName);
-                      return (
-                      <div key={line.id || idx} className="bg-gray-50 rounded-lg px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 min-w-0">
-                            <span className="text-sm font-medium text-ios-label truncate block">
-                              {parsedName}
-                              {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
-                            </span>
-                            <span className="text-xs text-ios-tertiary">
-                              {Number(line.sellPricePerUnit || 0).toFixed(0)} zł × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            <button
-                              onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: Math.max(1, (Number(l.quantity) || 1) - 1) } : l))}
-                              className="w-7 h-7 rounded-full bg-white text-ios-secondary text-lg font-bold flex items-center justify-center active-scale"
-                            >−</button>
-                            <input type="number" min="1" value={line.quantity}
-                              onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
-                              onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
-                              onFocus={e => e.target.select()}
-                              className="w-10 text-center text-sm font-bold border border-gray-200 rounded-lg py-1"
-                            />
-                            <button
-                              onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: (Number(l.quantity) || 0) + 1 } : l))}
-                              className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold flex items-center justify-center active-scale"
-                            >+</button>
-                          </div>
-                          <button onClick={() => setRemoveDialog(idx)} className="text-red-400 active:text-red-600 text-sm px-1">✕</button>
-                        </div>
+                  <div className="space-y-3">
+
+                    {/* Budget + running sell total — sticky summary */}
+                    <div className="ios-card px-4 py-3 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
+                        <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} zł</span>
                       </div>
-                      );
-                    })}
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-ios-tertiary shrink-0">{t.budget}:</span>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          value={editBudget}
+                          onChange={e => setEditBudget(e.target.value)}
+                          placeholder={editSellTotal > 0 ? String(Math.round(editSellTotal)) : '0'}
+                          className="flex-1 text-sm font-medium border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
+                        />
+                        <span className="text-xs text-ios-tertiary shrink-0">zł</span>
+                        {budgetNum > 0 && (
+                          <span className={`text-xs font-bold shrink-0 ${overBudget ? 'text-red-500' : underBudget ? 'text-green-600' : 'text-ios-tertiary'}`}>
+                            {overBudget ? '+' : ''}{delta.toFixed(0)} zł
+                          </span>
+                        )}
+                      </div>
+                    </div>
 
-                    {/* Budget + running sell total */}
-                    {editLines.length > 0 && (() => {
-                      const budgetNum = Number(editBudget) || 0;
-                      const delta = budgetNum ? editSellTotal - budgetNum : 0;
-                      const overBudget = delta > 0;
-                      const underBudget = delta < 0;
-                      return (
-                      <div className="bg-white rounded-xl border border-gray-100 px-3 py-2 space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
-                          <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} zł</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs text-ios-tertiary shrink-0">{t.budget}:</span>
-                          <input
-                            type="number"
-                            inputMode="numeric"
-                            value={editBudget}
-                            onChange={e => setEditBudget(e.target.value)}
-                            placeholder={editSellTotal > 0 ? String(Math.round(editSellTotal)) : '0'}
-                            className="flex-1 text-sm font-medium border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
-                          />
-                          <span className="text-xs text-ios-tertiary shrink-0">zł</span>
-                          {budgetNum > 0 && (
-                            <span className={`text-xs font-bold shrink-0 ${overBudget ? 'text-red-500' : underBudget ? 'text-green-600' : 'text-ios-tertiary'}`}>
-                              {overBudget ? '+' : ''}{delta.toFixed(0)} zł
-                            </span>
-                          )}
-                        </div>
-                      </div>);
-                    })()}
-
-                    {/* Add flower picker — shows stock with sell price and quantity */}
-                    {!addingFlower ? (
-                      <button onClick={() => setAddingFlower(true)}
-                        className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg active:bg-brand-100 active-scale"
-                      >+ {t.addFlower}</button>
-                    ) : (
-                      <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
-                        <input type="text" value={flowerSearch}
+                    {/* Stock catalog — tap to add, like Step2Bouquet */}
+                    <div>
+                      <div className="ios-card flex items-center px-4 gap-3 mb-2">
+                        <span className="text-ios-tertiary text-sm">🔍</span>
+                        <input
+                          type="text"
+                          value={flowerSearch}
                           onChange={e => setFlowerSearch(e.target.value)}
                           placeholder={t.flowerSearch}
-                          className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
-                          autoFocus />
-                        {/* Column headers */}
-                        <div className="flex items-center text-[10px] text-ios-tertiary uppercase tracking-wide px-2 pt-1">
-                          <span className="flex-1">{t.flowers}</span>
-                          <span className="w-14 text-right">{t.sellPrice}</span>
-                          <span className="w-12 text-right">{t.quantity}</span>
+                          className="flex-1 py-2.5 text-base bg-transparent outline-none placeholder-ios-tertiary/50"
+                        />
+                        {flowerSearch && (
+                          <button onClick={() => setFlowerSearch('')} className="text-ios-tertiary text-sm">✕</button>
+                        )}
+                      </div>
+                      <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-56 overflow-y-auto">
+                        {catalogItems.slice(0, 30).map(s => {
+                          const qty = Number(s['Current Quantity']) || 0;
+                          const sell = Number(s['Current Sell Price']) || 0;
+                          const inCart = editLines.find(l => l.stockItemId === s.id);
+                          const low = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
+                          const out = qty <= 0;
+                          return (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => addFromCatalog(s)}
+                              className={`w-full flex items-center px-4 py-2.5 gap-3 text-left transition-colors active-scale
+                                          ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
+                            >
+                              <div className="flex-1 min-w-0">
+                                <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
+                                  {s['Display Name']}
+                                </div>
+                                <div className="text-xs text-ios-tertiary">
+                                  <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
+                                  <span> · {qty} pcs</span>
+                                  {low && !out && <span className="text-ios-orange"> · low</span>}
+                                  {out && <span className="text-amber-600 font-medium"> · out</span>}
+                                </div>
+                              </div>
+                              {inCart && (
+                                <span className="min-w-[24px] h-[24px] px-1.5 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">
+                                  {inCart.quantity}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                        {catalogItems.length === 0 && (
+                          <p className="text-ios-tertiary text-sm text-center py-6">{t.noStockFound || 'No items found'}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Cart — current bouquet lines with steppers */}
+                    {editLines.length > 0 && (
+                      <div>
+                        <p className="ios-label">{t.bouquetContents || 'Bouquet'}</p>
+                        <div className="ios-card overflow-hidden divide-y divide-gray-100">
+                          {editLines.map((line, idx) => {
+                            const lineSell = Number(line.sellPricePerUnit || 0) * Number(line.quantity || 0);
+                            const { name: parsedName, batch } = parseBatchName(line.flowerName);
+                            return (
+                            <div key={line.id || idx} className="flex items-center gap-2 px-4 py-2.5">
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-medium text-ios-label truncate block">
+                                  {parsedName}
+                                  {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
+                                </span>
+                                <span className="text-xs text-ios-tertiary">
+                                  {Number(line.sellPricePerUnit || 0).toFixed(0)} zł × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <button
+                                  onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: Math.max(1, (Number(l.quantity) || 1) - 1) } : l))}
+                                  className="w-7 h-7 rounded-full bg-gray-100 text-ios-secondary text-lg font-bold flex items-center justify-center active-scale"
+                                >−</button>
+                                <input type="number" min="1" value={line.quantity}
+                                  onChange={e => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
+                                  onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
+                                  onFocus={e => e.target.select()}
+                                  className="w-9 text-center text-sm font-bold border border-gray-200 rounded-xl py-1 bg-white outline-none"
+                                />
+                                <button
+                                  onClick={() => setEditLines(prev => prev.map((l, i) => i === idx ? { ...l, quantity: (Number(l.quantity) || 0) + 1 } : l))}
+                                  className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold flex items-center justify-center active-scale"
+                                >+</button>
+                              </div>
+                              <button onClick={() => setRemoveDialog(idx)} className="text-red-400 active:text-red-600 text-sm px-1">✕</button>
+                            </div>
+                            );
+                          })}
                         </div>
-                        <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
-                          {stockItems
-                            .filter(s => {
-                              const name = (s['Display Name'] || '').toLowerCase();
-                              const qty = Number(s['Current Quantity']) || 0;
-                              if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
-                              if (editLines.some(l => l.stockItemId === s.id)) return false;
-                              if (flowerSearch) return name.includes(flowerSearch.toLowerCase());
-                              return true;
-                            })
-                            .slice(0, 20)
-                            .map(s => {
-                              const qty = Number(s['Current Quantity']) || 0;
-                              const cost = Number(s['Current Cost Price']) || 0;
-                              const sell = Number(s['Current Sell Price']) || 0;
-                              const { name: flowerName, batch } = parseBatchName(s['Display Name']);
-                              return (
-                                <button key={s.id} type="button"
-                                  onClick={() => {
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: s.id, flowerName: s['Display Name'],
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: cost,
-                                      sellPricePerUnit: sell,
-                                    }]);
-                                    setFlowerSearch('');
-                                  }}
-                                  className={`w-full flex items-center px-2 py-1.5 text-sm active:bg-gray-50 rounded ${
-                                    qty <= 0 ? 'bg-amber-50/50' : ''
-                                  }`}
-                                >
-                                  <span className="flex-1 font-medium text-left truncate">
-                                    {flowerName}
-                                    {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
-                                  </span>
-                                  <span className="w-14 text-right text-xs text-ios-secondary">{sell > 0 ? `${sell.toFixed(0)}` : '—'}</span>
-                                  <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
-                                </button>
-                              );
-                            })}
-                        </div>
-                        <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
-                          className="text-xs text-ios-tertiary">{t.cancel}</button>
                       </div>
                     )}
 
