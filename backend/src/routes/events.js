@@ -4,6 +4,7 @@
 
 import { Router } from 'express';
 import { addClient, removeClient } from '../services/notifications.js';
+import { safeEqual } from '../utils/auth.js';
 
 const router = Router();
 
@@ -20,7 +21,7 @@ const DRIVER_PINS = Object.entries(process.env)
 function isValidPin(pin) {
   if (!pin) return false;
   const allPins = [...Object.values(PINS), ...DRIVER_PINS].filter(Boolean);
-  return allPins.includes(pin);
+  return allPins.some(p => safeEqual(p, pin));
 }
 
 router.get('/', (req, res) => {

@@ -5,16 +5,8 @@
 // Drivers get individual PINs: PIN_DRIVER_TIMUR, PIN_DRIVER_NIKITA, etc.
 // The badge reader now knows *which* driver scanned in (req.driverName).
 
-import crypto from 'node:crypto';
 import { getBackupDriverName } from '../services/driverState.js';
-
-function safeEqual(a, b) {
-  if (typeof a !== 'string' || typeof b !== 'string') return false;
-  const bufA = Buffer.from(a);
-  const bufB = Buffer.from(b);
-  if (bufA.length !== bufB.length) return false;
-  return crypto.timingSafeEqual(bufA, bufB);
-}
+import { safeEqual } from '../utils/auth.js';
 
 const PINS = {
   owner:   process.env.PIN_OWNER,

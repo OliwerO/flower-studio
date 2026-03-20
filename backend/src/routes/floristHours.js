@@ -6,23 +6,14 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { pickAllowed } from '../utils/fields.js';
 import { getConfig } from './settings.js';
 
 const router = Router();
-// GET + POST open to both owner and florist (orders resource covers both roles).
-// PATCH + DELETE restricted to owner (admin resource) — see per-route guards below.
 
 const PATCH_ALLOWED = [
   'Name', 'Date', 'Hours', 'Hourly Rate', 'Rate Type', 'Bonus', 'Deduction', 'Notes', 'Delivery Count',
 ];
-
-function pickAllowed(body, allowedFields) {
-  const filtered = {};
-  for (const key of allowedFields) {
-    if (key in body) filtered[key] = body[key];
-  }
-  return filtered;
-}
 
 // GET /api/florist-hours?month=2026-03&name=Anya
 router.get('/', authorize('orders'), async (req, res, next) => {

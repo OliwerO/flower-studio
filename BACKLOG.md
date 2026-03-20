@@ -171,10 +171,10 @@ Keeping Airtable as the database. Ordered by impact × effort — do the cheap w
 
 ### Wave 1 — Security & Crash Prevention (do first)
 
-- [ ] **Fix SSE timing-unsafe PIN check** — `events.js` line 23 uses `allPins.includes(pin)` instead of `timingSafeEqual`. Extract shared `safeEqual()` to `backend/src/utils/auth.js`, use it in `middleware/auth.js`, `routes/auth.js`, and `routes/events.js`
-- [ ] **Add `unhandledRejection` handler** — `backend/src/index.js` currently handles SIGTERM but not unhandled promise rejections. Add handler to log + exit cleanly
-- [ ] **Add React Error Boundaries** — one per app wrapping the root. Catches component crashes, shows "something went wrong" instead of white screen. 3 small files
-- [ ] **Fix dashboard `Promise.all` inconsistency** — `routes/dashboard.js` has partial `.catch(() => [])` coverage. Some queries missing catch = one failure kills entire dashboard load
+- [x] **Fix SSE timing-unsafe PIN check** — extracted `safeEqual()` to `backend/src/utils/auth.js`, used in `middleware/auth.js`, `routes/auth.js`, and `routes/events.js`
+- [x] **Add `unhandledRejection` handler** — added both `unhandledRejection` and `uncaughtException` handlers to `index.js`
+- [x] **Add React Error Boundaries** — shared `ErrorBoundary` component wrapping all 3 app roots
+- [x] **Fix dashboard `Promise.all` inconsistency** — added `.catch(() => [])` to all queries in all 4 `Promise.all` blocks
 
 ### Wave 2 — Extract Shared Packages (biggest maintainability win)
 
@@ -194,10 +194,10 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 
 ### Wave 3 — Backend Consolidation
 
-- [ ] **Extract `pickAllowed()` to `backend/src/utils/fields.js`** — currently duplicated in 5 route files (stock, deliveries, orders, floristHours, customers). Same 6-line function × 5
-- [ ] **Extract `safeEqual()` to `backend/src/utils/auth.js`** — duplicated in `middleware/auth.js` + `routes/auth.js`. (Partially done if Wave 1 SSE fix is completed first)
-- [ ] **Validate env vars on startup** — add required env var check in `index.js` before server starts. Currently no validation = silent failures when vars are missing
-- [ ] **Batch OR formulas for large queries** — `orders.js` builds OR formulas with unbounded ID lists. Airtable has ~16KB formula limit. Add batching like `analytics.js` already does (lines 93-107)
+- [x] **Extract `pickAllowed()` to `backend/src/utils/fields.js`** — replaced in all 5 route files (stock, deliveries, orders, floristHours, customers)
+- [x] **Extract `safeEqual()` to `backend/src/utils/auth.js`** — replaced in middleware/auth.js and routes/auth.js
+- [x] **Validate env vars on startup** — checks AIRTABLE_API_KEY, AIRTABLE_BASE_ID, PIN_OWNER, PIN_FLORIST on boot
+- [x] **Batch OR formulas for large queries** — created `listByIds()` utility in `backend/src/utils/batchQuery.js`, replaced 4 unbounded OR formulas in orders.js
 
 ### Wave 4 — Component Decomposition (large components)
 
@@ -226,9 +226,9 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 
 | Wave | Items | Status | Impact |
 |------|-------|--------|--------|
-| 1 — Security & Crashes | 4 | Not started | Prevents data loss + exploits |
+| 1 — Security & Crashes | 4 | **Complete** (4/4) | Prevents data loss + exploits |
 | 2 — Shared Packages | 11 | In progress (7/11) | Halves maintenance burden |
-| 3 — Backend Consolidation | 4 | Not started | Cleaner, safer backend |
+| 3 — Backend Consolidation | 4 | **Complete** (4/4) | Cleaner, safer backend |
 | 4 — Component Decomposition | 4 | Not started | Enables testing + reuse |
 | 5 — Testing Foundation | 5 | Not started | Catches bugs before users |
 | 6 — Reliability | 5 | Not started | Production confidence |

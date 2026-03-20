@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { pickAllowed } from '../utils/fields.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -12,14 +13,6 @@ const STOCK_PATCH_ALLOWED = [
   'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
   'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size', 'Farmer',
 ];
-
-function pickAllowed(body, allowedFields) {
-  const filtered = {};
-  for (const key of allowedFields) {
-    if (key in body) filtered[key] = body[key];
-  }
-  return filtered;
-}
 
 // GET /api/stock?category=Roses&includeEmpty=true
 // By default hides items with qty=0 (old depleted batches). Pass includeEmpty=true to see all.
