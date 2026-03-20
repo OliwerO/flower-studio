@@ -25,9 +25,10 @@ const ORDERS_PATCH_ALLOWED = [
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram&forDate=2025-01-15
 // forDate: unified date filter — returns orders placed on OR due on that date (OR logic).
 // dateFrom/dateTo: legacy Order Date range filter (AND logic).
+// activeOnly: returns all non-terminal orders (excludes Delivered, Picked Up, Cancelled), sorted by Required By asc.
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming } = req.query;
+    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming, activeOnly, completedOnly } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -41,10 +42,21 @@ router.get('/', async (req, res, next) => {
     else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
     if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
 
-    // "upcoming" mode: today + future by delivery/pickup date.
-    // Fetch broadly (Order Date >= 90 days ago) — post-enrichment filter
-    // narrows to orders with delivery date >= today or no delivery date.
-    if (upcoming) {
+    // "activeOnly" mode: all non-terminal orders — florist's default view.
+    // Excludes Delivered, Picked Up, Cancelled. No date restriction.
+    if (activeOnly) {
+      filters.push(`AND({Status} != 'Delivered', {Status} != 'Picked Up', {Status} != 'Cancelled')`);
+    } else if (completedOnly) {
+      // Terminal orders only. If no date filter, show last 30 days.
+      filters.push(`OR({Status} = 'Delivered', {Status} = 'Picked Up', {Status} = 'Cancelled')`);
+      if (!forDate && !dateFrom) {
+        const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+        filters.push(`NOT(IS_BEFORE({Required By}, '${cutoff}'))`);
+      }
+    } else if (upcoming) {
+      // "upcoming" mode: today + future by delivery/pickup date.
+      // Fetch broadly (Order Date >= 90 days ago) — post-enrichment filter
+      // narrows to orders with delivery date >= today or no delivery date.
       const cutoff = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
       filters.push(`NOT(IS_BEFORE({Order Date}, '${cutoff}'))`);
     } else if (forDate) {
@@ -65,9 +77,16 @@ router.get('/', async (req, res, next) => {
       ? `AND(${filters.join(', ')})`
       : '';
 
+    // activeOnly mode: sort by Required By ascending (earliest needed first)
+    const sortFields = activeOnly
+      ? [{ field: 'Required By', direction: 'asc' }]
+      : completedOnly
+        ? [{ field: 'Required By', direction: 'desc' }]
+        : [{ field: 'Order Date', direction: 'desc' }];
+
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula,
-      sort: [{ field: 'Order Date', direction: 'desc' }],
+      sort: sortFields,
       maxRecords: 200,
     });
 
@@ -419,12 +438,12 @@ router.post('/', async (req, res, next) => {
 // PUT /api/orders/:id/lines — edit bouquet composition after order creation.
 // Handles add/remove/update lines with stock adjustments.
 // Body: { lines: [...], removedLines: [{ lineId, stockItemId, quantity, action: 'return'|'writeoff', reason? }] }
-// Editable at statuses: New, Accepted, In Preparation, Ready.
-// If owner edits while Ready → auto-revert to In Preparation.
+// Editable at statuses: New, Ready.
+// If owner edits while Ready → auto-revert to New.
 router.put('/:id/lines', async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.ORDERS, req.params.id);
-    const editableStatuses = ['New', 'Accepted', 'In Preparation', 'Ready'];
+    const editableStatuses = ['New', 'Ready'];
     if (!editableStatuses.includes(order.Status)) {
       return res.status(400).json({ error: `Cannot edit bouquet in "${order.Status}" status.` });
     }
@@ -512,7 +531,7 @@ router.put('/:id/lines', async (req, res, next) => {
 
     // 3. Auto-revert status if owner edits while Ready
     if (isOwner && order.Status === 'Ready') {
-      await db.update(TABLES.ORDERS, req.params.id, { Status: 'In Preparation' });
+      await db.update(TABLES.ORDERS, req.params.id, { Status: 'New' });
     }
 
     res.json({ updated: true, createdLines });
@@ -521,13 +540,10 @@ router.put('/:id/lines', async (req, res, next) => {
   }
 });
 
-// Allowed status transitions — like a production routing sheet.
-// Simplified: removed "In Progress" as a required step — unnecessary click
-// without value added. Orders flow: New → Ready → Delivered/Picked Up.
+// Allowed status transitions — orders flow: New → Ready → Delivered/Picked Up.
 // "In Progress" kept as legacy exit only (for orders already in that state).
 const ALLOWED_TRANSITIONS = {
-  'New':              ['Accepted', 'Ready', 'Cancelled'],
-  'Accepted':         ['Ready', 'Cancelled'],
+  'New':              ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],          // legacy — still allow exit
   'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
   'Out for Delivery': ['Delivered', 'Cancelled'],       // driver is en route
@@ -561,10 +577,8 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Record prep timestamps for cycle-time analysis.
-    // "Accepted" = work starts (like punching in at a workstation).
     // "Ready" = work complete (like scanning finished goods).
     const timestamps = {};
-    if (newStatus === 'Accepted') timestamps['Prep Started At'] = new Date().toISOString();
     if (newStatus === 'Ready') timestamps['Prep Ready At'] = new Date().toISOString();
 
     const order = await db.update(TABLES.ORDERS, req.params.id, {

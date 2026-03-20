@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
+import { listByIds } from '../utils/batchQuery.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -87,6 +88,79 @@ router.get('/velocity', async (req, res, next) => {
     }
 
     res.json(velocity);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stock/committed — aggregate committed (deferred) quantities from future orders per stock item.
+// Only counts lines from orders where Required By > today (future orders use deferred stock — no deduction at creation).
+// Returns { stockId: { committed: N, orders: [{ orderId, appOrderId, customerName, requiredBy, qty }] } }
+// Used to show "effective stock" = Current Quantity - committed demand from future orders.
+router.get('/committed', async (req, res, next) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+    // Fetch non-terminal orders with Required By in the future.
+    // Future orders use deferred stock (not deducted from inventory at creation time).
+    // Today's orders use non-deferred stock (already deducted), so they're excluded.
+    const orders = await db.list(TABLES.ORDERS, {
+      filterByFormula: `AND({Status} != 'Delivered', {Status} != 'Picked Up', {Status} != 'Cancelled', IS_AFTER({Required By}, '${today}'))`,
+      fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
+      maxRecords: 500,
+    });
+
+    // Bulk-fetch all order lines
+    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
+    const allLines = await listByIds(TABLES.ORDER_LINES, allLineIds, {
+      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
+      maxRecords: 2000,
+    });
+
+    // Bulk-fetch customers for display names
+    const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+    const allCustomers = await listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
+      fields: ['Name', 'Nickname'],
+    });
+    const customerMap = {};
+    for (const c of allCustomers) customerMap[c.id] = c;
+
+    // Index orders by ID for enrichment
+    const orderMap = {};
+    for (const o of orders) {
+      const custId = o.Customer?.[0];
+      orderMap[o.id] = {
+        appOrderId: o['App Order ID'] || '',
+        customerName: customerMap[custId]?.Name || customerMap[custId]?.Nickname || '',
+        requiredBy: o['Required By'] || null,
+        status: o.Status || 'New',
+      };
+    }
+
+    // Aggregate committed quantities per stock item
+    const committed = {};
+    for (const line of allLines) {
+      const stockId = line['Stock Item']?.[0];
+      if (!stockId) continue;
+      const qty = Number(line.Quantity || 0);
+      if (qty <= 0) continue;
+
+      if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
+      committed[stockId].committed += qty;
+
+      const orderId = line.Order?.[0];
+      const orderInfo = orderId ? orderMap[orderId] : null;
+      if (orderInfo) {
+        committed[stockId].orders.push({
+          orderId,
+          appOrderId: orderInfo.appOrderId,
+          customerName: orderInfo.customerName,
+          requiredBy: orderInfo.requiredBy,
+          qty,
+        });
+      }
+    }
+
+    res.json(committed);
   } catch (err) {
     next(err);
   }
@@ -193,8 +267,9 @@ router.post('/:id/write-off', async (req, res, next) => {
     const currentQty = item['Current Quantity'] || 0;
     const currentDead = item['Dead/Unsold Stems'] || 0;
 
-    // Can't write off more than available
-    const actualWriteOff = Math.min(quantity, currentQty);
+    // Allow full write-off even if it results in negative stock.
+    // Negative stock is intentional — signals demand gap for future orders.
+    const actualWriteOff = quantity;
 
     // Build update fields
     const fields = {

@@ -367,10 +367,20 @@ const en = {
   useThis:            'Use this',
   otherSupplier:      'Other',
 
+  // View modes
+  activeOrders:       'Active',
+  completedOrders:    'Completed',
+  filterByDate:       'Filter by date',
+
+  // Stock shortfall
+  stockShortfall:     'Stock Shortfall',
+  committed:          'Committed',
+  effectiveStock:     'Effective',
+  shortage:           'Shortage',
+  viewShortfall:      'Shortfall',
+  noCommitments:      'No orders using this flower',
+
   // Block 5 — florist UX
-  flowersNeeded:      'Flowers needed',
-  flowersToday:       'Today',
-  flowersTomorrow:    'Tomorrow',
   assignedDriver:     'Driver',
   noDriver:           'Not assigned',
   markReady:          'Mark Ready',
@@ -771,10 +781,20 @@ const ru = {
   useThis:            'Использовать',
   otherSupplier:      'Другой',
 
+  // View modes
+  activeOrders:       'Активные',
+  completedOrders:    'Завершённые',
+  filterByDate:       'По дате',
+
+  // Stock shortfall
+  stockShortfall:     'Нехватка на складе',
+  committed:          'Забронировано',
+  effectiveStock:     'Остаток',
+  shortage:           'Нехватка',
+  viewShortfall:      'Нехватка',
+  noCommitments:      'Нет заказов с этим цветком',
+
   // Block 5 — florist UX
-  flowersNeeded:      'Нужные цветы',
-  flowersToday:       'Сегодня',
-  flowersTomorrow:    'Завтра',
   assignedDriver:     'Водитель',
   noDriver:           'Не назначен',
   markReady:          'Готов',

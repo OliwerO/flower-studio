@@ -75,7 +75,7 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated, isOwner }) {
+export default function OrderCard({ order, onOrderUpdated, isOwner, stockShortfalls = {} }) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
@@ -228,6 +228,29 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
       {order['Bouquet Summary'] && (
         <p className="text-xs text-brand-600/70 mt-1 line-clamp-1">🌸 {order['Bouquet Summary']}</p>
       )}
+      {/* Stock shortage indicator — show flowers that are short for this order */}
+      {order['Bouquet Summary'] && (() => {
+        const parts = (order['Bouquet Summary'] || '').split(',').map(s => s.trim()).filter(Boolean);
+        const shortItems = [];
+        for (const part of parts) {
+          const match = part.match(/^(\d+)\s*[×x]\s*(.+)$/i);
+          if (!match) continue;
+          const name = match[2].trim();
+          // Find shortfall by matching flower name
+          const shortfall = Object.values(stockShortfalls).find(s => s.name === name && s.effective < 0);
+          if (shortfall) shortItems.push({ name, shortage: Math.abs(shortfall.effective) });
+        }
+        if (shortItems.length === 0) return null;
+        return (
+          <div className="mt-1 flex flex-wrap gap-1">
+            {shortItems.map((item, i) => (
+              <span key={i} className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-red-50 text-red-600 border border-red-200">
+                {item.name}: -{item.shortage}
+              </span>
+            ))}
+          </div>
+        );
+      })()}
       {/* Show delivery/pickup date in overview — more actionable than order date */}
       {(order['Delivery Date'] || order['Required By']) && (
         <p className="text-sm text-ios-label font-semibold mt-1">
@@ -456,7 +479,11 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                     <div className="py-1">
                       <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
                       <div className="flex flex-wrap gap-1.5">
-                        {timeSlots.map(slot => (
+                        {[...timeSlots].sort((a, b) => {
+                          const [ah, am] = a.split('-')[0].split(':').map(Number);
+                          const [bh, bm] = b.split('-')[0].split(':').map(Number);
+                          return (ah * 60 + am) - (bh * 60 + bm);
+                        }).map(slot => (
                           <button
                             key={slot}
                             onClick={() => patchDelivery({

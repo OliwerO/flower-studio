@@ -17,10 +17,11 @@ const SORT_OPTIONS = [
 ];
 
 const VIEW_OPTIONS = [
-  { key: 'all',      label: () => t.viewAll },
-  { key: 'negative', label: () => t.viewNegative },
-  { key: 'low',      label: () => t.viewLow },
-  { key: 'slow',     label: () => t.viewSlowMovers },
+  { key: 'all',       label: () => t.viewAll },
+  { key: 'shortfall', label: () => t.viewShortfall },
+  { key: 'negative',  label: () => t.viewNegative },
+  { key: 'low',       label: () => t.viewLow },
+  { key: 'slow',      label: () => t.viewSlowMovers },
 ];
 
 const SORT_FNS = {
@@ -40,6 +41,7 @@ export default function StockPanelPage() {
   const [showReceive, setShowReceive] = useState(false);
   const [editMode, setEditMode]       = useState(false);
   const [showHelp, setShowHelp]       = useState(false);
+  const [committedMap, setCommittedMap] = useState({}); // stockId → { committed, orders }
 
   // Search, sort, view
   const [search, setSearch]   = useState('');
@@ -50,8 +52,12 @@ export default function StockPanelPage() {
   async function fetchStock() {
     setLoading(true);
     try {
-      const res = await client.get('/stock');
-      setStock(res.data);
+      const [stockRes, committedRes] = await Promise.all([
+        client.get('/stock'),
+        client.get('/stock/committed'),
+      ]);
+      setStock(stockRes.data);
+      setCommittedMap(committedRes.data);
     } catch { showToast(t.adjustError, 'error'); }
     finally   { setLoading(false); }
   }
@@ -95,7 +101,14 @@ export default function StockPanelPage() {
     let items = stock;
 
     // View filter
-    if (view === 'negative') {
+    if (view === 'shortfall') {
+      items = items.filter(s => {
+        const cd = committedMap[s.id];
+        if (!cd) return false;
+        const qty = Number(s['Current Quantity'] || 0);
+        return qty - cd.committed < 0;
+      });
+    } else if (view === 'negative') {
       items = items.filter(s => (Number(s['Current Quantity']) || 0) < 0);
     } else if (view === 'low') {
       items = items.filter(s => {
@@ -135,9 +148,14 @@ export default function StockPanelPage() {
     });
 
     return sorted;
-  }, [stock, search, sortKey, sortAsc, view]);
+  }, [stock, search, sortKey, sortAsc, view, committedMap]);
 
   // Counts for view badges
+  const shortfallCount = useMemo(() => stock.filter(s => {
+    const cd = committedMap[s.id];
+    if (!cd) return false;
+    return (Number(s['Current Quantity'] || 0) - cd.committed) < 0;
+  }).length, [stock, committedMap]);
   const negativeCount = useMemo(() => stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length, [stock]);
   const lowCount = useMemo(() => stock.filter(s => {
     const qty = Number(s['Current Quantity']) || 0;
@@ -223,6 +241,9 @@ export default function StockPanelPage() {
               }`}
             >
               {v.label()}
+              {v.key === 'shortfall' && shortfallCount > 0 && (
+                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{shortfallCount}</span>
+              )}
               {v.key === 'negative' && negativeCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{negativeCount}</span>
               )}
@@ -265,6 +286,7 @@ export default function StockPanelPage() {
                 editMode={editMode}
                 onAdjust={delta => handleAdjust(item.id, delta)}
                 onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
+                committedData={committedMap[item.id]}
               />
             ))}
           </div>
