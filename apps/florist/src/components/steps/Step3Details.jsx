@@ -230,8 +230,8 @@ export default function Step3Details({ form, onChange }) {
         />
       </SectionCard>
 
-      {/* Payment method — only shown when paid */}
-      {form.paymentStatus === 'Paid' && (
+      {/* Payment method — shown when paid or partial */}
+      {(form.paymentStatus === 'Paid' || form.paymentStatus === 'Partial') && (
         <SectionCard label={t.paymentMethod}>
           <Pills
             value={form.paymentMethod}

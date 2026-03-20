@@ -44,14 +44,18 @@ router.post('/', async (req, res, next) => {
         finalItemId = newBatch.id;
         console.log(`[STOCK] New batch created: ${newBatch['Display Name']} (old qty: ${existingQty})`);
       } else {
-        // Old batch is empty — reuse the same record
+        // Old batch is depleted or negative — reuse the same record.
+        // ADD to existing quantity so negative stock (pre-sold stems) is accounted for.
+        // e.g. qty = -7, received 25 → new qty = 18 (not 25).
+        const newQty = existingQty + quantityPurchased;
         const stockUpdate = {
-          'Current Quantity':   quantityPurchased,
+          'Current Quantity':   newQty,
           'Current Cost Price': pricePerUnit,
           'Last Restocked':     today,
         };
         if (sellPricePerUnit) stockUpdate['Current Sell Price'] = sellPricePerUnit;
         await db.update(TABLES.STOCK, stockItemId, stockUpdate);
+        console.log(`[STOCK] Batch restocked: ${stockItem['Display Name']} (${existingQty} + ${quantityPurchased} = ${newQty})`);
       }
     }
 
