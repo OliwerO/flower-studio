@@ -89,7 +89,8 @@ export default function OrdersTab({ initialFilter }) {
   const [excludeCancelled, setExcludeCancelled] = useState(!!f.excludeCancelled);
   const [expandedId, setExpanded] = useState(f.orderId || null);
   const [selected, setSelected]   = useState(new Set());
-  const [sortBy, setSortBy]       = useState('status');
+  const [upcomingMode, setUpcoming] = useState(!f.dateFrom && !f.orderId);
+  const [sortBy, setSortBy]       = useState('deliveryDate');
   const { showToast }             = useToast();
 
   const initialLoaded = useRef(false);
@@ -99,8 +100,12 @@ export default function OrdersTab({ initialFilter }) {
     try {
       const params = {};
       if (statusFilter) params.status = statusFilter;
-      if (dateFrom) params.dateFrom = dateFrom;
-      if (dateTo) params.dateTo = dateTo;
+      if (upcomingMode) {
+        params.upcoming = '1';
+      } else {
+        if (dateFrom) params.dateFrom = dateFrom;
+        if (dateTo) params.dateTo = dateTo;
+      }
       if (unpaidOnly) params.paymentStatus = 'Unpaid';
       if (paidOnly) params.paymentStatus = 'Paid';
       if (deliveryTypeFilter) params.deliveryType = deliveryTypeFilter;
@@ -125,7 +130,7 @@ export default function OrdersTab({ initialFilter }) {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, dateFrom, dateTo, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
+  }, [statusFilter, dateFrom, dateTo, upcomingMode, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
 
   useEffect(() => {
     initialLoaded.current = false;
@@ -235,13 +240,25 @@ export default function OrdersTab({ initialFilter }) {
           ))}
         </div>
 
-        {/* Date range */}
+        {/* Upcoming toggle + Date range */}
         <div className="flex items-center gap-2 ml-auto">
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-            className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
-          <span className="text-xs text-ios-tertiary">—</span>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-            className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
+          <button
+            onClick={() => setUpcoming(u => !u)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+              upcomingMode ? 'bg-brand-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+            }`}
+          >
+            {t.upcoming || 'Today & upcoming'}
+          </button>
+          {!upcomingMode && (
+            <>
+              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+                className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
+              <span className="text-xs text-ios-tertiary">—</span>
+              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+                className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
+            </>
+          )}
         </div>
 
         {/* Unpaid toggle */}
@@ -375,8 +392,8 @@ export default function OrdersTab({ initialFilter }) {
               {order['App Order ID'] && (
                 <span className="text-[11px] font-mono text-ios-tertiary w-10 shrink-0">#{order['App Order ID']}</span>
               )}
-              <span className="text-xs text-ios-tertiary w-20 shrink-0">
-                {order['Order Date'] || '—'}
+              <span className="text-xs text-ios-tertiary w-20 shrink-0" title={order['Order Date'] ? `Order: ${order['Order Date']}` : ''}>
+                {fmtDate(order['Delivery Date'] || order['Required By']) || fmtDate(order['Order Date']) || '—'}
               </span>
               <span className="text-sm font-medium text-ios-label w-36 truncate">
                 {order['Customer Name'] || '—'}

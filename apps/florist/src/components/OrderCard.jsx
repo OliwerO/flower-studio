@@ -482,8 +482,9 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* #37 — Driver assignment for delivery orders */}
-              {isDelivery && detail?.delivery && drivers.length > 0 && (
+              {/* #37 — Driver assignment for delivery orders (only when method is Driver) */}
+              {isDelivery && detail?.delivery && drivers.length > 0 &&
+               (detail.delivery['Delivery Method'] || 'Driver') === 'Driver' && (
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
                   <div className="flex flex-wrap gap-1.5">

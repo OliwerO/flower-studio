@@ -205,8 +205,12 @@ router.get('/', async (req, res, next) => {
       .filter((o) => o['Payment Status'] !== 'Unpaid')
       .reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
 
-    // Unassigned deliveries: pending deliveries with no driver assigned
-    const unassignedDeliveries = deliveries.filter(d => !d['Assigned Driver'] && d.Status !== 'Delivered');
+    // Unassigned = no driver AND method is 'Driver' (Florist/Taxi don't need a driver), not yet delivered
+    const unassignedDeliveries = deliveries.filter(d =>
+      !d['Assigned Driver'] &&
+      (d['Delivery Method'] || 'Driver') === 'Driver' &&
+      d.Status !== 'Delivered'
+    );
 
     // Bulk-fetch order lines for unpaid orders to calculate accurate sell totals.
     // Can't rely on 'Sell Price Total' rollup — it may be stale after price edits.
