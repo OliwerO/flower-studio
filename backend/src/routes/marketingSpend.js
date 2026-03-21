@@ -37,14 +37,20 @@ router.post('/', async (req, res, next) => {
       return res.status(400).json({ error: 'Marketing Spend table not configured' });
     }
     const { month, channel, amount, notes } = req.body;
-    if (!month || !channel || amount == null) {
-      return res.status(400).json({ error: 'month, channel, and amount are required' });
+    if (!month || !channel || amount === undefined || amount === null) {
+      return res.status(400).json({ error: 'month, channel, and amount are required.' });
+    }
+    if (typeof amount !== 'number' || amount < 0) {
+      return res.status(400).json({ error: 'amount must be a non-negative number.' });
+    }
+    if (typeof channel !== 'string' || !channel.trim()) {
+      return res.status(400).json({ error: 'channel must be a non-empty string.' });
     }
     const record = await db.create(TABLES.MARKETING_SPEND, {
       Month: month,
-      Channel: channel,
-      Amount: Number(amount),
-      Notes: notes || '',
+      Channel: channel.trim(),
+      Amount: amount,
+      Notes: typeof notes === 'string' ? notes : '',
     });
     res.status(201).json(record);
   } catch (err) {

@@ -28,6 +28,19 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-03-21 — Phase 3: Input Validation + SSE Connection Limits
+
+### Backend — Input Validation
+- `routes/customers.js` — POST now validates Name/Nickname required, Phone type check, body goes through `pickAllowed` whitelist (was previously passing raw `req.body` to Airtable). PATCH rejects empty updates.
+- `routes/floristHours.js` — PATCH rejects empty updates (already had POST validation).
+- `routes/marketingSpend.js` — POST now validates: amount must be non-negative number, channel must be non-empty string, notes sanitized.
+
+### Backend — SSE Connection Limits
+- `services/notifications.js` — `addClient()` now enforces a max of 50 concurrent SSE connections (expected: ~7 users). Returns `false` when limit reached.
+- `routes/events.js` — returns 503 when connection limit hit, preventing memory exhaustion from runaway reconnections or bot traffic.
+
+---
+
 ## 2026-03-21 — Phase 2: ESLint, Service Layer Extraction, Logging Cleanup
 
 ### Backend — ESLint

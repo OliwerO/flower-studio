@@ -230,7 +230,16 @@ router.get('/:id', async (req, res, next) => {
 // POST /api/customers
 router.post('/', async (req, res, next) => {
   try {
-    const customer = await db.create(TABLES.CUSTOMERS, req.body);
+    const { Name, Nickname, Phone } = req.body;
+    if (!Name && !Nickname) {
+      return res.status(400).json({ error: 'Name or Nickname is required.' });
+    }
+    if (Phone && typeof Phone !== 'string') {
+      return res.status(400).json({ error: 'Phone must be a string if provided.' });
+    }
+
+    const safeFields = pickAllowed(req.body, CUSTOMERS_PATCH_ALLOWED);
+    const customer = await db.create(TABLES.CUSTOMERS, safeFields);
     res.status(201).json(customer);
   } catch (err) {
     next(err);
@@ -241,6 +250,9 @@ router.post('/', async (req, res, next) => {
 router.patch('/:id', async (req, res, next) => {
   try {
     const safeFields = pickAllowed(req.body, CUSTOMERS_PATCH_ALLOWED);
+    if (Object.keys(safeFields).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update.' });
+    }
     const customer = await db.update(TABLES.CUSTOMERS, req.params.id, safeFields);
     res.json(customer);
   } catch (err) {

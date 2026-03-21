@@ -28,6 +28,12 @@ router.get('/', (req, res) => {
   if (!isValidPin(req.query.pin)) {
     return res.status(401).json({ error: 'Valid PIN required as ?pin= query parameter.' });
   }
+  // Check connection limit before opening the stream
+  const accepted = addClient(res);
+  if (!accepted) {
+    return res.status(503).json({ error: 'Too many SSE connections. Try again later.' });
+  }
+
   // SSE headers — tell the browser this is a persistent event stream
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
@@ -39,9 +45,6 @@ router.get('/', (req, res) => {
 
   // Send initial connection confirmation
   res.write('data: {"type":"connected"}\n\n');
-
-  // Register this client for broadcasts
-  addClient(res);
 
   // Clean up when client disconnects (browser tab closed, network drop, etc.)
   req.on('close', () => {
