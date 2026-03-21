@@ -56,3 +56,12 @@ Each sub-directory has its own CLAUDE.md with domain-specific rules.
 - Check off completed items in `BACKLOG.md`
 - Create a git branch per feature/fix
 - Test against dev base (`.env.dev`), never production (`.env`)
+
+## Change Summaries (IMPORTANT)
+After completing each logical step of work (not just at the end), write a short **owner-friendly summary** explaining:
+1. **What changed** — which files, what was added/removed/moved
+2. **Why** — the problem it solves or the reason behind the approach
+3. **How it connects** — how it fits into the existing architecture (e.g., "this new constants file is imported by all route files, so status strings are defined once instead of scattered across 9 files")
+4. **What to watch for** — any trade-offs, things that could break, or areas the owner should understand for future decisions
+
+Keep it concise but educational. The goal is for the owner to build a mental model of the codebase over time, not just approve changes blindly. Use concrete file paths and line references, not abstract descriptions.
