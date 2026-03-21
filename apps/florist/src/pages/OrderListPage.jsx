@@ -54,12 +54,16 @@ function sortByStatus(orders) {
 }
 
 // Sort by Required By / Delivery Date ascending (earliest needed first),
-// then by status priority within same date
+// then by delivery time slot, then by status priority within same date
 function sortByEarliestNeeded(orders) {
   return [...orders].sort((a, b) => {
     const dateA = a['Delivery Date'] || a['Required By'] || '9999-12-31';
     const dateB = b['Delivery Date'] || b['Required By'] || '9999-12-31';
     if (dateA !== dateB) return dateA.localeCompare(dateB);
+    // Within same date, sort by time slot start (e.g. "10-12" → "10")
+    const timeA = (a['Delivery Time'] || '').split('-')[0] || 'zzz';
+    const timeB = (b['Delivery Time'] || '').split('-')[0] || 'zzz';
+    if (timeA !== timeB) return timeA.localeCompare(timeB);
     const pa = STATUS_PRIORITY[a['Status']] ?? 99;
     const pb = STATUS_PRIORITY[b['Status']] ?? 99;
     return pa - pb;
