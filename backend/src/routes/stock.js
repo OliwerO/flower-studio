@@ -5,6 +5,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
+import { ORDER_STATUS, LOSS_REASON } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -48,7 +49,7 @@ router.get('/velocity', async (req, res, next) => {
 
     // Fetch non-cancelled orders in the last 30 days
     const recentOrders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND(NOT(IS_BEFORE({Order Date}, '${thirtyDaysAgo}')), NOT(IS_AFTER({Order Date}, '${today}')), {Status} != 'Cancelled')`,
+      filterByFormula: `AND(NOT(IS_BEFORE({Order Date}, '${thirtyDaysAgo}')), NOT(IS_AFTER({Order Date}, '${today}')), {Status} != '${ORDER_STATUS.CANCELLED}')`,
       fields: ['Order Lines'],
     });
 
@@ -104,7 +105,7 @@ router.get('/committed', async (req, res, next) => {
     // Future orders use deferred stock (not deducted from inventory at creation time).
     // Today's orders use non-deferred stock (already deducted), so they're excluded.
     const orders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND({Status} != 'Delivered', {Status} != 'Picked Up', {Status} != 'Cancelled', IS_AFTER({Required By}, '${today}'))`,
+      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
       fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
       maxRecords: 500,
     });
@@ -289,12 +290,12 @@ router.post('/:id/write-off', async (req, res, next) => {
 
     // Also log to Stock Loss Log table for analytics breakdown
     if (TABLES.STOCK_LOSS_LOG && actualWriteOff > 0) {
-      const lossReason = (reason === 'Wilted' || reason === 'Damaged' || reason === 'Arrived Broken') ? reason : 'Other';
+      const lossReason = (reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN) ? reason : LOSS_REASON.OTHER;
 
       // Auto-calculate Days Survived for wilted flowers:
       // how many days the flower lasted from last restock to write-off date
       let daysSurvived = null;
-      if (reason === 'Wilted' && item['Last Restocked']) {
+      if (reason === LOSS_REASON.WILTED && item['Last Restocked']) {
         const restocked = new Date(item['Last Restocked']);
         const now = new Date();
         daysSurvived = Math.round((now.getTime() - restocked.getTime()) / 86400000);

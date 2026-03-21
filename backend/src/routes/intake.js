@@ -8,6 +8,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { parseRawText, parseFlowwowEmail, matchStockItems } from '../services/intake-parser.js';
+import { PAYMENT_STATUS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('orders')); // florist or owner can use this
@@ -109,7 +110,7 @@ router.post('/parse', async (req, res, next) => {
       orderLines,
       delivery: parsed.delivery || {},
       source: type === 'flowwow' ? 'Flowwow' : null,
-      paymentStatus: type === 'flowwow' ? 'Paid' : null,
+      paymentStatus: type === 'flowwow' ? PAYMENT_STATUS.PAID : null,
       deliveryFee: parsed.deliveryFee ?? null,
       totalPrice: parsed.totalPrice ?? null,
       flowwowOrderId: parsed.flowwowOrderId ?? null,

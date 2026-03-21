@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getConfig } from './settings.js';
+import { ORDER_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('analytics'));
@@ -33,7 +34,7 @@ router.get('/', async (req, res, next) => {
     const dateFilter = `AND(
       NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
       NOT(IS_AFTER({Order Date}, '${safeTo}')),
-      {Status} != 'Cancelled'
+      {Status} != '${ORDER_STATUS.CANCELLED}'
     )`;
 
     // Calculate previous period of the same length for product trend comparison
@@ -47,7 +48,7 @@ router.get('/', async (req, res, next) => {
     const prevDateFilter = `AND(
       NOT(IS_BEFORE({Order Date}, '${safePrevFrom}')),
       NOT(IS_AFTER({Order Date}, '${safePrevTo}')),
-      {Status} != 'Cancelled'
+      {Status} != '${ORDER_STATUS.CANCELLED}'
     )`;
 
     const [orders, stock, prevOrders, cancelledOrders, stockPurchases, stockLosses] = await Promise.all([
@@ -64,7 +65,7 @@ router.get('/', async (req, res, next) => {
         filterByFormula: `AND(
           NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
           NOT(IS_AFTER({Order Date}, '${safeTo}')),
-          {Status} = 'Cancelled'
+          {Status} = '${ORDER_STATUS.CANCELLED}'
         )`,
         fields: ['Order Date'],
       }).catch(() => []),
@@ -147,7 +148,7 @@ router.get('/', async (req, res, next) => {
     }
 
     // ── Revenue metrics (paid orders only) ──
-    const paidOrders = orders.filter(o => o['Payment Status'] !== 'Unpaid');
+    const paidOrders = orders.filter(o => o['Payment Status'] !== PAYMENT_STATUS.UNPAID);
 
     const totalRevenue = paidOrders.reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
 
@@ -217,7 +218,7 @@ router.get('/', async (req, res, next) => {
     // Build previous-period qty map for trend calculation
     // Only count prev-period paid order lines (match same filter as current period)
     const prevPaidOrderIds = new Set(
-      prevOrders.filter(o => o['Payment Status'] !== 'Unpaid').map(o => o.id)
+      prevOrders.filter(o => o['Payment Status'] !== PAYMENT_STATUS.UNPAID).map(o => o.id)
     );
     const prevProductQty = {};
     for (const line of prevLines) {
@@ -305,7 +306,7 @@ router.get('/', async (req, res, next) => {
       if (!month) continue;
       if (!monthlyMap[month]) monthlyMap[month] = { month, orders: [], paidOrders: [] };
       monthlyMap[month].orders.push(o);
-      if (o['Payment Status'] !== 'Unpaid') monthlyMap[month].paidOrders.push(o);
+      if (o['Payment Status'] !== PAYMENT_STATUS.UNPAID) monthlyMap[month].paidOrders.push(o);
     }
 
     const monthly = Object.values(monthlyMap)
@@ -405,7 +406,7 @@ router.get('/', async (req, res, next) => {
       const method = o['Payment Method'] || 'Not recorded';
       if (!paymentMap[method]) paymentMap[method] = { method, count: 0, paidCount: 0, revenue: 0, unpaidCount: 0, unpaidAmount: 0 };
       paymentMap[method].count++;
-      if (o['Payment Status'] !== 'Unpaid') {
+      if (o['Payment Status'] !== PAYMENT_STATUS.UNPAID) {
         paymentMap[method].paidCount++;
         paymentMap[method].revenue += o['Effective Price'] || 0;
       } else {
@@ -417,7 +418,7 @@ router.get('/', async (req, res, next) => {
 
     // ── Completion Funnel ──
     const totalCreated = orders.length + cancelledOrders.length;
-    const completedOrders = orders.filter(o => o.Status === 'Delivered' || o.Status === 'Picked Up').length;
+    const completedOrders = orders.filter(o => o.Status === ORDER_STATUS.DELIVERED || o.Status === ORDER_STATUS.PICKED_UP).length;
     const funnel = {
       totalCreated,
       completed: completedOrders,

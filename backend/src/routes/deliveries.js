@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
+import { ORDER_STATUS, DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -14,9 +15,6 @@ const DELIVERIES_PATCH_ALLOWED = [
   'Driver Payment Status', 'Driver Notes', 'Delivered At', 'Delivery Fee',
   'Delivery Result', 'Delivery Method', 'Driver Payout', 'Taxi Cost',
 ];
-
-// SYNC: must match RESULTS in apps/delivery/src/components/DeliveryResultPicker.jsx
-const VALID_DELIVERY_RESULTS = ['Success', 'Not Home', 'Wrong Address', 'Refused', 'Incomplete'];
 
 // GET /api/deliveries?date=2025-01-15&status=Pending&driver=Piotr
 router.get('/', async (req, res, next) => {
@@ -97,7 +95,7 @@ router.patch('/:id', async (req, res, next) => {
 
     // When a driver changes status, stamp their name on the delivery.
     // Like signing a work order — whoever completes it gets credited.
-    if (fields.Status === 'Out for Delivery' || fields.Status === 'Delivered') {
+    if (fields.Status === DELIVERY_STATUS.OUT_FOR_DELIVERY || fields.Status === DELIVERY_STATUS.DELIVERED) {
       if (req.driverName) {
         fields['Assigned Driver'] = req.driverName;
       }
@@ -105,8 +103,8 @@ router.patch('/:id', async (req, res, next) => {
 
     // Cascade delivery status changes to the linked order.
     // Like updating the master production board when the shipping dept changes status.
-    if (fields.Status === 'Out for Delivery' || fields.Status === 'Delivered') {
-      if (fields.Status === 'Delivered') {
+    if (fields.Status === DELIVERY_STATUS.OUT_FOR_DELIVERY || fields.Status === DELIVERY_STATUS.DELIVERED) {
+      if (fields.Status === DELIVERY_STATUS.DELIVERED) {
         fields['Delivered At'] = new Date().toISOString();
       }
 

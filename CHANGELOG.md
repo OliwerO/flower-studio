@@ -28,6 +28,15 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-03-21 — Code Quality: Status Constants + Shallow Config Fix
+
+### Backend
+- **New file `backend/src/constants/statuses.js`** — centralized constants for all order, delivery, payment, PO, and stock loss statuses. Eliminates ~100 hardcoded status strings scattered across route files.
+- **All route files** (`orders.js`, `dashboard.js`, `deliveries.js`, `analytics.js`, `stock.js`, `stockOrders.js`, `stockLoss.js`, `settings.js`, `intake.js`) now import and use status constants instead of string literals.
+- **`settings.js`** — fixed shallow config copy bug: `{ ...DEFAULTS }` → `structuredClone(DEFAULTS)`. Previously, nested object mutations (e.g., `storefrontCategories.permanent`) could leak across requests.
+
+---
+
 ## 2026-03-20 — Florist Display Restructure + Stock Shortfall Warnings
 
 ### Backend

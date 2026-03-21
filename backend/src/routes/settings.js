@@ -10,6 +10,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { sendAlert } from '../services/telegram.js';
+import { DELIVERY_STATUS } from '../constants/statuses.js';
 
 const router = Router();
 
@@ -61,7 +62,7 @@ const DEFAULTS = {
 };
 
 // ── In-memory config (loaded from Airtable on startup) ──────
-let config = { ...DEFAULTS };
+let config = structuredClone(DEFAULTS);
 let configRecordId = null; // Airtable record ID for the config row
 let configLoaded = false;
 
@@ -349,7 +350,7 @@ router.put('/driver-of-day', authorize('admin'), async (req, res, next) => {
     if (driverName) {
       const today = new Date().toISOString().split('T')[0];
       const unassigned = await db.list(TABLES.DELIVERIES, {
-        filterByFormula: `AND(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(today)}', {Assigned Driver} = '', {Status} != 'Delivered')`,
+        filterByFormula: `AND(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(today)}', {Assigned Driver} = '', {Status} != '${DELIVERY_STATUS.DELIVERED}')`,
         fields: ['Assigned Driver'],
       });
       for (const d of unassigned) {

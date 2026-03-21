@@ -11,16 +11,17 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 
-const VALID_STATUSES = ['Draft', 'Sent', 'Shopping', 'Reviewing', 'Evaluating', 'Eval Error', 'Complete'];
+const VALID_STATUSES = VALID_PO_STATUSES;
 
 const ALLOWED_TRANSITIONS = {
-  'Draft': ['Sent'],
-  'Sent': ['Shopping', 'Reviewing', 'Draft'],
-  'Shopping': ['Reviewing'],
-  'Reviewing': ['Evaluating'],
-  'Evaluating': ['Eval Error', 'Complete'],
-  'Eval Error': ['Evaluating'],
+  [PO_STATUS.DRAFT]:      [PO_STATUS.SENT],
+  [PO_STATUS.SENT]:       [PO_STATUS.SHOPPING, PO_STATUS.REVIEWING, PO_STATUS.DRAFT],
+  [PO_STATUS.SHOPPING]:   [PO_STATUS.REVIEWING],
+  [PO_STATUS.REVIEWING]:  [PO_STATUS.EVALUATING],
+  [PO_STATUS.EVALUATING]: [PO_STATUS.EVAL_ERROR, PO_STATUS.COMPLETE],
+  [PO_STATUS.EVAL_ERROR]: [PO_STATUS.EVALUATING],
 };
 
 const router = Router();
@@ -113,7 +114,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
 
     // Create the PO header
     const orderFields = {
-      Status: 'Draft',
+      Status: PO_STATUS.DRAFT,
       'Created Date': today,
       'Stock Order ID': poNumber,
       Notes: notes || '',
@@ -140,7 +141,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
         'Flower Name': line.flowerName || '',
         'Quantity Needed': Number(line.quantity) || 0,
         ...(lotSize > 0 ? { 'Lot Size': lotSize } : {}),
-        'Driver Status': 'Pending',
+        'Driver Status': PO_LINE_STATUS.PENDING,
         Supplier: line.supplier || '',
         'Cost Price': Number(line.costPrice) || 0,
         'Sell Price': Number(line.sellPrice) || 0,
@@ -214,8 +215,8 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
 
     if ('Driver Status' in fields) {
       const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-      if (po.Status === 'Sent') {
-        await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: 'Shopping' });
+      if (po.Status === PO_STATUS.SENT) {
+        await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.SHOPPING });
       }
     }
 
@@ -236,7 +237,7 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
 router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (po.Status !== 'Draft') {
+    if (po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: 'Can only add lines to Draft POs.' });
     }
     const { stockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
@@ -249,7 +250,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       'Cost Price': Number(costPrice) || 0,
       'Sell Price': Number(sellPrice) || 0,
       'Lot Size': Number(lotSize) || 0,
-      'Driver Status': 'Pending',
+      'Driver Status': PO_LINE_STATUS.PENDING,
     });
     res.json(line);
   } catch (err) {
@@ -261,7 +262,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
 router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (po.Status !== 'Draft') {
+    if (po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: 'Can only remove lines from Draft POs.' });
     }
     await db.deleteRecord(TABLES.STOCK_ORDER_LINES, req.params.lineId);
@@ -277,7 +278,7 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
   try {
     const { driverName } = req.body;
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
-      Status: 'Sent',
+      Status: PO_STATUS.SENT,
       'Assigned Driver': driverName || 'Nikita',
     });
 
@@ -295,11 +296,11 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
 router.post('/:id/driver-complete', authorize('stock-orders'), async (req, res, next) => {
   try {
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (!['Sent', 'Shopping'].includes(po.Status)) {
+    if (![PO_STATUS.SENT, PO_STATUS.SHOPPING].includes(po.Status)) {
       return res.status(400).json({ error: `PO is "${po.Status}", cannot complete shopping.` });
     }
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
-      Status: 'Reviewing',
+      Status: PO_STATUS.REVIEWING,
     });
 
     // SSE notification to owner + florists: shopping complete, review ready
@@ -315,10 +316,10 @@ router.post('/:id/driver-complete', authorize('stock-orders'), async (req, res, 
 router.post('/:id/approve-review', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (po.Status !== 'Reviewing') {
-      return res.status(400).json({ error: `PO is "${po.Status}", not "Reviewing".` });
+    if (po.Status !== PO_STATUS.REVIEWING) {
+      return res.status(400).json({ error: `PO is "${po.Status}", not "${PO_STATUS.REVIEWING}".` });
     }
-    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: 'Evaluating' });
+    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.EVALUATING });
     broadcast({ type: 'stock_evaluation_ready', stockOrderId: req.params.id });
     res.json(updated);
   } catch (err) {
@@ -370,8 +371,8 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
   try {
     // H1: Guard against double-evaluate — allow Evaluating (first attempt) or Eval Error (retry)
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (po.Status !== 'Evaluating' && po.Status !== 'Eval Error') {
-      return res.status(409).json({ error: `PO is "${po.Status}", not "Evaluating". Already processed?` });
+    if (po.Status !== PO_STATUS.EVALUATING && po.Status !== PO_STATUS.EVAL_ERROR) {
+      return res.status(409).json({ error: `PO is "${po.Status}", not "${PO_STATUS.EVALUATING}". Already processed?` });
     }
 
     const { lines } = req.body;
@@ -383,7 +384,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const line = await db.getById(TABLES.STOCK_ORDER_LINES, evalLine.lineId);
 
         // Skip lines already processed on a previous attempt (idempotency guard)
-        if (line['Eval Status'] === 'Processed') {
+        if (line['Eval Status'] === PO_LINE_STATUS.PROCESSED) {
           lineResults.push({ lineId: evalLine.lineId, status: 'skipped' });
           continue;
         }
@@ -436,12 +437,12 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         // Log write-offs
         const totalWriteOff = writeOff + altWriteOff;
         if (stockItemId && totalWriteOff > 0 && TABLES.STOCK_LOSS_LOG) {
-          const reason = evalLine.writeOffReason || 'Damaged';
+          const reason = evalLine.writeOffReason || LOSS_REASON.DAMAGED;
           db.create(TABLES.STOCK_LOSS_LOG, {
             Date: today,
             'Stock Item': [stockItemId],
             Quantity: totalWriteOff,
-            Reason: reason === 'Wilted' || reason === 'Damaged' || reason === 'Arrived Broken' ? reason : 'Other',
+            Reason: reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN ? reason : LOSS_REASON.OTHER,
             Notes: `PO evaluation write-off`,
           }).catch(err => console.error('[STOCK-ORDER] Failed to log write-off:', err.message));
         }
@@ -450,7 +451,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, {
           'Quantity Accepted': accepted,
           'Write Off Qty': writeOff,
-          'Eval Status': 'Processed',
+          'Eval Status': PO_LINE_STATUS.PROCESSED,
         });
 
         lineResults.push({ lineId: evalLine.lineId, status: 'ok' });
@@ -463,7 +464,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
     const failed = lineResults.filter(r => r.status === 'error');
     if (failed.length > 0) {
       // Partial failure: mark PO with error state so owner can see and retry
-      await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: 'Eval Error' });
+      await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.EVAL_ERROR });
       return res.status(207).json({
         success: false,
         message: `${failed.length} of ${lineResults.length} lines failed. PO marked as "Eval Error" — retry will skip already-processed lines.`,
@@ -472,7 +473,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
     }
 
     // All lines processed — mark PO as complete
-    await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: 'Complete' });
+    await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.COMPLETE });
 
     res.json({ success: true, lineResults });
   } catch (err) {

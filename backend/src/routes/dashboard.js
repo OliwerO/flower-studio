@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { ORDER_STATUS, PAYMENT_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('dashboard'));
@@ -23,25 +24,25 @@ router.get('/', async (req, res, next) => {
       }).catch(() => []),
       // Orders due today (by Required By — for "planned today" count)
       db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != 'Cancelled')`,
+        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
         fields: ['Required By', 'Status'],
         maxRecords: 200,
       }).catch(() => []),
       // Orders to fulfill today: Required By = today, not cancelled (full data for display)
       db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != 'Cancelled')`,
+        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
         sort: [{ field: 'Required By', direction: 'asc' }],
         maxRecords: 200,
       }).catch(() => []),
       // Tomorrow's orders: Required By = tomorrow, not cancelled (show all for planning)
       db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != 'Cancelled')`,
+        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
         fields: ['Customer', 'Required By', 'Status', 'Delivery Type', 'Order Lines', 'Customer Request', 'App Order ID', 'Delivery Time'],
         maxRecords: 100,
       }).catch(() => []),
       // Today's pending deliveries (all statuses — we filter below)
       db.list(TABLES.DELIVERIES, {
-        filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != 'Delivered')`,
+        filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != '${DELIVERY_STATUS.DELIVERED}')`,
       }).catch(() => []),
       // Stock items below reorder threshold
       db.list(TABLES.STOCK, {
@@ -51,7 +52,7 @@ router.get('/', async (req, res, next) => {
       // All unpaid/partial non-cancelled orders for aging calculation
       // Don't restrict fields — 'Final Price' is a formula field that may not exist in all bases
       db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(OR({Payment Status} = 'Unpaid', {Payment Status} = 'Partial'), {Status} != 'Cancelled')`,
+        filterByFormula: `AND(OR({Payment Status} = '${PAYMENT_STATUS.UNPAID}', {Payment Status} = '${PAYMENT_STATUS.PARTIAL}'), {Status} != '${ORDER_STATUS.CANCELLED}')`,
       }).catch(() => []),
       // Active stock items with negative quantity
       db.list(TABLES.STOCK, {
@@ -202,14 +203,14 @@ router.get('/', async (req, res, next) => {
 
     // Today's revenue from paid + partial orders (matching analytics.js filter)
     const todayRevenue = orders
-      .filter((o) => o['Payment Status'] !== 'Unpaid')
+      .filter((o) => o['Payment Status'] !== PAYMENT_STATUS.UNPAID)
       .reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
 
     // Unassigned = no driver AND method is 'Driver' (Florist/Taxi don't need a driver), not yet delivered
     const unassignedDeliveries = deliveries.filter(d =>
       !d['Assigned Driver'] &&
       (d['Delivery Method'] || 'Driver') === 'Driver' &&
-      d.Status !== 'Delivered'
+      d.Status !== DELIVERY_STATUS.DELIVERED
     );
 
     // Bulk-fetch order lines for unpaid orders to calculate accurate sell totals.
@@ -344,7 +345,7 @@ router.get('/', async (req, res, next) => {
       const deferredOrderIds = [...new Set(deferredLines.flatMap(l => l.Order || []))];
       const deferredOrders = deferredOrderIds.length > 0
         ? await db.list(TABLES.ORDERS, {
-            filterByFormula: `AND(OR(${deferredOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != 'Cancelled')`,
+            filterByFormula: `AND(OR(${deferredOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != '${ORDER_STATUS.CANCELLED}')`,
             fields: ['Required By'],
           }).catch(() => [])
         : [];
@@ -387,7 +388,7 @@ router.get('/', async (req, res, next) => {
       const parentOrderIds = [...new Set(negLines.flatMap(l => l.Order || []))];
       const parentOrders = parentOrderIds.length > 0
         ? await db.list(TABLES.ORDERS, {
-            filterByFormula: `AND(OR(${parentOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != 'Cancelled')`,
+            filterByFormula: `AND(OR(${parentOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != '${ORDER_STATUS.CANCELLED}')`,
             fields: ['Required By', 'Order Lines'],
           }).catch(() => [])
         : [];
