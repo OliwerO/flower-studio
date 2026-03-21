@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
@@ -54,9 +55,13 @@ function EditBouquetSection({
   configSuppliers, targetMarkup,
   saving, setSaving, orderId, showToast,
   setEditingBouquet, setAddingFlower, setOrder,
+  isOwner, originalPrice,
 }) {
   const editSellTotal = editLines.reduce((s, l) => s + Number(l.sellPricePerUnit || 0) * Number(l.quantity || 0), 0);
-  const budgetNum = Number(editBudget) || 0;
+  const editCostTotal = editLines.reduce((s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0);
+  const margin = editSellTotal > 0 ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
+  // Budget defaults to original price if not overridden
+  const budgetNum = Number(editBudget) || originalPrice || 0;
   const delta = budgetNum ? editSellTotal - budgetNum : 0;
   const overBudget = delta > 0;
   const underBudget = delta < 0;
@@ -106,28 +111,46 @@ function EditBouquetSection({
   return (
   <div className="space-y-3">
 
-    {/* Budget + running sell total */}
-    <div className="ios-card px-4 py-3 space-y-1.5">
+    {/* Price target + running totals */}
+    <div className="ios-card px-4 py-3 space-y-2">
+      {/* Original price as reference */}
+      {originalPrice > 0 && (
+        <div className="flex items-center justify-between text-xs text-ios-tertiary">
+          <span>{t.originalPrice || 'Original price'}</span>
+          <span className="font-semibold">{originalPrice} zł</span>
+        </div>
+      )}
+      {/* Current sell total + delta */}
       <div className="flex items-center justify-between">
         <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
-        <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} zł</span>
+        <div className="flex items-center gap-2">
+          <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} zł</span>
+          {budgetNum > 0 && (
+            <span className={`text-xs font-bold ${overBudget ? 'text-red-500' : underBudget ? 'text-green-600' : 'text-ios-tertiary'}`}>
+              ({overBudget ? '+' : ''}{delta.toFixed(0)})
+            </span>
+          )}
+        </div>
       </div>
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-ios-tertiary shrink-0">{t.budget}:</span>
+      {/* Cost + margin for owner */}
+      {isOwner && editCostTotal > 0 && (
+        <div className="flex items-center justify-between text-xs text-ios-tertiary">
+          <span>{t.costTotal || 'Cost'}: {editCostTotal.toFixed(0)} zł</span>
+          <span>{t.margin || 'Margin'}: {margin}%</span>
+        </div>
+      )}
+      {/* Budget override — only if different from original */}
+      <div className="flex items-center gap-2 pt-1 border-t border-gray-100">
+        <span className="text-xs text-ios-tertiary shrink-0">{t.newPrice || 'New price'}:</span>
         <input
           type="number"
           inputMode="numeric"
           value={editBudget}
           onChange={e => setEditBudget(e.target.value)}
-          placeholder={editSellTotal > 0 ? String(Math.round(editSellTotal)) : '0'}
+          placeholder={originalPrice > 0 ? String(originalPrice) : String(Math.round(editSellTotal))}
           className="flex-1 text-sm font-medium border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
         />
         <span className="text-xs text-ios-tertiary shrink-0">zł</span>
-        {budgetNum > 0 && (
-          <span className={`text-xs font-bold shrink-0 ${overBudget ? 'text-red-500' : underBudget ? 'text-green-600' : 'text-ios-tertiary'}`}>
-            {overBudget ? '+' : ''}{delta.toFixed(0)} zł
-          </span>
-        )}
       </div>
     </div>
 
@@ -162,7 +185,7 @@ function EditBouquetSection({
         )}
       </div>
 
-      <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-64 overflow-y-auto">
+      <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-80 overflow-y-auto">
         {/* Add unlisted flower option */}
         {flowerSearch.length >= 2 && !catalogItems.some(s => (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()) && (
           <button
@@ -205,6 +228,7 @@ function EditBouquetSection({
                   </div>
                   <div className="text-sm text-ios-tertiary">
                     <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
+                    {isOwner && <span> · {Number(s['Current Cost Price'] || 0).toFixed(0)} zł {t.costPrice}</span>}
                     <span> · {qty} pcs</span>
                     {low && !out && <span className="text-ios-orange"> · low</span>}
                     {out && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
@@ -486,6 +510,8 @@ export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { role } = useAuth();
+  const isOwner = role === 'owner';
   const { paymentMethods, suppliers: configSuppliers, targetMarkup } = useConfigLists();
 
   const [order, setOrder]     = useState(null);
@@ -651,6 +677,8 @@ export default function OrderDetailPage() {
                   setEditingBouquet={setEditingBouquet}
                   setAddingFlower={setAddingFlower}
                   setOrder={setOrder}
+                  isOwner={isOwner}
+                  originalPrice={price}
                 />) : (
                   <div className="ios-card overflow-hidden divide-y divide-gray-100">
                     {order.orderLines.map((line, i) => (

@@ -63,6 +63,8 @@ export default function OrderCardExpanded({
               saving={saving}
               detail={detail}
               isTerminal={isTerminal}
+              isOwner={isOwner}
+              originalPrice={currentPrice}
               onSaveClick={onSaveClick}
               doSave={doSave}
             />
