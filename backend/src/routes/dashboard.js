@@ -33,9 +33,9 @@ router.get('/', async (req, res, next) => {
         sort: [{ field: 'Required By', direction: 'asc' }],
         maxRecords: 200,
       }).catch(() => []),
-      // Tomorrow's orders: Required By = tomorrow, not finished
+      // Tomorrow's orders: Required By = tomorrow, not cancelled (show all for planning)
       db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != 'Cancelled', {Status} != 'Delivered', {Status} != 'Picked Up')`,
+        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != 'Cancelled')`,
         fields: ['Customer', 'Required By', 'Status', 'Delivery Type', 'Order Lines', 'Customer Request', 'App Order ID', 'Delivery Time'],
         maxRecords: 100,
       }).catch(() => []),
