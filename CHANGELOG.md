@@ -28,6 +28,18 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-03-21 — Phase 4: Testing Foundation
+
+### Backend
+- **Vitest** added as test framework (`npm test` / `npm run test:watch`).
+- **`vitest.config.js`** — sets dummy env vars so Airtable/auth imports don't crash during tests.
+- **46 tests** across 3 test files, all passing in ~300ms:
+  - `__tests__/utils.test.js` — `sanitizeFormulaValue` (formula injection prevention), `pickAllowed` (field whitelisting), `safeEqual` (timing-safe PIN comparison).
+  - `__tests__/analyticsService.test.js` — 13 tests covering all pure computation functions: revenue, waste, funnel, product ranking, flower pairings, weekly rhythm, payment methods, prep time, inventory turnover, supplier scorecard, stock losses.
+  - `__tests__/orderService.test.js` — `ALLOWED_TRANSITIONS` state machine: valid transitions, terminal states, legacy exits, full status coverage.
+
+---
+
 ## 2026-03-21 — Phase 3: Input Validation + SSE Connection Limits
 
 ### Backend — Input Validation
