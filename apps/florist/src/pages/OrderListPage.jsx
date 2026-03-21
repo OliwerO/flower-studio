@@ -60,10 +60,12 @@ function sortByEarliestNeeded(orders) {
     const dateA = a['Delivery Date'] || a['Required By'] || '9999-12-31';
     const dateB = b['Delivery Date'] || b['Required By'] || '9999-12-31';
     if (dateA !== dateB) return dateA.localeCompare(dateB);
-    // Within same date, sort by time slot start (e.g. "10-12" → "10")
-    const timeA = (a['Delivery Time'] || '').split('-')[0] || 'zzz';
-    const timeB = (b['Delivery Time'] || '').split('-')[0] || 'zzz';
-    if (timeA !== timeB) return timeA.localeCompare(timeB);
+    // Within same date, sort by time slot start numerically (e.g. "8-10" before "10-12")
+    const timeA = parseInt((a['Delivery Time'] || '').split('-')[0], 10);
+    const timeB = parseInt((b['Delivery Time'] || '').split('-')[0], 10);
+    const tA = isNaN(timeA) ? 999 : timeA;
+    const tB = isNaN(timeB) ? 999 : timeB;
+    if (tA !== tB) return tA - tB;
     const pa = STATUS_PRIORITY[a['Status']] ?? 99;
     const pb = STATUS_PRIORITY[b['Status']] ?? 99;
     return pa - pb;
