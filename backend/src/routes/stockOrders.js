@@ -111,7 +111,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
     const seq = existingPOs.length + 1;
     const poNumber = `PO-${today.replace(/-/g, '')}-${seq}`;
 
-    // Create the PO header — carry over driver selection from the form
+    // Create the PO header
     const orderFields = {
       Status: 'Draft',
       'Created Date': today,
@@ -147,12 +147,14 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       };
       if (line.farmer) lineFields.Farmer = line.farmer;
       if (line.notes) lineFields.Notes = line.notes;
+
       const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, lineFields);
       createdLines.push(lineRec);
     }
 
     res.status(201).json({ ...order, lines: createdLines });
   } catch (err) {
+    console.error('[STOCK-ORDER] PO creation failed:', err.message, err.statusCode);
     next(err);
   }
 });

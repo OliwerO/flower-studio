@@ -21,8 +21,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-11 | Sync Log | New table for Wix ↔ Airtable sync history | ❌ |
 | 2026-03-12 | Stock | New fields: `Lot Size` (Number, default 1) | ❌ |
 | 2026-03-12 | Order Lines | New field: `Stock Deferred` (Checkbox) | ❌ |
-| 2026-03-13 | Stock Orders | **New table** — PO header (Status, Supplier, Driver, Notes, Supplier Payments) | ❌ |
-| 2026-03-13 | Stock Order Lines | **New table** — PO lines (Stock Item, Qty Needed, Lot Size, Driver Status, Eval Status, Price Needs Review) | ❌ |
+| 2026-03-13 | Stock Orders | **New table** — PO header (Status, Created Date, Notes, Assigned Driver, Stock Order ID, Planned Date, Supplier Payments, Driver Payment, link: Order Lines → Stock Order Lines) | ✅ All fields exist |
+| 2026-03-13 | Stock Order Lines | **New table** — PO lines (Flower Name, Quantity Needed, Lot Size, Driver Status, Supplier, Cost Price, Sell Price, Notes, Quantity Found, Quantity Accepted, Write Off Qty, Eval Status, Price Needs Review, Alt Supplier, Alt Quantity Found, Alt Flower Name, Alt Cost, Farmer, links: Stock Orders, Stock Item) | ✅ All fields exist |
 | 2026-03-17 | Product Config | New fields: `Description` (Long text), `Translations` (Long text/JSON) | ✅ Already created |
 | 2026-03-18 | Florist Hours | New field: `Rate Type` (Single line text) — stores rate type name per entry | ❌ |
 
@@ -217,7 +217,9 @@ Changes made to the **dev base** that must be replicated in **production** befor
 ## Go-Live Checklist
 
 - [ ] Create all new Airtable tables in production (Webhook Log, Marketing Spend, Stock Loss Log, App Settings, Product Config, Sync Log, Stock Orders, Stock Order Lines)
-- [ ] Add new fields to existing tables (Stock: Lot Size; Order Lines: Stock Deferred)
+- [x] **Stock Orders table** — all fields exist (Status, Created Date, Notes, Assigned Driver, Stock Order ID, Planned Date, Supplier Payments, Driver Payment, link: Order Lines)
+- [x] **Stock Order Lines table** — all fields exist (Flower Name, Quantity Needed, Lot Size, Driver Status, Supplier, Cost Price, Sell Price, Notes, Quantity Found, Quantity Accepted, Write Off Qty, Eval Status, Price Needs Review, Alt Supplier, Alt Quantity Found, Alt Flower Name, Alt Cost, Farmer, links: Stock Orders, Stock Item)
+- [ ] Add new fields to existing tables (Stock: Lot Size, Farmer; Order Lines: Stock Deferred)
 - [ ] Apply all schema changes from "Schema Changes" table above to production base
 - [ ] Set all new env vars in Railway (per-driver PINs, Wix API, Telegram, PO table IDs)
 - [ ] Set correct Railway backend URL in all Vercel rewrite configs

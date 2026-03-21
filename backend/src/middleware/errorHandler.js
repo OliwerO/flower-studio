@@ -11,8 +11,11 @@ export function errorHandler(err, req, res, next) {
 
   // In production, hide internal error details (Airtable errors may leak
   // table names, field names, or API key fragments). In dev, show everything.
+  // 422 errors are safe to surface — they describe field validation issues.
   const message = isProduction
-    ? (status === 404 ? 'Not found' : 'Internal server error')
+    ? (status === 404 ? 'Not found'
+       : status === 422 ? (err.message || 'Validation error')
+       : 'Internal server error')
     : (err.message || 'Internal server error');
 
   res.status(status).json({
