@@ -5,11 +5,12 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { VALID_LOSS_REASONS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('orders')); // florists + owner can log waste
 
-const VALID_REASONS = ['Wilted', 'Damaged', 'Arrived Broken', 'Overstock', 'Other'];
+const VALID_REASONS = VALID_LOSS_REASONS;
 
 // GET /api/stock-loss?from=2026-01-01&to=2026-03-31
 // Enriches each entry with flower name + supplier from the linked Stock record.

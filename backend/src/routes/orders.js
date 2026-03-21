@@ -8,12 +8,10 @@ import { notifyNewOrder } from '../services/telegram.js';
 import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
 import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
+import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('orders'));
-
-// Source validation removed — sources are now dynamic from Settings tab.
-const VALID_PAYMENT_STATUSES = ['Paid', 'Unpaid', 'Partial'];
 
 const ORDERS_PATCH_ALLOWED = [
   'Status', 'Payment Status', 'Payment Method', 'Price Override',
@@ -40,15 +38,15 @@ router.get('/', async (req, res, next) => {
     // "Not recorded" means orders where Payment Method is blank/empty
     if (paymentMethod === 'Not recorded') filters.push(`OR({Payment Method} = BLANK(), {Payment Method} = '')`);
     else if (paymentMethod) filters.push(`{Payment Method} = '${sanitizeFormulaValue(paymentMethod)}'`);
-    if (excludeCancelled) filters.push(`{Status} != 'Cancelled'`);
+    if (excludeCancelled) filters.push(`{Status} != '${ORDER_STATUS.CANCELLED}'`);
 
     // "activeOnly" mode: all non-terminal orders — florist's default view.
     // Excludes Delivered, Picked Up, Cancelled. No date restriction.
     if (activeOnly) {
-      filters.push(`AND({Status} != 'Delivered', {Status} != 'Picked Up', {Status} != 'Cancelled')`);
+      filters.push(`AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}')`);
     } else if (completedOnly) {
       // Terminal orders only. If no date filter, show last 30 days.
-      filters.push(`OR({Status} = 'Delivered', {Status} = 'Picked Up', {Status} = 'Cancelled')`);
+      filters.push(`OR({Status} = '${ORDER_STATUS.DELIVERED}', {Status} = '${ORDER_STATUS.PICKED_UP}', {Status} = '${ORDER_STATUS.CANCELLED}')`);
       if (!forDate && !dateFrom) {
         const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
         filters.push(`NOT(IS_BEFORE({Required By}, '${cutoff}'))`);
@@ -299,12 +297,12 @@ router.post('/', async (req, res, next) => {
         'Notes Original':     notes || '',
         'Greeting Card Text': cardText || delivery?.cardText || '',
         'Delivery Time':      deliveryTime || delivery?.time || '',
-        'Payment Status':     paymentStatus || 'Unpaid',
+        'Payment Status':     paymentStatus || PAYMENT_STATUS.UNPAID,
         'Payment Method':     paymentMethod || null,
         'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
         'Price Override':     priceOverride || null,
         'App Order ID':       appOrderId,
-        Status:               'New',
+        Status:               ORDER_STATUS.NEW,
         'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
       });
 
@@ -363,7 +361,7 @@ router.post('/', async (req, res, next) => {
           'Delivery Fee':      delivery.fee ?? getConfig('defaultDeliveryFee'),
           'Delivery Method': 'Driver',
           'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
-          Status:              'Pending',
+          Status:              DELIVERY_STATUS.PENDING,
         });
       }
 
@@ -443,7 +441,7 @@ router.post('/', async (req, res, next) => {
 router.put('/:id/lines', async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.ORDERS, req.params.id);
-    const editableStatuses = ['New', 'Ready'];
+    const editableStatuses = [ORDER_STATUS.NEW, ORDER_STATUS.READY];
     if (!editableStatuses.includes(order.Status)) {
       return res.status(400).json({ error: `Cannot edit bouquet in "${order.Status}" status.` });
     }
@@ -530,8 +528,8 @@ router.put('/:id/lines', async (req, res, next) => {
     }
 
     // 3. Auto-revert status if owner edits while Ready
-    if (isOwner && order.Status === 'Ready') {
-      await db.update(TABLES.ORDERS, req.params.id, { Status: 'New' });
+    if (isOwner && order.Status === ORDER_STATUS.READY) {
+      await db.update(TABLES.ORDERS, req.params.id, { Status: ORDER_STATUS.NEW });
     }
 
     res.json({ updated: true, createdLines });
@@ -543,13 +541,13 @@ router.put('/:id/lines', async (req, res, next) => {
 // Allowed status transitions — orders flow: New → Ready → Delivered/Picked Up.
 // "In Progress" kept as legacy exit only (for orders already in that state).
 const ALLOWED_TRANSITIONS = {
-  'New':              ['Ready', 'Cancelled'],
-  'In Progress':      ['Ready', 'Cancelled'],          // legacy — still allow exit
-  'Ready':            ['Out for Delivery', 'Delivered', 'Picked Up', 'Cancelled'],
-  'Out for Delivery': ['Delivered', 'Cancelled'],       // driver is en route
-  'Delivered':        [],          // terminal — no changes
-  'Picked Up':        [],          // terminal — no changes
-  'Cancelled':        ['New'],     // allow un-cancel (reopen) back to New
+  [ORDER_STATUS.NEW]:              [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.IN_PROGRESS]:      [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED],          // legacy — still allow exit
+  [ORDER_STATUS.READY]:            [ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED],
+  [ORDER_STATUS.OUT_FOR_DELIVERY]: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED],       // driver is en route
+  [ORDER_STATUS.DELIVERED]:        [],          // terminal — no changes
+  [ORDER_STATUS.PICKED_UP]:        [],          // terminal — no changes
+  [ORDER_STATUS.CANCELLED]:        [ORDER_STATUS.NEW],     // allow un-cancel (reopen) back to New
 };
 
 // PATCH /api/orders/:id — update status, prices, assignment, etc.
@@ -562,7 +560,7 @@ router.patch('/:id', async (req, res, next) => {
     // If status is being changed, validate the transition
     if (newStatus) {
       const current = await db.getById(TABLES.ORDERS, req.params.id);
-      const currentStatus = current.Status || 'New';
+      const currentStatus = current.Status || ORDER_STATUS.NEW;
       const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
 
       if (newStatus !== currentStatus && !allowed.includes(newStatus)) {
@@ -579,7 +577,7 @@ router.patch('/:id', async (req, res, next) => {
     // Record prep timestamps for cycle-time analysis.
     // "Ready" = work complete (like scanning finished goods).
     const timestamps = {};
-    if (newStatus === 'Ready') timestamps['Prep Ready At'] = new Date().toISOString();
+    if (newStatus === ORDER_STATUS.READY) timestamps['Prep Ready At'] = new Date().toISOString();
 
     const order = await db.update(TABLES.ORDERS, req.params.id, {
       ...otherFields,
@@ -590,11 +588,11 @@ router.patch('/:id', async (req, res, next) => {
     // Cascade Order → Delivery status sync.
     // Mirrors the Delivery → Order cascade in deliveries.js.
     // Without this, marking "Delivered" from dashboard leaves the delivery record stale.
-    if (newStatus && ['Out for Delivery', 'Delivered'].includes(newStatus)) {
+    if (newStatus && [ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED].includes(newStatus)) {
       const deliveryId = order['Deliveries']?.[0];
       if (deliveryId) {
         const deliveryPatch = { Status: newStatus };
-        if (newStatus === 'Delivered') {
+        if (newStatus === ORDER_STATUS.DELIVERED) {
           deliveryPatch['Delivered At'] = new Date().toISOString();
         }
         await db.update(TABLES.DELIVERIES, deliveryId, deliveryPatch).catch(() => {});
@@ -602,7 +600,7 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Broadcast status changes that other apps care about
-    if (newStatus === 'Ready') {
+    if (newStatus === ORDER_STATUS.READY) {
       broadcast({
         type: 'order_ready',
         orderId: order.id,
@@ -622,15 +620,15 @@ router.patch('/:id', async (req, res, next) => {
 router.post('/:id/cancel-with-return', async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.ORDERS, req.params.id);
-    const currentStatus = order.Status || 'New';
+    const currentStatus = order.Status || ORDER_STATUS.NEW;
 
     // Only allow cancel-with-return from non-terminal states
-    if (currentStatus === 'Delivered' || currentStatus === 'Picked Up') {
+    if (currentStatus === ORDER_STATUS.DELIVERED || currentStatus === ORDER_STATUS.PICKED_UP) {
       return res.status(400).json({
         error: `Cannot cancel a ${currentStatus} order — it has already been fulfilled.`,
       });
     }
-    if (currentStatus === 'Cancelled') {
+    if (currentStatus === ORDER_STATUS.CANCELLED) {
       return res.status(400).json({ error: 'Order is already cancelled.' });
     }
 
@@ -658,7 +656,7 @@ router.post('/:id/cancel-with-return', async (req, res, next) => {
     }
 
     // Cancel the order
-    await db.update(TABLES.ORDERS, req.params.id, { Status: 'Cancelled' });
+    await db.update(TABLES.ORDERS, req.params.id, { Status: ORDER_STATUS.CANCELLED });
 
     res.json({
       message: 'Order cancelled and stock returned.',
