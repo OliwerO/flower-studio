@@ -5,7 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --env-file=.env.dev --watch src/index.js"
+    "dev": "node --env-file=.env.dev --watch src/index.js",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -16,5 +18,9 @@
     "express-rate-limit": "^8.3.0",
     "helmet": "^8.1.0",
     "p-queue": "^8.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.4",
+    "globals": "^17.4.0"
   }
 }

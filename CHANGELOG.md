@@ -28,6 +28,30 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-03-21 — Phase 2: ESLint, Service Layer Extraction, Logging Cleanup
+
+### Backend — ESLint
+- **New file `backend/eslint.config.js`** — ESLint 9 flat config with rules for: `no-unused-vars`, `no-undef`, `eqeqeq`, `prefer-const`, `no-async-promise-executor`, `require-atomic-updates`, `no-duplicate-imports`.
+- Added `lint` and `lint:fix` scripts to `backend/package.json`.
+- Auto-fixed 4 warnings (let→const, ==→===). Remaining 11 warnings are pre-existing and intentional.
+
+### Backend — Service Layer Extraction
+- **New file `backend/src/services/orderService.js`** — extracted business logic from `routes/orders.js`:
+  - `createOrder()` — atomic order creation with rollback
+  - `transitionStatus()` — status validation, cascade, broadcast
+  - `cancelWithStockReturn()` — cancel + stock recovery
+  - `editBouquetLines()` — bouquet editing with stock adjustments
+  - `autoMatchStock()` — flower name → stock item matching
+  - `ALLOWED_TRANSITIONS` — status state machine (now importable by tests)
+- **New file `backend/src/services/analyticsService.js`** — extracted 14 pure computation functions from `routes/analytics.js`: `calculateRevenueMetrics`, `rankTopProducts`, `analyzeFlowerPairings`, `calculateWeeklyRhythm`, `calculateMonthlyBreakdown`, `calculateCompletionFunnel`, `analyzeSourceEfficiency`, `analyzePaymentMethods`, `calculatePrepTimeStats`, `calculateInventoryTurnover`, `buildSupplierScorecard`, `breakdownStockLosses`, etc.
+- `routes/orders.js` — reduced from 710 to 290 lines (thin controller)
+- `routes/analytics.js` — reduced from 570 to 230 lines (data fetcher + assembler)
+
+### Backend — Logging Cleanup
+- `routes/webhook.js` — removed `console.log` that dumped full Wix order payload (contained customer PII: names, phones, addresses, payment info). Key structure logging preserved.
+
+---
+
 ## 2026-03-21 — Code Quality: Status Constants + Shallow Config Fix
 
 ### Backend
