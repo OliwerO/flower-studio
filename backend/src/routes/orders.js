@@ -3,12 +3,16 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { broadcast } from '../services/notifications.js';
-import { notifyNewOrder } from '../services/telegram.js';
 import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
 import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
 import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS } from '../constants/statuses.js';
+import {
+  createOrder,
+  transitionStatus,
+  cancelWithStockReturn,
+  editBouquetLines,
+} from '../services/orderService.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -89,7 +93,6 @@ router.get('/', async (req, res, next) => {
     });
 
     // Bulk-fetch order lines + customers + deliveries in parallel.
-    // Like loading a truck once with all parts instead of sending a separate van per item.
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
     const allDeliveryIds = orders.flatMap(o => o['Deliveries'] || []);
@@ -117,7 +120,7 @@ router.get('/', async (req, res, next) => {
     // Sum order line totals + build bouquet summary per order
     const totalByOrder = {};
     const costByOrder = {};
-    const linesByOrder = {};   // orderId → [{ name, qty }]
+    const linesByOrder = {};
     for (const line of allLines) {
       const oid = line.Order?.[0];
       if (oid) {
@@ -141,17 +144,14 @@ router.get('/', async (req, res, next) => {
       if (!order['Price Override'] && totalByOrder[order.id] != null) {
         order['Sell Total'] = totalByOrder[order.id];
       }
-      // Attach flower cost total for margin dot indicator
       if (costByOrder[order.id] != null) {
         order['Flowers Cost Total'] = costByOrder[order.id];
       }
-      // Bouquet summary — e.g. "5× Roses, 3× Tulips" for quick visual ID
       const lines = linesByOrder[order.id];
       if (lines?.length) {
         order['Bouquet Summary'] = lines.map(l => `${l.qty}× ${l.name}`).join(', ');
       }
 
-      // Attach delivery fields for display in order list / kanban
       const delivId = order['Deliveries']?.[0];
       if (delivId && deliveryMap[delivId]) {
         const d = deliveryMap[delivId];
@@ -163,20 +163,18 @@ router.get('/', async (req, res, next) => {
         order['Delivery Fee'] = Number(d['Delivery Fee'] || 0);
       }
 
-      // Compute Final Price = Price Override || (Sell Total + Delivery Fee)
       const sellTotal = order['Sell Total'] || totalByOrder[order.id] || 0;
       const delivFee = Number(order['Delivery Fee'] || 0);
       order['Final Price'] = order['Price Override'] || (sellTotal + delivFee) || 0;
     }
 
-    // Post-enrichment filter for "upcoming": keep orders with delivery/pickup
-    // date >= today, OR orders with no delivery date at all (unscheduled).
+    // Post-enrichment filter for "upcoming"
     if (upcoming) {
       const today = new Date().toISOString().split('T')[0];
       const result = orders.filter(o => {
         const dd = o['Delivery Date'] || o['Required By'];
-        if (!dd) return true;                      // no date → show it
-        return dd >= today;                        // today or future
+        if (!dd) return true;
+        return dd >= today;
       });
       return res.json(result);
     }
@@ -190,22 +188,17 @@ router.get('/', async (req, res, next) => {
 // GET /api/orders/:id — includes linked order lines
 router.get('/:id', async (req, res, next) => {
   try {
-    // 1. Fetch the order record (1 API call)
     const order = await db.getById(TABLES.ORDERS, req.params.id);
 
-    // 2. Bulk-fetch order lines + customer + delivery in parallel (2-3 API calls, not N+2)
-    //    Same pattern as the list endpoint — one truck for all packages.
     const lineIds = order['Order Lines'] || [];
     const custId = order.Customer?.[0];
     const deliveryId = order['Deliveries']?.[0];
 
     const [orderLines, customer, delivery] = await Promise.all([
       listByIds(TABLES.ORDER_LINES, lineIds),
-      // Fetch customer (1 call)
       custId
         ? db.getById(TABLES.CUSTOMERS, custId).catch(() => null)
         : Promise.resolve(null),
-      // Fetch delivery if exists (1 call)
       deliveryId
         ? db.getById(TABLES.DELIVERIES, deliveryId)
         : Promise.resolve(undefined),
@@ -223,28 +216,16 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
-// POST /api/orders — creates order + order lines + delivery atomically (sequential)
-// Body: { customer, customerRequest, source, deliveryType, orderLines[], delivery?, notes, paymentStatus, paymentMethod, priceOverride }
+// POST /api/orders — creates order + order lines + delivery atomically
 router.post('/', async (req, res, next) => {
   try {
     const {
-      customer,         // Airtable customer record ID
-      customerRequest,
-      source,
-      communicationMethod,  // how the customer contacted us (Instagram, WhatsApp, etc.)
-      deliveryType,
-      orderLines = [],  // [{ stockItemId, flowerName, quantity, costPricePerUnit, sellPricePerUnit }]
-      delivery,         // { address, recipientName, recipientPhone, date, time, cardText, driverId, fee }
-      notes,
-      paymentStatus,
-      paymentMethod,
-      priceOverride,
-      requiredBy,
-      cardText,         // top-level card text (works for both delivery and pickup)
-      deliveryTime,     // top-level time slot (used for pickup timing)
+      customer, customerRequest, source, communicationMethod, deliveryType,
+      orderLines = [], delivery, notes, paymentStatus, paymentMethod,
+      priceOverride, requiredBy, cardText, deliveryTime,
     } = req.body;
 
-    // --- Fix 1: Input validation (defect detection gate) ---
+    // --- Input validation ---
     if (!customer || typeof customer !== 'string') {
       return res.status(400).json({ error: 'customer (Airtable record ID) is required and must be a non-empty string.' });
     }
@@ -269,160 +250,22 @@ router.post('/', async (req, res, next) => {
     if (priceOverride !== undefined && priceOverride !== null && (typeof priceOverride !== 'number' || priceOverride < 0)) {
       return res.status(400).json({ error: 'priceOverride must be a number >= 0 if provided.' });
     }
-    // Source validation is no longer hardcoded — dynamic from Settings.
     if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
       return res.status(400).json({ error: `paymentStatus must be one of: ${VALID_PAYMENT_STATUSES.join(', ')}` });
     }
 
-    // --- Rollback tracking ---
-    let order = null;
-    const createdLineIds = [];
-    const stockAdjustments = []; // track deductions for rollback: [{ stockId, delta }]
-    let createdDelivery = null;
-
+    // --- Delegate to service ---
     try {
-      // 0. Generate sequential Order ID (YYYYMM-NNN)
-      const appOrderId = await generateOrderId();
+      const result = await createOrder({
+        customer, customerRequest, source, communicationMethod, deliveryType,
+        orderLines, delivery, notes,
+        paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
+        paymentMethod, priceOverride, requiredBy, cardText, deliveryTime,
+        createdBy: req.role === 'owner' ? 'Owner' : 'Florist',
+      }, { getConfig, getDriverOfDay, generateOrderId });
 
-      // 1. Create the parent order record
-      // For pickups, store the time slot directly on the order (no delivery record exists).
-      // For deliveries, time goes to both the order and the delivery record.
-      order = await db.create(TABLES.ORDERS, {
-        Customer:         [customer],
-        'Customer Request': customerRequest,
-        'Source':   source || null,
-        'Delivery Type':  deliveryType,
-        'Order Date':     new Date().toISOString().split('T')[0],
-        'Required By':    requiredBy || delivery?.date || null,
-        'Notes Original':     notes || '',
-        'Greeting Card Text': cardText || delivery?.cardText || '',
-        'Delivery Time':      deliveryTime || delivery?.time || '',
-        'Payment Status':     paymentStatus || PAYMENT_STATUS.UNPAID,
-        'Payment Method':     paymentMethod || null,
-        'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
-        'Price Override':     priceOverride || null,
-        'App Order ID':       appOrderId,
-        Status:               ORDER_STATUS.NEW,
-        'Created By':         req.role === 'owner' ? 'Owner' : 'Florist',
-      });
-
-      // 2a. Auto-match lines without stockItemId to existing stock by name.
-      // Handles text imports and other flows that may not resolve stock links.
-      const unmatchedLines = orderLines.filter(l => !l.stockItemId && l.flowerName);
-      if (unmatchedLines.length > 0) {
-        const allStock = await db.list(TABLES.STOCK, {
-          filterByFormula: '{Active} = TRUE()',
-          fields: ['Display Name'],
-        });
-        const byName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
-        for (const line of unmatchedLines) {
-          const match = byName.get((line.flowerName || '').toLowerCase());
-          if (match) {
-            line.stockItemId = match.id;
-            console.log(`[ORDER] Auto-matched "${line.flowerName}" to stock ${match.id}`);
-          }
-        }
-      }
-
-      // 2b. Create order line records (one per flower) — prices are snapshotted here
-      const createdLines = [];
-      for (const line of orderLines) {
-        const created = await db.create(TABLES.ORDER_LINES, {
-          Order:                  [order.id],
-          ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
-          'Flower Name':          line.flowerName,
-          Quantity:               line.quantity,
-          'Cost Price Per Unit':  line.costPricePerUnit || 0,
-          'Sell Price Per Unit':  line.sellPricePerUnit || 0,
-        });
-        createdLines.push(created);
-        createdLineIds.push(created.id);
-      }
-
-      // 3. Deduct stock atomically — serialized through stockQueue (no race conditions)
-      // Skip deduction for deferred lines — they signal demand without pulling from inventory.
-      for (const line of orderLines) {
-        if (line.stockItemId && !line.stockDeferred) {
-          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
-          stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
-        }
-      }
-
-      // 4. Create delivery record if delivery type
-      if (deliveryType === 'Delivery' && delivery) {
-        createdDelivery = await db.create(TABLES.DELIVERIES, {
-          'Linked Order':      [order.id],
-          'Delivery Address':  delivery.address || '',
-          'Recipient Name':    delivery.recipientName || '',
-          'Recipient Phone':   delivery.recipientPhone || '',
-          'Delivery Date':   delivery.date || null,
-          'Delivery Time':   delivery.time || '',
-          'Assigned Driver': delivery.driver || getDriverOfDay() || null,
-          'Delivery Fee':      delivery.fee ?? getConfig('defaultDeliveryFee'),
-          'Delivery Method': 'Driver',
-          'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
-          Status:              DELIVERY_STATUS.PENDING,
-        });
-      }
-
-      // 5. Update customer record with communication method + order source (non-blocking)
-      const customerPatch = {};
-      if (communicationMethod) customerPatch['Communication method'] = communicationMethod;
-      if (source) customerPatch['Order Source'] = source;
-      if (Object.keys(customerPatch).length > 0) {
-        db.update(TABLES.CUSTOMERS, customer, customerPatch)
-          .catch(err => console.error('[ORDER] Failed to update customer fields:', err.message));
-      }
-
-      // Broadcast new order to all connected SSE clients (florist + delivery + dashboard)
-      broadcast({
-        type: 'new_order',
-        orderId: order.id,
-        customerName: '',
-        source: source || 'In-store',
-        request: customerRequest || '',
-      });
-
-      // Telegram notification to owner + florists (non-blocking)
-      notifyNewOrder({
-        source: source || 'In-store',
-        customerName: '',
-        request: customerRequest,
-        deliveryType,
-        price: priceOverride || null,
-      }).catch(err => console.error('[TELEGRAM] Notification error:', err.message));
-
-
-      res.status(201).json({
-        order,
-        orderLines: createdLines,
-        delivery: createdDelivery,
-      });
+      res.status(201).json(result);
     } catch (creationErr) {
-      // Rollback — reverse stock deductions, delete created records.
-      // Like scrapping a half-assembled unit and returning parts to the bins.
-      console.error('Order creation failed mid-sequence, rolling back:', creationErr.message);
-      const rollbackErrors = [];
-
-      // Reverse stock deductions (add back what was deducted)
-      for (const adj of stockAdjustments) {
-        try { await db.atomicStockAdjust(adj.stockId, -adj.delta); }
-        catch (e) { rollbackErrors.push(`Failed to reverse stock ${adj.stockId}: ${e.message}`); }
-      }
-
-      for (const lineId of createdLineIds) {
-        try { await db.deleteRecord(TABLES.ORDER_LINES, lineId); }
-        catch (e) { rollbackErrors.push(`Failed to delete order line ${lineId}: ${e.message}`); }
-      }
-      if (order) {
-        try { await db.deleteRecord(TABLES.ORDERS, order.id); }
-        catch (e) { rollbackErrors.push(`Failed to delete order ${order.id}: ${e.message}`); }
-      }
-
-      if (rollbackErrors.length > 0) {
-        console.error('Rollback encountered errors:', rollbackErrors);
-      }
-
       return res.status(500).json({
         error: 'Order creation failed. Partial records have been cleaned up.',
         detail: creationErr.message,
@@ -434,180 +277,42 @@ router.post('/', async (req, res, next) => {
 });
 
 // PUT /api/orders/:id/lines — edit bouquet composition after order creation.
-// Handles add/remove/update lines with stock adjustments.
-// Body: { lines: [...], removedLines: [{ lineId, stockItemId, quantity, action: 'return'|'writeoff', reason? }] }
-// Editable at statuses: New, Ready.
-// If owner edits while Ready → auto-revert to New.
 router.put('/:id/lines', async (req, res, next) => {
   try {
-    const order = await db.getById(TABLES.ORDERS, req.params.id);
-    const editableStatuses = [ORDER_STATUS.NEW, ORDER_STATUS.READY];
-    if (!editableStatuses.includes(order.Status)) {
-      return res.status(400).json({ error: `Cannot edit bouquet in "${order.Status}" status.` });
-    }
-
-    const { lines = [], removedLines = [] } = req.body;
-    const isOwner = req.role === 'owner';
-
-    // 1. Handle removed lines: return to stock or write off
-    for (const rem of removedLines) {
-      if (rem.stockItemId && rem.quantity > 0) {
-        if (rem.action === 'return') {
-          await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
-        } else if (rem.action === 'writeoff') {
-          // Log as stock loss but don't return to stock
-          await db.create(TABLES.STOCK_LOSS_LOG, {
-            'Stock Item': [rem.stockItemId],
-            Quantity: rem.quantity,
-            Reason: rem.reason || 'Bouquet edit',
-            Date: new Date().toISOString().split('T')[0],
-          }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message));
-        }
-      }
-      if (rem.lineId) {
-        await db.deleteRecord(TABLES.ORDER_LINES, rem.lineId).catch(() => {});
-      }
-    }
-
-    // Track which stock items already had explicit stock actions in removedLines
-    // (qty reduction entries sent by frontend with lineId=null).
-    // Skip auto-adjustment for these to avoid double-counting.
-    const explicitStockIds = new Set(
-      removedLines.filter(r => !r.lineId && r.stockItemId).map(r => r.stockItemId)
+    const result = await editBouquetLines(
+      req.params.id,
+      req.body,
+      req.role === 'owner',
     );
-
-    // 2a. Auto-match new lines without stockItemId to existing stock by name.
-    const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
-    if (newUnmatched.length > 0) {
-      const allStock = await db.list(TABLES.STOCK, {
-        filterByFormula: '{Active} = TRUE()',
-        fields: ['Display Name'],
-      });
-      const byName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
-      for (const line of newUnmatched) {
-        const match = byName.get((line.flowerName || '').toLowerCase());
-        if (match) {
-          line.stockItemId = match.id;
-          console.log(`[BOUQUET-EDIT] Auto-matched "${line.flowerName}" to stock ${match.id}`);
-        }
-      }
-    }
-
-    // 2b. Handle new/updated lines
-    const createdLines = [];
-    for (const line of lines) {
-      if (line.id) {
-        // Existing line — update quantity
-        if (line._originalQty != null && line.quantity !== line._originalQty) {
-          // Only auto-adjust stock if the frontend didn't already send an explicit action
-          const delta = line._originalQty - line.quantity;
-          if (line.stockItemId && !line.stockDeferred && delta !== 0 && !explicitStockIds.has(line.stockItemId)) {
-            const adj = await db.atomicStockAdjust(line.stockItemId, delta);
-            console.log(`[BOUQUET-EDIT] Stock adjusted: ${line.flowerName} delta ${delta} (${adj.previousQty} → ${adj.newQty})`);
-          }
-          await db.update(TABLES.ORDER_LINES, line.id, { Quantity: line.quantity });
-        }
-      } else {
-        // New line — create record + deduct stock
-        const created = await db.create(TABLES.ORDER_LINES, {
-          Order: [req.params.id],
-          ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
-          'Flower Name': line.flowerName,
-          Quantity: line.quantity,
-          'Cost Price Per Unit': line.costPricePerUnit || 0,
-          'Sell Price Per Unit': line.sellPricePerUnit || 0,
-        });
-        createdLines.push(created);
-        if (line.stockItemId && !line.stockDeferred) {
-          const adj = await db.atomicStockAdjust(line.stockItemId, -line.quantity);
-          console.log(`[BOUQUET-EDIT] Stock deducted: ${line.flowerName} qty -${line.quantity} (${adj.previousQty} → ${adj.newQty})`);
-        } else {
-          console.log(`[BOUQUET-EDIT] Stock NOT deducted for ${line.flowerName}: stockItemId=${line.stockItemId}, stockDeferred=${line.stockDeferred}`);
-        }
-      }
-    }
-
-    // 3. Auto-revert status if owner edits while Ready
-    if (isOwner && order.Status === ORDER_STATUS.READY) {
-      await db.update(TABLES.ORDERS, req.params.id, { Status: ORDER_STATUS.NEW });
-    }
-
-    res.json({ updated: true, createdLines });
+    res.json(result);
   } catch (err) {
+    if (err.statusCode === 400) {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 });
 
-// Allowed status transitions — orders flow: New → Ready → Delivered/Picked Up.
-// "In Progress" kept as legacy exit only (for orders already in that state).
-const ALLOWED_TRANSITIONS = {
-  [ORDER_STATUS.NEW]:              [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.IN_PROGRESS]:      [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED],          // legacy — still allow exit
-  [ORDER_STATUS.READY]:            [ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED],
-  [ORDER_STATUS.OUT_FOR_DELIVERY]: [ORDER_STATUS.DELIVERED, ORDER_STATUS.CANCELLED],       // driver is en route
-  [ORDER_STATUS.DELIVERED]:        [],          // terminal — no changes
-  [ORDER_STATUS.PICKED_UP]:        [],          // terminal — no changes
-  [ORDER_STATUS.CANCELLED]:        [ORDER_STATUS.NEW],     // allow un-cancel (reopen) back to New
-};
-
 // PATCH /api/orders/:id — update status, prices, assignment, etc.
 router.patch('/:id', async (req, res, next) => {
   try {
-    // Fix 2: Field whitelisting — only approved fields pass through
     const safeFields = pickAllowed(req.body, ORDERS_PATCH_ALLOWED);
     const { Status: newStatus, ...otherFields } = safeFields;
 
-    // If status is being changed, validate the transition
     if (newStatus) {
-      const current = await db.getById(TABLES.ORDERS, req.params.id);
-      const currentStatus = current.Status || ORDER_STATUS.NEW;
-      const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
-
-      if (newStatus !== currentStatus && !allowed.includes(newStatus)) {
-        return res.status(400).json({
-          error: `Cannot move from "${currentStatus}" to "${newStatus}". Allowed: ${allowed.join(', ') || 'none (terminal)'}`,
-        });
-      }
-
-      // Stock not auto-returned on cancel per business rules —
-      // florist must manually re-add via Stock Panel.
-      // Flowers may have already been used or discarded.
-    }
-
-    // Record prep timestamps for cycle-time analysis.
-    // "Ready" = work complete (like scanning finished goods).
-    const timestamps = {};
-    if (newStatus === ORDER_STATUS.READY) timestamps['Prep Ready At'] = new Date().toISOString();
-
-    const order = await db.update(TABLES.ORDERS, req.params.id, {
-      ...otherFields,
-      ...(newStatus ? { Status: newStatus } : {}),
-      ...timestamps,
-    });
-
-    // Cascade Order → Delivery status sync.
-    // Mirrors the Delivery → Order cascade in deliveries.js.
-    // Without this, marking "Delivered" from dashboard leaves the delivery record stale.
-    if (newStatus && [ORDER_STATUS.OUT_FOR_DELIVERY, ORDER_STATUS.DELIVERED].includes(newStatus)) {
-      const deliveryId = order['Deliveries']?.[0];
-      if (deliveryId) {
-        const deliveryPatch = { Status: newStatus };
-        if (newStatus === ORDER_STATUS.DELIVERED) {
-          deliveryPatch['Delivered At'] = new Date().toISOString();
+      try {
+        const order = await transitionStatus(req.params.id, newStatus, otherFields);
+        return res.json(order);
+      } catch (transErr) {
+        if (transErr.statusCode === 400) {
+          return res.status(400).json({ error: transErr.message });
         }
-        await db.update(TABLES.DELIVERIES, deliveryId, deliveryPatch).catch(() => {});
+        throw transErr;
       }
     }
 
-    // Broadcast status changes that other apps care about
-    if (newStatus === ORDER_STATUS.READY) {
-      broadcast({
-        type: 'order_ready',
-        orderId: order.id,
-        customerRequest: order['Customer Request'] || '',
-      });
-    }
-
+    // No status change — just update other fields
+    const order = await db.update(TABLES.ORDERS, req.params.id, otherFields);
     res.json(order);
   } catch (err) {
     next(err);
@@ -615,66 +320,23 @@ router.patch('/:id', async (req, res, next) => {
 });
 
 // POST /api/orders/:id/cancel-with-return — cancel order AND return stock quantities.
-// Unlike plain cancel (which leaves stock as-is because flowers may be used/discarded),
-// this explicitly adds quantities back. Like a full return-to-shelf after a cancelled production run.
 router.post('/:id/cancel-with-return', async (req, res, next) => {
   try {
-    const order = await db.getById(TABLES.ORDERS, req.params.id);
-    const currentStatus = order.Status || ORDER_STATUS.NEW;
-
-    // Only allow cancel-with-return from non-terminal states
-    if (currentStatus === ORDER_STATUS.DELIVERED || currentStatus === ORDER_STATUS.PICKED_UP) {
-      return res.status(400).json({
-        error: `Cannot cancel a ${currentStatus} order — it has already been fulfilled.`,
-      });
-    }
-    if (currentStatus === ORDER_STATUS.CANCELLED) {
-      return res.status(400).json({ error: 'Order is already cancelled.' });
-    }
-
-    // Fetch order lines to know what stock to return
-    const lineIds = order['Order Lines'] || [];
-    let returnedItems = [];
-
-    if (lineIds.length > 0) {
-      const lines = await listByIds(TABLES.ORDER_LINES, lineIds);
-
-      // Return stock for each line that has a linked stock item
-      for (const line of lines) {
-        const stockId = line['Stock Item']?.[0];
-        const qty = Number(line.Quantity || 0);
-        if (stockId && qty > 0) {
-          const { newQty } = await db.atomicStockAdjust(stockId, qty);
-          returnedItems.push({
-            stockId,
-            flowerName: line['Flower Name'] || '?',
-            quantityReturned: qty,
-            newStockQty: newQty,
-          });
-        }
-      }
-    }
-
-    // Cancel the order
-    await db.update(TABLES.ORDERS, req.params.id, { Status: ORDER_STATUS.CANCELLED });
-
-    res.json({
-      message: 'Order cancelled and stock returned.',
-      returnedItems,
-    });
+    const result = await cancelWithStockReturn(req.params.id);
+    res.json(result);
   } catch (err) {
+    if (err.statusCode === 400) {
+      return res.status(400).json({ error: err.message });
+    }
     next(err);
   }
 });
 
-
 // POST /api/orders/:id/convert-to-delivery — creates a delivery record when switching from Pickup to Delivery.
-// Like adding a shipping label to a package that was originally set for counter pickup.
 router.post('/:id/convert-to-delivery', async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.ORDERS, req.params.id);
 
-    // Check if delivery record already exists
     if (order['Deliveries']?.length > 0) {
       return res.status(400).json({ error: 'Delivery record already exists for this order.' });
     }
@@ -692,10 +354,9 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       'Delivery Fee':     fee ?? getConfig('defaultDeliveryFee'),
       'Delivery Method': 'Driver',
       'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
-      Status:             'Pending',
+      Status:             DELIVERY_STATUS.PENDING,
     });
 
-    // Update order to Delivery type + set delivery fee
     await db.update(TABLES.ORDERS, req.params.id, {
       'Delivery Type': 'Delivery',
       'Delivery Fee':  fee ?? getConfig('defaultDeliveryFee'),

@@ -45,7 +45,7 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
     // Optionally include lines in a single batch fetch instead of N+1 calls
     if (include === 'lines' && orders.length > 0) {
       const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-      let allLines = [];
+      const allLines = [];
       if (allLineIds.length > 0) {
         // Airtable formula limit: batch into chunks of 100 IDs
         const CHUNK = 100;

@@ -68,7 +68,7 @@ router.post('/wix', verifyWixSignature, (req, res) => {
   const topKeys = Object.keys(payload || {});
   const dataKeys = payload?.data ? Object.keys(payload.data) : [];
   console.log(`[WEBHOOK] Wix payload received — top: [${topKeys.join(',')}], data: [${dataKeys.join(',')}]`);
-  console.log('[WEBHOOK] Wix order detail:', JSON.stringify(payload, null, 2).slice(0, 1000));
+  // Note: full payload NOT logged — may contain customer PII (name, phone, address, payment).
 
   // Process async — errors are caught and logged inside processWixOrder
   processWixOrder(payload).catch(err => {

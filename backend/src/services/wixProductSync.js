@@ -283,7 +283,7 @@ async function setWixCategoryProducts(collectionId, productIds) {
 async function fetchWixData() {
   const wixProducts = await fetchAllWixProducts();
 
-  let wixCategoryIdToName = {};
+  const wixCategoryIdToName = {};
   let wixCategories = [];
   try {
     wixCategories = await fetchWixCategories();
