@@ -1,44 +1,13 @@
-// LanguageContext for the delivery app — same pattern as florist.
-
-import { createContext, useContext, useState, useCallback } from 'react';
+import { LanguageProvider as SharedProvider, useLanguage, LangToggle } from '@flower-studio/shared';
 import { setLanguage } from '../translations.js';
 import { setGuideLanguage } from '../guideContent.js';
 
-const LanguageContext = createContext({ lang: 'ru', setLang: () => {} });
+export { useLanguage, LangToggle };
 
 export function LanguageProvider({ children }) {
-  const [lang, setLangState] = useState(
-    () => localStorage.getItem('blossom-lang') || 'ru'
-  );
-
-  const setLang = useCallback((newLang) => {
-    setLanguage(newLang);
-    setGuideLanguage(newLang);
-    localStorage.setItem('blossom-lang', newLang);
-    setLangState(newLang);
-  }, []);
-
   return (
-    <LanguageContext.Provider value={{ lang, setLang }}>
+    <SharedProvider setLanguage={setLanguage} setGuideLanguage={setGuideLanguage}>
       {children}
-    </LanguageContext.Provider>
-  );
-}
-
-export function useLanguage() {
-  return useContext(LanguageContext);
-}
-
-export function LangToggle() {
-  const { lang, setLang } = useLanguage();
-  return (
-    <button
-      onClick={() => setLang(lang === 'ru' ? 'en' : 'ru')}
-      className="text-xs font-bold px-2 py-1 rounded-lg bg-gray-100 text-gray-500
-                 hover:bg-gray-200 active:scale-95 uppercase tracking-wide"
-      title="Switch language"
-    >
-      {lang === 'ru' ? 'EN' : 'RU'}
-    </button>
+    </SharedProvider>
   );
 }

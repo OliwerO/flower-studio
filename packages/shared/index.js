@@ -5,3 +5,6 @@ export { renderStockName } from './utils/stockName.jsx';
 export { ToastProvider, useToast } from './context/ToastContext.jsx';
 export { default as Toast } from './components/Toast.jsx';
 export { default as ErrorBoundary } from './components/ErrorBoundary.jsx';
+export { default as apiClient, setClientPin, getClientPin } from './api/client.js';
+export { LanguageProvider, useLanguage, LangToggle } from './context/LanguageContext.jsx';
+export { AuthProvider, useAuth } from './context/AuthContext.jsx';
