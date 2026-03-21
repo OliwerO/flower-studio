@@ -180,11 +180,11 @@ Keeping Airtable as the database. Ordered by impact × effort — do the cheap w
 
 Create `packages/shared/` in the monorepo with these modules (all currently duplicated):
 
-- [ ] **`packages/shared/api/client.js`** — single API client (currently 3 identical copies in `apps/*/src/api/client.js`). Accept position config via param
+- [x] **`packages/shared/api/client.js`** — single API client, local re-exports in each app
 - [x] **`packages/shared/components/Toast.jsx`** — single Toast component with `position` prop, local wrappers in each app
 - [x] **`packages/shared/context/ToastContext.jsx`** — shared context, local re-exports in each app
-- [ ] **`packages/shared/context/LanguageContext.jsx`** — nearly identical in all 3 apps, minor CSS diff in LangToggle
-- [ ] **`packages/shared/context/AuthContext.jsx`** — florist/dashboard identical, delivery adds `driverName`. Support via optional field
+- [x] **`packages/shared/context/LanguageContext.jsx`** — shared provider accepts `setLanguage`/`setGuideLanguage` props, `LangToggle` accepts `className` prop. Local wrappers bind app-specific translations
+- [x] **`packages/shared/context/AuthContext.jsx`** — unified context with optional `driverName` field, local re-exports in florist + delivery
 - [x] **`packages/shared/utils/stockName.jsx`** — shared renderStockName, consumers updated in both apps
 - [ ] **`packages/shared/utils/formatDate.js`** — only used in florist (not a dedup win yet)
 - [x] **`packages/shared/utils/timeSlots.js`** — shared getAvailableSlots, consumers updated in both apps
@@ -201,10 +201,10 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 
 ### Wave 4 — Component Decomposition (large components)
 
-- [ ] **Split `OrderCard.jsx` (838 lines, 13 useState hooks)** — break into: OrderCardSummary (~150), OrderCardExpanded (~300), BouquetEditor (~200), StockActionPanel (~150)
-- [ ] **Split `SettingsTab.jsx` (1172 lines)** — break into: DeliveryZoneEditor, DriverSettings, CategoryEditor, TimeSlotSettings, SettingsTab wrapper (~200 lines each)
-- [ ] **Deduplicate `OrderDetailPanel.jsx` (914 lines)** — shares ~70% logic with OrderCard.jsx. Extract shared order display/edit logic, compose differently per app
-- [ ] **Split `ProductsTab.jsx` (899 lines)** — product list, product editor, category manager as separate components
+- [x] **Split `OrderCard.jsx`** — into OrderCardSummary, OrderCardExpanded, BouquetEditor. Orchestrator is ~160 lines
+- [x] **Split `SettingsTab.jsx`** — into SettingsPrimitives, DeliveryZonesSection, DriverSettingsSection, StorefrontCategoriesSection, RateEditors, MarketingSpendSection, StockLossSection. Wrapper is ~100 lines
+- [x] **Deduplicate `OrderDetailPanel.jsx`** — extracted BouquetSection + DeliverySection into order/ subfolder, added shared useOrderPatching hook. Panel is ~250 lines
+- [x] **Split `ProductsTab.jsx`** — into ProductCard, SyncStatus, SyncLogSection, AvailableTodayBanner, helpers. Orchestrator is ~175 lines
 
 ### Wave 5 — Testing Foundation
 
@@ -227,8 +227,8 @@ Create `packages/shared/` in the monorepo with these modules (all currently dupl
 | Wave | Items | Status | Impact |
 |------|-------|--------|--------|
 | 1 — Security & Crashes | 4 | **Complete** (4/4) | Prevents data loss + exploits |
-| 2 — Shared Packages | 11 | In progress (7/11) | Halves maintenance burden |
+| 2 — Shared Packages | 11 | In progress (10/11) | Halves maintenance burden |
 | 3 — Backend Consolidation | 4 | **Complete** (4/4) | Cleaner, safer backend |
-| 4 — Component Decomposition | 4 | Not started | Enables testing + reuse |
+| 4 — Component Decomposition | 4 | Complete (4/4) | Enables testing + reuse |
 | 5 — Testing Foundation | 5 | Not started | Catches bugs before users |
 | 6 — Reliability | 5 | Not started | Production confidence |
