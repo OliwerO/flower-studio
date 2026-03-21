@@ -19,7 +19,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, stockShortfa
   const status     = order['Status'] || 'New';
   const isDelivery = order['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
-  const price      = order['Price Override'] || order['Sell Total'] || '';
+  const price      = order['Final Price'] || order['Price Override'] || order['Sell Total'] || '';
   const isWix      = order['Source'] === 'Wix';
   const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
 
@@ -108,7 +108,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, stockShortfa
   const detailLineTotal = (detail?.orderLines || []).reduce((sum, l) =>
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
   const detailDeliveryFee = Number(d['Delivery Fee'] || detail?.delivery?.['Delivery Fee'] || 0);
-  const currentPrice = d['Price Override'] || (detailLineTotal > 0 ? detailLineTotal + detailDeliveryFee : (d['Sell Total'] || price) ) || 0;
+  const currentPrice = d['Final Price'] || d['Price Override'] || (detailLineTotal > 0 ? detailLineTotal + detailDeliveryFee : price) || 0;
 
   return (
     <div
