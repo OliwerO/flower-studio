@@ -4,7 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
-import { ORDER_STATUS, DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
+import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
