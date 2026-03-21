@@ -28,6 +28,31 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-03-21 — Phase 4: Testing Foundation
+
+### Backend
+- **Vitest** added as test framework (`npm test` / `npm run test:watch`).
+- **`vitest.config.js`** — sets dummy env vars so Airtable/auth imports don't crash during tests.
+- **46 tests** across 3 test files, all passing in ~300ms:
+  - `__tests__/utils.test.js` — `sanitizeFormulaValue` (formula injection prevention), `pickAllowed` (field whitelisting), `safeEqual` (timing-safe PIN comparison).
+  - `__tests__/analyticsService.test.js` — 13 tests covering all pure computation functions: revenue, waste, funnel, product ranking, flower pairings, weekly rhythm, payment methods, prep time, inventory turnover, supplier scorecard, stock losses.
+  - `__tests__/orderService.test.js` — `ALLOWED_TRANSITIONS` state machine: valid transitions, terminal states, legacy exits, full status coverage.
+
+---
+
+## 2026-03-21 — Phase 3: Input Validation + SSE Connection Limits
+
+### Backend — Input Validation
+- `routes/customers.js` — POST now validates Name/Nickname required, Phone type check, body goes through `pickAllowed` whitelist (was previously passing raw `req.body` to Airtable). PATCH rejects empty updates.
+- `routes/floristHours.js` — PATCH rejects empty updates (already had POST validation).
+- `routes/marketingSpend.js` — POST now validates: amount must be non-negative number, channel must be non-empty string, notes sanitized.
+
+### Backend — SSE Connection Limits
+- `services/notifications.js` — `addClient()` now enforces a max of 50 concurrent SSE connections (expected: ~7 users). Returns `false` when limit reached.
+- `routes/events.js` — returns 503 when connection limit hit, preventing memory exhaustion from runaway reconnections or bot traffic.
+
+---
+
 ## 2026-03-21 — Phase 2: ESLint, Service Layer Extraction, Logging Cleanup
 
 ### Backend — ESLint

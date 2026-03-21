@@ -4,13 +4,24 @@
 
 const clients = new Set();
 
+// Connection limits — prevent memory exhaustion from runaway reconnections.
+// Expected max: 1 owner + 4 florists + 2 drivers = 7 clients.
+// Headroom for page reloads / stale connections that haven't closed yet.
+const MAX_CLIENTS = 50;
+
 /**
  * Register a new SSE client (Express response object).
  * The response stays open — we write events to it over time.
+ * Returns false if connection limit reached.
  */
 export function addClient(res) {
+  if (clients.size >= MAX_CLIENTS) {
+    console.error(`[SSE] Connection limit reached (${MAX_CLIENTS}), rejecting new client`);
+    return false;
+  }
   clients.add(res);
   console.log(`[SSE] Client connected (${clients.size} total)`);
+  return true;
 }
 
 /**

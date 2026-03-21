@@ -82,6 +82,9 @@ router.post('/', authorize('orders'), async (req, res, next) => {
 router.patch('/:id', authorize('admin'), async (req, res, next) => {
   try {
     const safeFields = pickAllowed(req.body, PATCH_ALLOWED);
+    if (Object.keys(safeFields).length === 0) {
+      return res.status(400).json({ error: 'No valid fields to update.' });
+    }
     // Convert numeric fields
     if ('Hours' in safeFields) safeFields.Hours = Number(safeFields.Hours) || 0;
     if ('Hourly Rate' in safeFields) safeFields['Hourly Rate'] = Number(safeFields['Hourly Rate']) || 0;

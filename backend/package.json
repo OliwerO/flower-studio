@@ -7,7 +7,9 @@
     "start": "node src/index.js",
     "dev": "node --env-file=.env.dev --watch src/index.js",
     "lint": "eslint src/",
-    "lint:fix": "eslint src/ --fix"
+    "lint:fix": "eslint src/ --fix",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
@@ -21,6 +23,7 @@
   },
   "devDependencies": {
     "eslint": "^9.39.4",
-    "globals": "^17.4.0"
+    "globals": "^17.4.0",
+    "vitest": "^4.1.0"
   }
 }
