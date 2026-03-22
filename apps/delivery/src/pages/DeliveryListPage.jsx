@@ -12,6 +12,7 @@ import t from '../translations.js';
 import DeliveryCard from '../components/DeliveryCard.jsx';
 import DeliverySheet from '../components/DeliverySheet.jsx';
 import DeliveryResultPicker from '../components/DeliveryResultPicker.jsx';
+import { DeliveryListSkeleton } from '../components/Skeleton.jsx';
 import MapView from '../components/MapView.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 
@@ -96,16 +97,20 @@ export default function DeliveryListPage() {
 
   const selectedDelivery = deliveries.find(d => d.id === selectedId);
 
-  // Standard status change — "Start Delivery" or "Mark Delivered" (= Success)
+  // Standard status change — optimistic update, revert on failure
   async function updateStatus(id, newStatus) {
+    const patch = { Status: newStatus };
+    if (newStatus === 'Delivered') patch['Delivery Result'] = 'Success';
+    // Optimistic: apply immediately
+    const prevDeliveries = deliveries;
+    setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
+    if (newStatus === 'Delivered') setSelectedId(null);
     try {
-      const patch = { Status: newStatus };
-      if (newStatus === 'Delivered') patch['Delivery Result'] = 'Success';
       const res = await client.patch(`/deliveries/${id}`, patch);
       setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...res.data } : d));
-      showToast(`${newStatus}!`);
-      if (newStatus === 'Delivered') setSelectedId(null);
     } catch (err) {
+      // Revert on failure
+      setDeliveries(prevDeliveries);
       showToast(err.response?.data?.error || t.error, 'error');
     }
   }
@@ -119,15 +124,16 @@ export default function DeliveryListPage() {
   async function handleDeliveryProblem(result) {
     const id = resultPickerId;
     setResultPickerId(null);
+    const patch = { Status: 'Delivered', 'Delivery Result': result };
+    // Optimistic
+    const prevDeliveries = deliveries;
+    setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
+    setSelectedId(null);
     try {
-      const res = await client.patch(`/deliveries/${id}`, {
-        Status: 'Delivered',
-        'Delivery Result': result,
-      });
+      const res = await client.patch(`/deliveries/${id}`, patch);
       setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...res.data } : d));
-      showToast(`${t.delivered} — ${result}`);
-      setSelectedId(null);
     } catch (err) {
+      setDeliveries(prevDeliveries);
       showToast(err.response?.data?.error || t.error, 'error');
     }
   }
@@ -208,7 +214,7 @@ export default function DeliveryListPage() {
         )}
 
         {loading ? (
-          <p className="text-center text-ios-tertiary py-12">{t.loading}</p>
+          <DeliveryListSkeleton count={4} />
         ) : deliveries.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-4xl mb-3">📦</p>

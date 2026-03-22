@@ -10,6 +10,7 @@ import { renderStockName } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';
+import { SkeletonTable } from './Skeleton.jsx';
 
 export default function StockTab({ initialFilter }) {
   const [stock, setStock]           = useState([]);
@@ -271,11 +272,7 @@ export default function StockTab({ initialFilter }) {
         );
       })()}
 
-      {loading && (
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-        </div>
-      )}
+      {loading && <SkeletonTable rows={10} cols={5} />}
 
       {/* ── Waste view: period filter + dedicated write-off log ── */}
       {view === 'waste' && (

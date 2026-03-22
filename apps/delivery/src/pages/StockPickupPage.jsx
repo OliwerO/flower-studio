@@ -7,6 +7,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
 import client, { getClientPin } from '../api/client.js';
+import { StockPickupSkeleton } from '../components/Skeleton.jsx';
 import t from '../translations.js';
 
 export default function StockPickupPage() {
@@ -52,17 +53,20 @@ export default function StockPickupPage() {
     return () => { source.close(); clearInterval(interval); };
   }, [fetchOrders]);
 
-  // Auto-save line update
+  // Auto-save line update — optimistic: apply immediately, revert on failure
   async function updateLine(orderId, lineId, fields) {
+    // Optimistic update
+    const prevOrders = orders;
+    setOrders(prev => prev.map(o => o.id === orderId ? {
+      ...o,
+      lines: o.lines.map(l => l.id === lineId ? { ...l, ...fields } : l),
+    } : o));
     setSaving(prev => ({ ...prev, [lineId]: true }));
     try {
       await client.patch(`/stock-orders/${orderId}/lines/${lineId}`, fields);
-      // Update local state
-      setOrders(prev => prev.map(o => o.id === orderId ? {
-        ...o,
-        lines: o.lines.map(l => l.id === lineId ? { ...l, ...fields } : l),
-      } : o));
     } catch {
+      // Revert on failure
+      setOrders(prevOrders);
       showToast(t.error, 'error');
     } finally {
       setSaving(prev => ({ ...prev, [lineId]: false }));
@@ -109,8 +113,8 @@ export default function StockPickupPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
+      <div className="min-h-screen bg-ios-bg px-4 pt-6">
+        <StockPickupSkeleton count={4} />
       </div>
     );
   }

@@ -8,6 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import OrderDetailPanel from './OrderDetailPanel.jsx';
+import { SkeletonTable } from './Skeleton.jsx';
 
 // "2026-03-08" → "Mar 8"
 function fmtDate(iso) {
@@ -323,11 +324,7 @@ export default function OrdersTab({ initialFilter }) {
       )}
 
       {/* Loading */}
-      {loading && (
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-        </div>
-      )}
+      {loading && <SkeletonTable rows={8} cols={5} />}
 
       {/* Order list */}
       {/* Results count */}
