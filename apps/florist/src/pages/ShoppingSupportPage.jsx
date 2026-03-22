@@ -7,7 +7,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
-import client from '../api/client.js';
+import client, { getClientPin } from '../api/client.js';
 import t from '../translations.js';
 
 const DRIVER_STATUSES = ['Pending', 'Found All', 'Partial', 'Not Found'];
@@ -69,7 +69,7 @@ export default function ShoppingSupportPage() {
   // SSE listener for real-time updates from driver/owner + fallback poll every 30s
   useEffect(() => {
     const backendUrl = import.meta.env.VITE_BACKEND_URL || '';
-    const pin = client.defaults?.headers?.['X-Auth-PIN'] || '';
+    const pin = getClientPin() || '';
     const source = new EventSource(`${backendUrl}/api/events${pin ? `?pin=${pin}` : ''}`);
     source.onmessage = (event) => {
       try {

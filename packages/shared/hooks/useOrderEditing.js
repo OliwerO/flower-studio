@@ -126,12 +126,8 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
         sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
       }]);
     } catch {
-      setEditLines(prev => [...prev, {
-        id: null, stockItemId: null, flowerName: newFlowerForm.name,
-        quantity: 1, _originalQty: 0,
-        costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
-        sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
-      }]);
+      showToast(t.updateError || 'Error creating stock item', 'error');
+      return;
     }
     setNewFlowerForm(null);
     setFlowerSearch('');
@@ -147,11 +143,8 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
         costPricePerUnit: 0, sellPricePerUnit: 0,
       }]);
     } catch {
-      setEditLines(prev => [...prev, {
-        id: null, stockItemId: null, flowerName: name.trim(),
-        quantity: 1, _originalQty: 0,
-        costPricePerUnit: 0, sellPricePerUnit: 0,
-      }]);
+      showToast(t.updateError || 'Error creating stock item', 'error');
+      return;
     }
     setFlowerSearch('');
     setAddingFlower(false);

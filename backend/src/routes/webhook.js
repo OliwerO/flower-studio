@@ -1,8 +1,7 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import { processWixOrder } from '../services/wix.js';
-import { authenticate } from '../middleware/auth.js';
-import { authorize } from '../middleware/auth.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 

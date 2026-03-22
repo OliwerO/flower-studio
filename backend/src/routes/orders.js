@@ -141,10 +141,10 @@ router.get('/', async (req, res, next) => {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
 
-      if (!order['Price Override'] && totalByOrder[order.id] != null) {
+      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
         order['Sell Total'] = totalByOrder[order.id];
       }
-      if (costByOrder[order.id] != null) {
+      if (costByOrder[order.id] !== undefined) {
         order['Flowers Cost Total'] = costByOrder[order.id];
       }
       const lines = linesByOrder[order.id];
