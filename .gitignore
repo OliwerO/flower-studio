@@ -17,3 +17,4 @@ tmp/
 tmp_*.json
 *.backup
 C\357\200\272*
+backend/package-lock.json
