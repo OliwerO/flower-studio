@@ -12,7 +12,7 @@ import { TABLES } from '../config/airtable.js';
  * @param {string} [errorMessage] - error details if failed
  * @param {object} [rawPayload] - full webhook payload for debugging
  */
-export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMessage, rawPayload }) {
+export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMessage }) {
   try {
     if (!TABLES.WEBHOOK_LOG) {
       console.warn('[WEBHOOK_LOG] Table ID not configured — skipping log');

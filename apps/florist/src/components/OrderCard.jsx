@@ -36,13 +36,20 @@ export default function OrderCard({ order, onOrderUpdated, isOwner, stockShortfa
   }
 
   async function patch(fields) {
+    // Optimistic update: apply immediately, revert on failure
+    const prevDetail = detail;
+    const prevOrder = { ...order };
+    setDetail(prev => prev ? { ...prev, ...fields } : fields);
+    onOrderUpdated?.(order.id, fields);
     setSaving(true);
     try {
       const res = await client.patch(`/orders/${order.id}`, fields);
       setDetail(prev => prev ? { ...prev, ...res.data } : res.data);
       onOrderUpdated?.(order.id, res.data);
-      showToast(t.updated, 'success');
     } catch (err) {
+      // Revert optimistic update
+      setDetail(prevDetail);
+      onOrderUpdated?.(order.id, prevOrder);
       const msg = err.response?.data?.error || t.updateError;
       showToast(msg, 'error');
     } finally {

@@ -27,10 +27,7 @@ router.get('/', authorize('orders'), async (req, res, next) => {
       const startDate = `${year}-${mon}-01`;
       const endDay = new Date(Number(year), Number(mon), 0).getDate();
       const endDate = `${year}-${mon}-${String(endDay).padStart(2, '0')}`;
-      filters.push(`IS_AFTER({Date}, '${sanitizeFormulaValue(startDate)}')`);
-      filters.push(`IS_BEFORE({Date}, '${sanitizeFormulaValue(endDate)}')`);
-      // Include the boundary dates
-      filters.length = 0;
+      // Inclusive range: NOT before start AND NOT after end
       filters.push(`NOT(IS_BEFORE({Date}, '${sanitizeFormulaValue(startDate)}'))`);
       filters.push(`NOT(IS_AFTER({Date}, '${sanitizeFormulaValue(endDate)}'))`);
     }

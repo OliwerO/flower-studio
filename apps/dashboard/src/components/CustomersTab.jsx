@@ -7,6 +7,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import CustomerDetailPanel from './CustomerDetailPanel.jsx';
+import { SkeletonTable } from './Skeleton.jsx';
 
 const SEGMENT_COLORS = {
   Constant:         'bg-ios-green/15 text-ios-green',
@@ -241,11 +242,7 @@ export default function CustomersTab({ initialFilter }) {
         </div>
       )}
 
-      {loading && (
-        <div className="flex justify-center py-12">
-          <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-        </div>
-      )}
+      {loading && <SkeletonTable rows={6} cols={4} />}
 
       {/* Column headers */}
       {!loading && customers.length > 0 && (

@@ -70,13 +70,15 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   }, [orderId, showToast]);
 
   async function patchOrder(fields) {
+    // Optimistic: apply immediately, revert on failure
+    const prevOrder = order;
+    setOrder(prev => ({ ...prev, ...fields }));
     setSaving(true);
     try {
       await client.patch(`/orders/${orderId}`, fields);
-      setOrder(prev => ({ ...prev, ...fields }));
-      showToast(t.orderUpdated);
       onUpdate();
     } catch (err) {
+      setOrder(prevOrder);
       showToast(err.response?.data?.error || t.error, 'error');
     } finally {
       setSaving(false);

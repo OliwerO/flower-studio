@@ -6,6 +6,7 @@ import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
+import { OrderListSkeleton } from '../components/Skeleton.jsx';
 import t from '../translations.js';
 
 // Key for dismissing stock alerts per session
@@ -406,9 +407,7 @@ export default function OrderListPage() {
       {/* List */}
       <main className="px-4 pb-28 max-w-2xl mx-auto">
         {loading ? (
-          <div className="flex items-center justify-center mt-20">
-            <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-          </div>
+          <OrderListSkeleton count={5} />
         ) : orders.length === 0 ? (
           <div className="text-center mt-20">
             <p className="text-4xl mb-3">🌸</p>

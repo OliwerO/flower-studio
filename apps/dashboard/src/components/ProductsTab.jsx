@@ -7,6 +7,7 @@ import SyncStatus from './products/SyncStatus.jsx';
 import SyncLogSection from './products/SyncLogSection.jsx';
 import AvailableTodayBanner from './products/AvailableTodayBanner.jsx';
 import ProductCard from './products/ProductCard.jsx';
+import { SkeletonCard } from './Skeleton.jsx';
 
 export default function ProductsTab() {
   const [products, setProducts] = useState([]);
@@ -191,9 +192,7 @@ export default function ProductsTab() {
 
       {/* Product list */}
       {loading ? (
-        <div className="flex justify-center py-16">
-          <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-        </div>
+        <div className="space-y-3"><SkeletonCard /><SkeletonCard /><SkeletonCard /></div>
       ) : (
         <div className="space-y-3">
           {filtered.map(group => (

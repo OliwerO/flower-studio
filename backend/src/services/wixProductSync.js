@@ -124,6 +124,8 @@ async function updateWixInventory(productId, variantId, quantity) {
 /**
  * Update Wix product visibility (hide/show).
  */
+// Reserved for future use — hides/shows a product on Wix storefront.
+// eslint-disable-next-line no-unused-vars
 async function updateWixProductVisibility(productId, visible) {
   const res = await fetch(
     `${WIX_API_URL}/stores/v1/products/${productId}`,

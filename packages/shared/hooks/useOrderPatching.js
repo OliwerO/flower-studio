@@ -24,10 +24,10 @@ export default function useOrderPatching({ orderId, apiClient, showToast, t, set
     setSaving(true);
     try {
       await apiClient.patch(`/deliveries/${deliveryId}`, fields);
-      setOrder(prev => ({
+      setOrder(prev => prev ? ({
         ...prev,
         delivery: { ...prev.delivery, ...fields },
-      }));
+      }) : prev);
       showToast(t.orderUpdated || t.updated, 'success');
       return true;
     } catch (err) {

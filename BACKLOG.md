@@ -127,108 +127,102 @@ Features and improvements tracked against original build phases.
 - [x] **Dashboard: driver-of-day cascade** — auto-assigns to all unassigned deliveries for today
 - [x] **Dashboard Step2Bouquet key fix** — uses stable identity key (no quantity)
 - [x] **Dark mode (florist app)** — system preference + manual toggle, iOS dark palette, ThemeContext
+- [x] **Optimistic UI** — status changes, delivery updates, PO line edits apply instantly (revert on API failure). Follows StockTab.adjustQty() pattern across all 3 apps
+- [x] **Skeleton loading** — replaced all spinners with shimmer placeholders (SkeletonTable, SkeletonCard in dashboard; OrderListSkeleton in florist; DeliveryListSkeleton + StockPickupSkeleton in delivery)
+- [x] **Bug fixes (2026-03-22)** — SSE PIN access (delivery+florist), useOrderPatching null safety, addNewFlower ghost items, floristHours dead code, ESLint hygiene (7 fixes total)
 
 ---
 
 ## To Do
 
-### Phase 9 — Polish + Testing (remaining items)
-- [ ] **Empty states with messages** — some views still show blank when data is empty (partial coverage)
-- [ ] **Mobile responsiveness on actual devices** — verify florist on iPad, delivery on iPhone, dashboard on desktop
+### Priority 1 — Go-Live Blockers
+- [ ] **Go-live checklist** — see `CHANGELOG.md` (Airtable tables, env vars, deployment)
 - [ ] **E2E test** — 5 orders through full lifecycle (delivery + pickup paths) against dev base
+- [ ] **Mobile responsiveness on actual devices** — verify florist on iPad, delivery on iPhone, dashboard on desktop
 - [ ] **Phone format validation** — normalize phone numbers on input
 
-### Phase 10 — Excel Migration Script
-- [ ] **Import historical orders** — parse owner's Excel spreadsheets into App Orders + Order Lines
-- [ ] **Map legacy customers** — match Excel customer names to existing Clients (B2C) records
-- [ ] **Handle data quality** — missing fields, inconsistent naming, currency conversion
+### Priority 2 — Testing & CI (Wave 5)
+- [x] **ESLint config** — added ESLint 9 flat config with `eqeqeq`, `no-unused-vars`, `require-atomic-updates`. Pre-commit hook runs lint + tests
+- [x] **Backend unit tests** — 46 tests passing: `safeEqual`, `sanitizeFormulaValue`, `pickAllowed`, analytics computations, order state machine
+- [ ] **Frontend component tests** — Toast, AuthContext, useNotifications, useOrderEditing (small, isolated, high value)
+- [ ] **API integration tests** — order creation + stock deduction, delivery status cascade, PIN auth flow
+- [ ] **CI pipeline** — GitHub Actions: lint → test → build. Blocks broken code from deploying
 
-### Infrastructure
-- [ ] **Go-live** — see `CHANGELOG.md` Go-Live Checklist (Airtable tables, env vars, deployment)
-- [ ] **Custom domain** — e.g., app.blossomflowers.pl
-- [ ] **Backup strategy** — scheduled Airtable data export
-- [ ] **Error monitoring** — Sentry or similar for production error tracking
-- [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
-  - [ ] Restrict same-day delivery slots to "Available Today" bouquets only (Velo checkout logic)
-  - [ ] Hide "Available Today" nav item via Velo when `/api/public/categories` omits it (post-cutoff)
-  - [ ] Use `filteredTimeSlots` from `/api/public/delivery-pricing?date=` for Wix checkout time picker
+### Priority 3 — Reliability (Wave 6)
+- [ ] **Error monitoring (Sentry)** — add to all 3 frontend apps + backend. Quick setup, huge value for production
+- [ ] **Structured logging** — replace `console.error` with pino. Add request IDs for tracing
+- [ ] **SSE connection limits** — cap max connections per client in `notifications.js` to prevent memory exhaustion
+- [ ] **Config shallow copy fix** — `settings.js` uses `{ ...DEFAULTS }` (shallow). Use `structuredClone()`
+- [ ] **Order creation rollback hardening** — if rollback fails, log to dead-letter table for manual cleanup
 
-### Known Issues (from PO system audit)
-- [x] **Hardcoded strings in OrderDetailPanel** — bouquet editing buttons now use `t.xxx` translations (EN+RU)
+### Priority 4 — UX Polish
+- [ ] **Empty states with messages** — some views still show blank when data is empty
 - [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
+- [ ] **Offline support (delivery app)** — cache task list in localStorage, queue updates when offline
 
-### Open Investigation (2026-03-18)
-- [x] **Bouquet edit stock deduction** — Root cause found: multiple paths could create order lines without stockItemId (text imports with no stock match, failed new-flower creates). Fixed by: (1) auto-matching unlinked lines to stock by name at order creation and bouquet edit time, (2) loading stock with `includeEmpty=true` in bouquet editing picker so all flowers are visible.
+### Priority 5 — Infrastructure
+- [ ] **Custom domain** — e.g., app.blossomflowers.pl
+- [ ] **Backup strategy** — scheduled Airtable data export
+- [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
+  - [ ] Restrict same-day delivery slots to "Available Today" bouquets only
+  - [ ] Hide "Available Today" nav when post-cutoff
+  - [ ] Use `filteredTimeSlots` for Wix checkout time picker
+
+### Priority 6 — Data Migration
+- [ ] **Import historical orders** — parse owner's Excel spreadsheets into App Orders + Order Lines
+- [ ] **Map legacy customers** — match Excel customer names to existing Clients (B2C) records
+- [ ] **Handle data quality** — missing fields, inconsistent naming, currency conversion
 
 ---
 
 ## Improvement Project — Code Quality & Reliability (2026-03-19)
 
 Structured improvements to make the codebase more maintainable, reliable, and safe.
-Keeping Airtable as the database. Ordered by impact × effort — do the cheap wins first.
 
-### Wave 1 — Security & Crash Prevention (do first)
+### Wave 1 — Security & Crash Prevention — **Complete** (4/4)
 
-- [x] **Fix SSE timing-unsafe PIN check** — extracted `safeEqual()` to `backend/src/utils/auth.js`, used in `middleware/auth.js`, `routes/auth.js`, and `routes/events.js`
-- [x] **Add `unhandledRejection` handler** — added both `unhandledRejection` and `uncaughtException` handlers to `index.js`
-- [x] **Add React Error Boundaries** — shared `ErrorBoundary` component wrapping all 3 app roots
-- [x] **Fix dashboard `Promise.all` inconsistency** — added `.catch(() => [])` to all queries in all 4 `Promise.all` blocks
+- [x] Fix SSE timing-unsafe PIN check
+- [x] Add `unhandledRejection` handler
+- [x] Add React Error Boundaries
+- [x] Fix dashboard `Promise.all` inconsistency
 
-### Wave 2 — Extract Shared Packages (biggest maintainability win)
+### Wave 2 — Extract Shared Packages — **Complete** (10/11)
 
-Create `packages/shared/` in the monorepo with these modules (all currently duplicated):
+- [x] `packages/shared/api/client.js`, Toast, ToastContext, LanguageContext, AuthContext
+- [x] `packages/shared/utils/` — stockName, timeSlots, parseBatchName
+- [x] `packages/shared/hooks/` — useOrderEditing, useOrderPatching
+- [x] Wire up monorepo workspace
+- [ ] `packages/shared/utils/formatDate.js` — only used in florist (not a dedup win yet, deprioritized)
 
-- [x] **`packages/shared/api/client.js`** — single API client, local re-exports in each app
-- [x] **`packages/shared/components/Toast.jsx`** — single Toast component with `position` prop, local wrappers in each app
-- [x] **`packages/shared/context/ToastContext.jsx`** — shared context, local re-exports in each app
-- [x] **`packages/shared/context/LanguageContext.jsx`** — shared provider accepts `setLanguage`/`setGuideLanguage` props, `LangToggle` accepts `className` prop. Local wrappers bind app-specific translations
-- [x] **`packages/shared/context/AuthContext.jsx`** — unified context with optional `driverName` field, local re-exports in florist + delivery
-- [x] **`packages/shared/utils/stockName.jsx`** — shared renderStockName, consumers updated in both apps
-- [ ] **`packages/shared/utils/formatDate.js`** — only used in florist (not a dedup win yet)
-- [x] **`packages/shared/utils/timeSlots.js`** — shared getAvailableSlots, consumers updated in both apps
-- [x] **Wire up monorepo workspace** — add `packages/shared` to root `package.json` workspaces, update Vite configs for aliasing
-- [x] **`packages/shared/hooks/useOrderEditing.js`** — shared bouquet editing hook used by OrderCard (florist) and OrderDetailPanel (dashboard)
-- [x] **`packages/shared/utils/parseBatchName.js`** — shared utility, replaces 4 inline copies across florist + dashboard
+### Wave 3 — Backend Consolidation — **Complete** (4/4)
 
-### Wave 3 — Backend Consolidation
+- [x] Extract `pickAllowed()`, `safeEqual()`
+- [x] Validate env vars on startup
+- [x] Batch OR formulas for large queries
 
-- [x] **Extract `pickAllowed()` to `backend/src/utils/fields.js`** — replaced in all 5 route files (stock, deliveries, orders, floristHours, customers)
-- [x] **Extract `safeEqual()` to `backend/src/utils/auth.js`** — replaced in middleware/auth.js and routes/auth.js
-- [x] **Validate env vars on startup** — checks AIRTABLE_API_KEY, AIRTABLE_BASE_ID, PIN_OWNER, PIN_FLORIST on boot
-- [x] **Batch OR formulas for large queries** — created `listByIds()` utility in `backend/src/utils/batchQuery.js`, replaced 4 unbounded OR formulas in orders.js
+### Wave 4 — Component Decomposition — **Complete** (4/4)
 
-### Wave 4 — Component Decomposition (large components)
+- [x] Split OrderCard, SettingsTab, OrderDetailPanel, ProductsTab
 
-- [x] **Split `OrderCard.jsx`** — into OrderCardSummary, OrderCardExpanded, BouquetEditor. Orchestrator is ~160 lines
-- [x] **Split `SettingsTab.jsx`** — into SettingsPrimitives, DeliveryZonesSection, DriverSettingsSection, StorefrontCategoriesSection, RateEditors, MarketingSpendSection, StockLossSection. Wrapper is ~100 lines
-- [x] **Deduplicate `OrderDetailPanel.jsx`** — extracted BouquetSection + DeliverySection into order/ subfolder, added shared useOrderPatching hook. Panel is ~250 lines
-- [x] **Split `ProductsTab.jsx`** — into ProductCard, SyncStatus, SyncLogSection, AvailableTodayBanner, helpers. Orchestrator is ~175 lines
+### Wave 5 — Testing Foundation — **Partial** (2/5)
 
-### Wave 5 — Testing Foundation
+- [x] ESLint config + pre-commit hook
+- [x] Backend unit tests (46 tests)
+- [ ] Frontend component tests
+- [ ] API integration tests
+- [ ] CI pipeline
 
-- [ ] **Add ESLint config** — enforce import consistency, unused vars, hook rules. Catches bugs at write time
-- [ ] **Backend unit tests** — priority targets: `safeEqual`, `sanitizeFormulaValue`, `atomicStockAdjust`, `pickAllowed`, order rollback logic
-- [ ] **Frontend component tests** — Toast, AuthContext, useNotifications (small, isolated, high value)
-- [ ] **API integration tests** — order creation + stock deduction, delivery status cascade, PIN auth flow. Use dev base
-- [ ] **CI pipeline** — GitHub Actions: lint → test → build. Blocks broken code from deploying
-
-### Wave 6 — Reliability & Observability
-
-- [ ] **Error monitoring (Sentry)** — add to all 3 frontend apps + backend. Quick setup, huge value for catching production issues
-- [ ] **Structured logging** — replace `console.error` with structured logger (pino). Add request IDs for tracing
-- [ ] **SSE connection limits** — cap max connections per client in `notifications.js` to prevent memory exhaustion
-- [ ] **Config shallow copy fix** — `settings.js` line 64 does `{ ...DEFAULTS }` (shallow). Nested mutations leak across requests. Use `structuredClone()` or deep merge
-- [ ] **Order creation rollback hardening** — if rollback itself fails, log to dead-letter table for manual cleanup
+### Wave 6 — Reliability & Observability — Not started (0/5)
 
 ### Progress Tracking
 
 | Wave | Items | Status | Impact |
 |------|-------|--------|--------|
 | 1 — Security & Crashes | 4 | **Complete** (4/4) | Prevents data loss + exploits |
-| 2 — Shared Packages | 11 | In progress (10/11) | Halves maintenance burden |
+| 2 — Shared Packages | 11 | **Complete** (10/11) | Halves maintenance burden |
 | 3 — Backend Consolidation | 4 | **Complete** (4/4) | Cleaner, safer backend |
-| 4 — Component Decomposition | 4 | Complete (4/4) | Enables testing + reuse |
-| 5 — Testing Foundation | 5 | Not started | Catches bugs before users |
+| 4 — Component Decomposition | 4 | **Complete** (4/4) | Enables testing + reuse |
+| 5 — Testing Foundation | 5 | **Partial** (2/5) | Catches bugs before users |
 | 6 — Reliability | 5 | Not started | Production confidence |

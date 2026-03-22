@@ -106,7 +106,7 @@ router.get('/', async (req, res, next) => {
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
 
       // Compute effective price (Final Price is an Airtable formula that may not return)
-      if (!order['Price Override'] && totalByOrder[order.id] != null) {
+      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
         order['Sell Total'] = totalByOrder[order.id];
       }
       const deliveryFee = Number(order['Delivery Fee'] || 0);
@@ -147,7 +147,7 @@ router.get('/', async (req, res, next) => {
     for (const order of fulfillToday) {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
-      if (!order['Price Override'] && totalByOrder[order.id] != null) {
+      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
         order['Sell Total'] = totalByOrder[order.id];
       }
       const deliveryFee = Number(order['Delivery Fee'] || 0);
