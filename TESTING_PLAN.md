@@ -12,13 +12,23 @@
 
 ---
 
+## Step 0 — CLAUDE.md Testing Rules (already done)
+
+A "Testing Rules" section has been added to `CLAUDE.md`. This ensures Claude Code
+automatically writes tests for any new shared utility, hook, or backend service.
+**No action needed — this step is complete.**
+
+---
+
 ## Step 1 — Install Dependencies
 
 ### 1a. Root-level dev deps (shared by all workspaces via hoisting)
 
 ```bash
-npm install -D vitest @testing-library/react @testing-library/jest-dom @testing-library/user-event jsdom --save-dev -w
+npm install -D vitest @vitest/coverage-v8 @testing-library/react @testing-library/jest-dom @testing-library/user-event jsdom --save-dev -w
 ```
+
+`@vitest/coverage-v8` is needed for the coverage thresholds in Step 2a.
 
 These are dev-only and shared. No need to install per-app since npm workspaces hoists.
 
@@ -48,9 +58,21 @@ export default defineConfig({
   test: {
     environment: 'jsdom',
     setupFiles: ['./test/setup.js'],
+    coverage: {
+      provider: 'v8',
+      include: ['utils/**', 'hooks/**'],
+      thresholds: {
+        lines: 80,
+      },
+    },
   },
 });
 ```
+
+The `coverage.thresholds` block is **Option B** — CI will fail if new utils/hooks
+drop line coverage below 80%. This only applies to the shared package (where all
+reusable logic lives), not to app-level components (those change too often for
+hard thresholds to be practical).
 
 > Note: shared package doesn't have `@vitejs/plugin-react` as a dep. Either install it there
 > (`npm install -D @vitejs/plugin-react -w packages/shared`) or skip the react plugin for
@@ -283,8 +305,8 @@ jobs:
       - name: Backend tests
         run: npm test -w backend
 
-      - name: Shared package tests
-        run: npm test -w packages/shared
+      - name: Shared package tests + coverage check
+        run: npx vitest run --coverage -w packages/shared
 
       - name: Florist app tests
         run: npm test -w apps/florist
@@ -365,6 +387,34 @@ Plus edits to:
 5. **Step 6d** (KanbanBoard) — representative component test
 6. **Step 7** (CI) — automates everything
 7. **Steps 4c, 5b, 6e** — remaining coverage
+
+---
+
+## How This Adapts to New Features
+
+Two mechanisms keep test coverage growing automatically:
+
+### Option A — CLAUDE.md convention (already applied)
+The `Testing Rules` section in `CLAUDE.md` tells Claude Code:
+> New shared utilities and hooks **must** include a test file.
+
+Every Claude Code session reads `CLAUDE.md` first. When building a new feature —
+e.g. a `useDeliveryTracking` hook — it will create
+`packages/shared/test/useDeliveryTracking.test.js` alongside it. No human reminder needed.
+
+### Option B — Coverage threshold (enforced in CI)
+`packages/shared/vitest.config.js` sets `coverage.thresholds.lines: 80` for `utils/` and `hooks/`.
+If someone adds a new utility without tests, coverage drops and CI fails.
+
+This only gates the shared package — not app components. App components change too
+frequently for hard thresholds, and the CLAUDE.md rule handles them well enough.
+
+### What's NOT covered (and why that's fine)
+- **App-level components** (`apps/*/src/components/`) — no coverage gate. These are
+  UI-heavy, change often, and testing them has diminishing returns. The CLAUDE.md rule
+  encourages tests for complex ones, but doesn't enforce it.
+- **Backend routes** — already have their own test pattern in `backend/src/__tests__/`.
+  The CLAUDE.md rule now covers new services too.
 
 ---
 
