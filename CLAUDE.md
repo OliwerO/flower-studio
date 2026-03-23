@@ -31,6 +31,16 @@ Each sub-directory has its own CLAUDE.md with domain-specific rules.
 - Comments in English, UI text in Russian via `t.xxx`
 - `console.error` for caught errors; user-facing Russian toasts in UI
 
+## Testing Rules
+- **New shared utilities** (`packages/shared/utils/`) **must** include a test file in `packages/shared/test/`
+- **New shared hooks** (`packages/shared/hooks/`) **must** include a test file in `packages/shared/test/`
+- **New backend services** (`backend/src/services/`) **must** include a test file in `backend/src/__tests__/`
+- Test runner: **Vitest** everywhere. Use `@testing-library/react` + `jsdom` for component/hook tests
+- Mock external deps (API client, translations) — never make real network calls in tests
+- Use `vi.useFakeTimers()` when testing time-dependent logic
+- Coverage thresholds are enforced in CI for `packages/shared/utils/` and `packages/shared/hooks/` (80% lines)
+- Run `npm test` from root before pushing — CI will reject failing tests
+
 ## Airtable Rules (CRITICAL)
 - Rate limit: **5 req/sec** — always use `p-queue` for concurrency
 - **Always** use `filterByFormula` server-side, never fetch-all-then-filter
