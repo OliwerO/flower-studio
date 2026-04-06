@@ -127,102 +127,154 @@ Features and improvements tracked against original build phases.
 - [x] **Dashboard: driver-of-day cascade** — auto-assigns to all unassigned deliveries for today
 - [x] **Dashboard Step2Bouquet key fix** — uses stable identity key (no quantity)
 - [x] **Dark mode (florist app)** — system preference + manual toggle, iOS dark palette, ThemeContext
-- [x] **Optimistic UI** — status changes, delivery updates, PO line edits apply instantly (revert on API failure). Follows StockTab.adjustQty() pattern across all 3 apps
-- [x] **Skeleton loading** — replaced all spinners with shimmer placeholders (SkeletonTable, SkeletonCard in dashboard; OrderListSkeleton in florist; DeliveryListSkeleton + StockPickupSkeleton in delivery)
-- [x] **Bug fixes (2026-03-22)** — SSE PIN access (delivery+florist), useOrderPatching null safety, addNewFlower ghost items, floristHours dead code, ESLint hygiene (7 fixes total)
 
 ---
 
 ## To Do
 
-### Priority 1 — Go-Live Blockers
-- [ ] **Go-live checklist** — see `CHANGELOG.md` (Airtable tables, env vars, deployment)
-- [ ] **E2E test** — 5 orders through full lifecycle (delivery + pickup paths) against dev base
+### Phase 9 — Polish + Testing (remaining items)
+- [ ] **Empty states with messages** — some views still show blank when data is empty (partial coverage)
 - [ ] **Mobile responsiveness on actual devices** — verify florist on iPad, delivery on iPhone, dashboard on desktop
+- [ ] **E2E test** — 5 orders through full lifecycle (delivery + pickup paths) against dev base
 - [ ] **Phone format validation** — normalize phone numbers on input
 
-### Priority 2 — Testing & CI (Wave 5)
-- [x] **ESLint config** — added ESLint 9 flat config with `eqeqeq`, `no-unused-vars`, `require-atomic-updates`. Pre-commit hook runs lint + tests
-- [x] **Backend unit tests** — 46 tests passing: `safeEqual`, `sanitizeFormulaValue`, `pickAllowed`, analytics computations, order state machine
-- [ ] **Frontend component tests** — Toast, AuthContext, useNotifications, useOrderEditing (small, isolated, high value)
-- [ ] **API integration tests** — order creation + stock deduction, delivery status cascade, PIN auth flow
-- [ ] **CI pipeline** — GitHub Actions: lint → test → build. Blocks broken code from deploying
-
-### Priority 3 — Reliability (Wave 6)
-- [ ] **Error monitoring (Sentry)** — add to all 3 frontend apps + backend. Quick setup, huge value for production
-- [ ] **Structured logging** — replace `console.error` with pino. Add request IDs for tracing
-- [ ] **SSE connection limits** — cap max connections per client in `notifications.js` to prevent memory exhaustion
-- [ ] **Config shallow copy fix** — `settings.js` uses `{ ...DEFAULTS }` (shallow). Use `structuredClone()`
-- [ ] **Order creation rollback hardening** — if rollback fails, log to dead-letter table for manual cleanup
-
-### Priority 4 — UX Polish
-- [ ] **Empty states with messages** — some views still show blank when data is empty
-- [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
-- [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
-- [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
-- [ ] **Offline support (delivery app)** — cache task list in localStorage, queue updates when offline
-
-### Priority 5 — Infrastructure
-- [ ] **Custom domain** — e.g., app.blossomflowers.pl
-- [ ] **Backup strategy** — scheduled Airtable data export
-- [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
-  - [ ] Restrict same-day delivery slots to "Available Today" bouquets only
-  - [ ] Hide "Available Today" nav when post-cutoff
-  - [ ] Use `filteredTimeSlots` for Wix checkout time picker
-
-### Priority 6 — Data Migration
+### Phase 10 — Excel Migration Script
 - [ ] **Import historical orders** — parse owner's Excel spreadsheets into App Orders + Order Lines
 - [ ] **Map legacy customers** — match Excel customer names to existing Clients (B2C) records
 - [ ] **Handle data quality** — missing fields, inconsistent naming, currency conversion
 
----
+### Infrastructure
+- [ ] **Go-live** — see `CHANGELOG.md` Go-Live Checklist (Airtable tables, env vars, deployment)
+- [ ] **Custom domain** — e.g., app.blossomflowers.pl
+- [ ] **Backup strategy** — scheduled Airtable data export
+- [ ] **Error monitoring** — Sentry or similar for production error tracking
+- [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
+  - [ ] Restrict same-day delivery slots to "Available Today" bouquets only (Velo checkout logic)
+  - [ ] Hide "Available Today" nav item via Velo when `/api/public/categories` omits it (post-cutoff)
+  - [ ] Use `filteredTimeSlots` from `/api/public/delivery-pricing?date=` for Wix checkout time picker
 
-## Improvement Project — Code Quality & Reliability (2026-03-19)
+### Known Issues (from PO system audit)
+- [x] **Hardcoded strings in OrderDetailPanel** — bouquet editing buttons now use `t.xxx` translations (EN+RU)
+- [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
+- [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
+- [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
 
-Structured improvements to make the codebase more maintainable, reliable, and safe.
+### Tier 1 Bugs — Blocking Daily Operations (2026-04-03)
+- [ ] **Orders not shown in "All Orders"** — created & submitted order appears in CRM but not order list
+- [ ] **Dashboard ↔ Delivery app status sync** — orders marked delivered in dashboard stay as "New" on iPhone delivery app (SSE sync issue)
+- [ ] **Card text + notes lost after submit** — Greeting Card Text and important notes disappear after order submission (order 202603-038)
+- [ ] **Postcard text not visible after accepting** — even when text entered while accepting order, not visible once submitted
+- [ ] **Finished order stale after submit** — order stays on screen after submission, doesn't refresh
+- [ ] **Purchase orders can't be saved** — PO save fails, blocks entire PO workflow
+- [ ] **New order doesn't create negative stock** — submitting order does not generate negative stock entries
+- [ ] **New flowers for future order not in negative stock** — flowers added to future order don't appear in negative stock view
+- [ ] **Florist app: black on grey unreadable** — text contrast too low, can't read on device
+- [ ] **Pink login button cut off** — button not fully visible on some screens
 
-### Wave 1 — Security & Crash Prevention — **Complete** (4/4)
+### Tier 2 UX Fixes — Daily Friction (2026-04-03)
+- [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
+- [ ] **Delivery date should be required** — date required, time and address optional
+- [ ] **Time slots not in order** — sorting broken in time slot picker
+- [ ] **Delivery/pickup date not shown** — date missing from order display
+- [ ] **Sorting by delivery date not working** — sort function broken
+- [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back
+- [ ] **Florist should see important NOTE prominently** — notes not visible on order front page
+- [ ] **Total paid amount not shown** — only flower price visible, not full order total
+- [ ] **Show negative stock on top** in stock tab
+- [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
+- [ ] **PO add planned date** — visible in collapsed PO view
+- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10
+- [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
+- [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
+- [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
+- [ ] **Technical stock bilingual names** — Dasha has the list of items
+- [ ] **Different hourly rates for florists** — Standard, Wedding, Holidays (owner-activated)
 
-- [x] Fix SSE timing-unsafe PIN check
-- [x] Add `unhandledRejection` handler
-- [x] Add React Error Boundaries
-- [x] Fix dashboard `Promise.all` inconsistency
+### CRM & Relationship Intelligence (2026-04-03, after bug fixes)
+- [ ] **Key People system** — new Airtable table (later PostgreSQL): linked to customer, tracks name, phone, relationship type (optional), notes. One key person can have multiple important dates.
+  - **Important Dates sub-table**: linked to key person, stores date + date type (Birthday, Anniversary, Wedding, Name Day, Valentine's, Women's Day, Other) + notes
+  - Architecture: 3-tier (Customer → Key People → Important Dates). Replaces flat Key person 1/2 fields. Migration script needed.
+  - Dashboard: expandable key people cards in Customer Detail Panel
+  - Florist: auto-match recipient to existing key people, offer to save new ones
+  - Fixes bug: "Important Days" widget doesn't show which client/order reminder is based on
+- [ ] **Order purpose/occasion tracking** — record reason for order (birthday, anniversary, corporate, etc.) for analysis and targeted campaigns
+- [ ] **Standalone recipe/pricing tool** — florist can build bouquet recipe + calculate price without creating order
 
-### Wave 2 — Extract Shared Packages — **Complete** (10/11)
+### Financial / Payment Tracking (2026-04-03)
+- [ ] **Stripe refund handling** — track payment status, cancellation, refund reflected in system
+- [ ] **Post-order website message** — change what customer sees after order even if payment failed (Wix-side)
 
-- [x] `packages/shared/api/client.js`, Toast, ToastContext, LanguageContext, AuthContext
-- [x] `packages/shared/utils/` — stockName, timeSlots, parseBatchName
-- [x] `packages/shared/hooks/` — useOrderEditing, useOrderPatching
-- [x] Wire up monorepo workspace
-- [ ] `packages/shared/utils/formatDate.js` — only used in florist (not a dedup win yet, deprioritized)
+### Database Migration — Airtable → PostgreSQL (2026-04-03, after features stabilize)
+- [ ] **Migrate to PostgreSQL on Railway** — replace Airtable as primary database. Owner decision: all data managed through the app, no direct Airtable editing. Add on-demand export feature (to Airtable or Excel) for owner access.
+  - Phase A: Stock + POs (most rate-limit pain)
+  - Phase B: Orders + Lines + Deliveries
+  - Phase C: Customers + Key People + Dates
+  - Phase D: Config + Logs → decommission Airtable
+  - Prerequisites: all Tier 1+2 bugs fixed, key features stable, migration planning session
+  - Design principle: keep business logic in services/ (already done), centralize field names in config
 
-### Wave 3 — Backend Consolidation — **Complete** (4/4)
+### Promo & Event Features (2026-04-03)
+- [ ] **Promo bouquets** — new order type: customer pays nothing, but flower cost (supplier) and courier cost are tracked as business expense. Add "Promo" option when creating a new order. Promo orders must still deduct stock, track supplier costs, and track courier payment — all flow into business cost reporting, not customer billing. Reporting should show promo orders separately from paid orders.
+- [ ] **Seasonal event mode** — major feature requiring dedicated planning session. Two parts:
+  - **Event operations UI** — separate quick-entry interface for high-volume peak days (Valentine's, Women's Day, etc.). Optimized for speed, event-specific metrics, composition planning starting ~3 weeks before event. Very different from standard order wizard.
+  - **Event retrospective analysis** — per-event tracking: flowers used (species + qty), courier workload + pay per driver, full economics (revenue, flower cost, courier cost, profit), waste/overstock. Goal: plan next year using this year's data.
+  - **Prerequisites:** Owner shares Excel files from 14.02 + 08.03 2026 for analysis. Additional cost categories TBD. Do NOT build without planning session.
 
-- [x] Extract `pickAllowed()`, `safeEqual()`
-- [x] Validate env vars on startup
-- [x] Batch OR formulas for large queries
+### Tier 1 Bugs — Blocking Daily Operations (2026-04-03)
+- [x] **Card text + notes lost after submit** — was saving to wrong table (Delivery instead of Order). Fixed: save to Order, added card text for pickup orders
+- [x] **Dashboard ↔ Delivery app status sync** — SSE broadcast for all status changes, Order→Delivery cascade, visibility-change refresh
+- [x] **New order doesn't create negative stock** — removed silent text-only fallback, show error if stock creation fails
+- [x] **Deferred demand not visible** — dashboard now shows deferred demand in Flowers Needed section
+- [x] **Finished order stale after submit** — form reset added before navigation
+- [x] **Orders not shown in "All Orders"** — default date filter changed to month start
+- [x] **Florist app: black on grey unreadable** — dark mode variants added to all bg-gray-100 elements
+- [x] **Pink login button cut off** — bottom padding added for iPhone safe area
+- [x] **Dashboard build error** — pre-existing syntax error in OrderDetailPanel ternary fixed
+- [ ] **Orders not shown in "All Orders"** — created & submitted order appears in CRM but not order list (verify after deploy)
+- [ ] **Dashboard ↔ Delivery app status sync** — orders marked delivered in dashboard stay as "New" on iPhone (verify after deploy)
+- [ ] **Purchase orders can't be saved** — PO save fails (verify after deploy — may be fixed by prior commit 6697aa3)
 
-### Wave 4 — Component Decomposition — **Complete** (4/4)
+### Tier 2 UX Fixes — Daily Friction (2026-04-03)
+- [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
+- [ ] **Delivery date should be required** — date required, time and address optional
+- [ ] **Time slots not in order** — sorting broken in time slot picker
+- [ ] **Delivery/pickup date not shown** — date missing from order display
+- [ ] **Sorting by delivery date not working** — sort function broken
+- [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back
+- [ ] **Florist should see important NOTE prominently** — notes not visible on order front page
+- [ ] **Total paid amount not shown** — only flower price visible, not full order total
+- [ ] **Show negative stock on top** in stock tab
+- [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
+- [ ] **PO add planned date** — visible in collapsed PO view
+- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10
+- [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
+- [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
+- [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
+- [ ] **Technical stock bilingual names** — Dasha has the list of items
+- [ ] **Different hourly rates for florists** — Standard, Wedding, Holidays (owner-activated)
 
-- [x] Split OrderCard, SettingsTab, OrderDetailPanel, ProductsTab
+### CRM & Relationship Intelligence (2026-04-03, after bug fixes)
+- [ ] **Key People system** — new Airtable table (later PostgreSQL): linked to customer, tracks name, phone, relationship type (optional), notes. One key person can have multiple important dates.
+  - **Important Dates sub-table**: linked to key person, stores date + date type (Birthday, Anniversary, Wedding, Name Day, Valentine's, Women's Day, Other) + notes
+  - Architecture: 3-tier (Customer → Key People → Important Dates). Replaces flat Key person 1/2 fields. Migration script needed.
+  - Dashboard: expandable key people cards in Customer Detail Panel
+  - Florist: auto-match recipient to existing key people, offer to save new ones
+  - Fixes bug: "Important Days" widget doesn't show which client/order reminder is based on
+- [ ] **Order purpose/occasion tracking** — record reason for order (birthday, anniversary, corporate, etc.) for analysis and targeted campaigns
+- [ ] **Standalone recipe/pricing tool** — florist can build bouquet recipe + calculate price without creating order
 
-### Wave 5 — Testing Foundation — **Partial** (2/5)
+### Financial / Payment Tracking (2026-04-03)
+- [ ] **Stripe refund handling** — track payment status, cancellation, refund reflected in system
+- [ ] **Post-order website message** — change what customer sees after order even if payment failed (Wix-side)
 
-- [x] ESLint config + pre-commit hook
-- [x] Backend unit tests (46 tests)
-- [ ] Frontend component tests
-- [ ] API integration tests
-- [ ] CI pipeline
+### Database Migration — Airtable → PostgreSQL (2026-04-03, after features stabilize)
+- [ ] **Migrate to PostgreSQL on Railway** — replace Airtable as primary database. Owner decision: all data managed through the app, no direct Airtable editing. Add on-demand export feature (to Airtable or Excel) for owner access.
+  - Phase A: Stock + POs (most rate-limit pain)
+  - Phase B: Orders + Lines + Deliveries
+  - Phase C: Customers + Key People + Dates
+  - Phase D: Config + Logs → decommission Airtable
+  - Prerequisites: all Tier 1+2 bugs fixed, key features stable, migration planning session
+  - Design principle: keep business logic in services/ (already done), centralize field names in config
 
-### Wave 6 — Reliability & Observability — Not started (0/5)
-
-### Progress Tracking
-
-| Wave | Items | Status | Impact |
-|------|-------|--------|--------|
-| 1 — Security & Crashes | 4 | **Complete** (4/4) | Prevents data loss + exploits |
-| 2 — Shared Packages | 11 | **Complete** (10/11) | Halves maintenance burden |
-| 3 — Backend Consolidation | 4 | **Complete** (4/4) | Cleaner, safer backend |
-| 4 — Component Decomposition | 4 | **Complete** (4/4) | Enables testing + reuse |
-| 5 — Testing Foundation | 5 | **Partial** (2/5) | Catches bugs before users |
-| 6 — Reliability | 5 | Not started | Production confidence |
+### Open Investigation (2026-03-18)
+- [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.

@@ -327,7 +327,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
   const statusColor = status === 'Found All' ? 'bg-emerald-100 text-emerald-700' :
                       status === 'Partial' ? 'bg-amber-100 text-amber-700' :
                       status === 'Not Found' ? 'bg-red-100 text-red-700' :
-                      'bg-gray-100 text-gray-500';
+                      'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400';
 
   const statusLabel = status === 'Found All' ? t.shopping.foundAll :
                       status === 'Partial' ? t.shopping.partial :

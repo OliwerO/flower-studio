@@ -20,7 +20,7 @@ function Pills({ options, value, onChange }) {
           className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
             value === o.value
               ? 'bg-brand-600 text-white shadow-sm'
-              : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
+              : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
           }`}
         >
           {o.label}
@@ -141,10 +141,10 @@ export default function Step3Details({ form, onChange }) {
                   disabled={!available}
                   className={`px-3 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
                     !available
-                      ? 'opacity-40 cursor-not-allowed bg-gray-100 text-gray-400 border border-gray-200'
+                      ? 'opacity-40 cursor-not-allowed bg-gray-100 dark:bg-gray-700 text-gray-400 border border-gray-200 dark:border-gray-600'
                       : form.deliveryTime === slot
                         ? 'bg-brand-600 text-white shadow-sm'
-                        : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                   }`}
                 >
                   {slot}

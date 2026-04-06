@@ -134,7 +134,7 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
                       rounded-lg transition-all duration-150
                       ${isSelected
                         ? 'bg-brand-600 text-white shadow-sm'
-                        : 'text-ios-label hover:bg-gray-100 active:bg-gray-200'
+                        : 'text-ios-label hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600'
                       }
                     `}
                   >
@@ -162,7 +162,7 @@ export default function TimePicker({ value = '', onChange, placeholder = 'Select
                       rounded-lg transition-all duration-150
                       ${isSelected
                         ? 'bg-brand-600 text-white shadow-sm'
-                        : 'text-ios-label hover:bg-gray-100 active:bg-gray-200'
+                        : 'text-ios-label hover:bg-gray-100 dark:hover:bg-gray-700 active:bg-gray-200 dark:active:bg-gray-600'
                       }
                     `}
                   >

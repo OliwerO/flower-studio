@@ -557,7 +557,7 @@ export default function DayToDayTab({ onNavigate }) {
         </div>
       )}
 
-      {/* Flowers Needed — negative stock requiring purchase (bottom of page) */}
+      {/* Flowers Needed — negative stock + deferred demand requiring purchase */}
       {data.negativeStock?.length > 0 && (
         <div className="bg-red-50 border border-red-200 rounded-2xl px-4 py-4">
           <h3 className="text-xs font-semibold text-red-600 uppercase tracking-wide mb-3">
@@ -575,7 +575,14 @@ export default function DayToDayTab({ onNavigate }) {
               >
                 <span className="text-sm font-medium text-ios-label">{item.name}</span>
                 <div className="flex items-center gap-3 text-xs">
-                  <span className="font-bold text-red-600">{item.qty}</span>
+                  {item.qty < 0 && (
+                    <span className="font-bold text-red-600">{item.qty}</span>
+                  )}
+                  {item.deferredQty > 0 && (
+                    <span className="font-semibold text-amber-600">
+                      +{item.deferredQty} {t.deferred || 'deferred'}
+                    </span>
+                  )}
                   {item.neededBy && (
                     <span className="text-ios-secondary">
                       {t.neededBy} {fmtDate(item.neededBy)}

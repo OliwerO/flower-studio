@@ -67,9 +67,9 @@ export default function OrdersTab({ initialFilter }) {
   // Initialize state from initialFilter to avoid double-fetch race condition.
   // If a filter is passed from another tab (e.g., Financial), use it from the start.
   const f = initialFilter || {};
-  // When navigating with a specific orderId (e.g., from Today tab), use broad date range
-  // so the order is found regardless of which day it was created.
-  const defaultFrom = f.dateFrom || (f.orderId ? monthStart() : todayStr());
+  // Default to current month so recent orders are always visible.
+  // When navigating with a specific orderId, also use month start.
+  const defaultFrom = f.dateFrom || monthStart();
   const defaultTo   = f.dateTo   || todayStr();
   const [orders, setOrders]       = useState([]);
   const [loading, setLoading]     = useState(true);

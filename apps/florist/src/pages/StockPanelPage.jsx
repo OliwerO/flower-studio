@@ -184,8 +184,8 @@ export default function StockPanelPage() {
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowHelp(true)}
-              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-ios-secondary
-                         hover:bg-gray-200 active-scale flex items-center justify-center"
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300
+                         hover:bg-gray-200 dark:hover:bg-gray-600 active-scale flex items-center justify-center"
             >?</button>
             <button onClick={fetchStock} className="text-ios-tertiary text-base active-scale">↻</button>
           </div>

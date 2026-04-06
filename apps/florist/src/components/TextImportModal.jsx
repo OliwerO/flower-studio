@@ -55,7 +55,7 @@ export default function TextImportModal({ onClose, onParsed }) {
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               type === 'general'
                 ? 'bg-brand-600 text-white'
-                : 'bg-gray-100 text-ios-secondary'
+                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
             }`}
           >
             {t.intake.modeGeneral}
@@ -65,7 +65,7 @@ export default function TextImportModal({ onClose, onParsed }) {
             className={`flex-1 py-2.5 rounded-xl text-sm font-semibold transition-colors ${
               type === 'flowwow'
                 ? 'bg-brand-600 text-white'
-                : 'bg-gray-100 text-ios-secondary'
+                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
             }`}
           >
             Flowwow

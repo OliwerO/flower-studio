@@ -29,7 +29,7 @@ export default function HelpPanel({ onClose }) {
           <h2 className="text-lg font-bold text-ios-label">{guide.guideTitle}</h2>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-ios-tertiary text-sm"
+            className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center text-ios-tertiary dark:text-gray-400 text-sm"
           >
             ✕
           </button>
@@ -50,7 +50,7 @@ export default function HelpPanel({ onClose }) {
                     <div key={key}>
                       <button
                         onClick={() => toggle(key)}
-                        className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-gray-100"
+                        className="w-full flex items-center justify-between px-4 py-3 text-left active:bg-gray-100 dark:active:bg-gray-700"
                       >
                         <span className="text-sm font-medium text-ios-label pr-3">{item.q}</span>
                         <span className={`text-ios-tertiary text-xs shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`}>

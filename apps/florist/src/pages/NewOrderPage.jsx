@@ -194,6 +194,8 @@ export default function NewOrderPage() {
       } else {
         showToast(t.orderSubmitted, 'success');
       }
+      setForm(emptyForm);
+      setStep(0);
       navigate('/orders');
     } catch (err) {
       const detail = err.response?.data?.error || err.message || t.submitError;

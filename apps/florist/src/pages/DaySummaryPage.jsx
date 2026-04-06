@@ -94,7 +94,7 @@ export default function DaySummaryPage() {
         <Section title={t.owner.statusBreakdown}>
           <div className="flex flex-wrap gap-2">
             {Object.entries(sc).map(([status, count]) => (
-              <span key={status} className="text-xs bg-gray-100 rounded-full px-3 py-1 text-ios-label">
+              <span key={status} className="text-xs bg-gray-100 dark:bg-gray-700 rounded-full px-3 py-1 text-ios-label dark:text-gray-300">
                 {status}: <b>{count}</b>
               </span>
             ))}

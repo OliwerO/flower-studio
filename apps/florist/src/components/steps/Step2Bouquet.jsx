@@ -6,6 +6,7 @@
 
 import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
 import { renderStockName } from '@flower-studio/shared';
@@ -76,8 +77,8 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFuture
         <div className="flex items-center gap-1.5 shrink-0">
           <button
             onClick={() => onChangeQty(l.stockItemId || l.flowerName, -1)}
-            className="w-8 h-8 rounded-full bg-gray-100 text-ios-secondary text-xl font-bold
-                       flex items-center justify-center hover:bg-gray-200 active-scale"
+            className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-xl font-bold
+                       flex items-center justify-center hover:bg-gray-200 dark:hover:bg-gray-600 active-scale"
           >
             −
           </button>
@@ -118,6 +119,7 @@ export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
   onChange, onLinesChange, requiredBy, isOwner,
 }) {
+  const { showToast } = useToast();
   // Determine if the order is for a future date (not today).
   // Future orders allow toggling between "use current stock" and "order new" per line.
   const isFutureOrder = (() => {
@@ -447,18 +449,11 @@ export default function Step2Bouquet({
                   setShowCustomFlower(false);
                   setFlowerQuery('');
                   onStockRefresh();
-                } catch {
-                  // Fallback: add as text-only line (no stock record)
-                  onLinesChange(lines => [...lines, {
-                    stockItemId: null,
-                    flowerName: customFlower.name.trim(),
-                    quantity: 1,
-                    costPricePerUnit: Number(customFlower.costPrice) || 0,
-                    sellPricePerUnit: Number(customFlower.sellPrice) || 0,
-                    stockDeferred: isFutureOrder,
-                  }]);
-                  setShowCustomFlower(false);
-                  setFlowerQuery('');
+                } catch (err) {
+                  // Show error — do NOT fall back to text-only line.
+                  // Every flower in an order must have a stock record for stock tracking to work.
+                  const msg = err.response?.data?.error || t.error;
+                  showToast(msg, 'error');
                 }
               }}
               className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
@@ -468,7 +463,7 @@ export default function Step2Bouquet({
             <button
               type="button"
               onClick={() => setShowCustomFlower(false)}
-              className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
+              className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm"
             >
               {t.cancel}
             </button>

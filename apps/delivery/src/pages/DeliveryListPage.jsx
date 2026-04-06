@@ -15,6 +15,7 @@ import DeliveryResultPicker from '../components/DeliveryResultPicker.jsx';
 import { DeliveryListSkeleton } from '../components/Skeleton.jsx';
 import MapView from '../components/MapView.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
+import { useNotifications } from '../hooks/useNotifications.js';
 
 function todayStr() {
   const d = new Date();
@@ -58,6 +59,22 @@ export default function DeliveryListPage() {
   }, [driverName, showToast]);
 
   useEffect(() => { fetchDeliveries(); }, [fetchDeliveries]);
+
+  // Auto-refresh when tab becomes visible (driver switches back from Maps/WhatsApp)
+  useEffect(() => {
+    function onVisible() {
+      if (!document.hidden) fetchDeliveries();
+    }
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [fetchDeliveries]);
+
+  // Refresh delivery list when status changes come via SSE from other apps
+  useNotifications(!!driverName, (event) => {
+    if (event.type === 'order_status_changed' || event.type === 'order_ready') {
+      fetchDeliveries();
+    }
+  });
 
   // Check for assigned stock pickups
   useEffect(() => {

@@ -59,6 +59,11 @@ export function useNotifications(enabled = true, onEvent) {
           playNotificationSound();
         }
 
+        if (data.type === 'order_status_changed') {
+          // Status changed from another app (e.g. dashboard) — trigger refresh
+          playNotificationSound();
+        }
+
         if (onEventRef.current) {
           onEventRef.current(data);
         }

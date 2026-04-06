@@ -178,7 +178,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
                 className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
                   supplierId === s
                     ? 'bg-brand-600 text-white shadow-sm'
-                    : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                 }`}
               >
                 {s}
@@ -189,7 +189,7 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-colors active-scale ${
                 isNewSupplier
                   ? 'bg-brand-600 text-white shadow-sm'
-                  : 'bg-gray-100 text-ios-secondary border border-gray-200 hover:bg-gray-200'
+                  : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
               }`}
             >
               + New
