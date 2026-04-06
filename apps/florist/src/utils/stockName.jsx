@@ -29,7 +29,7 @@ export function renderStockName(displayName, lastRestocked) {
     ? 'bg-red-50 text-red-600 border-red-200'
     : daysAgo != null && daysAgo > 7
       ? 'bg-amber-50 text-amber-700 border-amber-200'
-      : 'bg-gray-100 text-gray-500 border-gray-200';
+      : 'bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 border-gray-200 dark:border-gray-600';
 
   return (
     <>

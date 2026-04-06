@@ -201,7 +201,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                         <div className="flex items-center gap-1 shrink-0">
                           <button
                             onClick={() => editing.decrementQty(idx)}
-                            className="w-7 h-7 rounded-full bg-gray-100 text-ios-secondary text-lg font-bold flex items-center justify-center active-scale"
+                            className="w-7 h-7 rounded-full bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-lg font-bold flex items-center justify-center active-scale"
                           >−</button>
                           <input type="number" min="1" value={line.quantity}
                             onChange={e => editing.updateLineQty(idx, e.target.value)}
@@ -280,7 +280,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
             >{saving || editing.saving ? '...' : (t.save || 'Save')}</button>
             <button onClick={() => editing.cancelEditing()}
-              className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm active-scale"
+              className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm active-scale"
             >{t.cancel}</button>
           </div>
         </div>

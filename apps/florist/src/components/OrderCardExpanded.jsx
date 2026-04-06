@@ -15,7 +15,7 @@ function Pills({ options, value, onChange, disabled }) {
           className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
             value === o.value
               ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-              : 'bg-gray-100 text-ios-secondary border-gray-200 hover:bg-gray-200'
+              : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
           }`}
         >
           {o.label}
@@ -105,7 +105,7 @@ export default function OrderCardExpanded({
                         className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
                           detail.delivery['Delivery Time'] === slot
                             ? 'bg-brand-600 text-white shadow-sm'
-                            : 'bg-white text-ios-secondary border border-gray-200 hover:bg-gray-100'
+                            : 'bg-white dark:bg-gray-800 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
                         }`}
                       >
                         {slot}
@@ -134,7 +134,7 @@ export default function OrderCardExpanded({
                     className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
                       detail.delivery['Assigned Driver'] === driver
                         ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                        : 'bg-gray-100 text-ios-secondary border-gray-200 hover:bg-gray-200'
+                        : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                     }`}
                   >
                     {driver}

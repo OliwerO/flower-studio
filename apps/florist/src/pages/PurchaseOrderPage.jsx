@@ -9,7 +9,7 @@ import useConfigLists from '../hooks/useConfigLists.js';
 import t from '../translations.js';
 
 const STATUS_COLORS = {
-  Draft:      'bg-gray-100 text-gray-700',
+  Draft:      'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300',
   Sent:       'bg-blue-100 text-blue-700',
   Shopping:   'bg-amber-100 text-amber-700',
   Reviewing:  'bg-orange-100 text-orange-700',
@@ -372,7 +372,7 @@ export default function PurchaseOrderPage() {
                 {submitting ? (t.saving || 'Saving...') : (t.save || 'Save')}
               </button>
               <button onClick={() => setShowForm(false)}
-                className="px-6 py-3 rounded-2xl bg-gray-100 text-ios-secondary text-sm active-scale">
+                className="px-6 py-3 rounded-2xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm active-scale">
                 {t.cancel}
               </button>
             </div>
@@ -397,7 +397,7 @@ export default function PurchaseOrderPage() {
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[order.Status] || 'bg-gray-100'}`}>
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[order.Status] || 'bg-gray-100 dark:bg-gray-700'}`}>
                         {(STATUS_LABELS[order.Status] || (() => order.Status))()}
                       </span>
                       <span className="text-sm font-medium text-ios-label">

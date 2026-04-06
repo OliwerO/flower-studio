@@ -246,7 +246,7 @@ export default function StockPanelPage() {
               className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors active-scale ${
                 view === v.key
                   ? 'bg-brand-600 text-white'
-                  : 'bg-gray-100 text-ios-secondary'
+                  : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
               }`}
             >
               {v.label()}

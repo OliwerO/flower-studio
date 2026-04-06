@@ -10,8 +10,8 @@ export function OrderCardSkeleton() {
         <div className="ml-auto h-6 w-16 rounded-full bg-gray-200" />
       </div>
       <div className="h-5 w-40 rounded bg-gray-200" />
-      <div className="h-4 w-64 rounded bg-gray-100" />
-      <div className="h-4 w-32 rounded bg-gray-100" />
+      <div className="h-4 w-64 rounded bg-gray-100 dark:bg-gray-700" />
+      <div className="h-4 w-32 rounded bg-gray-100 dark:bg-gray-700" />
     </div>
   );
 }
@@ -34,7 +34,7 @@ export function DeliveryCardSkeleton() {
         <div className="ml-auto h-5 w-14 rounded bg-gray-200" />
       </div>
       <div className="h-4 w-48 rounded bg-gray-200" />
-      <div className="h-4 w-36 rounded bg-gray-100" />
+      <div className="h-4 w-36 rounded bg-gray-100 dark:bg-gray-700" />
       <div className="h-10 w-full rounded-xl bg-gray-100" />
     </div>
   );
