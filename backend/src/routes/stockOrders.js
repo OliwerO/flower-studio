@@ -396,6 +396,20 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
 
         const accepted = Number(evalLine.quantityAccepted) || 0;
         const writeOff = Number(evalLine.writeOffQty) || 0;
+        const altAcceptedPre = Number(evalLine.altQuantityAccepted) || 0;
+        const altWriteOffPre = Number(evalLine.altWriteOffQty) || 0;
+
+        // Hard fail: a PO line with received qty but no Stock Item link cannot
+        // be received into inventory. Previously this was silently skipped,
+        // marking the line PROCESSED while the flowers vanished from tracking.
+        // The per-line catch below will record this and flip the PO to EVAL_ERROR
+        // so the owner can fix the line (link a Stock Item, then retry evaluate).
+        if (!stockItemId && (accepted > 0 || altAcceptedPre > 0 || writeOff > 0 || altWriteOffPre > 0)) {
+          throw new Error(
+            `Line "${line['Flower Name'] || evalLine.lineId}" has no linked Stock Item — ` +
+            `link it on the PO and retry. Stock cannot be received without a Stock Item.`
+          );
+        }
 
         // Primary supplier: receive into stock with batch logic
         if (stockItemId && accepted > 0) {

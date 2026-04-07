@@ -28,6 +28,26 @@ Changes made to the **dev base** that must be replicated in **production** befor
 
 ---
 
+## 2026-04-07 — Stock Workflow Hardening (orphan order/PO lines)
+
+### Airtable (production base `appM8rLfcE9cbxduZ`)
+- **Stock.Lot Size** — renamed to remove a trailing space. Symptom: `POST /api/stock` returned `UNKNOWN_FIELD_NAME: "Lot Size"`, breaking the florist "Add new flower" flow on iPad. Verified Airtable column was literally `Lot Size ` (one trailing space). No code change needed; just rename the column.
+- **Stock.Farmer** — verified, no trailing space, no rename needed.
+
+### Backend
+- `services/orderService.js` — `createOrder` and `editBouquetLines` now hard-reject any new order line that ends up with `stockItemId === null` after `autoMatchStock` runs. Throws a 400 with the offending flower names. Rationale: orphan lines silently broke stock deduction, demand calc and PO generation.
+- `routes/orders.js` — `POST /api/orders` now surfaces `statusCode === 400` errors verbatim instead of wrapping them as 500, so the dashboard/florist toast shows the real reason ("Create the flower in Stock first.").
+- `routes/stockOrders.js` — `POST /:id/evaluate` now throws per-line if a PO line has any received/written-off quantity but no linked Stock Item. The existing partial-failure machinery flips the PO to `Eval Error` so the owner can fix the link and retry. Previously these lines were silently marked `Processed` and the flowers vanished from inventory.
+
+### Dashboard (`apps/dashboard`)
+- `components/steps/Step2Bouquet.jsx` — removed the silent `catch {}` fallback that pushed an inline order line with `stockItemId: null` whenever `POST /api/stock` failed. Now mirrors the florist app: shows the real error in a toast via `useToast`. This was the main producer of orphan order lines.
+
+### Watch for
+- Any historical Order Lines created via the dashboard "Add new" path between ~2026-03-16 and 2026-04-07 may already be orphans (no `Stock Item` link). They will not block new orders, but they are invisible to demand/stock calc. To find them in Airtable: filter Order Lines where `Stock Item` is empty.
+- The new validation will reject orders that previously slipped through. If a florist hits "Order line(s) without a Stock Item are not allowed", the fix is to first add the flower in Stock (the same form they were already using), not to bypass the check.
+
+---
+
 ## 2026-03-21 — Phase 4: Testing Foundation
 
 ### Backend
