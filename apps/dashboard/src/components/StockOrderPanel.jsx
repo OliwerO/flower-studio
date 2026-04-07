@@ -195,10 +195,24 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     }
   }
 
-  async function sendToDriver(orderId) {
-    const driverName = editDrivers[orderId] || drivers[0] || 'Nikita';
+  // Resolve the driver currently shown in the dropdown for a given PO.
+  // CRITICAL: UI display and send-payload MUST use the exact same fallback chain,
+  // otherwise the owner sees "Nikita" but the PO silently goes to drivers[0].
+  function resolveDriverFor(order) {
+    return editDrivers[order.id] || order['Assigned Driver'] || drivers[0] || 'Nikita';
+  }
+
+  async function sendToDriver(order) {
+    const driverName = resolveDriverFor(order);
     try {
-      await client.post(`/stock-orders/${orderId}/send`, { driverName });
+      if (order.Status === 'Draft') {
+        // First release: /send transitions Draft → Sent AND stamps the driver.
+        await client.post(`/stock-orders/${order.id}/send`, { driverName });
+      } else {
+        // Already live: just reassign via header PATCH. Backend broadcasts
+        // stock_pickup_assigned so the new driver's app refetches immediately.
+        await client.patch(`/stock-orders/${order.id}`, { 'Assigned Driver': driverName });
+      }
       showToast(t.stockOrderSentMsg);
       fetchOrders();
     } catch (err) {
@@ -503,8 +517,8 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                     <p className="text-xs text-ios-secondary">{order.Notes}</p>
                   )}
 
-                  {/* Draft POs: editable lines */}
-                  {order.Status === 'Draft' ? (
+                  {/* Editable POs: Draft + Sent + Shopping. Reviewing/Evaluating/Complete stay read-only. */}
+                  {['Draft', 'Sent', 'Shopping'].includes(order.Status) ? (
                     <>
                       {expandedLines.map((line, idx) => (
                         <DraftLineEditor
@@ -526,7 +540,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                       </button>
                       <div className="flex items-center gap-2 pt-2">
                         <select
-                          value={editDrivers[order.id] || order['Assigned Driver'] || drivers[0] || 'Nikita'}
+                          value={resolveDriverFor(order)}
                           onChange={e => setEditDrivers(prev => ({ ...prev, [order.id]: e.target.value }))}
                           className="field-input w-32"
                         >
@@ -534,10 +548,10 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                           {drivers.length === 0 && <option value="Nikita">Nikita</option>}
                         </select>
                         <button
-                          onClick={() => sendToDriver(order.id)}
+                          onClick={() => sendToDriver(order)}
                           className="px-4 py-2 rounded-xl bg-blue-600 text-white text-sm font-semibold active-scale"
                         >
-                          {t.sendToDriver}
+                          {order.Status === 'Draft' ? t.sendToDriver : (t.reassignDriver || t.sendToDriver)}
                         </button>
                       </div>
                     </>

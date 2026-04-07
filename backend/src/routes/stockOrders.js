@@ -188,6 +188,18 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
     }
 
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, fields);
+
+    // SSE: driver app needs to refetch on ANY header change while the PO is live,
+    // and owner needs a re-notify if the driver reassignment moved the PO to someone else.
+    if ('Assigned Driver' in fields) {
+      broadcast({
+        type: 'stock_pickup_assigned',
+        stockOrderId: req.params.id,
+        driverName: fields['Assigned Driver'] || '',
+      });
+    }
+    broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id });
+
     res.json(updated);
   } catch (err) {
     next(err);
@@ -233,12 +245,16 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
   }
 });
 
-// POST /api/stock-orders/:id/lines — add a line to a Draft PO
+// POST /api/stock-orders/:id/lines — add a line to an editable PO
+// Owner can still tweak the shopping list while the PO is Draft/Sent/Shopping.
+// Reviewing/Evaluating/Complete are "closed books" — don't mutate past records.
+const EDITABLE_PO_STATUSES = [PO_STATUS.DRAFT, PO_STATUS.SENT, PO_STATUS.SHOPPING];
+
 router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (po.Status !== PO_STATUS.DRAFT) {
-      return res.status(400).json({ error: 'Can only add lines to Draft POs.' });
+    if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
+      return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
     const { stockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
     const line = await db.create(TABLES.STOCK_ORDER_LINES, {
@@ -252,20 +268,22 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       'Lot Size': Number(lotSize) || 0,
       'Driver Status': PO_LINE_STATUS.PENDING,
     });
+    broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: line.id });
     res.json(line);
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/stock-orders/:id/lines/:lineId — remove a line from a Draft PO
+// DELETE /api/stock-orders/:id/lines/:lineId — remove a line from an editable PO
 router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    if (po.Status !== PO_STATUS.DRAFT) {
-      return res.status(400).json({ error: 'Can only remove lines from Draft POs.' });
+    if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
+      return res.status(400).json({ error: `Cannot remove lines from a "${po.Status}" PO.` });
     }
     await db.deleteRecord(TABLES.STOCK_ORDER_LINES, req.params.lineId);
+    broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: req.params.lineId });
     res.json({ deleted: true });
   } catch (err) {
     next(err);
