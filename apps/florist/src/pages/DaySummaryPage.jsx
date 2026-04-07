@@ -130,7 +130,7 @@ export default function DaySummaryPage() {
               {unpaidOrders.map((o, i) => (
                 <div key={i} className="flex justify-between text-xs">
                   <span className="text-ios-label">
-                    #{o['App Order ID'] || '?'} — {o['Effective Price'] || o['Sell Total'] || 0} zł
+                    #{o['App Order ID'] || '?'} — {o['Effective Price'] || o['Final Price'] || o['Price Override'] || ((Number(o['Sell Total'] || 0)) + (o['Delivery Type'] === 'Delivery' ? Number(o['Delivery Fee'] || 0) : 0))} zł
                   </span>
                   <span className="text-ios-tertiary">{o.Source || ''}</span>
                 </div>

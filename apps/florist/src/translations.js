@@ -154,6 +154,7 @@ const en = {
   remaining:        'Remaining',
   paidAmount:       'Paid',
   paymentPartial:   'Partial',
+  partialAmountPaid:'Amount paid',
 
   // Step 4 — Review
   reviewTitle:      'Review order',
@@ -249,6 +250,8 @@ const en = {
   // Validation
   stockLoadError:        'Failed to load stock data.',
   deliveryAddressRequired: 'Delivery address is required.',
+  dateRequired:     'Date is required.',
+  note:             'Note',
 
   // Toast
   success:          'Done!',
@@ -568,6 +571,7 @@ const ru = {
   remaining:        'Остаток',
   paidAmount:       'Оплачено',
   paymentPartial:   'Частичная',
+  partialAmountPaid:'Оплачено сейчас',
 
   // Step 4 — Review
   reviewTitle:      'Проверка заказа',
@@ -663,6 +667,8 @@ const ru = {
   // Validation
   stockLoadError:        'Не удалось загрузить данные склада.',
   deliveryAddressRequired: 'Укажите адрес доставки.',
+  dateRequired:     'Укажите дату.',
+  note:             'Заметка',
 
   // Toast
   success:          'Готово!',

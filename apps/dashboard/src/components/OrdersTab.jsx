@@ -88,6 +88,7 @@ export default function OrdersTab({ initialFilter }) {
   const [selected, setSelected]   = useState(new Set());
   const [upcomingMode, setUpcoming] = useState(!f.dateFrom && !f.orderId);
   const [sortBy, setSortBy]       = useState('deliveryDate');
+  const [sortDir, setSortDir]     = useState('asc'); // 'asc' | 'desc' — bidirectional sort
   const { showToast }             = useToast();
 
   const initialLoaded = useRef(false);
@@ -147,27 +148,34 @@ export default function OrdersTab({ initialFilter }) {
       })
     : orders;
 
-  // Sort orders based on selected sort option
+  // Sort orders based on selected sort option + direction (bidirectional)
+  const dirMul = sortDir === 'desc' ? -1 : 1;
   const sorted = [...filtered].sort((a, b) => {
-    if (unpaidOnly) return new Date(a['Order Date']) - new Date(b['Order Date']);
+    if (unpaidOnly) return (new Date(a['Order Date']) - new Date(b['Order Date'])) * dirMul;
+    let result = 0;
     switch (sortBy) {
       case 'status':
-        return (STATUS_PRIORITY[a['Status']] ?? 99) - (STATUS_PRIORITY[b['Status']] ?? 99);
+        result = (STATUS_PRIORITY[a['Status']] ?? 99) - (STATUS_PRIORITY[b['Status']] ?? 99);
+        break;
       case 'deliveryDate': {
         const da = a['Delivery Date'] || a['Required By'] || '9999';
         const db = b['Delivery Date'] || b['Required By'] || '9999';
-        return da.localeCompare(db) || (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
+        result = da.localeCompare(db) || (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
+        break;
       }
       case 'type': {
         const ta = a['Delivery Type'] === 'Delivery' ? 0 : 1;
         const tb = b['Delivery Type'] === 'Delivery' ? 0 : 1;
-        return ta - tb || (STATUS_PRIORITY[a['Status']] ?? 99) - (STATUS_PRIORITY[b['Status']] ?? 99);
+        result = ta - tb || (STATUS_PRIORITY[a['Status']] ?? 99) - (STATUS_PRIORITY[b['Status']] ?? 99);
+        break;
       }
       case 'orderDate':
-        return (b['Order Date'] || '').localeCompare(a['Order Date'] || '');
+        result = (a['Order Date'] || '').localeCompare(b['Order Date'] || '');
+        break;
       default:
-        return 0;
+        result = 0;
     }
+    return result * dirMul;
   });
 
   function daysSince(dateStr) {
@@ -278,6 +286,14 @@ export default function OrdersTab({ initialFilter }) {
             <option key={opt.value} value={opt.value}>{opt.label}</option>
           ))}
         </select>
+        {/* Sort direction toggle — bidirectional */}
+        <button
+          onClick={() => setSortDir(d => d === 'asc' ? 'desc' : 'asc')}
+          className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs text-ios-secondary hover:bg-gray-100"
+          title={sortDir === 'asc' ? 'Ascending (click to reverse)' : 'Descending (click to reverse)'}
+        >
+          {sortDir === 'asc' ? '↑' : '↓'}
+        </button>
       </div>
 
       {/* Active filter badges — show when cross-tab filters are active */}

@@ -58,6 +58,47 @@ function Row({ label, value }) {
   );
 }
 
+// Inline-editable card text — usable in any order stage (per owner request).
+function EditableCardText({ value, onSave, disabled }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  if (!editing) {
+    return (
+      <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+        <span className="text-sm text-ios-tertiary shrink-0">{t.cardText || 'Card msg'}</span>
+        <button
+          onClick={() => { setDraft(value); setEditing(true); }}
+          className="text-sm text-ios-label text-right flex-1 truncate hover:text-brand-600"
+        >
+          {value || <span className="text-ios-tertiary italic">{t.tapToEdit || 'Tap to add'}</span>}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="py-2 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-ios-tertiary block mb-1">{t.cardText || 'Card msg'}</span>
+      <textarea
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        autoFocus
+        rows={3}
+        className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 text-sm"
+      />
+      <div className="flex gap-2 mt-1.5 justify-end">
+        <button onClick={() => setEditing(false)} className="text-xs px-3 py-1 rounded text-ios-tertiary">{t.cancel}</button>
+        <button
+          onClick={async () => { await onSave(draft); setEditing(false); }}
+          disabled={disabled}
+          className="text-xs px-3 py-1 rounded bg-brand-600 text-white font-semibold"
+        >
+          {t.save || 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -103,7 +144,11 @@ export default function OrderDetailPage() {
     }
   }
 
-  const price      = order?.['Price Override'] || order?.['Sell Total'];
+  // Total = Price Override (when set, already includes delivery) OR (flowers + delivery fee).
+  // Match backend cascade in routes/orders.js so list and detail show the same number.
+  const _delFee    = order?.['Delivery Type'] === 'Delivery' ? Number(order?.['Delivery Fee'] || 0) : 0;
+  const _sellTotal = Number(order?.['Sell Total'] || 0);
+  const price      = order?.['Final Price'] || order?.['Price Override'] || (_sellTotal + _delFee);
   const isPaid     = order?.['Payment Status'] === 'Paid';
   const isDelivery = order?.['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(order?.Status);
@@ -374,18 +419,19 @@ export default function OrderDetailPage() {
                       </a>
                     </div>
                   )}
-                  <Row label="Card msg"  value={order['Greeting Card Text']} />
+                  <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
                   <Row label="Fee"       value={order.delivery?.['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
                 </div>
               </div>
             )}
 
             {/* Pickup details */}
-            {!isDelivery && order['Required By'] && (
+            {!isDelivery && (
               <div>
                 <p className="ios-label">Pickup</p>
                 <div className="ios-card px-4 py-2">
-                  <Row label="Pickup time" value={order['Required By']} />
+                  {order['Required By'] && <Row label="Pickup time" value={order['Required By']} />}
+                  <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
                 </div>
               </div>
             )}

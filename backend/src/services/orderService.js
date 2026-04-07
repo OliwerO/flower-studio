@@ -57,6 +57,7 @@ export async function createOrder(params, config) {
     customer, customerRequest, source, communicationMethod, deliveryType,
     orderLines, delivery, notes, paymentStatus, paymentMethod, priceOverride,
     requiredBy, cardText, deliveryTime, createdBy,
+    payment1Amount, payment1Method,
   } = params;
   const { getConfig, getDriverOfDay, generateOrderId } = config;
 
@@ -82,6 +83,8 @@ export async function createOrder(params, config) {
       'Delivery Time':      deliveryTime || delivery?.time || '',
       'Payment Status':     paymentStatus,
       'Payment Method':     paymentMethod || null,
+      ...(payment1Amount != null ? { 'Payment 1 Amount': Number(payment1Amount) } : {}),
+      ...(payment1Method ? { 'Payment 1 Method': payment1Method } : {}),
       'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
       'Price Override':     priceOverride || null,
       'App Order ID':       appOrderId,

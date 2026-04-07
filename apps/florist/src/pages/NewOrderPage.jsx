@@ -17,7 +17,7 @@ const emptyForm = {
   requiredBy: '', recipientName: '', recipientPhone: '',
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
   cardText: '', notes: '',
-  paymentStatus: 'Unpaid', paymentMethod: '', deliveryFee: 35,
+  paymentStatus: 'Unpaid', paymentMethod: '', payment1Amount: '', deliveryFee: 35,
 };
 
 export default function NewOrderPage() {
@@ -132,8 +132,9 @@ export default function NewOrderPage() {
       showToast(t.bouquetRequired, 'error');
       return false;
     }
-    if (currentStep === 2 && form.deliveryType === 'Delivery' && !form.deliveryAddress.trim()) {
-      showToast(t.deliveryAddressRequired || 'Delivery address is required', 'error');
+    // Step 2 (Details): date required (delivery OR pickup). Address + time optional.
+    if (currentStep === 2 && !form.deliveryDate && !form.requiredBy) {
+      showToast(t.dateRequired || 'Date is required', 'error');
       return false;
     }
     return true;
@@ -148,8 +149,8 @@ export default function NewOrderPage() {
     // Final validation before API call
     if (!form.customerId) { showToast(t.customerRequired, 'error'); return; }
     if (form.orderLines.length === 0) { showToast(t.bouquetRequired, 'error'); return; }
-    if (form.deliveryType === 'Delivery' && !form.deliveryAddress.trim()) {
-      showToast(t.deliveryAddressRequired || 'Delivery address is required', 'error');
+    if (!form.deliveryDate && !form.requiredBy) {
+      showToast(t.dateRequired || 'Date is required', 'error');
       return;
     }
 
@@ -165,6 +166,8 @@ export default function NewOrderPage() {
         notes:               form.notes,
         paymentStatus:       form.paymentStatus,
         paymentMethod:       form.paymentMethod,
+        payment1Amount:      form.paymentStatus === 'Partial' && form.payment1Amount ? Number(form.payment1Amount) : null,
+        payment1Method:      form.paymentStatus === 'Partial' && form.paymentMethod ? form.paymentMethod : null,
         priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
         orderLines:          form.orderLines,
       };

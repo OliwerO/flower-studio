@@ -51,7 +51,11 @@ router.get('/', async (req, res, next) => {
     } else if (completedOnly) {
       // Terminal orders only. If no date filter, show last 30 days.
       filters.push(`OR({Status} = '${ORDER_STATUS.DELIVERED}', {Status} = '${ORDER_STATUS.PICKED_UP}', {Status} = '${ORDER_STATUS.CANCELLED}')`);
-      if (!forDate && !dateFrom) {
+      if (forDate) {
+        // Apply date filter inside completedOnly mode (was previously ignored — bug fix)
+        const d = sanitizeFormulaValue(forDate);
+        filters.push(`OR(DATESTR({Order Date}) = '${d}', DATESTR({Required By}) = '${d}')`);
+      } else if (!dateFrom) {
         const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
         filters.push(`NOT(IS_BEFORE({Required By}, '${cutoff}'))`);
       }
@@ -210,6 +214,13 @@ router.get('/:id', async (req, res, next) => {
     order.orderLines = orderLines;
     if (delivery) order.delivery = delivery;
 
+    // Compute Final Price (matches list endpoint logic) so frontend has authoritative total.
+    // Cascade: Price Override → (sum of order lines + delivery fee).
+    const lineTotal = orderLines.reduce((s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0);
+    const sellTotal = order['Sell Total'] || lineTotal || 0;
+    const delivFee  = order['Delivery Type'] === 'Delivery' ? Number(order['Delivery Fee'] || delivery?.['Delivery Fee'] || 0) : 0;
+    order['Final Price'] = order['Price Override'] || (sellTotal + delivFee) || 0;
+
     res.json(order);
   } catch (err) {
     next(err);
@@ -223,6 +234,7 @@ router.post('/', async (req, res, next) => {
       customer, customerRequest, source, communicationMethod, deliveryType,
       orderLines = [], delivery, notes, paymentStatus, paymentMethod,
       priceOverride, requiredBy, cardText, deliveryTime,
+      payment1Amount, payment1Method,
     } = req.body;
 
     // --- Input validation ---
@@ -261,6 +273,7 @@ router.post('/', async (req, res, next) => {
         orderLines, delivery, notes,
         paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
         paymentMethod, priceOverride, requiredBy, cardText, deliveryTime,
+        payment1Amount, payment1Method,
         createdBy: req.role === 'owner' ? 'Owner' : 'Florist',
       }, { getConfig, getDriverOfDay, generateOrderId });
 

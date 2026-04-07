@@ -95,7 +95,10 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const isDelivery = order['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
   const request    = order['Customer Request'] || '';
-  const price      = order['Price Override'] || order['Sell Total'] || '';
+  // Total includes delivery fee — use backend's Final Price if present, else compute
+  const _delFee    = isDelivery ? Number(order['Delivery Fee'] || 0) : 0;
+  const _sellTotal = Number(order['Sell Total'] || 0);
+  const price      = order['Final Price'] || order['Price Override'] || (_sellTotal + _delFee) || '';
   const isPaid     = order['Payment Status'] === 'Paid';
   const isPartialPayment = order['Payment Status'] === 'Partial';
   const isWix      = order['Source'] === 'Wix';

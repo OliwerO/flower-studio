@@ -120,12 +120,24 @@ export default function OrderCardSummary({ order, d, currentStatus, currentPaid,
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
+      {/* Florist note — prominent, distinct from card message */}
+      {!expanded && (order['Notes Original'] || order['Notes Translated']) && (
+        <div className="mt-2 bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-400 rounded-lg px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-0.5">
+            📝 {t.note || 'Note'}
+          </p>
+          <p className="text-sm text-ios-label dark:text-gray-200 leading-snug whitespace-pre-wrap line-clamp-2">
+            {order['Notes Translated'] || order['Notes Original']}
+          </p>
+        </div>
+      )}
+      {/* Card message — clearly distinct from florist note */}
       {!expanded && order['Greeting Card Text'] && (
-        <div className="relative mt-2 bg-amber-50 rounded-lg px-3 py-1.5 overflow-hidden" style={{ maxHeight: '2.2em' }}>
-          <p className="text-sm text-ios-label leading-snug whitespace-pre-wrap">
+        <div className="relative mt-2 bg-amber-50 dark:bg-amber-900/30 rounded-lg px-3 py-1.5 overflow-hidden" style={{ maxHeight: '2.2em' }}>
+          <p className="text-sm text-ios-label dark:text-gray-200 leading-snug whitespace-pre-wrap">
             ✉ {order['Greeting Card Text']}
           </p>
-          <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-amber-50 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-4 bg-gradient-to-t from-amber-50 dark:from-amber-900/30 to-transparent" />
         </div>
       )}
 

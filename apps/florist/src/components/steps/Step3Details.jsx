@@ -241,6 +241,25 @@ export default function Step3Details({ form, onChange }) {
         </SectionCard>
       )}
 
+      {/* Partial payment amount — shown only for Partial status */}
+      {form.paymentStatus === 'Partial' && (
+        <SectionCard label={t.partialAmountPaid || 'Amount paid'}>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={form.payment1Amount || ''}
+              onChange={e => onChange({ payment1Amount: e.target.value })}
+              placeholder="0"
+              className="w-full px-3 py-2 rounded-xl border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 text-base"
+            />
+            <span className="text-sm text-ios-tertiary">{t.zl || 'zł'}</span>
+          </div>
+        </SectionCard>
+      )}
+
     </div>
   );
 }
