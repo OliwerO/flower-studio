@@ -436,7 +436,7 @@ export default function Step2Bouquet({
                     supplier: supplierValue,
                     costPrice: Number(customFlower.costPrice) || 0,
                     sellPrice: Number(customFlower.sellPrice) || 0,
-                    lotSize: Number(customFlower.lotSize) || 1,
+                    ...(Number(customFlower.lotSize) > 1 ? { lotSize: Number(customFlower.lotSize) } : {}),
                     quantity: 0,
                   });
                   const newItem = res.data;

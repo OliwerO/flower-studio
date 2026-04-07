@@ -159,6 +159,17 @@ Features and improvements tracked against original build phases.
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
 
+### Tier 1 Bugs + Needs — New Reports (2026-04-07) [IMMEDIATE]
+- [ ] **Owner edit-everything** — owner needs full edit control of EVERY field on an order in EVERY stage (incl. delivery date after delivery is done). Critical: this is what removes the need for direct Airtable edits and unblocks the database migration.
+- [ ] **Florist + owner card text edit at any stage** — for existing orders, both florist and owner must be able to add/edit card text in every status (currently restricted)
+- [ ] **Date required, time optional** — make delivery/required date mandatory in order creation, but always editable later. Time selection stays optional.
+- [ ] **Florist app: prominent notes display** — show florist notes prominently in collapsed order view, clearly distinguished from card message
+- [ ] **Orders tab sort: bidirectional** — sort by column should toggle ascending/descending; currently broken / one-direction only
+- [ ] **Partial payment: missing amount input** — when "Partial" is selected, payment method shows but no field to enter the partial amount; on reopen, partial amount only shows flowers price not total (delivery missing)
+- [ ] **Order total wrong everywhere** — order summary in florist (and possibly dashboard) shows flowers-only price, not total including delivery fee
+- [ ] **Florist date filter broken** — Orders (all) view in florist app ignores date filter, shows all orders regardless
+- [ ] **"Lot Size" field unknown in dev Airtable** — frontend partially fixed (don't send default 1); add field to dev Airtable Stock table to be fully consistent with prod
+
 ### Tier 1 Bugs — Blocking Daily Operations (2026-04-03)
 - [ ] **Orders not shown in "All Orders"** — created & submitted order appears in CRM but not order list
 - [ ] **Dashboard ↔ Delivery app status sync** — orders marked delivered in dashboard stay as "New" on iPhone delivery app (SSE sync issue)
