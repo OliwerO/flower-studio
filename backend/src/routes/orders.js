@@ -266,6 +266,10 @@ router.post('/', async (req, res, next) => {
 
       res.status(201).json(result);
     } catch (creationErr) {
+      // Validation errors (e.g. orphan lines) — surface message verbatim
+      if (creationErr.statusCode === 400) {
+        return res.status(400).json({ error: creationErr.message });
+      }
       return res.status(500).json({
         error: 'Order creation failed. Partial records have been cleaned up.',
         detail: creationErr.message,

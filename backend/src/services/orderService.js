@@ -92,6 +92,21 @@ export async function createOrder(params, config) {
     // 2a. Auto-match unlinked lines to stock
     await autoMatchStock(orderLines);
 
+    // 2a-bis. Reject the whole order if any line is still orphaned.
+    // Orphan lines (stockItemId=null) silently break stock deduction, demand
+    // signals, and PO generation. Better to fail loudly here so the caller
+    // creates the missing Stock record first (POST /api/stock).
+    const orphans = orderLines.filter(l => !l.stockItemId);
+    if (orphans.length > 0) {
+      const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
+      const err = new Error(
+        `Order line(s) without a Stock Item are not allowed: ${names}. ` +
+        `Create the flower in Stock first.`
+      );
+      err.statusCode = 400;
+      throw err;
+    }
+
     // 2b. Create order line records (price snapshotting)
     const createdLines = [];
     for (const line of orderLines) {
@@ -323,6 +338,19 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
   const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
   if (newUnmatched.length > 0) {
     await autoMatchStock(newUnmatched);
+  }
+
+  // 2a-bis. Reject orphan new lines (see createOrder for rationale).
+  // Existing lines (line.id) are exempt — they were created before this guard.
+  const orphans = lines.filter(l => !l.id && !l.stockItemId);
+  if (orphans.length > 0) {
+    const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
+    const err = new Error(
+      `Order line(s) without a Stock Item are not allowed: ${names}. ` +
+      `Create the flower in Stock first.`
+    );
+    err.statusCode = 400;
+    throw err;
   }
 
   // 2b. Process new/updated lines

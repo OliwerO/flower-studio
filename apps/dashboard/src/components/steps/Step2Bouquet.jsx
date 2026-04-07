@@ -3,6 +3,7 @@
 import { useState, useMemo } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
 import { renderStockName } from '@flower-studio/shared';
 
@@ -17,6 +18,7 @@ export default function Step2Bouquet({
     return requiredBy > today;
   })();
   const { targetMarkup } = useConfigLists();
+  const { showToast } = useToast();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
@@ -250,15 +252,12 @@ export default function Step2Bouquet({
                   setShowCustomFlower(false);
                   setFlowerQuery('');
                   onStockRefresh();
-                } catch {
-                  onLinesChange(lines => [...lines, {
-                    stockItemId: null, flowerName: customFlower.name.trim(), quantity: 1,
-                    costPricePerUnit: Number(customFlower.costPrice) || 0,
-                    sellPricePerUnit: Number(customFlower.sellPrice) || 0,
-                    stockDeferred: isFutureOrder,
-                  }]);
-                  setShowCustomFlower(false);
-                  setFlowerQuery('');
+                } catch (err) {
+                  // Show error — do NOT fall back to a stockItemId-less line.
+                  // Every flower in an order must have a stock record so demand,
+                  // PO generation, and stock deduction stay consistent.
+                  const msg = err.response?.data?.error || t.error;
+                  showToast(msg, 'error');
                 }
               }}
               className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"

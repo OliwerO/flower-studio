@@ -176,6 +176,9 @@ Features and improvements tracked against original build phases.
 - [ ] **Card text + notes lost after submit** — Greeting Card Text and important notes disappear after order submission (order 202603-038)
 - [ ] **Postcard text not visible after accepting** — even when text entered while accepting order, not visible once submitted
 - [ ] **Finished order stale after submit** — order stays on screen after submission, doesn't refresh
+- [x] **Florist "Add new flower" fails** — Airtable rejected `Lot Size` because the column on Stock had a trailing space (`appM8rLfcE9cbxduZ`). Renamed in Airtable, no code change. (2026-04-07)
+- [x] **Dashboard silently created orphan order lines** — `apps/dashboard/.../Step2Bouquet.jsx` had a `catch {}` that pushed lines with `stockItemId: null` whenever stock create failed. Now shows the real error toast and `orderService.createOrder` / `editBouquetLines` reject orphan lines server-side. (2026-04-07)
+- [x] **PO evaluate silently dropped lines without Stock Item** — `routes/stockOrders.js` `/evaluate` skipped the receive-into-stock block when a line had no Stock link, marking it `Processed` while the flowers vanished. Now throws per-line so the PO flips to `Eval Error` and the owner can fix the link. (2026-04-07)
 - [ ] **Purchase orders can't be saved** — PO save fails, blocks entire PO workflow
 - [ ] **New order doesn't create negative stock** — submitting order does not generate negative stock entries
 - [ ] **New flowers for future order not in negative stock** — flowers added to future order don't appear in negative stock view
