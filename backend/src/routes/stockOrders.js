@@ -27,6 +27,7 @@ const ALLOWED_TRANSITIONS = {
 const router = Router();
 
 // GET /api/stock-orders?status=Draft&include=lines
+// Drivers only see POs assigned to them. Owner/florist see everything.
 router.get('/', authorize('stock-orders'), async (req, res, next) => {
   try {
     const { status, include } = req.query;
@@ -34,6 +35,11 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
     if (status) {
       if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status value' });
       filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
+    }
+    // Driver scope: only POs where Assigned Driver matches this driver's badge.
+    // This is what was missing — without it every driver saw every PO.
+    if (req.role === 'driver' && req.driverName) {
+      filters.push(`{Assigned Driver} = '${sanitizeFormulaValue(req.driverName)}'`);
     }
     const formula = filters.length > 0 ? `AND(${filters.join(', ')})` : '';
 
@@ -76,6 +82,10 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
 router.get('/:id', authorize('stock-orders'), async (req, res, next) => {
   try {
     const order = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    // Same scope rule as the list endpoint: drivers can only fetch their own PO.
+    if (req.role === 'driver' && req.driverName && order['Assigned Driver'] !== req.driverName) {
+      return res.status(404).json({ error: 'PO not found.' });
+    }
     const lineIds = order['Order Lines'] || [];
     let lines = [];
     if (lineIds.length > 0) {

@@ -237,6 +237,15 @@ export default function StockPickupPage() {
 
 // Individual line item with 3-option driver flow
 function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
+  // Derived values must be computed BEFORE any useState that references them.
+  // const declarations are NOT hoisted (Temporal Dead Zone) — reading lotSize
+  // before this line crashed the entire page render.
+  const status = line['Driver Status'] || 'Pending';
+  const needed = line['Quantity Needed'] || 0;
+  const lotSize = Number(line['Lot Size']) || 1;
+  const lots = lotSize > 1 ? Math.ceil(needed / lotSize) : 0;
+  const fullLotQty = lots > 0 ? lots * lotSize : needed;
+
   const [expanded, setExpanded] = useState(false);
   const [qtyFound, setQtyFound] = useState(line['Quantity Found'] || '');
   const [lotsFound, setLotsFound] = useState('');
@@ -246,12 +255,6 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
   const [altQty, setAltQty] = useState(line['Alt Quantity Found'] || '');
   const [showAlt, setShowAlt] = useState(!!line['Alt Supplier'] || !!line['Alt Flower Name']);
   const [note, setNote] = useState(line.Notes || '');
-
-  const status = line['Driver Status'] || 'Pending';
-  const needed = line['Quantity Needed'] || 0;
-  const lotSize = Number(line['Lot Size']) || 1;
-  const lots = lotSize > 1 ? Math.ceil(needed / lotSize) : 0;
-  const fullLotQty = lots > 0 ? lots * lotSize : needed;
 
   function selectStatus(newStatus) {
     if (newStatus === 'Found All') {
