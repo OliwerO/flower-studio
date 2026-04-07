@@ -16,15 +16,28 @@ const DELIVERIES_PATCH_ALLOWED = [
   'Delivery Result', 'Delivery Method', 'Driver Payout', 'Taxi Cost',
 ];
 
-// GET /api/deliveries?date=2025-01-15&status=Pending&driver=Piotr
+// GET /api/deliveries?date=2025-01-15&from=2025-01-15&status=Pending&driver=Piotr
+// Either pass `date` for a single day, or `from` (and optionally `to`) for a range.
+// `from` alone means "from this date onward", which is what the driver app uses to
+// see today + every future-assigned delivery.
 router.get('/', async (req, res, next) => {
   try {
-    const { date, status, driver } = req.query;
+    const { date, from, to, status, driver } = req.query;
     const filters = [];
 
-    // Show deliveries for the requested date OR deliveries with no date set
-    // (no-date deliveries would be invisible otherwise — like lost packages without a label)
-    if (date)   filters.push(`OR(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(date)}', {Delivery Date} = BLANK())`);
+    if (date) {
+      // Single day OR deliveries with no date set (would otherwise be invisible).
+      filters.push(`OR(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(date)}', {Delivery Date} = BLANK())`);
+    } else if (from) {
+      // Range mode: drivers want today + future, no upper bound by default.
+      const fromSafe = sanitizeFormulaValue(from);
+      if (to) {
+        const toSafe = sanitizeFormulaValue(to);
+        filters.push(`AND(DATESTR({Delivery Date}) >= '${fromSafe}', DATESTR({Delivery Date}) <= '${toSafe}')`);
+      } else {
+        filters.push(`OR(DATESTR({Delivery Date}) >= '${fromSafe}', {Delivery Date} = BLANK())`);
+      }
+    }
     if (status) filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
     if (driver) filters.push(`{Assigned Driver} = '${sanitizeFormulaValue(driver)}'`);
 
@@ -102,22 +115,27 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Cascade delivery status changes to the linked order.
-    // Like updating the master production board when the shipping dept changes status.
+    // IMPORTANT ordering: write the Delivery record FIRST, then mirror the
+    // status onto the linked Order. Previously the Order was updated first,
+    // so if the Delivery update then failed, the Order was already ahead of
+    // the Delivery — a permanent desync. Doing the delivery first means a
+    // failure leaves both records untouched.
+    let linkedOrderId = null;
     if (fields.Status === DELIVERY_STATUS.OUT_FOR_DELIVERY || fields.Status === DELIVERY_STATUS.DELIVERED) {
       if (fields.Status === DELIVERY_STATUS.DELIVERED) {
         fields['Delivered At'] = new Date().toISOString();
       }
-
-      // Update the linked order status to match
       const delivery = await db.getById(TABLES.DELIVERIES, req.params.id);
       if (delivery['Linked Order']?.length) {
-        await db.update(TABLES.ORDERS, delivery['Linked Order'][0], {
-          Status: fields.Status,
-        });
+        linkedOrderId = delivery['Linked Order'][0];
       }
     }
 
     const updated = await db.update(TABLES.DELIVERIES, req.params.id, fields);
+
+    if (linkedOrderId) {
+      await db.update(TABLES.ORDERS, linkedOrderId, { Status: fields.Status });
+    }
     res.json(updated);
   } catch (err) {
     next(err);

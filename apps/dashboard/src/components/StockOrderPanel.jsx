@@ -556,7 +556,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                       </div>
                     </>
                   ) : (
-                    /* Non-draft POs: detailed line view with driver results */
+                    /* Non-draft POs: detailed line view with driver results.
+                       Owner can correct alt entries during Reviewing — these
+                       are the substitutions the driver made on the road. */
                     <>
                       {expandedLines.map(line => {
                         const lineLotSize = Number(line['Lot Size']) || 1;
@@ -564,9 +566,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         const lineLots = lineLotSize > 1 ? Math.ceil(lineNeeded / lineLotSize) : 0;
                         const costPrice = Number(line['Cost Price']) || 0;
                         const qtyFound = line['Quantity Found'];
-                        const altName = line['Alt Flower Name'];
-                        const altSupplier = line['Alt Supplier'];
-                        const altQty = Number(line['Alt Quantity Found']) || 0;
+                        const editable = order.Status === 'Reviewing';
                         return (
                           <div key={line.id} className="bg-gray-50 rounded-lg px-3 py-2 text-sm space-y-1">
                             <div className="flex items-center justify-between">
@@ -589,11 +589,22 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                               {qtyFound != null && <span>{t.found || 'Found'}: {qtyFound}</span>}
                               {costPrice > 0 && <span>{costPrice} zł/{t.unit || 'pc'}</span>}
                             </div>
-                            {(altName || altSupplier) && altQty > 0 && (
-                              <div className="text-xs text-indigo-600">
-                                ↳ {altName || '?'} ({altSupplier}) × {altQty}
-                              </div>
-                            )}
+                            <AltLineEditor
+                              line={line}
+                              orderId={order.id}
+                              stock={stock}
+                              suppliers={SUPPLIERS}
+                              editable={editable}
+                              onSave={async (fields) => {
+                                try {
+                                  await client.patch(`/stock-orders/${order.id}/lines/${line.id}`, fields);
+                                  const res = await client.get(`/stock-orders/${order.id}`);
+                                  setExpandedLines(res.data.lines || []);
+                                } catch (err) {
+                                  showToast(err.response?.data?.error || t.error, 'error');
+                                }
+                              }}
+                            />
                             {line['Quantity Accepted'] != null && (
                               <div className="text-xs text-emerald-600">✓ {t.accepted || 'Accepted'}: {line['Quantity Accepted']}</div>
                             )}
@@ -601,11 +612,16 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         );
                       })}
 
-                      {/* Supplier + driver payments for Shopping/Reviewing POs */}
+                      {/* Supplier + driver payments for Shopping/Reviewing POs.
+                          Union with alt suppliers — see same fix in driver app. */}
                       {['Shopping', 'Reviewing'].includes(order.Status) && (() => {
                         let payments = {};
                         try { payments = JSON.parse(order['Supplier Payments'] || '{}'); } catch {}
-                        const suppliers = [...new Set(expandedLines.map(l => l.Supplier).filter(Boolean))];
+                        const plannedSuppliers = expandedLines.map(l => l.Supplier).filter(Boolean);
+                        const altSuppliers = expandedLines
+                          .filter(l => l['Alt Supplier'] && Number(l['Alt Quantity Found']) > 0)
+                          .map(l => l['Alt Supplier']);
+                        const suppliers = [...new Set([...plannedSuppliers, ...altSuppliers])];
                         return (
                           <div className="space-y-2 pt-2 border-t border-gray-100">
                             {suppliers.map(sup => (
@@ -650,6 +666,101 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// AltLineEditor — owner's view of a substituted line during Reviewing.
+// Read-only chip when nothing was substituted; editable form (with flower +
+// supplier dropdowns and an alt cost field) when the driver flagged Partial /
+// Not Found OR an alt supplier is already populated. Uses native datalist for
+// the dropdowns — same UX as the driver app but desktop-styled.
+function AltLineEditor({ line, stock, suppliers, editable, onSave }) {
+  const [altName, setAltName] = useState(line['Alt Flower Name'] || '');
+  const [altSupplier, setAltSupplier] = useState(line['Alt Supplier'] || '');
+  const [altQty, setAltQty] = useState(line['Alt Quantity Found'] || '');
+  const [altCost, setAltCost] = useState(line['Alt Cost'] || '');
+
+  // Sync external updates (e.g. SSE refresh after driver edit)
+  useEffect(() => {
+    setAltName(line['Alt Flower Name'] || '');
+    setAltSupplier(line['Alt Supplier'] || '');
+    setAltQty(line['Alt Quantity Found'] || '');
+    setAltCost(line['Alt Cost'] || '');
+  }, [line.id, line['Alt Flower Name'], line['Alt Supplier'], line['Alt Quantity Found'], line['Alt Cost']]);
+
+  const driverStatus = line['Driver Status'] || 'Pending';
+  const hasAlt = !!(altName || altSupplier || Number(altQty) > 0);
+  const showEditor = editable && (driverStatus === 'Partial' || driverStatus === 'Not Found' || hasAlt);
+
+  // Read-only chip — same look as before, just preserved for non-editable view
+  if (!editable) {
+    if (!hasAlt) return null;
+    return (
+      <div className="text-xs text-indigo-600">
+        ↳ {altName || '?'} ({altSupplier || '?'}) × {altQty || 0}
+        {altCost ? <span className="ml-1">· {altCost} zł</span> : null}
+      </div>
+    );
+  }
+
+  if (!showEditor) return null;
+
+  return (
+    <div className="mt-2 p-2 bg-indigo-50 rounded-lg space-y-2">
+      <p className="text-xs font-semibold text-indigo-700">↳ {t.substitution || 'Substitution'}</p>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase">{t.altFlowerName || 'Flower'}</label>
+          <input
+            type="text"
+            list={`owner-alt-flowers-${line.id}`}
+            value={altName}
+            onChange={e => setAltName(e.target.value)}
+            onBlur={() => onSave({ 'Alt Flower Name': altName })}
+            className="field-input w-full text-sm"
+            placeholder={t.altFlowerName || 'Flower'}
+          />
+          <datalist id={`owner-alt-flowers-${line.id}`}>
+            {(stock || []).map(s => <option key={s.id} value={s['Display Name']} />)}
+          </datalist>
+        </div>
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase">{t.altSupplier || 'Supplier'}</label>
+          <input
+            type="text"
+            list={`owner-alt-suppliers-${line.id}`}
+            value={altSupplier}
+            onChange={e => setAltSupplier(e.target.value)}
+            onBlur={() => onSave({ 'Alt Supplier': altSupplier })}
+            className="field-input w-full text-sm"
+            placeholder={t.altSupplier || 'Supplier'}
+          />
+          <datalist id={`owner-alt-suppliers-${line.id}`}>
+            {(suppliers || []).map(s => <option key={s} value={s} />)}
+          </datalist>
+        </div>
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase">{t.altAmount || 'Qty'}</label>
+          <input
+            type="number"
+            value={altQty}
+            onChange={e => setAltQty(e.target.value)}
+            onBlur={() => onSave({ 'Alt Quantity Found': Number(altQty) || 0 })}
+            className="field-input w-full text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase">{t.altCost || 'Cost zł'}</label>
+          <input
+            type="number"
+            value={altCost}
+            onChange={e => setAltCost(e.target.value)}
+            onBlur={() => onSave({ 'Alt Cost': Number(altCost) || 0 })}
+            className="field-input w-full text-sm"
+          />
+        </div>
+      </div>
     </div>
   );
 }

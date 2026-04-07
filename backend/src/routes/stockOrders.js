@@ -12,6 +12,7 @@ import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
+import { getConfig } from './settings.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
@@ -25,6 +26,28 @@ const ALLOWED_TRANSITIONS = {
 };
 
 const router = Router();
+
+// GET /api/stock-orders/meta/lookups — flowers + suppliers list for the
+// driver/owner alt-flower dropdowns. Drivers don't have access to /stock or
+// /settings, so this exposes only the minimal fields they need.
+router.get('/meta/lookups', authorize('stock-orders'), async (req, res, next) => {
+  try {
+    const stock = await db.list(TABLES.STOCK, {
+      filterByFormula: '{Active}',
+      fields: ['Display Name', 'Supplier', 'Current Cost Price'],
+    });
+    const flowers = stock.map(s => ({
+      id:       s.id,
+      name:     s['Display Name'] || '',
+      supplier: s.Supplier || '',
+      cost:     Number(s['Current Cost Price']) || 0,
+    })).filter(f => f.name);
+    const suppliers = getConfig('suppliers') || [];
+    res.json({ flowers, suppliers });
+  } catch (err) {
+    next(err);
+  }
+});
 
 // GET /api/stock-orders?status=Draft&include=lines
 // Drivers only see POs assigned to them. Owner/florist see everything.

@@ -17,6 +17,17 @@ export default function StockPickupPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
   const [confirmDone, setConfirmDone] = useState(null);
+  // Lookups for the alt-flower / alt-supplier dropdowns inside the Partial /
+  // Not Found expander. Drivers don't have access to /stock or /settings, so
+  // the backend exposes a slim /stock-orders/meta/lookups endpoint instead.
+  const [flowers, setFlowers] = useState([]);
+  const [suppliersList, setSuppliersList] = useState([]);
+
+  useEffect(() => {
+    client.get('/stock-orders/meta/lookups')
+      .then(r => { setFlowers(r.data.flowers || []); setSuppliersList(r.data.suppliers || []); })
+      .catch(() => {});
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -144,6 +155,16 @@ export default function StockPickupPage() {
               if (!bySupplier[sup]) bySupplier[sup] = [];
               bySupplier[sup].push(line);
             }
+            // Union with alt suppliers actually visited — that's how a payment
+            // input appears for a supplier the driver substituted to mid-shop.
+            const altSupplierSet = new Set(
+              order.lines
+                .filter(l => l['Alt Supplier'] && Number(l['Alt Quantity Found']) > 0)
+                .map(l => l['Alt Supplier'])
+            );
+            for (const altSup of altSupplierSet) {
+              if (!bySupplier[altSup]) bySupplier[altSup] = []; // empty = pure payment row
+            }
 
             let payments = {};
             try { payments = JSON.parse(order['Supplier Payments'] || '{}'); } catch {}
@@ -175,6 +196,8 @@ export default function StockPickupPage() {
                           orderId={order.id}
                           onUpdate={updateLine}
                           isSaving={saving[line.id]}
+                          flowers={flowers}
+                          suppliers={suppliersList}
                         />
                       ))}
                     </div>
@@ -236,7 +259,7 @@ export default function StockPickupPage() {
 }
 
 // Individual line item with 3-option driver flow
-function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
+function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppliers = [] }) {
   // Derived values must be computed BEFORE any useState that references them.
   // const declarations are NOT hoisted (Temporal Dead Zone) — reading lotSize
   // before this line crashed the entire page render.
@@ -427,16 +450,43 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving }) {
 
           {showAlt && (
             <div className="space-y-2">
-              <input type="text" value={altFlowerName} onChange={e => setAltFlowerName(e.target.value)}
-                onBlur={saveDetails} placeholder={t.altFlowerName}
-                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
+              {/* Flower picker — datalist gives a dropdown of known flowers
+                  while still allowing free text for "new" entries. Same idea
+                  as the owner's StockSearchInput but lighter for phones. */}
+              <input
+                type="text"
+                list={`alt-flowers-${line.id}`}
+                value={altFlowerName}
+                onChange={e => setAltFlowerName(e.target.value)}
+                onBlur={saveDetails}
+                placeholder={t.altFlowerName}
+                className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+              />
+              <datalist id={`alt-flowers-${line.id}`}>
+                {flowers.map(f => <option key={f.id} value={f.name} />)}
+              </datalist>
+
               <div className="grid grid-cols-2 gap-2">
-                <input type="text" value={altSupplier} onChange={e => setAltSupplier(e.target.value)}
-                  onBlur={saveDetails} placeholder={t.altSupplier}
-                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
-                <input type="number" value={altQty} onChange={e => setAltQty(e.target.value)}
-                  onBlur={saveDetails} placeholder={t.altAmount}
-                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none" />
+                <input
+                  type="text"
+                  list={`alt-suppliers-${line.id}`}
+                  value={altSupplier}
+                  onChange={e => setAltSupplier(e.target.value)}
+                  onBlur={saveDetails}
+                  placeholder={t.altSupplier}
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                />
+                <datalist id={`alt-suppliers-${line.id}`}>
+                  {suppliers.map(s => <option key={s} value={s} />)}
+                </datalist>
+                <input
+                  type="number"
+                  value={altQty}
+                  onChange={e => setAltQty(e.target.value)}
+                  onBlur={saveDetails}
+                  placeholder={t.altAmount}
+                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                />
               </div>
             </div>
           )}

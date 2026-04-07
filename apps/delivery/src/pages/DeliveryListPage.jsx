@@ -48,7 +48,11 @@ export default function DeliveryListPage() {
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { date: todayStr() };
+      // Range fetch: today onward, restricted to this driver. Backend supports
+      // `from` without `to` as "from this date forward" so future-assigned
+      // deliveries also show up — the driver sees their full upcoming queue.
+      const params = { from: todayStr() };
+      if (driverName) params.driver = driverName;
       const res = await client.get('/deliveries', { params });
       setDeliveries(res.data);
     } catch (err) {
@@ -86,20 +90,32 @@ export default function DeliveryListPage() {
     });
   }, []);
 
-  // Group by status, with the logged-in driver's deliveries sorted to the top.
-  // Like a shared task board where your own tasks float up.
-  const grouped = useMemo(() => {
+  // Split deliveries into "today" vs "upcoming" first, then group today by status.
+  // Today gets the rich Pending/Out/Delivered breakdown the driver works against;
+  // upcoming is a flat date-grouped preview of future-assigned work.
+  const today = todayStr();
+  const { todayGrouped, upcomingByDate } = useMemo(() => {
+    const todayList = [];
+    const futureList = [];
+    for (const d of deliveries) {
+      const ddate = d['Delivery Date'] || '';
+      if (!ddate || ddate === today) todayList.push(d);
+      else if (ddate > today) futureList.push(d);
+      // Past dates with this driver could appear if a delivery slipped — surface
+      // them with today so they aren't silently dropped.
+      else todayList.push(d);
+    }
+
     const groups = {
       'Pending':          [],
       'Out for Delivery': [],
       'Delivered':        [],
     };
-    deliveries.forEach(d => {
+    todayList.forEach(d => {
       const status = d['Status'] || 'Pending';
       if (groups[status]) groups[status].push(d);
       else groups['Pending'].push(d);
     });
-    // Sort: own deliveries first, then by time
     const prioritySort = (a, b) => {
       const aIsMine = a['Assigned Driver'] === driverName ? 0 : 1;
       const bIsMine = b['Assigned Driver'] === driverName ? 0 : 1;
@@ -109,8 +125,23 @@ export default function DeliveryListPage() {
     groups['Pending'].sort(prioritySort);
     groups['Out for Delivery'].sort(prioritySort);
     groups['Delivered'].sort(prioritySort);
-    return groups;
-  }, [deliveries, driverName]);
+
+    // Group future deliveries by date so the driver sees Tomorrow / Day after / ...
+    const byDate = {};
+    futureList.sort((a, b) =>
+      (a['Delivery Date'] || '').localeCompare(b['Delivery Date'] || '') ||
+      (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '')
+    );
+    for (const d of futureList) {
+      const k = d['Delivery Date'];
+      if (!byDate[k]) byDate[k] = [];
+      byDate[k].push(d);
+    }
+
+    return { todayGrouped: groups, upcomingByDate: byDate };
+  }, [deliveries, driverName, today]);
+
+  const grouped = todayGrouped;
 
   const selectedDelivery = deliveries.find(d => d.id === selectedId);
 
@@ -298,6 +329,32 @@ export default function DeliveryListPage() {
                     />
                   ))}
                 </div>
+              </section>
+            )}
+
+            {/* Upcoming — future-dated deliveries assigned to this driver,
+                grouped by date so they can plan ahead. */}
+            {Object.keys(upcomingByDate).length > 0 && (
+              <section>
+                <p className="ios-label flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-purple-500" />
+                  {t.upcoming || 'Upcoming'}
+                </p>
+                {Object.entries(upcomingByDate).map(([date, list]) => (
+                  <div key={date} className="space-y-2 mb-4">
+                    <p className="text-xs font-semibold text-ios-tertiary uppercase mt-2">
+                      {date} ({list.length})
+                    </p>
+                    {list.map(d => (
+                      <DeliveryCard
+                        key={d.id}
+                        delivery={d}
+                        onTap={() => setSelectedId(d.id)}
+                        dimmed
+                      />
+                    ))}
+                  </div>
+                ))}
               </section>
             )}
           </>
