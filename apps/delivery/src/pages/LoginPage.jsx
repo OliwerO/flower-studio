@@ -15,7 +15,6 @@ export default function LoginPage() {
   const [pin, setPin]         = useState('');
   const [error, setError]     = useState('');
   const [loading, setLoading] = useState(false);
-  const [greeting, setGreeting] = useState('');
   const { login }             = useAuth();
   const navigate              = useNavigate();
 
@@ -32,14 +31,7 @@ export default function LoginPage() {
         throw new Error('wrong_role');
       }
       login(pin, role, driverName);
-
-      // Show greeting briefly before navigating
-      if (driverName) {
-        setGreeting(`${t.hello}, ${driverName}!`);
-        setTimeout(() => navigate('/deliveries', { replace: true }), 1200);
-      } else {
-        navigate('/deliveries', { replace: true });
-      }
+      navigate('/deliveries', { replace: true });
     } catch {
       setClientPin(null);
       setPin('');
@@ -53,17 +45,6 @@ export default function LoginPage() {
     if (pin.length < 6) setPin(p => p + d);
   }
   function del() { setPin(p => p.slice(0, -1)); }
-
-  // Greeting screen
-  if (greeting) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center px-6">
-        <img src="/logo.png" alt="Blossom" className="w-44 mx-auto mb-8" />
-        <p className="text-2xl font-semibold text-brand-700">{greeting}</p>
-        <p className="text-ios-tertiary text-sm mt-2">Loading deliveries...</p>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6">

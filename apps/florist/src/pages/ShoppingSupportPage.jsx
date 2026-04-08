@@ -18,6 +18,10 @@ export default function ShoppingSupportPage() {
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState({});
+  // Per-PO transition lock — prevents double-tap on Done shopping / Send to florist
+  // from firing the same endpoint twice in flight (which would race the server's
+  // status check and produce a confusing error toast).
+  const [transitioning, setTransitioning] = useState({});
   // Track which line IDs have a focused input — skip them during poll refresh
   const focusedLines = useRef(new Set());
 
@@ -150,13 +154,17 @@ export default function ShoppingSupportPage() {
   }
 
   async function approveReview(orderId) {
+    if (transitioning[orderId]) return;
+    setTransitioning(prev => ({ ...prev, [orderId]: true }));
     try {
       await client.post(`/stock-orders/${orderId}/approve-review`);
       showToast(t.stockOrderApproved || 'Sent to florist for evaluation');
-      fetchOrders();
+      await fetchOrders();
     } catch (err) {
       console.error('approveReview failed', err);
       showToast(errMsg(err), 'error');
+    } finally {
+      setTransitioning(prev => ({ ...prev, [orderId]: false }));
     }
   }
 
@@ -166,12 +174,16 @@ export default function ShoppingSupportPage() {
   // Flips PO Shopping → Reviewing so the existing "Send to florist" button
   // can appear.
   async function completeShopping(orderId) {
+    if (transitioning[orderId]) return;
+    setTransitioning(prev => ({ ...prev, [orderId]: true }));
     try {
       await client.post(`/stock-orders/${orderId}/driver-complete`);
-      fetchOrders();
+      await fetchOrders();
     } catch (err) {
       console.error('completeShopping failed', err);
       showToast(errMsg(err), 'error');
+    } finally {
+      setTransitioning(prev => ({ ...prev, [orderId]: false }));
     }
   }
 
@@ -236,13 +248,15 @@ export default function ShoppingSupportPage() {
                     {order.Status === 'Shopping' && (
                       <button
                         onClick={() => completeShopping(order.id)}
-                        className="px-3 py-1 rounded-xl bg-amber-600 text-white text-xs font-semibold active-scale"
+                        disabled={!!transitioning[order.id]}
+                        className="px-3 py-1 rounded-xl bg-amber-600 text-white text-xs font-semibold active-scale disabled:opacity-50"
                       >{t.shopping.markShoppingDone || 'Done shopping'}</button>
                     )}
                     {order.Status === 'Reviewing' && (
                       <button
                         onClick={() => approveReview(order.id)}
-                        className="px-3 py-1 rounded-xl bg-purple-600 text-white text-xs font-semibold active-scale"
+                        disabled={!!transitioning[order.id]}
+                        className="px-3 py-1 rounded-xl bg-purple-600 text-white text-xs font-semibold active-scale disabled:opacity-50"
                       >{t.shopping.sendToFlorist || 'Send to florist'}</button>
                     )}
                   </div>
