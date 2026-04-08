@@ -160,6 +160,21 @@ export default function ShoppingSupportPage() {
     }
   }
 
+  // Owner-side "mark shopping done" — used when the driver didn't open the
+  // app and the owner is entering data on their behalf. Same backend endpoint
+  // the driver app uses (POST /:id/driver-complete), no role restriction.
+  // Flips PO Shopping → Reviewing so the existing "Send to florist" button
+  // can appear.
+  async function completeShopping(orderId) {
+    try {
+      await client.post(`/stock-orders/${orderId}/driver-complete`);
+      fetchOrders();
+    } catch (err) {
+      console.error('completeShopping failed', err);
+      showToast(errMsg(err), 'error');
+    }
+  }
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -218,6 +233,12 @@ export default function ShoppingSupportPage() {
                     }`}>
                       {order.Status}
                     </span>
+                    {order.Status === 'Shopping' && (
+                      <button
+                        onClick={() => completeShopping(order.id)}
+                        className="px-3 py-1 rounded-xl bg-amber-600 text-white text-xs font-semibold active-scale"
+                      >{t.shopping.markShoppingDone || 'Завершить закупку'}</button>
+                    )}
                     {order.Status === 'Reviewing' && (
                       <button
                         onClick={() => approveReview(order.id)}
