@@ -64,7 +64,12 @@ export default function StockEvaluationPage() {
     setSubmittingId(orderId);
     try {
       const evalLines = order.lines
-        .filter(l => l['Driver Status'] === 'Found All' || l['Driver Status'] === 'Partial')
+        .filter(l => {
+          const status = l['Driver Status'];
+          if (status === 'Found All' || status === 'Partial') return true;
+          if (status === 'Not Found' && Number(l['Alt Quantity Found']) > 0) return true;
+          return false;
+        })
         .map(l => {
           const ev = evalState[l.id] || {};
           return {
@@ -115,14 +120,25 @@ export default function StockEvaluationPage() {
           </div>
         ) : (
           orders.map(order => {
-            const foundLines = order.lines.filter(l =>
-              l['Driver Status'] === 'Found All' || l['Driver Status'] === 'Partial'
+            // A line is "evaluable" if there's anything physical to inspect:
+            // - Primary supplier delivered (Found All / Partial), OR
+            // - Primary failed but the alt supplier delivered substitutes
+            // The second case was previously dropped into the read-only
+            // notFound banner, leaving the florist unable to accept/write-off
+            // the substitutes that actually arrived.
+            const evaluableLines = order.lines.filter(l => {
+              const status = l['Driver Status'];
+              if (status === 'Found All' || status === 'Partial') return true;
+              if (status === 'Not Found' && Number(l['Alt Quantity Found']) > 0) return true;
+              return false;
+            });
+            const notFoundLines = order.lines.filter(l =>
+              l['Driver Status'] === 'Not Found' && !(Number(l['Alt Quantity Found']) > 0)
             );
-            const notFoundLines = order.lines.filter(l => l['Driver Status'] === 'Not Found');
 
-            // Group found lines by supplier
+            // Group evaluable lines by supplier
             const bySupplier = {};
-            for (const line of foundLines) {
+            for (const line of evaluableLines) {
               const sup = line.Supplier || '—';
               if (!bySupplier[sup]) bySupplier[sup] = [];
               bySupplier[sup].push(line);
@@ -184,7 +200,8 @@ export default function StockEvaluationPage() {
                               </div>
                             </div>
 
-                            {/* Accept / Write-off controls */}
+                            {/* Accept / Write-off controls — only when primary supplier actually delivered */}
+                            {found > 0 && (
                             <div className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2">
                               <div className="flex items-center gap-3">
                                 <div className="flex-1">
@@ -232,6 +249,7 @@ export default function StockEvaluationPage() {
                                 </div>
                               </div>
                             </div>
+                            )}
 
                             {/* Alt supplier block — separate indigo section */}
                             {altSupplier && altFound > 0 && (
@@ -328,13 +346,13 @@ export default function StockEvaluationPage() {
                 {/* Complete evaluation button */}
                 <button
                   onClick={() => submitEvaluation(order.id)}
-                  disabled={submittingId === order.id || foundLines.length === 0}
+                  disabled={submittingId === order.id || evaluableLines.length === 0}
                   className="w-full py-3.5 rounded-2xl bg-brand-600 text-white text-base font-semibold
                              disabled:opacity-30 active:bg-brand-700 transition-colors shadow-lg active-scale"
                 >
                   {submittingId === order.id
                     ? (t.saving || '...')
-                    : `${t.completeEvaluation} (${foundLines.length} ${t.items || 'items'})`}
+                    : `${t.completeEvaluation} (${evaluableLines.length} ${t.items || 'items'})`}
                 </button>
               </div>
             );
