@@ -92,6 +92,14 @@ export default function ShoppingSupportPage() {
     };
   }, [fetchOrders]);
 
+  // Surface the real backend/Airtable error so silent field-name or
+  // validation bugs don't hide behind a generic "Error" toast.
+  function errMsg(err) {
+    const data = err?.response?.data;
+    const detail = data?.error || data?.message || err?.message;
+    return detail ? `${t.error}: ${detail}` : t.error;
+  }
+
   // ── Auto-save a line field on blur ──
   async function updateLine(orderId, lineId, fields) {
     setSaving(prev => ({ ...prev, [lineId]: true }));
@@ -101,8 +109,9 @@ export default function ShoppingSupportPage() {
         ...o,
         lines: o.lines.map(l => l.id === lineId ? { ...l, ...fields } : l),
       } : o));
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('updateLine failed', err);
+      showToast(errMsg(err), 'error');
     } finally {
       setSaving(prev => ({ ...prev, [lineId]: false }));
     }
@@ -128,8 +137,9 @@ export default function ShoppingSupportPage() {
       await client.patch(`/stock-orders/${orderId}`, {
         'Supplier Payments': JSON.stringify(payments),
       });
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('saveSupplierPayment failed', err);
+      showToast(errMsg(err), 'error');
     }
   }
 
@@ -138,8 +148,9 @@ export default function ShoppingSupportPage() {
       await client.post(`/stock-orders/${orderId}/approve-review`);
       showToast(t.stockOrderApproved || 'Sent to florist for evaluation');
       fetchOrders();
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      console.error('approveReview failed', err);
+      showToast(errMsg(err), 'error');
     }
   }
 
@@ -273,7 +284,10 @@ export default function ShoppingSupportPage() {
                           await client.patch(`/stock-orders/${order.id}`, {
                             'Driver Payment': Number(order['Driver Payment']) || 0,
                           });
-                        } catch { showToast(t.error, 'error'); }
+                        } catch (err) {
+                          console.error('Driver Payment save failed', err);
+                          showToast(errMsg(err), 'error');
+                        }
                       }}
                       placeholder="0"
                       className="flex-1 text-sm font-medium border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
@@ -314,6 +328,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
         altFlower:    line['Alt Flower Name'] || '',
         altSupplier:  line['Alt Supplier'] || '',
         altQty:       line['Alt Quantity Found'] ?? '',
+        altCost:      line['Alt Cost'] ?? '',
         notes:        line.Notes || '',
       });
     }
@@ -348,9 +363,10 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
     const pendingFields = {
       'Quantity Found': Number(local.qtyFound) || 0,
       'Cost Price': Number(local.costPrice) || 0,
-      'Alt Flower Name': local.altFlowerName || '',
+      'Alt Flower Name': local.altFlower || '',
       'Alt Supplier': local.altSupplier || '',
       'Alt Quantity Found': Number(local.altQty) || 0,
+      'Alt Cost': local.altCost === '' ? 0 : Number(local.altCost) || 0,
       Notes: local.notes || '',
       'Driver Status': newStatus,
     };
@@ -488,7 +504,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                   <input
                     type="number"
                     inputMode="decimal"
-                    value={local.altCost ?? (Number(local.costPrice || 0) * Number(local.altQty || 0) || '')}
+                    value={local.altCost ?? ''}
                     onChange={e => handleChange('altCost', e.target.value)}
                     onFocus={onFocus}
                     onBlur={() => handleBlur({ 'Alt Cost': local.altCost === '' ? '' : Number(local.altCost) || 0 })}
