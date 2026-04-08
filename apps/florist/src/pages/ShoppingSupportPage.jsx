@@ -237,7 +237,7 @@ export default function ShoppingSupportPage() {
                       <button
                         onClick={() => completeShopping(order.id)}
                         className="px-3 py-1 rounded-xl bg-amber-600 text-white text-xs font-semibold active-scale"
-                      >{t.shopping.markShoppingDone || 'Завершить закупку'}</button>
+                      >{t.shopping.markShoppingDone || 'Done shopping'}</button>
                     )}
                     {order.Status === 'Reviewing' && (
                       <button

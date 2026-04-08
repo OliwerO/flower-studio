@@ -334,6 +334,8 @@ const en = {
     notes:          'Notes',
     notesHint:      'Note for driver or florist...',
     paidTo:         'Paid to',
+    markShoppingDone: 'Done shopping',
+    sendToFlorist:    'Send to florist',
   },
   // Purchase orders (owner)
   po: {
@@ -751,6 +753,8 @@ const ru = {
     notes:          'Заметки',
     notesHint:      'Заметка для водителя или флориста...',
     paidTo:         'Оплачено',
+    markShoppingDone: 'Завершить закупку',
+    sendToFlorist:    'Передать флористу',
   },
   // Purchase orders (owner)
   po: {

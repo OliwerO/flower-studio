@@ -3,7 +3,7 @@
 // Found All (one tap) / Partial (expand) / Not Found (expand).
 // Every status change auto-saves to the backend immediately.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
 import client, { getClientPin } from '../api/client.js';
@@ -269,15 +269,43 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
   const lots = lotSize > 1 ? Math.ceil(needed / lotSize) : 0;
   const fullLotQty = lots > 0 ? lots * lotSize : needed;
 
-  const [expanded, setExpanded] = useState(false);
+  const hasAltData = !!line['Alt Supplier'] || !!line['Alt Flower Name'];
+  const hasAnyDetails = (Number(line['Quantity Found']) > 0 && status !== 'Found All')
+    || hasAltData
+    || !!line.Notes;
+
+  const [expanded, setExpanded] = useState(hasAnyDetails && (status === 'Partial' || status === 'Not Found'));
   const [qtyFound, setQtyFound] = useState(line['Quantity Found'] || '');
   const [lotsFound, setLotsFound] = useState('');
   const [actualLotSize, setActualLotSize] = useState(lotSize);
   const [altFlowerName, setAltFlowerName] = useState(line['Alt Flower Name'] || '');
   const [altSupplier, setAltSupplier] = useState(line['Alt Supplier'] || '');
   const [altQty, setAltQty] = useState(line['Alt Quantity Found'] || '');
-  const [showAlt, setShowAlt] = useState(!!line['Alt Supplier'] || !!line['Alt Flower Name']);
+  const [showAlt, setShowAlt] = useState(hasAltData);
   const [note, setNote] = useState(line.Notes || '');
+
+  // Resync local form state when the parent delivers a fresh line via
+  // SSE/poll — e.g. when the owner edited the line in Shopping Support.
+  // Without this, useState initializers only run once on mount and the
+  // driver sees frozen empty fields no matter what owner enters.
+  // Also auto-expands the details panel if the new data has anything to show.
+  const lineRef = useRef(line);
+  useEffect(() => {
+    if (lineRef.current === line) return;
+    lineRef.current = line;
+    setQtyFound(line['Quantity Found'] || '');
+    setAltFlowerName(line['Alt Flower Name'] || '');
+    setAltSupplier(line['Alt Supplier'] || '');
+    setAltQty(line['Alt Quantity Found'] || '');
+    setNote(line.Notes || '');
+    const altPresent = !!line['Alt Supplier'] || !!line['Alt Flower Name'];
+    setShowAlt(altPresent);
+    const newStatus = line['Driver Status'] || 'Pending';
+    if ((newStatus === 'Partial' || newStatus === 'Not Found') &&
+        (Number(line['Quantity Found']) > 0 || altPresent || !!line.Notes)) {
+      setExpanded(true);
+    }
+  }, [line]);
 
   function selectStatus(newStatus) {
     if (newStatus === 'Found All') {
