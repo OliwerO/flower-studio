@@ -101,8 +101,13 @@ export default function ShoppingSupportPage() {
   }
 
   // ── Auto-save a line field on blur ──
+  // Race protection: keep the line in focusedLines for the entire duration
+  // of the PATCH, so any poll/SSE refresh that lands between blur and the
+  // server confirming will preserve the local value instead of clobbering
+  // it with stale server data.
   async function updateLine(orderId, lineId, fields) {
     setSaving(prev => ({ ...prev, [lineId]: true }));
+    focusedLines.current.add(lineId);
     try {
       await client.patch(`/stock-orders/${orderId}/lines/${lineId}`, fields);
       setOrders(prev => prev.map(o => o.id === orderId ? {
@@ -114,6 +119,7 @@ export default function ShoppingSupportPage() {
       showToast(errMsg(err), 'error');
     } finally {
       setSaving(prev => ({ ...prev, [lineId]: false }));
+      focusedLines.current.delete(lineId);
     }
   }
 

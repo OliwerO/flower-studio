@@ -241,8 +241,28 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
 
 // PATCH /api/stock-orders/:id/lines/:lineId — update a single line
 // Used by driver (status, qty found, alt supplier) and owner (corrections)
+//
+// Edit-window rules (prevents retroactive tampering with closed POs):
+//   DRAFT/SENT/SHOPPING → driver + owner can edit anything
+//   REVIEWING/EVALUATING/EVAL_ERROR → owner only (corrections during/after review)
+//   COMPLETE → nobody (closed books — create an adjustment instead)
+const PO_OWNER_ONLY_STATUSES = [PO_STATUS.REVIEWING, PO_STATUS.EVALUATING, PO_STATUS.EVAL_ERROR];
+
 router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, next) => {
   try {
+    // Edit-window guard
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (po.Status === PO_STATUS.COMPLETE) {
+      return res.status(409).json({
+        error: `PO is "${PO_STATUS.COMPLETE}" — closed books. Create an adjustment instead.`,
+      });
+    }
+    if (PO_OWNER_ONLY_STATUSES.includes(po.Status) && req.role !== 'owner') {
+      return res.status(403).json({
+        error: `PO is "${po.Status}" — only the owner can edit lines at this stage.`,
+      });
+    }
+
     const allowed = [
       'Driver Status', 'Quantity Found', 'Alt Supplier', 'Alt Quantity Found',
       'Alt Flower Name', 'Cost Price', 'Sell Price', 'Alt Cost',
@@ -378,6 +398,27 @@ router.post('/:id/approve-review', authorize('stock-orders', ['owner']), async (
   }
 });
 
+// Idempotency helper — returns true if a STOCK_PURCHASES row already exists
+// for this PO + line + variant (primary/alt). Used on retry after a partial
+// failure, so a second receiveIntoStock does NOT double-credit the batch.
+//
+// We identify each receive step by a stable marker embedded in the Notes field.
+// That avoids adding a new Airtable schema column and works with the existing
+// purchase history.
+async function purchaseAlreadyRecorded(poId, lineId, variant) {
+  if (!TABLES.STOCK_PURCHASES) return false;
+  const marker = `PO #${poId} L#${lineId} ${variant}`;
+  // Airtable FIND() returns 0 when not found, which is falsy.
+  const formula = `FIND("${marker}", {Notes} & "") > 0`;
+  try {
+    const rows = await db.list(TABLES.STOCK_PURCHASES, { filterByFormula: formula, maxRecords: 1 });
+    return rows.length > 0;
+  } catch (e) {
+    console.error('[STOCK-ORDER] Idempotency check failed:', e.message);
+    return false; // fail-open — better to risk a warning than block a retry
+  }
+}
+
 // Receive accepted flowers into stock using batch logic:
 // - If existing qty > 0 → create a new batch record (separate FIFO lot)
 // - If existing qty <= 0 → reuse the empty record (replenish it)
@@ -462,36 +503,49 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           );
         }
 
-        // Primary supplier: receive into stock with batch logic
+        // Primary supplier: receive into stock with batch logic.
+        // Idempotency: on retry after a partial failure, skip if the
+        // STOCK_PURCHASES row for this (PO, line, primary) already exists.
+        // Otherwise receiveIntoStock would credit the batch a second time.
         if (stockItemId && accepted > 0) {
-          const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, today);
+          const already = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'primary');
+          if (!already) {
+            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, today);
 
-          // Audit trail
-          await db.create(TABLES.STOCK_PURCHASES, {
-            'Purchase Date': today,
-            Supplier: supplier,
-            Flower: [finalItemId],
-            'Quantity Purchased': accepted,
-            'Price Per Unit': costPrice,
-            Notes: `PO #${req.params.id}`,
-          });
+            // Audit trail — marker must match purchaseAlreadyRecorded() exactly.
+            await db.create(TABLES.STOCK_PURCHASES, {
+              'Purchase Date': today,
+              Supplier: supplier,
+              Flower: [finalItemId],
+              'Quantity Purchased': accepted,
+              'Price Per Unit': costPrice,
+              Notes: `PO #${req.params.id} L#${evalLine.lineId} primary`,
+            });
+          } else {
+            console.log(`[STOCK-ORDER] Skipping primary receive for line ${evalLine.lineId} — already recorded`);
+          }
         }
 
-        // Alt supplier: same batch logic, flag price for review
+        // Alt supplier: same batch logic + same idempotency guard.
         const altAccepted = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOff = Number(evalLine.altWriteOffQty) || 0;
         const altSupplier = line['Alt Supplier'] || '';
         if (stockItemId && altAccepted > 0) {
-          const altFinalId = await receiveIntoStock(stockItemId, altAccepted, costPrice, sellPrice, altSupplier, today);
+          const alreadyAlt = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'alt');
+          if (!alreadyAlt) {
+            const altFinalId = await receiveIntoStock(stockItemId, altAccepted, costPrice, sellPrice, altSupplier, today);
 
-          await db.create(TABLES.STOCK_PURCHASES, {
-            'Purchase Date': today,
-            Supplier: altSupplier,
-            Flower: [altFinalId],
-            'Quantity Purchased': altAccepted,
-            'Price Per Unit': costPrice,
-            Notes: `PO #${req.params.id} (alt supplier — price needs review)`,
-          });
+            await db.create(TABLES.STOCK_PURCHASES, {
+              'Purchase Date': today,
+              Supplier: altSupplier,
+              Flower: [altFinalId],
+              'Quantity Purchased': altAccepted,
+              'Price Per Unit': costPrice,
+              Notes: `PO #${req.params.id} L#${evalLine.lineId} alt (price needs review)`,
+            });
+          } else {
+            console.log(`[STOCK-ORDER] Skipping alt receive for line ${evalLine.lineId} — already recorded`);
+          }
 
           // Flag for owner price review
           await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, {
