@@ -6,6 +6,7 @@ import helmet from 'helmet';
 
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
+import { validateAirtableSchema } from './services/airtableSchema.js';
 
 import authRoutes          from './routes/auth.js';
 import customerRoutes      from './routes/customers.js';
@@ -96,6 +97,12 @@ app.use('/api/florist-hours',  floristHoursRoutes);
 app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
+
+// Verify Airtable field names match what the backend writes — catches
+// trailing-space typos and renamed fields at boot instead of runtime.
+// See backend/src/services/airtableSchema.js for the rationale.
+await validateAirtableSchema();
+
 const server = app.listen(PORT, () => {
   console.log(`Flower Studio backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
