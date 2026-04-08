@@ -15,6 +15,18 @@ export default function StockEvaluationPage() {
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
   const [evalState, setEvalState] = useState({});
+  // Lowercased set of existing Stock display names — used to preview which
+  // substitutes will become brand-new stock cards on submit (edge case 2).
+  const [knownStockNames, setKnownStockNames] = useState(new Set());
+
+  useEffect(() => {
+    client.get('/stock-orders/meta/lookups')
+      .then(r => {
+        const names = (r.data.flowers || []).map(f => String(f.name || '').trim().toLowerCase());
+        setKnownStockNames(new Set(names));
+      })
+      .catch(() => {});
+  }, []);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -56,6 +68,35 @@ export default function StockEvaluationPage() {
       const wo = Math.max(0, Math.min(raw, altFound));
       updateEval(lineId, { altWriteOff: wo, altAccepted: Math.max(0, altFound - wo) });
     }
+  }
+
+  // Before submit, check which substitute flower names don't match any
+  // existing stock card — those will be created as new cards by the backend.
+  // Shows a confirm dialog so the florist can catch typos (edge case 2).
+  function collectNewSubstitutes(order) {
+    const out = [];
+    for (const line of order.lines) {
+      const ev = evalState[line.id] || {};
+      const altAccepted = Number(ev.altAccepted) || 0;
+      const altFlowerName = (line['Alt Flower Name'] || '').trim();
+      if (altAccepted > 0 && altFlowerName &&
+          !knownStockNames.has(altFlowerName.toLowerCase())) {
+        out.push(altFlowerName);
+      }
+    }
+    return out;
+  }
+
+  async function handleSubmitClick(orderId) {
+    const order = orders.find(o => o.id === orderId);
+    if (!order) return;
+    const newOnes = collectNewSubstitutes(order);
+    if (newOnes.length > 0) {
+      const list = newOnes.map(n => `• ${n}`).join('\n');
+      const msg = (t.confirmNewStockCards || 'These will be created as new stock cards:') + '\n\n' + list + '\n\n' + (t.confirmContinue || 'Continue?');
+      if (!window.confirm(msg)) return;
+    }
+    submitEvaluation(orderId);
   }
 
   async function submitEvaluation(orderId) {
@@ -252,12 +293,27 @@ export default function StockEvaluationPage() {
                             )}
 
                             {/* Alt supplier block — separate indigo section */}
-                            {altSupplier && altFound > 0 && (
+                            {altSupplier && altFound > 0 && (() => {
+                              // Real per-stem alt cost = total paid / delivered.
+                              // This is what actually lands on the substitute's new stock card.
+                              const altCostTotal = Number(line['Alt Cost']) || 0;
+                              const altCostPerStem = altFound > 0 ? (altCostTotal / altFound) : 0;
+                              const isNewSubstitute = altFlowerName &&
+                                !knownStockNames.has(String(altFlowerName).trim().toLowerCase());
+                              return (
                               <div className="bg-indigo-50 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
                                 <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide">
                                   ↳ {altFlowerName ? `${altFlowerName} — ${altSupplier}` : altSupplier}
-                                  <span className="ml-1 text-indigo-500 normal-case">({altFound} {t.delivered || 'delivered'})</span>
+                                  <span className="ml-1 text-indigo-500 normal-case">
+                                    ({altFound} {t.delivered || 'delivered'}
+                                    {altCostPerStem > 0 && `, ${altCostPerStem.toFixed(2)} zł/шт`})
+                                  </span>
                                 </p>
+                                {isNewSubstitute && (
+                                  <p className="text-[10px] text-amber-700 bg-amber-50 rounded-md px-2 py-1 border border-amber-200">
+                                    {t.newStockCardWarning || `Will create new stock card: "${altFlowerName}"`}
+                                  </p>
+                                )}
                                 <div className="flex items-center gap-3">
                                   <div className="flex-1">
                                     <label className="text-[10px] text-emerald-600 uppercase font-semibold mb-0.5 block">
@@ -303,7 +359,8 @@ export default function StockEvaluationPage() {
                                   </div>
                                 </div>
                               </div>
-                            )}
+                              );
+                            })()}
                           </div>
                         );
                       })}
@@ -345,7 +402,7 @@ export default function StockEvaluationPage() {
 
                 {/* Complete evaluation button */}
                 <button
-                  onClick={() => submitEvaluation(order.id)}
+                  onClick={() => handleSubmitClick(order.id)}
                   disabled={submittingId === order.id || evaluableLines.length === 0}
                   className="w-full py-3.5 rounded-2xl bg-brand-600 text-white text-base font-semibold
                              disabled:opacity-30 active:bg-brand-700 transition-colors shadow-lg active-scale"

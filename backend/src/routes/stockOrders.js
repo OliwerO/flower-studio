@@ -419,6 +419,56 @@ async function purchaseAlreadyRecorded(poId, lineId, variant) {
   }
 }
 
+// Find an existing Stock record by exact Display Name, or create a new one
+// for a substitute flower that doesn't exist in the catalog yet.
+//
+// Used by the PO evaluation flow when the driver brought a substitute that
+// needs to be received into inventory as its own stock item (not merged into
+// the original that was ordered). Category, unit, and reorder threshold are
+// copied from the originally-ordered stock item so the substitute has
+// sensible defaults without requiring the florist to fill a form.
+//
+// Sell price uses the global targetMarkup setting: sellPrice = costPerStem * markup.
+async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerStem, originalStockItem, today) {
+  const trimmedName = (altFlowerName || '').trim();
+  if (!trimmedName) {
+    throw new Error('Cannot receive substitute with empty flower name');
+  }
+
+  // Try to find an existing Stock record with the exact same display name.
+  // Sanitize quotes to avoid breaking the Airtable filter formula.
+  const safe = sanitizeFormulaValue(trimmedName);
+  const existing = await db.list(TABLES.STOCK, {
+    filterByFormula: `{Display Name} = '${safe}'`,
+    maxRecords: 1,
+  });
+  if (existing.length > 0) {
+    return existing[0].id;
+  }
+
+  // Not found → create a brand-new stock card for the substitute.
+  // Copy category/unit/threshold from the original item so the substitute
+  // inherits sensible defaults. Cost = actual per-stem paid, sell = cost * markup.
+  const markup = Number(getConfig('targetMarkup')) || 1;
+  const sellPerStem = Math.round(costPerStem * markup * 100) / 100;
+
+  const created = await db.create(TABLES.STOCK, {
+    'Display Name':       trimmedName,
+    'Purchase Name':      trimmedName,
+    Category:             originalStockItem?.Category || 'Other',
+    'Current Quantity':   0, // receiveIntoStock will adjust upward
+    'Current Cost Price': costPerStem,
+    'Current Sell Price': sellPerStem,
+    Supplier:             altSupplier || '',
+    Unit:                 originalStockItem?.Unit || 'Stems',
+    'Reorder Threshold':  originalStockItem?.['Reorder Threshold'] || 0,
+    Active:               true,
+    'Last Restocked':     today,
+  });
+  console.log(`[STOCK-ORDER] Created substitute stock card "${trimmedName}" (${created.id}) — cost ${costPerStem} zł, sell ${sellPerStem} zł`);
+  return created.id;
+}
+
 // Receive accepted flowers into stock using batch logic:
 // - If existing qty > 0 → create a new batch record (separate FIFO lot)
 // - If existing qty <= 0 → reuse the empty record (replenish it)
@@ -526,44 +576,80 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           }
         }
 
-        // Alt supplier: same batch logic + same idempotency guard.
+        // Alt supplier: substitute becomes its own stock card (Phase A substitution policy).
+        // Find-or-create a Stock record by exact Alt Flower Name, receive the
+        // accepted qty there at the REAL per-stem cost the driver paid (not
+        // the original planned cost). Sell price derives from targetMarkup.
+        // Skip entirely if florist accepted 0 of the substitute (edge case 6).
         const altAccepted = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOff = Number(evalLine.altWriteOffQty) || 0;
         const altSupplier = line['Alt Supplier'] || '';
-        if (stockItemId && altAccepted > 0) {
+        const altFlowerName = line['Alt Flower Name'] || '';
+        const altQtyFound = Number(line['Alt Quantity Found']) || 0;
+        const altCostTotal = Number(line['Alt Cost']) || 0;
+        // Per-stem cost = total paid / total delivered (not / accepted —
+        // the sunk cost covers all stems whether we keep them or write off).
+        const altCostPerStem = altQtyFound > 0 ? (altCostTotal / altQtyFound) : 0;
+
+        let substituteStockId = null;
+        if (stockItemId && altAccepted > 0 && altFlowerName) {
           const alreadyAlt = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'alt');
           if (!alreadyAlt) {
-            const altFinalId = await receiveIntoStock(stockItemId, altAccepted, costPrice, sellPrice, altSupplier, today);
+            // Fetch the originally-ordered stock item once so the helper can
+            // copy Category/Unit/Reorder Threshold as defaults.
+            const originalStockItem = await db.getById(TABLES.STOCK, stockItemId);
+            substituteStockId = await findOrCreateSubstituteStock(
+              altFlowerName, altSupplier, altCostPerStem, originalStockItem, today
+            );
+            const markup = Number(getConfig('targetMarkup')) || 1;
+            const altSellPerStem = Math.round(altCostPerStem * markup * 100) / 100;
+            const altFinalId = await receiveIntoStock(
+              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, today
+            );
+            substituteStockId = altFinalId; // may be a new batch id
 
             await db.create(TABLES.STOCK_PURCHASES, {
               'Purchase Date': today,
               Supplier: altSupplier,
               Flower: [altFinalId],
               'Quantity Purchased': altAccepted,
-              'Price Per Unit': costPrice,
-              Notes: `PO #${req.params.id} L#${evalLine.lineId} alt (price needs review)`,
+              'Price Per Unit': altCostPerStem,
+              Notes: `PO #${req.params.id} L#${evalLine.lineId} substitute for "${line['Flower Name'] || ''}"`,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping alt receive for line ${evalLine.lineId} — already recorded`);
           }
-
-          // Flag for owner price review
-          await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, {
-            'Price Needs Review': true,
-          });
         }
 
-        // Log write-offs
-        const totalWriteOff = writeOff + altWriteOff;
-        if (stockItemId && totalWriteOff > 0 && TABLES.STOCK_LOSS_LOG) {
+        // Log write-offs per source (primary vs substitute).
+        // Primary write-offs land on the original stock item. Substitute
+        // write-offs land on the substitute card (or on the original if
+        // we never created a substitute because accepted = 0).
+        if (stockItemId && writeOff > 0 && TABLES.STOCK_LOSS_LOG) {
           const reason = evalLine.writeOffReason || LOSS_REASON.DAMAGED;
           db.create(TABLES.STOCK_LOSS_LOG, {
             Date: today,
             'Stock Item': [stockItemId],
-            Quantity: totalWriteOff,
+            Quantity: writeOff,
             Reason: reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN ? reason : LOSS_REASON.OTHER,
-            Notes: `PO evaluation write-off`,
-          }).catch(err => console.error('[STOCK-ORDER] Failed to log write-off:', err.message));
+            Notes: `PO evaluation write-off (primary)`,
+          }).catch(err => console.error('[STOCK-ORDER] Failed to log primary write-off:', err.message));
+        }
+        if (altWriteOff > 0 && TABLES.STOCK_LOSS_LOG) {
+          const altReason = evalLine.altWriteOffReason || LOSS_REASON.DAMAGED;
+          // Prefer substitute card if one was created this session; otherwise
+          // fall back to the original (rare — means altAccepted was 0 but
+          // altWriteOff > 0, which only happens if the florist rejected everything).
+          const writeOffTarget = substituteStockId || stockItemId;
+          if (writeOffTarget) {
+            db.create(TABLES.STOCK_LOSS_LOG, {
+              Date: today,
+              'Stock Item': [writeOffTarget],
+              Quantity: altWriteOff,
+              Reason: altReason === LOSS_REASON.WILTED || altReason === LOSS_REASON.DAMAGED || altReason === LOSS_REASON.ARRIVED_BROKEN ? altReason : LOSS_REASON.OTHER,
+              Notes: `PO evaluation write-off (substitute)`,
+            }).catch(err => console.error('[STOCK-ORDER] Failed to log alt write-off:', err.message));
+          }
         }
 
         // Mark line as fully processed + save acceptance data (single write)

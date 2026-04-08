@@ -153,6 +153,29 @@ Features and improvements tracked against original build phases.
   - [ ] Hide "Available Today" nav item via Velo when `/api/public/categories` omits it (post-cutoff)
   - [ ] Use `filteredTimeSlots` from `/api/public/delivery-pricing?date=` for Wix checkout time picker
 
+### PO Substitution — Phase B (2026-04-08)
+Phase A shipped: when driver brings a substitute, it lands as its own stock card
+(find-by-name or create-new) with the REAL per-stem cost and sell price = cost × targetMarkup.
+Primary Not-Found stays at 0 stems. Florist manually swaps in bouquet builder for affected orders.
+
+Phase B (not yet built): reconciliation screen for negative-stock-driven POs.
+- Trigger: substitute card creation detects orders currently consuming negative stock of the original flower
+- UI: notification banner + screen listing affected orders with FIFO suggestion → one-tap swap per order
+- Backend: endpoint that reassigns a bouquet line from original → substitute, recalculates both stock cards
+- Demand suppression: while pending substitute is unresolved, skip the original from PO demand suggestions
+- Kickoff prompt saved at: `scripts/prompts/phase-b-po-substitution-reconciliation.md`
+- See: `apps/florist/src/pages/StockEvaluationPage.jsx` and `backend/src/routes/stockOrders.js:findOrCreateSubstituteStock`
+
+### Wix Stock Sync — accurate inventory projection to storefront (2026-04-08) [WIX-STOCK-PROJECTION]
+Currently Wix storefront does NOT track exact stock per product — it just knows "available" or "out of stock"
+at a coarser level. After the PO substitution change (Phase A), this becomes more visible:
+substitutes no longer silently fill in for the original, so the original can end up 0-stock more often.
+- Full session to design exact-stock projection from Airtable Stock → Wix product inventory
+- Needs: decision on how substitute flowers map back to Wix products (1:1 new product? linked as alternative? ignored?)
+- Needs: decision on whether to expose "available with substitute" as a Wix state or keep it binary
+- Related: `backend/src/services/wix.js`, `apps/dashboard/.../ProductsTab.jsx`
+- Findable tag: `WIX-STOCK-PROJECTION` (search BACKLOG.md for this string)
+
 ### Known Issues (from PO system audit)
 - [x] **Hardcoded strings in OrderDetailPanel** — bouquet editing buttons now use `t.xxx` translations (EN+RU)
 - [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
