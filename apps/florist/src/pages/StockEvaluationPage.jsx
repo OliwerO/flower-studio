@@ -30,10 +30,14 @@ export default function StockEvaluationPage() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await client.get('/stock-orders?status=Evaluating&include=lines');
-      setOrders(res.data);
+      const [evalRes, errorRes] = await Promise.all([
+        client.get('/stock-orders?status=Evaluating&include=lines'),
+        client.get('/stock-orders?status=Eval Error&include=lines'),
+      ]);
+      const merged = [...evalRes.data, ...errorRes.data];
+      setOrders(merged);
       const initial = {};
-      for (const order of res.data) {
+      for (const order of merged) {
         for (const line of order.lines) {
           const found = Number(line['Quantity Found']) || 0;
           const altFound = Number(line['Alt Quantity Found']) || 0;
@@ -123,8 +127,14 @@ export default function StockEvaluationPage() {
             altWriteOffReason: ev.altReason || 'Damaged',
           };
         });
-      await client.post(`/stock-orders/${orderId}/evaluate`, { lines: evalLines });
-      showToast(t.evaluationComplete, 'success');
+      const res = await client.post(`/stock-orders/${orderId}/evaluate`, { lines: evalLines });
+      if (res.data?.success === false) {
+        // 207 partial failure — some lines failed, PO moved to Eval Error
+        const failedCount = (res.data.lineResults || []).filter(r => r.status === 'error').length;
+        showToast(`${failedCount} ${failedCount === 1 ? 'линия' : 'линий'} с ошибкой — повторите после исправления`, 'error');
+      } else {
+        showToast(t.evaluationComplete, 'success');
+      }
       fetchOrders();
     } catch {
       showToast(t.evaluationError, 'error');
