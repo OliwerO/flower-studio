@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import t from '../translations.js';
-import { renderStockName } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag } from '@flower-studio/shared';
 import fmtDate from '../utils/formatDate.js';
 
 /**
@@ -12,7 +12,7 @@ import fmtDate from '../utils/formatDate.js';
  *
  * Tapping the row expands it to show which orders consume this flower.
  */
-export default function StockItem({ item, editMode, onAdjust, onWriteOff, committedData }) {
+export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatch, committedData }) {
   const qty       = item['Current Quantity'] || 0;
   const dead      = item['Dead/Unsold Stems'] || 0;
   const threshold = item['Reorder Threshold'] || 5;
@@ -26,6 +26,8 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
   const [showWriteOff, setShowWriteOff]    = useState(false);
   const [writeOffQty, setWriteOffQty]      = useState(1);
   const [reason, setReason]                = useState('');
+  const [editingDate, setEditingDate]      = useState(false);
+  const [dateDraft, setDateDraft]          = useState('');
 
   const dotColor = isOut ? 'bg-ios-red' : isLow ? 'bg-ios-orange' : 'bg-ios-green';
   const qtyColor = isOut ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label';
@@ -58,8 +60,32 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, commit
         <div className={`w-1.5 h-1.5 rounded-full shrink-0 ${dotColor}`} />
 
         <div className="flex-1 min-w-0">
-          <div className="flex items-start gap-1.5 flex-wrap">
-            <span className="text-[13px] font-medium text-ios-label break-words">{renderStockName(item['Display Name'], item['Last Restocked'])}</span>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[13px] font-medium text-ios-label break-words">{stockBaseName(item['Display Name'])}</span>
+            {editMode && editingDate ? (
+              <input
+                type="date"
+                value={dateDraft}
+                onChange={e => setDateDraft(e.target.value)}
+                onBlur={() => {
+                  setEditingDate(false);
+                  const oldVal = item['Last Restocked'] ? item['Last Restocked'].split('T')[0] : null;
+                  if ((dateDraft || null) !== oldVal) onPatch({ 'Last Restocked': dateDraft || null });
+                }}
+                autoFocus
+                className="text-xs border border-gray-200 rounded-lg px-1.5 py-0.5 bg-white outline-none"
+                onClick={e => e.stopPropagation()}
+              />
+            ) : (
+              <span onClick={e => {
+                if (!editMode) return;
+                e.stopPropagation();
+                setDateDraft(item['Last Restocked'] ? item['Last Restocked'].split('T')[0] : '');
+                setEditingDate(true);
+              }}>
+                {renderDateTag(item['Display Name'], item['Last Restocked'])}
+              </span>
+            )}
           </div>
           <span className="text-[11px] text-ios-tertiary">
             <span className="font-semibold text-brand-700">{Number(item['Current Sell Price'] || 0).toFixed(0)}zł</span>

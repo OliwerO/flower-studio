@@ -214,13 +214,15 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     });
   }
 
-  // ── Computed ───────────────────────────────────────────────────
-  const editCostTotal = editLines.reduce(
-    (s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0
-  );
-  const editSellTotal = editLines.reduce(
-    (s, l) => s + Number(l.sellPricePerUnit || 0) * Number(l.quantity || 0), 0
-  );
+  // ── Computed (use live stock prices when available) ─────────────
+  const editCostTotal = editLines.reduce((s, l) => {
+    const si = l.stockItemId ? stockItems.find(x => x.id === l.stockItemId) : null;
+    return s + Number(si?.['Current Cost Price'] ?? l.costPricePerUnit ?? 0) * Number(l.quantity || 0);
+  }, 0);
+  const editSellTotal = editLines.reduce((s, l) => {
+    const si = l.stockItemId ? stockItems.find(x => x.id === l.stockItemId) : null;
+    return s + Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0) * Number(l.quantity || 0);
+  }, 0);
   const editMargin = editSellTotal > 0
     ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
 

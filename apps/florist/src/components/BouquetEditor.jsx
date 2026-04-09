@@ -187,7 +187,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                 {editing.editLines.map((line, idx) => {
                   const si = editing.stockItems.find(s => s.id === line.stockItemId);
                   const availableQty = Number(si?.['Current Quantity']) || 0;
-                  const lineSell = Number(line.sellPricePerUnit || 0) * Number(line.quantity || 0);
+                  const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+                  const lineSell = liveSell * Number(line.quantity || 0);
                   const overStock = line.stockItemId && line.quantity > availableQty;
                   return (
                     <div key={line.id || idx} className="flex flex-col px-3 py-2">
@@ -195,7 +196,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-ios-label truncate block">{line.flowerName}</span>
                           <span className="text-xs text-ios-tertiary">
-                            {Number(line.sellPricePerUnit || 0).toFixed(0)} zł × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
+                            {liveSell.toFixed(0)} zł × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
                           </span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">

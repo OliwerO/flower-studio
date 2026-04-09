@@ -470,6 +470,8 @@ const en = {
   createPurchaseOrder:'Create Purchase Order',
   negativeFilter:     'Negative',
   neededBy:           'needed by',
+  inStockOnly:        'In stock',
+  showAll:            'All stock',
 
   // Stock orders
   stockOrders:        'Purchase Orders',
@@ -1084,6 +1086,8 @@ const ru = {
   createPurchaseOrder:'Создать заказ поставщику',
   negativeFilter:     'Минус',
   neededBy:           'нужен к',
+  inStockOnly:        'В наличии',
+  showAll:            'Весь склад',
 
   // Stock orders
   stockOrders:        'Заказы поставщикам',
