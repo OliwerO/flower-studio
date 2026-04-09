@@ -54,6 +54,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
   const [newFlowerForm, setNewFlowerForm] = useState(null); // { name, costPrice, sellPrice, lotSize, supplier }
+  const [pendingPO, setPendingPO] = useState({});
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -404,6 +405,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                   if (stockItems.length === 0) {
                     client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
                   }
+                  client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
                 }}
                 className="text-xs text-brand-600 font-medium"
               >{t.editBouquet}</button>
@@ -487,7 +489,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                     <span className="flex-1">{t.flowers}</span>
                     <span className="w-14 text-right">{t.costPrice}</span>
                     <span className="w-14 text-right">{t.sellPrice}</span>
-                    <span className="w-12 text-right">{t.quantity}</span>
+                    <span className="w-12 text-right">{t.quantity} <span className="text-blue-500">{t.onOrderShort || '+PO'}</span></span>
                   </div>
                   <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
                     {stockItems
@@ -504,6 +506,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                         const qty = Number(s['Current Quantity']) || 0;
                         const cost = Number(s['Current Cost Price']) || 0;
                         const sell = Number(s['Current Sell Price']) || 0;
+                        const poQty = pendingPO[s.id]?.ordered || 0;
                         const { name: fn, batch } = parseBatchName(s['Display Name']);
                         return (
                           <button key={s.id} type="button"
@@ -524,7 +527,10 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                             </span>
                             <span className="w-14 text-right text-xs text-ios-tertiary">{cost > 0 ? cost.toFixed(0) : '—'}</span>
                             <span className="w-14 text-right text-xs text-ios-secondary">{sell > 0 ? `${sell.toFixed(0)}` : '—'}</span>
-                            <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
+                            <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>
+                              {qty}
+                              {poQty > 0 && <span className="text-blue-600"> +{poQty}</span>}
+                            </span>
                           </button>
                         );
                       })}
