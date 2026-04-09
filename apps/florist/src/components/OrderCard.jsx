@@ -539,44 +539,51 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* Delivery details — date + time editable */}
+              {/* Date & time — same for delivery and pickup, uses patch (backend cascades to delivery) */}
+              <div>
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDate || 'Date'}</p>
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
+                  {/* Editable date */}
+                  <div className="flex items-center justify-between gap-2 py-1">
+                    <span className="text-xs text-ios-tertiary shrink-0">{t.labelDate}</span>
+                    <div className="relative z-10">
+                      <DatePicker
+                        value={d['Required By'] || ''}
+                        onChange={val => patch({ 'Required By': val || null })}
+                        placeholder={t.selectDate || '—'}
+                      />
+                    </div>
+                  </div>
+                  {/* Editable time slot */}
+                  <div className="py-1">
+                    <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {timeSlots.map(slot => (
+                        <button
+                          key={slot}
+                          onClick={() => patch({
+                            'Delivery Time': d['Delivery Time'] === slot ? '' : slot,
+                          })}
+                          disabled={saving}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
+                            d['Delivery Time'] === slot
+                              ? 'bg-brand-600 text-white shadow-sm'
+                              : 'bg-white dark:bg-gray-800 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Delivery-specific: address, recipient, fee */}
               {isDelivery && detail.delivery && (
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDelivery}</p>
-                  <div className="bg-gray-50 rounded-xl px-3 py-2 space-y-2">
-                    {/* Editable date */}
-                    <div className="flex items-center justify-between gap-2 py-1">
-                      <span className="text-xs text-ios-tertiary shrink-0">{t.labelDate}</span>
-                      <div className="relative z-10">
-                        <DatePicker
-                          value={detail.delivery['Delivery Date'] || ''}
-                          onChange={val => patchDelivery({ 'Delivery Date': val })}
-                          placeholder={t.optional || '—'}
-                        />
-                      </div>
-                    </div>
-                    {/* Editable time slot */}
-                    <div className="py-1">
-                      <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
-                      <div className="flex flex-wrap gap-1.5">
-                        {timeSlots.map(slot => (
-                          <button
-                            key={slot}
-                            onClick={() => patchDelivery({
-                              'Delivery Time': detail.delivery['Delivery Time'] === slot ? '' : slot,
-                            })}
-                            disabled={saving}
-                            className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
-                              detail.delivery['Delivery Time'] === slot
-                                ? 'bg-brand-600 text-white shadow-sm'
-                                : 'bg-white dark:bg-gray-800 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
-                            }`}
-                          >
-                            {slot}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
                     <Row label={t.labelAddress}   value={detail.delivery['Delivery Address']} />
                     <Row label={t.labelRecipient} value={detail.delivery['Recipient Name']} />
                     <Row label={t.labelPhone}     value={detail.delivery['Recipient Phone']} />
