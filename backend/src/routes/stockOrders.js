@@ -518,7 +518,22 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
     }
 
     const { lines } = req.body;
-    const today = new Date().toISOString().split('T')[0];
+    // On first attempt use today's date. On Eval Error retry, reuse the date
+    // from lines already processed in the first attempt so all stock entries
+    // for this PO share the same receive date (the day flowers actually arrived).
+    let evalDate = new Date().toISOString().split('T')[0];
+    if (po.Status === PO_STATUS.EVAL_ERROR && TABLES.STOCK_PURCHASES) {
+      const marker = `PO #${req.params.id}`;
+      try {
+        const prev = await db.list(TABLES.STOCK_PURCHASES, {
+          filterByFormula: `FIND("${marker}", {Notes} & "") > 0`,
+          maxRecords: 1,
+        });
+        if (prev.length > 0 && prev[0]['Purchase Date']) {
+          evalDate = prev[0]['Purchase Date'];
+        }
+      } catch { /* fall back to today */ }
+    }
     const lineResults = []; // track per-line outcome for partial failure recovery
 
     for (const evalLine of (lines || [])) {
@@ -567,11 +582,11 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         if (stockItemId && accepted > 0) {
           const already = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'primary');
           if (!already) {
-            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, today);
+            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate);
 
             // Audit trail — marker must match purchaseAlreadyRecorded() exactly.
             await db.create(TABLES.STOCK_PURCHASES, {
-              'Purchase Date': today,
+              'Purchase Date': evalDate,
               Supplier: supplier,
               Flower: [finalItemId],
               'Quantity Purchased': accepted,
@@ -610,17 +625,17 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               ? await db.getById(TABLES.STOCK, stockItemId)
               : null;
             substituteStockId = await findOrCreateSubstituteStock(
-              altFlowerName, altSupplier, altCostPerStem, originalStockItem, today
+              altFlowerName, altSupplier, altCostPerStem, originalStockItem, evalDate
             );
             const markup = Number(getConfig('targetMarkup')) || 1;
             const altSellPerStem = Math.round(altCostPerStem * markup * 100) / 100;
             const altFinalId = await receiveIntoStock(
-              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, today
+              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate
             );
             substituteStockId = altFinalId; // may be a new batch id
 
             await db.create(TABLES.STOCK_PURCHASES, {
-              'Purchase Date': today,
+              'Purchase Date': evalDate,
               Supplier: altSupplier,
               Flower: [altFinalId],
               'Quantity Purchased': altAccepted,
@@ -639,7 +654,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         if (stockItemId && writeOff > 0 && TABLES.STOCK_LOSS_LOG) {
           const reason = evalLine.writeOffReason || LOSS_REASON.DAMAGED;
           db.create(TABLES.STOCK_LOSS_LOG, {
-            Date: today,
+            Date: evalDate,
             'Stock Item': [stockItemId],
             Quantity: writeOff,
             Reason: reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN ? reason : LOSS_REASON.OTHER,
@@ -654,7 +669,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           const writeOffTarget = substituteStockId || stockItemId;
           if (writeOffTarget) {
             db.create(TABLES.STOCK_LOSS_LOG, {
-              Date: today,
+              Date: evalDate,
               'Stock Item': [writeOffTarget],
               Quantity: altWriteOff,
               Reason: altReason === LOSS_REASON.WILTED || altReason === LOSS_REASON.DAMAGED || altReason === LOSS_REASON.ARRIVED_BROKEN ? altReason : LOSS_REASON.OTHER,
