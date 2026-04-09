@@ -14,6 +14,7 @@ const STOCK_PATCH_ALLOWED = [
   'Display Name', 'Purchase Name', 'Category', 'Current Quantity', 'Unit',
   'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
   'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size', 'Farmer',
+  'Last Restocked',
 ];
 
 // GET /api/stock?category=Roses&includeEmpty=true

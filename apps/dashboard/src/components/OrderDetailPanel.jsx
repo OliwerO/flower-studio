@@ -826,17 +826,30 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         </div>
       )}
 
-      {/* Card text for pickup orders (delivery orders show it in the delivery section) */}
+      {/* Pickup details — date/time + card text */}
       {(!o.delivery || o['Delivery Type'] === 'Pickup') && (
-        <Section label={t.cardText}>
-          <InlineEdit
-            value={o['Greeting Card Text'] || ''}
-            multiline
-            placeholder="—"
-            onSave={v => patchOrder({ 'Greeting Card Text': v })}
-            disabled={saving}
-          />
-        </Section>
+        <div>
+          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
+            {t.pickup}
+          </p>
+          <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-3">
+            <EditableRow label={t.deliveryDate} value={o['Required By'] || ''}
+              onSave={v => patchOrder({ 'Required By': v || null })} disabled={saving} type="date" />
+            <div className="flex items-start gap-3">
+              <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryTime}</span>
+              <div className="flex-1">
+                <Pills
+                  options={timeSlots.map(s => ({ value: s, label: s }))}
+                  value={o['Delivery Time'] || ''}
+                  onChange={v => patchOrder({ 'Delivery Time': v })}
+                  disabled={saving}
+                />
+              </div>
+            </div>
+            <EditableRow label={t.cardText} value={o['Greeting Card Text'] || ''}
+              onSave={v => patchOrder({ 'Greeting Card Text': v })} disabled={saving} multiline />
+          </div>
+        </div>
       )}
 
       {/* Notes */}

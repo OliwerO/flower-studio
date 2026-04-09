@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import { renderStockName } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';
@@ -19,6 +19,7 @@ export default function StockTab({ initialFilter }) {
   const [showReceive, setShowReceive] = useState(false);
   const [showPurchaseOrders, setShowPurchaseOrders] = useState(initialFilter?.action === 'createPO');
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
+  const [hideZero, setHideZero]     = useState(true);
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const { showToast } = useToast();
 
@@ -151,6 +152,11 @@ export default function StockTab({ initialFilter }) {
     );
   }
 
+  // Hide zero-stock items (default on)
+  if (hideZero && view === 'all') {
+    filtered = filtered.filter(s => (s['Current Quantity'] || 0) !== 0);
+  }
+
   // Sort
   const sortFns = {
     name: (a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''),
@@ -208,6 +214,17 @@ export default function StockTab({ initialFilter }) {
             </button>
           ))}
         </div>
+
+        <button
+          onClick={() => setHideZero(!hideZero)}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            hideZero
+              ? 'bg-brand-100 text-brand-700'
+              : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+          }`}
+        >
+          {hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock')}
+        </button>
 
         <div className="ml-auto flex gap-2">
           <button
@@ -388,6 +405,7 @@ export default function StockTab({ initialFilter }) {
               <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
                 {[
                   { key: 'name',           label: t.stockName, align: 'left' },
+                  { key: 'lastRestocked',  label: t.receivedDate, align: 'left' },
                   { key: 'qty',            label: t.quantity, align: 'right' },
                   { key: 'cost',           label: t.costPrice, align: 'right' },
                   { key: 'sell',           label: t.sellPrice, align: 'right' },
@@ -436,7 +454,7 @@ export default function StockTab({ initialFilter }) {
                   <td className="px-2 py-2 text-right text-ios-label">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
-                  <td colSpan={6}></td>
+                  <td colSpan={7}></td>
                 </tr>
               </tfoot>
             )}
@@ -444,6 +462,45 @@ export default function StockTab({ initialFilter }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Inline date editor — click the tag to reveal a date input, blur to save.
+function InlineDate({ value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit() {
+    setDraft(value ? value.split('T')[0] : '');
+    setEditing(true);
+  }
+
+  function commitEdit() {
+    setEditing(false);
+    const newVal = draft || null;
+    const oldVal = value ? value.split('T')[0] : null;
+    if (newVal !== oldVal) onSave(draft || null);
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="date"
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commitEdit}
+        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
+        autoFocus
+        className="field-input text-xs w-28 py-0.5"
+      />
+    );
+  }
+
+  const dateTag = renderDateTag(null, value);
+  return (
+    <span onClick={startEdit} className="cursor-pointer" title={t.edit || 'Edit'}>
+      {dateTag || <span className="text-xs text-ios-tertiary/40">—</span>}
+    </span>
   );
 }
 
@@ -468,7 +525,10 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   return (
     <>
       <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
-        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{renderStockName(item['Display Name'], lastRestocked)}</td>
+        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{stockBaseName(item['Display Name'])}</td>
+        <td className="px-2 py-1.5">
+          <InlineDate value={lastRestocked} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} />
+        </td>
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
           isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
@@ -530,7 +590,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
       </tr>
       {showWo && (
         <tr className="bg-ios-red/5">
-          <td colSpan={10} className="px-3 py-2">
+          <td colSpan={11} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <input type="number" inputMode="numeric" min="1" value={woQty}
                 onFocus={e => e.target.select()}

@@ -264,6 +264,9 @@ const en = {
   stockLoadError:        'Failed to load stock data.',
   deliveryAddressRequired: 'Delivery address is required.',
   dateRequired:     'Date is required.',
+  selectDate:       'Select date',
+  pickupDetails:    'Pickup',
+  deliveryDetails:  'Delivery',
   note:             'Note',
 
   // Toast
@@ -696,6 +699,9 @@ const ru = {
   stockLoadError:        'Не удалось загрузить данные склада.',
   deliveryAddressRequired: 'Укажите адрес доставки.',
   dateRequired:     'Укажите дату.',
+  selectDate:       'Выберите дату',
+  pickupDetails:    'Самовывоз',
+  deliveryDetails:  'Доставка',
   note:             'Заметка',
 
   // Toast

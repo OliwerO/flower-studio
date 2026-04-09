@@ -4,7 +4,7 @@
 // Selected items get a brand tint so you can see at a glance what's in the bouquet.
 // Cart lines show only sell-price math. Cost + margin appear in the totals summary.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import client from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import t from '../../translations.js';
@@ -133,6 +133,30 @@ export default function Step2Bouquet({
   const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
   const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+
+  // Keep order line price snapshots in sync with current stock prices.
+  // When stock data refreshes (e.g. after editing sell price), update the
+  // snapshotted prices so the submitted order uses the latest values.
+  const stockRef = useRef(stock);
+  useEffect(() => {
+    if (stock === stockRef.current) return;
+    stockRef.current = stock;
+    if (orderLines.length === 0 || stock.length === 0) return;
+    let changed = false;
+    const updated = orderLines.map(l => {
+      if (!l.stockItemId) return l;
+      const si = stock.find(x => x.id === l.stockItemId);
+      if (!si) return l;
+      const newCost = Number(si['Current Cost Price']) || 0;
+      const newSell = Number(si['Current Sell Price']) || 0;
+      if (newCost !== l.costPricePerUnit || newSell !== l.sellPricePerUnit) {
+        changed = true;
+        return { ...l, costPricePerUnit: newCost, sellPricePerUnit: newSell };
+      }
+      return l;
+    });
+    if (changed) onLinesChange(() => updated);
+  }, [stock, orderLines, onLinesChange]);
 
   // Use current stock prices for display totals (snapshot happens at submit)
   const costTotal = useMemo(

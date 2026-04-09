@@ -58,6 +58,46 @@ function Row({ label, value }) {
   );
 }
 
+// Inline-editable date field for order details
+function EditableDate({ label, value, onSave, disabled }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(value);
+  const display = value ? new Date(value + 'T00:00:00').toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }) : null;
+  if (!editing) {
+    return (
+      <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+        <span className="text-sm text-ios-tertiary shrink-0">{label}</span>
+        <button
+          onClick={() => { setDraft(value || ''); setEditing(true); }}
+          className="text-sm text-ios-label text-right hover:text-brand-600"
+        >
+          {display || <span className="text-ios-tertiary italic">{t.tapToEdit || 'Tap to add'}</span>}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="py-2 border-b border-gray-100 last:border-0">
+      <span className="text-sm text-ios-tertiary block mb-1">{label}</span>
+      <div className="flex gap-2 items-center">
+        <input
+          type="date"
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          autoFocus
+          className="flex-1 px-2 py-1.5 rounded border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 text-sm"
+        />
+        <button
+          onClick={async () => { await onSave(draft); setEditing(false); }}
+          disabled={disabled}
+          className="text-xs px-3 py-1.5 rounded bg-brand-600 text-white font-semibold"
+        >{t.save || 'Save'}</button>
+        <button onClick={() => setEditing(false)} className="text-xs px-2 py-1.5 text-ios-tertiary">{t.cancel}</button>
+      </div>
+    </div>
+  );
+}
+
 // Inline-editable card text — usable in any order stage (per owner request).
 function EditableCardText({ value, onSave, disabled }) {
   const [editing, setEditing] = useState(false);
@@ -103,7 +143,7 @@ export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { paymentMethods } = useConfigLists();
+  const { paymentMethods, timeSlots } = useConfigLists();
 
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -139,6 +179,20 @@ export default function OrderDetailPage() {
     } catch (err) {
       const msg = err.response?.data?.error || 'Failed to update order.';
       showToast(msg, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function patchDelivery(fields) {
+    if (!order?.delivery?.id) return;
+    setSaving(true);
+    try {
+      await client.patch(`/deliveries/${order.delivery.id}`, fields);
+      setOrder(prev => ({ ...prev, delivery: { ...prev.delivery, ...fields } }));
+      showToast('Updated!', 'success');
+    } catch (err) {
+      showToast(err.response?.data?.error || 'Failed to update.', 'error');
     } finally {
       setSaving(false);
     }
@@ -405,22 +459,38 @@ export default function OrderDetailPage() {
             {/* Delivery details */}
             {isDelivery && (
               <div>
-                <p className="ios-label">Delivery</p>
+                <p className="ios-label">{t.deliveryDetails || 'Delivery'}</p>
                 <div className="ios-card px-4 py-2">
-                  <Row label="Date"      value={order.delivery?.['Delivery Date']} />
-                  <Row label="Time"      value={order.delivery?.['Delivery Time']} />
-                  <Row label="Address"   value={order.delivery?.['Delivery Address']} />
-                  <Row label="Recipient" value={order.delivery?.['Recipient Name']} />
+                  <EditableDate label={t.deliveryDate || 'Date'} value={order.delivery?.['Delivery Date'] || ''} onSave={v => patchDelivery({ 'Delivery Date': v || null })} disabled={saving} />
+                  <div className="py-2 border-b border-gray-100 last:border-0">
+                    <span className="text-sm text-ios-tertiary block mb-1.5">{t.deliveryTime || 'Time'}</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {timeSlots.map(slot => (
+                        <button
+                          key={slot}
+                          onClick={() => !saving && patchDelivery({ 'Delivery Time': order.delivery?.['Delivery Time'] === slot ? '' : slot })}
+                          disabled={saving}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                            order.delivery?.['Delivery Time'] === slot
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
+                          }`}
+                        >{slot}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <Row label={t.deliveryAddress || 'Address'} value={order.delivery?.['Delivery Address']} />
+                  <Row label={t.recipientName || 'Recipient'} value={order.delivery?.['Recipient Name']} />
                   {order.delivery?.['Recipient Phone'] && (
                     <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
-                      <span className="text-sm text-ios-tertiary shrink-0">Phone</span>
+                      <span className="text-sm text-ios-tertiary shrink-0">{t.recipientPhone || 'Phone'}</span>
                       <a href={`tel:${order.delivery['Recipient Phone']}`} className="text-sm text-brand-600 font-medium">
                         {order.delivery['Recipient Phone']}
                       </a>
                     </div>
                   )}
                   <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
-                  <Row label="Fee"       value={order.delivery?.['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
+                  <Row label={t.deliveryFee || 'Fee'} value={order.delivery?.['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
                 </div>
               </div>
             )}
@@ -428,9 +498,26 @@ export default function OrderDetailPage() {
             {/* Pickup details */}
             {!isDelivery && (
               <div>
-                <p className="ios-label">Pickup</p>
+                <p className="ios-label">{t.pickupDetails || 'Pickup'}</p>
                 <div className="ios-card px-4 py-2">
-                  {order['Required By'] && <Row label="Pickup time" value={order['Required By']} />}
+                  <EditableDate label={t.deliveryDate || 'Date'} value={order['Required By'] || ''} onSave={v => patch({ 'Required By': v || null })} disabled={saving} />
+                  <div className="py-2 border-b border-gray-100 last:border-0">
+                    <span className="text-sm text-ios-tertiary block mb-1.5">{t.deliveryTime || 'Time'}</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {timeSlots.map(slot => (
+                        <button
+                          key={slot}
+                          onClick={() => !saving && patch({ 'Delivery Time': order['Delivery Time'] === slot ? '' : slot })}
+                          disabled={saving}
+                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                            order['Delivery Time'] === slot
+                              ? 'bg-brand-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
+                          }`}
+                        >{slot}</button>
+                      ))}
+                    </div>
+                  </div>
                   <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
                 </div>
               </div>

@@ -88,6 +88,13 @@ export default function StockPanelPage() {
     } catch { showToast(t.receiveError, 'error'); }
   }
 
+  async function handlePatch(id, fields) {
+    try {
+      const res = await client.patch(`/stock/${id}`, fields);
+      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
+    } catch { showToast(t.adjustError, 'error'); }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortAsc(v => !v);
     else { setSortKey(key); setSortAsc(true); }
@@ -295,6 +302,7 @@ export default function StockPanelPage() {
                 editMode={editMode}
                 onAdjust={delta => handleAdjust(item.id, delta)}
                 onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
+                onPatch={fields => handlePatch(item.id, fields)}
                 committedData={committedMap[item.id]}
               />
             ))}

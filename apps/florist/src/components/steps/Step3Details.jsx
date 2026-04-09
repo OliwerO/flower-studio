@@ -117,17 +117,17 @@ export default function Step3Details({ form, onChange }) {
         />
       </SectionCard>
 
-      {/* Timing — date + time slot (both optional — may be provided later) */}
+      {/* Timing — date required, time slot optional */}
       <div className="relative z-20">
-        <p className="ios-label">{form.deliveryType === 'Delivery' ? t.labelDeliveryTiming : t.requiredBy}</p>
-        <div className="ios-card overflow-visible divide-y divide-gray-100">
+        <p className="ios-label">{form.deliveryType === 'Delivery' ? t.labelDeliveryTiming : t.requiredBy} <span className="text-ios-red">*</span></p>
+        <div className={`ios-card overflow-visible divide-y divide-gray-100 ${!form.deliveryDate ? 'ring-1 ring-ios-red/30' : ''}`}>
           <div className="flex items-center gap-3 px-4 py-3.5">
-            <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate}</span>
+            <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate} <span className="text-ios-red">*</span></span>
             <div className="flex-1">
               <DatePicker
                 value={form.deliveryDate}
                 onChange={handleDateChange}
-                placeholder={t.optional}
+                placeholder={t.selectDate || 'Select date'}
               />
             </div>
           </div>
