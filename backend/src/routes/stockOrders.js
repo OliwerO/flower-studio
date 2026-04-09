@@ -541,15 +541,22 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const altAcceptedPre = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOffPre = Number(evalLine.altWriteOffQty) || 0;
 
-        // Hard fail: a PO line with received qty but no Stock Item link cannot
-        // be received into inventory. Previously this was silently skipped,
-        // marking the line PROCESSED while the flowers vanished from tracking.
-        // The per-line catch below will record this and flip the PO to EVAL_ERROR
-        // so the owner can fix the line (link a Stock Item, then retry evaluate).
-        if (!stockItemId && (accepted > 0 || altAcceptedPre > 0 || writeOff > 0 || altWriteOffPre > 0)) {
+        // Hard fail: a PO line with PRIMARY received qty but no Stock Item link
+        // cannot be received into inventory. Substitute (alt) quantities are OK
+        // without a Stock Item — findOrCreateSubstituteStock will create one
+        // from the Alt Flower Name alone, using sensible defaults.
+        if (!stockItemId && (accepted > 0 || writeOff > 0)) {
           throw new Error(
             `Line "${line['Flower Name'] || evalLine.lineId}" has no linked Stock Item — ` +
             `link it on the PO and retry. Stock cannot be received without a Stock Item.`
+          );
+        }
+        // Alt quantities without a stock item require at least an Alt Flower Name
+        // so we know what substitute stock card to create.
+        if (!stockItemId && (altAcceptedPre > 0 || altWriteOffPre > 0) && !line['Alt Flower Name']) {
+          throw new Error(
+            `Line "${line['Flower Name'] || evalLine.lineId}" has no linked Stock Item and no Alt Flower Name — ` +
+            `link a Stock Item or add substitute details, then retry.`
           );
         }
 
@@ -592,12 +599,16 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const altCostPerStem = altQtyFound > 0 ? (altCostTotal / altQtyFound) : 0;
 
         let substituteStockId = null;
-        if (stockItemId && altAccepted > 0 && altFlowerName) {
+        if (altAccepted > 0 && altFlowerName) {
           const alreadyAlt = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'alt');
           if (!alreadyAlt) {
             // Fetch the originally-ordered stock item once so the helper can
             // copy Category/Unit/Reorder Threshold as defaults.
-            const originalStockItem = await db.getById(TABLES.STOCK, stockItemId);
+            // If the PO line has no Stock Item link (e.g. new flower not yet
+            // in stock), pass null — the helper uses sensible defaults.
+            const originalStockItem = stockItemId
+              ? await db.getById(TABLES.STOCK, stockItemId)
+              : null;
             substituteStockId = await findOrCreateSubstituteStock(
               altFlowerName, altSupplier, altCostPerStem, originalStockItem, today
             );
