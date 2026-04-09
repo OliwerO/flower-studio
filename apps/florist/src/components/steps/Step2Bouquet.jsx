@@ -21,7 +21,7 @@ const CONFIDENCE_STYLES = {
   none: 'border-l-4 border-l-red-300',
 };
 
-function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFutureOrder, onToggleDeferred }) {
+function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFutureOrder, onToggleDeferred, pendingPO }) {
   const stockItem = stock.find(s => s.id === l.stockItemId);
   const availableQty = Number(stockItem?.['Current Quantity']) || 0;
   const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
@@ -106,11 +106,15 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFuture
           </button>
         </div>
       </div>
-      {overStock && (
-        <div className="mt-1 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
-          {l.quantity - availableQty} {t.notInStock || 'not in stock'}
-        </div>
-      )}
+      {overStock && (() => {
+        const linePoQty = l.stockItemId ? (pendingPO?.[l.stockItemId]?.ordered || 0) : 0;
+        return (
+          <div className={`mt-1 text-xs rounded-lg px-2 py-1 ${linePoQty > 0 ? 'text-blue-700 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
+            {l.quantity - availableQty} {t.notInStock || 'not in stock'}
+            {linePoQty > 0 && <span> · +{linePoQty} {t.onOrder || 'on order'}</span>}
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -133,6 +137,12 @@ export default function Step2Bouquet({
   const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
   const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+  const [pendingPO, setPendingPO]     = useState({});
+
+  // Fetch pending PO quantities so florists can see what's coming
+  useEffect(() => {
+    client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+  }, []);
 
   // Keep order line price snapshots in sync with current stock prices.
   // When stock data refreshes (e.g. after editing sell price), update the
@@ -342,6 +352,7 @@ export default function Step2Bouquet({
               const inCart = orderLines.find(l => l.stockItemId === s.id);
               const low    = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
               const out    = qty <= 0;
+              const poQty  = pendingPO[s.id]?.ordered || 0;
 
               return (
                 <button
@@ -360,7 +371,8 @@ export default function Step2Bouquet({
                       {isOwner && <span> · {Number(s['Current Cost Price']).toFixed(0)} zł {t.costPrice}</span>}
                       <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {out && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                      {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                      {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {t.onOrder || 'on order'}</span>}
                     </div>
                   </div>
                   {inCart && (
@@ -510,6 +522,7 @@ export default function Step2Bouquet({
                 onRemove={(key) => removeLine(key)}
                 isFutureOrder={isFutureOrder}
                 onToggleDeferred={(key) => toggleDeferred(key)}
+                pendingPO={pendingPO}
               />
             ))}
           </div>

@@ -25,6 +25,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   const [flowerSearch, setFlowerSearch]       = useState('');
   const [stockItems, setStockItems]           = useState([]);
   const [newFlowerForm, setNewFlowerForm]     = useState(null);
+  const [pendingPO, setPendingPO]             = useState({});
 
   // ── Start editing ──────────────────────────────────────────────
   function startEditing(orderLines) {
@@ -45,6 +46,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     if (stockItems.length === 0) {
       apiClient.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
     }
+    apiClient.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
   }
 
   // ── Line quantity manipulation ─────────────────────────────────
@@ -247,6 +249,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     flowerSearch,
     stockItems,
     newFlowerForm, setNewFlowerForm,
+    pendingPO,
 
     // Computed
     editCostTotal, editSellTotal, editMargin,

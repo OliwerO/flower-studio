@@ -5,7 +5,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
-import { ORDER_STATUS, LOSS_REASON } from '../constants/statuses.js';
+import { ORDER_STATUS, PO_STATUS, LOSS_REASON } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -163,6 +163,64 @@ router.get('/committed', async (req, res, next) => {
     }
 
     res.json(committed);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stock/pending-po — aggregate quantities from pending purchase orders per stock item.
+// Returns { stockItemId: { ordered: N, pos: [{ id, number, quantity }] } }
+// for POs in Draft, Sent, or Shopping status (flowers not yet received into stock).
+// Used by bouquet builders so florists can see what's coming and plan accordingly.
+router.get('/pending-po', async (req, res, next) => {
+  try {
+    const pendingPOs = await db.list(TABLES.STOCK_ORDERS, {
+      filterByFormula: `OR({Status} = '${PO_STATUS.DRAFT}', {Status} = '${PO_STATUS.SENT}', {Status} = '${PO_STATUS.SHOPPING}')`,
+      fields: ['Status', 'Stock Order ID', 'Order Lines'],
+    });
+
+    if (pendingPOs.length === 0) return res.json({});
+
+    const allLineIds = pendingPOs.flatMap(po => po['Order Lines'] || []);
+    if (allLineIds.length === 0) return res.json({});
+
+    // Batch-fetch PO lines (Airtable formula length limit)
+    const allLines = [];
+    const CHUNK = 100;
+    for (let i = 0; i < allLineIds.length; i += CHUNK) {
+      const chunk = allLineIds.slice(i, i + CHUNK);
+      const chunkLines = await db.list(TABLES.STOCK_ORDER_LINES, {
+        filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders'],
+      });
+      allLines.push(...chunkLines);
+    }
+
+    // Build PO lookup
+    const poMap = {};
+    for (const po of pendingPOs) {
+      poMap[po.id] = { id: po.id, number: po['Stock Order ID'] || '', status: po.Status };
+    }
+
+    // Aggregate by stock item
+    const result = {};
+    for (const line of allLines) {
+      const stockId = line['Stock Item']?.[0];
+      if (!stockId) continue;
+      const qty = Number(line['Quantity Needed']) || 0;
+      if (qty <= 0) continue;
+
+      if (!result[stockId]) result[stockId] = { ordered: 0, pos: [] };
+      result[stockId].ordered += qty;
+
+      const poId = line['Stock Orders']?.[0];
+      const po = poId ? poMap[poId] : null;
+      if (po) {
+        result[stockId].pos.push({ id: po.id, number: po.number, quantity: qty });
+      }
+    }
+
+    res.json(result);
   } catch (err) {
     next(err);
   }

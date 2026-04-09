@@ -147,6 +147,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                   const inCart = editing.editLines.find(l => l.stockItemId === s.id);
                   const low = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
                   const out = qty <= 0;
+                  const poQty = editing.pendingPO?.[s.id]?.ordered || 0;
                   return (
                     <button
                       key={s.id}
@@ -164,7 +165,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                           {isOwner && <span> · {Number(s['Current Cost Price'] || 0).toFixed(0)} zł {t.costPrice}</span>}
                           <span> · {qty} pcs</span>
                           {low && !out && <span className="text-ios-orange"> · low</span>}
-                          {out && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                          {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                          {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {t.onOrder || 'on order'}</span>}
                         </div>
                       </div>
                       {inCart && (
@@ -190,6 +192,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                   const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
                   const lineSell = liveSell * Number(line.quantity || 0);
                   const overStock = line.stockItemId && line.quantity > availableQty;
+                  const linePoQty = line.stockItemId ? (editing.pendingPO?.[line.stockItemId]?.ordered || 0) : 0;
                   return (
                     <div key={line.id || idx} className="flex flex-col px-3 py-2">
                       <div className="flex items-center gap-2">
@@ -218,8 +221,9 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                         <button onClick={() => editing.setRemoveDialogIdx(idx)} className="text-red-400 active:text-red-600 text-sm px-1">✕</button>
                       </div>
                       {overStock && (
-                        <div className="mt-1 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
+                        <div className={`mt-1 text-xs rounded-lg px-2 py-1 ${linePoQty > 0 ? 'text-blue-700 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
                           {line.quantity - availableQty} {t.notInStock || 'not in stock'}
+                          {linePoQty > 0 && <span> · +{linePoQty} {t.onOrder || 'on order'}</span>}
                         </div>
                       )}
                     </div>
