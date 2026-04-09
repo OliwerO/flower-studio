@@ -184,20 +184,6 @@ export default function OrderDetailPage() {
     }
   }
 
-  async function patchDelivery(fields) {
-    if (!order?.delivery?.id) return;
-    setSaving(true);
-    try {
-      await client.patch(`/deliveries/${order.delivery.id}`, fields);
-      setOrder(prev => ({ ...prev, delivery: { ...prev.delivery, ...fields } }));
-      showToast('Updated!', 'success');
-    } catch (err) {
-      showToast(err.response?.data?.error || 'Failed to update.', 'error');
-    } finally {
-      setSaving(false);
-    }
-  }
-
   // Total = Price Override (when set, already includes delivery) OR (flowers + delivery fee).
   // Match backend cascade in routes/orders.js so list and detail show the same number.
   const _delFee    = order?.['Delivery Type'] === 'Delivery' ? Number(order?.['Delivery Fee'] || 0) : 0;
@@ -456,32 +442,40 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Delivery details */}
-            {isDelivery && (
+            {/* Date & time — same UI for delivery and pickup */}
+            <div>
+              <p className="ios-label">{t.deliveryDate || 'Date'}</p>
+              <div className="ios-card px-4 py-2">
+                <EditableDate label={t.deliveryDate || 'Date'} value={order['Required By'] || ''} onSave={v => patch({ 'Required By': v || null })} disabled={saving} />
+                <div className="py-2 border-b border-gray-100 last:border-0">
+                  <span className="text-sm text-ios-tertiary block mb-1.5">{t.deliveryTime || 'Time'}</span>
+                  <div className="flex flex-wrap gap-1.5">
+                    {timeSlots.map(slot => (
+                      <button
+                        key={slot}
+                        onClick={() => !saving && patch({ 'Delivery Time': order['Delivery Time'] === slot ? '' : slot })}
+                        disabled={saving}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          order['Delivery Time'] === slot
+                            ? 'bg-brand-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
+                        }`}
+                      >{slot}</button>
+                    ))}
+                  </div>
+                </div>
+                <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
+              </div>
+            </div>
+
+            {/* Delivery-specific: address, recipient, fee */}
+            {isDelivery && order.delivery && (
               <div>
                 <p className="ios-label">{t.deliveryDetails || 'Delivery'}</p>
                 <div className="ios-card px-4 py-2">
-                  <EditableDate label={t.deliveryDate || 'Date'} value={order.delivery?.['Delivery Date'] || ''} onSave={v => patchDelivery({ 'Delivery Date': v || null })} disabled={saving} />
-                  <div className="py-2 border-b border-gray-100 last:border-0">
-                    <span className="text-sm text-ios-tertiary block mb-1.5">{t.deliveryTime || 'Time'}</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {timeSlots.map(slot => (
-                        <button
-                          key={slot}
-                          onClick={() => !saving && patchDelivery({ 'Delivery Time': order.delivery?.['Delivery Time'] === slot ? '' : slot })}
-                          disabled={saving}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                            order.delivery?.['Delivery Time'] === slot
-                              ? 'bg-brand-600 text-white'
-                              : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
-                          }`}
-                        >{slot}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <Row label={t.deliveryAddress || 'Address'} value={order.delivery?.['Delivery Address']} />
-                  <Row label={t.recipientName || 'Recipient'} value={order.delivery?.['Recipient Name']} />
-                  {order.delivery?.['Recipient Phone'] && (
+                  <Row label={t.deliveryAddress || 'Address'} value={order.delivery['Delivery Address']} />
+                  <Row label={t.recipientName || 'Recipient'} value={order.delivery['Recipient Name']} />
+                  {order.delivery['Recipient Phone'] && (
                     <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
                       <span className="text-sm text-ios-tertiary shrink-0">{t.recipientPhone || 'Phone'}</span>
                       <a href={`tel:${order.delivery['Recipient Phone']}`} className="text-sm text-brand-600 font-medium">
@@ -489,36 +483,7 @@ export default function OrderDetailPage() {
                       </a>
                     </div>
                   )}
-                  <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
-                  <Row label={t.deliveryFee || 'Fee'} value={order.delivery?.['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
-                </div>
-              </div>
-            )}
-
-            {/* Pickup details */}
-            {!isDelivery && (
-              <div>
-                <p className="ios-label">{t.pickupDetails || 'Pickup'}</p>
-                <div className="ios-card px-4 py-2">
-                  <EditableDate label={t.deliveryDate || 'Date'} value={order['Required By'] || ''} onSave={v => patch({ 'Required By': v || null })} disabled={saving} />
-                  <div className="py-2 border-b border-gray-100 last:border-0">
-                    <span className="text-sm text-ios-tertiary block mb-1.5">{t.deliveryTime || 'Time'}</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {timeSlots.map(slot => (
-                        <button
-                          key={slot}
-                          onClick={() => !saving && patch({ 'Delivery Time': order['Delivery Time'] === slot ? '' : slot })}
-                          disabled={saving}
-                          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                            order['Delivery Time'] === slot
-                              ? 'bg-brand-600 text-white'
-                              : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
-                          }`}
-                        >{slot}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
+                  <Row label={t.deliveryFee || 'Fee'} value={order.delivery['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
                 </div>
               </div>
             )}
