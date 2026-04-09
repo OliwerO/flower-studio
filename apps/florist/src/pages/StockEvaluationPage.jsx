@@ -39,6 +39,8 @@ export default function StockEvaluationPage() {
       const initial = {};
       for (const order of merged) {
         for (const line of order.lines) {
+          // Already-processed lines (from a previous partial attempt) stay read-only
+          if (line['Eval Status'] === 'Processed') continue;
           const found = Number(line['Quantity Found']) || 0;
           const altFound = Number(line['Alt Quantity Found']) || 0;
           initial[line.id] = {
@@ -80,6 +82,7 @@ export default function StockEvaluationPage() {
   function collectNewSubstitutes(order) {
     const out = [];
     for (const line of order.lines) {
+      if (line['Eval Status'] === 'Processed') continue;
       const ev = evalState[line.id] || {};
       const altAccepted = Number(ev.altAccepted) || 0;
       const altFlowerName = (line['Alt Flower Name'] || '').trim();
@@ -97,7 +100,7 @@ export default function StockEvaluationPage() {
     const newOnes = collectNewSubstitutes(order);
     if (newOnes.length > 0) {
       const list = newOnes.map(n => `• ${n}`).join('\n');
-      const msg = (t.confirmNewStockCards || 'These will be created as new stock cards:') + '\n\n' + list + '\n\n' + (t.confirmContinue || 'Continue?');
+      const msg = t.confirmNewStockCards + '\n\n' + list + '\n\n' + t.confirmContinue;
       if (!window.confirm(msg)) return;
     }
     submitEvaluation(orderId);
@@ -110,6 +113,7 @@ export default function StockEvaluationPage() {
     try {
       const evalLines = order.lines
         .filter(l => {
+          if (l['Eval Status'] === 'Processed') return false;
           const status = l['Driver Status'];
           if (status === 'Found All' || status === 'Partial') return true;
           if (status === 'Not Found' && Number(l['Alt Quantity Found']) > 0) return true;
@@ -129,7 +133,6 @@ export default function StockEvaluationPage() {
         });
       const res = await client.post(`/stock-orders/${orderId}/evaluate`, { lines: evalLines });
       if (res.data?.success === false) {
-        // 207 partial failure — some lines failed, PO moved to Eval Error
         const failedCount = (res.data.lineResults || []).filter(r => r.status === 'error').length;
         showToast(`${failedCount} ${failedCount === 1 ? 'линия' : 'линий'} с ошибкой — повторите после исправления`, 'error');
       } else {
@@ -167,24 +170,23 @@ export default function StockEvaluationPage() {
         {orders.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-3xl mb-2">📦</p>
-            <p className="text-ios-tertiary text-sm">{t.nothingToEvaluate || 'No deliveries to evaluate'}</p>
+            <p className="text-ios-tertiary text-sm">{t.nothingToEvaluate}</p>
           </div>
         ) : (
           orders.map(order => {
-            // A line is "evaluable" if there's anything physical to inspect:
-            // - Primary supplier delivered (Found All / Partial), OR
-            // - Primary failed but the alt supplier delivered substitutes
-            // The second case was previously dropped into the read-only
-            // notFound banner, leaving the florist unable to accept/write-off
-            // the substitutes that actually arrived.
+            const isRetry = order.Status === 'Eval Error';
             const evaluableLines = order.lines.filter(l => {
+              if (l['Eval Status'] === 'Processed') return false;
               const status = l['Driver Status'];
               if (status === 'Found All' || status === 'Partial') return true;
               if (status === 'Not Found' && Number(l['Alt Quantity Found']) > 0) return true;
               return false;
             });
+            const processedLines = order.lines.filter(l => l['Eval Status'] === 'Processed');
             const notFoundLines = order.lines.filter(l =>
-              l['Driver Status'] === 'Not Found' && !(Number(l['Alt Quantity Found']) > 0)
+              l['Driver Status'] === 'Not Found' &&
+              l['Eval Status'] !== 'Processed' &&
+              !(Number(l['Alt Quantity Found']) > 0)
             );
 
             // Group evaluable lines by supplier
@@ -203,24 +205,63 @@ export default function StockEvaluationPage() {
                     <span className="text-xs font-bold text-ios-tertiary uppercase">
                       {order['Stock Order ID'] || 'PO'}
                     </span>
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-purple-100 text-purple-700">
-                      {t.stockEvaluation}
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${
+                      isRetry ? 'bg-red-100 text-red-700' : 'bg-purple-100 text-purple-700'
+                    }`}>
+                      {isRetry ? t.evalError : t.stockEvaluation}
                     </span>
                   </div>
                   {order['Assigned Driver'] && (
                     <span className="text-xs text-ios-secondary">
-                      {t.driver || 'Driver'}: {order['Assigned Driver']}
+                      {t.driver}: {order['Assigned Driver']}
                     </span>
                   )}
                 </div>
 
-                {/* Found lines grouped by supplier */}
+                {/* Already processed lines (from previous partial attempt) */}
+                {processedLines.length > 0 && (
+                  <div className="ios-card overflow-hidden opacity-60">
+                    <div className="bg-emerald-50 px-4 py-2 flex items-center justify-between">
+                      <span className="text-xs font-semibold text-emerald-700 uppercase">
+                        {t.alreadyProcessed}
+                      </span>
+                      <span className="text-xs text-emerald-500">{processedLines.length}</span>
+                    </div>
+                    <div className="divide-y divide-gray-100">
+                      {processedLines.map(line => (
+                        <div key={line.id} className="px-4 py-2.5 flex items-center justify-between">
+                          <div>
+                            <p className="text-sm font-medium text-ios-secondary">{line['Flower Name']}</p>
+                            {line['Alt Flower Name'] && (
+                              <p className="text-xs text-indigo-500 mt-0.5">
+                                ↳ {line['Alt Flower Name']}
+                              </p>
+                            )}
+                          </div>
+                          <div className="text-right text-xs text-ios-tertiary">
+                            {Number(line['Quantity Accepted']) > 0 && (
+                              <span className="text-emerald-600">
+                                ✓ {line['Quantity Accepted']}
+                              </span>
+                            )}
+                            {Number(line['Write Off Qty']) > 0 && (
+                              <span className="text-amber-600 ml-2">
+                                ✗ {line['Write Off Qty']}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Evaluable lines grouped by supplier */}
                 {Object.entries(bySupplier).map(([supplier, lines]) => (
                   <div key={supplier} className="ios-card overflow-hidden">
-                    {/* Supplier header */}
                     <div className="bg-brand-50 px-4 py-2 flex items-center justify-between">
                       <span className="text-sm font-semibold text-brand-700">{supplier}</span>
-                      <span className="text-xs text-brand-500">{lines.length} {t.items || 'items'}</span>
+                      <span className="text-xs text-brand-500">{lines.length} {t.items}</span>
                     </div>
 
                     <div className="divide-y divide-gray-100">
@@ -237,138 +278,73 @@ export default function StockEvaluationPage() {
                         return (
                           <div key={line.id} className="px-4 py-3 space-y-3">
                             {/* Flower info header */}
-                            <div className="flex items-start justify-between">
-                              <div>
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
                                 <p className="text-sm font-semibold text-ios-label">{line['Flower Name']}</p>
-                                <div className="flex items-center gap-2 mt-0.5 text-xs text-ios-tertiary">
-                                  {lotSize > 1 && <span>{t.lotSize}: {lotSize}</span>}
-                                  {costPrice > 0 && <span>{costPrice} zł</span>}
-                                </div>
+                                <p className="text-xs text-ios-tertiary mt-0.5">
+                                  {lotSize > 1 && <>{t.lotSize}: {lotSize} · </>}
+                                  {costPrice > 0 && <>{costPrice} zł</>}
+                                </p>
                               </div>
-                              <div className="text-right">
-                                <p className="text-xs text-ios-tertiary">{t.qtyNeeded || 'Needed'}: {needed}</p>
-                                <p className="text-sm font-bold text-ios-label">{t.driverFound}: {found}</p>
+                              <div className="text-right shrink-0">
+                                <p className="text-xs text-ios-tertiary">{t.qtyNeeded}: {needed}</p>
+                                <p className={`text-sm font-bold ${found > 0 ? 'text-ios-label' : 'text-red-500'}`}>
+                                  {t.driverFound}: {found}
+                                </p>
                               </div>
                             </div>
 
                             {/* Accept / Write-off controls — only when primary supplier actually delivered */}
                             {found > 0 && (
-                            <div className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2">
-                              <div className="flex items-center gap-3">
-                                <div className="flex-1">
-                                  <label className="text-[10px] text-emerald-600 uppercase font-semibold mb-0.5 block">
-                                    ✓ {t.accept}
-                                  </label>
-                                  <input
-                                    type="number"
-                                    value={ev.accepted ?? found}
-                                    onChange={e => {
-                                      const val = Math.max(0, Math.min(Number(e.target.value) || 0, found));
-                                      updateEval(line.id, { accepted: val, writeOff: Math.max(0, found - val) });
-                                    }}
-                                    className="w-full text-sm font-medium border border-emerald-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                                    min="0" max={found}
-                                  />
-                                </div>
-                                <div className="flex-1">
-                                  <label className="text-[10px] text-amber-600 uppercase font-semibold mb-0.5 block">
-                                    ✗ {t.writeOffQty}
-                                  </label>
-                                  <input
-                                    type="number"
-                                    value={ev.writeOff || 0}
-                                    onChange={e => handleWriteOffChange(line.id, e.target.value, 'writeOff')}
-                                    className="w-full text-sm font-medium border border-amber-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                                    min="0"
-                                  />
-                                </div>
-                                <div className="flex-1">
-                                  <label className="text-[10px] text-ios-tertiary uppercase font-semibold mb-0.5 block">
-                                    {t.reason || 'Reason'}
-                                  </label>
-                                  <select
-                                    value={ev.reason || 'Damaged'}
-                                    onChange={e => updateEval(line.id, { reason: e.target.value })}
-                                    className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                                  >
-                                    <option value="Wilted">{t.reasonWilted}</option>
-                                    <option value="Damaged">{t.reasonDamaged}</option>
-                                    <option value="Arrived Broken">{t.arrivedBroken || 'Arrived Broken'}</option>
-                                    <option value="Overstock">{t.reasonOverstock || 'Overstock'}</option>
-                                    <option value="Other">{t.reasonOther || 'Other'}</option>
-                                  </select>
-                                </div>
-                              </div>
-                            </div>
+                              <AcceptWriteOffRow
+                                accepted={ev.accepted ?? found}
+                                writeOff={ev.writeOff || 0}
+                                reason={ev.reason || 'Damaged'}
+                                max={found}
+                                onAcceptChange={val => {
+                                  const v = Math.max(0, Math.min(Number(val) || 0, found));
+                                  updateEval(line.id, { accepted: v, writeOff: Math.max(0, found - v) });
+                                }}
+                                onWriteOffChange={val => handleWriteOffChange(line.id, val, 'writeOff')}
+                                onReasonChange={val => updateEval(line.id, { reason: val })}
+                              />
                             )}
 
-                            {/* Alt supplier block — separate indigo section */}
+                            {/* Alt supplier block */}
                             {altSupplier && altFound > 0 && (() => {
-                              // Real per-stem alt cost = total paid / delivered.
-                              // This is what actually lands on the substitute's new stock card.
                               const altCostTotal = Number(line['Alt Cost']) || 0;
                               const altCostPerStem = altFound > 0 ? (altCostTotal / altFound) : 0;
                               const isNewSubstitute = altFlowerName &&
                                 !knownStockNames.has(String(altFlowerName).trim().toLowerCase());
                               return (
-                              <div className="bg-indigo-50 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
-                                <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide">
-                                  ↳ {altFlowerName ? `${altFlowerName} — ${altSupplier}` : altSupplier}
-                                  <span className="ml-1 text-indigo-500 normal-case">
-                                    ({altFound} {t.delivered || 'delivered'}
-                                    {altCostPerStem > 0 && `, ${altCostPerStem.toFixed(2)} zł/шт`})
-                                  </span>
-                                </p>
-                                {isNewSubstitute && (
-                                  <p className="text-[10px] text-amber-700 bg-amber-50 rounded-md px-2 py-1 border border-amber-200">
-                                    {t.newStockCardWarning || `Will create new stock card: "${altFlowerName}"`}
-                                  </p>
-                                )}
-                                <div className="flex items-center gap-3">
-                                  <div className="flex-1">
-                                    <label className="text-[10px] text-emerald-600 uppercase font-semibold mb-0.5 block">
-                                      ✓ {t.accept}
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={ev.altAccepted ?? altFound}
-                                      onChange={e => {
-                                        const val = Math.max(0, Math.min(Number(e.target.value) || 0, altFound));
-                                        updateEval(line.id, { altAccepted: val, altWriteOff: Math.max(0, altFound - val) });
-                                      }}
-                                      className="w-full text-sm font-medium border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                                      min="0" max={altFound}
-                                    />
+                                <div className="bg-indigo-50/70 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
+                                  <div>
+                                    <p className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                                      ↳ {altFlowerName || altSupplier}
+                                    </p>
+                                    <p className="text-[11px] text-indigo-500 mt-0.5">
+                                      {altSupplier} · {altFound} {t.delivered} · {altCostPerStem.toFixed(2)} zł/шт
+                                    </p>
                                   </div>
-                                  <div className="flex-1">
-                                    <label className="text-[10px] text-amber-600 uppercase font-semibold mb-0.5 block">
-                                      ✗ {t.writeOffQty}
-                                    </label>
-                                    <input
-                                      type="number"
-                                      value={ev.altWriteOff || 0}
-                                      onChange={e => handleWriteOffChange(line.id, e.target.value, 'altWriteOff')}
-                                      className="w-full text-sm font-medium border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                                      min="0"
-                                    />
-                                  </div>
-                                  <div className="flex-1">
-                                    <label className="text-[10px] text-ios-tertiary uppercase font-semibold mb-0.5 block">
-                                      {t.reason || 'Reason'}
-                                    </label>
-                                    <select
-                                      value={ev.altReason || 'Damaged'}
-                                      onChange={e => updateEval(line.id, { altReason: e.target.value })}
-                                      className="w-full text-sm border border-indigo-200 rounded-xl px-3 py-2.5 bg-white outline-none"
-                                    >
-                                      <option value="Wilted">{t.reasonWilted}</option>
-                                      <option value="Damaged">{t.reasonDamaged}</option>
-                                      <option value="Overstock">{t.reasonOverstock || 'Overstock'}</option>
-                                      <option value="Other">{t.reasonOther || 'Other'}</option>
-                                    </select>
-                                  </div>
+                                  {isNewSubstitute && (
+                                    <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5 border border-amber-200">
+                                      ⚠ {t.newStockCardWarning}
+                                    </p>
+                                  )}
+                                  <AcceptWriteOffRow
+                                    accepted={ev.altAccepted ?? altFound}
+                                    writeOff={ev.altWriteOff || 0}
+                                    reason={ev.altReason || 'Damaged'}
+                                    max={altFound}
+                                    borderColor="border-indigo-200"
+                                    onAcceptChange={val => {
+                                      const v = Math.max(0, Math.min(Number(val) || 0, altFound));
+                                      updateEval(line.id, { altAccepted: v, altWriteOff: Math.max(0, altFound - v) });
+                                    }}
+                                    onWriteOffChange={val => handleWriteOffChange(line.id, val, 'altWriteOff')}
+                                    onReasonChange={val => updateEval(line.id, { altReason: val })}
+                                  />
                                 </div>
-                              </div>
                               );
                             })()}
                           </div>
@@ -387,30 +363,22 @@ export default function StockEvaluationPage() {
                       </span>
                     </div>
                     <div className="divide-y divide-gray-100">
-                      {notFoundLines.map(line => {
-                        const hasAlt = line['Alt Supplier'] && Number(line['Alt Quantity Found']) > 0;
-                        return (
-                          <div key={line.id} className="px-4 py-3">
-                            <div className="flex items-center justify-between">
-                              <span className="text-sm font-medium text-ios-secondary">{line['Flower Name']}</span>
-                              <span className="text-xs text-ios-tertiary">{Number(line['Quantity Needed']) || 0} {t.qtyNeeded || 'needed'}</span>
-                            </div>
-                            {line.Notes && (
-                              <p className="text-xs text-ios-tertiary mt-0.5">{line.Notes}</p>
-                            )}
-                            {hasAlt && (
-                              <div className="mt-1.5 bg-indigo-50 rounded-lg px-2.5 py-1.5 text-xs text-indigo-600">
-                                ↳ {line['Alt Flower Name'] || '?'} ({line['Alt Supplier']}) × {line['Alt Quantity Found']}
-                              </div>
-                            )}
+                      {notFoundLines.map(line => (
+                        <div key={line.id} className="px-4 py-2.5">
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm font-medium text-ios-secondary">{line['Flower Name']}</span>
+                            <span className="text-xs text-ios-tertiary">{Number(line['Quantity Needed']) || 0} {t.qtyNeeded}</span>
                           </div>
-                        );
-                      })}
+                          {line.Notes && (
+                            <p className="text-xs text-ios-tertiary mt-0.5">{line.Notes}</p>
+                          )}
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
 
-                {/* Complete evaluation button */}
+                {/* Submit button */}
                 <button
                   onClick={() => handleSubmitClick(order.id)}
                   disabled={submittingId === order.id || evaluableLines.length === 0}
@@ -418,14 +386,64 @@ export default function StockEvaluationPage() {
                              disabled:opacity-30 active:bg-brand-700 transition-colors shadow-lg active-scale"
                 >
                   {submittingId === order.id
-                    ? (t.saving || '...')
-                    : `${t.completeEvaluation} (${evaluableLines.length} ${t.items || 'items'})`}
+                    ? '...'
+                    : `${t.completeEvaluation} (${evaluableLines.length})`}
                 </button>
               </div>
             );
           })
         )}
       </main>
+    </div>
+  );
+}
+
+// Reusable row: accept count · write-off count · reason picker
+function AcceptWriteOffRow({ accepted, writeOff, reason, max, borderColor = 'border-emerald-200', onAcceptChange, onWriteOffChange, onReasonChange }) {
+  return (
+    <div className="grid grid-cols-[1fr_1fr_1.2fr] gap-2">
+      <div>
+        <label className="text-[10px] text-emerald-600 uppercase font-semibold mb-1 block">
+          ✓ {t.accept}
+        </label>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={accepted}
+          onChange={e => onAcceptChange(e.target.value)}
+          className={`w-full text-center text-sm font-semibold ${borderColor} border rounded-xl px-2 py-2.5 bg-white outline-none`}
+          min="0" max={max}
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-amber-600 uppercase font-semibold mb-1 block">
+          ✗ {t.writeOffQty}
+        </label>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={writeOff}
+          onChange={e => onWriteOffChange(e.target.value)}
+          className="w-full text-center text-sm font-semibold border-amber-200 border rounded-xl px-2 py-2.5 bg-white outline-none"
+          min="0"
+        />
+      </div>
+      <div>
+        <label className="text-[10px] text-ios-tertiary uppercase font-semibold mb-1 block">
+          {t.reason}
+        </label>
+        <select
+          value={reason}
+          onChange={e => onReasonChange(e.target.value)}
+          className="w-full text-sm border border-gray-200 rounded-xl px-2 py-2.5 bg-white outline-none appearance-none"
+        >
+          <option value="Damaged">{t.reasonDamaged}</option>
+          <option value="Wilted">{t.reasonWilted}</option>
+          <option value="Arrived Broken">{t.arrivedBroken}</option>
+          <option value="Overstock">{t.reasonOverstock}</option>
+          <option value="Other">{t.reasonOther}</option>
+        </select>
+      </div>
     </div>
   );
 }
