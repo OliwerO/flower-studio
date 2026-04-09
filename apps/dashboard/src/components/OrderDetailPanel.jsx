@@ -791,7 +791,31 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         </div>
       )}
 
-      {/* Delivery info — all editable */}
+      {/* Date & time — same for delivery and pickup, uses patchOrder (backend cascades to delivery) */}
+      <div>
+        <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
+          {t.deliveryDate}
+        </p>
+        <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-3">
+          <EditableRow label={t.deliveryDate} value={o['Required By'] || ''}
+            onSave={v => patchOrder({ 'Required By': v || null })} disabled={saving} type="date" />
+          <div className="flex items-start gap-3">
+            <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryTime}</span>
+            <div className="flex-1">
+              <Pills
+                options={timeSlots.map(s => ({ value: s, label: s }))}
+                value={o['Delivery Time'] || ''}
+                onChange={v => patchOrder({ 'Delivery Time': v })}
+                disabled={saving}
+              />
+            </div>
+          </div>
+          <EditableRow label={t.cardText} value={o['Greeting Card Text'] || ''}
+            onSave={v => patchOrder({ 'Greeting Card Text': v })} disabled={saving} multiline />
+        </div>
+      </div>
+
+      {/* Delivery-specific: recipient, address, fee */}
       {o.delivery && (
         <div>
           <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
@@ -804,50 +828,9 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               onSave={v => patchDelivery({ 'Recipient Phone': v })} disabled={saving} />
             <EditableRow label={t.deliveryAddress} value={o.delivery['Delivery Address']}
               onSave={v => patchDelivery({ 'Delivery Address': v })} disabled={saving} multiline />
-            <EditableRow label={t.deliveryDate} value={o.delivery['Delivery Date'] || ''}
-              onSave={v => patchDelivery({ 'Delivery Date': v || null })} disabled={saving} type="date" />
-            <div className="flex items-start gap-3">
-              <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryTime}</span>
-              <div className="flex-1">
-                <Pills
-                  options={timeSlots.map(s => ({ value: s, label: s }))}
-                  value={o.delivery['Delivery Time'] || ''}
-                  onChange={v => patchDelivery({ 'Delivery Time': v })}
-                  disabled={saving}
-                />
-              </div>
-            </div>
-            <EditableRow label={t.cardText} value={o['Greeting Card Text'] || o.delivery['Greeting Card Text']}
-              onSave={v => patchOrder({ 'Greeting Card Text': v })} disabled={saving} multiline />
             <EditableRow label={t.deliveryFee} value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}
               onSave={v => patchDelivery({ 'Delivery Fee': v ? Number(v) : null })} disabled={saving} type="number"
               suffix={t.zl} />
-          </div>
-        </div>
-      )}
-
-      {/* Pickup details — date/time + card text */}
-      {(!o.delivery || o['Delivery Type'] === 'Pickup') && (
-        <div>
-          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
-            {t.pickup}
-          </p>
-          <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-3">
-            <EditableRow label={t.deliveryDate} value={o['Required By'] || ''}
-              onSave={v => patchOrder({ 'Required By': v || null })} disabled={saving} type="date" />
-            <div className="flex items-start gap-3">
-              <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryTime}</span>
-              <div className="flex-1">
-                <Pills
-                  options={timeSlots.map(s => ({ value: s, label: s }))}
-                  value={o['Delivery Time'] || ''}
-                  onChange={v => patchOrder({ 'Delivery Time': v })}
-                  disabled={saving}
-                />
-              </div>
-            </div>
-            <EditableRow label={t.cardText} value={o['Greeting Card Text'] || ''}
-              onSave={v => patchOrder({ 'Greeting Card Text': v })} disabled={saving} multiline />
           </div>
         </div>
       )}

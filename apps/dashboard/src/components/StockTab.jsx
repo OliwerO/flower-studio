@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import { stockBaseName, renderDateTag } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag, parseBatchName } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import InlineEdit from './InlineEdit.jsx';
@@ -21,6 +21,8 @@ export default function StockTab({ initialFilter }) {
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [hideZero, setHideZero]     = useState(true);
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
+  const [wasteGroupBy, setWasteGroupBy] = useState('supplier'); // 'supplier' | 'all'
+  const [wasteSortBy, setWasteSortBy] = useState('date'); // 'date' | 'batch'
   const { showToast } = useToast();
 
   const stockLoaded = useRef(false);
@@ -308,25 +310,103 @@ export default function StockTab({ initialFilter }) {
       )}
       {view === 'waste' && !loading && (() => {
         // Filter by search
-        const filteredLog = search
+        let filteredLog = search
           ? lossLog.filter(e => (e.flowerName || '').toLowerCase().includes(search.toLowerCase())
               || (e.supplier || '').toLowerCase().includes(search.toLowerCase()))
           : lossLog;
-        // Group by supplier
-        const bySupplier = {};
+
+        // Sort entries
+        if (wasteSortBy === 'batch') {
+          filteredLog = [...filteredLog].sort((a, b) => {
+            const batchA = parseBatchName(a.flowerName || '').batch || '';
+            const batchB = parseBatchName(b.flowerName || '').batch || '';
+            return batchA.localeCompare(batchB) || (a.Date || '').localeCompare(b.Date || '');
+          });
+        } else {
+          filteredLog = [...filteredLog].sort((a, b) => (b.Date || '').localeCompare(a.Date || ''));
+        }
+
         let totalLost = 0;
         let totalCostLost = 0;
+        for (const e of filteredLog) {
+          totalLost += e.Quantity || 0;
+          totalCostLost += (e.Quantity || 0) * (e.costPrice || 0);
+        }
+
+        // Get unique suppliers for filter
+        const allSuppliers = [...new Set(filteredLog.map(e => e.supplier || '—'))].sort();
+
+        // Group by supplier (when not in "all" mode)
+        const bySupplier = {};
         for (const e of filteredLog) {
           const sup = e.supplier || '—';
           if (!bySupplier[sup]) bySupplier[sup] = { entries: [], totalQty: 0, totalCost: 0 };
           bySupplier[sup].entries.push(e);
           bySupplier[sup].totalQty += e.Quantity || 0;
           bySupplier[sup].totalCost += (e.Quantity || 0) * (e.costPrice || 0);
-          totalLost += e.Quantity || 0;
-          totalCostLost += (e.Quantity || 0) * (e.costPrice || 0);
         }
+
+        // Render a waste table row with batch tag
+        function WasteRow({ e, showSupplier }) {
+          const { name: baseName, batch } = parseBatchName(e.flowerName || '');
+          return (
+            <tr key={e.id} className="border-b border-gray-50">
+              <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
+              <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
+              <td className="px-3 py-1.5 text-xs">
+                {batch && (
+                  <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 border-gray-200">
+                    {batch}
+                  </span>
+                )}
+              </td>
+              {showSupplier && <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>}
+              <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
+              <td className="px-3 py-1.5 text-xs">
+                <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
+                  e.Reason === 'Wilted' ? 'bg-yellow-100 text-yellow-800' :
+                  e.Reason === 'Damaged' ? 'bg-red-100 text-red-700' :
+                  e.Reason === 'Arrived Broken' ? 'bg-orange-100 text-orange-700' :
+                  e.Reason === 'Overstock' ? 'bg-blue-100 text-blue-700' :
+                  'bg-gray-100 text-gray-600'
+                }`}>{e.Reason}</span>
+              </td>
+              <td className="px-3 py-1.5 text-xs text-right text-ios-tertiary">
+                {e['Days Survived'] != null ? e['Days Survived'] : '—'}
+              </td>
+            </tr>
+          );
+        }
+
         return (
           <>
+            {/* Waste toolbar: group by + sort */}
+            <div className="glass-card px-4 py-2 flex flex-wrap items-center gap-2">
+              <div className="flex gap-1">
+                {[
+                  { key: 'supplier', label: t.supplier },
+                  { key: 'all',      label: t.allStatuses },
+                ].map(g => (
+                  <button key={g.key} onClick={() => setWasteGroupBy(g.key)}
+                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                      wasteGroupBy === g.key ? 'bg-brand-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+                    }`}>{g.label}</button>
+                ))}
+              </div>
+              <span className="text-xs text-ios-tertiary">·</span>
+              <div className="flex gap-1">
+                {[
+                  { key: 'date',  label: t.date },
+                  { key: 'batch', label: t.receivedDate || 'Batch' },
+                ].map(s => (
+                  <button key={s.key} onClick={() => setWasteSortBy(s.key)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
+                      wasteSortBy === s.key ? 'bg-brand-100 text-brand-700' : 'bg-gray-50 text-ios-tertiary'
+                    }`}>{s.label} {wasteSortBy === s.key ? '↓' : ''}</button>
+                ))}
+              </div>
+            </div>
+
             {/* Summary bar */}
             {filteredLog.length > 0 && (
               <div className="glass-card px-4 py-3 flex flex-wrap gap-6">
@@ -340,13 +420,13 @@ export default function StockTab({ initialFilter }) {
                 </div>
                 <div>
                   <span className="text-xs text-ios-tertiary">{t.suppliers || 'Suppliers'}</span>
-                  <p className="text-lg font-bold text-ios-label">{Object.keys(bySupplier).length}</p>
+                  <p className="text-lg font-bold text-ios-label">{allSuppliers.length}</p>
                 </div>
               </div>
             )}
 
-            {/* Write-off log grouped by supplier */}
-            {Object.entries(bySupplier).sort(([,a], [,b]) => b.totalQty - a.totalQty).map(([sup, data]) => (
+            {/* Grouped by supplier */}
+            {wasteGroupBy === 'supplier' && Object.entries(bySupplier).sort(([,a], [,b]) => b.totalQty - a.totalQty).map(([sup, data]) => (
               <div key={sup} className="glass-card overflow-hidden">
                 <div className="px-4 py-2 bg-brand-50/40 border-b border-white/40 flex items-center justify-between">
                   <h3 className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
@@ -361,35 +441,41 @@ export default function StockTab({ initialFilter }) {
                     <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
                       <th className="text-left px-3 py-2 font-medium">{t.date}</th>
                       <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.receivedDate || 'Batch'}</th>
                       <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
                       <th className="text-left px-3 py-2 font-medium">{t.reason}</th>
                       <th className="text-right px-3 py-2 font-medium">{t.daysSurvived}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {data.entries.map(e => (
-                      <tr key={e.id} className="border-b border-gray-50">
-                        <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
-                        <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{e.flowerName}</td>
-                        <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
-                        <td className="px-3 py-1.5 text-xs">
-                          <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
-                            e.Reason === 'Wilted' ? 'bg-yellow-100 text-yellow-800' :
-                            e.Reason === 'Damaged' ? 'bg-red-100 text-red-700' :
-                            e.Reason === 'Arrived Broken' ? 'bg-orange-100 text-orange-700' :
-                            e.Reason === 'Overstock' ? 'bg-blue-100 text-blue-700' :
-                            'bg-gray-100 text-gray-600'
-                          }`}>{e.Reason}</span>
-                        </td>
-                        <td className="px-3 py-1.5 text-xs text-right text-ios-tertiary">
-                          {e['Days Survived'] != null ? e['Days Survived'] : '—'}
-                        </td>
-                      </tr>
-                    ))}
+                    {data.entries.map(e => <WasteRow key={e.id} e={e} showSupplier={false} />)}
                   </tbody>
                 </table>
               </div>
             ))}
+
+            {/* All entries — flat table */}
+            {wasteGroupBy === 'all' && filteredLog.length > 0 && (
+              <div className="glass-card overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
+                      <th className="text-left px-3 py-2 font-medium">{t.date}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.receivedDate || 'Batch'}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.supplier}</th>
+                      <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
+                      <th className="text-left px-3 py-2 font-medium">{t.reason}</th>
+                      <th className="text-right px-3 py-2 font-medium">{t.daysSurvived}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredLog.map(e => <WasteRow key={e.id} e={e} showSupplier={true} />)}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
             {filteredLog.length === 0 && (
               <p className="text-center text-sm text-ios-tertiary py-8">{t.noData}</p>
             )}

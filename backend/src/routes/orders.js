@@ -331,6 +331,17 @@ router.patch('/:id', async (req, res, next) => {
     // No status change — just update other fields
     const order = await db.update(TABLES.ORDERS, req.params.id, otherFields);
 
+    // Cascade date/time changes to linked delivery record so both stay in sync
+    const deliveryIds = order['Deliveries'] || [];
+    if (deliveryIds.length > 0) {
+      const deliveryCascade = {};
+      if ('Required By' in otherFields) deliveryCascade['Delivery Date'] = otherFields['Required By'];
+      if ('Delivery Time' in otherFields) deliveryCascade['Delivery Time'] = otherFields['Delivery Time'];
+      if (Object.keys(deliveryCascade).length > 0) {
+        await db.update(TABLES.DELIVERIES, deliveryIds[0], deliveryCascade);
+      }
+    }
+
     // Broadcast all other status changes so delivery app stays in sync
     if (newStatus && newStatus !== 'Ready') {
       broadcast({
