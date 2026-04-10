@@ -880,6 +880,7 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   const [sellPriceManual, setSellPriceManual] = useState(Number(line['Sell Price']) > 0);
   const [farmer, setFarmer] = useState(line.Farmer || '');
   const [notes, setNotes] = useState(line.Notes || '');
+  const [lotSize, setLotSize] = useState(Number(line['Lot Size']) || 0);
 
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
@@ -892,6 +893,7 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     setSellPrice(itemSell > 0 ? String(itemSell) : (itemCost > 0 && targetMarkup ? String(Math.round(itemCost * targetMarkup)) : ''));
     setSellPriceManual(itemSell > 0);
     setFarmer(item.Farmer || '');
+    setLotSize(Number(item['Lot Size']) || 0);
     onUpdate(line.id, {
       'Flower Name': item['Display Name'],
       Supplier: item.Supplier || '',
@@ -937,6 +939,23 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           min="1"
           placeholder={t.quantity}
         />
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
+          <input
+            type="number"
+            value={lotSize || ''}
+            onChange={e => setLotSize(Number(e.target.value) || 0)}
+            onBlur={() => onUpdate(line.id, { 'Lot Size': lotSize })}
+            className="field-input w-14 text-center text-xs"
+            min="0"
+            placeholder="—"
+          />
+        </div>
+        {lotSize > 1 && qty > 0 && (
+          <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
+            = {Math.ceil(qty / lotSize)} × {lotSize}
+          </span>
+        )}
         <select
           value={line.Supplier || ''}
           onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
@@ -1008,11 +1027,6 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           />
         </div>
       </div>
-      {line['Lot Size'] > 1 && (
-        <div className="text-[11px] text-ios-tertiary">
-          {t.lotSize}: {line['Lot Size']} → {Math.ceil(qty / line['Lot Size'])} × {line['Lot Size']}
-        </div>
-      )}
     </div>
   );
 }
