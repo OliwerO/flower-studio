@@ -191,7 +191,7 @@ router.get('/pending-po', async (req, res, next) => {
       const chunk = allLineIds.slice(i, i + CHUNK);
       const chunkLines = await db.list(TABLES.STOCK_ORDER_LINES, {
         filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders', 'Lot Size'],
+        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders', 'Lot Size', 'Cost Price', 'Sell Price', 'Supplier'],
       });
       allLines.push(...chunkLines);
     }
@@ -221,17 +221,34 @@ router.get('/pending-po', async (req, res, next) => {
           const safe = sanitizeFormulaValue(name);
           const matches = await db.list(TABLES.STOCK, {
             filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
-            fields: ['Display Name'],
+            fields: ['Display Name', 'Current Cost Price', 'Current Sell Price'],
             maxRecords: 1,
           });
           if (matches.length > 0) {
             nameToId[name] = matches[0].id;
+            // Backfill missing prices on existing zero-qty items from PO line data
+            const existing = matches[0];
+            if (!existing['Current Cost Price'] && !existing['Current Sell Price']) {
+              const poLine = allLines[unlinked.find(x => x.name === name)?.idx];
+              if (poLine && (Number(poLine['Cost Price']) || Number(poLine['Sell Price']))) {
+                db.update(TABLES.STOCK, existing.id, {
+                  'Current Cost Price': Number(poLine['Cost Price']) || 0,
+                  'Current Sell Price': Number(poLine['Sell Price']) || 0,
+                  ...(poLine.Supplier ? { Supplier: poLine.Supplier } : {}),
+                }).catch(() => {});
+              }
+            }
           } else {
-            // Auto-create stock item so the flower shows up in pickers
+            // Auto-create stock item so the flower shows up in pickers.
+            // Pull cost/sell from the PO line that triggered this.
+            const poLine = allLines[unlinked.find(x => x.name === name)?.idx];
             const created = await db.create(TABLES.STOCK, {
               'Display Name': name,
               'Purchase Name': name,
               'Current Quantity': 0,
+              'Current Cost Price': Number(poLine?.['Cost Price']) || 0,
+              'Current Sell Price': Number(poLine?.['Sell Price']) || 0,
+              Supplier: poLine?.Supplier || '',
               Category: 'Other',
               Active: true,
             });

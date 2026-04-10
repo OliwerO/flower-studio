@@ -34,6 +34,9 @@ const en = {
   statusDelivered:      'Delivered',
   statusPickedUp:       'Picked Up',
   statusCancelled:      'Cancelled',
+  cancelAndReturn:      'Cancel + return stock',
+  cancelAndReturnConfirm: 'Cancel this order and return flowers to stock?',
+  orderCancelled:       'Order cancelled',
 
   // Order card
   pickup:           'Pickup',
@@ -474,6 +477,9 @@ const ru = {
   statusDelivered:      'Доставлен',
   statusPickedUp:       'Забран',
   statusCancelled:      'Отменён',
+  cancelAndReturn:      'Отменить + вернуть на склад',
+  cancelAndReturnConfirm: 'Отменить заказ и вернуть цветы на склад?',
+  orderCancelled:       'Заказ отменён',
 
   // Order card
   pickup:           'Самовывоз',

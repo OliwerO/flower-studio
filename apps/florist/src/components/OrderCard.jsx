@@ -731,6 +731,33 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                     />
                   );
                 })()}
+                {/* Cancel + return stock — available for any non-cancelled order including delivered */}
+                {currentStatus !== 'Cancelled' && isTerminal && (
+                  <button
+                    onClick={async () => {
+                      if (!confirm(t.cancelAndReturnConfirm || 'Cancel this order and return flowers to stock?')) return;
+                      setSaving(true);
+                      try {
+                        const res = await client.post(`/orders/${order.id}/cancel-with-return`);
+                        const returned = res.data.returnedItems || [];
+                        const summary = returned.length > 0
+                          ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
+                          : '';
+                        showToast(`${t.orderCancelled || 'Cancelled'}${summary ? '. ' + summary : ''}`, 'success');
+                        onOrderUpdated?.(order.id, { Status: 'Cancelled' });
+                        setDetail(prev => prev ? { ...prev, Status: 'Cancelled' } : prev);
+                      } catch (err) {
+                        showToast(err.response?.data?.error || t.updateError, 'error');
+                      } finally {
+                        setSaving(false);
+                      }
+                    }}
+                    disabled={saving}
+                    className="mt-2 w-full py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
+                  >
+                    {t.cancelAndReturn || 'Cancel + return stock'}
+                  </button>
+                )}
               </div>
 
               {/* Payment controls */}
