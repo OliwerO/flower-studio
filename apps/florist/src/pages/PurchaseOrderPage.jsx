@@ -614,13 +614,17 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
 
 // ── Draft line editor (mobile layout) ──
 function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
-  const [qty, setQty] = useState(line['Quantity Needed'] || 1);
+  const storedLs = Number(line['Lot Size']) || 0;
+  const storedQty = Number(line['Quantity Needed']) || 1;
+  // Display qty as lots (user enters lots, not stems)
+  const initLots = storedLs > 1 ? Math.max(1, Math.round(storedQty / storedLs)) : storedQty;
+  const [qty, setQty] = useState(initLots);
   const [costPrice, setCostPrice] = useState(line['Cost Price'] || '');
   const [sellPrice, setSellPrice] = useState(line['Sell Price'] || '');
   const [sellPriceManual, setSellPriceManual] = useState(Number(line['Sell Price']) > 0);
   const [farmer, setFarmer] = useState(line.Farmer || '');
   const [notes, setNotes] = useState(line.Notes || '');
-  const [lotSize, setLotSize] = useState(Number(line['Lot Size']) || 0);
+  const [lotSize, setLotSize] = useState(storedLs);
 
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
@@ -673,18 +677,23 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
       <div className="flex items-center gap-2">
         <input type="number" value={qty}
           onChange={e => setQty(Number(e.target.value) || 0)}
-          onBlur={() => onUpdate(line.id, { 'Quantity Needed': qty })}
+          onBlur={() => {
+            const stems = lotSize > 1 ? qty * lotSize : qty;
+            onUpdate(line.id, { 'Quantity Needed': stems });
+          }}
           className="field-input w-16 text-sm text-center" min="1" placeholder={t.quantity || 'Qty'} />
         <div className="flex items-center gap-1">
           <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
           <input type="number" value={lotSize || ''}
             onChange={e => setLotSize(Number(e.target.value) || 0)}
-            onBlur={() => onUpdate(line.id, { 'Lot Size': lotSize })}
+            onBlur={() => {
+              onUpdate(line.id, { 'Lot Size': lotSize, 'Quantity Needed': lotSize > 1 ? qty * lotSize : qty });
+            }}
             className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
         </div>
         {lotSize > 1 && qty > 0 && (
           <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
-            = {Math.ceil(qty / lotSize)} × {lotSize}
+            = {qty} × {lotSize} = {qty * lotSize}
           </span>
         )}
         <select value={line.Supplier || ''}

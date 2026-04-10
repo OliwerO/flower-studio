@@ -161,7 +161,9 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
     // falling back to the stock item's configured lot size, then 1.
     const createdLines = [];
     for (const line of (lines || [])) {
-      // Auto-link: if no stockItemId but flowerName is given, find a matching stock item
+      // Auto-link or auto-create: if no stockItemId but flowerName is given,
+      // find a matching stock item. If not found, create one with qty=0 so it
+      // appears in the stock picker with an "on order" badge immediately.
       let resolvedStockItemId = line.stockItemId || null;
       if (!resolvedStockItemId && line.flowerName) {
         try {
@@ -170,8 +172,26 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
             filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
             maxRecords: 1,
           });
-          if (matches.length > 0) resolvedStockItemId = matches[0].id;
-        } catch { /* best effort — line stays unlinked */ }
+          if (matches.length > 0) {
+            resolvedStockItemId = matches[0].id;
+          } else {
+            // Create a new stock item so the flower appears in the stock picker
+            const newItem = await db.create(TABLES.STOCK, {
+              'Display Name': line.flowerName.trim(),
+              'Purchase Name': line.flowerName.trim(),
+              'Current Quantity': 0,
+              'Current Cost Price': Number(line.costPrice) || 0,
+              'Current Sell Price': Number(line.sellPrice) || 0,
+              Supplier: line.supplier || '',
+              Category: 'Other',
+              Active: true,
+            });
+            resolvedStockItemId = newItem.id;
+            console.log(`[STOCK-ORDER] Auto-created stock item "${line.flowerName}" (${newItem.id}) from PO line`);
+          }
+        } catch (err) {
+          console.error(`[STOCK-ORDER] Auto-link/create failed for "${line.flowerName}":`, err.message);
+        }
       }
       let lotSize = Number(line.lotSize) || 0;
       if (!lotSize && resolvedStockItemId) {
@@ -322,7 +342,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
     const { stockItemId: rawStockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
-    // Auto-link: if no stockItemId but flowerName is given, find a matching stock item
+    // Auto-link or auto-create stock item
     let resolvedStockItemId = rawStockItemId || null;
     if (!resolvedStockItemId && flowerName) {
       try {
@@ -331,7 +351,21 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
           filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
           maxRecords: 1,
         });
-        if (matches.length > 0) resolvedStockItemId = matches[0].id;
+        if (matches.length > 0) {
+          resolvedStockItemId = matches[0].id;
+        } else {
+          const newItem = await db.create(TABLES.STOCK, {
+            'Display Name': flowerName.trim(),
+            'Purchase Name': flowerName.trim(),
+            'Current Quantity': 0,
+            'Current Cost Price': Number(costPrice) || 0,
+            'Current Sell Price': Number(sellPrice) || 0,
+            Supplier: supplier || '',
+            Category: 'Other',
+            Active: true,
+          });
+          resolvedStockItemId = newItem.id;
+        }
       } catch { /* best effort */ }
     }
     const line = await db.create(TABLES.STOCK_ORDER_LINES, {

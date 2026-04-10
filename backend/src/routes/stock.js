@@ -232,9 +232,10 @@ router.get('/pending-po', async (req, res, next) => {
       }
     }
 
-    // Aggregate by stock item — use lot-adjusted quantities.
-    // PO lines store raw qty (e.g. 1) with a separate Lot Size (e.g. 60).
-    // The actual ordered stems = ceil(qty / lotSize) * lotSize when lotSize > 1.
+    // Aggregate by stock item — Quantity Needed stores actual stems
+    // (qty × lotSize for new POs, or already lot-adjusted for auto-generated).
+    // For backward compat with old lines where qty was entered as lots,
+    // detect and adjust: if qty < lotSize, it's probably lots → multiply.
     const result = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0] || line._resolvedStockId;
@@ -242,7 +243,9 @@ router.get('/pending-po', async (req, res, next) => {
       const rawQty = Number(line['Quantity Needed']) || 0;
       if (rawQty <= 0) continue;
       const lotSize = Number(line['Lot Size']) || 0;
-      const qty = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
+      const qty = lotSize > 1 && rawQty < lotSize
+        ? rawQty * lotSize   // old format: qty is lot count
+        : rawQty;            // new format: qty is already stems
 
       if (!result[stockId]) result[stockId] = { ordered: 0, pos: [] };
       result[stockId].ordered += qty;
