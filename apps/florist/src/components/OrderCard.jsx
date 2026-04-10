@@ -92,7 +92,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
 
   const status     = order['Status'] || 'New';
   const styles     = STATUS_STYLES[status] || STATUS_STYLES['New'];
-  const isDelivery = order['Delivery Type'] === 'Delivery';
+  const isDelivery = order['Delivery Type'] === 'Delivery' || detail?.['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
   const request    = order['Customer Request'] || '';
   // Total includes delivery fee — use backend's Final Price if present, else compute
@@ -584,10 +584,40 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDelivery}</p>
                   <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
-                    <Row label={t.labelAddress}   value={detail.delivery['Delivery Address']} />
-                    <Row label={t.labelRecipient} value={detail.delivery['Recipient Name']} />
-                    <Row label={t.labelPhone}     value={detail.delivery['Recipient Phone']} />
-                    <Row label={t.labelFee}       value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelAddress}</span>
+                      <input
+                        type="text"
+                        defaultValue={detail.delivery['Delivery Address'] || ''}
+                        onBlur={e => { if (e.target.value !== (detail.delivery['Delivery Address'] || '')) patchDelivery({ 'Delivery Address': e.target.value }); }}
+                        placeholder="—"
+                        disabled={saving}
+                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                      />
+                    </div>
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelRecipient}</span>
+                      <input
+                        type="text"
+                        defaultValue={detail.delivery['Recipient Name'] || ''}
+                        onBlur={e => { if (e.target.value !== (detail.delivery['Recipient Name'] || '')) patchDelivery({ 'Recipient Name': e.target.value }); }}
+                        placeholder="—"
+                        disabled={saving}
+                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                      />
+                    </div>
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelPhone}</span>
+                      <input
+                        type="tel"
+                        defaultValue={detail.delivery['Recipient Phone'] || ''}
+                        onBlur={e => { if (e.target.value !== (detail.delivery['Recipient Phone'] || '')) patchDelivery({ 'Recipient Phone': e.target.value }); }}
+                        placeholder="—"
+                        disabled={saving}
+                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                      />
+                    </div>
+                    <Row label={t.labelFee} value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
                   </div>
                 </div>
               )}
