@@ -121,7 +121,8 @@ router.patch('/:id', async (req, res, next) => {
     // the Delivery — a permanent desync. Doing the delivery first means a
     // failure leaves both records untouched.
     let linkedOrderId = null;
-    if (fields.Status === DELIVERY_STATUS.OUT_FOR_DELIVERY || fields.Status === DELIVERY_STATUS.DELIVERED) {
+    const cascadeStatuses = [DELIVERY_STATUS.OUT_FOR_DELIVERY, DELIVERY_STATUS.DELIVERED, DELIVERY_STATUS.CANCELLED];
+    if (cascadeStatuses.includes(fields.Status)) {
       if (fields.Status === DELIVERY_STATUS.DELIVERED) {
         fields['Delivered At'] = new Date().toISOString();
       }
@@ -134,7 +135,11 @@ router.patch('/:id', async (req, res, next) => {
     const updated = await db.update(TABLES.DELIVERIES, req.params.id, fields);
 
     if (linkedOrderId) {
-      await db.update(TABLES.ORDERS, linkedOrderId, { Status: fields.Status });
+      // Map delivery status to order status for the cascade
+      const orderStatus = fields.Status === DELIVERY_STATUS.CANCELLED
+        ? 'Cancelled'  // ORDER_STATUS.CANCELLED — orders use same string
+        : fields.Status;
+      await db.update(TABLES.ORDERS, linkedOrderId, { Status: orderStatus });
     }
     res.json(updated);
   } catch (err) {
