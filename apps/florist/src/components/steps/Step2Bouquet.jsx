@@ -11,6 +11,13 @@ import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
 import { renderStockName } from '@flower-studio/shared';
 
+const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatPoDate(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  return `${d.getDate()}.${PO_MONTHS[d.getMonth()]}.`;
+}
+
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
 // that buffers its output before sending it down the line.
@@ -356,6 +363,8 @@ export default function Step2Bouquet({
               const low    = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
               const out    = qty <= 0;
               const poQty  = pendingPO[s.id]?.ordered || 0;
+              const poDate = pendingPO[s.id]?.plannedDate || null;
+              const poDateLabel = poDate ? formatPoDate(poDate) : null;
 
               return (
                 <button
@@ -375,7 +384,7 @@ export default function Step2Bouquet({
                       <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
-                      {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {t.onOrder || 'on order'}</span>}
+                      {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
                     </div>
                   </div>
                   {inCart && (

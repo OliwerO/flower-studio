@@ -176,7 +176,7 @@ router.get('/pending-po', async (req, res, next) => {
   try {
     const pendingPOs = await db.list(TABLES.STOCK_ORDERS, {
       filterByFormula: `OR({Status} = '${PO_STATUS.DRAFT}', {Status} = '${PO_STATUS.SENT}', {Status} = '${PO_STATUS.SHOPPING}')`,
-      fields: ['Status', 'Stock Order ID', 'Order Lines'],
+      fields: ['Status', 'Stock Order ID', 'Order Lines', 'Planned Date'],
     });
 
     if (pendingPOs.length === 0) return res.json({});
@@ -199,7 +199,7 @@ router.get('/pending-po', async (req, res, next) => {
     // Build PO lookup
     const poMap = {};
     for (const po of pendingPOs) {
-      poMap[po.id] = { id: po.id, number: po['Stock Order ID'] || '', status: po.Status };
+      poMap[po.id] = { id: po.id, number: po['Stock Order ID'] || '', status: po.Status, plannedDate: po['Planned Date'] || null };
     }
 
     // Collect unlinked flower names for batch resolution
@@ -247,13 +247,17 @@ router.get('/pending-po', async (req, res, next) => {
         ? rawQty * lotSize   // old format: qty is lot count
         : rawQty;            // new format: qty is already stems
 
-      if (!result[stockId]) result[stockId] = { ordered: 0, pos: [] };
+      if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [] };
       result[stockId].ordered += qty;
 
       const poId = line['Stock Orders']?.[0];
       const po = poId ? poMap[poId] : null;
       if (po) {
-        result[stockId].pos.push({ id: po.id, number: po.number, quantity: qty });
+        result[stockId].pos.push({ id: po.id, number: po.number, quantity: qty, plannedDate: po.plannedDate });
+        // Track earliest planned date across all POs for this item
+        if (po.plannedDate && (!result[stockId].plannedDate || po.plannedDate < result[stockId].plannedDate)) {
+          result[stockId].plannedDate = po.plannedDate;
+        }
       }
     }
 
