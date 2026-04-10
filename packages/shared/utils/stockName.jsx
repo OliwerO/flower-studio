@@ -3,6 +3,11 @@
 // Otherwise, if lastRestocked is provided, it formats and shows that date as a tag.
 
 const DATE_BATCH_RE = /^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/;
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function formatDateTag(d) {
+  return `${d.getDate()}.${MONTHS[d.getMonth()]}.`;
+}
 
 export function renderStockName(displayName, lastRestocked) {
   if (!displayName) return '';
@@ -15,7 +20,7 @@ export function renderStockName(displayName, lastRestocked) {
   if (!dateLabel && lastRestocked) {
     const d = new Date(lastRestocked);
     if (!isNaN(d)) {
-      dateLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+      dateLabel = formatDateTag(d);
       daysAgo = Math.floor((Date.now() - d.getTime()) / 86400000);
     }
   } else if (lastRestocked) {
@@ -62,7 +67,7 @@ export function renderDateTag(displayName, lastRestocked) {
   if (!dateLabel && lastRestocked) {
     const d = new Date(lastRestocked);
     if (!isNaN(d)) {
-      dateLabel = d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' });
+      dateLabel = formatDateTag(d);
       daysAgo = Math.floor((Date.now() - d.getTime()) / 86400000);
     }
   } else if (lastRestocked) {
