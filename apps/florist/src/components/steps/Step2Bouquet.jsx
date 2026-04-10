@@ -311,7 +311,10 @@ export default function Step2Bouquet({
             >
               {showOutOfStock ? t.showAll : t.inStockOnly}
             </button>
-            <button onClick={onStockRefresh} className="text-xs text-brand-600 font-medium">
+            <button onClick={() => {
+              onStockRefresh();
+              client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+            }} className="text-xs text-brand-600 font-medium">
               ↻ {t.refreshStock}
             </button>
           </div>
@@ -379,8 +382,8 @@ export default function Step2Bouquet({
                       {renderStockName(s['Display Name'], qty > 0 ? s['Last Restocked'] : null)}
                     </div>
                     <div className="text-sm text-ios-tertiary">
-                      <span className="font-bold text-brand-700">{Number(s['Current Sell Price']).toFixed(0)} zł</span>
-                      {isOwner && <span> · {Number(s['Current Cost Price']).toFixed(0)} zł {t.costPrice}</span>}
+                      <span className="font-bold text-brand-700">{(Number(s['Current Sell Price']) || 0).toFixed(0)} zł</span>
+                      {isOwner && <span> · {(Number(s['Current Cost Price']) || 0).toFixed(0)} zł {t.costPrice}</span>}
                       <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
