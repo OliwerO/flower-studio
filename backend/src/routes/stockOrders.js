@@ -161,16 +161,28 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
     // falling back to the stock item's configured lot size, then 1.
     const createdLines = [];
     for (const line of (lines || [])) {
-      let lotSize = Number(line.lotSize) || 0;
-      if (!lotSize && line.stockItemId) {
+      // Auto-link: if no stockItemId but flowerName is given, find a matching stock item
+      let resolvedStockItemId = line.stockItemId || null;
+      if (!resolvedStockItemId && line.flowerName) {
         try {
-          const stockItem = await db.getById(TABLES.STOCK, line.stockItemId);
+          const safe = sanitizeFormulaValue(line.flowerName.trim());
+          const matches = await db.list(TABLES.STOCK, {
+            filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
+            maxRecords: 1,
+          });
+          if (matches.length > 0) resolvedStockItemId = matches[0].id;
+        } catch { /* best effort — line stays unlinked */ }
+      }
+      let lotSize = Number(line.lotSize) || 0;
+      if (!lotSize && resolvedStockItemId) {
+        try {
+          const stockItem = await db.getById(TABLES.STOCK, resolvedStockItemId);
           lotSize = Number(stockItem['Lot Size']) || 0;
         } catch { /* stock item may have been deleted */ }
       }
       const lineFields = {
         'Stock Orders': [order.id],
-        ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
+        ...(resolvedStockItemId ? { 'Stock Item': [resolvedStockItemId] } : {}),
         'Flower Name': line.flowerName || '',
         'Quantity Needed': Number(line.quantity) || 0,
         ...(lotSize > 0 ? { 'Lot Size': lotSize } : {}),
@@ -309,10 +321,22 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
       return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
-    const { stockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
+    const { stockItemId: rawStockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
+    // Auto-link: if no stockItemId but flowerName is given, find a matching stock item
+    let resolvedStockItemId = rawStockItemId || null;
+    if (!resolvedStockItemId && flowerName) {
+      try {
+        const safe = sanitizeFormulaValue(flowerName.trim());
+        const matches = await db.list(TABLES.STOCK, {
+          filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
+          maxRecords: 1,
+        });
+        if (matches.length > 0) resolvedStockItemId = matches[0].id;
+      } catch { /* best effort */ }
+    }
     const line = await db.create(TABLES.STOCK_ORDER_LINES, {
       'Stock Orders': [req.params.id],
-      'Stock Item': stockItemId ? [stockItemId] : undefined,
+      'Stock Item': resolvedStockItemId ? [resolvedStockItemId] : undefined,
       'Flower Name': flowerName || '',
       'Quantity Needed': Number(quantity) || 1,
       Supplier: supplier || '',
@@ -546,7 +570,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           continue;
         }
 
-        const stockItemId = line['Stock Item']?.[0];
+        let stockItemId = line['Stock Item']?.[0];
         const costPrice = Number(line['Cost Price']) || 0;
         const sellPrice = Number(line['Sell Price']) || 0;
         const supplier = line.Supplier || '';
@@ -556,15 +580,44 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const altAcceptedPre = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOffPre = Number(evalLine.altWriteOffQty) || 0;
 
-        // Hard fail: a PO line with PRIMARY received qty but no Stock Item link
-        // cannot be received into inventory. Substitute (alt) quantities are OK
-        // without a Stock Item — findOrCreateSubstituteStock will create one
-        // from the Alt Flower Name alone, using sensible defaults.
+        // Auto-resolve: if PO line has no Stock Item but has Flower Name,
+        // find a matching stock record and link it. This handles lines created
+        // from freetext input (no stock item selected in the PO form).
         if (!stockItemId && (accepted > 0 || writeOff > 0)) {
-          throw new Error(
-            `Line "${line['Flower Name'] || evalLine.lineId}" has no linked Stock Item — ` +
-            `link it on the PO and retry. Stock cannot be received without a Stock Item.`
-          );
+          const flowerName = (line['Flower Name'] || '').trim();
+          if (!flowerName) {
+            throw new Error(
+              `Line "${evalLine.lineId}" has no Stock Item and no Flower Name — cannot resolve.`
+            );
+          }
+          const safe = sanitizeFormulaValue(flowerName);
+          const matches = await db.list(TABLES.STOCK, {
+            filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
+            maxRecords: 1,
+          });
+          if (matches.length > 0) {
+            stockItemId = matches[0].id;
+            await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, { 'Stock Item': [stockItemId] });
+            console.log(`[STOCK-ORDER] Auto-linked "${flowerName}" → stock item ${stockItemId}`);
+          } else {
+            // Create a new stock item so the line can be received
+            const markup = Number(getConfig('targetMarkup')) || 1;
+            const autoSell = sellPrice || Math.round(costPrice * markup * 100) / 100;
+            const created = await db.create(TABLES.STOCK, {
+              'Display Name': flowerName,
+              'Purchase Name': flowerName,
+              Category: 'Other',
+              'Current Quantity': 0,
+              'Current Cost Price': costPrice,
+              'Current Sell Price': autoSell,
+              Supplier: supplier,
+              Unit: 'Stems',
+              Active: true,
+            });
+            stockItemId = created.id;
+            await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, { 'Stock Item': [stockItemId] });
+            console.log(`[STOCK-ORDER] Created & linked stock item for "${flowerName}" (${stockItemId})`);
+          }
         }
         // Alt quantities without a stock item require at least an Alt Flower Name
         // so we know what substitute stock card to create.

@@ -200,9 +200,12 @@ export default function Step2Bouquet({
 
   const filteredStock = useMemo(() => {
     let result = visibleStock;
-    // #39: Filter to show only in-stock items by default
+    // #39: Filter to show only in-stock items by default,
+    // but always show items with pending PO quantities (they're coming)
     if (!showOutOfStock) {
-      result = result.filter(s => (Number(s['Current Quantity']) || 0) > 0);
+      result = result.filter(s =>
+        (Number(s['Current Quantity']) || 0) > 0 || (pendingPO[s.id]?.ordered || 0) > 0
+      );
     }
     const q = flowerQuery.toLowerCase().trim();
     if (!q) return result;
@@ -210,7 +213,7 @@ export default function Step2Bouquet({
       (s['Display Name'] || '').toLowerCase().includes(q) ||
       (s['Category'] || '').toLowerCase().includes(q)
     );
-  }, [visibleStock, flowerQuery, showOutOfStock]);
+  }, [visibleStock, flowerQuery, showOutOfStock, pendingPO]);
 
   function addOne(stockItem) {
     onLinesChange(lines => {

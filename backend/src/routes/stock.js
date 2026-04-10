@@ -202,10 +202,40 @@ router.get('/pending-po', async (req, res, next) => {
       poMap[po.id] = { id: po.id, number: po['Stock Order ID'] || '', status: po.Status };
     }
 
+    // Collect unlinked flower names for batch resolution
+    const unlinked = []; // { lineIdx, flowerName }
+    for (let i = 0; i < allLines.length; i++) {
+      if (!allLines[i]['Stock Item']?.[0] && allLines[i]['Flower Name']) {
+        unlinked.push({ idx: i, name: allLines[i]['Flower Name'].trim() });
+      }
+    }
+
+    // Resolve unlinked lines by matching Flower Name → Stock Item Display Name
+    if (unlinked.length > 0) {
+      const uniqueNames = [...new Set(unlinked.map(u => u.name))];
+      const nameToId = {};
+      for (const name of uniqueNames) {
+        try {
+          const safe = sanitizeFormulaValue(name);
+          const matches = await db.list(TABLES.STOCK, {
+            filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
+            fields: ['Display Name'],
+            maxRecords: 1,
+          });
+          if (matches.length > 0) nameToId[name] = matches[0].id;
+        } catch { /* skip */ }
+      }
+      for (const u of unlinked) {
+        if (nameToId[u.name]) {
+          allLines[u.idx]._resolvedStockId = nameToId[u.name];
+        }
+      }
+    }
+
     // Aggregate by stock item
     const result = {};
     for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
+      const stockId = line['Stock Item']?.[0] || line._resolvedStockId;
       if (!stockId) continue;
       const qty = Number(line['Quantity Needed']) || 0;
       if (qty <= 0) continue;
