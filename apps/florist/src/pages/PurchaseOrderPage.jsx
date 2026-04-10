@@ -673,48 +673,48 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
         </div>
         <button onClick={() => onRemove(line.id)} className="text-red-400 active:text-red-600 text-sm px-1">✕</button>
       </div>
-      {/* Row 2: Qty + Lot Size + Supplier */}
+      {/* Row 2: Qty + Lot Size + total stems */}
       <div className="flex items-center gap-2">
-        <input type="number" value={qty}
-          onChange={e => setQty(Number(e.target.value) || 0)}
-          onBlur={() => {
-            const stems = lotSize > 1 ? qty * lotSize : qty;
-            onUpdate(line.id, { 'Quantity Needed': stems });
-          }}
-          className="field-input w-16 text-sm text-center" min="1" placeholder={t.quantity || 'Qty'} />
-        <div className="flex items-center gap-1">
-          <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
+        <div className="flex items-center gap-1.5">
+          <input type="number" value={qty}
+            onChange={e => setQty(Number(e.target.value) || 0)}
+            onBlur={() => {
+              const stems = lotSize > 1 ? qty * lotSize : qty;
+              onUpdate(line.id, { 'Quantity Needed': stems });
+            }}
+            className="field-input w-14 text-sm text-center" min="1" placeholder={t.quantity || 'Qty'} />
+          <span className="text-[10px] text-ios-tertiary">×</span>
           <input type="number" value={lotSize || ''}
             onChange={e => setLotSize(Number(e.target.value) || 0)}
             onBlur={() => {
               onUpdate(line.id, { 'Lot Size': lotSize, 'Quantity Needed': lotSize > 1 ? qty * lotSize : qty });
             }}
-            className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
+            className="field-input w-14 text-center text-xs" min="0" placeholder={t.lotSize || 'Lot'} />
         </div>
         {lotSize > 1 && qty > 0 && (
-          <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
-            = {qty} × {lotSize} = {qty * lotSize}
+          <span className="text-sm text-ios-label font-semibold">
+            = {qty * lotSize} <span className="text-[10px] font-normal text-ios-tertiary">{t.stems || 'pcs'}</span>
           </span>
         )}
+      </div>
+      {/* Row 3: Supplier + Cost + Sell + Markup */}
+      <div className="flex items-center gap-2">
         <select value={line.Supplier || ''}
           onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
           className="field-input flex-1 text-sm">
-          <option value="">—</option>
+          <option value="">{t.supplier || 'Supplier'}...</option>
           {(suppliers || []).map(s => <option key={s} value={s}>{s}</option>)}
         </select>
-      </div>
-      {/* Row 3: Cost + Sell + Markup */}
-      <div className="flex items-center gap-2 flex-wrap">
         <input type="number" step="0.01" value={costPrice}
           onChange={e => handleCostChange(e.target.value)}
           onBlur={() => onUpdate(line.id, { 'Cost Price': Number(costPrice) || 0, 'Sell Price': Number(sellPrice) || 0 })}
-          className="field-input w-20 text-sm text-right" placeholder={t.costPrice || 'Cost'} />
+          className="field-input w-16 text-sm text-right" placeholder={t.costPrice || 'Cost'} />
         <input type="number" step="0.01" value={sellPrice}
           onChange={e => handleSellChange(e.target.value)}
           onBlur={() => onUpdate(line.id, { 'Sell Price': Number(sellPrice) || 0 })}
-          className="field-input w-20 text-sm text-right" placeholder={t.sellPrice || 'Sell'} />
+          className="field-input w-16 text-sm text-right" placeholder={t.sellPrice || 'Sell'} />
         {computedMarkup && (
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
+          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
             Number(computedMarkup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
           }`}>×{computedMarkup}</span>
         )}
