@@ -31,11 +31,13 @@ export default function DashboardPage() {
     { key: 'products', label: t.tabProducts },
     { key: 'settings', label: '\u2699 ' + t.tabSettings },
   ];
-  const [activeTab, setActiveTab] = useState('today');
+  const [activeTab, setActiveTab] = useState(() => {
+    try { return localStorage.getItem('dashboard_tab') || 'today'; } catch { return 'today'; }
+  });
   const [tabFilter, setTabFilter] = useState(null);
   // Track whether the financial tab has ever been opened, so we only mount
   // the lazy-loaded Recharts bundle on first visit (not on initial page load).
-  const [financialMounted, setFinancialMounted] = useState(false);
+  const [financialMounted, setFinancialMounted] = useState(activeTab === 'financial');
   // filterKey increments on every cross-tab navigation, forcing the target tab
   // to fully remount with a clean state. Without this, React may reuse the
   // previous component instance and old filter state "leaks" across navigations.
@@ -49,6 +51,7 @@ export default function DashboardPage() {
     setTabFilter(filter || null);
     setFilterKey(k => k + 1);
     if (tab === 'financial') setFinancialMounted(true);
+    try { localStorage.setItem('dashboard_tab', tab); } catch {}
   }, []);
 
   // When user clicks a tab pill manually, clear any navigation filter.
@@ -58,6 +61,7 @@ export default function DashboardPage() {
     setActiveTab(key);
     setTabFilter(null);
     if (key === 'financial') setFinancialMounted(true);
+    try { localStorage.setItem('dashboard_tab', key); } catch {}
   }
 
   return (
