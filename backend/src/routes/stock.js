@@ -191,7 +191,7 @@ router.get('/pending-po', async (req, res, next) => {
       const chunk = allLineIds.slice(i, i + CHUNK);
       const chunkLines = await db.list(TABLES.STOCK_ORDER_LINES, {
         filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders'],
+        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders', 'Lot Size'],
       });
       allLines.push(...chunkLines);
     }
@@ -232,13 +232,17 @@ router.get('/pending-po', async (req, res, next) => {
       }
     }
 
-    // Aggregate by stock item
+    // Aggregate by stock item — use lot-adjusted quantities.
+    // PO lines store raw qty (e.g. 1) with a separate Lot Size (e.g. 60).
+    // The actual ordered stems = ceil(qty / lotSize) * lotSize when lotSize > 1.
     const result = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0] || line._resolvedStockId;
       if (!stockId) continue;
-      const qty = Number(line['Quantity Needed']) || 0;
-      if (qty <= 0) continue;
+      const rawQty = Number(line['Quantity Needed']) || 0;
+      if (rawQty <= 0) continue;
+      const lotSize = Number(line['Lot Size']) || 0;
+      const qty = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
 
       if (!result[stockId]) result[stockId] = { ordered: 0, pos: [] };
       result[stockId].ordered += qty;

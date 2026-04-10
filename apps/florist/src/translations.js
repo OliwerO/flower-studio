@@ -401,6 +401,10 @@ const en = {
   shortage:           'Shortage',
   viewShortfall:      'Shortfall',
   noCommitments:      'No orders using this flower',
+  trace:              'Trace',
+  noUsageData:        'No history found.',
+  usageOrder:         'Order',
+  usagePurchase:      'Purchase',
 
   // Block 5 — florist UX
   assignedDriver:     'Driver',
@@ -837,6 +841,10 @@ const ru = {
   shortage:           'Нехватка',
   viewShortfall:      'Нехватка',
   noCommitments:      'Нет заказов с этим цветком',
+  trace:              'Движение',
+  noUsageData:        'История не найдена.',
+  usageOrder:         'Заказ',
+  usagePurchase:      'Закупка',
 
   // Block 5 — florist UX
   assignedDriver:     'Водитель',

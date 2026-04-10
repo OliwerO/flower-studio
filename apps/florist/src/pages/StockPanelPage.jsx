@@ -48,12 +48,13 @@ export default function StockPanelPage() {
   const [sortKey, setSortKey] = useState('name');
   const [sortAsc, setSortAsc] = useState(true);
   const [view, setView]       = useState('all');
+  const [hideZero, setHideZero] = useState(true);
 
   async function fetchStock() {
     setLoading(true);
     try {
       const [stockRes, committedRes] = await Promise.all([
-        client.get('/stock'),
+        client.get('/stock?includeEmpty=true'),
         client.get('/stock/committed'),
       ]);
       setStock(stockRes.data);
@@ -106,6 +107,11 @@ export default function StockPanelPage() {
     const SLOW_DAYS = 14;
 
     let items = stock;
+
+    // Hide zero-stock items (default on, same as dashboard)
+    if (hideZero && view === 'all') {
+      items = items.filter(s => (Number(s['Current Quantity']) || 0) !== 0);
+    }
 
     // View filter
     if (view === 'shortfall') {
@@ -164,7 +170,7 @@ export default function StockPanelPage() {
     }
 
     return sorted;
-  }, [stock, search, sortKey, sortAsc, view, committedMap]);
+  }, [stock, search, sortKey, sortAsc, view, committedMap, hideZero]);
 
   // Counts for view badges
   const shortfallCount = useMemo(() => stock.filter(s => {
@@ -268,6 +274,20 @@ export default function StockPanelPage() {
               )}
             </button>
           ))}
+        </div>
+
+        {/* Hide-zero toggle */}
+        <div className="flex justify-end mb-2">
+          <button
+            onClick={() => setHideZero(!hideZero)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors active-scale ${
+              hideZero
+                ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
+                : 'bg-gray-200 dark:bg-gray-600 text-ios-label dark:text-gray-200'
+            }`}
+          >
+            {hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock')}
+          </button>
         </div>
 
         {/* Sort pills */}

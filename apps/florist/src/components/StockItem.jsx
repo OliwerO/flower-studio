@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import client from '../api/client.js';
 import t from '../translations.js';
 import { stockBaseName, renderDateTag } from '@flower-studio/shared';
 import fmtDate from '../utils/formatDate.js';
@@ -28,6 +29,21 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
   const [reason, setReason]                = useState('');
   const [editingDate, setEditingDate]      = useState(false);
   const [dateDraft, setDateDraft]          = useState('');
+  const [showTrace, setShowTrace]          = useState(false);
+  const [traceTrail, setTraceTrail]        = useState(null);
+  const [traceLoading, setTraceLoading]    = useState(false);
+
+  function toggleTrace(e) {
+    e.stopPropagation();
+    if (showTrace) { setShowTrace(false); return; }
+    setShowTrace(true);
+    if (traceTrail) return;
+    setTraceLoading(true);
+    client.get(`/stock/${item.id}/usage`)
+      .then(r => setTraceTrail(r.data.trail || []))
+      .catch(() => setTraceTrail([]))
+      .finally(() => setTraceLoading(false));
+  }
 
   const dotColor = isOut ? 'bg-ios-red' : isLow ? 'bg-ios-orange' : 'bg-ios-green';
   const qtyColor = isOut ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label';
@@ -170,6 +186,56 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
       {expanded && !editMode && committed === 0 && (
         <div className="px-3 pb-2 ml-4">
           <p className="text-[10px] text-ios-tertiary">{t.noCommitments}</p>
+        </div>
+      )}
+
+      {/* Trace button + usage trail */}
+      {expanded && !editMode && (
+        <div className="px-3 pb-2 ml-4" onClick={e => e.stopPropagation()}>
+          <button onClick={toggleTrace}
+            className={`text-[10px] font-medium px-2 py-0.5 rounded-full active-scale ${
+              showTrace ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600'
+            }`}>
+            {t.trace || 'Trace'}
+          </button>
+          {showTrace && (
+            <div className="mt-1.5">
+              {traceLoading ? (
+                <p className="text-[10px] text-ios-tertiary">{t.loading}...</p>
+              ) : !traceTrail || traceTrail.length === 0 ? (
+                <p className="text-[10px] text-ios-tertiary">{t.noUsageData || 'No history found.'}</p>
+              ) : (
+                <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden max-h-48 overflow-y-auto">
+                  {traceTrail.map((entry, i) => (
+                    <div key={i} className="flex items-center justify-between px-2.5 py-1.5">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className={`text-[9px] font-medium px-1 py-0.5 rounded ${
+                          entry.type === 'order' ? 'bg-brand-100 text-brand-700' :
+                          entry.type === 'writeoff' ? 'bg-red-100 text-red-700' :
+                          'bg-green-100 text-green-700'
+                        }`}>
+                          {entry.type === 'order' ? (t.usageOrder || 'Order') :
+                           entry.type === 'writeoff' ? (t.writeOff || 'W/O') :
+                           (t.usagePurchase || 'Purchase')}
+                        </span>
+                        <span className="text-[10px] text-ios-label truncate">
+                          {entry.type === 'order' ? `${entry.orderId} ${entry.customer}` :
+                           entry.type === 'writeoff' ? entry.reason :
+                           entry.supplier}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {entry.date && <span className="text-[9px] text-ios-tertiary">{entry.date}</span>}
+                        <span className={`text-[11px] font-semibold tabular-nums ${entry.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {entry.quantity > 0 ? '+' : ''}{entry.quantity}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
