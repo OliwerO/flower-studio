@@ -263,11 +263,6 @@ export async function cancelWithStockReturn(orderId) {
   const order = await db.getById(TABLES.ORDERS, orderId);
   const currentStatus = order.Status || ORDER_STATUS.NEW;
 
-  if (currentStatus === ORDER_STATUS.DELIVERED || currentStatus === ORDER_STATUS.PICKED_UP) {
-    const err = new Error(`Cannot cancel a ${currentStatus} order — it has already been fulfilled.`);
-    err.statusCode = 400;
-    throw err;
-  }
   if (currentStatus === ORDER_STATUS.CANCELLED) {
     const err = new Error('Order is already cancelled.');
     err.statusCode = 400;

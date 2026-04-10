@@ -596,6 +596,20 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
   const [showWo, setShowWo]     = useState(false);
+  const [showUsage, setShowUsage] = useState(false);
+  const [usageTrail, setUsageTrail] = useState(null);
+  const [usageLoading, setUsageLoading] = useState(false);
+
+  function toggleUsage() {
+    if (showUsage) { setShowUsage(false); return; }
+    setShowUsage(true);
+    if (usageTrail) return; // already loaded
+    setUsageLoading(true);
+    client.get(`/stock/${item.id}/usage`)
+      .then(r => setUsageTrail(r.data.trail || []))
+      .catch(() => setUsageTrail([]))
+      .finally(() => setUsageLoading(false));
+  }
 
   const qty = item['Current Quantity'] || 0;
   const threshold = item['Reorder Threshold'] || 0;
@@ -672,9 +686,57 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
               className="ml-0.5 px-1.5 py-0.5 rounded bg-ios-red/10 text-ios-red text-[10px] hover:bg-ios-red/20">
               {t.writeOff}
             </button>
+            <button onClick={toggleUsage}
+              className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] ${showUsage ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
+              {t.trace || 'Trace'}
+            </button>
           </div>
         </td>
       </tr>
+      {showUsage && (
+        <tr className="bg-blue-50/50">
+          <td colSpan={11} className="px-3 py-2">
+            {usageLoading ? (
+              <p className="text-xs text-ios-tertiary">{t.loading}...</p>
+            ) : !usageTrail || usageTrail.length === 0 ? (
+              <p className="text-xs text-ios-tertiary">{t.noUsageData || 'No usage history found.'}</p>
+            ) : (
+              <div className="max-h-60 overflow-y-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="text-[10px] text-ios-tertiary uppercase border-b border-blue-100">
+                      <th className="text-left py-1 pr-2">{t.date}</th>
+                      <th className="text-left py-1 pr-2">{t.usageType || 'Type'}</th>
+                      <th className="text-left py-1 pr-2">{t.usageDetail || 'Details'}</th>
+                      <th className="text-right py-1">{t.quantity}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {usageTrail.map((entry, i) => (
+                      <tr key={i} className="border-b border-blue-50">
+                        <td className="py-1 pr-2 text-ios-secondary">{entry.date || '—'}</td>
+                        <td className="py-1 pr-2">
+                          {entry.type === 'order' && <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-medium">{t.usageOrder || 'Order'}</span>}
+                          {entry.type === 'writeoff' && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-medium">{t.writeOff}</span>}
+                          {entry.type === 'purchase' && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-medium">{t.usagePurchase || 'Purchase'}</span>}
+                        </td>
+                        <td className="py-1 pr-2 text-ios-label">
+                          {entry.type === 'order' && `${entry.orderId} — ${entry.customer} (${entry.status})`}
+                          {entry.type === 'writeoff' && `${entry.reason}${entry.notes ? ': ' + entry.notes : ''}`}
+                          {entry.type === 'purchase' && `${entry.supplier}${entry.notes ? ' — ' + entry.notes : ''}`}
+                        </td>
+                        <td className={`py-1 text-right font-medium tabular-nums ${entry.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                          {entry.quantity > 0 ? '+' : ''}{entry.quantity}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </td>
+        </tr>
+      )}
       {showWo && (
         <tr className="bg-ios-red/5">
           <td colSpan={11} className="px-3 py-2">

@@ -284,6 +284,95 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// GET /api/stock/:id/usage — trace where flowers went: orders that used this stock item,
+// write-offs, and PO receipts. Returns a chronological audit trail.
+router.get('/:id/usage', async (req, res, next) => {
+  try {
+    const stockItem = await db.getById(TABLES.STOCK, req.params.id);
+    const displayName = stockItem['Display Name'] || '';
+
+    // 1. Order lines referencing this stock item
+    const orderLines = await db.list(TABLES.ORDER_LINES, {
+      filterByFormula: `FIND("${req.params.id}", ARRAYJOIN({Stock Item}))`,
+      fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit'],
+    });
+
+    // Fetch parent orders for context (date, customer, status)
+    const orderIds = [...new Set(orderLines.flatMap(l => l.Order || []))];
+    const orders = orderIds.length > 0
+      ? await listByIds(TABLES.ORDERS, orderIds, {
+          fields: ['App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
+        })
+      : [];
+    const orderMap = {};
+    for (const o of orders) orderMap[o.id] = o;
+
+    // Fetch customer names
+    const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+    const customers = customerIds.length > 0
+      ? await listByIds(TABLES.CUSTOMERS, customerIds, { fields: ['Name', 'Nickname'] })
+      : [];
+    const customerMap = {};
+    for (const c of customers) customerMap[c.id] = c;
+
+    const usageOrders = orderLines.map(l => {
+      const orderId = l.Order?.[0];
+      const o = orderId ? orderMap[orderId] : null;
+      const custId = o?.Customer?.[0];
+      const cust = custId ? customerMap[custId] : null;
+      return {
+        type: 'order',
+        date: o?.['Order Date'] || o?.['Required By'] || null,
+        orderId: o?.['App Order ID'] || orderId || '',
+        customer: cust?.Name || cust?.Nickname || '',
+        status: o?.Status || '',
+        quantity: -(l.Quantity || 0),
+        flowerName: l['Flower Name'] || displayName,
+      };
+    });
+
+    // 2. Loss log entries for this stock item
+    const losses = TABLES.STOCK_LOSS_LOG ? await db.list(TABLES.STOCK_LOSS_LOG, {
+      filterByFormula: `FIND("${req.params.id}", ARRAYJOIN({Stock Item}))`,
+      fields: ['Date', 'Quantity', 'Reason', 'Notes'],
+    }).catch(() => []) : [];
+
+    const usageLosses = losses.map(l => ({
+      type: 'writeoff',
+      date: l.Date || null,
+      reason: l.Reason || '',
+      notes: l.Notes || '',
+      quantity: -(l.Quantity || 0),
+    }));
+
+    // 3. Purchase records (incoming stock)
+    const purchases = await db.list(TABLES.STOCK_PURCHASES, {
+      filterByFormula: `FIND("${req.params.id}", ARRAYJOIN({Flower}))`,
+      fields: ['Purchase Date', 'Quantity Purchased', 'Supplier', 'Price Per Unit', 'Notes'],
+    }).catch(() => []);
+
+    const usagePurchases = purchases.map(p => ({
+      type: 'purchase',
+      date: p['Purchase Date'] || null,
+      quantity: +(p['Quantity Purchased'] || 0),
+      supplier: p.Supplier || '',
+      costPerUnit: p['Price Per Unit'] || 0,
+      notes: p.Notes || '',
+    }));
+
+    // Combine and sort chronologically (newest first)
+    const trail = [...usageOrders, ...usageLosses, ...usagePurchases]
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    res.json({
+      stockItem: { id: stockItem.id, displayName, currentQty: stockItem['Current Quantity'] || 0 },
+      trail,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // PATCH /api/stock/:id — update prices, threshold, etc.
 // When Reorder Threshold changes, sync it across all batches of the same flower
 // (matched by Purchase Name) so the threshold applies uniformly.
