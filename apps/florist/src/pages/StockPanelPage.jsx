@@ -59,7 +59,7 @@ export default function StockPanelPage() {
       ]);
       setStock(stockRes.data);
       setCommittedMap(committedRes.data);
-    } catch { showToast(t.adjustError, 'error'); }
+    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
     finally   { setLoading(false); }
   }
 
@@ -69,7 +69,7 @@ export default function StockPanelPage() {
     try {
       const res = await client.post(`/stock/${id}/adjust`, { delta });
       setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
-    } catch { showToast(t.adjustError, 'error'); }
+    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
   async function handleWriteOff(id, quantity, reason) {
@@ -77,7 +77,7 @@ export default function StockPanelPage() {
       const res = await client.post(`/stock/${id}/write-off`, { quantity, reason: reason || undefined });
       setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
       showToast(`${quantity} stems written off`, 'success');
-    } catch { showToast(t.writeOffError, 'error'); }
+    } catch (err) { showToast(err.response?.data?.error || t.writeOffError, 'error'); }
   }
 
   async function handleReceive(data) {
@@ -86,14 +86,14 @@ export default function StockPanelPage() {
       showToast(t.success, 'success');
       setShowReceive(false);
       fetchStock();
-    } catch { showToast(t.receiveError, 'error'); }
+    } catch (err) { showToast(err.response?.data?.error || t.receiveError, 'error'); }
   }
 
   async function handlePatch(id, fields) {
     try {
       const res = await client.patch(`/stock/${id}`, fields);
       setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
-    } catch { showToast(t.adjustError, 'error'); }
+    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
   function toggleSort(key) {

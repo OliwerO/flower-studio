@@ -204,7 +204,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   // Effective price: Price Override || (sell total + delivery fee)
   const detailLineTotal = (detail?.orderLines || []).reduce((sum, l) =>
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
-  const detailDeliveryFee = Number(d['Delivery Fee'] || detail?.delivery?.['Delivery Fee'] || 0);
+  const detailDeliveryFee = Number(detail?.delivery?.['Delivery Fee'] || d['Delivery Fee'] || 0);
   const currentPrice = d['Price Override'] || (detailLineTotal > 0 ? detailLineTotal + detailDeliveryFee : (d['Sell Total'] || price) ) || 0;
 
   function statusLabel(s) {
@@ -219,7 +219,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
       }`}
     >
       {/* Unpaid warning — prominent banner for pickup orders */}
-      {!currentPaid && !isDelivery && currentStatus !== 'Cancelled' && (
+      {!currentPaid && currentStatus !== 'Cancelled' && (
         <div className="bg-red-50 border border-red-200 rounded-xl px-3 py-2 mb-3 flex items-center gap-2">
           <span className="text-red-500 text-sm">⚠</span>
           <span className="text-xs font-semibold text-red-700">{t.collectPayment || 'Collect payment before handing over'}</span>
@@ -339,7 +339,9 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                         setEditingBouquet(true);
                         // Lazy-load stock for the flower picker
                         if (stockItems.length === 0) {
-                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {
+                            showToast(t.loadError || 'Failed to load stock', 'error');
+                          });
                         }
                       }} className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
                     )}
@@ -617,7 +619,23 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                         className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
                       />
                     </div>
-                    <Row label={t.labelFee} value={detail.delivery['Delivery Fee'] ? `${detail.delivery['Delivery Fee']} zł` : null} />
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelFee}</span>
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          defaultValue={detail.delivery['Delivery Fee'] || ''}
+                          onBlur={e => {
+                            const val = e.target.value === '' ? 0 : Number(e.target.value);
+                            if (val !== Number(detail.delivery['Delivery Fee'] || 0)) patchDelivery({ 'Delivery Fee': val });
+                          }}
+                          placeholder="0"
+                          disabled={saving}
+                          className="w-20 text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                        />
+                        <span className="text-xs text-ios-tertiary">zł</span>
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
@@ -668,7 +686,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                   || (detail.orderLines || []).reduce(
                     (sum, l) => sum + Number(l['Sell Price Per Unit'] || 0) * Number(l['Quantity'] || 0), 0
                   );
-                const effectivePrice = sellTotal + Number(detail['Delivery Fee'] || 0);
+                const effectivePrice = sellTotal + Number(detail?.delivery?.['Delivery Fee'] || detail['Delivery Fee'] || 0);
                 if (!costTotal && !effectivePrice) return null;
                 const marginAmt = effectivePrice - costTotal;
                 const marginPct = effectivePrice > 0 ? Math.round((marginAmt / effectivePrice) * 100) : 0;

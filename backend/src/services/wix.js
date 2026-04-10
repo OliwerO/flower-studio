@@ -10,6 +10,7 @@ import { notifyNewOrder } from './telegram.js';
 import { logWebhookEvent } from './webhookLog.js';
 import { generateOrderId } from '../routes/settings.js';
 import { checkOversell } from './oversellCheck.js';
+import { DELIVERY_STATUS } from '../constants/statuses.js';
 
 
 /**
@@ -194,6 +195,7 @@ export async function processWixOrder(payload) {
       return null;
     }
 
+    const createdLines = [];
     for (const li of lineItems) {
       const productName = li.name || li.productName || li.catalogReference?.catalogItemName || 'Wix Item';
       const qty = li.quantity || 1;
@@ -213,7 +215,8 @@ export async function processWixOrder(payload) {
         lineFields['Stock Item'] = [matched.id];
       }
 
-      await db.create(TABLES.ORDER_LINES, lineFields);
+      const createdLine = await db.create(TABLES.ORDER_LINES, lineFields);
+      createdLines.push(createdLine);
 
       // No stock deduction for Wix orders — Wix "bouquets" don't map to
       // individual flower stock items. The florist opens the order later and
@@ -227,13 +230,9 @@ export async function processWixOrder(payload) {
 
     // 9b. Oversell check — compare ordered quantities against stock.
     // Doesn't block the order; just sends a Telegram alert if stock is short.
-    // Like a post-shipment quality gate: the order ships, but if we're short
-    // on materials, the production manager gets a heads-up to call the customer.
+    // Uses the lines we just created above instead of re-querying Airtable
+    // (ARRAYJOIN on linked fields returns display names, not record IDs).
     try {
-      const createdLines = await db.list(TABLES.ORDER_LINES, {
-        filterByFormula: `SEARCH('${sanitizeFormulaValue(order.id)}', ARRAYJOIN({Order}))`,
-        fields: ['Stock Item', 'Quantity', 'Flower Name'],
-      });
       await checkOversell(order.id, createdLines, customerName, customerPhone);
     } catch (oversellErr) {
       console.error('[WIX] Oversell check failed (non-blocking):', oversellErr.message);
@@ -253,7 +252,7 @@ export async function processWixOrder(payload) {
           || new Date().toISOString().split('T')[0],
         'Delivery Time': '',
         'Delivery Fee': 0, // studio adjusts later
-        Status: 'Pending',
+        Status: DELIVERY_STATUS.PENDING,
       });
       log('8-DELIVERY', `Delivery created → ${deliveryAddress}`);
     }

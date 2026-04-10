@@ -343,7 +343,7 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Broadcast all other status changes so delivery app stays in sync
-    if (newStatus && newStatus !== 'Ready') {
+    if (newStatus && newStatus !== ORDER_STATUS.READY) {
       broadcast({
         type: 'order_status_changed',
         orderId: order.id,
@@ -352,11 +352,11 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Cascade Order → Delivery status (mirrors the Delivery → Order cascade in deliveries.js)
-    if (newStatus === 'Out for Delivery' || newStatus === 'Delivered' || newStatus === 'Cancelled') {
+    if (newStatus === ORDER_STATUS.OUT_FOR_DELIVERY || newStatus === ORDER_STATUS.DELIVERED || newStatus === ORDER_STATUS.CANCELLED) {
       const deliveryIds = order['Deliveries'] || [];
       if (deliveryIds.length > 0) {
-        const deliveryFields = { Status: newStatus === 'Cancelled' ? 'Cancelled' : newStatus };
-        if (newStatus === 'Delivered') deliveryFields['Delivered At'] = new Date().toISOString();
+        const deliveryFields = { Status: newStatus === ORDER_STATUS.CANCELLED ? DELIVERY_STATUS.CANCELLED : newStatus };
+        if (newStatus === ORDER_STATUS.DELIVERED) deliveryFields['Delivered At'] = new Date().toISOString();
         await db.update(TABLES.DELIVERIES, deliveryIds[0], deliveryFields);
       }
     }

@@ -12,7 +12,7 @@ import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
-import { getConfig } from './settings.js';
+import { getConfig, getDriverOfDay } from './settings.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
@@ -342,6 +342,9 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
     const { stockItemId: rawStockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
+    if (!rawStockItemId && !flowerName?.trim()) {
+      return res.status(400).json({ error: 'PO line must have a stock item or flower name.' });
+    }
     // Auto-link or auto-create stock item
     let resolvedStockItemId = rawStockItemId || null;
     if (!resolvedStockItemId && flowerName) {
@@ -427,13 +430,14 @@ router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async 
 router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const { driverName } = req.body;
+    const resolvedDriver = driverName || getDriverOfDay() || 'Driver';
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
       Status: PO_STATUS.SENT,
-      'Assigned Driver': driverName || 'Nikita',
+      'Assigned Driver': resolvedDriver,
     });
 
     // SSE notification to driver
-    broadcast({ type: 'stock_pickup_assigned', stockOrderId: req.params.id, driverName: driverName || 'Nikita' });
+    broadcast({ type: 'stock_pickup_assigned', stockOrderId: req.params.id, driverName: resolvedDriver });
 
     res.json(updated);
   } catch (err) {

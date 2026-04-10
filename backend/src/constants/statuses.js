@@ -28,6 +28,7 @@ export const DELIVERY_STATUS = {
   PENDING:          'Pending',
   OUT_FOR_DELIVERY: 'Out for Delivery',
   DELIVERED:        'Delivered',
+  CANCELLED:        'Cancelled',
 };
 
 // ── Payment statuses ──
