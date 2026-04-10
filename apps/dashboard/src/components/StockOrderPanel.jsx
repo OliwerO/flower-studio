@@ -196,6 +196,16 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     }
   }
 
+  async function deleteDraftPO(orderId) {
+    try {
+      await client.delete(`/stock-orders/${orderId}`);
+      showToast(t.poDeleted || 'PO deleted', 'success');
+      fetchOrders();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
   // Resolve the driver currently shown in the dropdown for a given PO.
   // CRITICAL: UI display and send-payload MUST use the exact same fallback chain,
   // otherwise the owner sees "Nikita" but the PO silently goes to drivers[0].
@@ -554,6 +564,14 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         >
                           {order.Status === 'Draft' ? t.sendToDriver : (t.reassignDriver || t.sendToDriver)}
                         </button>
+                        {order.Status === 'Draft' && (
+                          <button
+                            onClick={() => { if (confirm(t.deletePOConfirm || 'Delete this draft PO?')) deleteDraftPO(order.id); }}
+                            className="px-3 py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium"
+                          >
+                            {t.deletePO || 'Delete PO'}
+                          </button>
+                        )}
                       </div>
                     </>
                   ) : (
@@ -862,6 +880,7 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   const [sellPriceManual, setSellPriceManual] = useState(Number(line['Sell Price']) > 0);
   const [farmer, setFarmer] = useState(line.Farmer || '');
   const [notes, setNotes] = useState(line.Notes || '');
+  const [lotSize, setLotSize] = useState(Number(line['Lot Size']) || 0);
 
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
@@ -874,6 +893,7 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     setSellPrice(itemSell > 0 ? String(itemSell) : (itemCost > 0 && targetMarkup ? String(Math.round(itemCost * targetMarkup)) : ''));
     setSellPriceManual(itemSell > 0);
     setFarmer(item.Farmer || '');
+    setLotSize(Number(item['Lot Size']) || 0);
     onUpdate(line.id, {
       'Flower Name': item['Display Name'],
       Supplier: item.Supplier || '',
@@ -919,6 +939,23 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           min="1"
           placeholder={t.quantity}
         />
+        <div className="flex items-center gap-1">
+          <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
+          <input
+            type="number"
+            value={lotSize || ''}
+            onChange={e => setLotSize(Number(e.target.value) || 0)}
+            onBlur={() => onUpdate(line.id, { 'Lot Size': lotSize })}
+            className="field-input w-14 text-center text-xs"
+            min="0"
+            placeholder="—"
+          />
+        </div>
+        {lotSize > 1 && qty > 0 && (
+          <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
+            = {Math.ceil(qty / lotSize)} × {lotSize}
+          </span>
+        )}
         <select
           value={line.Supplier || ''}
           onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
@@ -990,11 +1027,6 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           />
         </div>
       </div>
-      {line['Lot Size'] > 1 && (
-        <div className="text-[11px] text-ios-tertiary">
-          {t.lotSize}: {line['Lot Size']} → {Math.ceil(qty / line['Lot Size'])} × {line['Lot Size']}
-        </div>
-      )}
     </div>
   );
 }

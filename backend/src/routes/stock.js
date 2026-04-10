@@ -290,15 +290,28 @@ router.get('/:id/usage', async (req, res, next) => {
   try {
     const stockItem = await db.getById(TABLES.STOCK, req.params.id);
     const displayName = stockItem['Display Name'] || '';
+    const purchaseName = stockItem['Purchase Name'] || displayName;
+    const stockId = req.params.id;
 
-    // 1. Order lines referencing this stock item
+    // 1. Order lines — filter by Flower Name (linked record IDs aren't searchable
+    //    in Airtable formulas). Match both exact Display Name and Purchase Name.
+    const safeName = sanitizeFormulaValue(displayName);
+    const safePurchase = purchaseName !== displayName ? sanitizeFormulaValue(purchaseName) : null;
+    const nameFilter = safePurchase
+      ? `OR({Flower Name} = '${safeName}', {Flower Name} = '${safePurchase}')`
+      : `{Flower Name} = '${safeName}'`;
     const orderLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: `FIND("${req.params.id}", ARRAYJOIN({Stock Item}))`,
-      fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit'],
+      filterByFormula: nameFilter,
+      fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
+    });
+    // Verify Stock Item link matches (avoids false positives from same-name flowers)
+    const matchedLines = orderLines.filter(l => {
+      const linkedId = l['Stock Item']?.[0];
+      return linkedId === stockId || !linkedId; // include unlinked lines by name match
     });
 
-    // Fetch parent orders for context (date, customer, status)
-    const orderIds = [...new Set(orderLines.flatMap(l => l.Order || []))];
+    // Fetch parent orders for context
+    const orderIds = [...new Set(matchedLines.flatMap(l => l.Order || []))];
     const orders = orderIds.length > 0
       ? await listByIds(TABLES.ORDERS, orderIds, {
           fields: ['App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
@@ -307,7 +320,6 @@ router.get('/:id/usage', async (req, res, next) => {
     const orderMap = {};
     for (const o of orders) orderMap[o.id] = o;
 
-    // Fetch customer names
     const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
     const customers = customerIds.length > 0
       ? await listByIds(TABLES.CUSTOMERS, customerIds, { fields: ['Name', 'Nickname'] })
@@ -315,7 +327,7 @@ router.get('/:id/usage', async (req, res, next) => {
     const customerMap = {};
     for (const c of customers) customerMap[c.id] = c;
 
-    const usageOrders = orderLines.map(l => {
+    const usageOrders = matchedLines.map(l => {
       const orderId = l.Order?.[0];
       const o = orderId ? orderMap[orderId] : null;
       const custId = o?.Customer?.[0];
@@ -331,34 +343,46 @@ router.get('/:id/usage', async (req, res, next) => {
       };
     });
 
-    // 2. Loss log entries for this stock item
-    const losses = TABLES.STOCK_LOSS_LOG ? await db.list(TABLES.STOCK_LOSS_LOG, {
-      filterByFormula: `FIND("${req.params.id}", ARRAYJOIN({Stock Item}))`,
-      fields: ['Date', 'Quantity', 'Reason', 'Notes'],
-    }).catch(() => []) : [];
+    // 2. Loss log — fetch recent entries and filter by Stock Item link in JS
+    let usageLosses = [];
+    if (TABLES.STOCK_LOSS_LOG) {
+      try {
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+        const allLosses = await db.list(TABLES.STOCK_LOSS_LOG, {
+          filterByFormula: `NOT(IS_BEFORE({Date}, '${ninetyDaysAgo}'))`,
+          sort: [{ field: 'Date', direction: 'desc' }],
+        });
+        usageLosses = allLosses
+          .filter(l => l['Stock Item']?.[0] === stockId)
+          .map(l => ({
+            type: 'writeoff',
+            date: l.Date || null,
+            reason: l.Reason || '',
+            notes: l.Notes || '',
+            quantity: -(l.Quantity || 0),
+          }));
+      } catch { /* table may not exist */ }
+    }
 
-    const usageLosses = losses.map(l => ({
-      type: 'writeoff',
-      date: l.Date || null,
-      reason: l.Reason || '',
-      notes: l.Notes || '',
-      quantity: -(l.Quantity || 0),
-    }));
-
-    // 3. Purchase records (incoming stock)
-    const purchases = await db.list(TABLES.STOCK_PURCHASES, {
-      filterByFormula: `FIND("${req.params.id}", ARRAYJOIN({Flower}))`,
-      fields: ['Purchase Date', 'Quantity Purchased', 'Supplier', 'Price Per Unit', 'Notes'],
-    }).catch(() => []);
-
-    const usagePurchases = purchases.map(p => ({
-      type: 'purchase',
-      date: p['Purchase Date'] || null,
-      quantity: +(p['Quantity Purchased'] || 0),
-      supplier: p.Supplier || '',
-      costPerUnit: p['Price Per Unit'] || 0,
-      notes: p.Notes || '',
-    }));
+    // 3. Purchase records — fetch and filter by Flower link in JS
+    let usagePurchases = [];
+    try {
+      const allPurchases = await db.list(TABLES.STOCK_PURCHASES, {
+        filterByFormula: `{Supplier} != ''`,
+        sort: [{ field: 'Purchase Date', direction: 'desc' }],
+        maxRecords: 500,
+      });
+      usagePurchases = allPurchases
+        .filter(p => p.Flower?.[0] === stockId)
+        .map(p => ({
+          type: 'purchase',
+          date: p['Purchase Date'] || null,
+          quantity: +(p['Quantity Purchased'] || 0),
+          supplier: p.Supplier || '',
+          costPerUnit: p['Price Per Unit'] || 0,
+          notes: p.Notes || '',
+        }));
+    } catch { /* table may not exist */ }
 
     // Combine and sort chronologically (newest first)
     const trail = [...usageOrders, ...usageLosses, ...usagePurchases]
