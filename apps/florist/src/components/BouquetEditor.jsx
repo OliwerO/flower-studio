@@ -19,10 +19,13 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
   );
 
   // Filtered catalog: search + in-stock toggle
+  // Always show items with pending PO quantities even at qty=0
   const catalogItems = useMemo(() => {
     let result = visibleStock;
     if (!showOutOfStock) {
-      result = result.filter(s => (Number(s['Current Quantity']) || 0) > 0);
+      result = result.filter(s =>
+        (Number(s['Current Quantity']) || 0) > 0 || (editing.pendingPO?.[s.id]?.ordered || 0) > 0
+      );
     }
     const q = flowerSearch.toLowerCase().trim();
     if (!q) return result;
@@ -30,7 +33,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
       (s['Display Name'] || '').toLowerCase().includes(q) ||
       (s['Category'] || '').toLowerCase().includes(q)
     );
-  }, [visibleStock, flowerSearch, showOutOfStock]);
+  }, [visibleStock, flowerSearch, showOutOfStock, editing.pendingPO]);
 
   function addFromCatalog(s) {
     const existing = editing.editLines.findIndex(l => l.stockItemId === s.id);
