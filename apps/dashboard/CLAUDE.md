@@ -27,12 +27,8 @@ The owner needs two things: (1) daily operational control — same visibility as
 | StockReceiveForm.jsx | Record incoming supplier deliveries with batch tracking. |
 | BouquetSection.jsx / DeliverySection.jsx | Sub-sections of OrderDetailPanel for bouquet editing and delivery info. |
 
-## Dashboard vs Florist Feature Parity
-Both apps manage orders and stock, but with different implementations. When adding a feature to one, check if the other needs it too:
-- **Order editing**: Dashboard uses `OrderDetailPanel.jsx`; Florist uses `OrderCard.jsx` + `OrderDetailPage.jsx`
-- **Stock management**: Dashboard uses `StockTab.jsx`; Florist uses `StockPanelPage.jsx` + `StockItem.jsx`
-- **PO management**: Dashboard uses `StockOrderPanel.jsx`; Florist uses `PurchaseOrderPage.jsx`
-- **Order creation**: Dashboard uses `NewOrderTab.jsx` + `steps/`; Florist uses `NewOrderPage.jsx` + `components/steps/`
+## Dashboard ↔ Florist Feature Parity (IMPORTANT)
+The owner uses both apps — dashboard on desktop, florist app on mobile. **Every feature added here must also be added to the florist app** (and vice versa). If adding filters, inline editors, status actions, or any user-facing behavior, implement in both. See root CLAUDE.md for the full mapping of parallel files.
 
 ## State & Data Flow
 - Tab selection persisted in localStorage (`dashboard_tab`)

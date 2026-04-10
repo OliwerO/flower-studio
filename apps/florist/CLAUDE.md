@@ -44,6 +44,9 @@ The florist should see all relevant information at a glance — what to prepare 
 - Dark mode: `darkMode: 'class'` in Tailwind config
 - Inline editing pattern: `defaultValue` + `onBlur` → patch API call (no separate edit mode)
 
+## Florist ↔ Dashboard Feature Parity (IMPORTANT)
+The owner uses this app on mobile for the same daily tasks she does on the dashboard. **Every feature added here must also be added to the dashboard app** (and vice versa). See root CLAUDE.md for the full mapping of parallel files.
+
 ## Important Patterns
 - **OrderCard vs OrderDetailPage**: OrderCard is the collapsed/expanded card in the list. OrderDetailPage is the full-page view. Both can edit orders — keep them in sync when adding features.
 - **Stock filtering**: dated batch items (e.g. "Rose (14.Mar.)") at qty=0 are hidden from bouquet pickers but visible in stock management. Check `Step2Bouquet.jsx` and `useOrderEditing.js`.

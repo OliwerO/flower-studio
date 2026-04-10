@@ -73,6 +73,18 @@ When updating one record, related records often need updating too:
 - **Order date/time → Delivery date/time**: changing `Required By` or `Delivery Time` on an order cascades to the delivery record
 - **Order cancellation → Stock return**: handled by `cancelWithStockReturn()` in `orderService.js`, NOT by status change alone
 
+## Cross-App Feature Parity (IMPORTANT)
+When a feature is added to the florist app, it should also be added to the dashboard — and vice versa. The owner uses both apps (dashboard on desktop, florist app on mobile), so they must offer the same capabilities for shared domains (orders, stock, POs). If unsure whether a feature applies to both, ask.
+
+**Parallel implementations to keep in sync:**
+- Order editing: `OrderCard.jsx` + `OrderDetailPage.jsx` (florist) ↔ `OrderDetailPanel.jsx` (dashboard)
+- Stock management: `StockPanelPage.jsx` + `StockItem.jsx` (florist) ↔ `StockTab.jsx` (dashboard)
+- PO management: `PurchaseOrderPage.jsx` (florist) ↔ `StockOrderPanel.jsx` (dashboard)
+- Order creation: `NewOrderPage.jsx` + `steps/` (florist) ↔ `NewOrderTab.jsx` + `steps/` (dashboard)
+- Bouquet editing: `BouquetEditor.jsx` (florist) ↔ `BouquetSection.jsx` (dashboard)
+
+When adding filters, inline editors, status actions, or any user-facing behavior — implement in both apps.
+
 ## Known Pitfalls (prevent recurrence)
 These bug patterns have been found and fixed. Follow these rules to avoid reintroducing them:
 1. **Stale state after conversion** — when a component has both parent `order` props and local `detail` state, always derive display values (isDelivery, delivery fee, payment status) from `detail` (local state) when loaded, not `order` (parent prop). After a Pickup→Delivery conversion, the parent prop is stale.
