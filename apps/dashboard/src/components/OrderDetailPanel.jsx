@@ -138,9 +138,30 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
     }
   }
 
-  async function handleCancel() {
-    await patchOrder({ Status: 'Cancelled' });
-    setConfirmCancel(false);
+  async function handleCancel(returnStock = false) {
+    setSaving(true);
+    try {
+      if (returnStock) {
+        const res = await client.post(`/orders/${orderId}/cancel-with-return`);
+        const returned = res.data.returnedItems || [];
+        if (returned.length > 0) {
+          const summary = returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ');
+          showToast(`${t.orderCancelled || 'Order cancelled'}. ${t.stockReturned || 'Returned'}: ${summary}`, 'success');
+        } else {
+          showToast(t.orderCancelled || 'Order cancelled', 'success');
+        }
+      } else {
+        await patchOrder({ Status: 'Cancelled' });
+      }
+      const res = await client.get(`/orders/${orderId}`);
+      setOrder(res.data);
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setSaving(false);
+      setConfirmCancel(false);
+    }
   }
 
   if (loading) {
@@ -874,21 +895,30 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 {t.cancelOrder}
               </button>
             ) : (
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-ios-red">{t.cancelConfirm}</span>
-                <button
-                  onClick={handleCancel}
-                  disabled={saving}
-                  className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold"
-                >
-                  {t.confirm}
-                </button>
-                <button
-                  onClick={() => setConfirmCancel(false)}
-                  className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs"
-                >
-                  {t.cancel}
-                </button>
+              <div className="space-y-2">
+                <span className="text-xs text-ios-red block">{t.cancelConfirm}</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => handleCancel(true)}
+                    disabled={saving}
+                    className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold"
+                  >
+                    {t.cancelAndReturn || 'Cancel + return stock'}
+                  </button>
+                  <button
+                    onClick={() => handleCancel(false)}
+                    disabled={saving}
+                    className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold"
+                  >
+                    {t.cancelNoReturn || 'Cancel only'}
+                  </button>
+                  <button
+                    onClick={() => setConfirmCancel(false)}
+                    className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs"
+                  >
+                    {t.cancel}
+                  </button>
+                </div>
               </div>
             )}
           </>

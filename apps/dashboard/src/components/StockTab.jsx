@@ -531,6 +531,7 @@ export default function StockTab({ initialFilter }) {
                   <td className="px-2 py-2 text-ios-label uppercase tracking-wide">
                     {t.total || 'Total'} ({filtered.length})
                   </td>
+                  <td></td>
                   <td className="px-2 py-2 text-right text-ios-label text-base">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
                   </td>
@@ -540,7 +541,7 @@ export default function StockTab({ initialFilter }) {
                   <td className="px-2 py-2 text-right text-ios-label">
                     {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
-                  <td colSpan={7}></td>
+                  <td colSpan={6}></td>
                 </tr>
               </tfoot>
             )}
@@ -552,7 +553,7 @@ export default function StockTab({ initialFilter }) {
 }
 
 // Inline date editor — click the tag to reveal a date input, blur to save.
-function InlineDate({ value, onSave }) {
+function InlineDate({ value, displayName, onSave }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -582,7 +583,7 @@ function InlineDate({ value, onSave }) {
     );
   }
 
-  const dateTag = renderDateTag(null, value);
+  const dateTag = renderDateTag(displayName || null, value);
   return (
     <span onClick={startEdit} className="cursor-pointer" title={t.edit || 'Edit'}>
       {dateTag || <span className="text-xs text-ios-tertiary/40">—</span>}
@@ -613,7 +614,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
       <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
         <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{stockBaseName(item['Display Name'])}</td>
         <td className="px-2 py-1.5">
-          <InlineDate value={lastRestocked} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} />
+          <InlineDate value={lastRestocked} displayName={item['Display Name']} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} />
         </td>
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
           isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
