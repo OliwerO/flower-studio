@@ -367,7 +367,7 @@ export default function Step2Bouquet({
                 >
                   <div className="flex-1 min-w-0">
                     <div className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                      {renderStockName(s['Display Name'], s['Last Restocked'])}
+                      {renderStockName(s['Display Name'], qty > 0 ? s['Last Restocked'] : null)}
                     </div>
                     <div className="text-sm text-ios-tertiary">
                       <span className="font-bold text-brand-700">{Number(s['Current Sell Price']).toFixed(0)} zł</span>

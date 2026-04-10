@@ -161,7 +161,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                     >
                       <div className="flex-1 min-w-0">
                         <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                          {renderStockName(s['Display Name'], s['Last Restocked'])}
+                          {renderStockName(s['Display Name'], qty > 0 ? s['Last Restocked'] : null)}
                         </div>
                         <div className="text-xs text-ios-tertiary">
                           <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
