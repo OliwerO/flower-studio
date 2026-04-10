@@ -196,6 +196,16 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     }
   }
 
+  async function deleteDraftPO(orderId) {
+    try {
+      await client.delete(`/stock-orders/${orderId}`);
+      showToast(t.poDeleted || 'PO deleted', 'success');
+      fetchOrders();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
   // Resolve the driver currently shown in the dropdown for a given PO.
   // CRITICAL: UI display and send-payload MUST use the exact same fallback chain,
   // otherwise the owner sees "Nikita" but the PO silently goes to drivers[0].
@@ -554,6 +564,14 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         >
                           {order.Status === 'Draft' ? t.sendToDriver : (t.reassignDriver || t.sendToDriver)}
                         </button>
+                        {order.Status === 'Draft' && (
+                          <button
+                            onClick={() => { if (confirm(t.deletePOConfirm || 'Delete this draft PO?')) deleteDraftPO(order.id); }}
+                            className="px-3 py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium"
+                          >
+                            {t.deletePO || 'Delete PO'}
+                          </button>
+                        )}
                       </div>
                     </>
                   ) : (

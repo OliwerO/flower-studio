@@ -352,6 +352,27 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
   }
 });
 
+// DELETE /api/stock-orders/:id — delete an entire Draft PO (owner only).
+// Removes all its lines first, then the PO header.
+router.delete('/:id', authorize('stock-orders', ['owner']), async (req, res, next) => {
+  try {
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (po.Status !== PO_STATUS.DRAFT) {
+      return res.status(400).json({ error: `Only Draft POs can be deleted. This PO is "${po.Status}".` });
+    }
+    // Delete all lines first
+    const lineIds = po['Order Lines'] || [];
+    for (const lineId of lineIds) {
+      await db.deleteRecord(TABLES.STOCK_ORDER_LINES, lineId).catch(() => {});
+    }
+    await db.deleteRecord(TABLES.STOCK_ORDERS, req.params.id);
+    broadcast({ type: 'stock_order_deleted', stockOrderId: req.params.id });
+    res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /api/stock-orders/:id/lines/:lineId — remove a line from an editable PO
 router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {

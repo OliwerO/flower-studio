@@ -221,8 +221,8 @@ export default function StockTab({ initialFilter }) {
           onClick={() => setHideZero(!hideZero)}
           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
             hideZero
-              ? 'bg-brand-100 text-brand-700'
-              : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+              ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
+              : 'bg-gray-200 text-ios-label'
           }`}
         >
           {hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock')}
