@@ -269,11 +269,9 @@ router.get('/pending-po', async (req, res, next) => {
       }
     }
 
-    // Aggregate by stock item — Quantity Needed stores actual stems
-    // (qty × lotSize for new POs, or already lot-adjusted for auto-generated).
-    // For backward compat with old lines where qty was entered as lots,
-    // detect and adjust: if qty < lotSize, it's probably lots → multiply.
+    // Aggregate by stock item + backfill missing prices on linked stock items.
     const result = {};
+    const backfilledIds = new Set();
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0] || line._resolvedStockId;
       if (!stockId) continue;
@@ -295,6 +293,47 @@ router.get('/pending-po', async (req, res, next) => {
         if (po.plannedDate && (!result[stockId].plannedDate || po.plannedDate < result[stockId].plannedDate)) {
           result[stockId].plannedDate = po.plannedDate;
         }
+      }
+    }
+
+    // Backfill missing prices: find stock items in the result that have zero
+    // cost AND zero sell, then update from PO line data. Only touches items
+    // that were auto-created without prices — won't overwrite manual adjustments.
+    const backfillCandidates = {};
+    for (const line of allLines) {
+      const stockId = line['Stock Item']?.[0] || line._resolvedStockId;
+      if (!stockId || backfilledIds.has(stockId)) continue;
+      const lineCost = Number(line['Cost Price']) || 0;
+      const lineSell = Number(line['Sell Price']) || 0;
+      if (lineCost > 0 || lineSell > 0) {
+        backfillCandidates[stockId] = { cost: lineCost, sell: lineSell, supplier: line.Supplier || '' };
+        backfilledIds.add(stockId);
+      }
+    }
+    if (Object.keys(backfillCandidates).length > 0) {
+      // Batch-fetch to check current prices before overwriting
+      const ids = Object.keys(backfillCandidates);
+      const CHUNK = 100;
+      for (let i = 0; i < ids.length; i += CHUNK) {
+        const chunk = ids.slice(i, i + CHUNK);
+        try {
+          const items = await db.list(TABLES.STOCK, {
+            filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+            fields: ['Current Cost Price', 'Current Sell Price'],
+          });
+          for (const item of items) {
+            const hasCost = Number(item['Current Cost Price']) > 0;
+            const hasSell = Number(item['Current Sell Price']) > 0;
+            if (!hasCost || !hasSell) {
+              const src = backfillCandidates[item.id];
+              db.update(TABLES.STOCK, item.id, {
+                ...(!hasCost && src.cost > 0 ? { 'Current Cost Price': src.cost } : {}),
+                ...(!hasSell && src.sell > 0 ? { 'Current Sell Price': src.sell } : {}),
+                ...(src.supplier ? { Supplier: src.supplier } : {}),
+              }).catch(() => {});
+            }
+          }
+        } catch { /* skip batch */ }
       }
     }
 

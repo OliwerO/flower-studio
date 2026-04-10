@@ -662,8 +662,8 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   }
 
   return (
-    <div className="bg-gray-50 rounded-xl px-3 py-2.5 space-y-2">
-      {/* Row 1: Item + Remove */}
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-sm px-3.5 py-3 space-y-3">
+      {/* Header: Flower name + remove */}
       <div className="flex items-center gap-2">
         <div className="flex-1">
           <StockSearchInput stock={stock}
@@ -671,64 +671,75 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
             onChange={name => onUpdate(line.id, { 'Flower Name': name })}
             onSelect={handleStockSelect} />
         </div>
-        <button onClick={() => onRemove(line.id)} className="text-red-400 active:text-red-600 text-sm px-1">✕</button>
+        <button onClick={() => onRemove(line.id)} className="w-7 h-7 rounded-full bg-red-50 text-red-400 active:bg-red-100 active:text-red-600 text-sm flex items-center justify-center">✕</button>
       </div>
-      {/* Row 2: Qty + Lot Size + total stems */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1.5">
+
+      {/* Quantity row */}
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 bg-gray-50 rounded-xl px-2.5 py-1.5">
           <input type="number" value={qty}
             onChange={e => setQty(Number(e.target.value) || 0)}
             onBlur={() => {
               const stems = lotSize > 1 ? qty * lotSize : qty;
               onUpdate(line.id, { 'Quantity Needed': stems });
             }}
-            className="field-input w-14 text-sm text-center" min="1" placeholder={t.quantity || 'Qty'} />
-          <span className="text-[10px] text-ios-tertiary">×</span>
+            className="w-10 text-center text-sm font-bold bg-transparent outline-none" min="1" />
+          <span className="text-ios-tertiary text-xs">×</span>
           <input type="number" value={lotSize || ''}
             onChange={e => setLotSize(Number(e.target.value) || 0)}
             onBlur={() => {
               onUpdate(line.id, { 'Lot Size': lotSize, 'Quantity Needed': lotSize > 1 ? qty * lotSize : qty });
             }}
-            className="field-input w-14 text-center text-xs" min="0" placeholder={t.lotSize || 'Lot'} />
+            className="w-10 text-center text-sm bg-transparent outline-none" min="0" placeholder="lot" />
         </div>
         {lotSize > 1 && qty > 0 && (
-          <span className="text-sm text-ios-label font-semibold">
-            = {qty * lotSize} <span className="text-[10px] font-normal text-ios-tertiary">{t.stems || 'pcs'}</span>
+          <span className="text-base font-bold text-brand-700">
+            = {qty * lotSize} <span className="text-xs font-normal text-ios-tertiary">{t.stems || 'pcs'}</span>
           </span>
         )}
+        <div className="ml-auto">
+          <select value={line.Supplier || ''}
+            onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
+            className="field-input text-sm py-1.5">
+            <option value="">{t.supplier || 'Supplier'}...</option>
+            {(suppliers || []).map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+        </div>
       </div>
-      {/* Row 3: Supplier + Cost + Sell + Markup */}
+
+      {/* Prices row */}
       <div className="flex items-center gap-2">
-        <select value={line.Supplier || ''}
-          onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
-          className="field-input flex-1 text-sm">
-          <option value="">{t.supplier || 'Supplier'}...</option>
-          {(suppliers || []).map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-        <input type="number" step="0.01" value={costPrice}
-          onChange={e => handleCostChange(e.target.value)}
-          onBlur={() => onUpdate(line.id, { 'Cost Price': Number(costPrice) || 0, 'Sell Price': Number(sellPrice) || 0 })}
-          className="field-input w-16 text-sm text-right" placeholder={t.costPrice || 'Cost'} />
-        <input type="number" step="0.01" value={sellPrice}
-          onChange={e => handleSellChange(e.target.value)}
-          onBlur={() => onUpdate(line.id, { 'Sell Price': Number(sellPrice) || 0 })}
-          className="field-input w-16 text-sm text-right" placeholder={t.sellPrice || 'Sell'} />
+        <div className="flex items-center gap-1 flex-1">
+          <span className="text-[10px] text-ios-tertiary shrink-0">{t.costPrice || 'Cost'}:</span>
+          <input type="number" step="0.01" value={costPrice}
+            onChange={e => handleCostChange(e.target.value)}
+            onBlur={() => onUpdate(line.id, { 'Cost Price': Number(costPrice) || 0, 'Sell Price': Number(sellPrice) || 0 })}
+            className="field-input w-full text-sm text-right py-1" placeholder="0" />
+        </div>
+        <div className="flex items-center gap-1 flex-1">
+          <span className="text-[10px] text-ios-tertiary shrink-0">{t.sellPrice || 'Sell'}:</span>
+          <input type="number" step="0.01" value={sellPrice}
+            onChange={e => handleSellChange(e.target.value)}
+            onBlur={() => onUpdate(line.id, { 'Sell Price': Number(sellPrice) || 0 })}
+            className="field-input w-full text-sm text-right py-1" placeholder="0" />
+        </div>
         {computedMarkup && (
           <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
             Number(computedMarkup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
           }`}>×{computedMarkup}</span>
         )}
       </div>
-      {/* Row 4: Farmer + Notes */}
+
+      {/* Farmer + Notes row */}
       <div className="flex items-center gap-2">
         <input type="text" value={farmer}
           onChange={e => setFarmer(e.target.value)}
           onBlur={() => onUpdate(line.id, { Farmer: farmer })}
-          className="field-input flex-1 text-sm" placeholder={t.farmer || 'Farmer'} />
+          className="field-input flex-1 text-sm py-1" placeholder={t.farmer || 'Farmer'} />
         <input type="text" value={notes}
           onChange={e => setNotes(e.target.value)}
           onBlur={() => onUpdate(line.id, { Notes: notes })}
-          className="field-input flex-1 text-sm" placeholder={t.po?.notes || 'Notes'} />
+          className="field-input flex-1 text-sm py-1" placeholder={t.po?.notes || 'Notes'} />
       </div>
     </div>
   );
