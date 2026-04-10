@@ -151,6 +151,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                   const low = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
                   const out = qty <= 0;
                   const poQty = editing.pendingPO?.[s.id]?.ordered || 0;
+                  const poDate = editing.pendingPO?.[s.id]?.plannedDate || null;
+                  const poDateLabel = poDate ? (() => { const d = new Date(poDate); return isNaN(d) ? null : `${d.getDate()}.${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}.`; })() : null;
                   return (
                     <button
                       key={s.id}
@@ -169,7 +171,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                           <span> · {qty} pcs</span>
                           {low && !out && <span className="text-ios-orange"> · low</span>}
                           {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
-                          {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {t.onOrder || 'on order'}</span>}
+                          {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
                         </div>
                       </div>
                       {inCart && (
