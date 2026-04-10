@@ -210,7 +210,9 @@ router.get('/pending-po', async (req, res, next) => {
       }
     }
 
-    // Resolve unlinked lines by matching Flower Name → Stock Item Display Name
+    // Resolve unlinked lines by matching Flower Name → Stock Item Display Name.
+    // If no match found, auto-create a stock item with qty=0 so the flower
+    // appears in the bouquet picker. Also link the PO line for future consistency.
     if (unlinked.length > 0) {
       const uniqueNames = [...new Set(unlinked.map(u => u.name))];
       const nameToId = {};
@@ -222,12 +224,30 @@ router.get('/pending-po', async (req, res, next) => {
             fields: ['Display Name'],
             maxRecords: 1,
           });
-          if (matches.length > 0) nameToId[name] = matches[0].id;
+          if (matches.length > 0) {
+            nameToId[name] = matches[0].id;
+          } else {
+            // Auto-create stock item so the flower shows up in pickers
+            const created = await db.create(TABLES.STOCK, {
+              'Display Name': name,
+              'Purchase Name': name,
+              'Current Quantity': 0,
+              Category: 'Other',
+              Active: true,
+            });
+            nameToId[name] = created.id;
+            console.log(`[STOCK] Auto-created "${name}" (${created.id}) from pending PO line`);
+          }
         } catch { /* skip */ }
       }
+      // Link resolved/created stock items back to PO lines (fire-and-forget)
       for (const u of unlinked) {
         if (nameToId[u.name]) {
           allLines[u.idx]._resolvedStockId = nameToId[u.name];
+          const lineId = allLines[u.idx].id;
+          if (lineId) {
+            db.update(TABLES.STOCK_ORDER_LINES, lineId, { 'Stock Item': [nameToId[u.name]] }).catch(() => {});
+          }
         }
       }
     }
