@@ -885,7 +885,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           </button>
         )}
 
-        {!isTerminal && (
+        {o.Status !== 'Cancelled' && (
           <>
             {!confirmCancel ? (
               <button
