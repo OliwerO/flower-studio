@@ -145,11 +145,18 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
         notes: formNotes,
         driver: formDriver,
         plannedDate: formPlannedDate || null,
-        lines: formLines.filter(l => l.flowerName).map(l => ({
-          ...l,
-          costPrice: Number(l.costPrice) || 0,
-          sellPrice: Number(l.sellPrice) || 0,
-        })),
+        lines: formLines.filter(l => l.flowerName).map(l => {
+          const ls = Number(l.lotSize) || 0;
+          const rawQty = Number(l.quantity) || 1;
+          // Quantity field = number of lots; store actual stems
+          const quantity = ls > 1 ? rawQty * ls : rawQty;
+          return {
+            ...l,
+            quantity,
+            costPrice: Number(l.costPrice) || 0,
+            sellPrice: Number(l.sellPrice) || 0,
+          };
+        }),
       });
       showToast(t.stockOrderCreated);
       setShowForm(false);
@@ -288,10 +295,11 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
               </div>
               {lines.map(line => {
                 const ls = Number(line.lotSize) || 0;
-                const lotsNeeded = ls > 1 ? Math.ceil((line.quantity || 0) / ls) : 0;
+                const lineQty = Number(line.quantity) || 0;
+                // qty field = lots; total stems = qty × lotSize
+                const totalStems = ls > 1 ? lineQty * ls : lineQty;
                 const lineCost = Number(line.costPrice) || 0;
                 const lineSell = Number(line.sellPrice) || 0;
-                const lineQty = Number(line.quantity) || 0;
                 const lineMarkup = lineCost > 0 && lineSell > 0 ? (lineSell / lineCost).toFixed(1) : null;
                 return (
                 <div key={line._idx} className="px-3 py-2 border-t border-gray-100 space-y-2">
@@ -325,9 +333,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         placeholder="—"
                       />
                     </div>
-                    {lotsNeeded > 0 && (
+                    {ls > 1 && lineQty > 0 && (
                       <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
-                        = {lotsNeeded} × {ls}
+                        = {lineQty} × {ls} = {totalStems}
                       </span>
                     )}
                     <select
@@ -412,22 +420,28 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
             + {t.addLine}
           </button>
 
-          {/* Grand total — uses lot-rounded quantities for cost calculation */}
+          {/* Grand total — qty = lots, total stems = qty × lotSize */}
           {(() => {
             const grandCost = formLines.reduce((sum, l) => {
               const qty = Number(l.quantity) || 0;
               const ls = Number(l.lotSize) || 0;
-              const effectiveQty = ls > 1 ? Math.ceil(qty / ls) * ls : qty;
-              return sum + effectiveQty * (Number(l.costPrice) || 0);
+              const totalStems = ls > 1 ? qty * ls : qty;
+              return sum + totalStems * (Number(l.costPrice) || 0);
             }, 0);
             const grandSell = formLines.reduce((sum, l) => {
               const qty = Number(l.quantity) || 0;
               const ls = Number(l.lotSize) || 0;
-              const effectiveQty = ls > 1 ? Math.ceil(qty / ls) * ls : qty;
-              return sum + effectiveQty * (Number(l.sellPrice) || 0);
+              const totalStems = ls > 1 ? qty * ls : qty;
+              return sum + totalStems * (Number(l.sellPrice) || 0);
+            }, 0);
+            const grandStems = formLines.reduce((sum, l) => {
+              const qty = Number(l.quantity) || 0;
+              const ls = Number(l.lotSize) || 0;
+              return sum + (ls > 1 ? qty * ls : qty);
             }, 0);
             return grandCost > 0 ? (
               <div className="flex items-center gap-4 text-sm px-1">
+                <span className="text-ios-tertiary">{t.totalStems || 'Stems'}: <span className="font-semibold text-ios-label">{grandStems}</span></span>
                 <span className="text-ios-tertiary">{t.costTotal}: <span className="font-semibold text-ios-label">{grandCost.toFixed(0)} {t.zl}</span></span>
                 {grandSell > 0 && (
                   <span className="text-ios-tertiary">{t.sellTotal}: <span className="font-semibold text-ios-green">{grandSell.toFixed(0)} {t.zl}</span></span>
@@ -874,13 +888,17 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
 // Inline editor for a single Draft PO line — flower search, qty, cost, sell, supplier, farmer, notes.
 // Auto-saves on blur so changes persist immediately without a "save" button.
 function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
-  const [qty, setQty] = useState(line['Quantity Needed'] || 1);
+  const storedLs = Number(line['Lot Size']) || 0;
+  const storedQty = Number(line['Quantity Needed']) || 1;
+  // Display qty as lots (user enters lots, not stems)
+  const initLots = storedLs > 1 ? Math.max(1, Math.round(storedQty / storedLs)) : storedQty;
+  const [qty, setQty] = useState(initLots);
   const [costPrice, setCostPrice] = useState(line['Cost Price'] || '');
   const [sellPrice, setSellPrice] = useState(line['Sell Price'] || '');
   const [sellPriceManual, setSellPriceManual] = useState(Number(line['Sell Price']) > 0);
   const [farmer, setFarmer] = useState(line.Farmer || '');
   const [notes, setNotes] = useState(line.Notes || '');
-  const [lotSize, setLotSize] = useState(Number(line['Lot Size']) || 0);
+  const [lotSize, setLotSize] = useState(storedLs);
 
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
@@ -934,7 +952,10 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           type="number"
           value={qty}
           onChange={e => setQty(Number(e.target.value) || 0)}
-          onBlur={() => onUpdate(line.id, { 'Quantity Needed': qty })}
+          onBlur={() => {
+            const stems = lotSize > 1 ? qty * lotSize : qty;
+            onUpdate(line.id, { 'Quantity Needed': stems });
+          }}
           className="field-input w-16 text-sm text-center"
           min="1"
           placeholder={t.quantity}
@@ -945,7 +966,9 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
             type="number"
             value={lotSize || ''}
             onChange={e => setLotSize(Number(e.target.value) || 0)}
-            onBlur={() => onUpdate(line.id, { 'Lot Size': lotSize })}
+            onBlur={() => {
+              onUpdate(line.id, { 'Lot Size': lotSize, 'Quantity Needed': lotSize > 1 ? qty * lotSize : qty });
+            }}
             className="field-input w-14 text-center text-xs"
             min="0"
             placeholder="—"
@@ -953,7 +976,7 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
         </div>
         {lotSize > 1 && qty > 0 && (
           <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
-            = {Math.ceil(qty / lotSize)} × {lotSize}
+            = {qty} × {lotSize} = {qty * lotSize}
           </span>
         )}
         <select

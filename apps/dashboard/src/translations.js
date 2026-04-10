@@ -200,6 +200,7 @@ const en = {
   bouquetContents:  'Bouquet contents',
   costTotal:        'Cost total',
   sellTotal:        'Sell total',
+  totalStems:       'Stems',
   refreshStock:     'Refresh stock',
   noStockFound:     'No flowers found.',
 
@@ -831,6 +832,7 @@ const ru = {
   bouquetContents:  'Состав букета',
   costTotal:        'Себестоимость',
   sellTotal:        'Итого продажа',
+  totalStems:       'Стебли',
   refreshStock:     'Обновить склад',
   noStockFound:     'Цветы не найдены.',
 

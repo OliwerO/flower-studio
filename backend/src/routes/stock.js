@@ -191,7 +191,7 @@ router.get('/pending-po', async (req, res, next) => {
       const chunk = allLineIds.slice(i, i + CHUNK);
       const chunkLines = await db.list(TABLES.STOCK_ORDER_LINES, {
         filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders'],
+        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders', 'Lot Size'],
       });
       allLines.push(...chunkLines);
     }
@@ -232,13 +232,20 @@ router.get('/pending-po', async (req, res, next) => {
       }
     }
 
-    // Aggregate by stock item
+    // Aggregate by stock item — Quantity Needed stores actual stems
+    // (qty × lotSize for new POs, or already lot-adjusted for auto-generated).
+    // For backward compat with old lines where qty was entered as lots,
+    // detect and adjust: if qty < lotSize, it's probably lots → multiply.
     const result = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0] || line._resolvedStockId;
       if (!stockId) continue;
-      const qty = Number(line['Quantity Needed']) || 0;
-      if (qty <= 0) continue;
+      const rawQty = Number(line['Quantity Needed']) || 0;
+      if (rawQty <= 0) continue;
+      const lotSize = Number(line['Lot Size']) || 0;
+      const qty = lotSize > 1 && rawQty < lotSize
+        ? rawQty * lotSize   // old format: qty is lot count
+        : rawQty;            // new format: qty is already stems
 
       if (!result[stockId]) result[stockId] = { ordered: 0, pos: [] };
       result[stockId].ordered += qty;
