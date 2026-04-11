@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
+import PremadeBouquetCard from '../components/PremadeBouquetCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
 import { OrderListSkeleton } from '../components/Skeleton.jsx';
@@ -12,8 +13,11 @@ import t from '../translations.js';
 // Key for dismissing stock alerts per session
 const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
 
-// View modes: 'active' (default) shows non-terminal orders, 'completed' shows past orders
-const VIEW_MODES = { ACTIVE: 'active', COMPLETED: 'completed' };
+// View modes:
+//   active — non-terminal orders (florist's default view)
+//   completed — past/terminal orders
+//   premade — premade-bouquet inventory (composition without an order attached)
+const VIEW_MODES = { ACTIVE: 'active', COMPLETED: 'completed', PREMADE: 'premade' };
 
 // Status filters for active view (non-terminal statuses)
 const ACTIVE_STATUSES = ['', 'New', 'Ready', 'Out for Delivery'];
@@ -82,6 +86,7 @@ export default function OrderListPage() {
   const { role } = useAuth();
   const isOwner = role === 'owner';
   const [orders, setOrders]         = useState([]);
+  const [premadeBouquets, setPremadeBouquets] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [viewMode, setViewMode]     = useState(VIEW_MODES.ACTIVE);
   const [date, setDate]             = useState(''); // only used in completed view
@@ -107,6 +112,14 @@ export default function OrderListPage() {
   const fetchOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
+      // Premade view fetches from a different endpoint — no status/date filters.
+      if (viewMode === VIEW_MODES.PREMADE) {
+        const res = await client.get('/premade-bouquets');
+        setPremadeBouquets(res.data);
+        initialLoaded.current = true;
+        return;
+      }
+
       const params = {};
       if (status) params.status = status;
 
@@ -138,6 +151,23 @@ export default function OrderListPage() {
       setLoading(false);
     }
   }, [viewMode, date, status]);
+
+  // Premade count — shown as a badge on the filter chip even when not in premade view.
+  const [premadeCount, setPremadeCount] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    async function fetchCount() {
+      try {
+        const res = await client.get('/premade-bouquets');
+        if (!cancelled) setPremadeCount(res.data.length);
+      } catch {
+        // Non-critical — badge just won't appear
+      }
+    }
+    fetchCount();
+    const interval = setInterval(fetchCount, 30000);
+    return () => { cancelled = true; clearInterval(interval); };
+  }, [orders.length, premadeBouquets.length]);
 
   useEffect(() => {
     initialLoaded.current = false;
@@ -277,7 +307,7 @@ export default function OrderListPage() {
 
       {/* Filters */}
       <div className="px-4 py-3 max-w-2xl mx-auto flex flex-col gap-2">
-        {/* View mode toggle: Active / Completed */}
+        {/* View mode toggle: Active / Completed / Premade */}
         <div className="flex gap-2 items-center">
           <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1">
             <button
@@ -299,6 +329,23 @@ export default function OrderListPage() {
               }`}
             >
               {t.completedOrders}
+            </button>
+            <button
+              onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); }}
+              className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+                viewMode === VIEW_MODES.PREMADE
+                  ? 'bg-brand-600 text-white'
+                  : 'text-ios-secondary active:bg-ios-fill'
+              }`}
+            >
+              {t.premadeBouquets}
+              {premadeCount > 0 && (
+                <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                  viewMode === VIEW_MODES.PREMADE ? 'bg-white text-brand-600' : 'bg-brand-600 text-white'
+                }`}>
+                  {premadeCount}
+                </span>
+              )}
             </button>
           </div>
           <button onClick={fetchOrders} className="h-9 w-9 rounded-full bg-white border border-ios-separator shadow-sm flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
@@ -408,6 +455,25 @@ export default function OrderListPage() {
       <main className="px-4 pb-28 max-w-2xl mx-auto">
         {loading ? (
           <OrderListSkeleton count={5} />
+        ) : viewMode === VIEW_MODES.PREMADE ? (
+          premadeBouquets.length === 0 ? (
+            <div className="text-center mt-20">
+              <p className="text-4xl mb-3">🌸</p>
+              <p className="text-ios-tertiary">{t.premadeBouquetEmpty}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2.5 mt-1">
+              {premadeBouquets.map(bouquet => (
+                <PremadeBouquetCard
+                  key={bouquet.id}
+                  bouquet={bouquet}
+                  isOwner={isOwner}
+                  onRemoved={(id) => setPremadeBouquets(prev => prev.filter(b => b.id !== id))}
+                  onMatchClicked={(id) => navigate('/orders/new', { state: { matchPremadeId: id } })}
+                />
+              ))}
+            </div>
+          )
         ) : orders.length === 0 ? (
           <div className="text-center mt-20">
             <p className="text-4xl mb-3">🌸</p>
@@ -444,6 +510,14 @@ export default function OrderListPage() {
             >
               <span className="text-sm font-semibold text-ios-label">{t.intake.fabLabel}</span>
               <span className="w-10 h-10 rounded-full bg-amber-500 text-white text-lg flex items-center justify-center">📋</span>
+            </button>
+            {/* Premade bouquet option — compose without a customer */}
+            <button
+              onClick={() => { setFabOpen(false); navigate('/premade-bouquets/new'); }}
+              className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active-scale"
+            >
+              <span className="text-sm font-semibold text-ios-label">{t.fabPremade}</span>
+              <span className="w-10 h-10 rounded-full bg-pink-500 text-white text-lg flex items-center justify-center">💐</span>
             </button>
             {/* Manual new order option */}
             <button

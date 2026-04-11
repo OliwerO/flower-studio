@@ -25,6 +25,106 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-13 | Stock Order Lines | **New table** — PO lines (Flower Name, Quantity Needed, Lot Size, Driver Status, Supplier, Cost Price, Sell Price, Notes, Quantity Found, Quantity Accepted, Write Off Qty, Eval Status, Price Needs Review, Alt Supplier, Alt Quantity Found, Alt Flower Name, Alt Cost, Farmer, links: Stock Orders, Stock Item) | ✅ All fields exist |
 | 2026-03-17 | Product Config | New fields: `Description` (Long text), `Translations` (Long text/JSON) | ✅ Already created |
 | 2026-03-18 | Florist Hours | New field: `Rate Type` (Single line text) — stores rate type name per entry | ❌ |
+| 2026-04-11 | Premade Bouquets | **New table** — standalone bouquet compositions the florist prepares before any order. Fields: `Name` (Single line text, required), `Created At` (Created time, auto), `Created By` (Single line text), `Price Override` (Number, optional), `Notes` (Long text), `Lines` (link → Premade Bouquet Lines). | ❌ |
+| 2026-04-11 | Premade Bouquet Lines | **New table** — line items for a premade bouquet. Fields: `Premade Bouquet` (link → Premade Bouquets), `Stock Item` (link → Stock, required), `Flower Name` (Single line text), `Quantity` (Number), `Cost Price Per Unit` (Number, snapshot), `Sell Price Per Unit` (Number, snapshot). | ❌ |
+
+### Env vars
+
+Add to `.env.dev` and `.env` (before the feature ships):
+
+```
+AIRTABLE_PREMADE_BOUQUETS_TABLE=tbl...       # Premade Bouquets table ID
+AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
+```
+
+---
+
+## 2026-04-11 — Premade Bouquets
+
+A new flow that lets the florist compose bouquets **before** any order exists —
+"display" bouquets prepared each day that walk-in clients or Instagram/Wix
+buyers can later match to. Stock is deducted the moment the bouquet is built;
+if nobody buys it the flowers are returned to stock; if a buyer is matched a
+real order is created and the premade record is consumed (no re-deduction).
+
+### Airtable (dev base)
+Two new tables: `Premade Bouquets` and `Premade Bouquet Lines` (see schema
+table above). Must be created in production before go-live.
+
+### Backend
+- `services/premadeBouquetService.js` (new) — `createPremadeBouquet`,
+  `listPremadeBouquets`, `getPremadeBouquet`, `updatePremadeBouquet`,
+  `returnPremadeBouquetToStock`, `matchPremadeBouquetToOrder`. All stock
+  mutations run through the existing `atomicStockAdjust` queue so concurrent
+  edits are serialized.
+- `services/orderService.js:55` — `createOrder()` now accepts an internal
+  `opts.skipStockDeduction` flag. Used only by the match flow, where the
+  stock hold was already placed when the premade was built.
+- `routes/premadeBouquets.js` (new) — 7 endpoints (`GET`, `POST`, `PATCH`,
+  `PUT /lines`, `POST /return-to-stock`, `POST /match`).
+- `middleware/auth.js:27` — added `premade-bouquets` resource; owner and
+  florist allowed, driver blocked.
+- `config/airtable.js` — two new `TABLES.PREMADE_BOUQUETS*` env-var hooks.
+- `services/airtableSchema.js` — expected-fields validation for the two new
+  tables (catches field-name drift at boot, not at runtime).
+- `services/notifications.js` — three new SSE event types:
+  `premade_bouquet_created`, `premade_bouquet_matched`,
+  `premade_bouquet_returned`.
+- `__tests__/premadeBouquetService.test.js` (new) — 9 unit tests covering
+  create happy path, rollback, validation guards, return-to-stock, match-to-order
+  (including confirmation that the match flow doesn't re-deduct stock and
+  carries over the price override).
+
+### Florist App (`apps/florist`)
+- `pages/OrderListPage.jsx` — third FAB option ("Готовый букет" → new
+  composition page); new "Готовые букеты" view-mode chip on the orders list
+  with a live count badge; in that view the page renders a list of
+  `PremadeBouquetCard` instead of `OrderCard`.
+- `pages/PremadeBouquetCreatePage.jsx` (new, route `/premade-bouquets/new`) —
+  name + notes + embedded `Step2Bouquet` picker + save button.
+- `components/PremadeBouquetCard.jsx` (new) — expandable card with "Продано"
+  and "Вернуть в склад" actions.
+- `components/steps/Step2Bouquet.jsx` — accepts new `premadeBouquets` +
+  `matchPremadeId` + `onSelectPremade` + `onUnlinkPremade` props. When a
+  premade is locked in, the catalog and editable cart hide and a read-only
+  composition preview replaces them.
+- `pages/NewOrderPage.jsx` — fetches premade bouquets; handles
+  `location.state.matchPremadeId` (Path A — "Sold" button on inventory) and
+  the in-wizard "tap a premade" flow (Path B); on submit routes through
+  `POST /api/premade-bouquets/:id/match` when locked.
+- `hooks/useNotifications.js` — toasts for the three new SSE events.
+- `App.jsx` — new route `/premade-bouquets/new`.
+
+### Dashboard App (`apps/dashboard`)
+Mirrors the florist parity per CLAUDE.md.
+- `components/OrdersTab.jsx` — new "💐 Готовые букеты" chip; when active the
+  tab renders `PremadeBouquetList` instead of the orders table.
+- `components/PremadeBouquetList.jsx` (new) — expandable row list, matches
+  the orders table density. Has a "+ Create premade bouquet" button in the
+  header that opens `PremadeBouquetCreateModal`.
+- `components/PremadeBouquetCreateModal.jsx` (new) — inline modal that
+  reuses `Step2Bouquet` + name/notes/price fields for composition.
+- `components/NewOrderTab.jsx` — accepts `initialFilter.matchPremadeId`;
+  fetches available premades; Path A (from orders tab "Sold" button) and
+  Path B (select premade inside Step 2) both route through the match
+  endpoint on submit.
+- `components/steps/Step2Bouquet.jsx` — same props + behavior as florist
+  version (premade list on top, lock banner, read-only cart).
+- `pages/DashboardPage.jsx` — passes `navigateTo` down to `OrdersTab` and
+  `initialFilter` to `NewOrderTab` so cross-tab "Sold" navigation works.
+
+### Translations
+Added ~20 new keys per language to both `apps/florist/src/translations.js`
+and `apps/dashboard/src/translations.js` (premade bouquet, inventory, match
+to client, return to stock, locked banner, etc.).
+
+### Known trade-offs
+- **Florist can't edit a premade bouquet's line composition after save.**
+  You can return it to stock and re-create it. Future work: surface the
+  `PUT /api/premade-bouquets/:id/lines` endpoint in the card UI.
+- **No Wix sync yet.** The bouquets live only in Airtable. If the owner
+  wants to advertise them on the storefront we need a new sync integration.
+- **No photo/advertised-text fields yet.** Name + notes only for v1.
 
 ---
 

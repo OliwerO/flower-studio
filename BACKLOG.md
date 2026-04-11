@@ -127,6 +127,7 @@ Features and improvements tracked against original build phases.
 - [x] **Dashboard: driver-of-day cascade** — auto-assigns to all unassigned deliveries for today
 - [x] **Dashboard Step2Bouquet key fix** — uses stable identity key (no quantity)
 - [x] **Dark mode (florist app)** — system preference + manual toggle, iOS dark palette, ThemeContext
+- [x] **Premade bouquets** (2026-04-11) — florist composes display bouquets without a customer; inventory view with "Sold"/"Return to stock" actions; match-to-client flow creates an order and consumes the premade; supports both paths (from inventory card or picked inside Step 2 of the new-order wizard). Cross-app parity on florist + dashboard. Backend: new `Premade Bouquets` + `Premade Bouquet Lines` tables, `premadeBouquetService.js`, 7 routes, 9 unit tests.
 
 ---
 
@@ -137,6 +138,13 @@ Features and improvements tracked against original build phases.
 - [ ] **Mobile responsiveness on actual devices** — verify florist on iPad, delivery on iPhone, dashboard on desktop
 - [ ] **E2E test** — 5 orders through full lifecycle (delivery + pickup paths) against dev base
 - [ ] **Phone format validation** — normalize phone numbers on input
+
+### Premade Bouquets — v2 follow-ups
+- [ ] **Edit premade lines** — surface `PUT /api/premade-bouquets/:id/lines` in the card UI so the florist can add/remove flowers without returning + re-creating the bouquet
+- [ ] **Photo attachment** — add `Photo` attachment field + upload UI for display/advertising
+- [ ] **Freshness warning** — highlight premade bouquets older than N days using `Created At`
+- [ ] **Wix storefront sync** — project premade bouquets as purchasable products on the storefront (needs decision on Wix product identity, checkout flow, order source mapping)
+- [ ] **Metrics** — track premade sell-through vs. return-to-stock rate per week, include in owner dashboard
 
 ### Phase 10 — Excel Migration Script
 - [ ] **Import historical orders** — parse owner's Excel spreadsheets into App Orders + Order Lines

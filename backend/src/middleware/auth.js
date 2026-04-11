@@ -25,8 +25,8 @@ const DRIVER_PINS = Object.entries(process.env)
 
 // Route access per role
 const ROLE_ACCESS = {
-  owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'stock-orders', 'auth', 'admin'],
-  florist: ['orders', 'customers', 'stock', 'stock-purchases', 'stock-orders', 'deliveries'],
+  owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'stock-orders', 'auth', 'admin', 'premade-bouquets'],
+  florist: ['orders', 'customers', 'stock', 'stock-purchases', 'stock-orders', 'deliveries', 'premade-bouquets'],
   driver:  ['deliveries', 'stock-orders', 'auth'],
 };
 

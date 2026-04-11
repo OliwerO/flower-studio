@@ -50,9 +50,11 @@ export async function autoMatchStock(lines) {
  * Create order + lines + delivery atomically with rollback on failure.
  * @param {Object} params - validated order data from the route
  * @param {Object} config - { getConfig, getDriverOfDay, generateOrderId }
+ * @param {Object} [opts] - internal options
+ * @param {boolean} [opts.skipStockDeduction] - do not deduct stock (used when matching a premade bouquet whose stock was deducted at creation time)
  * @returns {{ order, orderLines, delivery }}
  */
-export async function createOrder(params, config) {
+export async function createOrder(params, config, opts = {}) {
   const {
     customer, customerRequest, source, communicationMethod, deliveryType,
     orderLines, delivery, notes, paymentStatus, paymentMethod, priceOverride,
@@ -60,6 +62,7 @@ export async function createOrder(params, config) {
     payment1Amount, payment1Method,
   } = params;
   const { getConfig, getDriverOfDay, generateOrderId } = config;
+  const { skipStockDeduction = false } = opts;
 
   // Rollback tracking
   let order = null;
@@ -125,11 +128,15 @@ export async function createOrder(params, config) {
       createdLineIds.push(created.id);
     }
 
-    // 3. Deduct stock (serialized through stockQueue)
-    for (const line of orderLines) {
-      if (line.stockItemId && !line.stockDeferred) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
-        stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
+    // 3. Deduct stock (serialized through stockQueue).
+    // Skipped when matching a premade bouquet — stock was already deducted when
+    // the florist composed the premade, so the order just inherits the existing hold.
+    if (!skipStockDeduction) {
+      for (const line of orderLines) {
+        if (line.stockItemId && !line.stockDeferred) {
+          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+          stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
+        }
       }
     }
 

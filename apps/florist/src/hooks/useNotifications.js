@@ -64,6 +64,18 @@ export function useNotifications(onNewOrder) {
           showToast(`📦 ${t.stockEvalBanner}`, 'success');
           playNotificationSound();
         }
+
+        // Premade bouquet lifecycle events — silent-ish, no sound, but toast
+        // the name so everyone knows inventory changed.
+        if (data.type === 'premade_bouquet_created') {
+          showToast(`💐 ${t.premadeBouquet}: ${data.name || ''}`, 'success');
+        }
+        if (data.type === 'premade_bouquet_matched') {
+          showToast(`💐 ${t.premadeMatched}`, 'success');
+        }
+        if (data.type === 'premade_bouquet_returned') {
+          showToast(`💐 ${t.premadeReturned}`, 'success');
+        }
       } catch {
         // Ignore parse errors (heartbeats, malformed events)
       }

@@ -19,19 +19,83 @@ const emptyForm = {
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
   cardText: '', notes: '',
   paymentStatus: 'Unpaid', paymentMethod: '', deliveryFee: 35,
+  // When set, the resulting order is created via POST /api/premade-bouquets/:id/match
+  matchPremadeId: null,
 };
 
-export default function NewOrderTab({ onNavigate }) {
+export default function NewOrderTab({ onNavigate, initialFilter }) {
   const STEPS = [t.step1, t.step2, t.step3, t.step4];
   const { showToast }         = useToast();
   const [step, setStep]       = useState(0);
   const [form, setForm]       = useState(emptyForm);
   const [submitting, setSubmitting] = useState(false);
   const [stock, setStock]     = useState([]);
+  const [premadeBouquets, setPremadeBouquets] = useState([]);
 
   useEffect(() => {
     client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(console.error);
+    client.get('/premade-bouquets').then(r => setPremadeBouquets(r.data || [])).catch(() => {});
   }, []);
+
+  // Path A: owner clicked "Sold" on a premade from the Orders tab — arrives with
+  // matchPremadeId in initialFilter. Fetch the bouquet and lock the wizard.
+  useEffect(() => {
+    const matchId = initialFilter?.matchPremadeId;
+    if (!matchId) return;
+    (async () => {
+      try {
+        const res = await client.get(`/premade-bouquets/${matchId}`);
+        const bouquet = res.data;
+        const seededLines = (bouquet.lines || []).map(l => ({
+          stockItemId: l['Stock Item']?.[0] || null,
+          flowerName: l['Flower Name'] || '',
+          quantity: Number(l.Quantity || 0),
+          costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
+          sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
+        }));
+        setForm(prev => ({
+          ...prev,
+          matchPremadeId: matchId,
+          orderLines: seededLines,
+          priceOverride: bouquet['Price Override']
+            ? String(bouquet['Price Override'])
+            : prev.priceOverride,
+          notes: bouquet.Notes || prev.notes,
+        }));
+        setPremadeBouquets(prev => {
+          if (prev.find(b => b.id === bouquet.id)) return prev;
+          return [bouquet, ...prev];
+        });
+      } catch (err) {
+        console.error('Failed to load premade bouquet:', err);
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
+    })();
+  }, [initialFilter?.matchPremadeId]);
+
+  // Path B: user taps a premade bouquet inside Step 2 — lock cart to its composition.
+  function handleSelectPremade(bouquet) {
+    const seededLines = (bouquet.lines || []).map(l => ({
+      stockItemId: l['Stock Item']?.[0] || null,
+      flowerName: l['Flower Name'] || '',
+      quantity: Number(l.Quantity || 0),
+      costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
+      sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
+    }));
+    setForm(prev => ({
+      ...prev,
+      matchPremadeId: bouquet.id,
+      orderLines: seededLines,
+      priceOverride: bouquet['Price Override']
+        ? String(bouquet['Price Override'])
+        : prev.priceOverride,
+      notes: bouquet.Notes || prev.notes,
+    }));
+  }
+
+  function handleUnlinkPremade() {
+    setForm(prev => ({ ...prev, matchPremadeId: null, orderLines: [] }));
+  }
 
   function updateForm(patch) {
     setForm(prev => ({ ...prev, ...patch }));
@@ -71,7 +135,15 @@ export default function NewOrderTab({ onNavigate }) {
           time: form.deliveryTime, cardText: form.cardText, fee: form.deliveryFee,
         };
       }
-      await client.post('/orders', body);
+      // Route through the match endpoint when locked to a premade bouquet.
+      // The backend copies lines from the bouquet, skips stock deduction
+      // (already done at premade creation), and deletes the premade record.
+      if (form.matchPremadeId) {
+        const { orderLines: _, ...matchBody } = body;
+        await client.post(`/premade-bouquets/${form.matchPremadeId}/match`, matchBody);
+      } else {
+        await client.post('/orders', body);
+      }
       // Check if any non-deferred ordered items exceed available stock
       const negativeItems = form.orderLines.filter(l => {
         if (l.stockDeferred) return false; // deferred lines don't pull from inventory
@@ -166,6 +238,10 @@ export default function NewOrderTab({ onNavigate }) {
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={form.deliveryDate}
+            premadeBouquets={premadeBouquets}
+            matchPremadeId={form.matchPremadeId}
+            onSelectPremade={handleSelectPremade}
+            onUnlinkPremade={handleUnlinkPremade}
           />
         )}
         {step === 2 && <Step3Details form={form} onChange={updateForm} />}

@@ -10,7 +10,16 @@ import { renderStockName } from '@flower-studio/shared';
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
   onChange, onLinesChange, requiredBy,
+  // Premade-bouquet match mode — mirrors the florist app.
+  premadeBouquets = null,
+  matchPremadeId = null,
+  onSelectPremade = null,
+  onUnlinkPremade = null,
 }) {
+  const premadeLocked = !!matchPremadeId;
+  const lockedBouquet = premadeLocked && Array.isArray(premadeBouquets)
+    ? premadeBouquets.find(b => b.id === matchPremadeId)
+    : null;
   // Determine if the order is for a future date (not today).
   const isFutureOrder = (() => {
     if (!requiredBy) return false;
@@ -129,7 +138,61 @@ export default function Step2Bouquet({
         </div>
       </div>
 
+      {/* Premade bouquets section — for matching an existing composition to this customer */}
+      {Array.isArray(premadeBouquets) && premadeBouquets.length > 0 && !premadeLocked && (
+        <div>
+          <p className="ios-label">{t.premadeBouquets}</p>
+          <div className="ios-card overflow-hidden divide-y divide-white/40">
+            {premadeBouquets.map(b => {
+              const price = Math.round(Number(b['Price Override'] || b['Computed Sell Total'] || 0));
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => onSelectPremade?.(b)}
+                  className="w-full flex items-center px-4 py-3 gap-3 text-left active:bg-pink-50 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 text-base flex items-center justify-center shrink-0">
+                    💐
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-ios-label truncate">{b.Name || t.premadeBouquet}</div>
+                    <div className="text-xs text-ios-tertiary truncate">{b['Bouquet Summary'] || '—'}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-bold text-brand-600">{price} zł</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Locked-to-premade banner */}
+      {premadeLocked && (
+        <div className="ios-card bg-pink-50 border border-pink-200 px-4 py-3 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-pink-100 text-pink-600 text-lg flex items-center justify-center shrink-0">
+            💐
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-pink-700 font-semibold uppercase tracking-wide">{t.premadeLocked}</div>
+            <div className="text-sm font-semibold text-ios-label truncate">
+              {lockedBouquet?.Name || t.premadeBouquet}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onUnlinkPremade?.()}
+            className="text-pink-700 text-xs font-semibold underline active-scale shrink-0"
+          >
+            {t.unlinkPremade}
+          </button>
+        </div>
+      )}
+
       {/* Catalog */}
+      {!premadeLocked && (
       <div>
         <div className="flex items-center justify-between mb-1.5 px-1">
           <p className="ios-label !px-0 !mb-0">{t.searchFlowers}</p>
@@ -204,9 +267,10 @@ export default function Step2Bouquet({
           )}
         </div>
       </div>
+      )}
 
       {/* Custom flower form */}
-      {showCustomFlower && (
+      {!premadeLocked && showCustomFlower && (
         <div className="ios-card px-4 py-3 space-y-2">
           <p className="text-sm font-semibold text-ios-label">{t.addNewFlower || 'Add new flower'}</p>
           <input
@@ -274,7 +338,17 @@ export default function Step2Bouquet({
         <div>
           <p className="ios-label">{t.bouquetContents}</p>
           <div className="ios-card overflow-hidden divide-y divide-white/40">
-            {orderLines.map(l => {
+            {premadeLocked && orderLines.map(l => (
+              <div key={lineKey(l)} className="flex items-center justify-between px-4 py-3">
+                <span className="text-sm font-medium text-ios-label truncate">
+                  {Number(l.quantity)}× {l.flowerName}
+                </span>
+                <span className="text-xs text-ios-tertiary shrink-0">
+                  {Number(l.sellPricePerUnit).toFixed(0)} × {Number(l.quantity)} = {(Number(l.sellPricePerUnit) * Number(l.quantity)).toFixed(0)} zł
+                </span>
+              </div>
+            ))}
+            {!premadeLocked && orderLines.map(l => {
               const key = lineKey(l);
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const availableQty = Number(stockItem?.['Current Quantity']) || 0;
