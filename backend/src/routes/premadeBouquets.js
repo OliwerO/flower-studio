@@ -10,6 +10,7 @@ import {
   getPremadeBouquet,
   createPremadeBouquet,
   updatePremadeBouquet,
+  editPremadeBouquetLines,
   returnPremadeBouquetToStock,
   matchPremadeBouquetToOrder,
 } from '../services/premadeBouquetService.js';
@@ -91,6 +92,25 @@ router.patch('/:id', async (req, res, next) => {
     if (notes !== undefined) patch.notes = notes;
     const bouquet = await updatePremadeBouquet(req.params.id, patch);
     res.json(bouquet);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/premade-bouquets/:id/lines — edit bouquet lines (add/remove/qty).
+router.put('/:id/lines', async (req, res, next) => {
+  try {
+    const { lines = [], removedLines = [] } = req.body;
+    try {
+      const result = await editPremadeBouquetLines(req.params.id, { lines, removedLines });
+      const bouquet = await getPremadeBouquet(req.params.id);
+      res.json({ ...result, bouquet });
+    } catch (editErr) {
+      if (editErr.statusCode === 400) {
+        return res.status(400).json({ error: editErr.message });
+      }
+      return res.status(500).json({ error: 'Failed to edit premade bouquet lines.', detail: editErr.message });
+    }
   } catch (err) {
     next(err);
   }
