@@ -35,7 +35,9 @@ export default function SyncLogSection({ logs }) {
             <tbody>
               {logs.map(log => {
                 const ts = new Date(log['Timestamp']);
-                const ok = log['Status'] === 'success';
+                const status = log['Status'] || '';
+                const ok = status.includes('success');
+                const partial = status.includes('partial');
                 const errMsg = log['Error Message'];
                 return (
                   <tr key={log.id} className="border-b border-gray-50 last:border-0">
@@ -43,8 +45,8 @@ export default function SyncLogSection({ logs }) {
                       {ts.toLocaleDateString()} {ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                     </td>
                     <td className="py-1.5 px-3">
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${ok ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
-                        {ok ? '\u2713' : '\u2717'} {log['Status']}
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-medium ${ok ? 'bg-green-50 text-green-700' : partial ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-600'}`}>
+                        {ok ? '\u2713' : partial ? '\u26A0' : '\u2717'} {log['Status']}
                       </span>
                     </td>
                     <td className="py-1.5 px-2 text-right text-gray-700">{log['New Products'] || 0}</td>

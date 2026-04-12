@@ -310,7 +310,10 @@ async function logSync(direction, stats) {
   try {
     await db.create(TABLES.SYNC_LOG, {
       'Timestamp': new Date().toISOString(),
-      'Status': stats.errors.length > 0 ? 'failed' : `success (${direction})`,
+      'Status': stats.errors.length > 0
+        ? (stats.pricesSynced || stats.stockSynced || stats.new || stats.updated
+          ? `partial (${direction})` : `failed (${direction})`)
+        : `success (${direction})`,
       'New Products': stats.new || 0,
       'Updated': stats.updated || 0,
       'Deactivated': stats.deactivated || 0,
@@ -545,7 +548,8 @@ export async function runPush() {
     for (const row of allVariantRows) {
       const pid = row['Wix Product ID'];
       const vid = row['Wix Variant ID'];
-      if (!pid || !vid) continue;
+      const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+      if (!pid || !vid || vid === ZERO_UUID) continue;
       const shouldBeAvailable = row['Active'] === true;
       const targetQty = shouldBeAvailable ? 999 : 0;
       try {

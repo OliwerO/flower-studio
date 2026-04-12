@@ -107,7 +107,12 @@ export default function ProductsTab() {
       if (s.visibilitySynced) parts.push(`${s.visibilitySynced} ${t.prodVisibility}`);
       if (s.stockSynced) parts.push(`${s.stockSynced} ${t.prodStockSyncs}`);
       if (s.categoriesSynced) parts.push(`${s.categoriesSynced} ${t.prodCategorySyncs}`);
-      showToast(`${t.prodPushDone}${parts.length ? ': ' + parts.join(', ') : ''}`, 'success');
+      const errCount = s.errors?.length || 0;
+      if (errCount) parts.push(`${errCount} ${t.prodErrors || 'errors'}`);
+      showToast(
+        `${t.prodPushDone}${parts.length ? ': ' + parts.join(', ') : ''}`,
+        errCount ? 'warning' : 'success'
+      );
       fetchProducts();
     } catch {
       showToast(t.prodSyncFailed, 'error');
