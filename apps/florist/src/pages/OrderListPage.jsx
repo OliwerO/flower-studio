@@ -10,9 +10,6 @@ import TextImportModal from '../components/TextImportModal.jsx';
 import { OrderListSkeleton } from '../components/Skeleton.jsx';
 import t from '../translations.js';
 
-// Key for dismissing stock alerts per session
-const ALERTS_DISMISSED_KEY = 'blossom-alerts-dismissed';
-
 // View modes:
 //   active — non-terminal orders (florist's default view)
 //   completed — past/terminal orders
@@ -103,9 +100,6 @@ export default function OrderListPage() {
 
   // Owner-only: dashboard summary data
   const [dashData, setDashData]       = useState(null);
-  const [alertsDismissed, setAlertsDismissed] = useState(
-    () => sessionStorage.getItem(ALERTS_DISMISSED_KEY) === 'true'
-  );
   // Track whether we've done the initial load (show spinner only on first load)
   const initialLoaded = useRef(false);
 
@@ -238,11 +232,6 @@ export default function OrderListPage() {
     }
   }, [isOwner]);
 
-  function dismissAlerts() {
-    setAlertsDismissed(true);
-    sessionStorage.setItem(ALERTS_DISMISSED_KEY, 'true');
-  }
-
   return (
     <div className="min-h-screen dark:bg-dark-bg dark:text-dark-label">
 
@@ -309,10 +298,10 @@ export default function OrderListPage() {
       <div className="px-4 py-3 max-w-2xl mx-auto flex flex-col gap-2">
         {/* View mode toggle: Active / Completed / Premade */}
         <div className="flex gap-2 items-center">
-          <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1">
+          <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1 min-w-0 overflow-x-auto">
             <button
               onClick={() => { setViewMode(VIEW_MODES.ACTIVE); setStatus(''); }}
-              className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              className={`px-3 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
                 viewMode === VIEW_MODES.ACTIVE
                   ? 'bg-brand-600 text-white'
                   : 'text-ios-secondary active:bg-ios-fill'
@@ -322,7 +311,7 @@ export default function OrderListPage() {
             </button>
             <button
               onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); }}
-              className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              className={`px-3 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
                 viewMode === VIEW_MODES.COMPLETED
                   ? 'bg-brand-600 text-white'
                   : 'text-ios-secondary active:bg-ios-fill'
@@ -332,7 +321,7 @@ export default function OrderListPage() {
             </button>
             <button
               onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); }}
-              className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              className={`px-3 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                 viewMode === VIEW_MODES.PREMADE
                   ? 'bg-brand-600 text-white'
                   : 'text-ios-secondary active:bg-ios-fill'
@@ -348,7 +337,7 @@ export default function OrderListPage() {
               )}
             </button>
           </div>
-          <button onClick={fetchOrders} className="h-9 w-9 rounded-full bg-white border border-ios-separator shadow-sm flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
+          <button onClick={fetchOrders} className="shrink-0 h-9 w-9 rounded-full bg-white border border-ios-separator shadow-sm flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
             ↻
           </button>
         </div>
@@ -389,37 +378,6 @@ export default function OrderListPage() {
           </div>
         </div>
       </div>
-
-      {/* Owner: Stock alerts banner */}
-      {isOwner && dashData?.lowStockAlerts?.length > 0 && !alertsDismissed && (
-        <div className="px-4 max-w-2xl mx-auto">
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-semibold text-amber-800 uppercase tracking-wide">{t.owner.stockAlerts}</span>
-              <button onClick={dismissAlerts} className="text-xs text-amber-600 active-scale">{t.owner.dismissAlerts}</button>
-            </div>
-            <div className="flex flex-col gap-1">
-              {dashData.lowStockAlerts
-                .sort((a, b) => (a['Current Quantity'] || 0) - (b['Current Quantity'] || 0))
-                .map((item, i) => {
-                  const qty = item['Current Quantity'] || 0;
-                  const isOut = qty === 0;
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => navigate('/stock')}
-                      className="text-left text-xs py-0.5 active-scale"
-                    >
-                      <span className={isOut ? 'text-red-600' : 'text-orange-600'}>
-                        {isOut ? '🔴' : '🟠'} {item['Display Name']} — {isOut ? t.owner.outOfStock : `${qty} ${t.owner.left} (${t.owner.threshold}: ${item['Reorder Threshold']})`}
-                      </span>
-                    </button>
-                  );
-                })}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Stock shortfall warning banner */}
       {(() => {
