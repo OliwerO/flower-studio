@@ -58,7 +58,7 @@ export async function listPremadeBouquets() {
   const allLines = await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds);
   const linesByBouquet = {};
   for (const line of allLines) {
-    const bid = line['Premade Bouquet']?.[0];
+    const bid = line['Premade Bouquets']?.[0];
     if (!bid) continue;
     if (!linesByBouquet[bid]) linesByBouquet[bid] = [];
     linesByBouquet[bid].push(line);
@@ -148,7 +148,7 @@ export async function createPremadeBouquet(params) {
     // 2b. Create the line records (price snapshotting)
     for (const line of lines) {
       const created = await db.create(TABLES.PREMADE_BOUQUET_LINES, {
-        'Premade Bouquet':     [bouquet.id],
+        'Premade Bouquets':    [bouquet.id],
         'Stock Item':          [line.stockItemId],
         'Flower Name':         line.flowerName,
         Quantity:              line.quantity,

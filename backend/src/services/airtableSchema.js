@@ -51,7 +51,7 @@ const EXPECTED_WRITE_FIELDS = {
     'Name', 'Created By', 'Price Override', 'Notes', 'Lines',
   ],
   [TABLES.PREMADE_BOUQUET_LINES]: [
-    'Premade Bouquet', 'Stock Item', 'Flower Name', 'Quantity',
+    'Premade Bouquets', 'Stock Item', 'Flower Name', 'Quantity',
     'Cost Price Per Unit', 'Sell Price Per Unit',
   ],
 };
