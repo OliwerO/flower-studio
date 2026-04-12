@@ -377,24 +377,21 @@ router.get('/:id/usage', async (req, res, next) => {
   try {
     const stockItem = await db.getById(TABLES.STOCK, req.params.id);
     const displayName = stockItem['Display Name'] || '';
-    const purchaseName = stockItem['Purchase Name'] || displayName;
     const stockId = req.params.id;
 
     // 1. Order lines — filter by Flower Name (linked record IDs aren't searchable
-    //    in Airtable formulas). Match both exact Display Name and Purchase Name.
+    //    in Airtable formulas). Use exact Display Name only — not Purchase Name,
+    //    which would match all batches of the same flower type.
     const safeName = sanitizeFormulaValue(displayName);
-    const safePurchase = purchaseName !== displayName ? sanitizeFormulaValue(purchaseName) : null;
-    const nameFilter = safePurchase
-      ? `OR({Flower Name} = '${safeName}', {Flower Name} = '${safePurchase}')`
-      : `{Flower Name} = '${safeName}'`;
     const orderLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: nameFilter,
+      filterByFormula: `{Flower Name} = '${safeName}'`,
       fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
     });
-    // Verify Stock Item link matches (avoids false positives from same-name flowers)
+    // Keep only lines linked to THIS specific stock item — excludes unlinked lines
+    // and lines from other batches that happen to share the same base name.
     const matchedLines = orderLines.filter(l => {
       const linkedId = l['Stock Item']?.[0];
-      return linkedId === stockId || !linkedId; // include unlinked lines by name match
+      return linkedId === stockId;
     });
 
     // Fetch parent orders for context
