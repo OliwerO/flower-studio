@@ -107,7 +107,7 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 - Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
 - Check off completed items in `BACKLOG.md`
 - Create a git branch per feature/fix
-- Test against dev base (`.env.dev`), never production (`.env`)
+- **Production only** — there is no dev/staging environment. All work targets the production Airtable base, Railway backend, and Vercel frontends directly. Be careful with destructive operations.
 
 ## Change Summaries (IMPORTANT)
 After completing each logical step of work (not just at the end), write a short **owner-friendly summary** explaining:
