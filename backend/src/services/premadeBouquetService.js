@@ -210,6 +210,79 @@ export async function updatePremadeBouquet(id, patch) {
 }
 
 /**
+ * Edit bouquet lines — handle removals (return to stock), new lines, qty changes.
+ * Mirrors editBouquetLines() in orderService.js but for premade bouquets.
+ * @param {string} id - premade bouquet record ID
+ * @param {Object} params
+ * @param {Array}  params.lines - [{ id?, stockItemId, flowerName, quantity, _originalQty?, costPricePerUnit, sellPricePerUnit }]
+ * @param {Array}  params.removedLines - [{ lineId?, stockItemId, quantity }]
+ * @returns {{ updated: true, createdLines }}
+ */
+export async function editPremadeBouquetLines(id, { lines = [], removedLines = [] }) {
+  // Verify bouquet exists
+  await db.getById(TABLES.PREMADE_BOUQUETS, id);
+
+  // 1. Handle removed lines — always return to stock (no writeoff for premade)
+  for (const rem of removedLines) {
+    if (rem.stockItemId && rem.quantity > 0) {
+      await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
+    }
+    if (rem.lineId) {
+      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, rem.lineId).catch(() => {});
+    }
+  }
+
+  // 2a. Auto-match new unlinked lines
+  const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
+  if (newUnmatched.length > 0) {
+    await autoMatchStock(newUnmatched);
+  }
+
+  // 2a-bis. Reject orphan new lines
+  const orphans = lines.filter(l => !l.id && !l.stockItemId);
+  if (orphans.length > 0) {
+    const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
+    const err = new Error(
+      `Bouquet line(s) without a Stock Item are not allowed: ${names}. ` +
+      `Create the flower in Stock first.`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // 2b. Process new/updated lines
+  const createdLines = [];
+  for (const line of lines) {
+    if (line.id) {
+      // Existing line — update quantity, adjust stock for delta
+      if (line._originalQty != null && line.quantity !== line._originalQty) {
+        const delta = line._originalQty - line.quantity;
+        if (line.stockItemId && delta !== 0) {
+          await db.atomicStockAdjust(line.stockItemId, delta);
+        }
+        await db.update(TABLES.PREMADE_BOUQUET_LINES, line.id, { Quantity: line.quantity });
+      }
+    } else {
+      // New line — create + deduct stock
+      const created = await db.create(TABLES.PREMADE_BOUQUET_LINES, {
+        'Premade Bouquets': [id],
+        ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
+        'Flower Name': line.flowerName,
+        Quantity: line.quantity,
+        'Cost Price Per Unit': line.costPricePerUnit || 0,
+        'Sell Price Per Unit': line.sellPricePerUnit || 0,
+      });
+      createdLines.push(created);
+      if (line.stockItemId) {
+        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+      }
+    }
+  }
+
+  return { updated: true, createdLines };
+}
+
+/**
  * Return all flowers in a premade bouquet to stock, then delete the records.
  * Mirrors cancelWithStockReturn() in orderService.js.
  * @returns {{ message, returnedItems }}

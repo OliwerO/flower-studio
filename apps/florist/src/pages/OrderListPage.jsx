@@ -240,6 +240,9 @@ export default function OrderListPage() {
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <img src="/logo.png" alt="Blossom" className="h-7" />
           <div className="flex items-center gap-2">
+            <button onClick={fetchOrders} className="h-8 w-8 rounded-full bg-white/80 border border-ios-separator flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
+              ↻
+            </button>
             <LangToggle />
           </div>
         </div>
@@ -297,48 +300,43 @@ export default function OrderListPage() {
       {/* Filters */}
       <div className="px-4 py-3 max-w-2xl mx-auto flex flex-col gap-2">
         {/* View mode toggle: Active / Completed / Premade */}
-        <div className="flex gap-2 items-center">
-          <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1 min-w-0 overflow-x-auto">
-            <button
-              onClick={() => { setViewMode(VIEW_MODES.ACTIVE); setStatus(''); }}
-              className={`px-3 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                viewMode === VIEW_MODES.ACTIVE
-                  ? 'bg-brand-600 text-white'
-                  : 'text-ios-secondary active:bg-ios-fill'
-              }`}
-            >
-              {t.activeOrders}
-            </button>
-            <button
-              onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); }}
-              className={`px-3 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                viewMode === VIEW_MODES.COMPLETED
-                  ? 'bg-brand-600 text-white'
-                  : 'text-ios-secondary active:bg-ios-fill'
-              }`}
-            >
-              {t.completedOrders}
-            </button>
-            <button
-              onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); }}
-              className={`px-3 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
-                viewMode === VIEW_MODES.PREMADE
-                  ? 'bg-brand-600 text-white'
-                  : 'text-ios-secondary active:bg-ios-fill'
-              }`}
-            >
-              {t.premadeBouquets}
-              {premadeCount > 0 && (
-                <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
-                  viewMode === VIEW_MODES.PREMADE ? 'bg-white text-brand-600' : 'bg-brand-600 text-white'
-                }`}>
-                  {premadeCount}
-                </span>
-              )}
-            </button>
-          </div>
-          <button onClick={fetchOrders} className="shrink-0 h-9 w-9 rounded-full bg-white border border-ios-separator shadow-sm flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
-            ↻
+        <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1">
+          <button
+            onClick={() => { setViewMode(VIEW_MODES.ACTIVE); setStatus(''); }}
+            className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              viewMode === VIEW_MODES.ACTIVE
+                ? 'bg-brand-600 text-white'
+                : 'text-ios-secondary active:bg-ios-fill'
+            }`}
+          >
+            {t.activeOrders}
+          </button>
+          <button
+            onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); }}
+            className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+              viewMode === VIEW_MODES.COMPLETED
+                ? 'bg-brand-600 text-white'
+                : 'text-ios-secondary active:bg-ios-fill'
+            }`}
+          >
+            {t.completedOrders}
+          </button>
+          <button
+            onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); }}
+            className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
+              viewMode === VIEW_MODES.PREMADE
+                ? 'bg-brand-600 text-white'
+                : 'text-ios-secondary active:bg-ios-fill'
+            }`}
+          >
+            {t.premadeBouquets}
+            {premadeCount > 0 && (
+              <span className={`min-w-[18px] h-[18px] px-1 rounded-full text-[10px] font-bold flex items-center justify-center ${
+                viewMode === VIEW_MODES.PREMADE ? 'bg-white text-brand-600' : 'bg-brand-600 text-white'
+              }`}>
+                {premadeCount}
+              </span>
+            )}
           </button>
         </div>
 
@@ -427,6 +425,7 @@ export default function OrderListPage() {
                   bouquet={bouquet}
                   isOwner={isOwner}
                   onRemoved={(id) => setPremadeBouquets(prev => prev.filter(b => b.id !== id))}
+                  onUpdated={(updated) => setPremadeBouquets(prev => prev.map(b => b.id === updated.id ? updated : b))}
                   onMatchClicked={(id) => navigate('/orders/new', { state: { matchPremadeId: id } })}
                 />
               ))}
