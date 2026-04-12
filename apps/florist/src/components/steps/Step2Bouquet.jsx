@@ -129,6 +129,14 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFuture
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
   onChange, onLinesChange, requiredBy, isOwner,
+  // Premade-bouquet match mode (optional — only used inside the new-order wizard).
+  // When `premadeBouquets` is an array, a "Готовые букеты" section is rendered
+  // above the flower catalog. Tapping one locks the cart to that composition.
+  // `matchPremadeId` + `onSelectPremade` + `onUnlinkPremade` manage the lock state.
+  premadeBouquets = null,
+  matchPremadeId = null,
+  onSelectPremade = null,
+  onUnlinkPremade = null,
 }) {
   const { showToast } = useToast();
   // Determine if the order is for a future date (not today).
@@ -283,6 +291,16 @@ export default function Step2Bouquet({
     );
   }
 
+  // ── Premade bouquet match mode ──
+  // `premadeBouquets` list is passed from NewOrderPage when the wizard is
+  // opened for a customer. If the owner taps one, the cart becomes read-only
+  // and the rest of the wizard submits via POST /api/premade-bouquets/:id/match
+  // instead of POST /api/orders.
+  const premadeLocked = !!matchPremadeId;
+  const lockedBouquet = premadeLocked && Array.isArray(premadeBouquets)
+    ? premadeBouquets.find(b => b.id === matchPremadeId)
+    : null;
+
   return (
     <div className="flex flex-col gap-6">
 
@@ -300,7 +318,61 @@ export default function Step2Bouquet({
         </div>
       </div>
 
+      {/* ── Premade bouquets section — available only in match mode ── */}
+      {Array.isArray(premadeBouquets) && premadeBouquets.length > 0 && !premadeLocked && (
+        <div>
+          <p className="ios-label">{t.premadeBouquets}</p>
+          <div className="ios-card overflow-hidden divide-y divide-gray-100">
+            {premadeBouquets.map(b => {
+              const price = Math.round(Number(b['Price Override'] || b['Computed Sell Total'] || 0));
+              return (
+                <button
+                  key={b.id}
+                  type="button"
+                  onClick={() => onSelectPremade?.(b)}
+                  className="w-full flex items-center px-4 py-3 gap-3 text-left active:bg-pink-50 transition-colors"
+                >
+                  <div className="w-8 h-8 rounded-full bg-pink-100 text-pink-600 text-base flex items-center justify-center shrink-0">
+                    💐
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-sm font-semibold text-ios-label truncate">{b.Name || t.premadeBouquet}</div>
+                    <div className="text-xs text-ios-tertiary truncate">{b['Bouquet Summary'] || '—'}</div>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <div className="text-sm font-bold text-brand-600">{price} zł</div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── Locked-to-premade banner — replaces catalog when a premade is selected ── */}
+      {premadeLocked && (
+        <div className="ios-card bg-pink-50 border border-pink-200 px-4 py-3 flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-pink-100 text-pink-600 text-lg flex items-center justify-center shrink-0">
+            💐
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-xs text-pink-700 font-semibold uppercase tracking-wide">{t.premadeLocked}</div>
+            <div className="text-sm font-semibold text-ios-label truncate">
+              {lockedBouquet?.Name || t.premadeBouquet}
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onUnlinkPremade?.()}
+            className="text-pink-700 text-xs font-semibold underline active-scale shrink-0"
+          >
+            {t.unlinkPremade}
+          </button>
+        </div>
+      )}
+
       {/* ── Catalog — tap entire row to add ── */}
+      {!premadeLocked && (
       <div>
         <div className="flex items-center justify-between mb-1.5 px-1">
           <p className="ios-label !px-0 !mb-0">{t.searchFlowers}</p>
@@ -401,9 +473,10 @@ export default function Step2Bouquet({
           )}
         </div>
       </div>
+      )}
 
       {/* ── Custom flower form — create new stock item + add to cart ── */}
-      {showCustomFlower && (
+      {!premadeLocked && showCustomFlower && (
         <div className="ios-card px-4 py-3 space-y-2">
           <p className="text-sm font-semibold text-ios-label">{t.addNewFlower || 'Add new flower'}</p>
           <input
@@ -527,19 +600,35 @@ export default function Step2Bouquet({
         <div>
           <p className="ios-label">{t.bouquetContents}</p>
           <div className="ios-card overflow-hidden divide-y divide-gray-100">
-            {orderLines.map(l => (
-              <CartLine
-                key={lineKey(l)}
-                line={l}
-                stock={stock}
-                onChangeQty={(key, delta) => changeQty(key, delta)}
-                onCommitQty={(key, val) => commitQty(key, val)}
-                onRemove={(key) => removeLine(key)}
-                isFutureOrder={isFutureOrder}
-                onToggleDeferred={(key) => toggleDeferred(key)}
-                pendingPO={pendingPO}
-              />
-            ))}
+            {premadeLocked ? (
+              // Read-only view when matching a premade bouquet — don't let the
+              // user tweak quantities here, because the composition is locked
+              // to whatever the florist already prepared physically.
+              orderLines.map(l => (
+                <div key={lineKey(l)} className="flex items-center justify-between px-4 py-3">
+                  <span className="text-sm font-medium text-ios-label truncate">
+                    {Number(l.quantity)}× {l.flowerName}
+                  </span>
+                  <span className="text-xs text-ios-tertiary shrink-0">
+                    {Number(l.sellPricePerUnit).toFixed(0)} × {Number(l.quantity)} = {(Number(l.sellPricePerUnit) * Number(l.quantity)).toFixed(0)} zł
+                  </span>
+                </div>
+              ))
+            ) : (
+              orderLines.map(l => (
+                <CartLine
+                  key={lineKey(l)}
+                  line={l}
+                  stock={stock}
+                  onChangeQty={(key, delta) => changeQty(key, delta)}
+                  onCommitQty={(key, val) => commitQty(key, val)}
+                  onRemove={(key) => removeLine(key)}
+                  isFutureOrder={isFutureOrder}
+                  onToggleDeferred={(key) => toggleDeferred(key)}
+                  pendingPO={pendingPO}
+                />
+              ))
+            )}
           </div>
 
           {/* Totals — tap to toggle cost/margin visibility (owner only) */}

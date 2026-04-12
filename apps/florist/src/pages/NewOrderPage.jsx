@@ -18,6 +18,9 @@ const emptyForm = {
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
   cardText: '', notes: '',
   paymentStatus: 'Unpaid', paymentMethod: '', payment1Amount: '', deliveryFee: 35,
+  // When set, the resulting order is created via POST /api/premade-bouquets/:id/match
+  // instead of POST /api/orders. The bouquet's lines are copied server-side.
+  matchPremadeId: null,
 };
 
 export default function NewOrderPage() {
@@ -33,6 +36,9 @@ export default function NewOrderPage() {
   const [stock, setStock]     = useState([]);
   const [stockError, setStockError] = useState(false);
   const [importWarnings, setImportWarnings] = useState([]);
+  // Premade-bouquets list for the "pick a premade inside Step 2" path.
+  // Fetched alongside stock so the catalog and premade section are ready together.
+  const [premadeBouquets, setPremadeBouquets] = useState([]);
 
   useEffect(() => {
     client.get('/stock?includeEmpty=true')
@@ -42,6 +48,12 @@ export default function NewOrderPage() {
         setStockError(true);
         showToast(t.stockLoadError || 'Failed to load stock data', 'error');
       });
+    // Fetch available premade bouquets so Step 2 can offer them as selectable
+    // compositions. Non-critical — if this fails, the wizard still works as a
+    // normal new-order flow.
+    client.get('/premade-bouquets')
+      .then(r => setPremadeBouquets(r.data || []))
+      .catch(() => {});
   }, []);
 
   // Protect against accidental navigation (browser back/refresh) when form has data.
@@ -53,6 +65,46 @@ export default function NewOrderPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [form.customerId, form.orderLines.length, form.customerRequest]);
+
+  // Path A: user clicked "Sold" on an inventory card — premade ID arrives via
+  // location.state. Fetch that bouquet and lock the wizard to its composition.
+  useEffect(() => {
+    const matchId = location.state?.matchPremadeId;
+    if (!matchId) return;
+    window.history.replaceState({}, '');
+
+    (async () => {
+      try {
+        const res = await client.get(`/premade-bouquets/${matchId}`);
+        const bouquet = res.data;
+        // Seed orderLines from premade lines so Step 3/4 can render the summary,
+        // but mark matchPremadeId so submit goes through the match endpoint.
+        const seededLines = (bouquet.lines || []).map(l => ({
+          stockItemId: l['Stock Item']?.[0] || null,
+          flowerName: l['Flower Name'] || '',
+          quantity: Number(l.Quantity || 0),
+          costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
+          sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
+        }));
+        setForm(prev => ({
+          ...prev,
+          matchPremadeId: matchId,
+          orderLines: seededLines,
+          priceOverride: bouquet['Price Override'] ? String(bouquet['Price Override']) : prev.priceOverride,
+          notes: bouquet.Notes || prev.notes,
+        }));
+        // Make the bouquet visible in Step2Bouquet's premadeBouquets list so
+        // the locked banner can read its name.
+        setPremadeBouquets(prev => {
+          if (prev.find(b => b.id === bouquet.id)) return prev;
+          return [bouquet, ...prev];
+        });
+      } catch (err) {
+        console.error('Failed to load premade bouquet:', err);
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
+    })();
+  }, [location.state]);
 
   // Apply import draft if navigated from TextImportModal
   useEffect(() => {
@@ -126,6 +178,37 @@ export default function NewOrderPage() {
     setStep(1);
   }
 
+  // Path B: user taps a premade bouquet inside Step 2.
+  // Lock the wizard to that bouquet's composition and replace the cart.
+  function handleSelectPremade(bouquet) {
+    const seededLines = (bouquet.lines || []).map(l => ({
+      stockItemId: l['Stock Item']?.[0] || null,
+      flowerName: l['Flower Name'] || '',
+      quantity: Number(l.Quantity || 0),
+      costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
+      sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
+    }));
+    setForm(prev => ({
+      ...prev,
+      matchPremadeId: bouquet.id,
+      orderLines: seededLines,
+      priceOverride: bouquet['Price Override']
+        ? String(bouquet['Price Override'])
+        : prev.priceOverride,
+      notes: bouquet.Notes || prev.notes,
+    }));
+  }
+
+  // "Отвязать" — clear the premade lock and reset the cart to empty so the
+  // user can compose fresh from the catalog.
+  function handleUnlinkPremade() {
+    setForm(prev => ({
+      ...prev,
+      matchPremadeId: null,
+      orderLines: [],
+    }));
+  }
+
   // Validate before advancing to the next step
   function validateStep(currentStep) {
     if (currentStep === 1 && form.orderLines.length === 0) {
@@ -183,7 +266,17 @@ export default function NewOrderPage() {
           time: form.deliveryTime, cardText: form.cardText, fee: form.deliveryFee,
         };
       }
-      await client.post('/orders', body);
+      // Route through the match endpoint when the wizard is locked to a premade
+      // bouquet — the backend copies lines from the bouquet record, skips stock
+      // deduction (already done at creation), and deletes the premade.
+      if (form.matchPremadeId) {
+        // orderLines are not needed by the match endpoint — it reads them from
+        // the premade bouquet. Strip them to keep the body small and explicit.
+        const { orderLines: _, ...matchBody } = body;
+        await client.post(`/premade-bouquets/${form.matchPremadeId}/match`, matchBody);
+      } else {
+        await client.post('/orders', body);
+      }
       // Check if any non-deferred ordered items exceed available stock
       const negativeItems = form.orderLines.filter(l => {
         if (l.stockDeferred) return false; // deferred lines don't pull from inventory
@@ -312,6 +405,10 @@ export default function NewOrderPage() {
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={form.deliveryDate || form.requiredBy}
+            premadeBouquets={premadeBouquets}
+            matchPremadeId={form.matchPremadeId}
+            onSelectPremade={handleSelectPremade}
+            onUnlinkPremade={handleUnlinkPremade}
           />
         )}
         {step === 2 && <Step3Details form={form} onChange={updateForm} />}

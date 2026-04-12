@@ -47,6 +47,13 @@ const EXPECTED_WRITE_FIELDS = {
     'Current Quantity', 'Current Cost Price', 'Current Sell Price',
     'Supplier', 'Unit', 'Reorder Threshold', 'Active', 'Last Restocked',
   ],
+  [TABLES.PREMADE_BOUQUETS]: [
+    'Name', 'Created By', 'Price Override', 'Notes', 'Lines',
+  ],
+  [TABLES.PREMADE_BOUQUET_LINES]: [
+    'Premade Bouquets', 'Stock Item', 'Flower Name', 'Quantity',
+    'Cost Price Per Unit', 'Sell Price Per Unit',
+  ],
 };
 
 /**

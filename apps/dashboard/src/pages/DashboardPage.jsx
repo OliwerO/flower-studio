@@ -116,10 +116,14 @@ export default function DashboardPage() {
           <DayToDayTab onNavigate={navigateTo} />
         </div>
         <div style={{ display: activeTab === 'orders' ? 'block' : 'none' }}>
-          <OrdersTab key={filterKey} initialFilter={tabFilter} />
+          <OrdersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
         </div>
         <div style={{ display: activeTab === 'newOrder' ? 'block' : 'none' }}>
-          <NewOrderTab onNavigate={navigateTo} />
+          <NewOrderTab
+            key={`newOrder-${filterKey}`}
+            onNavigate={navigateTo}
+            initialFilter={activeTab === 'newOrder' ? tabFilter : null}
+          />
         </div>
         <div style={{ display: activeTab === 'stock' ? 'block' : 'none' }}>
           <StockTab key={filterKey} initialFilter={tabFilter} />

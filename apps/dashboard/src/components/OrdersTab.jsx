@@ -8,6 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import OrderDetailPanel from './OrderDetailPanel.jsx';
+import PremadeBouquetList from './PremadeBouquetList.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
 
 // "2026-03-08" → "Mar 8"
@@ -62,7 +63,7 @@ function monthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-export default function OrdersTab({ initialFilter }) {
+export default function OrdersTab({ initialFilter, onNavigate }) {
   const STATUS_OPTIONS = getStatusOptions();
   // Initialize state from initialFilter to avoid double-fetch race condition.
   // If a filter is passed from another tab (e.g., Financial), use it from the start.
@@ -87,6 +88,7 @@ export default function OrdersTab({ initialFilter }) {
   const [expandedId, setExpanded] = useState(f.orderId || null);
   const [selected, setSelected]   = useState(new Set());
   const [upcomingMode, setUpcoming] = useState(!f.dateFrom && !f.orderId);
+  const [showPremade, setShowPremade] = useState(false);
   const [sortBy, setSortBy]       = useState('deliveryDate');
   const [sortDir, setSortDir]     = useState('asc'); // 'asc' | 'desc' — bidirectional sort
   const { showToast }             = useToast();
@@ -245,6 +247,16 @@ export default function OrdersTab({ initialFilter }) {
           ))}
         </div>
 
+        {/* Premade toggle — switches the list to premade-bouquet inventory */}
+        <button
+          onClick={() => setShowPremade(v => !v)}
+          className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+            showPremade ? 'bg-pink-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+          }`}
+        >
+          💐 {t.premadeBouquets}
+        </button>
+
         {/* Upcoming toggle + Date range */}
         <div className="flex items-center gap-2 ml-auto">
           <button
@@ -339,12 +351,19 @@ export default function OrdersTab({ initialFilter }) {
         </div>
       )}
 
+      {/* Premade inventory — replaces the orders list when the chip is active */}
+      {showPremade && (
+        <PremadeBouquetList
+          onMatchClicked={(id) => onNavigate?.({ tab: 'newOrder', filter: { matchPremadeId: id } })}
+        />
+      )}
+
       {/* Loading */}
-      {loading && <SkeletonTable rows={8} cols={5} />}
+      {!showPremade && loading && <SkeletonTable rows={8} cols={5} />}
 
       {/* Order list */}
       {/* Results count */}
-      {!loading && (
+      {!showPremade && !loading && (
         <div className="flex items-center gap-3 px-1">
           <label className="flex items-center gap-1.5 cursor-pointer" onClick={e => e.stopPropagation()}>
             <input
@@ -364,7 +383,7 @@ export default function OrdersTab({ initialFilter }) {
         </div>
       )}
 
-      {!loading && fetchError && (
+      {!showPremade && !loading && fetchError && (
         <div className="text-center py-12">
           <p className="text-ios-tertiary mb-3">{t.error}</p>
           <button onClick={fetchOrders}
@@ -373,11 +392,11 @@ export default function OrdersTab({ initialFilter }) {
         </div>
       )}
 
-      {!loading && !fetchError && sorted.length === 0 && (
+      {!showPremade && !loading && !fetchError && sorted.length === 0 && (
         <div className="text-center py-12 text-ios-tertiary">{t.noResults}</div>
       )}
 
-      {!loading && sorted.map(order => {
+      {!showPremade && !loading && sorted.map(order => {
         const isExpanded = expandedId === order.id;
         const days = daysSince(order['Order Date']);
         const isOverdue = unpaidOnly && days > 7;

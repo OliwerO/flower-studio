@@ -14,6 +14,7 @@ import LoginPage        from './pages/LoginPage.jsx';
 import OrderListPage    from './pages/OrderListPage.jsx';
 import OrderDetailPage  from './pages/OrderDetailPage.jsx';
 import NewOrderPage     from './pages/NewOrderPage.jsx';
+import PremadeBouquetCreatePage from './pages/PremadeBouquetCreatePage.jsx';
 import StockPanelPage       from './pages/StockPanelPage.jsx';
 import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
 import DaySummaryPage          from './pages/DaySummaryPage.jsx';
@@ -84,6 +85,10 @@ export default function App() {
 
         <Route path="/orders/new" element={
           <PrivateRoute><Layout><NewOrderPage /></Layout></PrivateRoute>
+        } />
+
+        <Route path="/premade-bouquets/new" element={
+          <PrivateRoute><Layout><PremadeBouquetCreatePage /></Layout></PrivateRoute>
         } />
 
         <Route path="/orders/:id" element={

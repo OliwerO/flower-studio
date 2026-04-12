@@ -26,6 +26,7 @@ import publicRoutes        from './routes/public.js';
 import productRoutes       from './routes/products.js';
 import stockOrderRoutes    from './routes/stockOrders.js';
 import floristHoursRoutes from './routes/floristHours.js';
+import premadeBouquetRoutes from './routes/premadeBouquets.js';
 
 // Validate required env vars on startup — fail early instead of silently breaking at runtime.
 const REQUIRED_ENV = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'PIN_OWNER', 'PIN_FLORIST'];
@@ -92,6 +93,7 @@ app.use('/api/stock-loss',      stockLossRoutes);
 app.use('/api/products',        productRoutes);
 app.use('/api/stock-orders',    stockOrderRoutes);
 app.use('/api/florist-hours',  floristHoursRoutes);
+app.use('/api/premade-bouquets', premadeBouquetRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);
