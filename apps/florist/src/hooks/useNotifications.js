@@ -65,6 +65,12 @@ export function useNotifications(onNewOrder) {
           playNotificationSound();
         }
 
+        if (data.type === 'substitute_reconciliation_needed') {
+          const count = data.affectedOrders?.length || 0;
+          showToast(`⚠ ${count} ${t.ordersNeedSwap}`, 'warning');
+          playNotificationSound();
+        }
+
         // Premade bouquet lifecycle events — silent-ish, no sound, but toast
         // the name so everyone knows inventory changed.
         if (data.type === 'premade_bouquet_created') {

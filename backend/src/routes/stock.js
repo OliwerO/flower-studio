@@ -419,6 +419,8 @@ router.get('/:id/usage', async (req, res, next) => {
       return {
         type: 'order',
         date: o?.['Order Date'] || o?.['Required By'] || null,
+        requiredBy: o?.['Required By'] || null,
+        orderRecordId: orderId || '',
         orderId: o?.['App Order ID'] || orderId || '',
         customer: cust?.Name || cust?.Nickname || '',
         status: o?.Status || '',
@@ -554,9 +556,13 @@ router.post('/:id/write-off', async (req, res, next) => {
     const currentQty = item['Current Quantity'] || 0;
     const currentDead = item['Dead/Unsold Stems'] || 0;
 
-    // Allow full write-off even if it results in negative stock.
-    // Negative stock is intentional — signals demand gap for future orders.
-    const actualWriteOff = quantity;
+    // Only allow writing off flowers that physically exist.
+    // Negative stock = demand signal (flowers on order), not physical inventory.
+    const physicalStock = Math.max(0, currentQty);
+    if (physicalStock === 0) {
+      return res.status(400).json({ error: 'No physical stock to write off. Current quantity is zero or negative (flowers on order).' });
+    }
+    const actualWriteOff = Math.min(quantity, physicalStock);
 
     // Build update fields
     const fields = {
@@ -599,6 +605,118 @@ router.post('/:id/write-off', async (req, res, next) => {
     }
 
     res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stock/reconciliation — detect stock mismatches.
+// For non-terminal orders with Required By today or earlier, stock should have
+// been deducted (non-deferred). This surfaces items where the actual qty doesn't
+// match what the order deductions imply.
+router.get('/reconciliation', async (req, res, next) => {
+  try {
+    const today = new Date().toISOString().split('T')[0];
+
+    // Fetch active stock items
+    const stockItems = await db.list(TABLES.STOCK, {
+      filterByFormula: '{Active} = TRUE()',
+      fields: ['Display Name', 'Current Quantity', 'Dead/Unsold Stems'],
+    });
+
+    // Fetch non-terminal orders where Required By <= today (stock should be deducted)
+    const orders = await db.list(TABLES.ORDERS, {
+      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', NOT(IS_AFTER({Required By}, '${today}')))`,
+      fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
+      maxRecords: 500,
+    });
+
+    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
+    const allLines = allLineIds.length > 0
+      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
+          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
+        })
+      : [];
+
+    // Customer names for display
+    const custIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+    const custs = custIds.length > 0
+      ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
+      : [];
+    const custMap = {};
+    for (const c of custs) custMap[c.id] = c;
+    const orderMap = {};
+    for (const o of orders) {
+      const cid = o.Customer?.[0];
+      orderMap[o.id] = {
+        appOrderId: o['App Order ID'] || '',
+        customerName: custMap[cid]?.Name || custMap[cid]?.Nickname || '',
+        requiredBy: o['Required By'] || null,
+        status: o.Status || '',
+      };
+    }
+
+    // Sum expected deductions per stock item (from today/past non-terminal orders)
+    const deductions = {};
+    for (const line of allLines) {
+      const stockId = line['Stock Item']?.[0];
+      if (!stockId) continue;
+      const qty = Number(line.Quantity || 0);
+      if (qty <= 0) continue;
+      if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
+      deductions[stockId].expected += qty;
+      const oid = line.Order?.[0];
+      const oi = oid ? orderMap[oid] : null;
+      if (oi) {
+        deductions[stockId].orders.push({
+          orderId: oid,
+          appOrderId: oi.appOrderId,
+          customerName: oi.customerName,
+          requiredBy: oi.requiredBy,
+          qty,
+          status: oi.status,
+        });
+      }
+    }
+
+    // Build index of stock items
+    const stockMap = {};
+    for (const item of stockItems) stockMap[item.id] = item;
+
+    // Report items with active order deductions for review
+    const items = [];
+    for (const [stockId, d] of Object.entries(deductions)) {
+      const item = stockMap[stockId];
+      if (!item) continue;
+      items.push({
+        stockId,
+        name: item['Display Name'] || '',
+        currentQty: Number(item['Current Quantity'] || 0),
+        deductionExpected: d.expected,
+        orders: d.orders,
+      });
+    }
+
+    res.json(items);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/stock/reconciliation/apply — apply stock corrections in bulk
+router.post('/reconciliation/apply', async (req, res, next) => {
+  try {
+    const adjustments = req.body;
+    if (!Array.isArray(adjustments)) {
+      return res.status(400).json({ error: 'Expected array of { stockId, adjustDelta }' });
+    }
+    const results = [];
+    for (const { stockId, adjustDelta } of adjustments) {
+      if (!stockId || typeof adjustDelta !== 'number' || adjustDelta === 0) continue;
+      const result = await db.atomicStockAdjust(stockId, adjustDelta);
+      results.push(result);
+    }
+    res.json({ applied: results.length, results });
   } catch (err) {
     next(err);
   }

@@ -17,6 +17,7 @@ import NewOrderPage     from './pages/NewOrderPage.jsx';
 import PremadeBouquetCreatePage from './pages/PremadeBouquetCreatePage.jsx';
 import StockPanelPage       from './pages/StockPanelPage.jsx';
 import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
+import SubstituteReconciliationPage from './pages/SubstituteReconciliationPage.jsx';
 import DaySummaryPage          from './pages/DaySummaryPage.jsx';
 import ShoppingSupportPage     from './pages/ShoppingSupportPage.jsx';
 import PurchaseOrderPage       from './pages/PurchaseOrderPage.jsx';
@@ -101,6 +102,10 @@ export default function App() {
 
         <Route path="/stock-evaluation" element={
           <FloristRoute><Layout><StockEvaluationPage /></Layout></FloristRoute>
+        } />
+
+        <Route path="/reconcile-substitutes" element={
+          <PrivateRoute><SubstituteReconciliationPage /></PrivateRoute>
         } />
 
         <Route path="/shopping-support" element={

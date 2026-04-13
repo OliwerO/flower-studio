@@ -11,8 +11,9 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
+import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON, ORDER_STATUS } from '../constants/statuses.js';
 import { getConfig, getDriverOfDay } from './settings.js';
+import { listByIds } from '../utils/batchQuery.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
@@ -797,7 +798,14 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           'Eval Status': PO_LINE_STATUS.PROCESSED,
         });
 
-        lineResults.push({ lineId: evalLine.lineId, status: 'ok' });
+        lineResults.push({
+          lineId: evalLine.lineId,
+          status: 'ok',
+          substituteStockId: substituteStockId || null,
+          originalStockId: stockItemId || null,
+          originalFlowerName: line['Flower Name'] || '',
+          receivedQty: altAccepted || 0,
+        });
       } catch (lineErr) {
         console.error(`[STOCK-ORDER] Evaluate line ${evalLine.lineId} failed:`, lineErr.message);
         lineResults.push({ lineId: evalLine.lineId, status: 'error', error: lineErr.message });
@@ -817,6 +825,74 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
 
     // All lines processed — mark PO as complete
     await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.COMPLETE });
+
+    // Phase B: detect orders needing reconciliation after substitution.
+    // For each substitute received, check if open orders are waiting for the original.
+    const substitutionsMade = lineResults.filter(
+      r => r.status === 'ok' && r.substituteStockId && r.originalStockId
+    );
+    if (substitutionsMade.length > 0) {
+      try {
+        const today = new Date().toISOString().split('T')[0];
+        // Fetch non-terminal future orders (same logic as GET /stock/committed)
+        const openOrders = await db.list(TABLES.ORDERS, {
+          filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
+          fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
+          maxRecords: 500,
+        });
+        const allSubLineIds = openOrders.flatMap(o => o['Order Lines'] || []);
+        const allSubLines = allSubLineIds.length > 0
+          ? await listByIds(TABLES.ORDER_LINES, allSubLineIds, {
+              fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
+            })
+          : [];
+        const custIds = [...new Set(openOrders.flatMap(o => o.Customer || []))];
+        const custs = custIds.length > 0
+          ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
+          : [];
+        const custMap = {};
+        for (const c of custs) custMap[c.id] = c;
+        const orderInfoMap = {};
+        for (const o of openOrders) {
+          const cid = o.Customer?.[0];
+          orderInfoMap[o.id] = {
+            appOrderId: o['App Order ID'] || '',
+            customerName: custMap[cid]?.Name || custMap[cid]?.Nickname || '',
+            requiredBy: o['Required By'] || null,
+          };
+        }
+
+        for (const sub of substitutionsMade) {
+          const affectedOrders = [];
+          for (const line of allSubLines) {
+            if (line['Stock Item']?.[0] !== sub.originalStockId) continue;
+            const oid = line.Order?.[0];
+            const oi = oid ? orderInfoMap[oid] : null;
+            if (oi) {
+              affectedOrders.push({
+                orderId: oid,
+                appOrderId: oi.appOrderId,
+                customerName: oi.customerName,
+                requiredBy: oi.requiredBy,
+                qty: Number(line.Quantity || 0),
+              });
+            }
+          }
+          if (affectedOrders.length > 0) {
+            broadcast({
+              type: 'substitute_reconciliation_needed',
+              originalStockId: sub.originalStockId,
+              originalFlowerName: sub.originalFlowerName,
+              substituteStockId: sub.substituteStockId,
+              affectedOrders,
+              substituteQty: sub.receivedQty,
+            });
+          }
+        }
+      } catch (reconErr) {
+        console.error('[STOCK-ORDER] Reconciliation detection failed (non-blocking):', reconErr.message);
+      }
+    }
 
     res.json({ success: true, lineResults });
   } catch (err) {

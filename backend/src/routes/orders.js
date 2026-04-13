@@ -13,6 +13,7 @@ import {
   cancelWithStockReturn,
   editBouquetLines,
 } from '../services/orderService.js';
+import { broadcast } from '../services/notifications.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -412,6 +413,59 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
     });
 
     res.status(201).json(delivery);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/orders/:id/swap-bouquet-line — swap a bouquet line from one stock item to another.
+// Used after PO evaluation when a substitute flower replaces an original.
+// Adjusts stock on both sides: returns qty to original, deducts from substitute.
+router.post('/:id/swap-bouquet-line', async (req, res, next) => {
+  try {
+    const { fromStockItemId, toStockItemId, lineId, newQty } = req.body;
+    if (!fromStockItemId || !toStockItemId || !lineId) {
+      return res.status(400).json({ error: 'fromStockItemId, toStockItemId, and lineId are required' });
+    }
+
+    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    if (![ORDER_STATUS.NEW, ORDER_STATUS.READY].includes(order.Status)) {
+      return res.status(400).json({ error: `Cannot swap bouquet line in "${order.Status}" status` });
+    }
+
+    // Verify the line belongs to this order
+    const line = await db.getById(TABLES.ORDER_LINES, lineId);
+    const lineOrderId = line.Order?.[0];
+    if (lineOrderId !== req.params.id) {
+      return res.status(400).json({ error: 'Line does not belong to this order' });
+    }
+
+    const oldQty = Number(line.Quantity || 0);
+    const qty = newQty != null ? Number(newQty) : oldQty;
+
+    // Fetch substitute stock item for cost/sell/name
+    const substituteStock = await db.getById(TABLES.STOCK, toStockItemId);
+
+    // Return stock to original (undo the deduction)
+    if (oldQty > 0) {
+      await db.atomicStockAdjust(fromStockItemId, +oldQty);
+    }
+    // Deduct from substitute
+    if (qty > 0) {
+      await db.atomicStockAdjust(toStockItemId, -qty);
+    }
+
+    // Update the order line to point to the substitute
+    const updated = await db.update(TABLES.ORDER_LINES, lineId, {
+      'Stock Item': [toStockItemId],
+      'Flower Name': substituteStock['Display Name'] || substituteStock['Purchase Name'] || '',
+      'Cost Price Per Unit': substituteStock['Current Cost Price'] || 0,
+      'Sell Price Per Unit': substituteStock['Current Sell Price'] || 0,
+      Quantity: qty,
+    });
+
+    broadcast({ type: 'order_updated', orderId: req.params.id });
+    res.json(updated);
   } catch (err) {
     next(err);
   }

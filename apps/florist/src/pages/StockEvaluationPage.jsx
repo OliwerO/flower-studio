@@ -18,6 +18,11 @@ export default function StockEvaluationPage() {
   // Lowercased set of existing Stock display names — used to preview which
   // substitutes will become brand-new stock cards on submit (edge case 2).
   const [knownStockNames, setKnownStockNames] = useState(new Set());
+  const [committedMap, setCommittedMap] = useState({});
+
+  useEffect(() => {
+    client.get('/stock/committed').then(r => setCommittedMap(r.data)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     client.get('/stock-orders/meta/lookups')
@@ -363,17 +368,39 @@ export default function StockEvaluationPage() {
                       </span>
                     </div>
                     <div className="divide-y divide-gray-100">
-                      {notFoundLines.map(line => (
-                        <div key={line.id} className="px-4 py-2.5">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium text-ios-secondary">{line['Flower Name']}</span>
-                            <span className="text-xs text-ios-tertiary">{Number(line['Quantity Needed']) || 0} {t.qtyNeeded}</span>
+                      {notFoundLines.map(line => {
+                        const stockItemId = line['Stock Item']?.[0];
+                        const cd = stockItemId ? committedMap[stockItemId] : null;
+                        return (
+                          <div key={line.id} className="px-4 py-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium text-ios-secondary">{line['Flower Name']}</span>
+                              <span className="text-xs text-ios-tertiary">{Number(line['Quantity Needed']) || 0} {t.qtyNeeded}</span>
+                            </div>
+                            {line.Notes && (
+                              <p className="text-xs text-ios-tertiary mt-0.5">{line.Notes}</p>
+                            )}
+                            {cd?.orders?.length > 0 && (
+                              <div className="mt-1.5 bg-amber-50 rounded-lg px-3 py-1.5 border border-amber-200">
+                                <p className="text-[10px] font-medium text-amber-700">
+                                  ⚠ {cd.committed} {t.stemsCommitted} → {cd.orders.length} {t.ordersNeedSwap}
+                                </p>
+                                <div className="mt-0.5 flex flex-wrap gap-x-2">
+                                  {cd.orders.map((o, i) => (
+                                    <span
+                                      key={i}
+                                      onClick={(e) => { e.stopPropagation(); navigate(`/orders/${o.orderId}`); }}
+                                      className="text-[10px] text-brand-600 cursor-pointer active:underline"
+                                    >
+                                      #{o.appOrderId} {o.customerName} ({o.qty})
+                                    </span>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
-                          {line.Notes && (
-                            <p className="text-xs text-ios-tertiary mt-0.5">{line.Notes}</p>
-                          )}
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
