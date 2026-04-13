@@ -248,16 +248,19 @@ export default function StockTab({ initialFilter, onNavigate }) {
     let rows = Object.keys(pendingPO).map(stockId => {
       const po = pendingPO[stockId] || { ordered: 0, pos: [], flowerName: '' };
       const com = committedMap[stockId] || { committed: 0, orders: [] };
+      // Only count "New" orders as committed — Ready orders already have flowers composed
+      const newOrders = (com.orders || []).filter(o => o.status === 'New');
+      const committedQty = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
       const stockName = nameMap[stockId] || '';
       const poName = stockBaseName(po.flowerName) || '';
       return {
         stockId,
         name: (poName.length >= stockName.length ? poName : stockName) || '—',
         ordered: po.ordered,
-        committed: com.committed,
-        net: po.ordered - com.committed,
+        committed: committedQty,
+        net: po.ordered - committedQty,
         pos: po.pos || [],
-        orders: com.orders || [],
+        orders: newOrders,
         plannedDate: po.plannedDate || null,
       };
     }).filter(r => r.ordered > 0).sort((a, b) => a.name.localeCompare(b.name));
@@ -265,22 +268,26 @@ export default function StockTab({ initialFilter, onNavigate }) {
     return rows;
   }, [pendingPO, committedMap, stock, search]);
 
-  // Needed rows — flowers committed to future orders (shows demand)
+  // Needed rows — flowers committed to future orders that haven't been composed yet.
+  // Only "New" status orders: once a bouquet is "Ready", the flowers are physically committed.
   const neededRows = useMemo(() => {
     const nameMap = {};
     for (const s of stock) nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
     let rows = Object.keys(committedMap).map(stockId => {
       const com = committedMap[stockId];
+      // Filter to only New orders — Ready/later orders have already been composed
+      const newOrders = (com.orders || []).filter(o => o.status === 'New');
+      const needed = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
       const hasPO = !!pendingPO[stockId];
-      const earliestDate = com.orders.reduce((earliest, o) => {
+      const earliestDate = newOrders.reduce((earliest, o) => {
         if (!o.requiredBy) return earliest;
         return !earliest || o.requiredBy < earliest ? o.requiredBy : earliest;
       }, null);
       return {
         stockId,
         name: nameMap[stockId] || '—',
-        needed: com.committed,
-        orders: com.orders || [],
+        needed,
+        orders: newOrders,
         earliestDate,
         hasPO,
       };
