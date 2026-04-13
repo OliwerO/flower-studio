@@ -554,9 +554,13 @@ router.post('/:id/write-off', async (req, res, next) => {
     const currentQty = item['Current Quantity'] || 0;
     const currentDead = item['Dead/Unsold Stems'] || 0;
 
-    // Allow full write-off even if it results in negative stock.
-    // Negative stock is intentional — signals demand gap for future orders.
-    const actualWriteOff = quantity;
+    // Only allow writing off flowers that physically exist.
+    // Negative stock = demand signal (flowers on order), not physical inventory.
+    const physicalStock = Math.max(0, currentQty);
+    if (physicalStock === 0) {
+      return res.status(400).json({ error: 'No physical stock to write off. Current quantity is zero or negative (flowers on order).' });
+    }
+    const actualWriteOff = Math.min(quantity, physicalStock);
 
     // Build update fields
     const fields = {

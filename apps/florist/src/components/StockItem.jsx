@@ -138,7 +138,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                   </div>
                 )}
               </div>
-              {(qty > 0 || hasShortfall) && (
+              {qty > 0 && (
                 <button
                   onClick={(e) => { e.stopPropagation(); setShowWriteOff(!showWriteOff); }}
                   className={`w-7 h-7 rounded-full text-xs flex items-center justify-center active-scale transition-colors ${
@@ -254,21 +254,23 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                 inputMode="numeric"
                 value={writeOffQty}
                 min={1}
+                max={qty}
                 onFocus={e => e.target.select()}
                 onChange={e => {
                   const raw = e.target.value;
                   if (raw === '') { setWriteOffQty(''); return; }
                   const n = parseInt(raw, 10);
-                  if (!isNaN(n) && n >= 0) setWriteOffQty(n);
+                  if (!isNaN(n) && n >= 0) setWriteOffQty(Math.min(n, qty));
                 }}
                 onBlur={() => {
                   const n = Number(writeOffQty);
                   if (!n || n < 1) setWriteOffQty(1);
+                  else if (n > qty) setWriteOffQty(qty);
                 }}
                 className="w-9 text-center text-xs font-bold border border-red-200 rounded-lg py-0.5 bg-white outline-none"
               />
               <button
-                onClick={() => setWriteOffQty(q => q + 1)}
+                onClick={() => setWriteOffQty(q => Math.min(q + 1, qty))}
                 className="w-6 h-6 rounded-full bg-red-50 text-red-600 text-base font-bold flex items-center justify-center active-scale"
               >+</button>
             </div>
