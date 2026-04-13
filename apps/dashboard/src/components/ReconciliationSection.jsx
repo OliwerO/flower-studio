@@ -107,9 +107,14 @@ export default function ReconciliationSection({ onClose }) {
                     </td>
                     <td className="py-1.5 px-2 text-ios-tertiary">
                       {item.orders?.slice(0, 3).map((o, i) => (
-                        <span key={i} className="mr-1">#{o.appOrderId}</span>
+                        <span key={i} className={`mr-1 ${o.mixedDeferredFlag ? 'text-red-500 font-medium' : ''}`}>
+                          #{o.appOrderId}{o.deferred ? '⚠' : ''}
+                        </span>
                       ))}
                       {item.orders?.length > 3 && <span>+{item.orders.length - 3}</span>}
+                      {item.orders?.some(o => o.mixedDeferredFlag) && (
+                        <span className="ml-1 text-[10px] text-red-500">{t.mixedDeferred || 'mixed deferred'}</span>
+                      )}
                     </td>
                   </tr>
                 ))}
