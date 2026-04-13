@@ -393,6 +393,10 @@ export default function StockTab({ initialFilter, onNavigate }) {
         // Render a waste table row with batch tag + edit/delete
         function WasteRow({ e, showSupplier }) {
           const { name: baseName, batch } = parseBatchName(e.flowerName || '');
+          // If no batch in the name, use the stock item's Last Restocked date as fallback tag
+          const batchTag = batch
+            ? <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 border-gray-200">{batch}</span>
+            : (e.lastRestocked ? renderDateTag(null, e.lastRestocked) : null);
           const isEditing = wasteEditId === e.id;
 
           if (isEditing) {
@@ -400,7 +404,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
               <tr key={e.id} className="border-b border-gray-50 bg-blue-50/50">
                 <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
                 <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
-                <td className="px-3 py-1.5 text-xs">{batch && <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 border-gray-200">{batch}</span>}</td>
+                <td className="px-3 py-1.5 text-xs">{batchTag}</td>
                 {showSupplier && <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>}
                 <td className="px-3 py-1.5 text-xs text-right">
                   <input type="number" min="1" value={wasteEditForm.quantity}
@@ -426,13 +430,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
             <tr key={e.id} className="border-b border-gray-50 group">
               <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
               <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
-              <td className="px-3 py-1.5 text-xs">
-                {batch && (
-                  <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 border-gray-200">
-                    {batch}
-                  </span>
-                )}
-              </td>
+              <td className="px-3 py-1.5 text-xs">{batchTag}</td>
               {showSupplier && <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>}
               <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
               <td className="px-3 py-1.5 text-xs">

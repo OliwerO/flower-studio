@@ -1,7 +1,9 @@
 // PendingArrivalsSection — shows flowers arriving from pending POs
-// cross-referenced with committed orders. Matches main stock table styling.
+// cross-referenced with committed orders.
+// Column layout aligns with the main stock table below:
+//   Name | ETA(=Received) | Ordered(=Qty) | Net(=Cost) | Committed(=Sell) | ...
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, Fragment } from 'react';
 import client from '../api/client.js';
 import t from '../translations.js';
 
@@ -10,7 +12,7 @@ function formatPlannedTag(dateStr) {
   const d = new Date(dateStr);
   if (isNaN(d)) return dateStr;
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  return `${d.getDate()}. ${months[d.getMonth()]}.`;
+  return `${d.getDate()}.${months[d.getMonth()]}.`;
 }
 
 export default function PendingArrivalsSection({ stock, onNavigate }) {
@@ -31,7 +33,6 @@ export default function PendingArrivalsSection({ stock, onNavigate }) {
     .finally(() => setLoading(false));
   }, []);
 
-  // Build name map from stock + pending-po flowerName fallback
   const nameMap = useMemo(() => {
     const m = {};
     for (const s of (stock || [])) m[s.id] = s['Display Name'] || s['Purchase Name'] || '';
@@ -41,12 +42,16 @@ export default function PendingArrivalsSection({ stock, onNavigate }) {
   const rows = useMemo(() => {
     const ids = new Set(Object.keys(pendingPO));
     return [...ids].map(stockId => {
-      const po = pendingPO[stockId] || { ordered: 0, pos: [] };
+      const po = pendingPO[stockId] || { ordered: 0, pos: [], flowerName: '' };
       const com = committed[stockId] || { committed: 0, orders: [] };
       const net = po.ordered - com.committed;
+      // Prefer PO line flower name (user-entered) over stock Display Name
+      // (which may be truncated or auto-generated)
+      const stockName = nameMap[stockId] || '';
+      const poName = po.flowerName || '';
+      const name = (poName.length >= stockName.length ? poName : stockName) || '—';
       return {
-        stockId,
-        name: nameMap[stockId] || po.flowerName || '—',
+        stockId, name,
         ordered: po.ordered,
         committed: com.committed,
         net,
@@ -74,97 +79,82 @@ export default function PendingArrivalsSection({ stock, onNavigate }) {
 
       {!collapsed && (
         <div className="overflow-x-auto">
+          {/* Match main stock table: 11 columns, same header classes */}
           <table className="w-full text-sm whitespace-nowrap">
             <thead>
               <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
                 <th className="text-left px-2 py-2 font-medium">{t.stockName}</th>
-                <th className="text-right px-2 py-2 font-medium">{t.ordered}</th>
                 <th className="text-left px-2 py-2 font-medium">{t.eta}</th>
+                <th className="text-right px-2 py-2 font-medium">{t.ordered}</th>
                 <th className="text-right px-2 py-2 font-medium">{t.netQty}</th>
                 <th className="text-right px-2 py-2 font-medium">{t.committedToOrders}</th>
+                <th colSpan={6}></th>
               </tr>
             </thead>
             <tbody>
-              {rows.map(row => (
-                <FlowerRow
-                  key={row.stockId}
-                  row={row}
-                  expanded={expandedId === row.stockId}
-                  onToggle={() => setExpandedId(expandedId === row.stockId ? null : row.stockId)}
-                  onNavigate={onNavigate}
-                />
-              ))}
+              {rows.map(row => {
+                const netColor = row.net > 0 ? 'text-green-600' : row.net < 0 ? 'text-red-600' : 'text-ios-label';
+                const plannedTag = formatPlannedTag(row.plannedDate);
+                return (
+                  <Fragment key={row.stockId}>
+                    <tr
+                      className="border-b border-gray-100 hover:bg-indigo-50/20 cursor-pointer"
+                      onClick={() => setExpandedId(expandedId === row.stockId ? null : row.stockId)}
+                    >
+                      <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{row.name}</td>
+                      <td className="px-2 py-1.5">
+                        {plannedTag && (
+                          <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border-indigo-200">
+                            {plannedTag}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-base font-bold text-indigo-600">
+                        {row.ordered}
+                      </td>
+                      <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${netColor}`}>
+                        {row.net > 0 ? '+' : ''}{row.net}
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        {row.committed > 0 ? (
+                          <span className="tabular-nums text-amber-600 font-medium">
+                            {row.committed}
+                            <span className="ml-0.5 text-[9px] text-ios-tertiary">({row.orders.length})</span>
+                          </span>
+                        ) : (
+                          <span className="text-ios-tertiary">—</span>
+                        )}
+                      </td>
+                      <td colSpan={6}></td>
+                    </tr>
+                    {expandedId === row.stockId && row.orders.length > 0 && (
+                      <tr className="bg-amber-50/50">
+                        <td colSpan={11} className="px-6 py-1.5">
+                          <div className="space-y-0.5">
+                            {row.orders.map((o, i) => (
+                              <div
+                                key={i}
+                                className="flex items-center justify-between text-xs cursor-pointer hover:underline text-amber-700"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onNavigate?.({ tab: 'orders', filter: { orderId: o.orderId } });
+                                }}
+                              >
+                                <span>#{o.appOrderId} — {o.customerName} ({o.requiredBy || '—'})</span>
+                                <span className="tabular-nums font-medium">{o.qty} {t.stems}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             </tbody>
           </table>
         </div>
       )}
     </div>
-  );
-}
-
-function FlowerRow({ row, expanded, onToggle, onNavigate }) {
-  const netColor = row.net > 0 ? 'text-green-600' : row.net < 0 ? 'text-red-600' : 'text-ios-label';
-  const plannedTag = formatPlannedTag(row.plannedDate);
-
-  return (
-    <>
-      <tr
-        className={`border-b border-gray-50 cursor-pointer hover:bg-indigo-50/20 transition-colors ${
-          row.orders.length > 0 ? '' : ''
-        }`}
-        onClick={onToggle}
-      >
-        <td className="px-2 py-2 font-medium text-ios-label">
-          {row.name}
-        </td>
-        <td className="px-2 py-2 text-right tabular-nums font-semibold text-indigo-600">
-          {row.ordered}
-        </td>
-        <td className="px-2 py-2">
-          {plannedTag && (
-            <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-indigo-50 text-indigo-600 border-indigo-200">
-              {t.planned || 'Planned'} {plannedTag}
-            </span>
-          )}
-        </td>
-        <td className={`px-2 py-2 text-right tabular-nums font-semibold ${netColor}`}>
-          {row.net > 0 ? '+' : ''}{row.net}
-        </td>
-        <td className="px-2 py-2 text-right">
-          {row.committed > 0 ? (
-            <span className="tabular-nums text-amber-600 font-medium">{row.committed}</span>
-          ) : (
-            <span className="text-ios-tertiary">—</span>
-          )}
-          {row.orders.length > 0 && (
-            <span className="ml-1 text-[9px] text-ios-tertiary">
-              ({row.orders.length})
-            </span>
-          )}
-        </td>
-      </tr>
-
-      {expanded && row.orders.length > 0 && (
-        <tr className="bg-amber-50/50">
-          <td colSpan={5} className="px-6 py-1.5">
-            <div className="space-y-0.5">
-              {row.orders.map((o, i) => (
-                <div
-                  key={i}
-                  className="flex items-center justify-between text-xs cursor-pointer hover:underline text-amber-700"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    onNavigate?.({ tab: 'orders', filter: { orderId: o.orderId } });
-                  }}
-                >
-                  <span>#{o.appOrderId} — {o.customerName} ({o.requiredBy || '—'})</span>
-                  <span className="tabular-nums font-medium">{o.qty} {t.stems}</span>
-                </div>
-              ))}
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
   );
 }

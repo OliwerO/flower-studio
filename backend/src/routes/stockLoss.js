@@ -34,7 +34,7 @@ router.get('/', async (req, res, next) => {
       const batch = stockIds.slice(i, i + 100);
       const items = await db.list(TABLES.STOCK, {
         filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Display Name', 'Purchase Name', 'Supplier', 'Current Cost Price'],
+        fields: ['Display Name', 'Purchase Name', 'Supplier', 'Current Cost Price', 'Last Restocked'],
       });
       for (const item of items) stockMap[item.id] = item;
     }
@@ -48,6 +48,7 @@ router.get('/', async (req, res, next) => {
         flowerName: stock?.['Display Name'] || stock?.['Purchase Name'] || '—',
         supplier: stock?.Supplier || '—',
         costPrice: stock?.['Current Cost Price'] || 0,
+        lastRestocked: stock?.['Last Restocked'] || null,
       };
     });
 
