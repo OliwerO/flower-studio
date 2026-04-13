@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import StockItem from '../components/StockItem.jsx';
 import ReceiveStockForm from '../components/ReceiveStockForm.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
+import PendingArrivalsSection from '../components/PendingArrivalsSection.jsx';
 import t from '../translations.js';
 
 const SORT_OPTIONS = [
@@ -216,6 +217,13 @@ export default function StockPanelPage() {
             {t.po?.title || 'Purchase Orders'}
           </button>
         )}
+
+        {/* Pending arrivals — PO overview */}
+        <PendingArrivalsSection
+          stock={stock}
+          committedMap={committedMap}
+          onOrderClick={(id) => navigate(`/orders/${id}`)}
+        />
 
         {/* Receive stock */}
         <button

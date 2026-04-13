@@ -166,13 +166,13 @@ Phase A shipped: when driver brings a substitute, it lands as its own stock card
 (find-by-name or create-new) with the REAL per-stem cost and sell price = cost × targetMarkup.
 Primary Not-Found stays at 0 stems. Florist manually swaps in bouquet builder for affected orders.
 
-Phase B (not yet built): reconciliation screen for negative-stock-driven POs.
-- Trigger: substitute card creation detects orders currently consuming negative stock of the original flower
-- UI: notification banner + screen listing affected orders with FIFO suggestion → one-tap swap per order
-- Backend: endpoint that reassigns a bouquet line from original → substitute, recalculates both stock cards
-- Demand suppression: while pending substitute is unresolved, skip the original from PO demand suggestions
+Phase B (built 2026-04-13): reconciliation screen for negative-stock-driven POs.
+- [x] Trigger: `POST /:id/evaluate` detects substitutions and broadcasts `substitute_reconciliation_needed` SSE
+- [x] UI: notification banner (SSE handler in `useNotifications.js`) + evaluation page shows impacted orders
+- [x] Backend: `POST /orders/:id/swap-bouquet-line` — reassigns a bouquet line from original → substitute
+- [x] Reconciliation screen: `SubstituteReconciliationPage.jsx` (florist) + `ReconciliationSection.jsx` (dashboard)
+- [ ] Demand suppression: skip original from PO demand when substitute exists (deferred — needs STOCK_PURCHASES notes scanning)
 - Kickoff prompt saved at: `scripts/prompts/phase-b-po-substitution-reconciliation.md`
-- See: `apps/florist/src/pages/StockEvaluationPage.jsx` and `backend/src/routes/stockOrders.js:findOrCreateSubstituteStock`
 
 ### Wix Stock Sync — accurate inventory projection to storefront (2026-04-08) [WIX-STOCK-PROJECTION]
 Currently Wix storefront does NOT track exact stock per product — it just knows "available" or "out of stock"

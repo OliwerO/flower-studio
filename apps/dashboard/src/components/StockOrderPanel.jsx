@@ -37,11 +37,16 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   // Separate driver state for expanded/existing POs (keyed by PO id)
   // Prevents editing an existing PO's driver from changing the new-PO form.
   const [editDrivers, setEditDrivers] = useState({});
+  const [committedMap, setCommittedMap] = useState({});
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await client.get('/stock-orders');
+      const [res, comRes] = await Promise.all([
+        client.get('/stock-orders'),
+        client.get('/stock/committed'),
+      ]);
       setOrders(res.data);
+      setCommittedMap(comRes.data);
     } catch {
       showToast(t.error, 'error');
     } finally {
@@ -670,6 +675,26 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                                 }
                               }}
                             />
+                            {/* Impacted orders warning for Not Found / substitute lines */}
+                            {(() => {
+                              const drvStatus = line['Driver Status'];
+                              if (drvStatus !== 'Not Found' && drvStatus !== 'Partial') return null;
+                              const sid = line['Stock Item']?.[0];
+                              const cd = sid ? committedMap[sid] : null;
+                              if (!cd?.orders?.length) return null;
+                              return (
+                                <div className="bg-amber-50 rounded-lg px-3 py-1.5 border border-amber-200 text-xs">
+                                  <span className="font-medium text-amber-700">
+                                    ⚠ {cd.committed} {t.stemsCommitted} → {cd.orders.length} {t.ordersNeedSwap}:
+                                  </span>
+                                  {cd.orders.map((o, i) => (
+                                    <span key={i} className="ml-1 text-amber-600">
+                                      #{o.appOrderId} ({o.qty})
+                                    </span>
+                                  ))}
+                                </div>
+                              );
+                            })()}
                             {line['Quantity Accepted'] != null && (
                               <div className="text-xs text-emerald-600">✓ {t.accepted || 'Accepted'}: {line['Quantity Accepted']}</div>
                             )}

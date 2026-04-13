@@ -93,4 +93,74 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// PATCH /api/stock-loss/:id — edit a waste entry, adjusting stock if quantity changed
+router.patch('/:id', async (req, res, next) => {
+  try {
+    if (!TABLES.STOCK_LOSS_LOG) {
+      return res.status(400).json({ error: 'Stock Loss Log table not configured' });
+    }
+    const { quantity, reason, notes, date } = req.body;
+
+    const current = await db.getById(TABLES.STOCK_LOSS_LOG, req.params.id);
+    const oldQty = Number(current.Quantity || 0);
+    const stockItemId = current['Stock Item']?.[0];
+
+    const fields = {};
+    if (quantity != null) fields.Quantity = Number(quantity);
+    if (reason != null) {
+      if (!VALID_REASONS.includes(reason)) {
+        return res.status(400).json({ error: `reason must be one of: ${VALID_REASONS.join(', ')}` });
+      }
+      fields.Reason = reason;
+    }
+    if (notes != null) fields.Notes = notes;
+    if (date != null) fields.Date = date;
+
+    const newQty = fields.Quantity != null ? fields.Quantity : oldQty;
+    const delta = oldQty - newQty; // positive = reduced loss → restore stock
+
+    if (delta !== 0 && stockItemId) {
+      await db.atomicStockAdjust(stockItemId, delta);
+      // Adjust Dead/Unsold Stems counter
+      const stockItem = await db.getById(TABLES.STOCK, stockItemId);
+      const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
+      await db.update(TABLES.STOCK, stockItemId, {
+        'Dead/Unsold Stems': Math.max(0, currentDead - delta),
+      });
+    }
+
+    const updated = await db.update(TABLES.STOCK_LOSS_LOG, req.params.id, fields);
+    res.json(updated);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/stock-loss/:id — delete a waste entry and restore stock
+router.delete('/:id', async (req, res, next) => {
+  try {
+    if (!TABLES.STOCK_LOSS_LOG) {
+      return res.status(400).json({ error: 'Stock Loss Log table not configured' });
+    }
+
+    const current = await db.getById(TABLES.STOCK_LOSS_LOG, req.params.id);
+    const qty = Number(current.Quantity || 0);
+    const stockItemId = current['Stock Item']?.[0];
+
+    if (stockItemId && qty > 0) {
+      await db.atomicStockAdjust(stockItemId, +qty);
+      const stockItem = await db.getById(TABLES.STOCK, stockItemId);
+      const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
+      await db.update(TABLES.STOCK, stockItemId, {
+        'Dead/Unsold Stems': Math.max(0, currentDead - qty),
+      });
+    }
+
+    await db.deleteRecord(TABLES.STOCK_LOSS_LOG, req.params.id);
+    res.json({ id: req.params.id, deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
 export default router;

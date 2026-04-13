@@ -243,6 +243,22 @@ to client, return to stock, locked banner, etc.).
 
 ---
 
+## Stock Visibility Overhaul (2026-04-13)
+
+**6-part feature drop** improving stock supply chain visibility:
+1. **Trace improvements**: delivery date + clickable order entries in stock trace (both apps)
+2. **PO overview table** ("Pending Arrivals"): ordered vs committed flowers above stock table (both apps)
+3. **PO substitution Phase B**: impacted orders during evaluation + reconciliation screen + swap endpoint + SSE notifications
+4. **Waste log edit/delete**: PATCH + DELETE endpoints with stock restoration, inline UI in dashboard settings
+5. **Stock reconciliation tool**: detect mismatches, let owner fix in bulk (dashboard)
+6. **Translations**: all new keys in EN + RU for both apps
+
+New endpoints: `PATCH/DELETE /stock-loss/:id`, `POST /orders/:id/swap-bouquet-line`, `GET /stock/reconciliation`, `POST /stock/reconciliation/apply`
+New files: `PendingArrivalsSection.jsx` (both apps), `ReconciliationSection.jsx` (dashboard), `SubstituteReconciliationPage.jsx` (florist)
+No schema changes — all existing Airtable fields.
+
+---
+
 ## Code Changes Affecting Go-Live
 
 | Date | File | Change | Go-Live Impact |

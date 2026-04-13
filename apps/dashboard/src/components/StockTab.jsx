@@ -9,15 +9,18 @@ import t from '../translations.js';
 import { stockBaseName, renderDateTag, parseBatchName } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
+import PendingArrivalsSection from './PendingArrivalsSection.jsx';
+import ReconciliationSection from './ReconciliationSection.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
 
-export default function StockTab({ initialFilter }) {
+export default function StockTab({ initialFilter, onNavigate }) {
   const [stock, setStock]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [showReceive, setShowReceive] = useState(false);
   const [showPurchaseOrders, setShowPurchaseOrders] = useState(initialFilter?.action === 'createPO');
+  const [showReconcile, setShowReconcile] = useState(false);
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [hideZero, setHideZero]     = useState(true);
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
@@ -236,6 +239,12 @@ export default function StockTab({ initialFilter }) {
             {t.stockOrders || 'Purchase Orders'}
           </button>
           <button
+            onClick={() => setShowReconcile(!showReconcile)}
+            className="px-3 py-1.5 rounded-xl bg-amber-100 text-amber-700 text-xs font-semibold"
+          >
+            {t.reconcile}
+          </button>
+          <button
             onClick={() => setShowReceive(!showReceive)}
             className="px-3 py-1.5 rounded-xl bg-ios-green/15 text-ios-green text-xs font-semibold"
           >
@@ -243,6 +252,11 @@ export default function StockTab({ initialFilter }) {
           </button>
         </div>
       </div>
+
+      {/* Reconciliation panel */}
+      {showReconcile && (
+        <ReconciliationSection onClose={() => { setShowReconcile(false); fetchStock(); }} />
+      )}
 
       {/* Receive stock form */}
       {showReceive && (
@@ -290,6 +304,10 @@ export default function StockTab({ initialFilter }) {
           </div>
         );
       })()}
+
+      {!loading && view !== 'waste' && (
+        <PendingArrivalsSection stock={stock} onNavigate={onNavigate} />
+      )}
 
       {loading && <SkeletonTable rows={10} cols={5} />}
 
@@ -708,6 +726,7 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
                   <thead>
                     <tr className="text-[10px] text-ios-tertiary uppercase border-b border-blue-100">
                       <th className="text-left py-1 pr-2">{t.date}</th>
+                      <th className="text-left py-1 pr-2">{t.deliveryDate}</th>
                       <th className="text-left py-1 pr-2">{t.usageType || 'Type'}</th>
                       <th className="text-left py-1 pr-2">{t.usageDetail || 'Details'}</th>
                       <th className="text-right py-1">{t.quantity}</th>
@@ -717,13 +736,23 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
                     {usageTrail.map((entry, i) => (
                       <tr key={i} className="border-b border-blue-50">
                         <td className="py-1 pr-2 text-ios-secondary">{entry.date || '—'}</td>
+                        <td className="py-1 pr-2 text-ios-secondary">
+                          {entry.type === 'order' && entry.requiredBy ? entry.requiredBy : '—'}
+                        </td>
                         <td className="py-1 pr-2">
                           {entry.type === 'order' && <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-medium">{t.usageOrder || 'Order'}</span>}
                           {entry.type === 'writeoff' && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-medium">{t.writeOff}</span>}
                           {entry.type === 'purchase' && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-medium">{t.usagePurchase || 'Purchase'}</span>}
                         </td>
                         <td className="py-1 pr-2 text-ios-label">
-                          {entry.type === 'order' && `${entry.orderId} — ${entry.customer} (${entry.status})`}
+                          {entry.type === 'order' && (
+                            <span
+                              className={entry.orderRecordId ? 'cursor-pointer text-brand-600 hover:underline' : ''}
+                              onClick={() => entry.orderRecordId && onNavigate?.({ tab: 'orders', filter: { orderId: entry.orderRecordId } })}
+                            >
+                              {entry.orderId} — {entry.customer} ({entry.status})
+                            </span>
+                          )}
                           {entry.type === 'writeoff' && `${entry.reason}${entry.notes ? ': ' + entry.notes : ''}`}
                           {entry.type === 'purchase' && `${entry.supplier}${entry.notes ? ' — ' + entry.notes : ''}`}
                         </td>

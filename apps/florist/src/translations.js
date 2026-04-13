@@ -474,6 +474,31 @@ const en = {
   useStockOrPremade:        'Or pick a premade bouquet',
   premadeBouquetAge:        'Made',
   priceOverrideOptional:    'Fixed price (optional)',
+
+  // Stock visibility overhaul
+  pendingArrivals:          'Pending Arrivals',
+  ordered:                  'Ordered',
+  committedToOrders:        'Committed',
+  netQty:                   'Net',
+  eta:                      'ETA',
+  noArrivalsPending:        'No pending purchase orders',
+  deliveryDate:             'Delivery',
+  impactedOrders:           'Impacted orders',
+  stemsCommitted:           'stems committed',
+  swapFlower:               'Swap',
+  swapComplete:             'Flower swapped',
+  reconcileSubstitutes:     'Reconcile substitutes',
+  remainingAfterSwap:       'Remaining',
+  ordersNeedSwap:           'orders need flower swap',
+  confirmDeleteWaste:       'Delete this entry? Stock will be restored.',
+  entryUpdated:             'Entry updated',
+  entryDeleted:             'Entry deleted',
+  reconcile:                'Reconcile',
+  reconcileTitle:           'Stock Reconciliation',
+  mismatchFound:            'Mismatches found',
+  noMismatches:             'All stock quantities match',
+  applyFixes:               'Apply corrections',
+  fixesApplied:             'Corrections applied',
 };
 
 const ru = {
@@ -947,6 +972,31 @@ const ru = {
   useStockOrPremade:        'Или выберите готовый букет',
   premadeBouquetAge:        'Собран',
   priceOverrideOptional:    'Фиксированная цена (необязательно)',
+
+  // Stock visibility overhaul
+  pendingArrivals:          'Ожидаемые поставки',
+  ordered:                  'Заказано',
+  committedToOrders:        'Зарезервировано',
+  netQty:                   'Остаток',
+  eta:                      'Дата',
+  noArrivalsPending:        'Нет ожидающих закупок',
+  deliveryDate:             'Доставка',
+  impactedOrders:           'Затронутые заказы',
+  stemsCommitted:           'стеблей зарезервировано',
+  swapFlower:               'Заменить',
+  swapComplete:             'Цветок заменён',
+  reconcileSubstitutes:     'Сверка замен',
+  remainingAfterSwap:       'Остаток',
+  ordersNeedSwap:           'заказов требуют замены',
+  confirmDeleteWaste:       'Удалить запись списания? Остаток будет восстановлен.',
+  entryUpdated:             'Запись обновлена',
+  entryDeleted:             'Запись удалена',
+  reconcile:                'Сверка',
+  reconcileTitle:           'Сверка склада',
+  mismatchFound:            'Найдены расхождения',
+  noMismatches:             'Расхождений не найдено',
+  applyFixes:               'Применить корректировки',
+  fixesApplied:             'Корректировки применены',
 };
 
 // ── Proxy-based dynamic translation ──

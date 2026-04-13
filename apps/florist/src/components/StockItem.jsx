@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import t from '../translations.js';
 import { stockBaseName, renderDateTag } from '@flower-studio/shared';
@@ -14,6 +15,7 @@ import fmtDate from '../utils/formatDate.js';
  * Tapping the row expands it to show which orders consume this flower.
  */
 export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatch, committedData }) {
+  const navigate = useNavigate();
   const qty       = item['Current Quantity'] || 0;
   const dead      = item['Dead/Unsold Stems'] || 0;
   const threshold = item['Reorder Threshold'] || 5;
@@ -207,7 +209,15 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
               ) : (
                 <div className="bg-white rounded-lg border border-gray-100 divide-y divide-gray-50 overflow-hidden max-h-48 overflow-y-auto">
                   {traceTrail.map((entry, i) => (
-                    <div key={i} className="flex items-center justify-between px-2.5 py-1.5">
+                    <div
+                      key={i}
+                      className={`flex items-center justify-between px-2.5 py-1.5 ${
+                        entry.type === 'order' && entry.orderRecordId ? 'cursor-pointer active:bg-gray-50' : ''
+                      }`}
+                      onClick={() => {
+                        if (entry.type === 'order' && entry.orderRecordId) navigate(`/orders/${entry.orderRecordId}`);
+                      }}
+                    >
                       <div className="flex items-center gap-1.5 min-w-0">
                         <span className={`text-[9px] font-medium px-1 py-0.5 rounded ${
                           entry.type === 'order' ? 'bg-brand-100 text-brand-700' :
@@ -218,14 +228,18 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                            entry.type === 'writeoff' ? (t.writeOff || 'W/O') :
                            (t.usagePurchase || 'Purchase')}
                         </span>
-                        <span className="text-[10px] text-ios-label truncate">
+                        <span className={`text-[10px] truncate ${entry.type === 'order' && entry.orderRecordId ? 'text-brand-600' : 'text-ios-label'}`}>
                           {entry.type === 'order' ? `${entry.orderId} ${entry.customer}` :
                            entry.type === 'writeoff' ? entry.reason :
                            entry.supplier}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {entry.date && <span className="text-[9px] text-ios-tertiary">{entry.date}</span>}
+                        {entry.date && (
+                          <span className="text-[9px] text-ios-tertiary">
+                            {entry.date}{entry.type === 'order' && entry.requiredBy ? ` → ${entry.requiredBy}` : ''}
+                          </span>
+                        )}
                         <span className={`text-[11px] font-semibold tabular-nums ${entry.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {entry.quantity > 0 ? '+' : ''}{entry.quantity}
                         </span>
