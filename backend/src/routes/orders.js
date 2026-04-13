@@ -169,7 +169,8 @@ router.get('/', async (req, res, next) => {
 
       const sellTotal = order['Sell Total'] || totalByOrder[order.id] || 0;
       const delivFee = Number(order['Delivery Fee'] || 0);
-      order['Final Price'] = order['Price Override'] || (sellTotal + delivFee) || 0;
+      // Price Override replaces flower total only; delivery fee always added on top
+      order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
     }
 
     // Post-enrichment filter for "upcoming"
@@ -215,11 +216,11 @@ router.get('/:id', async (req, res, next) => {
     if (delivery) order.delivery = delivery;
 
     // Compute Final Price (matches list endpoint logic) so frontend has authoritative total.
-    // Cascade: Price Override → (sum of order lines + delivery fee).
+    // Price Override replaces flower total only; delivery fee always added on top.
     const lineTotal = orderLines.reduce((s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0);
     const sellTotal = order['Sell Total'] || lineTotal || 0;
     const delivFee  = order['Delivery Type'] === 'Delivery' ? Number(order['Delivery Fee'] || delivery?.['Delivery Fee'] || 0) : 0;
-    order['Final Price'] = order['Price Override'] || (sellTotal + delivFee) || 0;
+    order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
 
     res.json(order);
   } catch (err) {

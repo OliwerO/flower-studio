@@ -15,7 +15,8 @@ export function enrichOrderPrices(orders, orderSellTotals, orderCostTotals, deli
     o._flowerSell = flowerSell;
     o._deliveryFee = delFee;
     o._cost = orderCostTotals[o.id] || 0;
-    o['Effective Price'] = o['Final Price'] ?? o['Price Override'] ?? (flowerSell + delFee);
+    // Price Override replaces flower total only; delivery fee always added on top
+    o['Effective Price'] = o['Final Price'] ?? ((o['Price Override'] || flowerSell) + delFee);
   }
 }
 

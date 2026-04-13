@@ -110,9 +110,9 @@ router.get('/', async (req, res, next) => {
         order['Sell Total'] = totalByOrder[order.id];
       }
       const deliveryFee = Number(order['Delivery Fee'] || 0);
+      // Price Override replaces flower total only; delivery fee always added on top
       order['Effective Price'] = order['Final Price']
-        ?? order['Price Override']
-        ?? ((order['Sell Total'] || 0) + deliveryFee);
+        ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
     }
 
     // Enrich fulfillToday orders with customer names + effective prices
@@ -152,8 +152,7 @@ router.get('/', async (req, res, next) => {
       }
       const deliveryFee = Number(order['Delivery Fee'] || 0);
       order['Effective Price'] = order['Final Price']
-        ?? order['Price Override']
-        ?? ((order['Sell Total'] || 0) + deliveryFee);
+        ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
     }
 
     // Enrich tomorrowOrders with customer names + order line summaries
@@ -247,7 +246,7 @@ router.get('/', async (req, res, next) => {
       const daysOld = Math.floor((todayMs - orderDateMs) / DAY_MS);
       const sellTotal = unpaidTotalByOrder[o.id] || 0;
       const delFee = Number(o['Delivery Fee'] || 0);
-      const effectivePrice = o['Final Price'] ?? o['Price Override'] ?? (sellTotal + delFee);
+      const effectivePrice = o['Final Price'] ?? ((o['Price Override'] || sellTotal) + delFee);
       const amt = Number(effectivePrice) || 0;
 
       let bucket;

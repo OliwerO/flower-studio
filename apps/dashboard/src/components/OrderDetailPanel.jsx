@@ -178,12 +178,11 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const isTerminal = o.Status === 'Delivered' || o.Status === 'Picked Up' || o.Status === 'Cancelled';
   const showPaymentMethod = o['Payment Status'] === 'Paid';
 
-  // Effective price: Price Override || (line sell total + delivery fee)
-  // This is the "invoice total" — what the customer owes.
+  // Price Override replaces flower total only; delivery fee always added on top.
   const lineTotal = (o.orderLines || []).reduce((sum, l) =>
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
   const deliveryFee = Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0);
-  const effectivePrice = o['Price Override'] || (lineTotal + deliveryFee) || 0;
+  const effectivePrice = (o['Price Override'] || lineTotal) + deliveryFee;
 
   // Partial payment state
   const isPartial = o['Payment Status'] === 'Partial';
