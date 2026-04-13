@@ -114,7 +114,7 @@ router.get('/committed', async (req, res, next) => {
     // Bulk-fetch all order lines
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const allLines = await listByIds(TABLES.ORDER_LINES, allLineIds, {
-      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
+      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name', 'Stock Deferred'],
       maxRecords: 2000,
     });
 
@@ -138,9 +138,12 @@ router.get('/committed', async (req, res, next) => {
       };
     }
 
-    // Aggregate committed quantities per stock item
+    // Aggregate committed quantities per stock item — only deferred lines
+    // (non-deferred lines already had stock deducted at creation, so they're reflected in current qty)
     const committed = {};
     for (const line of allLines) {
+      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
+      if (!isDeferred) continue;
       const stockId = line['Stock Item']?.[0];
       if (!stockId) continue;
       const qty = Number(line.Quantity || 0);
