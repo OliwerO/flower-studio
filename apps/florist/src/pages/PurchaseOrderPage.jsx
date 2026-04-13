@@ -162,15 +162,41 @@ export default function PurchaseOrderPage() {
 
   async function updateDraftLine(orderId, lineId, fields) {
     try {
+      // Temp lines (not yet persisted) — create via POST when flower name is set
+      if (typeof lineId === 'string' && lineId.startsWith('_temp_')) {
+        if (!fields['Flower Name']?.trim()) {
+          setExpandedLines(prev => prev.map(l => l.id === lineId ? { ...l, ...fields } : l));
+          return;
+        }
+        const merged = expandedLines.find(l => l.id === lineId) || {};
+        const payload = {
+          flowerName: fields['Flower Name'] || merged['Flower Name'] || '',
+          quantity: fields['Quantity Needed'] ?? merged['Quantity Needed'] ?? 1,
+          supplier: fields.Supplier ?? merged.Supplier ?? '',
+          costPrice: Number(fields['Cost Price'] ?? merged['Cost Price']) || 0,
+          sellPrice: Number(fields['Sell Price'] ?? merged['Sell Price']) || 0,
+          lotSize: Number(fields['Lot Size'] ?? merged['Lot Size']) || 0,
+          farmer: fields.Farmer ?? merged.Farmer ?? '',
+          notes: fields.Notes ?? merged.Notes ?? '',
+          stockItemId: fields['Stock Item']?.[0] || '',
+        };
+        const created = await client.post(`/stock-orders/${orderId}/lines`, payload);
+        setExpandedLines(prev => prev.map(l => l.id === lineId ? created.data : l));
+        return;
+      }
       await client.patch(`/stock-orders/${orderId}/lines/${lineId}`, fields);
       const res = await client.get(`/stock-orders/${orderId}`);
       setExpandedLines(res.data.lines || []);
-    } catch {
-      showToast(t.error, 'error');
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
   async function removeDraftLine(orderId, lineId) {
+    if (typeof lineId === 'string' && lineId.startsWith('_temp_')) {
+      setExpandedLines(prev => prev.filter(l => l.id !== lineId));
+      return;
+    }
     try {
       await client.delete(`/stock-orders/${orderId}/lines/${lineId}`);
       setExpandedLines(prev => prev.filter(l => l.id !== lineId));
@@ -179,13 +205,19 @@ export default function PurchaseOrderPage() {
     }
   }
 
-  async function addDraftLine(orderId) {
-    try {
-      const line = await client.post(`/stock-orders/${orderId}/lines`, { flowerName: '', quantity: 1 });
-      setExpandedLines(prev => [...prev, line.data]);
-    } catch {
-      showToast(t.error, 'error');
-    }
+  function addDraftLine() {
+    const tempLine = {
+      id: `_temp_${Date.now()}`,
+      'Flower Name': '',
+      'Quantity Needed': 1,
+      'Lot Size': 0,
+      Supplier: '',
+      'Cost Price': 0,
+      'Sell Price': 0,
+      Farmer: '',
+      Notes: '',
+    };
+    setExpandedLines(prev => [...prev, tempLine]);
   }
 
   async function deleteDraftPO(orderId) {
@@ -445,7 +477,7 @@ export default function PurchaseOrderPage() {
                             suppliers={SUPPLIERS}
                           />
                         ))}
-                        <button onClick={() => addDraftLine(order.id)}
+                        <button onClick={() => addDraftLine()}
                           className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-xl active:bg-brand-100 active-scale">
                           + {t.po?.addLine || 'Add line'}
                         </button>
