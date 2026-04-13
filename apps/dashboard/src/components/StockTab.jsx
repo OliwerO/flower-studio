@@ -299,6 +299,9 @@ export default function StockTab({ initialFilter, onNavigate }) {
     return rows;
   }, [committedMap, pendingPO, stock, search]);
 
+  // Stock IDs shown in Needed section — hide from Available to avoid duplication
+  const neededStockIds = useMemo(() => new Set(neededRows.map(r => r.stockId)), [neededRows]);
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -813,6 +816,13 @@ export default function StockTab({ initialFilter, onNavigate }) {
               <col style={{ width: '6%' }} /><col style={{ width: '17%' }} />
             </colgroup>
             <thead>
+              <tr className="bg-green-50/60">
+                <th colSpan={11} className="px-3 py-2 border-b border-green-100 text-left font-normal">
+                  <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">
+                    {t.flowersInStock || 'Flowers in Stock'} ({filtered.filter(s => !neededStockIds.has(s.id)).length})
+                  </span>
+                </th>
+              </tr>
               <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
                 {[
                   { key: 'name',           label: t.stockName, align: 'left' },
@@ -840,7 +850,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(item => (
+              {filtered.filter(item => !neededStockIds.has(item.id)).map(item => (
                 <StockRow
                   key={item.id}
                   item={item}
@@ -851,26 +861,28 @@ export default function StockTab({ initialFilter, onNavigate }) {
                 />
               ))}
             </tbody>
-            {filtered.length > 0 && (
+            {(() => {
+              const inStock = filtered.filter(s => !neededStockIds.has(s.id));
+              return inStock.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold text-xs">
                   <td className="px-2 py-2 text-ios-label uppercase tracking-wide">
-                    {t.total || 'Total'} ({filtered.length})
+                    {t.total || 'Total'} ({inStock.length})
                   </td>
                   <td></td>
                   <td className="px-2 py-2 text-right text-ios-label text-base">
-                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
+                    {inStock.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
                   </td>
                   <td className="px-2 py-2 text-right text-ios-label">
-                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(2)} {t.zl}
+                    {inStock.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
                   <td className="px-2 py-2 text-right text-ios-label">
-                    {filtered.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
+                    {inStock.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
                   </td>
                   <td colSpan={6}></td>
                 </tr>
               </tfoot>
-            )}
+            ); })()}
           </table>
         </div>
       )}
