@@ -68,8 +68,8 @@ export default function ProductsTab() {
     return true;
   }).filter(g => {
     if (catFilter) {
-      const cats = parseCats(g.variants[0]?.['Category']);
-      if (!cats.includes(catFilter)) return false;
+      const allCats = [...new Set(g.variants.flatMap(v => parseCats(v['Category'])))];
+      if (!allCats.includes(catFilter)) return false;
     }
     return true;
   }).filter(g => {

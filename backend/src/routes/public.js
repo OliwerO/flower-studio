@@ -214,17 +214,36 @@ router.get('/categories', (_req, res) => {
 
   // Flat name lists (backward compat for product assignment / nav rendering)
   const permanentNames = permanent.map(p => typeof p === 'string' ? p : p.name);
-  const autoNames = auto.map(a => typeof a === 'string' ? a : a.name);
-  const all = [...permanentNames, ...(seasonal ? [seasonal.name] : []), ...autoNames];
-  const allCategories = [...new Set([...permanentNames, ...allSeasonal, ...autoNames])];
+  const all = [...permanentNames, ...(seasonal ? [seasonal.name] : [])];
+  const allCategories = [...new Set([...permanentNames, ...allSeasonal])];
+
+  // Count "Available Today" products from the products cache (no extra Airtable call).
+  // The products cache computes availableToday per product using lead time + stock.
+  const productsCached = cache['products']?.data;
+  const availTodayCount = productsCached
+    ? productsCached.products.filter(p => p.availableToday).length
+    : null; // null = cache not warmed yet, frontend should treat as unknown
+
+  // Build auto array as objects with productCount (not bare strings)
+  const autoObjects = auto.map(a => {
+    if (typeof a === 'string') return { name: a, slug: a.toLowerCase().replace(/[^a-z0-9]+/g, '-') };
+    const obj = { name: a.name, slug: a.slug, description: a.description || '', translations: a.translations || {} };
+    if (a.slug === 'available-today') obj.productCount = availTodayCount;
+    return obj;
+  });
+  const autoNames = autoObjects.map(a => a.name);
+
+  // Include auto names in all/allCategories lists
+  all.push(...autoNames);
+  allCategories.push(...autoNames);
 
   // Slug-keyed lookup — Velo reads current URL slug, matches to category translations
   const categoryMap = {};
   for (const p of permanent) {
     if (typeof p === 'object') categoryMap[p.slug] = { name: p.name, slug: p.slug, description: p.description || '', translations: p.translations || {} };
   }
-  for (const a of auto) {
-    if (typeof a === 'object') categoryMap[a.slug] = { name: a.name, slug: a.slug, description: a.description || '', translations: a.translations || {} };
+  for (const a of autoObjects) {
+    categoryMap[a.slug] = a;
   }
   for (const s of sc.seasonal || []) {
     categoryMap[s.slug] = { name: s.name, slug: s.slug, description: s.description || '', translations: s.translations || {} };
@@ -240,7 +259,7 @@ router.get('/categories', (_req, res) => {
           translations: seasonal.translations || {},
         }
       : { active: null, slug: null },
-    auto: autoNames,
+    auto: autoObjects,
     all,
     allCategories,
     categoryMap,

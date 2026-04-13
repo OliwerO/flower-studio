@@ -583,7 +583,6 @@ export async function runPush() {
           allConfigRows.filter(r => parseCategoryField(r['Category']).includes(catName))
             .map(r => r['Wix Product ID']).filter(Boolean)
         )];
-        if (productIds.length === 0) continue;
         try {
           await setWixCategoryProducts(wixCatId, productIds);
           stats.categoriesSynced++;
@@ -603,9 +602,7 @@ export async function runPush() {
         )];
         console.log(`[PUSH] Seasonal "${seasonal.name}": ${seasonalProductIds.length} products`);
         try {
-          if (seasonalProductIds.length > 0) {
-            await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
-          }
+          await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
           // Push EN translation as primary (Wix site is English)
           const enTitle = seasonal.translations?.en?.title;
           const enDesc = seasonal.translations?.en?.description;
