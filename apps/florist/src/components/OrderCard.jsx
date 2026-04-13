@@ -95,10 +95,10 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const isDelivery = order['Delivery Type'] === 'Delivery' || detail?.['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
   const request    = order['Customer Request'] || '';
-  // Total includes delivery fee — use backend's Final Price if present, else compute
+  // Price Override replaces flower total only; delivery fee always added on top
   const _delFee    = isDelivery ? Number(order['Delivery Fee'] || 0) : 0;
   const _sellTotal = Number(order['Sell Total'] || 0);
-  const price      = order['Final Price'] || order['Price Override'] || (_sellTotal + _delFee) || '';
+  const price      = order['Final Price'] || ((order['Price Override'] || _sellTotal) + _delFee) || '';
   const isPaid     = order['Payment Status'] === 'Paid';
   const isPartialPayment = order['Payment Status'] === 'Partial';
   const isWix      = order['Source'] === 'Wix';
@@ -201,11 +201,12 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const d = detail || order;
   const currentStatus = d['Status'] || 'New';
   const currentPaid   = d['Payment Status'] === 'Paid';
-  // Effective price: Price Override || (sell total + delivery fee)
+  // Price Override replaces flower total only; delivery fee always added on top
   const detailLineTotal = (detail?.orderLines || []).reduce((sum, l) =>
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
   const detailDeliveryFee = Number(detail?.delivery?.['Delivery Fee'] || d['Delivery Fee'] || 0);
-  const currentPrice = d['Price Override'] || (detailLineTotal > 0 ? detailLineTotal + detailDeliveryFee : (d['Sell Total'] || price) ) || 0;
+  const flowerTotal = detailLineTotal > 0 ? detailLineTotal : (Number(d['Sell Total']) || 0);
+  const currentPrice = (d['Price Override'] || flowerTotal) + detailDeliveryFee;
 
   function statusLabel(s) {
     return STATUS_LABELS[s]?.() || s;
@@ -534,139 +535,79 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* Order date (shown in expanded view, not overview) */}
-              {d['Order Date'] && (
-                <div className="bg-gray-50 rounded-xl px-3 py-1">
-                  <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />
-                </div>
-              )}
-
-              {/* Date & time — same for delivery and pickup, uses patch (backend cascades to delivery) */}
-              <div>
-                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDate || 'Date'}</p>
-                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
-                  {/* Editable date */}
-                  <div className="flex items-center justify-between gap-2 py-1">
-                    <span className="text-xs text-ios-tertiary shrink-0">{t.labelDate}</span>
-                    <div className="relative z-10">
-                      <DatePicker
-                        value={d['Required By'] || ''}
-                        onChange={val => patch({ 'Required By': val || null })}
-                        placeholder={t.selectDate || '—'}
-                      />
+              {/* ── Price Summary ── */}
+              {(() => {
+                const fTotal = flowerTotal;
+                const overrideVal = d['Price Override'] ? Number(d['Price Override']) : null;
+                const dFee = isDelivery ? detailDeliveryFee : 0;
+                const grandTotal = (overrideVal || fTotal) + dFee;
+                return (
+                  <div className="bg-white border border-gray-200 rounded-xl px-3 py-2">
+                    <div className="flex justify-between py-1.5">
+                      <span className="text-xs text-ios-tertiary">{t.flowerTotal || 'Flowers'}</span>
+                      <span className={`text-sm text-ios-label ${overrideVal ? 'line-through text-ios-tertiary' : 'font-medium'}`}>
+                        {Math.round(fTotal)} zł
+                      </span>
                     </div>
-                  </div>
-                  {/* Editable time slot */}
-                  <div className="py-1">
-                    <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {timeSlots.map(slot => (
-                        <button
-                          key={slot}
-                          onClick={() => patch({
-                            'Delivery Time': d['Delivery Time'] === slot ? '' : slot,
-                          })}
-                          disabled={saving}
-                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
-                            d['Delivery Time'] === slot
-                              ? 'bg-brand-600 text-white shadow-sm'
-                              : 'bg-white dark:bg-gray-800 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
-                          }`}
-                        >
-                          {slot}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Delivery-specific: address, recipient, fee */}
-              {isDelivery && detail.delivery && (
-                <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDelivery}</p>
-                  <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
-                    <div className="py-1">
-                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelAddress}</span>
-                      <input
-                        type="text"
-                        defaultValue={detail.delivery['Delivery Address'] || ''}
-                        onBlur={e => { if (e.target.value !== (detail.delivery['Delivery Address'] || '')) patchDelivery({ 'Delivery Address': e.target.value }); }}
-                        placeholder="—"
-                        disabled={saving}
-                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
-                      />
-                    </div>
-                    <div className="py-1">
-                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelRecipient}</span>
-                      <input
-                        type="text"
-                        defaultValue={detail.delivery['Recipient Name'] || ''}
-                        onBlur={e => { if (e.target.value !== (detail.delivery['Recipient Name'] || '')) patchDelivery({ 'Recipient Name': e.target.value }); }}
-                        placeholder="—"
-                        disabled={saving}
-                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
-                      />
-                    </div>
-                    <div className="py-1">
-                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelPhone}</span>
-                      <input
-                        type="tel"
-                        defaultValue={detail.delivery['Recipient Phone'] || ''}
-                        onBlur={e => { if (e.target.value !== (detail.delivery['Recipient Phone'] || '')) patchDelivery({ 'Recipient Phone': e.target.value }); }}
-                        placeholder="—"
-                        disabled={saving}
-                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
-                      />
-                    </div>
-                    <div className="py-1">
-                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelFee}</span>
+                    <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
+                      <span className="text-xs text-ios-tertiary">{t.priceOverride}</span>
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
-                          defaultValue={detail.delivery['Delivery Fee'] || ''}
+                          defaultValue={d['Price Override'] || ''}
                           onBlur={e => {
-                            const val = e.target.value === '' ? 0 : Number(e.target.value);
-                            if (val !== Number(detail.delivery['Delivery Fee'] || 0)) patchDelivery({ 'Delivery Fee': val });
+                            const val = e.target.value === '' ? null : Number(e.target.value);
+                            if (val !== (d['Price Override'] || null)) patch({ 'Price Override': val });
                           }}
-                          placeholder="0"
+                          placeholder="—"
                           disabled={saving}
-                          className="w-20 text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                          className="w-20 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none disabled:opacity-40"
                         />
                         <span className="text-xs text-ios-tertiary">zł</span>
                       </div>
                     </div>
+                    {isDelivery && (
+                      <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
+                        <span className="text-xs text-ios-tertiary">{t.labelFee}</span>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            defaultValue={detail?.delivery?.['Delivery Fee'] || ''}
+                            onBlur={e => {
+                              const val = e.target.value === '' ? 0 : Number(e.target.value);
+                              if (val !== Number(detail?.delivery?.['Delivery Fee'] || 0)) patchDelivery({ 'Delivery Fee': val });
+                            }}
+                            placeholder="0"
+                            disabled={saving}
+                            className="w-20 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none disabled:opacity-40"
+                          />
+                          <span className="text-xs text-ios-tertiary">zł</span>
+                        </div>
+                      </div>
+                    )}
+                    <div className="flex justify-between py-1.5 border-t border-gray-200">
+                      <span className="text-xs font-semibold text-ios-label uppercase">{t.grandTotal || 'Total'}</span>
+                      <span className="text-base font-bold text-brand-600">{Math.round(grandTotal)} zł</span>
+                    </div>
+                    {isOwner && (() => {
+                      const costTotal = (detail.orderLines || []).reduce(
+                        (sum, l) => sum + Number(l['Cost Price Per Unit'] || 0) * Number(l['Quantity'] || 0), 0
+                      );
+                      if (!costTotal) return null;
+                      const marginAmt = grandTotal - costTotal;
+                      const marginPct = grandTotal > 0 ? Math.round((marginAmt / grandTotal) * 100) : 0;
+                      return (
+                        <div className="flex justify-between py-1.5 border-t border-gray-100 text-xs text-ios-tertiary">
+                          <span>{t.owner.cost}: {Math.round(costTotal)} zł</span>
+                          <span>{t.owner.margin}: {Math.round(marginAmt)} zł ({marginPct}%)</span>
+                        </div>
+                      );
+                    })()}
                   </div>
-                </div>
-              )}
+                );
+              })()}
 
-              {/* #37 — Driver assignment for delivery orders */}
-              {isDelivery && detail?.delivery && drivers.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {drivers.map(driver => (
-                      <button
-                        key={driver}
-                        onClick={() => patchDelivery({ 'Assigned Driver': detail.delivery['Assigned Driver'] === driver ? '' : driver })}
-                        disabled={saving}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                          detail.delivery['Assigned Driver'] === driver
-                            ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                            : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        {driver}
-                      </button>
-                    ))}
-                  </div>
-                  {!detail.delivery['Assigned Driver'] && (
-                    <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
-                  )}
-                </div>
-              )}
-
-              {/* Greeting card text — large, readable for writing onto physical card */}
+              {/* ── Greeting card ── */}
               {detail['Greeting Card Text'] && (
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelCardMsg}</p>
@@ -676,65 +617,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* Owner: Cost/Margin — computed from order lines */}
-              {isOwner && (() => {
-                // Compute cost from line items (detail endpoint doesn't pre-calculate this)
-                const costTotal = (detail.orderLines || []).reduce(
-                  (sum, l) => sum + Number(l['Cost Price Per Unit'] || 0) * Number(l['Quantity'] || 0), 0
-                );
-                const sellTotal = Number(detail['Price Override'] || 0)
-                  || (detail.orderLines || []).reduce(
-                    (sum, l) => sum + Number(l['Sell Price Per Unit'] || 0) * Number(l['Quantity'] || 0), 0
-                  );
-                const effectivePrice = sellTotal + Number(detail?.delivery?.['Delivery Fee'] || detail['Delivery Fee'] || 0);
-                if (!costTotal && !effectivePrice) return null;
-                const marginAmt = effectivePrice - costTotal;
-                const marginPct = effectivePrice > 0 ? Math.round((marginAmt / effectivePrice) * 100) : 0;
-                return (
-                  <div>
-                    <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.owner.finances}</p>
-                    <div className="bg-gray-50 rounded-xl px-3 py-1">
-                      <Row label={t.owner.cost} value={`${Math.round(costTotal)} zł`} />
-                      <Row label={t.owner.margin} value={`${Math.round(marginAmt)} zł (${marginPct}%)`} />
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Delivery type switch — allows changing Pickup↔Delivery after creation */}
-              {!isTerminal && (
-                <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.deliveryType || 'Delivery type'}</p>
-                  <Pills
-                    value={d['Delivery Type'] || 'Pickup'}
-                    onChange={async val => {
-                      if (val === 'Delivery' && d['Delivery Type'] === 'Pickup' && !detail?.delivery) {
-                        // Switching Pickup → Delivery: create delivery record on-the-fly
-                        setSaving(true);
-                        try {
-                          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
-                          setDetail(prev => ({ ...prev, 'Delivery Type': 'Delivery', delivery: res.data }));
-                          onOrderUpdated?.(order.id, { 'Delivery Type': 'Delivery' });
-                          showToast(t.updated, 'success');
-                        } catch (err) {
-                          showToast(err.response?.data?.error || t.updateError, 'error');
-                        } finally {
-                          setSaving(false);
-                        }
-                      } else {
-                        patch({ 'Delivery Type': val });
-                      }
-                    }}
-                    disabled={saving}
-                    options={[
-                      { value: 'Pickup',   label: t.pickup || 'Pickup' },
-                      { value: 'Delivery', label: t.delivery || 'Delivery' },
-                    ]}
-                  />
-                </div>
-              )}
-
-              {/* Status controls */}
+              {/* ── Status controls ── */}
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelStatus}</p>
                 {(() => {
@@ -749,7 +632,6 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                     />
                   );
                 })()}
-                {/* Cancel + return stock — available for any non-cancelled order including delivered */}
                 {currentStatus !== 'Cancelled' && isTerminal && (
                   <button
                     onClick={async () => {
@@ -778,7 +660,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 )}
               </div>
 
-              {/* Payment controls */}
+              {/* ── Payment controls ── */}
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelPayment}</p>
                 <div className="flex flex-col gap-2">
@@ -802,7 +684,6 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                       { value: 'Partial', label: t.partial || 'Partial' },
                     ]}
                   />
-                  {/* Paid directly — single method */}
                   {currentPaid && (
                     <Pills
                       value={d['Payment Method'] || ''}
@@ -811,7 +692,6 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                       options={payMethods.map(m => ({ value: m, label: m }))}
                     />
                   )}
-                  {/* Partial payment flow */}
                   {d['Payment Status'] === 'Partial' && (() => {
                     const effPrice = currentPrice || 0;
                     const p1Amt = Number(d['Payment 1 Amount'] || 0);
@@ -822,10 +702,9 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                       <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-3">
                         {effPrice > 0 && (
                           <p className="text-xs text-ios-tertiary">
-                            {t.price || 'Total'}: <span className="font-semibold text-ios-label">{effPrice} zł</span>
+                            {t.grandTotal || 'Total'}: <span className="font-semibold text-ios-label">{effPrice} zł</span>
                           </p>
                         )}
-                        {/* Payment 1 */}
                         <div className="space-y-1.5">
                           <p className="text-xs font-semibold text-ios-tertiary uppercase">{t.payment1}</p>
                           <input
@@ -853,7 +732,6 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                             options={payMethods.map(m => ({ value: m, label: m }))}
                           />
                         </div>
-                        {/* Remaining + Payment 2 */}
                         {hasP1 && (
                           <div className="border-t border-gray-200 pt-2 space-y-1.5">
                             <p className="text-xs text-ios-tertiary">
@@ -898,11 +776,149 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               </div>
 
-              {/* Notes */}
-              {detail['Notes Original'] && (
+              {/* ── Fulfillment type ── */}
+              {!isTerminal && (
                 <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelNotes}</p>
-                  <p className="text-sm text-ios-label bg-gray-50 rounded-xl px-3 py-2">{detail['Notes Original']}</p>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.deliveryType || 'Fulfillment'}</p>
+                  <Pills
+                    value={d['Delivery Type'] || 'Pickup'}
+                    onChange={async val => {
+                      if (val === 'Delivery' && d['Delivery Type'] === 'Pickup' && !detail?.delivery) {
+                        setSaving(true);
+                        try {
+                          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
+                          setDetail(prev => ({ ...prev, 'Delivery Type': 'Delivery', delivery: res.data }));
+                          onOrderUpdated?.(order.id, { 'Delivery Type': 'Delivery' });
+                          showToast(t.updated, 'success');
+                        } catch (err) {
+                          showToast(err.response?.data?.error || t.updateError, 'error');
+                        } finally {
+                          setSaving(false);
+                        }
+                      } else {
+                        patch({ 'Delivery Type': val });
+                      }
+                    }}
+                    disabled={saving}
+                    options={[
+                      { value: 'Pickup',   label: t.pickup || 'Pickup' },
+                      { value: 'Delivery', label: t.delivery || 'Delivery' },
+                    ]}
+                  />
+                </div>
+              )}
+
+              {/* ── Date & time ── */}
+              <div>
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDate || 'Date'}</p>
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
+                  <div className="flex items-center justify-between gap-2 py-1">
+                    <span className="text-xs text-ios-tertiary shrink-0">{t.labelDate}</span>
+                    <div className="relative z-10">
+                      <DatePicker
+                        value={d['Required By'] || ''}
+                        onChange={val => patch({ 'Required By': val || null })}
+                        placeholder={t.selectDate || '—'}
+                      />
+                    </div>
+                  </div>
+                  <div className="py-1">
+                    <span className="text-xs text-ios-tertiary block mb-1.5">{t.labelTime}</span>
+                    <div className="flex flex-wrap gap-1.5">
+                      {timeSlots.map(slot => (
+                        <button
+                          key={slot}
+                          onClick={() => patch({
+                            'Delivery Time': d['Delivery Time'] === slot ? '' : slot,
+                          })}
+                          disabled={saving}
+                          className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
+                            d['Delivery Time'] === slot
+                              ? 'bg-brand-600 text-white shadow-sm'
+                              : 'bg-white dark:bg-gray-800 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          }`}
+                        >
+                          {slot}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* ── Delivery details (address, recipient, phone) ── */}
+              {isDelivery && detail.delivery && (
+                <div>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelDelivery}</p>
+                  <div className="bg-gray-50 dark:bg-gray-800 rounded-xl px-3 py-2 space-y-2">
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelAddress}</span>
+                      <input
+                        type="text"
+                        defaultValue={detail.delivery['Delivery Address'] || ''}
+                        onBlur={e => { if (e.target.value !== (detail.delivery['Delivery Address'] || '')) patchDelivery({ 'Delivery Address': e.target.value }); }}
+                        placeholder="—"
+                        disabled={saving}
+                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                      />
+                    </div>
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelRecipient}</span>
+                      <input
+                        type="text"
+                        defaultValue={detail.delivery['Recipient Name'] || ''}
+                        onBlur={e => { if (e.target.value !== (detail.delivery['Recipient Name'] || '')) patchDelivery({ 'Recipient Name': e.target.value }); }}
+                        placeholder="—"
+                        disabled={saving}
+                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                      />
+                    </div>
+                    <div className="py-1">
+                      <span className="text-xs text-ios-tertiary block mb-1">{t.labelPhone}</span>
+                      <input
+                        type="tel"
+                        defaultValue={detail.delivery['Recipient Phone'] || ''}
+                        onBlur={e => { if (e.target.value !== (detail.delivery['Recipient Phone'] || '')) patchDelivery({ 'Recipient Phone': e.target.value }); }}
+                        placeholder="—"
+                        disabled={saving}
+                        className="w-full text-sm text-ios-label bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Driver assignment ── */}
+              {isDelivery && detail?.delivery && drivers.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {drivers.map(driver => (
+                      <button
+                        key={driver}
+                        onClick={() => patchDelivery({ 'Assigned Driver': detail.delivery['Assigned Driver'] === driver ? '' : driver })}
+                        disabled={saving}
+                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                          detail.delivery['Assigned Driver'] === driver
+                            ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                            : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {driver}
+                      </button>
+                    ))}
+                  </div>
+                  {!detail.delivery['Assigned Driver'] && (
+                    <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Order date + Notes ── */}
+              {(d['Order Date'] || detail['Notes Original']) && (
+                <div className="bg-gray-50 rounded-xl px-3 py-1 space-y-0">
+                  {d['Order Date'] && <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />}
+                  {detail['Notes Original'] && <Row label={t.labelNotes} value={detail['Notes Original']} />}
                 </div>
               )}
             </>
