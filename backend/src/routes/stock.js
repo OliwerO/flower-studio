@@ -282,8 +282,12 @@ router.get('/pending-po', async (req, res, next) => {
         ? rawQty * lotSize   // old format: qty is lot count
         : rawQty;            // new format: qty is already stems
 
-      if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [] };
+      if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [], flowerName: '' };
       result[stockId].ordered += qty;
+      // Keep the first non-empty flower name
+      if (!result[stockId].flowerName && line['Flower Name']) {
+        result[stockId].flowerName = line['Flower Name'];
+      }
 
       const poId = line['Stock Orders']?.[0];
       const po = poId ? poMap[poId] : null;
@@ -611,30 +615,29 @@ router.post('/:id/write-off', async (req, res, next) => {
 });
 
 // GET /api/stock/reconciliation — detect stock mismatches.
-// For non-terminal orders with Required By today or earlier, stock should have
-// been deducted (non-deferred). This surfaces items where the actual qty doesn't
-// match what the order deductions imply.
+// Checks ALL non-terminal orders (including future ones). Only counts order
+// lines where Stock Deferred is NOT true (these should have been deducted
+// from stock at order creation). Compares expected deduction totals against
+// actual stock qty to surface discrepancies.
 router.get('/reconciliation', async (req, res, next) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
-
     // Fetch active stock items
     const stockItems = await db.list(TABLES.STOCK, {
       filterByFormula: '{Active} = TRUE()',
       fields: ['Display Name', 'Current Quantity', 'Dead/Unsold Stems'],
     });
 
-    // Fetch non-terminal orders where Required By <= today (stock should be deducted)
+    // Fetch ALL non-terminal orders (no date filter — deferred flag is what matters)
     const orders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', NOT(IS_AFTER({Required By}, '${today}')))`,
+      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
       fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
-      maxRecords: 500,
+      maxRecords: 1000,
     });
 
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const allLines = allLineIds.length > 0
       ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
+          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name', 'Stock Deferred'],
         })
       : [];
 
@@ -656,13 +659,16 @@ router.get('/reconciliation', async (req, res, next) => {
       };
     }
 
-    // Sum expected deductions per stock item (from today/past non-terminal orders)
+    // Only count NON-deferred lines — these had their stock deducted at creation
     const deductions = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0];
       if (!stockId) continue;
       const qty = Number(line.Quantity || 0);
       if (qty <= 0) continue;
+      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
+      if (isDeferred) continue; // deferred lines did NOT deduct stock — skip
+
       if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
       deductions[stockId].expected += qty;
       const oid = line.Order?.[0];
@@ -675,7 +681,44 @@ router.get('/reconciliation', async (req, res, next) => {
           requiredBy: oi.requiredBy,
           qty,
           status: oi.status,
+          deferred: false,
         });
+      }
+    }
+
+    // Also flag deferred lines that SHOULD have been deducted but weren't
+    // (lines in the same order as non-deferred lines = inconsistency)
+    for (const line of allLines) {
+      const stockId = line['Stock Item']?.[0];
+      if (!stockId) continue;
+      const qty = Number(line.Quantity || 0);
+      if (qty <= 0) continue;
+      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
+      if (!isDeferred) continue; // already counted above
+
+      const oid = line.Order?.[0];
+      const oi = oid ? orderMap[oid] : null;
+      // Check if same order has non-deferred lines (mixed deferred = likely bug)
+      const sameOrderNonDeferred = allLines.some(l =>
+        l.Order?.[0] === oid && l.id !== line.id &&
+        !(l['Stock Deferred'] === true || l['Stock Deferred'] === 'true')
+      );
+      if (sameOrderNonDeferred) {
+        // This is suspicious: same order has both deferred and non-deferred lines
+        if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
+        deductions[stockId].expected += qty;
+        if (oi) {
+          deductions[stockId].orders.push({
+            orderId: oid,
+            appOrderId: oi.appOrderId,
+            customerName: oi.customerName,
+            requiredBy: oi.requiredBy,
+            qty,
+            status: oi.status,
+            deferred: true,
+            mixedDeferredFlag: true,
+          });
+        }
       }
     }
 
@@ -683,7 +726,7 @@ router.get('/reconciliation', async (req, res, next) => {
     const stockMap = {};
     for (const item of stockItems) stockMap[item.id] = item;
 
-    // Report items with active order deductions for review
+    // Report items where deductions exist — owner reviews and decides
     const items = [];
     for (const [stockId, d] of Object.entries(deductions)) {
       const item = stockMap[stockId];

@@ -32,7 +32,7 @@ export default function PendingArrivalsSection({ stock, committedMap, onOrderCli
       const net = po.ordered - com.committed;
       return {
         stockId,
-        name: nameMap[stockId] || '—',
+        name: nameMap[stockId] || po.flowerName || '—',
         ordered: po.ordered,
         committed: com.committed,
         net,
