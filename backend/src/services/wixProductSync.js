@@ -420,7 +420,8 @@ export async function runPull() {
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
-          if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
+          // Active is Airtable-owned — never overwrite from Wix pull.
+          // Only sync Visible in Wix (what Wix reports) for informational purposes.
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
           const existingCats = parseCategoryField(existing['Category']);
           if (existingCats.length === 0 && importedCategories.length > 0) {

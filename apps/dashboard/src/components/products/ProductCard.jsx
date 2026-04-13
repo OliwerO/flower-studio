@@ -144,6 +144,23 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
   const active = variant['Active'] || false;
   const minStems = Number(variant['Min Stems'] || 0);
 
+  // Local draft state — only commits on blur/Enter to prevent
+  // mid-edit filtering (e.g. typing "1" on the way to "2")
+  const [draftPrice, setDraftPrice] = useState(price);
+  const [draftLt, setDraftLt] = useState(lt);
+  useEffect(() => { setDraftPrice(price); }, [price]);
+  useEffect(() => { setDraftLt(lt); }, [lt]);
+
+  function commitPrice() {
+    if (draftPrice !== price) onUpdate(variant.id, 'Price', draftPrice);
+  }
+  function commitLt() {
+    if (draftLt !== lt) onUpdate(variant.id, 'Lead Time Days', draftLt);
+  }
+  function handleKeyDown(e, commitFn) {
+    if (e.key === 'Enter') { e.target.blur(); commitFn(); }
+  }
+
   let suggested = null;
   if (productType === 'mono' && minStems > 0) {
     const keyFlower = variant['Key Flower'];
@@ -162,7 +179,8 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
         {minStems > 0 && <span className="text-xs text-gray-400 ml-1">({minStems} {t.prodStems})</span>}
       </td>
       <td className="py-2 px-2 text-right">
-        <input type="number" value={price} onChange={e => onUpdate(variant.id, 'Price', Number(e.target.value))}
+        <input type="number" value={draftPrice} onChange={e => setDraftPrice(Number(e.target.value))}
+          onBlur={commitPrice} onKeyDown={e => handleKeyDown(e, commitPrice)}
           className="w-20 text-right border border-gray-200 rounded-lg px-2 py-1 text-sm" min="0" />
       </td>
       {productType === 'mono' && (
@@ -183,7 +201,8 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
         </td>
       )}
       <td className="py-2 px-2 text-center">
-        <input type="number" value={lt} onChange={e => onUpdate(variant.id, 'Lead Time Days', Number(e.target.value))}
+        <input type="number" value={draftLt} onChange={e => setDraftLt(Number(e.target.value))}
+          onBlur={commitLt} onKeyDown={e => handleKeyDown(e, commitLt)}
           className="w-14 text-center border border-gray-200 rounded-lg px-1 py-1 text-sm" min="0" />
       </td>
       <td className="py-2 px-2 text-center">
