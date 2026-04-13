@@ -2,17 +2,34 @@
 // Like a warehouse management screen: see every item, adjust quantities,
 // receive deliveries, track waste. All fields inline-editable.
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import { stockBaseName, renderDateTag, parseBatchName } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
-import PendingArrivalsSection from './PendingArrivalsSection.jsx';
 import ReconciliationSection from './ReconciliationSection.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
+
+function formatDateTag(dateStr, color = 'gray') {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return dateStr;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const label = `${d.getDate()}.${months[d.getMonth()]}.`;
+  const colors = {
+    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-200',
+    amber: 'bg-amber-50 text-amber-600 border-amber-200',
+    gray: 'bg-gray-100 text-gray-500 border-gray-200',
+  };
+  return (
+    <span className={`inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md ${colors[color] || colors.gray}`}>
+      {label}
+    </span>
+  );
+}
 
 export default function StockTab({ initialFilter, onNavigate }) {
   const [stock, setStock]           = useState([]);
@@ -29,6 +46,12 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const [wasteEditId, setWasteEditId] = useState(null);
   const [wasteEditForm, setWasteEditForm] = useState({ quantity: '', reason: '' });
   const [wasteDeleteId, setWasteDeleteId] = useState(null);
+  const [pendingPO, setPendingPO] = useState({});
+  const [committedMap, setCommittedMap] = useState({});
+  const [plannedCollapsed, setPlannedCollapsed] = useState(false);
+  const [neededCollapsed, setNeededCollapsed] = useState(false);
+  const [expandedPlanned, setExpandedPlanned] = useState(null);
+  const [expandedNeeded, setExpandedNeeded] = useState(null);
   const { showToast } = useToast();
 
   const stockLoaded = useRef(false);
@@ -36,17 +59,23 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const res = await client.get('/stock?includeEmpty=true');
+      const [stockRes, poRes, comRes] = await Promise.all([
+        client.get('/stock?includeEmpty=true'),
+        client.get('/stock/pending-po'),
+        client.get('/stock/committed'),
+      ]);
       setStock(prev => {
-        if (!stockLoaded.current) return res.data;
+        if (!stockLoaded.current) return stockRes.data;
         // Merge: update existing items in place, preserve local UI state
-        const newMap = new Map(res.data.map(s => [s.id, s]));
+        const newMap = new Map(stockRes.data.map(s => [s.id, s]));
         const merged = prev.map(s => newMap.get(s.id) || s).filter(s => newMap.has(s.id));
-        for (const s of res.data) {
+        for (const s of stockRes.data) {
           if (!merged.find(m => m.id === s.id)) merged.push(s);
         }
         return merged;
       });
+      setPendingPO(poRes.data);
+      setCommittedMap(comRes.data);
       stockLoaded.current = true;
     } catch {
       if (!silent) showToast(t.error, 'error');
@@ -212,6 +241,57 @@ export default function StockTab({ initialFilter, onNavigate }) {
     });
   }
 
+  // Planned rows — flowers arriving from pending POs, cross-referenced with committed orders
+  const plannedRows = useMemo(() => {
+    const nameMap = {};
+    for (const s of stock) nameMap[s.id] = s['Display Name'] || s['Purchase Name'] || '';
+    let rows = Object.keys(pendingPO).map(stockId => {
+      const po = pendingPO[stockId] || { ordered: 0, pos: [], flowerName: '' };
+      const com = committedMap[stockId] || { committed: 0, orders: [] };
+      const stockName = nameMap[stockId] || '';
+      const poName = po.flowerName || '';
+      return {
+        stockId,
+        name: (poName.length >= stockName.length ? poName : stockName) || '—',
+        ordered: po.ordered,
+        committed: com.committed,
+        net: po.ordered - com.committed,
+        pos: po.pos || [],
+        orders: com.orders || [],
+        plannedDate: po.plannedDate || null,
+      };
+    }).filter(r => r.ordered > 0).sort((a, b) => a.name.localeCompare(b.name));
+    if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+    return rows;
+  }, [pendingPO, committedMap, stock, search]);
+
+  // Needed rows — flowers committed to future orders (shows demand)
+  const neededRows = useMemo(() => {
+    const nameMap = {};
+    for (const s of stock) nameMap[s.id] = s['Display Name'] || s['Purchase Name'] || '';
+    let rows = Object.keys(committedMap).map(stockId => {
+      const com = committedMap[stockId];
+      const hasPO = !!pendingPO[stockId];
+      const earliestDate = com.orders.reduce((earliest, o) => {
+        if (!o.requiredBy) return earliest;
+        return !earliest || o.requiredBy < earliest ? o.requiredBy : earliest;
+      }, null);
+      return {
+        stockId,
+        name: nameMap[stockId] || '—',
+        needed: com.committed,
+        orders: com.orders || [],
+        earliestDate,
+        hasPO,
+      };
+    }).filter(r => r.needed > 0).sort((a, b) => {
+      if (a.hasPO !== b.hasPO) return a.hasPO ? 1 : -1;
+      return (a.earliestDate || '').localeCompare(b.earliestDate || '');
+    });
+    if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
+    return rows;
+  }, [committedMap, pendingPO, stock, search]);
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -331,9 +411,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
         );
       })()}
 
-      {!loading && view !== 'waste' && (
-        <PendingArrivalsSection stock={stock} onNavigate={onNavigate} />
-      )}
+      {/* Planned + Needed + Available sections rendered in unified table below */}
 
       {loading && <SkeletonTable rows={10} cols={5} />}
 
@@ -572,16 +650,163 @@ export default function StockTab({ initialFilter, onNavigate }) {
         );
       })()}
 
-      {/* ── Stock table — flat sortable view (all/slow/negative views) ── */}
+      {/* ── Unified stock table — Planned + Needed + Available in one aligned table ── */}
       {view !== 'waste' && !loading && (
         <div className="glass-card overflow-x-auto">
-          <table className="w-full text-sm whitespace-nowrap">
+          <table className="w-full text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
+            <colgroup>
+              <col style={{ width: '24%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '5%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '17%' }} />
+            </colgroup>
+
+            {/* ── Section A: PLANNED — flowers arriving from pending POs ── */}
+            {plannedRows.length > 0 && (
+              <tbody>
+                <tr className="bg-indigo-50/60">
+                  <td colSpan={11} className="px-3 py-2 border-b border-indigo-100">
+                    <button onClick={() => setPlannedCollapsed(v => !v)} className="w-full flex items-center justify-between">
+                      <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                        {t.pendingArrivals} ({plannedRows.length})
+                      </span>
+                      <span className="text-xs text-indigo-400">{plannedCollapsed ? '▼' : '▲'}</span>
+                    </button>
+                  </td>
+                </tr>
+                {!plannedCollapsed && (
+                  <>
+                    <tr className="text-xs text-ios-tertiary border-b border-indigo-100 bg-indigo-50/20">
+                      <th className="text-left px-2 py-1.5 font-medium">{t.stockName}</th>
+                      <th className="text-left px-2 py-1.5 font-medium">{t.planned}</th>
+                      <th className="text-right px-2 py-1.5 font-medium">{t.ordered}</th>
+                      <th className="text-right px-2 py-1.5 font-medium">{t.committedToOrders}</th>
+                      <th className="text-right px-2 py-1.5 font-medium">{t.netQty}</th>
+                      <th colSpan={6}></th>
+                    </tr>
+                    {plannedRows.map(row => (
+                      <Fragment key={row.stockId}>
+                        <tr
+                          className="border-b border-gray-100 hover:bg-indigo-50/20 cursor-pointer"
+                          onClick={() => setExpandedPlanned(expandedPlanned === row.stockId ? null : row.stockId)}
+                        >
+                          <td className="px-2 py-1.5 text-ios-label font-medium text-sm truncate">{row.name}</td>
+                          <td className="px-2 py-1.5">{formatDateTag(row.plannedDate, 'indigo')}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-base font-bold text-indigo-600">{row.ordered}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-amber-600 font-medium">
+                            {row.committed > 0 ? row.committed : '—'}
+                          </td>
+                          <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                            row.net > 0 ? 'text-green-600' : row.net < 0 ? 'text-red-600' : 'text-ios-label'
+                          }`}>
+                            {row.net > 0 ? '+' : ''}{row.net}
+                          </td>
+                          <td colSpan={6}></td>
+                        </tr>
+                        {expandedPlanned === row.stockId && row.orders.length > 0 && (
+                          <tr className="bg-amber-50/50">
+                            <td colSpan={11} className="px-6 py-1.5">
+                              <div className="space-y-0.5">
+                                {row.orders.map((o, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex items-center justify-between text-xs cursor-pointer hover:underline text-amber-700"
+                                    onClick={e => { e.stopPropagation(); onNavigate?.({ tab: 'orders', filter: { orderId: o.orderId } }); }}
+                                  >
+                                    <span>#{o.appOrderId} — {o.customerName} ({o.requiredBy || '—'})</span>
+                                    <span className="tabular-nums font-medium">{o.qty} {t.stems}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </>
+                )}
+              </tbody>
+            )}
+
+            {/* ── Section B: NEEDED — flowers committed to future orders ── */}
+            {neededRows.length > 0 && (
+              <tbody>
+                <tr className="bg-amber-50/60">
+                  <td colSpan={11} className="px-3 py-2 border-b border-amber-100">
+                    <button onClick={() => setNeededCollapsed(v => !v)} className="w-full flex items-center justify-between">
+                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
+                        {t.neededForOrders} ({neededRows.length})
+                      </span>
+                      <span className="text-xs text-amber-400">{neededCollapsed ? '▼' : '▲'}</span>
+                    </button>
+                  </td>
+                </tr>
+                {!neededCollapsed && (
+                  <>
+                    <tr className="text-xs text-ios-tertiary border-b border-amber-100 bg-amber-50/20">
+                      <th className="text-left px-2 py-1.5 font-medium">{t.stockName}</th>
+                      <th className="text-left px-2 py-1.5 font-medium">{t.neededBy}</th>
+                      <th className="text-right px-2 py-1.5 font-medium">{t.needed}</th>
+                      <th className="text-left px-2 py-1.5 font-medium">{t.orders}</th>
+                      <th className="px-2 py-1.5"></th>
+                      <th colSpan={6}></th>
+                    </tr>
+                    {neededRows.map(row => (
+                      <Fragment key={row.stockId}>
+                        <tr
+                          className="border-b border-gray-100 hover:bg-amber-50/20 cursor-pointer"
+                          onClick={() => setExpandedNeeded(expandedNeeded === row.stockId ? null : row.stockId)}
+                        >
+                          <td className="px-2 py-1.5 text-ios-label font-medium text-sm truncate">{row.name}</td>
+                          <td className="px-2 py-1.5">{formatDateTag(row.earliestDate, 'amber')}</td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-base font-bold text-red-600">-{row.needed}</td>
+                          <td className="px-2 py-1.5 text-xs text-ios-secondary">
+                            {row.orders.length}
+                          </td>
+                          <td className="px-2 py-1.5">
+                            {!row.hasPO && <span className="text-[10px] text-red-500 font-medium whitespace-nowrap">⚠ {t.noPO}</span>}
+                          </td>
+                          <td colSpan={6}></td>
+                        </tr>
+                        {expandedNeeded === row.stockId && row.orders.length > 0 && (
+                          <tr className="bg-amber-50/50">
+                            <td colSpan={11} className="px-6 py-1.5">
+                              <div className="space-y-0.5">
+                                {row.orders.map((o, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex items-center justify-between text-xs cursor-pointer hover:underline text-amber-700"
+                                    onClick={e => { e.stopPropagation(); onNavigate?.({ tab: 'orders', filter: { orderId: o.orderId } }); }}
+                                  >
+                                    <span>#{o.appOrderId} — {o.customerName} ({o.requiredBy || '—'})</span>
+                                    <span className="tabular-nums font-medium">{o.qty} {t.stems}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    ))}
+                  </>
+                )}
+              </tbody>
+            )}
+
+            {/* ── Section C: AVAILABLE — current stock inventory ── */}
             <thead>
               <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
                 {[
                   { key: 'name',           label: t.stockName, align: 'left' },
                   { key: 'lastRestocked',  label: t.receivedDate, align: 'left' },
-                  { key: 'qty',            label: t.quantity, align: 'right' },
+                  { key: 'qty',            label: t.available, align: 'right' },
                   { key: 'cost',           label: t.costPrice, align: 'right' },
                   { key: 'sell',           label: t.sellPrice, align: 'right' },
                   { key: null,             label: t.markup, align: 'right' },
@@ -611,6 +836,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
                   onAdjust={adjustQty}
                   onWriteOff={writeOff}
                   onPatch={patchStock}
+                  onNavigate={onNavigate}
                 />
               ))}
             </tbody>
@@ -681,7 +907,7 @@ function InlineDate({ value, displayName, onSave }) {
 }
 
 // Individual stock row — flat: name, qty, cost, sell, markup, supplier, farmer, lot, threshold, days in stock, actions
-function StockRow({ item, onAdjust, onWriteOff, onPatch }) {
+function StockRow({ item, onAdjust, onWriteOff, onPatch, onNavigate }) {
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
   const [showWo, setShowWo]     = useState(false);
