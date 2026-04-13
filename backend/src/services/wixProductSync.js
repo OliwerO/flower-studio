@@ -248,7 +248,8 @@ async function setWixCategoryProducts(collectionId, productIds) {
     }
   }
 
-  // Step 2: Remove products that shouldn't be in this collection
+  // Step 2: Remove products that shouldn't be in this collection.
+  // Uses POST /productIds/delete (batch removal) — NOT per-product DELETE.
   try {
     const existing = await fetch(`${WIX_API_URL}/stores/v1/products/query`, {
       method: 'POST',
@@ -265,11 +266,23 @@ async function setWixCategoryProducts(collectionId, productIds) {
       const data = await existing.json();
       const existingIds = (data.products || []).map(p => p.id);
       const toRemove = existingIds.filter(id => !productIds.includes(id));
-      for (const pid of toRemove) {
-        await fetch(`${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds/${pid}`, {
-          method: 'DELETE',
-          headers: wixHeaders(),
-        });
+      if (toRemove.length > 0) {
+        for (let i = 0; i < toRemove.length; i += 100) {
+          const batch = toRemove.slice(i, i + 100);
+          const removeRes = await fetch(
+            `${WIX_API_URL}/stores/v1/collections/${collectionId}/productIds/delete`,
+            {
+              method: 'POST',
+              headers: wixHeaders(),
+              body: JSON.stringify({ productIds: batch }),
+            }
+          );
+          if (!removeRes.ok) {
+            const text = await removeRes.text();
+            console.error(`[SYNC] Remove from collection ${collectionId} failed: ${text}`);
+          }
+        }
+        console.log(`[SYNC] Removed ${toRemove.length} stale products from collection ${collectionId}`);
       }
     }
   } catch (err) {

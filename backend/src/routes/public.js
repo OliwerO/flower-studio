@@ -218,10 +218,10 @@ router.get('/categories', (_req, res) => {
   const allCategories = [...new Set([...permanentNames, ...allSeasonal])];
 
   // Count "Available Today" products from the products cache (no extra Airtable call).
-  // The products cache computes availableToday per product using lead time + stock.
+  // Must match push criteria: availableToday (LT=0 + inStock) AND tagged with "Available Today" category.
   const productsCached = cache['products']?.data;
   const availTodayCount = productsCached
-    ? productsCached.products.filter(p => p.availableToday).length
+    ? productsCached.products.filter(p => p.availableToday && p.category.includes('Available Today')).length
     : null; // null = cache not warmed yet, frontend should treat as unknown
 
   // Build auto array as objects with productCount (not bare strings)
