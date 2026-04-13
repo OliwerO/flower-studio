@@ -26,6 +26,9 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const [wasteGroupBy, setWasteGroupBy] = useState('supplier'); // 'supplier' | 'all'
   const [wasteSortBy, setWasteSortBy] = useState('date'); // 'date' | 'batch'
+  const [wasteEditId, setWasteEditId] = useState(null);
+  const [wasteEditForm, setWasteEditForm] = useState({ quantity: '', reason: '' });
+  const [wasteDeleteId, setWasteDeleteId] = useState(null);
   const { showToast } = useToast();
 
   const stockLoaded = useRef(false);
@@ -87,6 +90,29 @@ export default function StockTab({ initialFilter, onNavigate }) {
   }, []);
 
   useEffect(() => { fetchLossLog(wastePeriod); }, [wastePeriod]);
+
+  async function handleWasteEdit(id) {
+    try {
+      await client.patch(`/stock-loss/${id}`, {
+        quantity: Number(wasteEditForm.quantity),
+        reason: wasteEditForm.reason,
+      });
+      setWasteEditId(null);
+      showToast(t.entryUpdated, 'success');
+      fetchLossLog();
+      fetchStock();
+    } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+  }
+
+  async function handleWasteDelete(id) {
+    try {
+      await client.delete(`/stock-loss/${id}`);
+      setWasteDeleteId(null);
+      showToast(t.entryDeleted, 'success');
+      fetchLossLog();
+      fetchStock();
+    } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+  }
 
   async function adjustQty(id, delta) {
     // Optimistic update: change local state immediately, revert on failure
@@ -364,11 +390,40 @@ export default function StockTab({ initialFilter, onNavigate }) {
           bySupplier[sup].totalCost += (e.Quantity || 0) * (e.costPrice || 0);
         }
 
-        // Render a waste table row with batch tag
+        // Render a waste table row with batch tag + edit/delete
         function WasteRow({ e, showSupplier }) {
           const { name: baseName, batch } = parseBatchName(e.flowerName || '');
+          const isEditing = wasteEditId === e.id;
+
+          if (isEditing) {
+            return (
+              <tr key={e.id} className="border-b border-gray-50 bg-blue-50/50">
+                <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
+                <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
+                <td className="px-3 py-1.5 text-xs">{batch && <span className="inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md bg-gray-100 text-gray-500 border-gray-200">{batch}</span>}</td>
+                {showSupplier && <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>}
+                <td className="px-3 py-1.5 text-xs text-right">
+                  <input type="number" min="1" value={wasteEditForm.quantity}
+                    onChange={ev => setWasteEditForm(f => ({ ...f, quantity: ev.target.value }))}
+                    className="w-14 text-xs px-1 py-0.5 border rounded text-right" />
+                </td>
+                <td className="px-3 py-1.5 text-xs">
+                  <select value={wasteEditForm.reason}
+                    onChange={ev => setWasteEditForm(f => ({ ...f, reason: ev.target.value }))}
+                    className="text-xs px-1 py-0.5 border rounded">
+                    {['Wilted','Damaged','Arrived Broken','Overstock','Other'].map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </td>
+                <td className="px-3 py-1.5 text-xs text-right whitespace-nowrap">
+                  <button onClick={() => handleWasteEdit(e.id)} className="text-green-600 hover:underline mr-1">✓</button>
+                  <button onClick={() => setWasteEditId(null)} className="text-gray-400 hover:underline">✕</button>
+                </td>
+              </tr>
+            );
+          }
+
           return (
-            <tr key={e.id} className="border-b border-gray-50">
+            <tr key={e.id} className="border-b border-gray-50 group">
               <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
               <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
               <td className="px-3 py-1.5 text-xs">
@@ -389,8 +444,14 @@ export default function StockTab({ initialFilter, onNavigate }) {
                   'bg-gray-100 text-gray-600'
                 }`}>{e.Reason}</span>
               </td>
-              <td className="px-3 py-1.5 text-xs text-right text-ios-tertiary">
+              <td className="px-3 py-1.5 text-xs text-right text-ios-tertiary whitespace-nowrap">
                 {e['Days Survived'] != null ? e['Days Survived'] : '—'}
+                <span className="ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button onClick={() => { setWasteEditId(e.id); setWasteEditForm({ quantity: String(e.Quantity || ''), reason: e.Reason || '' }); }}
+                    className="text-blue-500 hover:underline mr-1 text-[10px]">{t.editEntry || '✎'}</button>
+                  <button onClick={() => setWasteDeleteId(e.id)}
+                    className="text-red-400 hover:underline text-[10px]">{t.deleteEntry || '✕'}</button>
+                </span>
               </td>
             </tr>
           );
@@ -398,6 +459,18 @@ export default function StockTab({ initialFilter, onNavigate }) {
 
         return (
           <>
+            {/* Delete confirmation modal */}
+            {wasteDeleteId && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setWasteDeleteId(null)}>
+                <div className="bg-white rounded-2xl p-5 shadow-xl max-w-xs" onClick={ev => ev.stopPropagation()}>
+                  <p className="text-sm mb-3">{t.confirmDeleteWaste}</p>
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => setWasteDeleteId(null)} className="text-sm px-3 py-1.5 rounded-lg border hover:bg-gray-50">{t.cancel}</button>
+                    <button onClick={() => handleWasteDelete(wasteDeleteId)} className="text-sm px-3 py-1.5 rounded-lg bg-red-500 text-white hover:bg-red-600">{t.deleteEntry}</button>
+                  </div>
+                </div>
+              </div>
+            )}
             {/* Waste toolbar: group by + sort */}
             <div className="glass-card px-4 py-2 flex flex-wrap items-center gap-2">
               <div className="flex gap-1">
