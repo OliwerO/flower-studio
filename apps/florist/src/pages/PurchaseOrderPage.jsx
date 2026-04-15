@@ -597,9 +597,12 @@ export default function PurchaseOrderPage() {
 }
 
 // ── Stock search dropdown (mobile-optimized) ──
-function StockSearchInput({ stock, value, onChange, onSelect }) {
+function StockSearchInput({ stock, value, onChange, onSelect, onBlur: onBlurCb }) {
   const [query, setQuery] = useState(value || '');
   const [open, setOpen] = useState(false);
+  // Track whether the user selected from the dropdown — skip onBlur save
+  // to avoid a race between the select PATCH and a redundant blur PATCH.
+  const selectedRef = useRef(false);
 
   useEffect(() => { setQuery(value || ''); }, [value]);
 
@@ -618,14 +621,18 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
       <input type="text" value={query}
         onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
         onFocus={() => { if (query) setOpen(true); }}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 200);
+          if (!selectedRef.current) onBlurCb?.(query);
+          selectedRef.current = false;
+        }}
         placeholder={t.po?.flowerSearch || 'Search...'}
         className="field-input w-full text-sm" />
       {open && query && (
         <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
           {filtered.map(s => (
             <button key={s.id} type="button"
-              onMouseDown={() => { onSelect(s); setQuery(s['Display Name']); setOpen(false); }}
+              onMouseDown={() => { selectedRef.current = true; onSelect(s); setQuery(s['Display Name']); setOpen(false); }}
               className="w-full text-left px-3 py-2.5 text-sm active:bg-gray-50 border-b border-gray-50">
               <span className="font-medium">{s['Display Name']}</span>
               <span className="text-xs text-ios-secondary ml-1">({s['Current Quantity'] ?? 0})</span>
@@ -633,7 +640,7 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
           ))}
           {!exactMatch && query.length >= 2 && (
             <button type="button"
-              onMouseDown={() => { onChange(query); setOpen(false); }}
+              onMouseDown={() => { selectedRef.current = true; onChange(query); setOpen(false); }}
               className="w-full text-left px-3 py-2.5 text-sm border-t border-gray-100 text-brand-600 font-medium active:bg-brand-50">
               + {t.po?.addNewFlower || 'Add'} "{query}"
             </button>
@@ -657,6 +664,10 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   const [farmer, setFarmer] = useState(line.Farmer || '');
   const [notes, setNotes] = useState(line.Notes || '');
   const [lotSize, setLotSize] = useState(storedLs);
+  // Local flower name — avoids PATCHing partial names on every keystroke
+  // which caused a race condition where "Hydrangea" got overwritten with "h".
+  const [flowerName, setFlowerName] = useState(line['Flower Name'] || '');
+  useEffect(() => { setFlowerName(line['Flower Name'] || ''); }, [line['Flower Name']]);
 
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
@@ -670,8 +681,10 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     setSellPriceManual(itemSell > 0);
     setFarmer(item.Farmer || '');
     setLotSize(Number(item['Lot Size']) || 0);
+    setFlowerName(item['Display Name']);
     onUpdate(line.id, {
       'Flower Name': item['Display Name'],
+      'Stock Item': [item.id],
       Supplier: item.Supplier || '',
       'Cost Price': itemCost,
       'Sell Price': itemSell || (itemCost > 0 && targetMarkup ? Math.round(itemCost * targetMarkup) : 0),
@@ -699,9 +712,14 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
       <div className="flex items-center gap-2">
         <div className="flex-1">
           <StockSearchInput stock={stock}
-            value={line['Flower Name'] || ''}
-            onChange={name => onUpdate(line.id, { 'Flower Name': name })}
-            onSelect={handleStockSelect} />
+            value={flowerName}
+            onChange={name => setFlowerName(name)}
+            onSelect={handleStockSelect}
+            onBlur={name => {
+              if (name && name !== (line['Flower Name'] || '')) {
+                onUpdate(line.id, { 'Flower Name': name });
+              }
+            }} />
         </div>
         <button onClick={() => onRemove(line.id)} className="w-7 h-7 rounded-full bg-red-50 text-red-400 active:bg-red-100 active:text-red-600 text-sm flex items-center justify-center">✕</button>
       </div>

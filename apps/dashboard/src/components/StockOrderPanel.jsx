@@ -858,9 +858,12 @@ function AltLineEditor({ line, stock, suppliers, editable, onSave }) {
 // Inline stock search dropdown — shows matching stock items + "add new" option.
 // Works like the customer search in the order form: type to filter, click to select,
 // or use the "add new" button for flowers not yet in the stock catalog.
-function StockSearchInput({ stock, value, onChange, onSelect }) {
+function StockSearchInput({ stock, value, onChange, onSelect, onBlur: onBlurCb }) {
   const [query, setQuery] = useState(value || '');
   const [open, setOpen] = useState(false);
+  // Track whether the user selected from the dropdown — skip onBlur save
+  // to avoid a race between the select PATCH and a redundant blur PATCH.
+  const selectedRef = useRef(false);
 
   // Sync external value changes (e.g. pre-filled from negative stock)
   useEffect(() => { setQuery(value || ''); }, [value]);
@@ -883,6 +886,7 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
   }
 
   function handleSelect(item) {
+    selectedRef.current = true;
     onSelect(item);
     setQuery(item['Display Name']);
     setOpen(false);
@@ -890,6 +894,7 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
 
   // "Add as new" — keep the freetext name, no stockItemId linked
   function handleAddNew() {
+    selectedRef.current = true;
     onChange(query);
     setOpen(false);
   }
@@ -901,7 +906,11 @@ function StockSearchInput({ stock, value, onChange, onSelect }) {
         value={query}
         onChange={handleInputChange}
         onFocus={() => { if (query) setOpen(true); }}
-        onBlur={() => setTimeout(() => setOpen(false), 200)}
+        onBlur={() => {
+          setTimeout(() => setOpen(false), 200);
+          if (!selectedRef.current) onBlurCb?.(query);
+          selectedRef.current = false;
+        }}
         placeholder={t.flowerSearch || 'Search...'}
         className="field-input w-full text-sm"
       />
@@ -956,6 +965,10 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   const [farmer, setFarmer] = useState(line.Farmer || '');
   const [notes, setNotes] = useState(line.Notes || '');
   const [lotSize, setLotSize] = useState(storedLs);
+  // Local flower name — avoids PATCHing partial names on every keystroke
+  // which caused a race condition where "Hydrangea" got overwritten with "h".
+  const [flowerName, setFlowerName] = useState(line['Flower Name'] || '');
+  useEffect(() => { setFlowerName(line['Flower Name'] || ''); }, [line['Flower Name']]);
 
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
@@ -969,8 +982,10 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     setSellPriceManual(itemSell > 0);
     setFarmer(item.Farmer || '');
     setLotSize(Number(item['Lot Size']) || 0);
+    setFlowerName(item['Display Name']);
     onUpdate(line.id, {
       'Flower Name': item['Display Name'],
+      'Stock Item': [item.id],
       Supplier: item.Supplier || '',
       'Cost Price': itemCost,
       'Sell Price': itemSell || (itemCost > 0 && targetMarkup ? Math.round(itemCost * targetMarkup) : 0),
@@ -1000,9 +1015,14 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
         <div className="flex-1">
           <StockSearchInput
             stock={stock}
-            value={line['Flower Name'] || ''}
-            onChange={name => onUpdate(line.id, { 'Flower Name': name })}
+            value={flowerName}
+            onChange={name => setFlowerName(name)}
             onSelect={handleStockSelect}
+            onBlur={name => {
+              if (name && name !== (line['Flower Name'] || '')) {
+                onUpdate(line.id, { 'Flower Name': name });
+              }
+            }}
           />
         </div>
         <input
