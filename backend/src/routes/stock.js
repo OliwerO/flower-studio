@@ -285,9 +285,12 @@ router.get('/pending-po', async (req, res, next) => {
 
       if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [], flowerName: '' };
       result[stockId].ordered += qty;
-      // Keep the first non-empty flower name
+      // Keep the first non-empty flower name.
+      // Airtable may return an array if Flower Name is a lookup field —
+      // normalise to a plain string so the frontend never receives an array.
       if (!result[stockId].flowerName && line['Flower Name']) {
-        result[stockId].flowerName = line['Flower Name'];
+        const raw = line['Flower Name'];
+        result[stockId].flowerName = Array.isArray(raw) ? (raw[0] || '') : String(raw);
       }
 
       const poId = line['Stock Orders']?.[0];

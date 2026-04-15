@@ -17,6 +17,14 @@ import { listByIds } from '../utils/batchQuery.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
+// Airtable may return Flower Name as an array (lookup field) or a string
+// (text field). Normalise to a plain string so downstream code (.trim(),
+// template literals, formula values) never receives an array.
+function normaliseFlowerName(raw) {
+  if (Array.isArray(raw)) return String(raw[0] || '');
+  return String(raw || '');
+}
+
 const ALLOWED_TRANSITIONS = {
   [PO_STATUS.DRAFT]:      [PO_STATUS.SENT],
   [PO_STATUS.SENT]:       [PO_STATUS.SHOPPING, PO_STATUS.REVIEWING, PO_STATUS.DRAFT],
@@ -87,6 +95,12 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
           allLines.push(...chunkLines);
         }
       }
+      // Normalise Flower Name on every line — Airtable may return arrays
+      // from lookup fields, but frontends expect a plain string.
+      for (const l of allLines) {
+        if (l['Flower Name'] != null) l['Flower Name'] = normaliseFlowerName(l['Flower Name']);
+        if (l['Alt Flower Name'] != null) l['Alt Flower Name'] = normaliseFlowerName(l['Alt Flower Name']);
+      }
       // Index lines by ID for fast lookup
       const lineMap = new Map(allLines.map(l => [l.id, l]));
       const result = orders.map(o => ({
@@ -116,6 +130,10 @@ router.get('/:id', authorize('stock-orders'), async (req, res, next) => {
       lines = await db.list(TABLES.STOCK_ORDER_LINES, {
         filterByFormula: `OR(${lineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
       });
+      for (const l of lines) {
+        if (l['Flower Name'] != null) l['Flower Name'] = normaliseFlowerName(l['Flower Name']);
+        if (l['Alt Flower Name'] != null) l['Alt Flower Name'] = normaliseFlowerName(l['Alt Flower Name']);
+      }
     }
     res.json({ ...order, lines });
   } catch (err) {
@@ -309,6 +327,21 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
     if (Object.keys(fields).length === 0) {
       return res.json(await db.getById(TABLES.STOCK_ORDER_LINES, req.params.lineId));
     }
+
+    // Guard: if the PATCH tries to shorten Flower Name to fewer than 2 chars
+    // while the line has a linked Stock Item, reject it — this is almost
+    // certainly a race from the keystroke-by-keystroke search input, not an
+    // intentional rename. The full name will arrive in a subsequent PATCH.
+    if ('Flower Name' in fields && typeof fields['Flower Name'] === 'string' && fields['Flower Name'].length < 2) {
+      const existing = await db.getById(TABLES.STOCK_ORDER_LINES, req.params.lineId);
+      const hasStockItem = !!existing['Stock Item']?.[0];
+      const currentName = existing['Flower Name'] || '';
+      if (hasStockItem && currentName.length >= 2) {
+        delete fields['Flower Name'];
+        if (Object.keys(fields).length === 0) return res.json(existing);
+      }
+    }
+
     const updated = await db.update(TABLES.STOCK_ORDER_LINES, req.params.lineId, fields);
 
     if ('Driver Status' in fields) {
@@ -325,6 +358,9 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       lineId: req.params.lineId,
     });
 
+    // Normalise Flower Name in response
+    if (updated['Flower Name'] != null) updated['Flower Name'] = normaliseFlowerName(updated['Flower Name']);
+    if (updated['Alt Flower Name'] != null) updated['Alt Flower Name'] = normaliseFlowerName(updated['Alt Flower Name']);
     res.json(updated);
   } catch (err) {
     next(err);
@@ -384,6 +420,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       'Driver Status': PO_LINE_STATUS.PENDING,
     });
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: line.id });
+    if (line['Flower Name'] != null) line['Flower Name'] = normaliseFlowerName(line['Flower Name']);
     res.json(line);
   } catch (err) {
     next(err);
@@ -644,7 +681,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         // find a matching stock record and link it. This handles lines created
         // from freetext input (no stock item selected in the PO form).
         if (!stockItemId && (accepted > 0 || writeOff > 0)) {
-          const flowerName = (line['Flower Name'] || '').trim();
+          const flowerName = normaliseFlowerName(line['Flower Name']).trim();
           if (!flowerName) {
             throw new Error(
               `Line "${evalLine.lineId}" has no Stock Item and no Flower Name — cannot resolve.`
@@ -683,7 +720,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         // so we know what substitute stock card to create.
         if (!stockItemId && (altAcceptedPre > 0 || altWriteOffPre > 0) && !line['Alt Flower Name']) {
           throw new Error(
-            `Line "${line['Flower Name'] || evalLine.lineId}" has no linked Stock Item and no Alt Flower Name — ` +
+            `Line "${normaliseFlowerName(line['Flower Name']) || evalLine.lineId}" has no linked Stock Item and no Alt Flower Name — ` +
             `link a Stock Item or add substitute details, then retry.`
           );
         }
@@ -753,7 +790,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               Flower: [altFinalId],
               'Quantity Purchased': altAccepted,
               'Price Per Unit': altCostPerStem,
-              Notes: `PO #${req.params.id} L#${evalLine.lineId} substitute for "${line['Flower Name'] || ''}"`,
+              Notes: `PO #${req.params.id} L#${evalLine.lineId} substitute for "${normaliseFlowerName(line['Flower Name'])}"`,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping alt receive for line ${evalLine.lineId} — already recorded`);
@@ -803,7 +840,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           status: 'ok',
           substituteStockId: substituteStockId || null,
           originalStockId: stockItemId || null,
-          originalFlowerName: line['Flower Name'] || '',
+          originalFlowerName: normaliseFlowerName(line['Flower Name']),
           receivedQty: altAccepted || 0,
         });
       } catch (lineErr) {
