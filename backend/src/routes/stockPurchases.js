@@ -7,10 +7,9 @@ const router = Router();
 router.use(authorize('stock-purchases'));
 
 // POST /api/stock-purchases — record a new supplier delivery.
-// Batch tracking: if the existing item still has stock (qty > 0), creates a
-// NEW stock record for the new batch instead of merging. This prevents mixing
-// old and new flowers and preserves accurate cost per batch.
+// Always creates a NEW dated batch record so each delivery is tracked separately.
 // Body: { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes }
+const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
 router.post('/', async (req, res, next) => {
   try {
     const { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes } = req.body;
@@ -18,45 +17,50 @@ router.post('/', async (req, res, next) => {
 
     let finalItemId = stockItemId;
 
-    // Batch logic: if existing item has remaining stock, create a new batch record
+    // Batch logic: always create a new dated batch so every delivery is traceable.
+    // If the original record has negative qty (pre-sold demand), absorb the deficit
+    // into the new batch and zero out the original.
     if (stockItemId) {
       const stockItem = await db.getById(TABLES.STOCK, stockItemId);
-      const existingQty = stockItem['Current Quantity'] || 0;
+      const existingQty = Number(stockItem['Current Quantity']) || 0;
 
-      if (existingQty > 0) {
-        // Old batch still has stock — create a NEW record for the new batch
-        const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-        const d = new Date(today);
-        const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
-        const newBatch = await db.create(TABLES.STOCK, {
-          'Display Name':       `${stockItem['Display Name']} (${batchLabel})`,
-          'Purchase Name':      stockItem['Purchase Name'] || stockItem['Display Name'],
-          Category:             stockItem.Category || 'Other',
-          'Current Quantity':   quantityPurchased,
-          'Current Cost Price': pricePerUnit,
-          'Current Sell Price': sellPricePerUnit || stockItem['Current Sell Price'] || 0,
-          Supplier:             supplierName || stockItem.Supplier || '',
-          Unit:                 stockItem.Unit || 'Stems',
-          'Reorder Threshold':  stockItem['Reorder Threshold'] || 0,
-          Active:               true,
-          'Last Restocked':     today,
-        });
-        finalItemId = newBatch.id;
-        console.log(`[STOCK] New batch created: ${newBatch['Display Name']} (old qty: ${existingQty})`);
-      } else {
-        // Old batch is depleted or negative — reuse the same record.
-        // ADD to existing quantity so negative stock (pre-sold stems) is accounted for.
-        // e.g. qty = -7, received 25 → new qty = 18 (not 25).
-        const newQty = existingQty + quantityPurchased;
-        const stockUpdate = {
-          'Current Quantity':   newQty,
-          'Current Cost Price': pricePerUnit,
-          'Last Restocked':     today,
-        };
-        if (sellPricePerUnit) stockUpdate['Current Sell Price'] = sellPricePerUnit;
-        await db.update(TABLES.STOCK, stockItemId, stockUpdate);
-        console.log(`[STOCK] Batch restocked: ${stockItem['Display Name']} (${existingQty} + ${quantityPurchased} = ${newQty})`);
+      const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      const d = new Date(today);
+      const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
+
+      // Strip any existing date suffix to avoid double-dating
+      const rawName = stockItem['Display Name'] || '';
+      const baseName = (rawName.match(DATE_BATCH_RE)?.[1] || rawName).trim();
+
+      // Absorb negative deficit from original
+      let batchQty = quantityPurchased;
+      if (existingQty < 0) {
+        batchQty = quantityPurchased + existingQty; // e.g. 25 + (-7) = 18
+        if (batchQty < 0) batchQty = 0;
+        // Zero out the original so the negative display disappears
+        await db.update(TABLES.STOCK, stockItemId, { 'Current Quantity': 0 });
       }
+
+      const newBatch = await db.create(TABLES.STOCK, {
+        'Display Name':       `${baseName} (${batchLabel})`,
+        'Purchase Name':      stockItem['Purchase Name'] || baseName,
+        Category:             stockItem.Category || 'Other',
+        'Current Quantity':   batchQty,
+        'Current Cost Price': pricePerUnit,
+        'Current Sell Price': sellPricePerUnit || stockItem['Current Sell Price'] || 0,
+        Supplier:             supplierName || stockItem.Supplier || '',
+        Unit:                 stockItem.Unit || 'Stems',
+        'Reorder Threshold':  stockItem['Reorder Threshold'] || 0,
+        Active:               true,
+        'Last Restocked':     today,
+      });
+      finalItemId = newBatch.id;
+      console.log(`[STOCK] New batch created: ${newBatch['Display Name']} (prev qty on original: ${existingQty})`);
+
+      // Keep template record's prices current
+      const templateUpdate = { 'Current Cost Price': pricePerUnit, 'Last Restocked': today };
+      if (sellPricePerUnit) templateUpdate['Current Sell Price'] = sellPricePerUnit;
+      await db.update(TABLES.STOCK, stockItemId, templateUpdate);
     }
 
     // Create the purchase record linked to the actual batch

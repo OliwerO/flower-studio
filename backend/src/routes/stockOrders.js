@@ -590,41 +590,60 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
   return created.id;
 }
 
-// Receive accepted flowers into stock using batch logic:
-// - If existing qty > 0 → create a new batch record (separate FIFO lot)
-// - If existing qty <= 0 → reuse the empty record (replenish it)
-// Returns the final stock item ID (original or new batch).
+// Receive accepted flowers into stock as a SEPARATE dated batch.
+// Always creates a new Stock record with a date suffix (e.g. "Hydrangea (15.Apr.)")
+// so the florist can track when each lot arrived and manage FIFO.
+//
+// If the original stock record has negative qty (pre-sold demand), the deficit
+// is absorbed into the new batch (received - deficit) and the original is
+// zeroed out. This way order-line links stay valid and the florist doesn't see
+// a confusing negative number next to fresh flowers.
+//
+// Returns the new batch's stock item ID.
+const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
 async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today) {
   const stockItem = await db.getById(TABLES.STOCK, stockItemId);
-  const existingQty = stockItem['Current Quantity'] || 0;
+  const existingQty = Number(stockItem['Current Quantity']) || 0;
 
-  if (existingQty > 0) {
-    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-    const d = new Date(today);
-    const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
-    const newBatch = await db.create(TABLES.STOCK, {
-      'Display Name':       `${stockItem['Display Name']} (${batchLabel})`,
-      'Purchase Name':      stockItem['Purchase Name'] || stockItem['Display Name'],
-      Category:             stockItem.Category || 'Other',
-      'Current Quantity':   qty,
-      'Current Cost Price': costPrice || stockItem['Current Cost Price'] || 0,
-      'Current Sell Price': sellPrice || stockItem['Current Sell Price'] || 0,
-      Supplier:             supplier || stockItem.Supplier || '',
-      Unit:                 stockItem.Unit || 'Stems',
-      'Reorder Threshold':  stockItem['Reorder Threshold'] || 0,
-      Active:               true,
-      'Last Restocked':     today,
-    });
-    return newBatch.id;
-  } else {
-    await db.atomicStockAdjust(stockItemId, qty);
-    await db.update(TABLES.STOCK, stockItemId, {
-      'Current Cost Price': costPrice || stockItem['Current Cost Price'],
-      'Current Sell Price': sellPrice || stockItem['Current Sell Price'],
-      'Last Restocked': today,
-    });
-    return stockItemId;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const d = new Date(today);
+  const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
+
+  // Strip any existing date suffix to avoid "Rose (14.Apr.) (15.Apr.)" names
+  const rawName = stockItem['Display Name'] || '';
+  const baseName = (rawName.match(DATE_BATCH_RE)?.[1] || rawName).trim();
+
+  // When the original record has negative qty (pre-sold stems), absorb
+  // the deficit into this new batch and zero out the original.
+  let batchQty = qty;
+  if (existingQty < 0) {
+    batchQty = qty + existingQty; // e.g. 25 + (-5) = 20
+    if (batchQty < 0) batchQty = 0; // edge: received less than deficit
+    await db.atomicStockAdjust(stockItemId, -existingQty); // zero it out
   }
+
+  const newBatch = await db.create(TABLES.STOCK, {
+    'Display Name':       `${baseName} (${batchLabel})`,
+    'Purchase Name':      stockItem['Purchase Name'] || baseName,
+    Category:             stockItem.Category || 'Other',
+    'Current Quantity':   batchQty,
+    'Current Cost Price': costPrice || stockItem['Current Cost Price'] || 0,
+    'Current Sell Price': sellPrice || stockItem['Current Sell Price'] || 0,
+    Supplier:             supplier || stockItem.Supplier || '',
+    Unit:                 stockItem.Unit || 'Stems',
+    'Reorder Threshold':  stockItem['Reorder Threshold'] || 0,
+    Active:               true,
+    'Last Restocked':     today,
+  });
+
+  // Update prices on the original record too so the "template" stays current
+  await db.update(TABLES.STOCK, stockItemId, {
+    'Current Cost Price': costPrice || stockItem['Current Cost Price'],
+    'Current Sell Price': sellPrice || stockItem['Current Sell Price'],
+    'Last Restocked': today,
+  });
+
+  return newBatch.id;
 }
 
 // POST /api/stock-orders/:id/evaluate — florist submits quality evaluation
