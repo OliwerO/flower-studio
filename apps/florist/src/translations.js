@@ -366,6 +366,11 @@ const en = {
     lineSavedAndSent: 'Saved · sent to driver',
     fillAllFields:    'Fill flower name, supplier, qty and cost',
     notReceived:      'Not received',
+    costPerStem:      'Cost / stem',
+    lotSize:          'Lot size',
+    lotsFound:        'Lots',
+    totalStems:       'Total stems',
+    totalCost:        'Total cost',
   },
   // Purchase orders (owner)
   po: {
@@ -873,6 +878,11 @@ const ru = {
     lineSavedAndSent: 'Сохранено · отправлено водителю',
     fillAllFields:    'Заполните название, поставщика, количество и цену',
     notReceived:      'Не получено',
+    costPerStem:      'Цена / шт',
+    lotSize:          'Фасовка',
+    lotsFound:        'Упаковок',
+    totalStems:       'Всего стеблей',
+    totalCost:        'Итого',
   },
   // Purchase orders (owner)
   po: {

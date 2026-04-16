@@ -209,21 +209,23 @@ export default function PurchaseOrderPage() {
   // the line is persisted immediately. Returns true on success so the inline
   // form can collapse. Supersedes the old temp-local-line pattern which could
   // silently drop the line if the owner didn't enter a flower name.
-  async function addPersistedLine(orderId, { flowerName, supplier, quantity, costPrice }) {
+  async function addPersistedLine(orderId, { flowerName, supplier, quantity, costPrice, lotSize }) {
     try {
       const poStatus = orders.find(o => o.id === orderId)?.Status;
+      const stems = Number(quantity) || 0;
       const created = await client.post(`/stock-orders/${orderId}/lines`, {
         flowerName: flowerName.trim(),
         supplier: supplier.trim(),
-        quantity: Number(quantity) || 0,
+        quantity: stems,
         costPrice: Number(costPrice) || 0,
+        lotSize: Number(lotSize) || 0,
       });
       // Lines added during Shopping are for flowers already physically bought,
       // so mark Found All and stamp Quantity Found so the florist can see them.
       if (poStatus === 'Shopping') {
         await client.patch(`/stock-orders/${orderId}/lines/${created.data.id}`, {
           'Driver Status': 'Found All',
-          'Quantity Found': Number(quantity) || 0,
+          'Quantity Found': stems,
         });
       }
       const res = await client.get(`/stock-orders/${orderId}`);
@@ -831,30 +833,48 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
 }
 
 // ── Inline add-line form ──────────────────────────────────────────────────
-// Same pattern as the dashboard version: required fields enforced up front,
-// POST fires only once everything is filled. Replaces the temp-local-line
-// pattern which could silently drop the owner's entry if the flower name
-// wasn't filled before she navigated away.
+// Same logic as the DraftLineEditor qty/lotSize handling: when lot size > 1
+// the "qty" field means LOTS and total stems = lots × lot size; otherwise
+// qty is raw stems. Cost is explicitly per-stem with a live total preview.
+// All fields required up front; POST only fires on submit — no silent drops.
 function AddLineInlineForm({ orderId, onAdd, suppliers = [] }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+  const [form, setForm] = useState({
+    flowerName: '',
+    supplier: '',
+    lotSize: '',
+    qty: '',
+    costPerStem: '',
+  });
+
+  const lotSizeNum = Number(form.lotSize) || 0;
+  const qtyNum = Number(form.qty) || 0;
+  const costPerStemNum = Number(form.costPerStem) || 0;
+  const totalStems = lotSizeNum > 1 ? qtyNum * lotSizeNum : qtyNum;
+  const totalCost = totalStems * costPerStemNum;
 
   function reset() {
-    setForm({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+    setForm({ flowerName: '', supplier: '', lotSize: '', qty: '', costPerStem: '' });
     setOpen(false);
   }
 
   const ready =
     form.flowerName.trim() &&
     form.supplier.trim() &&
-    Number(form.quantity) > 0 &&
-    Number(form.costPrice) > 0;
+    totalStems > 0 &&
+    costPerStemNum > 0;
 
   async function submit() {
     if (!ready || submitting) return;
     setSubmitting(true);
-    const ok = await onAdd(orderId, form);
+    const ok = await onAdd(orderId, {
+      flowerName: form.flowerName,
+      supplier: form.supplier,
+      quantity: totalStems,
+      costPrice: costPerStemNum,
+      lotSize: lotSizeNum,
+    });
     setSubmitting(false);
     if (ok) reset();
   }
@@ -880,33 +900,63 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [] }) {
         placeholder={t.shopping?.flowerName || 'Flower name'}
         className="field-input w-full text-sm"
       />
-      <div className="grid grid-cols-2 gap-2">
-        <input
-          type="text"
-          list={`po-sup-${orderId}`}
-          value={form.supplier}
-          onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-          placeholder={t.shopping?.supplier || t.supplier || 'Supplier'}
-          className="field-input w-full text-sm"
-        />
-        <datalist id={`po-sup-${orderId}`}>
-          {suppliers.map(s => <option key={s} value={s} />)}
-        </datalist>
-        <input
-          type="number"
-          value={form.quantity}
-          onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-          placeholder={t.po?.qtyNeeded || 'Qty'}
-          className="field-input w-full text-sm"
-        />
-      </div>
       <input
-        type="number"
-        value={form.costPrice}
-        onChange={e => setForm(f => ({ ...f, costPrice: e.target.value }))}
-        placeholder={`${t.shopping?.costPrice || 'Cost'} (zł)`}
+        type="text"
+        list={`po-sup-${orderId}`}
+        value={form.supplier}
+        onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
+        placeholder={t.shopping?.supplier || t.supplier || 'Supplier'}
         className="field-input w-full text-sm"
       />
+      <datalist id={`po-sup-${orderId}`}>
+        {suppliers.map(s => <option key={s} value={s} />)}
+      </datalist>
+      {/* Lot size + qty + cost/stem — qty auto-means lots when lotSize > 1 */}
+      <div className="grid grid-cols-3 gap-2">
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping?.lotSize || t.lotSize}</label>
+          <input
+            type="number"
+            value={form.lotSize}
+            onChange={e => setForm(f => ({ ...f, lotSize: e.target.value }))}
+            placeholder="1"
+            className="field-input w-full text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">
+            {lotSizeNum > 1 ? (t.shopping?.lotsFound || 'Lots') : (t.po?.qtyNeeded || 'Qty')}
+          </label>
+          <input
+            type="number"
+            value={form.qty}
+            onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+            placeholder="0"
+            className="field-input w-full text-sm"
+          />
+        </div>
+        <div>
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping?.costPerStem || 'Cost/stem'}</label>
+          <input
+            type="number"
+            step="0.01"
+            value={form.costPerStem}
+            onChange={e => setForm(f => ({ ...f, costPerStem: e.target.value }))}
+            placeholder="zł"
+            className="field-input w-full text-sm"
+          />
+        </div>
+      </div>
+      {totalStems > 0 && (
+        <div className="flex items-center justify-between bg-brand-50 rounded-lg px-3 py-1.5">
+          <span className="text-xs text-brand-700">= {totalStems} {t.stems}</span>
+          {totalCost > 0 && (
+            <span className="text-sm font-semibold text-brand-700">
+              {t.shopping?.totalCost || 'Total'}: {totalCost.toFixed(2)} zł
+            </span>
+          )}
+        </div>
+      )}
       {!ready && (
         <p className="text-[11px] text-amber-600">{t.shopping?.fillAllFields}</p>
       )}

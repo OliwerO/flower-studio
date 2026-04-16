@@ -1074,7 +1074,24 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch, onNavigate }) {
                             </span>
                           )}
                           {entry.type === 'writeoff' && `${entry.reason}${entry.notes ? ': ' + entry.notes : ''}`}
-                          {entry.type === 'purchase' && `${entry.supplier}${entry.notes ? ' — ' + entry.notes : ''}`}
+                          {entry.type === 'purchase' && (
+                            <span>
+                              {entry.poDisplayId ? (
+                                <>
+                                  <span className="font-medium text-ios-label">{entry.poDisplayId}</span>
+                                  {' · '}{entry.supplier || '—'}
+                                  {entry.variant && entry.variant !== 'primary' && (
+                                    <span className="ml-1 px-1 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px]">
+                                      {entry.variant}
+                                    </span>
+                                  )}
+                                </>
+                              ) : (
+                                // Manual stock receive (no PO) — just show supplier + any notes
+                                <>{entry.supplier || '—'}{entry.notes ? ` — ${entry.notes}` : ''}</>
+                              )}
+                            </span>
+                          )}
                         </td>
                         <td className={`py-1 text-right font-medium tabular-nums ${entry.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {entry.quantity > 0 ? '+' : ''}{entry.quantity}

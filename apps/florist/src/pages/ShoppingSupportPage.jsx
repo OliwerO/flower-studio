@@ -131,20 +131,23 @@ export default function ShoppingSupportPage() {
   // The owner sometimes buys something not on the original list. The backend
   // already broadcasts stock_order_line_updated so the driver's app refreshes.
   // Driver Status = Found All because we only add a line that's already bought
-  // (all four fields required up front — no "temp line" that can silently vanish).
-  async function addExtraLine(orderId, { flowerName, supplier, quantity, costPrice }) {
+  // (all fields required up front — no "temp line" that can silently vanish).
+  // `quantity` here is the TOTAL STEMS (form pre-computes lots × lot size).
+  async function addExtraLine(orderId, { flowerName, supplier, quantity, costPrice, lotSize }) {
     try {
+      const stems = Number(quantity) || 0;
       const created = await client.post(`/stock-orders/${orderId}/lines`, {
         flowerName: flowerName.trim(),
         supplier: supplier.trim(),
-        quantity: Number(quantity) || 0,
+        quantity: stems,
         costPrice: Number(costPrice) || 0,
+        lotSize: Number(lotSize) || 0,
       });
       // Mark the new line as Found All immediately — the owner only adds lines
       // for flowers she's already bought, and we need the florist to see them.
       await client.patch(`/stock-orders/${orderId}/lines/${created.data.id}`, {
         'Driver Status': 'Found All',
-        'Quantity Found': Number(quantity) || 0,
+        'Quantity Found': stems,
       });
       // Refresh the PO so the new line appears in the supplier-grouped layout.
       await fetchOrders();
@@ -659,29 +662,50 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
 }
 
 // ── Add-extra-flower inline form ──────────────────────────────────────────
-// Requires all four fields up front (flower name, supplier, qty, cost) and
-// only POSTs when they're filled. No "temp local line" that can silently
-// vanish. Collapsed by default — tap the button to expand.
+// Mirrors the lot/quantity logic used in the PO DraftLineEditor: when lot
+// size > 1, the "qty" input is LOTS (so entering "1" for a lot of 10 means
+// 10 stems); when lot size is 0 or 1, "qty" is raw stems. Cost is explicitly
+// per-stem. Live display shows derived stem count and total cost so the
+// owner can sanity-check before submitting. All fields required; POST only
+// fires on submit, never from blur — no temp-local-line that can vanish.
 function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+  const [form, setForm] = useState({
+    flowerName: '',
+    supplier: '',
+    lotSize: '',       // stems per lot; blank/0 means loose stems
+    qty: '',           // lots if lotSize > 1, else stems
+    costPerStem: '',
+  });
+
+  const lotSizeNum = Number(form.lotSize) || 0;
+  const qtyNum = Number(form.qty) || 0;
+  const costPerStemNum = Number(form.costPerStem) || 0;
+  const totalStems = lotSizeNum > 1 ? qtyNum * lotSizeNum : qtyNum;
+  const totalCost = totalStems * costPerStemNum;
 
   function reset() {
-    setForm({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+    setForm({ flowerName: '', supplier: '', lotSize: '', qty: '', costPerStem: '' });
     setOpen(false);
   }
 
   const ready =
     form.flowerName.trim() &&
     form.supplier.trim() &&
-    Number(form.quantity) > 0 &&
-    Number(form.costPrice) > 0;
+    totalStems > 0 &&
+    costPerStemNum > 0;
 
   async function submit() {
     if (!ready || submitting) return;
     setSubmitting(true);
-    const ok = await onAdd(orderId, form);
+    const ok = await onAdd(orderId, {
+      flowerName: form.flowerName,
+      supplier: form.supplier,
+      quantity: totalStems,
+      costPrice: costPerStemNum,
+      lotSize: lotSizeNum,
+    });
     setSubmitting(false);
     if (ok) reset();
   }
@@ -714,29 +738,59 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
         placeholder={t.shopping.supplier}
         className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
       />
+      {/* Lot size + qty row — qty is LOTS when lotSize > 1, else stems */}
       <div className="flex gap-2">
         <div className="flex-1">
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.lotSize}</label>
           <input
             type="number"
             inputMode="numeric"
-            value={form.quantity}
-            onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
-            placeholder={t.shopping.qtyFound}
+            value={form.lotSize}
+            onChange={e => setForm(f => ({ ...f, lotSize: e.target.value }))}
+            placeholder="1"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+          />
+        </div>
+        <div className="flex-1">
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">
+            {lotSizeNum > 1 ? t.shopping.lotsFound : t.shopping.qtyFound}
+          </label>
+          <input
+            type="number"
+            inputMode="numeric"
+            value={form.qty}
+            onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
+            placeholder="0"
             className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
           />
         </div>
         <div className="flex-1 relative">
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.costPerStem}</label>
           <input
             type="number"
             inputMode="decimal"
-            value={form.costPrice}
-            onChange={e => setForm(f => ({ ...f, costPrice: e.target.value }))}
-            placeholder={t.shopping.costPrice}
-            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 pr-8 bg-white dark:bg-dark-elevated outline-none"
+            step="0.01"
+            value={form.costPerStem}
+            onChange={e => setForm(f => ({ ...f, costPerStem: e.target.value }))}
+            placeholder="0"
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 pr-7 bg-white dark:bg-dark-elevated outline-none"
           />
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ios-tertiary">zł</span>
+          <span className="absolute right-2.5 top-7 text-xs text-ios-tertiary">zł</span>
         </div>
       </div>
+      {/* Live derived totals — same feedback pattern as the DraftLineEditor */}
+      {totalStems > 0 && (
+        <div className="flex items-center justify-between bg-brand-50 dark:bg-brand-900/30 rounded-lg px-3 py-1.5">
+          <span className="text-xs text-brand-700 dark:text-brand-300">
+            = {totalStems} {t.stems}
+          </span>
+          {totalCost > 0 && (
+            <span className="text-sm font-semibold text-brand-700 dark:text-brand-300">
+              {t.shopping.totalCost}: {totalCost.toFixed(2)} zł
+            </span>
+          )}
+        </div>
+      )}
       {!ready && (
         <p className="text-[11px] text-amber-600">{fillAllHint}</p>
       )}
