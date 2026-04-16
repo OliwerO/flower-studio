@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: "Вопрос / Question"
+    url: "https://claude.ai/code"
+    about: "Задайте вопрос через Claude Code — он ответит сразу, без создания issue / Ask a question via Claude Code — it answers directly, no issue needed"

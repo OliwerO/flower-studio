@@ -1,0 +1,66 @@
+name: "Ошибка / Bug Report"
+description: "Опишите проблему, которую вы заметили / Report something that isn't working correctly"
+labels: ["bug", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Опишите проблему, которую вы заметили.**
+        Заполните форму ниже — это поможет разработчику быстрее найти и исправить ошибку.
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: "Приложение / App"
+      description: "В каком приложении вы заметили проблему? / Which app has the issue?"
+      options:
+        - "Панель управления / Dashboard"
+        - "Приложение флориста / Florist App"
+        - "Приложение доставки / Delivery App"
+        - "Не уверена / Not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: urgency
+    attributes:
+      label: "Срочность / Urgency"
+      description: "Насколько это срочно? / How urgent is this?"
+      options:
+        - "Срочно — мешает работе / Urgent — blocks work"
+        - "Важно — но можно работать / Important — but can work around it"
+        - "Когда-нибудь — мелочь / Someday — minor annoyance"
+    validations:
+      required: true
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: "Что случилось? / What happened?"
+      description: "Опишите, что пошло не так / Describe what went wrong"
+      placeholder: "Example: When I open order #123, the delivery fee shows 0 zł instead of 25 zł"
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: "Что должно было быть? / What did you expect?"
+      description: "Как должно было работать? / How should it have worked?"
+      placeholder: "Example: The delivery fee should show 25 zł as I entered when creating the order"
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: "Как воспроизвести? / Steps to reproduce"
+      description: "Что вы делали перед тем, как заметили проблему? / What were you doing before you noticed the issue?"
+      placeholder: |
+        1. Open the florist app
+        2. Go to order #123
+        3. Look at the delivery fee field
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Дополнительно / Additional context"
+      description: "Скриншоты, номера заказов, или другая полезная информация / Screenshots, order numbers, or other helpful info"

@@ -1,0 +1,58 @@
+name: "Новая функция / Feature Request"
+description: "Опишите, что бы вы хотели добавить или изменить / Suggest a new feature or improvement"
+labels: ["enhancement", "triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Опишите, что бы вы хотели добавить или изменить.**
+        Расскажите, какую задачу это поможет решить — это поможет разработчику выбрать лучшее решение.
+
+  - type: dropdown
+    id: app
+    attributes:
+      label: "Приложение / App"
+      description: "Для какого приложения эта функция? / Which app is this for?"
+      options:
+        - "Панель управления / Dashboard"
+        - "Приложение флориста / Florist App"
+        - "Приложение доставки / Delivery App"
+        - "Все приложения / All apps"
+        - "Бэкенд / Backend"
+        - "Не уверена / Not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: priority
+    attributes:
+      label: "Приоритет / Priority"
+      description: "Насколько это важно? / How important is this?"
+      options:
+        - "Срочно — нужно как можно скорее / Urgent — needed ASAP"
+        - "Важно — в ближайшее время / Important — soon"
+        - "Когда-нибудь — было бы хорошо / Someday — nice to have"
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: "Какую проблему это решает? / What problem does this solve?"
+      description: "Опишите задачу или неудобство, которое вы хотите решить / Describe the task or pain point"
+      placeholder: "Example: I spend 10 minutes every morning manually checking which orders need flowers that are out of stock"
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: "Как бы вы хотели, чтобы это работало? / How should it work?"
+      description: "Опишите идеальное решение / Describe the ideal solution"
+      placeholder: "Example: When I open the orders page, orders with out-of-stock flowers should be highlighted in yellow"
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: "Дополнительно / Additional context"
+      description: "Примеры, скриншоты, или ссылки / Examples, screenshots, or references"

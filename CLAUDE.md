@@ -117,3 +117,57 @@ After completing each logical step of work (not just at the end), write a short 
 4. **What to watch for** — any trade-offs, things that could break, or areas the owner should understand for future decisions
 
 Keep it concise but educational. The goal is for the owner to build a mental model of the codebase over time, not just approve changes blindly. Use concrete file paths and line references, not abstract descriptions.
+
+## Owner Interaction Mode
+
+When the user is the **owner** (not a developer), follow these rules:
+
+### Language
+- The owner speaks **Russian**. Always respond in Russian.
+- When creating GitHub issues, write **everything in English** (title and body) — the developer needs them in English.
+
+### What the owner might ask
+1. **Bug reports** — "Заказ не показывает правильную цену"
+2. **Feature requests** — "Хочу видеть фото букетов в списке"
+3. **Questions about the system** — "Как считается маржа?"
+4. **Pasting a Claude Chat summary** — she may paste output from a separate Claude Chat conversation and ask to create an issue from it
+
+### How to respond
+
+**For questions**: Answer directly by reading the codebase. Reference specific files and explain in simple terms. Do NOT create an issue.
+
+**For bugs and features**:
+1. Acknowledge what she described (in Russian)
+2. Ask clarifying questions if needed — which app, when it happens, how urgent
+3. Investigate the codebase — find relevant files, understand current behavior
+4. Explain what you found (simple Russian)
+5. Check `BACKLOG.md` for duplicates — if already tracked, tell her
+6. Create a GitHub Issue using GitHub MCP tools with:
+   - **English title** — concise, prefixed `fix:` for bugs or `feat:` for features
+   - **Labels** — appropriate combination from: `bug`/`enhancement` + `urgent`/`important`/`someday` + `app:dashboard`/`app:florist`/`app:delivery`/`app:backend`
+   - **English body** with this structure:
+
+```
+## Description
+[Clear description of the problem or request]
+
+## Technical Context
+- **App:** [which app]
+- **Affected files:** [file paths found during investigation]
+- **Current behavior:** [what the code does now]
+- **Expected behavior:** [what it should do]
+- **Root cause hypothesis:** [if identifiable from code reading]
+
+## Implementation Notes
+[Which files to change, what approach to take, any edge cases]
+```
+
+7. Confirm to the owner (in Russian) that the issue was created, with a link
+
+### Backlog awareness
+Before creating a new issue, check `BACKLOG.md`. If the item is already tracked:
+- Tell the owner it's in the backlog
+- Offer to create an issue anyway for tracking, noting what's new
+
+### Claude Chat bridge
+If the owner pastes a summary from a Claude Chat conversation, parse it and create a structured issue from it following the same format above.

@@ -1,0 +1,41 @@
+name: "Вопрос / Question"
+description: "Задайте вопрос о системе / Ask a question about the system"
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Задайте вопрос о системе.**
+        Если вопрос срочный, лучше спросите через Claude Code — он ответит сразу.
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: "Область / Area"
+      description: "О чём ваш вопрос? / What is your question about?"
+      options:
+        - "Заказы / Orders"
+        - "Склад и цветы / Stock & flowers"
+        - "Доставки / Deliveries"
+        - "Закупки / Purchase orders"
+        - "Финансы и цены / Finances & pricing"
+        - "Клиенты / Customers"
+        - "Настройки / Settings"
+        - "Другое / Other"
+    validations:
+      required: true
+
+  - type: textarea
+    id: question
+    attributes:
+      label: "Ваш вопрос / Your question"
+      description: "Опишите, что хотите узнать / Describe what you'd like to know"
+      placeholder: "Example: How is the margin calculated for custom bouquets? Does it include the delivery fee?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: "Контекст / Context"
+      description: "Дополнительная информация, если нужна / Additional info if relevant"
