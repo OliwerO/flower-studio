@@ -343,6 +343,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                           id: l.id, stockItemId: l['Stock Item']?.[0] || null,
                           flowerName: l['Flower Name'], quantity: l.Quantity,
                           _originalQty: l.Quantity,
+                          costPricePerUnit: Number(l['Cost Price Per Unit']) || 0,
+                          sellPricePerUnit: Number(l['Sell Price Per Unit']) || 0,
                         })));
                         setRemovedLines([]);
                         setAddingFlower(false);
@@ -378,7 +380,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                             </div>
                             <div className="flex justify-between items-baseline pr-12">
                               <span className="text-xs text-ios-tertiary">
-                                {liveSell > 0 ? `${liveSell.toFixed(0)} zł × ${qtyNum}` : (t.noPriceSet || '—')}
+                                {liveSell > 0 ? `${liveSell.toFixed(0)} zł × ${qtyNum}` : '—'}
                               </span>
                               {liveSell > 0 && (
                                 <span className="text-xs font-semibold text-brand-700">{lineTotal.toFixed(0)} zł</span>
