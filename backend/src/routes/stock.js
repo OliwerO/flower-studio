@@ -95,32 +95,26 @@ router.get('/velocity', async (req, res, next) => {
   }
 });
 
-// GET /api/stock/committed — aggregate DEFERRED committed quantities per stock item.
-// A line counts as "committed / needed" only when Stock Deferred = true, i.e. the
-// stock hasn't been deducted from Current Quantity yet. Non-deferred lines were
-// already materialised at order creation — counting them here would double-book
-// the demand that's already reflected in the stock's current qty.
+// GET /api/stock/committed — aggregate committed quantities per stock item for
+// future-dated non-terminal orders. Returns raw demand regardless of whether
+// the order already deducted stock at creation; the frontend compares this to
+// Current Quantity to decide whether to flag the flower as "needed".
 // Returns { stockId: { committed: N, orders: [{ orderId, appOrderId, customerName, requiredBy, qty }] } }
 router.get('/committed', async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    // Non-terminal orders with Required By in the future. Deferred is line-level,
-    // so we still fetch all their lines and filter individually below.
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
       fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
       maxRecords: 500,
     });
 
-    // Bulk-fetch all order lines — include Stock Deferred so we can skip lines
-    // whose demand is already reflected in Current Quantity.
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const allLines = await listByIds(TABLES.ORDER_LINES, allLineIds, {
-      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name', 'Stock Deferred'],
+      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
       maxRecords: 2000,
     });
 
-    // Bulk-fetch customers for display names
     const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
     const allCustomers = await listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
       fields: ['Name', 'Nickname'],
@@ -128,7 +122,6 @@ router.get('/committed', async (req, res, next) => {
     const customerMap = {};
     for (const c of allCustomers) customerMap[c.id] = c;
 
-    // Index orders by ID for enrichment
     const orderMap = {};
     for (const o of orders) {
       const custId = o.Customer?.[0];
@@ -140,17 +133,12 @@ router.get('/committed', async (req, res, next) => {
       };
     }
 
-    // Aggregate committed quantities per stock item — deferred lines only.
     const committed = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0];
       if (!stockId) continue;
       const qty = Number(line.Quantity || 0);
       if (qty <= 0) continue;
-      // Stock Deferred can be true/false/undefined depending on how Airtable
-      // serialises the checkbox. Treat anything non-truthy as "already deducted".
-      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
-      if (!isDeferred) continue;
 
       if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
       committed[stockId].committed += qty;

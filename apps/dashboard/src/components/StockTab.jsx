@@ -270,9 +270,16 @@ export default function StockTab({ initialFilter, onNavigate }) {
 
   // Needed rows — flowers committed to future orders that haven't been composed yet.
   // Only "New" status orders: once a bouquet is "Ready", the flowers are physically committed.
+  // Hides rows where the stock's Current Quantity already covers the needed qty —
+  // when a PO arrives after an order was placed, the stock balance catches up and
+  // the row should disappear without needing to flip any "deferred" flag.
   const neededRows = useMemo(() => {
     const nameMap = {};
-    for (const s of stock) nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
+    const qtyById = {};
+    for (const s of stock) {
+      nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
+      qtyById[s.id] = Number(s['Current Quantity']) || 0;
+    }
     let rows = Object.keys(committedMap).map(stockId => {
       const com = committedMap[stockId];
       // Filter to only New orders — Ready/later orders have already been composed
@@ -287,14 +294,20 @@ export default function StockTab({ initialFilter, onNavigate }) {
         stockId,
         name: nameMap[stockId] || '—',
         needed,
+        currentQty: qtyById[stockId] ?? 0,
         orders: newOrders,
         earliestDate,
         hasPO,
       };
-    }).filter(r => r.needed > 0).sort((a, b) => {
-      if (a.hasPO !== b.hasPO) return a.hasPO ? 1 : -1;
-      return (a.earliestDate || '').localeCompare(b.earliestDate || '');
-    });
+    })
+      // Drop rows where we actually have enough stock on hand — the order's
+      // demand is already covered (either stock was deducted at creation and
+      // topped up by a PO, or it was received independently).
+      .filter(r => r.needed > 0 && r.currentQty < r.needed)
+      .sort((a, b) => {
+        if (a.hasPO !== b.hasPO) return a.hasPO ? 1 : -1;
+        return (a.earliestDate || '').localeCompare(b.earliestDate || '');
+      });
     if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
     return rows;
   }, [committedMap, pendingPO, stock, search]);
