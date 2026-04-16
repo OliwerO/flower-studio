@@ -157,9 +157,57 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setAddingFlower(false);
   }
 
+  // Dissolve-premade workflow state. When the save would push stock below
+  // zero for a line whose stockItemId is locked in one or more premades, we
+  // pause the save, surface the options here, and let the UI render a
+  // confirmation modal. Shape:
+  //   { shortfalls: [{ stockId, name, shortage, available, need, bouquets: [...] }],
+  //     pendingAction: 'return' | 'writeoff' | null }
+  const [dissolveCandidates, setDissolveCandidates] = useState(null);
+
+  // Look at the net stock deduction each save would cause and, for any line
+  // that would go negative, report which premade bouquets hold stems of that
+  // stock item so the owner can dissolve them to cover the shortfall.
+  function computeShortfalls(lines, finalRemoved) {
+    const netDeduction = {};
+    for (const line of lines) {
+      if (!line.stockItemId) continue;
+      const delta = line.id
+        ? (Number(line.quantity) || 0) - (Number(line._originalQty) || 0)
+        : (Number(line.quantity) || 0);
+      if (delta <= 0) continue;
+      netDeduction[line.stockItemId] = (netDeduction[line.stockItemId] || 0) + delta;
+    }
+    // A "return" removal adds stock back, reducing the net deduction for
+    // that stock item. "writeoff" does not return to stock.
+    for (const rem of finalRemoved) {
+      if (rem.action !== 'return' || !rem.stockItemId) continue;
+      netDeduction[rem.stockItemId] = (netDeduction[rem.stockItemId] || 0) - (Number(rem.quantity) || 0);
+    }
+    const shortfalls = [];
+    for (const [stockId, deduction] of Object.entries(netDeduction)) {
+      if (deduction <= 0) continue;
+      const stockItem = stockItems.find(s => s.id === stockId);
+      const currentQty = Number(stockItem?.['Current Quantity']) || 0;
+      const remaining = currentQty - deduction;
+      if (remaining >= 0) continue;
+      const premades = premadeMap[stockId]?.bouquets || [];
+      if (premades.length === 0) continue;
+      shortfalls.push({
+        stockId,
+        name: stockItem?.['Display Name'] || '?',
+        shortage: -remaining,
+        available: currentQty,
+        need: deduction,
+        bouquets: premades,
+      });
+    }
+    return shortfalls;
+  }
+
   // ── Save bouquet ───────────────────────────────────────────────
   // Returns the refreshed order data on success, null on failure.
-  async function doSave(action) {
+  async function doSave(action, { skipShortfallCheck = false } = {}) {
     setSaving(true);
     try {
       const finalRemoved = [...removedLines];
@@ -175,6 +223,18 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
         }
         for (const rem of finalRemoved) { if (!rem.action) rem.action = action; }
       }
+
+      // Before hitting the backend, see if this save would eat into premade-
+      // reserved stems. If so, pause and let the UI render a confirm dialog.
+      if (!skipShortfallCheck) {
+        const shortfalls = computeShortfalls(editLines, finalRemoved);
+        if (shortfalls.length > 0) {
+          setDissolveCandidates({ shortfalls, pendingAction: action });
+          setSaving(false);
+          return null;
+        }
+      }
+
       await apiClient.put(`/orders/${orderId}/lines`, { lines: editLines, removedLines: finalRemoved });
       setEditingBouquet(false);
       setStockAction(null);
@@ -187,6 +247,37 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
       setSaving(false);
       return null;
     }
+  }
+
+  // Called by the dialog when the owner confirms which premades to dissolve.
+  // Dissolves each (returns remaining stems to stock + deletes the bouquet),
+  // refreshes stockItems, then re-runs the save with shortfall check bypassed.
+  async function confirmDissolveAndSave(bouquetIds) {
+    const action = dissolveCandidates?.pendingAction ?? null;
+    setDissolveCandidates(null);
+    setSaving(true);
+    for (const id of bouquetIds) {
+      try {
+        await apiClient.post(`/premade-bouquets/${id}/dissolve`);
+      } catch (err) {
+        showToast(err.response?.data?.error || t.updateError || 'Dissolve failed', 'error');
+      }
+    }
+    // Refresh stockItems + premadeMap so the next shortfall check (if any)
+    // sees the post-dissolve reality.
+    try {
+      const [stockRes, premadeRes] = await Promise.all([
+        apiClient.get('/stock?includeEmpty=true'),
+        apiClient.get('/stock/premade-committed').catch(() => ({ data: {} })),
+      ]);
+      setStockItems(stockRes.data);
+      setPremadeMap(premadeRes.data || {});
+    } catch {}
+    return doSave(action, { skipShortfallCheck: true });
+  }
+
+  function cancelDissolve() {
+    setDissolveCandidates(null);
   }
 
   // Called when the user clicks Save. If quantities were reduced, shows stock
@@ -256,6 +347,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     newFlowerForm, setNewFlowerForm,
     pendingPO,
     premadeMap,
+    dissolveCandidates,
 
     // Computed
     editCostTotal, editSellTotal, editMargin,
@@ -280,5 +372,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     handleSaveClick,
     cancelEditing,
     setStockAction,
+    confirmDissolveAndSave,
+    cancelDissolve,
   };
 }
