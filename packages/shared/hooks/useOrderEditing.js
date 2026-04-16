@@ -184,13 +184,13 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     }
   }
 
-  // Called when the user clicks Save. If quantities were reduced, shows stock
-  // action dialog first. Otherwise saves directly.
-  // Returns a promise that resolves to the refreshed data or null.
+  // Called when the user clicks Save. Only asks about spare flowers when a line
+  // quantity was reduced inline (e.g. 10 → 7) — those stems need a return/writeoff
+  // decision. Fully-removed lines already carry their own action from the per-line
+  // remove dialog, so re-asking would be a redundant second confirmation.
   function handleSaveClick() {
     const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
-    const hasRemovals = removedLines.length > 0;
-    if ((hasReductions || hasRemovals) && stockAction !== 'pending') {
+    if (hasReductions && stockAction !== 'pending') {
       setStockAction('pending');
       return Promise.resolve(null); // dialog will appear, user picks action, then doSave runs
     }

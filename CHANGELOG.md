@@ -39,6 +39,58 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-16 — Bouquet Editor UX (florist app): live totals + single return-to-stock prompt
+
+Two annoyances in the florist bouquet editor surfaced while editing an
+existing order:
+
+1. **Double "return to stock" prompt when removing a line.** Tapping ✕ on
+   a flower already opens a per-line dialog (Return / Write-off). After
+   picking an action, pressing **Save** would show the same question again
+   as a second confirmation — the user had to re-choose for a decision
+   they'd already made.
+2. **Totals didn't refresh while editing.** The "Flowers" subtotal and
+   "TOTAL" in the price-summary card kept showing the saved value. To see
+   the effect of adding or removing stems, the owner had to save, see the
+   new total, and decide if they needed to add more — a multi-round trip.
+   Per-line sell price × qty was also not visible while editing.
+
+### Frontend — `apps/florist/src/components/OrderCard.jsx`
+
+- Save handler now only opens the spare-flowers dialog when a line
+  quantity was **reduced inline** (e.g. 10 → 7). Lines fully removed via
+  ✕ already carry `action: 'return' | 'writeoff'` from their per-line
+  dialog, so the second prompt was redundant and has been dropped.
+- Bouquet edit rows now render `{price} zł × {qty}` and `{line total}` under
+  each flower, using the current stock sell price so the owner sees
+  exactly what each line contributes.
+- New live "Flowers" footer inside the editor — sums all lines as
+  quantities change and shows the delta vs. the original order total in
+  red (over) / green (under).
+- Flower picker results now show sell price + quantity (e.g. `65 zł · 12 pcs`)
+  so the owner can pick the right flower by price before adding.
+- `flowerTotal` in the outer Price Summary card now reflects in-memory
+  edits while `editingBouquet` is true (falls back to the saved total
+  otherwise). This propagates to the grand total displayed at the top of
+  the card and below the bouquet.
+
+### Frontend — `packages/shared/hooks/useOrderEditing.js`
+
+- Same single-prompt fix applied to the shared hook used by the dashboard
+  flow and tests, for consistency.
+
+### What to watch for
+
+- The top-of-card price badge now moves while editing — that's intentional
+  so the owner can gauge the new total at a glance, but it means the badge
+  is no longer "what the customer owes right now" during edits.
+- `sellPricePerUnit` on a line is a snapshot at add-time; the editor
+  prefers the live `Current Sell Price` from stock so if an owner
+  mid-editing changes a stock price elsewhere, the editor reflects that
+  immediately. The committed line still snapshots the price at save.
+
+---
+
 ## 2026-04-16 — PO Visibility Fix (partial qty + owner-added lines)
 
 Three related symptoms in the PO flow collapsed onto the same root cause:
