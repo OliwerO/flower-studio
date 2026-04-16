@@ -270,41 +270,79 @@ export default function StockTab({ initialFilter, onNavigate }) {
 
   // Needed rows — flowers committed to future orders that haven't been composed yet.
   // Only "New" status orders: once a bouquet is "Ready", the flowers are physically committed.
-  // Shows the real SHORTFALL (needed minus currentQty), so e.g. 6 committed with 4
-  // in stock surfaces as "short 2" rather than the full "need 6" — which previously
-  // looked like the stock itself was negative. Rows where currentQty >= needed are
-  // dropped entirely (no shortage).
+  //
+  // Stock availability is aggregated across ALL active records sharing the same
+  // base name (stripped of "(14.Apr.)" batch suffix). This is because:
+  //   - Order lines link to a specific stock record (often the old base).
+  //   - receiveIntoStock creates a NEW dated batch record for each receive,
+  //     leaving the order's original link pointing at the drained base.
+  //   - Without aggregation the Needed panel would flag a shortage even when
+  //     a sibling batch has plenty — e.g. base=1 + batch=10 covers need=9,
+  //     but the committed map only knows about the base record.
+  // We only hide rows (or shrink shortfall) when the aggregated supply covers
+  // the aggregated demand per flower name.
   const neededRows = useMemo(() => {
     const nameMap = {};
     const qtyById = {};
+    const baseNameById = {};
     for (const s of stock) {
-      nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
+      const displayName = s['Display Name'] || s['Purchase Name'] || '';
+      const base = stockBaseName(displayName) || s['Purchase Name'] || '';
+      nameMap[s.id] = base;
+      baseNameById[s.id] = base;
       qtyById[s.id] = Number(s['Current Quantity']) || 0;
     }
-    let rows = Object.keys(committedMap).map(stockId => {
+    // Aggregate available qty per base name — all batches + the undated base.
+    const availableByBaseName = {};
+    for (const s of stock) {
+      const base = baseNameById[s.id];
+      if (!base) continue;
+      availableByBaseName[base] = (availableByBaseName[base] || 0) + (Number(s['Current Quantity']) || 0);
+    }
+    // Aggregate demand per base name too — multiple stock records for the
+    // same flower can each have committed orders; we sum them before comparing.
+    const demandByBaseName = {};
+    for (const stockId of Object.keys(committedMap)) {
+      const base = baseNameById[stockId];
+      if (!base) continue;
       const com = committedMap[stockId];
-      // Filter to only New orders — Ready/later orders have already been composed
       const newOrders = (com.orders || []).filter(o => o.status === 'New');
       const needed = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
-      const currentQty = qtyById[stockId] ?? 0;
-      const shortfall = Math.max(0, needed - currentQty);
-      const hasPO = !!pendingPO[stockId];
-      const earliestDate = newOrders.reduce((earliest, o) => {
+      if (!demandByBaseName[base]) demandByBaseName[base] = { needed: 0, orders: [], stockIds: [] };
+      demandByBaseName[base].needed += needed;
+      demandByBaseName[base].orders.push(...newOrders);
+      if (!demandByBaseName[base].stockIds.includes(stockId)) {
+        demandByBaseName[base].stockIds.push(stockId);
+      }
+    }
+    let rows = Object.entries(demandByBaseName).map(([base, d]) => {
+      const needed = d.needed;
+      const aggregateAvailable = availableByBaseName[base] ?? 0;
+      const shortfall = Math.max(0, needed - aggregateAvailable);
+      const hasPO = d.stockIds.some(id => !!pendingPO[id]);
+      const earliestDate = d.orders.reduce((earliest, o) => {
         if (!o.requiredBy) return earliest;
         return !earliest || o.requiredBy < earliest ? o.requiredBy : earliest;
       }, null);
+      // Dedup orders (an order that spans multiple stock ids would otherwise count twice).
+      const seenOrderIds = new Set();
+      const uniqueOrders = d.orders.filter(o => {
+        if (seenOrderIds.has(o.orderId)) return false;
+        seenOrderIds.add(o.orderId);
+        return true;
+      });
       return {
-        stockId,
-        name: nameMap[stockId] || '—',
+        stockId: d.stockIds[0],              // primary id for React key + expand state
+        stockIds: d.stockIds,                // all records sharing this name
+        name: base,
         needed,
-        currentQty,
+        currentQty: aggregateAvailable,       // shown as "avail" in the UI
         shortfall,
-        orders: newOrders,
+        orders: uniqueOrders,
         earliestDate,
         hasPO,
       };
     })
-      // Only rows with a real shortage — if stock covers the need, nothing to buy.
       .filter(r => r.shortfall > 0)
       .sort((a, b) => {
         if (a.hasPO !== b.hasPO) return a.hasPO ? 1 : -1;
