@@ -381,19 +381,48 @@ router.get('/:id/usage', async (req, res, next) => {
     const displayName = stockItem['Display Name'] || '';
     const stockId = req.params.id;
 
-    // 1. Order lines — filter by Flower Name (linked record IDs aren't searchable
-    //    in Airtable formulas). Use exact Display Name only — not Purchase Name,
-    //    which would match all batches of the same flower type.
-    const safeName = sanitizeFormulaValue(displayName);
+    // Aggregate across sibling batches sharing the same base flower name.
+    // receiveIntoStock creates a new dated batch record for each receive,
+    // and order lines stay linked to whichever record existed at creation —
+    // so an order's usage and a PO's receipt often live on different stock
+    // records even though they refer to the same physical flower. The trace
+    // should show the full picture for the flower, not just this one record.
+    const dateBatchRe = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
+    const baseName = (displayName.match(dateBatchRe)?.[1] || displayName).trim();
+    const safeBase = sanitizeFormulaValue(baseName);
+    // Find all sibling stock records: the base record itself, plus any
+    // "<base> (dd.Mmm.)" dated batches.
+    let siblingStocks = [];
+    try {
+      siblingStocks = await db.list(TABLES.STOCK, {
+        filterByFormula: `OR({Display Name} = '${safeBase}', FIND('${safeBase} (', {Display Name} & '') = 1)`,
+        fields: ['Display Name', 'Current Quantity'],
+      });
+    } catch {
+      siblingStocks = [stockItem];
+    }
+    // Ensure the requested record is always in the set (in case the formula
+    // misses due to whitespace/punctuation differences).
+    if (!siblingStocks.some(s => s.id === stockId)) siblingStocks.push(stockItem);
+    const siblingIds = new Set(siblingStocks.map(s => s.id));
+    const siblingNames = siblingStocks.map(s => s['Display Name']).filter(Boolean);
+
+    // 1. Order lines — build an OR-formula that matches any of the sibling
+    //    display names (the Flower Name stamped on each line at creation).
+    //    Then keep only lines whose Stock Item link resolves to one of the
+    //    siblings, so we don't accidentally pick up unrelated records that
+    //    happen to share a name fragment.
+    const orSafeNames = siblingNames.map(n => `{Flower Name} = '${sanitizeFormulaValue(n)}'`);
+    const orderLineFormula = orSafeNames.length > 0 ? `OR(${orSafeNames.join(', ')})` : `{Flower Name} = '${safeBase}'`;
     const orderLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: `{Flower Name} = '${safeName}'`,
+      filterByFormula: orderLineFormula,
       fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
     });
-    // Keep only lines linked to THIS specific stock item — excludes unlinked lines
-    // and lines from other batches that happen to share the same base name.
     const matchedLines = orderLines.filter(l => {
       const linkedId = l['Stock Item']?.[0];
-      return linkedId === stockId;
+      // No link → still keep if the name matched, so orphan lines are surfaced.
+      if (!linkedId) return true;
+      return siblingIds.has(linkedId);
     });
 
     // Fetch parent orders for context
@@ -441,7 +470,7 @@ router.get('/:id/usage', async (req, res, next) => {
           sort: [{ field: 'Date', direction: 'desc' }],
         });
         usageLosses = allLosses
-          .filter(l => l['Stock Item']?.[0] === stockId)
+          .filter(l => siblingIds.has(l['Stock Item']?.[0]))
           .map(l => ({
             type: 'writeoff',
             date: l.Date || null,
@@ -464,7 +493,7 @@ router.get('/:id/usage', async (req, res, next) => {
         sort: [{ field: 'Purchase Date', direction: 'desc' }],
         maxRecords: 500,
       });
-      const linePurchases = allPurchases.filter(p => p.Flower?.[0] === stockId);
+      const linePurchases = allPurchases.filter(p => siblingIds.has(p.Flower?.[0]));
 
       // Parse PO marker from Notes; batch-fetch the parent POs to resolve
       // Stock Order ID. The marker is a stable format produced by the

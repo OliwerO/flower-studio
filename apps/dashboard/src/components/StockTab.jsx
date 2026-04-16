@@ -318,7 +318,24 @@ export default function StockTab({ initialFilter, onNavigate }) {
     let rows = Object.entries(demandByBaseName).map(([base, d]) => {
       const needed = d.needed;
       const aggregateAvailable = availableByBaseName[base] ?? 0;
-      const shortfall = Math.max(0, needed - aggregateAvailable);
+      // Shortfall = how many stems we still need to procure.
+      //
+      // We deliberately compute this as max(0, -aggregateAvailable) rather than
+      // max(0, needed - aggregateAvailable). Reason: order lines deduct from
+      // stock at creation (orderService.editBouquetLines line 385 and the
+      // create-order flow). Once deducted, the demand is ALREADY reflected in
+      // Current Quantity — subtracting "needed" again would double-count.
+      // Example: base=0 → order 7 → base=-7. The -7 IS the shortfall; adding
+      // the committed 7 on top gives the nonsensical 14 that prompted this fix.
+      //
+      // The only case this misses is a manually-deferred line (owner toggled
+      // stockDeferred during order creation). That workflow is opt-in and
+      // requires the "Stock Deferred" field on Order Lines in Airtable. Until
+      // that field is added to the production base, deferred lines would be
+      // invisible here — but they're also invisible at order creation (no
+      // deduction occurs), so the negative-stock signal continues to apply
+      // whenever the florist tries to consume them.
+      const shortfall = Math.max(0, -aggregateAvailable);
       const hasPO = d.stockIds.some(id => !!pendingPO[id]);
       const earliestDate = d.orders.reduce((earliest, o) => {
         if (!o.requiredBy) return earliest;
@@ -840,7 +857,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
                         <td className="px-2 py-1.5 text-right tabular-nums">
                           <div className="text-base font-bold text-red-600">-{row.shortfall}</div>
                           <div className="text-[10px] text-ios-tertiary font-normal">
-                            {row.currentQty} / {row.needed}
+                            {row.currentQty} {t.stems || 'stems'}
                           </div>
                         </td>
                         <td className="px-2 py-1.5 text-xs text-ios-secondary">{row.orders.length}</td>
