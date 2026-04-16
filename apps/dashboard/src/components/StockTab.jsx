@@ -48,10 +48,11 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const [wasteDeleteId, setWasteDeleteId] = useState(null);
   const [pendingPO, setPendingPO] = useState({});
   const [committedMap, setCommittedMap] = useState({});
+  // Premade-bouquet reservations per stock item:
+  // { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
+  const [premadeMap, setPremadeMap] = useState({});
   const [plannedCollapsed, setPlannedCollapsed] = useState(false);
-  const [neededCollapsed, setNeededCollapsed] = useState(false);
   const [expandedPlanned, setExpandedPlanned] = useState(null);
-  const [expandedNeeded, setExpandedNeeded] = useState(null);
   const { showToast } = useToast();
 
   const stockLoaded = useRef(false);
@@ -59,10 +60,11 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [stockRes, poRes, comRes] = await Promise.all([
+      const [stockRes, poRes, comRes, premadeRes] = await Promise.all([
         client.get('/stock?includeEmpty=true'),
         client.get('/stock/pending-po'),
         client.get('/stock/committed'),
+        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStock(prev => {
         if (!stockLoaded.current) return stockRes.data;
@@ -76,6 +78,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
       });
       setPendingPO(poRes.data);
       setCommittedMap(comRes.data);
+      setPremadeMap(premadeRes.data || {});
       stockLoaded.current = true;
     } catch {
       if (!silent) showToast(t.error, 'error');
@@ -268,112 +271,13 @@ export default function StockTab({ initialFilter, onNavigate }) {
     return rows;
   }, [pendingPO, committedMap, stock, search]);
 
-  // Needed rows — flowers committed to future orders that haven't been composed yet.
-  // Only "New" status orders: once a bouquet is "Ready", the flowers are physically committed.
-  //
-  // Stock availability is aggregated across ALL active records sharing the same
-  // base name (stripped of "(14.Apr.)" batch suffix). This is because:
-  //   - Order lines link to a specific stock record (often the old base).
-  //   - receiveIntoStock creates a NEW dated batch record for each receive,
-  //     leaving the order's original link pointing at the drained base.
-  //   - Without aggregation the Needed panel would flag a shortage even when
-  //     a sibling batch has plenty — e.g. base=1 + batch=10 covers need=9,
-  //     but the committed map only knows about the base record.
-  // We only hide rows (or shrink shortfall) when the aggregated supply covers
-  // the aggregated demand per flower name.
-  const neededRows = useMemo(() => {
-    const nameMap = {};
-    const qtyById = {};
-    const baseNameById = {};
-    for (const s of stock) {
-      const displayName = s['Display Name'] || s['Purchase Name'] || '';
-      const base = stockBaseName(displayName) || s['Purchase Name'] || '';
-      nameMap[s.id] = base;
-      baseNameById[s.id] = base;
-      qtyById[s.id] = Number(s['Current Quantity']) || 0;
-    }
-    // Aggregate available qty per base name — all batches + the undated base.
-    const availableByBaseName = {};
-    for (const s of stock) {
-      const base = baseNameById[s.id];
-      if (!base) continue;
-      availableByBaseName[base] = (availableByBaseName[base] || 0) + (Number(s['Current Quantity']) || 0);
-    }
-    // Aggregate demand per base name too — multiple stock records for the
-    // same flower can each have committed orders; we sum them before comparing.
-    const demandByBaseName = {};
-    for (const stockId of Object.keys(committedMap)) {
-      const base = baseNameById[stockId];
-      if (!base) continue;
-      const com = committedMap[stockId];
-      const newOrders = (com.orders || []).filter(o => o.status === 'New');
-      const needed = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
-      if (!demandByBaseName[base]) demandByBaseName[base] = { needed: 0, orders: [], stockIds: [] };
-      demandByBaseName[base].needed += needed;
-      demandByBaseName[base].orders.push(...newOrders);
-      if (!demandByBaseName[base].stockIds.includes(stockId)) {
-        demandByBaseName[base].stockIds.push(stockId);
-      }
-    }
-    let rows = Object.entries(demandByBaseName).map(([base, d]) => {
-      const needed = d.needed;
-      const aggregateAvailable = availableByBaseName[base] ?? 0;
-      // Shortfall = how many stems we still need to procure.
-      //
-      // We deliberately compute this as max(0, -aggregateAvailable) rather than
-      // max(0, needed - aggregateAvailable). Reason: order lines deduct from
-      // stock at creation (orderService.editBouquetLines line 385 and the
-      // create-order flow). Once deducted, the demand is ALREADY reflected in
-      // Current Quantity — subtracting "needed" again would double-count.
-      // Example: base=0 → order 7 → base=-7. The -7 IS the shortfall; adding
-      // the committed 7 on top gives the nonsensical 14 that prompted this fix.
-      //
-      // The only case this misses is a manually-deferred line (owner toggled
-      // stockDeferred during order creation). That workflow is opt-in and
-      // requires the "Stock Deferred" field on Order Lines in Airtable. Until
-      // that field is added to the production base, deferred lines would be
-      // invisible here — but they're also invisible at order creation (no
-      // deduction occurs), so the negative-stock signal continues to apply
-      // whenever the florist tries to consume them.
-      const shortfall = Math.max(0, -aggregateAvailable);
-      const hasPO = d.stockIds.some(id => !!pendingPO[id]);
-      const earliestDate = d.orders.reduce((earliest, o) => {
-        if (!o.requiredBy) return earliest;
-        return !earliest || o.requiredBy < earliest ? o.requiredBy : earliest;
-      }, null);
-      // Dedup orders (an order that spans multiple stock ids would otherwise count twice).
-      const seenOrderIds = new Set();
-      const uniqueOrders = d.orders.filter(o => {
-        if (seenOrderIds.has(o.orderId)) return false;
-        seenOrderIds.add(o.orderId);
-        return true;
-      });
-      return {
-        stockId: d.stockIds[0],              // primary id for React key + expand state
-        stockIds: d.stockIds,                // all records sharing this name
-        name: base,
-        needed,
-        currentQty: aggregateAvailable,       // shown as "avail" in the UI
-        shortfall,
-        orders: uniqueOrders,
-        earliestDate,
-        hasPO,
-      };
-    })
-      .filter(r => r.shortfall > 0)
-      .sort((a, b) => {
-        if (a.hasPO !== b.hasPO) return a.hasPO ? 1 : -1;
-        return (a.earliestDate || '').localeCompare(b.earliestDate || '');
-      });
-    if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
-    return rows;
-  }, [committedMap, pendingPO, stock, search]);
-
-  // (Previously hid flowers shown in "Needed" from the main stock list to avoid
-  // duplication. Removed — with the shortfall-based Needed panel, a flower can
-  // legitimately appear in both places: "you have 4 in stock, you still need 2
-  // more". Hiding it from the stock list made it impossible to see the Current
-  // Quantity or open the Trace for a partially-covered flower.)
+  // The old "Needed for Orders" panel has been removed. It was built on a
+  // brittle assumption (all order lines reserve future demand not reflected in
+  // stock) that produced double-counts whenever stock was already deducted at
+  // creation. Now that we surface premade reservations directly on each stock
+  // row and allow on-demand dissolving during bouquet save, the shortfall
+  // panel added more noise than signal. Real shortages still surface via
+  // negative Current Quantity on the stock row itself.
 
   return (
     <div className="space-y-4">
@@ -810,84 +714,6 @@ export default function StockTab({ initialFilter, onNavigate }) {
             </table>
           )}
 
-          {/* ── NEEDED — flowers committed to future orders (deferred stock only) ── */}
-          {neededRows.length > 0 && (
-            <table className="w-full text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: '24%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-                <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '5%' }} />
-                <col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-                <col style={{ width: '6%' }} /><col style={{ width: '17%' }} />
-              </colgroup>
-              <thead>
-                <tr className="bg-amber-50/60">
-                  <th colSpan={11} className="px-3 py-2 border-b border-amber-100 text-left font-normal">
-                    <button onClick={() => setNeededCollapsed(v => !v)} className="w-full flex items-center justify-between">
-                      <span className="text-xs font-semibold text-amber-700 uppercase tracking-wide">
-                        {t.neededForOrders} ({neededRows.length})
-                      </span>
-                      <span className="text-xs text-amber-400">{neededCollapsed ? '▼' : '▲'}</span>
-                    </button>
-                  </th>
-                </tr>
-                {!neededCollapsed && (
-                  <tr className="text-xs text-ios-tertiary border-b border-amber-100 bg-amber-50/20">
-                    <th className="text-left px-2 py-1.5 font-medium">{t.stockName}</th>
-                    <th className="text-left px-2 py-1.5 font-medium">{t.neededBy}</th>
-                    <th className="text-right px-2 py-1.5 font-medium">{t.needed}</th>
-                    <th className="text-left px-2 py-1.5 font-medium">{t.orders}</th>
-                    <th className="px-2 py-1.5"></th>
-                    <th colSpan={6}></th>
-                  </tr>
-                )}
-              </thead>
-              {!neededCollapsed && (
-                <tbody>
-                  {neededRows.map(row => (
-                    <Fragment key={row.stockId}>
-                      <tr
-                        className="border-b border-gray-100 hover:bg-amber-50/20 cursor-pointer"
-                        onClick={() => setExpandedNeeded(expandedNeeded === row.stockId ? null : row.stockId)}
-                      >
-                        <td className="px-2 py-1.5 text-ios-label font-medium text-sm truncate">{row.name}</td>
-                        <td className="px-2 py-1.5">{formatDateTag(row.earliestDate, 'amber')}</td>
-                        {/* Shortfall = how many more stems to buy. A secondary
-                            label shows current stock / total committed so the
-                            owner sees the full picture: "short 2 · 4/6". */}
-                        <td className="px-2 py-1.5 text-right tabular-nums">
-                          <div className="text-base font-bold text-red-600">-{row.shortfall}</div>
-                          <div className="text-[10px] text-ios-tertiary font-normal">
-                            {row.currentQty} {t.stems || 'stems'}
-                          </div>
-                        </td>
-                        <td className="px-2 py-1.5 text-xs text-ios-secondary">{row.orders.length}</td>
-                        <td className="px-2 py-1.5">
-                          {!row.hasPO && <span className="text-[10px] text-red-500 font-medium whitespace-nowrap">⚠ {t.noPO}</span>}
-                        </td>
-                        <td colSpan={6}></td>
-                      </tr>
-                      {expandedNeeded === row.stockId && row.orders.length > 0 && (
-                        <tr className="bg-amber-50/50">
-                          <td colSpan={11} className="px-6 py-1.5">
-                            <div className="space-y-0.5">
-                              {row.orders.map((o, i) => (
-                                <div key={i} className="flex items-center justify-between text-xs cursor-pointer hover:underline text-amber-700"
-                                     onClick={e => { e.stopPropagation(); onNavigate?.({ tab: 'orders', filter: { orderId: o.orderId } }); }}>
-                                  <span>#{o.appOrderId} — {o.customerName} ({o.requiredBy || '—'})</span>
-                                  <span className="tabular-nums font-medium">{o.qty} {t.stems}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              )}
-            </table>
-          )}
-
           {/* ── AVAILABLE — current stock inventory ── */}
           <table className="w-full text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
             <colgroup>
@@ -935,6 +761,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
                 <StockRow
                   key={item.id}
                   item={item}
+                  premade={premadeMap[item.id]}
                   onAdjust={adjustQty}
                   onWriteOff={writeOff}
                   onPatch={patchStock}
@@ -1011,7 +838,8 @@ function InlineDate({ value, displayName, onSave }) {
 }
 
 // Individual stock row — flat: name, qty, cost, sell, markup, supplier, farmer, lot, threshold, days in stock, actions
-function StockRow({ item, onAdjust, onWriteOff, onPatch, onNavigate }) {
+function StockRow({ item, premade, onAdjust, onWriteOff, onPatch, onNavigate }) {
+  const [showPremadeDetail, setShowPremadeDetail] = useState(false);
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
   const [showWo, setShowWo]     = useState(false);
@@ -1052,7 +880,16 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch, onNavigate }) {
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
           isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
-          {qty}
+          <div>{qty}</div>
+          {premade && premade.qty > 0 && (
+            <button
+              onClick={e => { e.stopPropagation(); setShowPremadeDetail(v => !v); }}
+              className="text-[10px] font-medium text-indigo-600 hover:text-indigo-800 normal-case"
+              title={t.clickToSeePremades || 'Click to see which bouquets'}
+            >
+              +{premade.qty} {t.inPremades || 'in premades'}
+            </button>
+          )}
         </td>
         <td className="px-2 py-1.5 text-right">
           <InlineEdit
@@ -1114,6 +951,23 @@ function StockRow({ item, onAdjust, onWriteOff, onPatch, onNavigate }) {
           </div>
         </td>
       </tr>
+      {showPremadeDetail && premade && premade.bouquets?.length > 0 && (
+        <tr className="bg-indigo-50/60">
+          <td colSpan={11} className="px-6 py-2">
+            <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide mb-1">
+              {t.lockedInPremades || 'Locked in premade bouquets'}
+            </p>
+            <div className="space-y-0.5">
+              {premade.bouquets.map((b, i) => (
+                <div key={i} className="flex items-center justify-between text-xs text-indigo-800">
+                  <span>{b.name}</span>
+                  <span className="tabular-nums font-medium">{b.qty} {t.stems || 'stems'}</span>
+                </div>
+              ))}
+            </div>
+          </td>
+        </tr>
+      )}
       {showUsage && (
         <tr className="bg-blue-50/50">
           <td colSpan={11} className="px-3 py-2">

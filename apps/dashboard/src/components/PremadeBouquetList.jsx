@@ -7,7 +7,7 @@
 //
 // Owner can also edit the bouquet's name/price override via the inline fields.
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -120,41 +120,12 @@ export default function PremadeBouquetList({ onMatchClicked }) {
             </div>
 
             {isExpanded && (
-              <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
-                {(b.lines || []).length > 0 && (
-                  <ul className="text-sm text-ios-label space-y-0.5">
-                    {b.lines.map(l => (
-                      <li key={l.id} className="flex justify-between">
-                        <span>{Number(l.Quantity || 0)}× {l['Flower Name'] || '?'}</span>
-                        <span className="text-ios-tertiary">
-                          {Number(l['Sell Price Per Unit'] || 0).toFixed(0)} × {Number(l.Quantity || 0)} = {(Number(l['Sell Price Per Unit'] || 0) * Number(l.Quantity || 0)).toFixed(0)} zł
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                {b.Notes && (
-                  <div className="text-xs text-ios-secondary italic">{b.Notes}</div>
-                )}
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onMatchClicked?.(b.id)}
-                    disabled={!onMatchClicked}
-                    title={!onMatchClicked ? 'Switch to the New Order tab and pick this bouquet from Step 2.' : ''}
-                    className="flex-1 h-10 rounded-xl bg-brand-600 text-white text-sm font-semibold active:bg-brand-700 disabled:opacity-40"
-                  >
-                    {t.soldBouquet}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleReturn(b.id)}
-                    className="flex-1 h-10 rounded-xl bg-amber-100 text-amber-700 text-sm font-semibold active:bg-amber-200"
-                  >
-                    {t.returnToStock}
-                  </button>
-                </div>
-              </div>
+              <PremadeExpanded
+                bouquet={b}
+                onMatchClicked={onMatchClicked}
+                onReturn={() => handleReturn(b.id)}
+                onUpdated={(updated) => setBouquets(prev => prev.map(x => x.id === updated.id ? updated : x))}
+              />
             )}
           </div>
         );
@@ -169,6 +140,315 @@ export default function PremadeBouquetList({ onMatchClicked }) {
           }}
         />
       )}
+    </div>
+  );
+}
+
+// Expanded row — read-only by default, switches to inline edit when the owner
+// clicks "Edit bouquet". Mirrors the florist PremadeBouquetCard edit UI but
+// stays compact for the dashboard's denser rows. On save, patches name/price/
+// notes and PUTs line changes, then surfaces the refreshed bouquet upward.
+function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
+  const { showToast } = useToast();
+  const [editing, setEditing] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  const [editName, setEditName] = useState(bouquet.Name || '');
+  const [editNotes, setEditNotes] = useState(bouquet.Notes || '');
+  const [editPriceOverride, setEditPriceOverride] = useState(bouquet['Price Override'] || '');
+  const [editLines, setEditLines] = useState([]);
+  const [removedLines, setRemovedLines] = useState([]);
+  const [stock, setStock] = useState([]);
+  const [flowerSearch, setFlowerSearch] = useState('');
+  const [showAddFlower, setShowAddFlower] = useState(false);
+
+  const sellTotal = Number(bouquet['Computed Sell Total'] || 0);
+
+  function startEditing() {
+    setEditing(true);
+    setEditName(bouquet.Name || '');
+    setEditNotes(bouquet.Notes || '');
+    setEditPriceOverride(bouquet['Price Override'] || '');
+    setEditLines((bouquet.lines || []).map(l => ({
+      id: l.id,
+      stockItemId: l['Stock Item']?.[0] || null,
+      flowerName: l['Flower Name'] || '',
+      quantity: Number(l.Quantity || 0),
+      _originalQty: Number(l.Quantity || 0),
+      costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
+      sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
+    })));
+    setRemovedLines([]);
+    setShowAddFlower(false);
+    setFlowerSearch('');
+  }
+
+  function cancelEditing() {
+    setEditing(false);
+    setRemovedLines([]);
+    setShowAddFlower(false);
+  }
+
+  function removeLine(idx) {
+    const line = editLines[idx];
+    if (line.id) {
+      setRemovedLines(prev => [...prev, {
+        lineId: line.id,
+        stockItemId: line.stockItemId,
+        quantity: line._originalQty,
+      }]);
+    }
+    setEditLines(prev => prev.filter((_, i) => i !== idx));
+  }
+
+  function updateQty(idx, delta) {
+    setEditLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      return { ...l, quantity: Math.max(1, l.quantity + delta) };
+    }));
+  }
+
+  function addFlowerFromStock(item) {
+    const existing = editLines.findIndex(l => l.stockItemId === item.id);
+    if (existing >= 0) {
+      setEditLines(prev => prev.map((l, i) =>
+        i === existing ? { ...l, quantity: l.quantity + 1 } : l,
+      ));
+    } else {
+      setEditLines(prev => [...prev, {
+        id: null,
+        stockItemId: item.id,
+        flowerName: item['Display Name'] || '',
+        quantity: 1,
+        _originalQty: 0,
+        costPricePerUnit: Number(item['Current Cost Price'] || 0),
+        sellPricePerUnit: Number(item['Current Sell Price'] || 0),
+      }]);
+    }
+    setShowAddFlower(false);
+    setFlowerSearch('');
+  }
+
+  useEffect(() => {
+    if (!showAddFlower || stock.length > 0) return;
+    client.get('/stock').then(r => setStock(r.data)).catch(() => {});
+  }, [showAddFlower, stock.length]);
+
+  const filteredStock = useMemo(() => {
+    if (!flowerSearch.trim()) return stock.slice(0, 20);
+    const q = flowerSearch.toLowerCase().trim();
+    return stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(q)).slice(0, 20);
+  }, [stock, flowerSearch]);
+
+  async function handleSave() {
+    setBusy(true);
+    try {
+      const patch = {};
+      if (editName.trim() !== (bouquet.Name || '')) patch.name = editName.trim();
+      if ((editNotes || '') !== (bouquet.Notes || '')) patch.notes = editNotes;
+      const overrideNum = editPriceOverride ? Number(editPriceOverride) : null;
+      if (overrideNum !== (bouquet['Price Override'] || null)) patch.priceOverride = overrideNum;
+
+      if (Object.keys(patch).length > 0) {
+        await client.patch(`/premade-bouquets/${bouquet.id}`, patch);
+      }
+
+      const hasLineChanges = removedLines.length > 0
+        || editLines.some(l => !l.id)
+        || editLines.some(l => l.id && l.quantity !== l._originalQty);
+
+      if (hasLineChanges) {
+        await client.put(`/premade-bouquets/${bouquet.id}/lines`, {
+          lines: editLines,
+          removedLines,
+        });
+      }
+
+      const res = await client.get(`/premade-bouquets/${bouquet.id}`);
+      onUpdated?.(res.data);
+      setEditing(false);
+      showToast(t.bouquetUpdated, 'success');
+    } catch (err) {
+      console.error('Failed to save premade bouquet:', err);
+      showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!editing) {
+    return (
+      <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+        {(bouquet.lines || []).length > 0 && (
+          <ul className="text-sm text-ios-label space-y-0.5">
+            {bouquet.lines.map(l => (
+              <li key={l.id} className="flex justify-between">
+                <span>{Number(l.Quantity || 0)}× {l['Flower Name'] || '?'}</span>
+                <span className="text-ios-tertiary">
+                  {Number(l['Sell Price Per Unit'] || 0).toFixed(0)} × {Number(l.Quantity || 0)} = {(Number(l['Sell Price Per Unit'] || 0) * Number(l.Quantity || 0)).toFixed(0)} zł
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {bouquet.Notes && (
+          <div className="text-xs text-ios-secondary italic">{bouquet.Notes}</div>
+        )}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onMatchClicked?.(bouquet.id)}
+            disabled={!onMatchClicked}
+            title={!onMatchClicked ? 'Switch to the New Order tab and pick this bouquet from Step 2.' : ''}
+            className="flex-1 h-10 rounded-xl bg-brand-600 text-white text-sm font-semibold active:bg-brand-700 disabled:opacity-40"
+          >
+            {t.soldBouquet}
+          </button>
+          <button
+            type="button"
+            onClick={startEditing}
+            className="h-10 px-4 rounded-xl bg-gray-100 text-ios-label text-sm font-semibold active:bg-gray-200"
+          >
+            {t.editBouquet}
+          </button>
+          <button
+            type="button"
+            onClick={onReturn}
+            className="flex-1 h-10 rounded-xl bg-amber-100 text-amber-700 text-sm font-semibold active:bg-amber-200"
+          >
+            {t.returnToStock}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Edit mode
+  return (
+    <div className="px-4 pb-4 pt-1 border-t border-gray-100 space-y-3">
+      <div>
+        <label className="text-[11px] text-ios-tertiary uppercase tracking-wide">{t.premadeBouquetName}</label>
+        <input
+          type="text"
+          value={editName}
+          onChange={e => setEditName(e.target.value)}
+          className="field-input w-full mt-1 text-sm"
+        />
+      </div>
+
+      <div>
+        <div className="flex items-center justify-between mb-1">
+          <label className="text-[11px] text-ios-tertiary uppercase tracking-wide">{t.labelBouquet || 'Bouquet'}</label>
+          <button
+            type="button"
+            onClick={() => setShowAddFlower(v => !v)}
+            className="text-xs font-semibold text-brand-600 active-scale"
+          >
+            + {t.addFlower}
+          </button>
+        </div>
+
+        {showAddFlower && (
+          <div className="mb-2 bg-gray-50 rounded-xl p-3">
+            <input
+              type="text"
+              value={flowerSearch}
+              onChange={e => setFlowerSearch(e.target.value)}
+              placeholder={t.flowerSearch || 'Search stock...'}
+              className="field-input w-full text-sm mb-2"
+              autoFocus
+            />
+            <div className="max-h-40 overflow-y-auto space-y-1">
+              {filteredStock.map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => addFlowerFromStock(item)}
+                  className="w-full text-left px-3 py-2 rounded-lg bg-white text-sm hover:bg-gray-100 flex justify-between items-center"
+                >
+                  <span className="text-ios-label">{item['Display Name'] || '?'}</span>
+                  <span className="text-ios-tertiary text-xs">
+                    {Number(item['Current Quantity'] || 0)} · {Number(item['Current Sell Price'] || 0)} zł
+                  </span>
+                </button>
+              ))}
+              {filteredStock.length === 0 && (
+                <p className="text-xs text-ios-tertiary text-center py-2">{t.noStockFound || 'No items found'}</p>
+              )}
+            </div>
+          </div>
+        )}
+
+        <div className="space-y-1">
+          {editLines.map((line, idx) => (
+            <div key={line.id || `new-${idx}`} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+              <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
+              <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => updateQty(idx, -1)}
+                  className="w-7 h-7 rounded-full bg-white border border-gray-200 text-sm flex items-center justify-center"
+                >−</button>
+                <span className="w-6 text-center text-sm font-semibold">{line.quantity}</span>
+                <button
+                  type="button"
+                  onClick={() => updateQty(idx, 1)}
+                  className="w-7 h-7 rounded-full bg-white border border-gray-200 text-sm flex items-center justify-center"
+                >+</button>
+              </div>
+              <span className="text-xs text-ios-tertiary w-14 text-right">
+                {Math.round(line.sellPricePerUnit * line.quantity)} zł
+              </span>
+              <button
+                type="button"
+                onClick={() => removeLine(idx)}
+                className="text-red-400 text-sm ml-1"
+              >✕</button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div>
+        <label className="text-[11px] text-ios-tertiary uppercase tracking-wide">{t.priceOverrideOptional || 'Price override'}</label>
+        <input
+          type="number"
+          value={editPriceOverride}
+          onChange={e => setEditPriceOverride(e.target.value)}
+          placeholder={`${Math.round(sellTotal)} zł`}
+          className="field-input w-full mt-1 text-sm"
+        />
+      </div>
+
+      <div>
+        <label className="text-[11px] text-ios-tertiary uppercase tracking-wide">{t.premadeBouquetNotes || 'Notes'}</label>
+        <textarea
+          value={editNotes}
+          onChange={e => setEditNotes(e.target.value)}
+          placeholder={t.premadeBouquetNotesHint || ''}
+          rows={2}
+          className="field-input w-full mt-1 text-sm resize-none"
+        />
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          type="button"
+          disabled={busy || !editName.trim() || editLines.length === 0}
+          onClick={handleSave}
+          className="flex-1 h-10 rounded-xl bg-brand-600 text-white text-sm font-semibold disabled:opacity-40 active:bg-brand-700"
+        >
+          {t.saveBouquet || t.save || 'Save'}
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={cancelEditing}
+          className="h-10 px-6 rounded-xl bg-gray-100 text-ios-secondary text-sm font-semibold active:bg-gray-200"
+        >
+          {t.cancel}
+        </button>
+      </div>
     </div>
   );
 }

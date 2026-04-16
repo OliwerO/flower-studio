@@ -8,6 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
+import { DissolvePremadesDialog, computePremadeShortfalls } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -55,6 +56,11 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const [stockItems, setStockItems] = useState([]);
   const [newFlowerForm, setNewFlowerForm] = useState(null); // { name, costPrice, sellPrice, lotSize, supplier }
   const [pendingPO, setPendingPO] = useState({});
+  // Premade reservations + pending dissolve dialog. Fetched lazily when the
+  // owner opens the bouquet editor; only rendered when a save would push
+  // stock negative for a flower that's locked in a premade.
+  const [premadeMap, setPremadeMap] = useState({});
+  const [dissolveCandidates, setDissolveCandidates] = useState(null);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -91,7 +97,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
     }
   }
 
-  async function doSaveDashboard(action) {
+  async function doSaveDashboard(action, { skipShortfallCheck = false } = {}) {
     setSaving(true);
     try {
       const finalRemoved = [...removedLines];
@@ -107,6 +113,21 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         }
         for (const rem of finalRemoved) { if (!rem.action) rem.action = action; }
       }
+
+      // Gate: if this save would push a flower's stock below zero AND some of
+      // those stems are locked in premade bouquets, pause and ask the owner
+      // whether to dissolve them. The dialog re-enters via confirmDissolveAndSave.
+      if (!skipShortfallCheck) {
+        const shortfalls = computePremadeShortfalls({
+          editLines, finalRemoved, stockItems, premadeMap,
+        });
+        if (shortfalls.length > 0) {
+          setDissolveCandidates({ shortfalls, pendingAction: action });
+          setSaving(false);
+          return;
+        }
+      }
+
       await client.put(`/orders/${orderId}/lines`, { lines: editLines, removedLines: finalRemoved });
       setEditingBouquet(false);
       setStockAction(null);
@@ -119,6 +140,31 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
     } finally {
       setSaving(false);
     }
+  }
+
+  // Dissolve each selected premade (returns remaining stems to stock + deletes
+  // the bouquet), refresh stockItems/premadeMap, then retry the save with the
+  // shortfall check bypassed.
+  async function confirmDissolveAndSave(bouquetIds) {
+    const action = dissolveCandidates?.pendingAction ?? null;
+    setDissolveCandidates(null);
+    setSaving(true);
+    for (const id of bouquetIds) {
+      try {
+        await client.post(`/premade-bouquets/${id}/dissolve`);
+      } catch (err) {
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
+    }
+    try {
+      const [stockRes, premadeRes] = await Promise.all([
+        client.get('/stock'),
+        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+      ]);
+      setStockItems(stockRes.data);
+      setPremadeMap(premadeRes.data || {});
+    } catch {}
+    await doSaveDashboard(action, { skipShortfallCheck: true });
   }
 
   async function patchDelivery(fields) {
@@ -426,6 +472,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                     client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
                   }
                   client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+                  client.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
                 }}
                 className="text-xs text-brand-600 font-medium"
               >{t.editBouquet}</button>
@@ -923,6 +970,21 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           </>
         )}
       </div>
+      <DissolvePremadesDialog
+        candidates={dissolveCandidates}
+        saving={saving}
+        onConfirm={confirmDissolveAndSave}
+        onCancel={() => setDissolveCandidates(null)}
+        labels={{
+          title: t.dissolvePremadeTitle || 'Dissolve premade bouquets?',
+          intro: t.dissolvePremadeIntro || 'These flowers are locked in premade bouquets. Pick which to dissolve — the remaining stems will return to stock and the bouquet will disappear.',
+          headerNeed: t.dissolvePremadeNeed || 'Need',
+          headerAvail: t.dissolvePremadeAvail || 'Avail',
+          headerShort: t.dissolvePremadeShort || 'Short',
+          cancel: t.cancel || 'Cancel',
+          confirm: t.dissolvePremadeConfirm || 'Dissolve',
+        }}
+      />
     </div>
   );
 }

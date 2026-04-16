@@ -200,6 +200,14 @@ const en = {
   addToCart:        'Add to bouquet',
   saveBouquet:      'Save bouquet',
   bouquetUpdated:   'Bouquet updated',
+  dissolvePremadeTitle:   'Dissolve premade bouquets?',
+  dissolvePremadeIntro:   'These flowers are locked in premade bouquets. Pick which to dissolve — the remaining stems return to stock and the bouquet is deleted.',
+  dissolvePremadeNeed:    'Need',
+  dissolvePremadeAvail:   'Have',
+  dissolvePremadeShort:   'Short',
+  dissolvePremadeConfirm: 'Dissolve',
+  inPremadesShort:        'premade',
+  lockedInPremades:       'Locked in premades',
   markup:           'Markup',
 
   // Delivery method
@@ -712,6 +720,14 @@ const ru = {
   addToCart:        'Добавить в букет',
   saveBouquet:      'Сохранить букет',
   bouquetUpdated:   'Букет обновлён',
+  dissolvePremadeTitle:   'Разобрать заготовки?',
+  dissolvePremadeIntro:   'Эти цветы заняты в заготовках. Выберите, какие разобрать — оставшиеся стебли вернутся в склад, а заготовка удалится.',
+  dissolvePremadeNeed:    'Нужно',
+  dissolvePremadeAvail:   'Есть',
+  dissolvePremadeShort:   'Не хватает',
+  dissolvePremadeConfirm: 'Разобрать',
+  inPremadesShort:        'в заг.',
+  lockedInPremades:       'Занято в заготовках',
   markup:           'Наценка',
 
   // Delivery method
