@@ -98,35 +98,38 @@ function EditableDate({ label, value, onSave, disabled }) {
   );
 }
 
-// Inline-editable card text — usable in any order stage (per owner request).
-function EditableCardText({ value, onSave, disabled }) {
+// Inline-editable text row — usable for card message, notes, or any free-form
+// field. Shows the current value (or a "tap to add" placeholder) as a button;
+// on tap expands into a textarea with Save / Cancel.
+function EditableTextRow({ label, value, placeholder, onSave, disabled, rows = 3 }) {
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState(value);
+  const [draft, setDraft]     = useState(value || '');
+  const placeholderText = placeholder || t.tapToEdit || 'Tap to add';
   if (!editing) {
     return (
       <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
-        <span className="text-sm text-ios-tertiary shrink-0">{t.cardText || 'Card msg'}</span>
+        <span className="text-sm text-ios-tertiary shrink-0">{label}</span>
         <button
-          onClick={() => { setDraft(value); setEditing(true); }}
+          onClick={() => { setDraft(value || ''); setEditing(true); }}
           className="text-sm text-ios-label text-right flex-1 truncate hover:text-brand-600"
         >
-          {value || <span className="text-ios-tertiary italic">{t.tapToEdit || 'Tap to add'}</span>}
+          {value || <span className="text-ios-tertiary italic">{placeholderText}</span>}
         </button>
       </div>
     );
   }
   return (
     <div className="py-2 border-b border-gray-100 last:border-0">
-      <span className="text-sm text-ios-tertiary block mb-1">{t.cardText || 'Card msg'}</span>
+      <span className="text-sm text-ios-tertiary block mb-1">{label}</span>
       <textarea
         value={draft}
         onChange={e => setDraft(e.target.value)}
         autoFocus
-        rows={3}
+        rows={rows}
         className="w-full px-2 py-1.5 rounded border border-gray-200 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 text-sm"
       />
       <div className="flex gap-2 mt-1.5 justify-end">
-        <button onClick={() => setEditing(false)} className="text-xs px-3 py-1 rounded text-ios-tertiary">{t.cancel}</button>
+        <button onClick={() => { setEditing(false); setDraft(value || ''); }} className="text-xs px-3 py-1 rounded text-ios-tertiary">{t.cancel}</button>
         <button
           onClick={async () => { await onSave(draft); setEditing(false); }}
           disabled={disabled}
@@ -464,7 +467,13 @@ export default function OrderDetailPage() {
                     ))}
                   </div>
                 </div>
-                <EditableCardText value={order['Greeting Card Text'] || ''} onSave={v => patch({ 'Greeting Card Text': v })} disabled={saving} />
+                <EditableTextRow
+                  label={t.cardText || 'Card msg'}
+                  value={order['Greeting Card Text'] || ''}
+                  placeholder={t.addCardMsg || 'Tap to add card message'}
+                  onSave={v => patch({ 'Greeting Card Text': v })}
+                  disabled={saving}
+                />
               </div>
             </div>
 
@@ -535,16 +544,21 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            {/* Source + notes */}
-            {(order['Source'] || order['Notes Original']) && (
-              <div>
-                <p className="ios-label">Info</p>
-                <div className="ios-card px-4 py-2">
-                  <Row label="Source" value={order['Source']} />
-                  <Row label="Notes"  value={order['Notes Original']} />
-                </div>
+            {/* Source + notes — notes always editable */}
+            <div>
+              <p className="ios-label">{t.labelNotes || 'Info'}</p>
+              <div className="ios-card px-4 py-2">
+                {order['Source'] && <Row label="Source" value={order['Source']} />}
+                <EditableTextRow
+                  label={t.labelNotes || 'Notes'}
+                  value={order['Notes Original'] || ''}
+                  placeholder={t.addNotes || 'Tap to add notes'}
+                  onSave={v => patch({ 'Notes Original': v })}
+                  disabled={saving}
+                  rows={2}
+                />
               </div>
-            )}
+            </div>
           </>
         )}
       </div>

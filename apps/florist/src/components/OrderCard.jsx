@@ -74,6 +74,64 @@ function Row({ label, value }) {
   );
 }
 
+// Tap-to-edit textarea block. Used for card message and florist notes so
+// both the owner and the florist can update them inline without leaving the
+// expanded order view. Clicks inside are isolated by the expanded wrapper,
+// so the card won't collapse while editing.
+function EditableBlock({ value, onSave, placeholder, rows = 3, textClassName = 'text-sm text-ios-label' }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft]     = useState(value || '');
+  const [saving, setSaving]   = useState(false);
+  const current = value || '';
+
+  if (!editing) {
+    return (
+      <button
+        type="button"
+        onClick={() => { setDraft(current); setEditing(true); }}
+        className="w-full text-left"
+      >
+        {current ? (
+          <span className={`${textClassName} whitespace-pre-wrap leading-relaxed`}>{current}</span>
+        ) : (
+          <span className="text-ios-tertiary italic text-sm">{placeholder}</span>
+        )}
+      </button>
+    );
+  }
+
+  return (
+    <div>
+      <textarea
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        rows={rows}
+        autoFocus
+        className={`w-full bg-transparent outline-none resize-none ${textClassName} leading-relaxed`}
+      />
+      <div className="flex gap-2 mt-1 justify-end">
+        <button
+          type="button"
+          onClick={() => { setEditing(false); setDraft(current); }}
+          disabled={saving}
+          className="text-xs px-3 py-1 rounded-lg text-ios-tertiary"
+        >{t.cancel}</button>
+        <button
+          type="button"
+          onClick={async () => {
+            if (draft === current) { setEditing(false); return; }
+            setSaving(true);
+            try { await onSave(draft); setEditing(false); }
+            finally { setSaving(false); }
+          }}
+          disabled={saving}
+          className="text-xs px-3 py-1 rounded-lg bg-brand-600 text-white font-semibold disabled:opacity-40"
+        >{saving ? '...' : (t.save || 'Save')}</button>
+      </div>
+    </div>
+  );
+}
+
 export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
   const { showToast } = useToast();
@@ -668,15 +726,19 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 );
               })()}
 
-              {/* ── Greeting card ── */}
-              {detail['Greeting Card Text'] && (
-                <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelCardMsg}</p>
-                  <p className="text-lg text-ios-label bg-amber-50 rounded-xl px-4 py-3 leading-relaxed whitespace-pre-wrap">
-                    {detail['Greeting Card Text']}
-                  </p>
+              {/* ── Greeting card — always editable so plans can change ── */}
+              <div>
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelCardMsg}</p>
+                <div className="bg-amber-50 rounded-xl px-4 py-3">
+                  <EditableBlock
+                    value={detail['Greeting Card Text'] || ''}
+                    onSave={v => patch({ 'Greeting Card Text': v })}
+                    placeholder={t.addCardMsg || 'Tap to add card message'}
+                    rows={3}
+                    textClassName="text-lg text-ios-label"
+                  />
                 </div>
-              )}
+              </div>
 
               {/* ── Status controls ── */}
               <div>
@@ -975,13 +1037,26 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* ── Order date + Notes ── */}
-              {(d['Order Date'] || detail['Notes Original']) && (
-                <div className="bg-gray-50 rounded-xl px-3 py-1 space-y-0">
-                  {d['Order Date'] && <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />}
-                  {detail['Notes Original'] && <Row label={t.labelNotes} value={detail['Notes Original']} />}
+              {/* ── Order date ── */}
+              {d['Order Date'] && (
+                <div className="bg-gray-50 rounded-xl px-3 py-1">
+                  <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />
                 </div>
               )}
+
+              {/* ── Notes — always editable ── */}
+              <div>
+                <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelNotes}</p>
+                <div className="bg-gray-50 rounded-xl px-3 py-2">
+                  <EditableBlock
+                    value={detail['Notes Original'] || ''}
+                    onSave={v => patch({ 'Notes Original': v })}
+                    placeholder={t.addNotes || 'Tap to add notes'}
+                    rows={2}
+                    textClassName="text-sm text-ios-label"
+                  />
+                </div>
+              </div>
             </>
           )}
 
