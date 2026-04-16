@@ -243,9 +243,19 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
   const d = detail || order;
   const currentStatus = d['Status'] || 'New';
   const currentPaid   = d['Payment Status'] === 'Paid';
-  // Price Override replaces flower total only; delivery fee always added on top
-  const detailLineTotal = (detail?.orderLines || []).reduce((sum, l) =>
+  // Price Override replaces flower total only; delivery fee always added on top.
+  // While editing the bouquet, compute the line total from the in-memory editLines
+  // (using live stock sell prices) so Flowers / Total update as quantities change.
+  const savedLineTotal = (detail?.orderLines || []).reduce((sum, l) =>
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
+  const editingLineTotal = editingBouquet
+    ? editLines.reduce((sum, l) => {
+        const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
+        const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+        return sum + price * Number(l.quantity || 0);
+      }, 0)
+    : null;
+  const detailLineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
   const detailDeliveryFee = Number(detail?.delivery?.['Delivery Fee'] || d['Delivery Fee'] || 0);
   const flowerTotal = detailLineTotal > 0 ? detailLineTotal : (Number(d['Sell Total']) || 0);
   const currentPrice = (d['Price Override'] || flowerTotal) + detailDeliveryFee;
@@ -375,6 +385,8 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                           id: l.id, stockItemId: l['Stock Item']?.[0] || null,
                           flowerName: l['Flower Name'], quantity: l.Quantity,
                           _originalQty: l.Quantity,
+                          costPricePerUnit: Number(l['Cost Price Per Unit']) || 0,
+                          sellPricePerUnit: Number(l['Sell Price Per Unit']) || 0,
                         })));
                         setRemovedLines([]);
                         setAddingFlower(false);
@@ -393,17 +405,59 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
 
                   {editingBouquet ? (
                     <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-2">
-                      {editLines.map((line, idx) => (
-                        <div key={line.id || idx} className="flex items-center gap-2">
-                          <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
-                          <input type="number" min="1" value={line.quantity}
-                            onChange={e => setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
-                            onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
-                            onFocus={e => e.target.select()}
-                            className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1.5" />
-                          <button onClick={() => setRemoveIdx(idx)} className="text-red-400 text-sm px-1">✕</button>
-                        </div>
-                      ))}
+                      {editLines.map((line, idx) => {
+                        const si = line.stockItemId ? stockItems.find(s => s.id === line.stockItemId) : null;
+                        const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+                        const qtyNum = Number(line.quantity || 0);
+                        const lineTotal = liveSell * qtyNum;
+                        return (
+                          <div key={line.id || idx} className="flex flex-col gap-0.5">
+                            <div className="flex items-center gap-2">
+                              <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
+                              <input type="number" min="1" value={line.quantity}
+                                onChange={e => setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: e.target.value === '' ? '' : (Number(e.target.value) || 0) } : l))}
+                                onBlur={e => { if (!e.target.value || Number(e.target.value) < 1) setEditLines(p => p.map((l, i) => i === idx ? { ...l, quantity: 1 } : l)); }}
+                                onFocus={e => e.target.select()}
+                                className="w-14 text-center text-sm border border-gray-200 rounded-lg py-1.5" />
+                              <button onClick={() => setRemoveIdx(idx)} className="text-red-400 text-sm px-1">✕</button>
+                            </div>
+                            <div className="flex justify-between items-baseline pr-12">
+                              <span className="text-xs text-ios-tertiary">
+                                {liveSell > 0 ? `${liveSell.toFixed(0)} zł × ${qtyNum}` : '—'}
+                              </span>
+                              {liveSell > 0 && (
+                                <span className="text-xs font-semibold text-brand-700">{lineTotal.toFixed(0)} zł</span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      {/* Live flower total — updates as quantities change */}
+                      {editLines.length > 0 && (() => {
+                        const liveSellTotal = editLines.reduce((sum, l) => {
+                          const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
+                          const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+                          return sum + price * Number(l.quantity || 0);
+                        }, 0);
+                        const originalTotal = Number(detail?.['Sell Total'] || 0);
+                        const delta = originalTotal > 0 ? liveSellTotal - originalTotal : 0;
+                        return (
+                          <div className="flex justify-between items-baseline pt-1 border-t border-gray-200">
+                            <span className="text-xs font-semibold text-ios-secondary uppercase tracking-wide">
+                              {t.flowerTotal || 'Flowers'}
+                            </span>
+                            <div className="flex items-center gap-2">
+                              {originalTotal > 0 && delta !== 0 && (
+                                <span className={`text-xs font-bold ${delta > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                                  ({delta > 0 ? '+' : ''}{delta.toFixed(0)})
+                                </span>
+                              )}
+                              <span className="text-sm font-bold text-brand-600">{liveSellTotal.toFixed(0)} zł</span>
+                            </div>
+                          </div>
+                        );
+                      })()}
 
                       {/* Add flower picker */}
                       {!addingFlower ? (
@@ -429,29 +483,34 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                                 return name.includes(q) && !editLines.some(l => l.stockItemId === s.id);
                               })
                               .slice(0, 6)
-                              .map(s => (
-                                <div key={s.id}
-                                  onPointerDown={e => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: s.id,
-                                      flowerName: s['Display Name'],
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: Number(s['Current Cost Price']) || 0,
-                                      sellPricePerUnit: Number(s['Current Sell Price']) || 0,
-                                    }]);
-                                    setFlowerSearch('');
-                                    setAddingFlower(false);
-                                  }}
-                                  className="w-full text-left px-2 py-2.5 text-sm active:bg-gray-100 dark:active:bg-gray-700 rounded cursor-pointer"
-                                >
-                                  <span className="font-medium">{s['Display Name']}</span>
-                                  <span className="text-xs text-ios-tertiary ml-1">
-                                    ({Number(s['Current Quantity']) || 0} pcs)
-                                  </span>
-                                </div>
-                              ))}
+                              .map(s => {
+                                const stockQty = Number(s['Current Quantity']) || 0;
+                                const stockSell = Number(s['Current Sell Price']) || 0;
+                                return (
+                                  <div key={s.id}
+                                    onPointerDown={e => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      setEditLines(p => [...p, {
+                                        id: null, stockItemId: s.id,
+                                        flowerName: s['Display Name'],
+                                        quantity: 1, _originalQty: 0,
+                                        costPricePerUnit: Number(s['Current Cost Price']) || 0,
+                                        sellPricePerUnit: stockSell,
+                                      }]);
+                                      setFlowerSearch('');
+                                      setAddingFlower(false);
+                                    }}
+                                    className="w-full text-left px-2 py-2.5 text-sm active:bg-gray-100 dark:active:bg-gray-700 rounded cursor-pointer flex items-center justify-between gap-2"
+                                  >
+                                    <span className="font-medium truncate">{s['Display Name']}</span>
+                                    <span className="text-xs text-ios-tertiary shrink-0">
+                                      {stockSell > 0 && <span className="font-bold text-brand-700">{stockSell.toFixed(0)} zł</span>}
+                                      {' · '}{stockQty} pcs
+                                    </span>
+                                  </div>
+                                );
+                              })}
                             {/* Add unlisted flower */}
                             {flowerSearch.length >= 2 && !stockItems.some(s =>
                               (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
@@ -515,11 +574,13 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                         </div>
                       )}
 
-                      {/* Stock action dialog — shown when Save is tapped and quantities decreased */}
+                      {/* Stock action dialog — shown when Save is tapped and quantities
+                          were reduced inline (e.g. 10→7). Fully-removed lines already
+                          carry their own action from the per-line ✕ dialog. */}
                       {stockAction === 'pending' && (() => {
                         const reduced = editLines.filter(l => l._originalQty > 0 && l.quantity < l._originalQty);
                         const totalReduced = reduced.reduce((s, l) => s + (l._originalQty - l.quantity), 0);
-                        return totalReduced > 0 || removedLines.length > 0 ? (
+                        return totalReduced > 0 ? (
                           <div className="bg-amber-50 rounded-xl px-3 py-3 space-y-2">
                             <p className="text-sm font-medium text-amber-800">
                               {t.spareFlowersQuestion || 'What would you like to do with the spare flowers?'}
@@ -541,14 +602,14 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
 
                       <div className="flex gap-2 pt-1">
                         <button onClick={() => {
-                          // Check if any quantities decreased or lines removed
+                          // Only ask about spare flowers for INLINE quantity reductions.
+                          // Lines removed via ✕ already chose return/writeoff per-line,
+                          // so a second confirmation would be redundant.
                           const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
-                          const hasRemovals = removedLines.length > 0;
-                          if ((hasReductions || hasRemovals) && stockAction !== 'pending') {
+                          if (hasReductions && stockAction !== 'pending') {
                             setStockAction('pending');
                             return;
                           }
-                          // No reductions — save directly (additions or no changes)
                           doSave(null);
                         }} disabled={saving}
                           className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
