@@ -358,6 +358,14 @@ const en = {
     paidTo:         'Paid to',
     markShoppingDone: 'Done shopping',
     sendToFlorist:    'Send to florist',
+    addExtraFlower:   '+ Add extra flower',
+    flowerName:       'Flower name',
+    supplier:         'Supplier',
+    addExtraHint:     'Extra flower bought off-plan',
+    lineAddedAndSent: 'Added · sent to driver',
+    lineSavedAndSent: 'Saved · sent to driver',
+    fillAllFields:    'Fill flower name, supplier, qty and cost',
+    notReceived:      'Not received',
   },
   // Purchase orders (owner)
   po: {
@@ -857,6 +865,14 @@ const ru = {
     paidTo:         'Оплачено',
     markShoppingDone: 'Завершить закупку',
     sendToFlorist:    'Передать флористу',
+    addExtraFlower:   '+ Добавить доп. цветок',
+    flowerName:       'Название цветка',
+    supplier:         'Поставщик',
+    addExtraHint:     'Доп. цветок, купленный сверх плана',
+    lineAddedAndSent: 'Добавлено · отправлено водителю',
+    lineSavedAndSent: 'Сохранено · отправлено водителю',
+    fillAllFields:    'Заполните название, поставщика, количество и цену',
+    notReceived:      'Не получено',
   },
   // Purchase orders (owner)
   po: {

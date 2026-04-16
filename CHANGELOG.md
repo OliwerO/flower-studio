@@ -39,6 +39,73 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-16 — PO Visibility Fix (partial qty + owner-added lines)
+
+Three related symptoms in the PO flow collapsed onto the same root cause:
+the florist's evaluation screen was only rendering lines whose `Driver Status`
+was explicitly `Found All`, `Partial`, or `Not Found + alt qty`. Any line
+where the owner entered a Qty Found (via Shopping Support) but did not tap
+the status pill, or any line added mid-shopping through the "+ Add line"
+button, stayed at `Pending` and was silently filtered out. Additionally,
+the "+ Add line" button on both the dashboard and florist PO pages was
+using a temp-local-line pattern that could drop the owner's entry on
+refresh/navigate-away if the Flower Name wasn't filled first.
+
+### Frontend — `apps/florist/src/pages/StockEvaluationPage.jsx`
+- Evaluation filter (lines ~183-200) now includes any line with `Quantity Found > 0`
+  **or** `Alt Quantity Found > 0`, regardless of `Driver Status`. Immediately
+  rescues in-flight POs that had partial quantities stuck at `Pending`.
+- `notFoundLines` tightened so it only shows lines with zero primary and zero alt.
+- Alt-block render (line ~325) now shows whenever `altFound > 0`, even when
+  `Alt Supplier` is blank (owner may have entered only the flower and qty).
+
+### Frontend — `apps/florist/src/pages/ShoppingSupportPage.jsx`
+- `ShoppingLineItem` auto-derives `Driver Status` on Qty Found / Alt Qty Found
+  blur: `qty >= needed → Found All`; `0 < qty < needed → Partial`;
+  `qty == 0 && altQty > 0 → Not Found`; `qty == 0 && altQty == 0 → no change`.
+  Owner no longer has to tap the status pill for the florist to see her entries.
+- New `AddExtraLineForm` component + `addExtraLine` handler — inline form with
+  all four required fields (flower name, supplier, qty, cost) enforced up
+  front; POSTs via `/stock-orders/:id/lines` and immediately stamps
+  `Driver Status: Found All` + `Quantity Found = qty` so the florist sees the
+  extra flower for evaluation. Visible only while PO is Sent/Shopping.
+
+### Frontend — `apps/dashboard/src/components/StockOrderPanel.jsx` + `apps/florist/src/pages/PurchaseOrderPage.jsx`
+- Replaced `addDraftLine` (temp-local-line) with `addPersistedLine` +
+  `AddLineInlineForm`. Full fields required; POST fires only when all four
+  are present. When the PO is already `Shopping`, the new line is auto-promoted
+  to `Found All` + `Quantity Found` so the florist can evaluate it.
+- Final overview (Reviewing/Evaluating/Complete read-only rows) now shows a
+  grey "Не получено / Not received" chip on lines that stayed at `Pending`
+  with no qty. Makes it obvious what slipped through so the owner can reconcile
+  via Receive Stock if needed.
+
+### Translations
+- Dashboard + florist: added `addExtraFlower`, `addExtraHint`, `fillAllFields`,
+  `lineAddedAndSent`, `notReceived`, `flowerNameLabel` (dashboard) /
+  `shopping.flowerName`, `shopping.supplier` (florist).
+
+### No schema or backend changes
+Everything rides on existing endpoints:
+- `POST /stock-orders/:id/lines` (already supports Draft/Sent/Shopping)
+- `PATCH /stock-orders/:id/lines/:lineId` (always supported)
+- `stock_order_line_updated` SSE broadcast (already fires) ensures the driver
+  app refreshes when the owner adds/edits a line on a Sent PO.
+
+### What to watch for
+- The filter relaxation means ANY line with `Quantity Found > 0` is evaluable,
+  even if Driver Status is `Not Found` (shouldn't happen, but be aware of
+  the mismatch). Previously the owner had to tap a pill; now the qty alone
+  is enough. If the florist complains about seeing lines she didn't expect,
+  it's likely because the qty was saved but the owner never reconciled the
+  pill — surface the qty in owner review, don't re-tighten the filter.
+- Owner-added lines on a `Shopping` PO are auto-promoted to `Found All` even
+  though no driver actually shopped them. Stock-wise this is fine (the flowers
+  really were bought). For reporting, these lines will show `Assigned Driver`
+  on the parent PO, not who physically bought them.
+
+---
+
 ## 2026-04-11 — Premade Bouquets
 
 A new flow that lets the florist compose bouquets **before** any order exists —
