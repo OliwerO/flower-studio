@@ -468,7 +468,7 @@ router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async 
 router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const { driverName } = req.body;
-    const resolvedDriver = driverName || getDriverOfDay() || 'Driver';
+    const resolvedDriver = driverName || 'Nikita';
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
       Status: PO_STATUS.SENT,
       'Assigned Driver': resolvedDriver,
