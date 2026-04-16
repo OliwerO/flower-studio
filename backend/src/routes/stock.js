@@ -95,26 +95,28 @@ router.get('/velocity', async (req, res, next) => {
   }
 });
 
-// GET /api/stock/committed — aggregate committed (deferred) quantities from future orders per stock item.
-// Only counts lines from orders where Required By > today (future orders use deferred stock — no deduction at creation).
+// GET /api/stock/committed — aggregate DEFERRED committed quantities per stock item.
+// A line counts as "committed / needed" only when Stock Deferred = true, i.e. the
+// stock hasn't been deducted from Current Quantity yet. Non-deferred lines were
+// already materialised at order creation — counting them here would double-book
+// the demand that's already reflected in the stock's current qty.
 // Returns { stockId: { committed: N, orders: [{ orderId, appOrderId, customerName, requiredBy, qty }] } }
-// Used to show "effective stock" = Current Quantity - committed demand from future orders.
 router.get('/committed', async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    // Fetch non-terminal orders with Required By in the future.
-    // Future orders use deferred stock (not deducted from inventory at creation time).
-    // Today's orders use non-deferred stock (already deducted), so they're excluded.
+    // Non-terminal orders with Required By in the future. Deferred is line-level,
+    // so we still fetch all their lines and filter individually below.
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
       fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
       maxRecords: 500,
     });
 
-    // Bulk-fetch all order lines
+    // Bulk-fetch all order lines — include Stock Deferred so we can skip lines
+    // whose demand is already reflected in Current Quantity.
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const allLines = await listByIds(TABLES.ORDER_LINES, allLineIds, {
-      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
+      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name', 'Stock Deferred'],
       maxRecords: 2000,
     });
 
@@ -138,13 +140,17 @@ router.get('/committed', async (req, res, next) => {
       };
     }
 
-    // Aggregate committed quantities per stock item
+    // Aggregate committed quantities per stock item — deferred lines only.
     const committed = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0];
       if (!stockId) continue;
       const qty = Number(line.Quantity || 0);
       if (qty <= 0) continue;
+      // Stock Deferred can be true/false/undefined depending on how Airtable
+      // serialises the checkbox. Treat anything non-truthy as "already deducted".
+      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
+      if (!isDeferred) continue;
 
       if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
       committed[stockId].committed += qty;
@@ -458,7 +464,11 @@ router.get('/:id/usage', async (req, res, next) => {
       } catch { /* table may not exist */ }
     }
 
-    // 3. Purchase records — fetch and filter by Flower link in JS
+    // 3. Purchase records — fetch and filter by Flower link in JS.
+    // Purchases created by the PO evaluate flow carry a Notes marker like
+    // "PO #recXXX L#recYYY primary". Parse it out and resolve the PO's
+    // display ID (e.g. "PO-20260415-1") so the trace shows a human reference
+    // instead of raw Airtable record IDs.
     let usagePurchases = [];
     try {
       const allPurchases = await db.list(TABLES.STOCK_PURCHASES, {
@@ -466,16 +476,43 @@ router.get('/:id/usage', async (req, res, next) => {
         sort: [{ field: 'Purchase Date', direction: 'desc' }],
         maxRecords: 500,
       });
-      usagePurchases = allPurchases
-        .filter(p => p.Flower?.[0] === stockId)
-        .map(p => ({
+      const linePurchases = allPurchases.filter(p => p.Flower?.[0] === stockId);
+
+      // Parse PO marker from Notes; batch-fetch the parent POs to resolve
+      // Stock Order ID. The marker is a stable format produced by the
+      // evaluate endpoint; we leave Notes unchanged for idempotency.
+      const poMarkerRe = /PO #(rec[A-Za-z0-9]+)\s+L#(rec[A-Za-z0-9]+)\s+(primary|substitute|alt)/;
+      const poIdSet = new Set();
+      for (const p of linePurchases) {
+        const m = p.Notes?.match(poMarkerRe);
+        if (m) poIdSet.add(m[1]);
+      }
+      const poMap = {};
+      if (poIdSet.size > 0) {
+        try {
+          const poRecs = await listByIds(TABLES.STOCK_ORDERS, [...poIdSet], {
+            fields: ['Stock Order ID'],
+          });
+          for (const po of poRecs) poMap[po.id] = po['Stock Order ID'] || '';
+        } catch { /* best effort — fall back to raw Notes */ }
+      }
+
+      usagePurchases = linePurchases.map(p => {
+        const m = p.Notes?.match(poMarkerRe);
+        const poRecordId = m?.[1] || null;
+        const poDisplayId = poRecordId ? (poMap[poRecordId] || '') : '';
+        const variant = m?.[3] || ''; // primary | substitute | alt
+        return {
           type: 'purchase',
           date: p['Purchase Date'] || null,
           quantity: +(p['Quantity Purchased'] || 0),
           supplier: p.Supplier || '',
           costPerUnit: p['Price Per Unit'] || 0,
           notes: p.Notes || '',
-        }));
+          poDisplayId,
+          variant,
+        };
+      });
     } catch { /* table may not exist */ }
 
     // Combine and sort chronologically (newest first)
