@@ -95,6 +95,53 @@ router.get('/velocity', async (req, res, next) => {
   }
 });
 
+// GET /api/stock/premade-committed — stems locked in active premade bouquets.
+// Returns { stockId: { qty: N, bouquets: [{ bouquetId, name, qty }] } }
+// Premade bouquets deduct stock at creation, so Current Quantity already
+// reflects them. This endpoint exposes WHICH premades hold them so the UI
+// can show "X available · Y in premades" and offer the dissolve flow when
+// an order needs more stems than are freely available.
+router.get('/premade-committed', async (req, res, next) => {
+  try {
+    if (!TABLES.PREMADE_BOUQUETS || !TABLES.PREMADE_BOUQUET_LINES) {
+      return res.json({});
+    }
+    const bouquets = await db.list(TABLES.PREMADE_BOUQUETS, {
+      fields: ['Name', 'Lines'],
+      maxRecords: 500,
+    });
+    const allLineIds = bouquets.flatMap(b => b['Lines'] || []);
+    const allLines = allLineIds.length > 0
+      ? await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds, {
+          fields: ['Premade Bouquets', 'Stock Item', 'Quantity', 'Flower Name'],
+        })
+      : [];
+    const bouquetMap = {};
+    for (const b of bouquets) bouquetMap[b.id] = b;
+
+    const committed = {};
+    for (const line of allLines) {
+      const stockId = line['Stock Item']?.[0];
+      if (!stockId) continue;
+      const qty = Number(line.Quantity || 0);
+      if (qty <= 0) continue;
+      const bouquetId = line['Premade Bouquets']?.[0];
+      const bouquet = bouquetId ? bouquetMap[bouquetId] : null;
+      if (!bouquet) continue;
+      if (!committed[stockId]) committed[stockId] = { qty: 0, bouquets: [] };
+      committed[stockId].qty += qty;
+      committed[stockId].bouquets.push({
+        bouquetId,
+        name: bouquet.Name || '?',
+        qty,
+      });
+    }
+    res.json(committed);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/stock/committed — aggregate committed quantities per stock item for
 // future-dated non-terminal orders. Returns raw demand regardless of whether
 // the order already deducted stock at creation; the frontend compares this to

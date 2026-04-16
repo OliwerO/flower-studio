@@ -117,8 +117,10 @@ router.put('/:id/lines', async (req, res, next) => {
 });
 
 // POST /api/premade-bouquets/:id/return-to-stock — return all flowers to
-// inventory and delete the premade record.
-router.post('/:id/return-to-stock', async (req, res, next) => {
+// inventory and delete the premade record. Also aliased as /dissolve for the
+// "take from premade to fulfil an order" flow — same operation, different
+// calling context.
+router.post(['/:id/return-to-stock', '/:id/dissolve'], async (req, res, next) => {
   try {
     const result = await returnPremadeBouquetToStock(req.params.id);
     res.json(result);
