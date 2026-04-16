@@ -213,6 +213,26 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
               </div>
             ))}
           </div>
+          {/* Repair action for legacy data where premade deduction didn't fire */}
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            <span className="text-[10px] text-indigo-700 flex-1">
+              {t.reconcilePremadeHint || 'If stock looks too high'}: {qty} − {premadeQty} = {qty - premadeQty}
+            </span>
+            <button
+              onClick={e => {
+                e.stopPropagation();
+                const target = qty - premadeQty;
+                if (!window.confirm(
+                  `${t.reconcilePremadeConfirm || 'Subtract premade qty from Current Quantity?'}\n\n${item['Display Name']}: ${qty} → ${target}`,
+                )) return;
+                onAdjust(-premadeQty);
+                setShowPremade(false);
+              }}
+              className="px-2.5 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold active-scale"
+            >
+              −{premadeQty}
+            </button>
+          </div>
         </div>
       )}
 

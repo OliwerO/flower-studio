@@ -208,6 +208,8 @@ const en = {
   dissolvePremadeConfirm: 'Dissolve',
   inPremadesShort:        'premade',
   lockedInPremades:       'Locked in premades',
+  reconcilePremadeHint:   'If stock looks too high',
+  reconcilePremadeConfirm: 'Subtract premade qty from Current Quantity?',
   markup:           'Markup',
 
   // Delivery method
@@ -728,6 +730,8 @@ const ru = {
   dissolvePremadeConfirm: 'Разобрать',
   inPremadesShort:        'в заг.',
   lockedInPremades:       'Занято в заготовках',
+  reconcilePremadeHint:   'Если в наличии слишком много',
+  reconcilePremadeConfirm: 'Вычесть количество в заготовках из текущего запаса?',
   markup:           'Наценка',
 
   // Delivery method
