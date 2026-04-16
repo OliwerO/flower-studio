@@ -127,6 +127,36 @@ export default function ShoppingSupportPage() {
     }
   }
 
+  // ── Add a brand-new line to an active PO (off-plan flower) ──
+  // The owner sometimes buys something not on the original list. The backend
+  // already broadcasts stock_order_line_updated so the driver's app refreshes.
+  // Driver Status = Found All because we only add a line that's already bought
+  // (all four fields required up front — no "temp line" that can silently vanish).
+  async function addExtraLine(orderId, { flowerName, supplier, quantity, costPrice }) {
+    try {
+      const created = await client.post(`/stock-orders/${orderId}/lines`, {
+        flowerName: flowerName.trim(),
+        supplier: supplier.trim(),
+        quantity: Number(quantity) || 0,
+        costPrice: Number(costPrice) || 0,
+      });
+      // Mark the new line as Found All immediately — the owner only adds lines
+      // for flowers she's already bought, and we need the florist to see them.
+      await client.patch(`/stock-orders/${orderId}/lines/${created.data.id}`, {
+        'Driver Status': 'Found All',
+        'Quantity Found': Number(quantity) || 0,
+      });
+      // Refresh the PO so the new line appears in the supplier-grouped layout.
+      await fetchOrders();
+      showToast(t.shopping.lineAddedAndSent || 'Added · sent to driver');
+      return true;
+    } catch (err) {
+      console.error('addExtraLine failed', err);
+      showToast(errMsg(err), 'error');
+      return false;
+    }
+  }
+
   // ── Supplier payment (keystroke → local, blur → API) ──
   function setLocalPayment(orderId, supplier, amount) {
     setOrders(prev => prev.map(o => {
@@ -309,6 +339,18 @@ export default function ShoppingSupportPage() {
                     </div>
                   </div>
                 ))}
+                {/* + Add extra flower — for when the owner buys something
+                    off-plan (talked with driver at the market). Creates a
+                    real PO line in Airtable with Driver Status = Found All
+                    so the florist can evaluate it. Only visible while the
+                    PO is still active (Sent/Shopping). */}
+                {['Sent', 'Shopping'].includes(order.Status) && (
+                  <AddExtraLineForm
+                    orderId={order.id}
+                    onAdd={addExtraLine}
+                    fillAllHint={t.shopping.fillAllFields}
+                  />
+                )}
                 {/* Driver payment for this PO */}
                 <div className="ios-card px-4 py-3">
                   <label className="text-xs text-ios-secondary mb-1 block">
@@ -399,6 +441,45 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
     onUpdate(orderId, line.id, fieldMap);
   }
 
+  // Auto-derive Driver Status from the primary + alt quantities the owner has
+  // entered, so lines don't stay stuck at Pending and invisible to the florist.
+  // Rule (primary qty drives the status):
+  //   qty >= needed               → Found All
+  //   0 < qty < needed            → Partial
+  //   qty == 0 && altQty > 0      → Not Found (substitute arrived)
+  //   qty == 0 && altQty == 0     → leave as-is (owner should tap red pill explicitly)
+  function deriveDriverStatus({ qty, altQty }) {
+    const q = Number(qty) || 0;
+    const a = Number(altQty) || 0;
+    if (q >= needed && needed > 0) return 'Found All';
+    if (q > 0) return 'Partial';
+    if (a > 0) return 'Not Found';
+    return null; // no change
+  }
+
+  // Blur for primary qty — also auto-sets Driver Status when appropriate.
+  function handleQtyFoundBlur() {
+    const qty = Number(local.qtyFound) || 0;
+    const altQty = Number(local.altQty) || 0;
+    const fields = { 'Quantity Found': qty };
+    const derived = deriveDriverStatus({ qty, altQty });
+    if (derived && derived !== status) fields['Driver Status'] = derived;
+    handleBlur(fields);
+  }
+
+  // Blur for alt qty — auto-sets Driver Status to Not Found if primary is 0,
+  // or to Partial if primary < needed. Doesn't downgrade an existing Found All.
+  function handleAltQtyBlur() {
+    const qty = Number(local.qtyFound) || 0;
+    const altQty = Number(local.altQty) || 0;
+    const fields = { 'Alt Quantity Found': altQty };
+    const derived = deriveDriverStatus({ qty, altQty });
+    if (derived && derived !== status && status !== 'Found All') {
+      fields['Driver Status'] = derived;
+    }
+    handleBlur(fields);
+  }
+
   function handleStatusOverride(newStatus) {
     // Save any pending local edits before changing status
     const pendingFields = {
@@ -473,7 +554,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
               value={local.qtyFound}
               onChange={e => handleChange('qtyFound', e.target.value)}
               onFocus={onFocus}
-              onBlur={() => handleBlur({ 'Quantity Found': Number(local.qtyFound) || 0 })}
+              onBlur={handleQtyFoundBlur}
               className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
             />
           </div>
@@ -532,7 +613,7 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                   value={local.altQty}
                   onChange={e => handleChange('altQty', e.target.value)}
                   onFocus={onFocus}
-                  onBlur={() => handleBlur({ 'Alt Quantity Found': Number(local.altQty) || 0 })}
+                  onBlur={handleAltQtyBlur}
                   className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
                 />
               </div>
@@ -572,6 +653,108 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
             className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
           />
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Add-extra-flower inline form ──────────────────────────────────────────
+// Requires all four fields up front (flower name, supplier, qty, cost) and
+// only POSTs when they're filled. No "temp local line" that can silently
+// vanish. Collapsed by default — tap the button to expand.
+function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+
+  function reset() {
+    setForm({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+    setOpen(false);
+  }
+
+  const ready =
+    form.flowerName.trim() &&
+    form.supplier.trim() &&
+    Number(form.quantity) > 0 &&
+    Number(form.costPrice) > 0;
+
+  async function submit() {
+    if (!ready || submitting) return;
+    setSubmitting(true);
+    const ok = await onAdd(orderId, form);
+    setSubmitting(false);
+    if (ok) reset();
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2.5 rounded-xl border-2 border-dashed border-brand-300 text-brand-600 text-sm font-semibold active:bg-brand-50 active-scale"
+      >
+        {t.shopping.addExtraFlower || '+ Add extra flower'}
+      </button>
+    );
+  }
+
+  return (
+    <div className="ios-card px-4 py-3 space-y-2 border border-brand-200">
+      <p className="text-[11px] text-ios-tertiary">{t.shopping.addExtraHint}</p>
+      <input
+        type="text"
+        value={form.flowerName}
+        onChange={e => setForm(f => ({ ...f, flowerName: e.target.value }))}
+        placeholder={t.shopping.flowerName}
+        className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+      />
+      <input
+        type="text"
+        value={form.supplier}
+        onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
+        placeholder={t.shopping.supplier}
+        className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+      />
+      <div className="flex gap-2">
+        <div className="flex-1">
+          <input
+            type="number"
+            inputMode="numeric"
+            value={form.quantity}
+            onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+            placeholder={t.shopping.qtyFound}
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+          />
+        </div>
+        <div className="flex-1 relative">
+          <input
+            type="number"
+            inputMode="decimal"
+            value={form.costPrice}
+            onChange={e => setForm(f => ({ ...f, costPrice: e.target.value }))}
+            placeholder={t.shopping.costPrice}
+            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 pr-8 bg-white dark:bg-dark-elevated outline-none"
+          />
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ios-tertiary">zł</span>
+        </div>
+      </div>
+      {!ready && (
+        <p className="text-[11px] text-amber-600">{fillAllHint}</p>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={submit}
+          disabled={!ready || submitting}
+          className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold disabled:opacity-40 active-scale"
+        >
+          {submitting ? '...' : t.save}
+        </button>
+        <button
+          onClick={reset}
+          disabled={submitting}
+          className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm font-medium active-scale"
+        >
+          {t.cancel}
+        </button>
       </div>
     </div>
   );

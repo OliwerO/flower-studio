@@ -180,18 +180,26 @@ export default function StockEvaluationPage() {
         ) : (
           orders.map(order => {
             const isRetry = order.Status === 'Eval Error';
+            // Any line with a physical quantity (primary or alt) belongs in
+            // evaluation — we do NOT gate on Driver Status, because the owner
+            // may have entered a Qty Found via Shopping Support without tapping
+            // the status pill, and lines added mid-shopping may still be Pending.
             const evaluableLines = order.lines.filter(l => {
               if (l['Eval Status'] === 'Processed') return false;
+              if (Number(l['Quantity Found']) > 0) return true;
+              if (Number(l['Alt Quantity Found']) > 0) return true;
+              // Legacy path: still honour the driver's explicit pill states
               const status = l['Driver Status'];
               if (status === 'Found All' || status === 'Partial') return true;
-              if (status === 'Not Found' && Number(l['Alt Quantity Found']) > 0) return true;
               return false;
             });
             const processedLines = order.lines.filter(l => l['Eval Status'] === 'Processed');
+            // Truly not-found: nothing arrived at all (no primary qty, no alt qty).
             const notFoundLines = order.lines.filter(l =>
-              l['Driver Status'] === 'Not Found' &&
               l['Eval Status'] !== 'Processed' &&
-              !(Number(l['Alt Quantity Found']) > 0)
+              !(Number(l['Quantity Found']) > 0) &&
+              !(Number(l['Alt Quantity Found']) > 0) &&
+              l['Driver Status'] === 'Not Found'
             );
 
             // Group evaluable lines by supplier
@@ -315,8 +323,10 @@ export default function StockEvaluationPage() {
                               />
                             )}
 
-                            {/* Alt supplier block */}
-                            {altSupplier && altFound > 0 && (() => {
+                            {/* Alt supplier block — show whenever a substitute
+                                quantity was recorded, even if supplier is blank
+                                (owner may have typed only the flower + qty). */}
+                            {altFound > 0 && (() => {
                               const altCostTotal = Number(line['Alt Cost']) || 0;
                               const altCostPerStem = altFound > 0 ? (altCostTotal / altFound) : 0;
                               const isNewSubstitute = altFlowerName &&

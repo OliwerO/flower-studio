@@ -205,19 +205,36 @@ export default function PurchaseOrderPage() {
     }
   }
 
-  function addDraftLine() {
-    const tempLine = {
-      id: `_temp_${Date.now()}`,
-      'Flower Name': '',
-      'Quantity Needed': 1,
-      'Lot Size': 0,
-      Supplier: '',
-      'Cost Price': 0,
-      'Sell Price': 0,
-      Farmer: '',
-      Notes: '',
-    };
-    setExpandedLines(prev => [...prev, tempLine]);
+  // Add a brand-new line to an existing PO — all required fields up front so
+  // the line is persisted immediately. Returns true on success so the inline
+  // form can collapse. Supersedes the old temp-local-line pattern which could
+  // silently drop the line if the owner didn't enter a flower name.
+  async function addPersistedLine(orderId, { flowerName, supplier, quantity, costPrice }) {
+    try {
+      const poStatus = orders.find(o => o.id === orderId)?.Status;
+      const created = await client.post(`/stock-orders/${orderId}/lines`, {
+        flowerName: flowerName.trim(),
+        supplier: supplier.trim(),
+        quantity: Number(quantity) || 0,
+        costPrice: Number(costPrice) || 0,
+      });
+      // Lines added during Shopping are for flowers already physically bought,
+      // so mark Found All and stamp Quantity Found so the florist can see them.
+      if (poStatus === 'Shopping') {
+        await client.patch(`/stock-orders/${orderId}/lines/${created.data.id}`, {
+          'Driver Status': 'Found All',
+          'Quantity Found': Number(quantity) || 0,
+        });
+      }
+      const res = await client.get(`/stock-orders/${orderId}`);
+      setExpandedLines(res.data.lines || []);
+      showToast(t.shopping?.lineAddedAndSent || t.po?.sentMsg || 'Added');
+      return true;
+    } catch (err) {
+      console.error('PO add-line failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
+      return false;
+    }
   }
 
   async function deleteDraftPO(orderId) {
@@ -483,10 +500,12 @@ export default function PurchaseOrderPage() {
                             suppliers={SUPPLIERS}
                           />
                         ))}
-                        <button onClick={() => addDraftLine()}
-                          className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-xl active:bg-brand-100 active-scale">
-                          + {t.po?.addLine || 'Add line'}
-                        </button>
+                        <AddLineInlineForm
+                          orderId={order.id}
+                          onAdd={addPersistedLine}
+                          suppliers={SUPPLIERS}
+                        />
+
                         <div className="flex items-center gap-2 pt-2">
                           <select
                             value={editDrivers[order.id] || order['Assigned Driver'] || 'Nikita'}
@@ -531,6 +550,14 @@ export default function PurchaseOrderPage() {
                                     line['Driver Status'] === 'Partial' ? 'bg-amber-100 text-amber-700' :
                                     'bg-red-100 text-red-700'
                                   }`}>{line['Driver Status']}</span>
+                                )}
+                                {/* Line was on the PO but never received */}
+                                {(!line['Driver Status'] || line['Driver Status'] === 'Pending') &&
+                                  !(Number(line['Quantity Found']) > 0) &&
+                                  !(Number(line['Alt Quantity Found']) > 0) && (
+                                  <span className="px-2 py-0.5 rounded-full text-xs font-medium shrink-0 bg-gray-200 text-gray-600">
+                                    {t.shopping?.notReceived || 'Not received'}
+                                  </span>
                                 )}
                               </div>
                               <div className="flex items-center gap-3 text-xs text-ios-secondary flex-wrap">
@@ -798,6 +825,106 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           onChange={e => setNotes(e.target.value)}
           onBlur={() => onUpdate(line.id, { Notes: notes })}
           className="field-input flex-1 text-sm py-1" placeholder={t.po?.notes || 'Notes'} />
+      </div>
+    </div>
+  );
+}
+
+// ── Inline add-line form ──────────────────────────────────────────────────
+// Same pattern as the dashboard version: required fields enforced up front,
+// POST fires only once everything is filled. Replaces the temp-local-line
+// pattern which could silently drop the owner's entry if the flower name
+// wasn't filled before she navigated away.
+function AddLineInlineForm({ orderId, onAdd, suppliers = [] }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [form, setForm] = useState({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+
+  function reset() {
+    setForm({ flowerName: '', supplier: '', quantity: '', costPrice: '' });
+    setOpen(false);
+  }
+
+  const ready =
+    form.flowerName.trim() &&
+    form.supplier.trim() &&
+    Number(form.quantity) > 0 &&
+    Number(form.costPrice) > 0;
+
+  async function submit() {
+    if (!ready || submitting) return;
+    setSubmitting(true);
+    const ok = await onAdd(orderId, form);
+    setSubmitting(false);
+    if (ok) reset();
+  }
+
+  if (!open) {
+    return (
+      <button
+        onClick={() => setOpen(true)}
+        className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-xl active:bg-brand-100 active-scale"
+      >
+        + {t.po?.addLine || 'Add line'}
+      </button>
+    );
+  }
+
+  return (
+    <div className="bg-brand-50/50 border border-brand-200 rounded-xl p-3 space-y-2">
+      <p className="text-[11px] text-ios-tertiary">{t.shopping?.addExtraHint}</p>
+      <input
+        type="text"
+        value={form.flowerName}
+        onChange={e => setForm(f => ({ ...f, flowerName: e.target.value }))}
+        placeholder={t.shopping?.flowerName || 'Flower name'}
+        className="field-input w-full text-sm"
+      />
+      <div className="grid grid-cols-2 gap-2">
+        <input
+          type="text"
+          list={`po-sup-${orderId}`}
+          value={form.supplier}
+          onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
+          placeholder={t.shopping?.supplier || t.supplier || 'Supplier'}
+          className="field-input w-full text-sm"
+        />
+        <datalist id={`po-sup-${orderId}`}>
+          {suppliers.map(s => <option key={s} value={s} />)}
+        </datalist>
+        <input
+          type="number"
+          value={form.quantity}
+          onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))}
+          placeholder={t.po?.qtyNeeded || 'Qty'}
+          className="field-input w-full text-sm"
+        />
+      </div>
+      <input
+        type="number"
+        value={form.costPrice}
+        onChange={e => setForm(f => ({ ...f, costPrice: e.target.value }))}
+        placeholder={`${t.shopping?.costPrice || 'Cost'} (zł)`}
+        className="field-input w-full text-sm"
+      />
+      {!ready && (
+        <p className="text-[11px] text-amber-600">{t.shopping?.fillAllFields}</p>
+      )}
+      <div className="flex gap-2">
+        <button
+          onClick={submit}
+          disabled={!ready || submitting}
+          className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold disabled:opacity-40 active-scale"
+        >
+          {submitting ? '...' : (t.save || 'Save')}
+        </button>
+        <button
+          onClick={reset}
+          disabled={submitting}
+          className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm font-medium active-scale"
+        >
+          {t.cancel || 'Cancel'}
+        </button>
       </div>
     </div>
   );
