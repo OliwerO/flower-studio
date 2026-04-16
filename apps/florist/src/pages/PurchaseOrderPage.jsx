@@ -95,7 +95,7 @@ export default function PurchaseOrderPage() {
     });
     setFormLines(lines.length > 0 ? lines : [emptyLine()]);
     setFormNotes('');
-    setFormDriver(drivers[0] || configDrivers[0] || 'Nikita');
+    setFormDriver('Nikita');
     setFormPlannedDate('');
     setShowForm(true);
   }
@@ -231,9 +231,15 @@ export default function PurchaseOrderPage() {
   }
 
   async function sendToDriver(orderId) {
-    const driverName = editDrivers[orderId] || drivers[0] || 'Nikita';
+    const order = orders.find(o => o.id === orderId);
+    const driverName = editDrivers[orderId] || 'Nikita';
     try {
-      await client.post(`/stock-orders/${orderId}/send`, { driverName });
+      if (!order || order.Status === 'Draft') {
+        await client.post(`/stock-orders/${orderId}/send`, { driverName });
+      } else {
+        // Already live: just reassign driver via header PATCH
+        await client.patch(`/stock-orders/${orderId}`, { 'Assigned Driver': driverName });
+      }
       showToast(t.po?.sentMsg || 'Sent');
       fetchOrders();
     } catch {
@@ -463,8 +469,8 @@ export default function PurchaseOrderPage() {
                   <div className="border-t border-gray-100 px-4 py-3 space-y-3">
                     {order.Notes && <p className="text-xs text-ios-secondary">{order.Notes}</p>}
 
-                    {order.Status === 'Draft' ? (
-                      /* ── Draft PO: editable lines ── */
+                    {['Draft', 'Sent', 'Shopping'].includes(order.Status) ? (
+                      /* ── Editable PO: Draft + Sent + Shopping ── */
                       <>
                         {expandedLines.map(line => (
                           <DraftLineEditor
@@ -483,19 +489,21 @@ export default function PurchaseOrderPage() {
                         </button>
                         <div className="flex items-center gap-2 pt-2">
                           <select
-                            value={editDrivers[order.id] || order['Assigned Driver'] || allDrivers[0]}
+                            value={editDrivers[order.id] || order['Assigned Driver'] || 'Nikita'}
                             onChange={e => setEditDrivers(prev => ({ ...prev, [order.id]: e.target.value }))}
                             className="field-input flex-1 text-sm">
                             {allDrivers.map(d => <option key={d} value={d}>{d}</option>)}
                           </select>
                           <button onClick={() => sendToDriver(order.id)}
                             className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold active-scale">
-                            {t.po?.sendToDriver || 'Send'}
+                            {order.Status === 'Draft' ? (t.po?.sendToDriver || 'Send') : (t.po?.reassignDriver || t.po?.sendToDriver || 'Reassign')}
                           </button>
-                          <button onClick={() => { if (confirm(t.po?.deleteConfirm || 'Delete this draft PO?')) deleteDraftPO(order.id); }}
-                            className="px-3 py-2.5 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium active-scale">
-                            {t.po?.deletePO || 'Delete'}
-                          </button>
+                          {order.Status === 'Draft' && (
+                            <button onClick={() => { if (confirm(t.po?.deleteConfirm || 'Delete this draft PO?')) deleteDraftPO(order.id); }}
+                              className="px-3 py-2.5 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium active-scale">
+                              {t.po?.deletePO || 'Delete'}
+                            </button>
+                          )}
                         </div>
                       </>
                     ) : (
