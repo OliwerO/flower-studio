@@ -270,9 +270,10 @@ export default function StockTab({ initialFilter, onNavigate }) {
 
   // Needed rows — flowers committed to future orders that haven't been composed yet.
   // Only "New" status orders: once a bouquet is "Ready", the flowers are physically committed.
-  // Hides rows where the stock's Current Quantity already covers the needed qty —
-  // when a PO arrives after an order was placed, the stock balance catches up and
-  // the row should disappear without needing to flip any "deferred" flag.
+  // Shows the real SHORTFALL (needed minus currentQty), so e.g. 6 committed with 4
+  // in stock surfaces as "short 2" rather than the full "need 6" — which previously
+  // looked like the stock itself was negative. Rows where currentQty >= needed are
+  // dropped entirely (no shortage).
   const neededRows = useMemo(() => {
     const nameMap = {};
     const qtyById = {};
@@ -285,6 +286,8 @@ export default function StockTab({ initialFilter, onNavigate }) {
       // Filter to only New orders — Ready/later orders have already been composed
       const newOrders = (com.orders || []).filter(o => o.status === 'New');
       const needed = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const currentQty = qtyById[stockId] ?? 0;
+      const shortfall = Math.max(0, needed - currentQty);
       const hasPO = !!pendingPO[stockId];
       const earliestDate = newOrders.reduce((earliest, o) => {
         if (!o.requiredBy) return earliest;
@@ -294,16 +297,15 @@ export default function StockTab({ initialFilter, onNavigate }) {
         stockId,
         name: nameMap[stockId] || '—',
         needed,
-        currentQty: qtyById[stockId] ?? 0,
+        currentQty,
+        shortfall,
         orders: newOrders,
         earliestDate,
         hasPO,
       };
     })
-      // Drop rows where we actually have enough stock on hand — the order's
-      // demand is already covered (either stock was deducted at creation and
-      // topped up by a PO, or it was received independently).
-      .filter(r => r.needed > 0 && r.currentQty < r.needed)
+      // Only rows with a real shortage — if stock covers the need, nothing to buy.
+      .filter(r => r.shortfall > 0)
       .sort((a, b) => {
         if (a.hasPO !== b.hasPO) return a.hasPO ? 1 : -1;
         return (a.earliestDate || '').localeCompare(b.earliestDate || '');
@@ -312,8 +314,11 @@ export default function StockTab({ initialFilter, onNavigate }) {
     return rows;
   }, [committedMap, pendingPO, stock, search]);
 
-  // Stock IDs shown in Needed section — hide from Available to avoid duplication
-  const neededStockIds = useMemo(() => new Set(neededRows.map(r => r.stockId)), [neededRows]);
+  // (Previously hid flowers shown in "Needed" from the main stock list to avoid
+  // duplication. Removed — with the shortfall-based Needed panel, a flower can
+  // legitimately appear in both places: "you have 4 in stock, you still need 2
+  // more". Hiding it from the stock list made it impossible to see the Current
+  // Quantity or open the Trace for a partially-covered flower.)
 
   return (
     <div className="space-y-4">
@@ -791,7 +796,15 @@ export default function StockTab({ initialFilter, onNavigate }) {
                       >
                         <td className="px-2 py-1.5 text-ios-label font-medium text-sm truncate">{row.name}</td>
                         <td className="px-2 py-1.5">{formatDateTag(row.earliestDate, 'amber')}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-base font-bold text-red-600">-{row.needed}</td>
+                        {/* Shortfall = how many more stems to buy. A secondary
+                            label shows current stock / total committed so the
+                            owner sees the full picture: "short 2 · 4/6". */}
+                        <td className="px-2 py-1.5 text-right tabular-nums">
+                          <div className="text-base font-bold text-red-600">-{row.shortfall}</div>
+                          <div className="text-[10px] text-ios-tertiary font-normal">
+                            {row.currentQty} / {row.needed}
+                          </div>
+                        </td>
                         <td className="px-2 py-1.5 text-xs text-ios-secondary">{row.orders.length}</td>
                         <td className="px-2 py-1.5">
                           {!row.hasPO && <span className="text-[10px] text-red-500 font-medium whitespace-nowrap">⚠ {t.noPO}</span>}
@@ -832,7 +845,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
               <tr className="bg-green-50/60">
                 <th colSpan={11} className="px-3 py-2 border-b border-green-100 text-left font-normal">
                   <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">
-                    {t.flowersInStock || 'Flowers in Stock'} ({filtered.filter(s => !neededStockIds.has(s.id)).length})
+                    {t.flowersInStock || 'Flowers in Stock'} ({filtered.length})
                   </span>
                 </th>
               </tr>
@@ -863,7 +876,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.filter(item => !neededStockIds.has(item.id)).map(item => (
+              {filtered.map(item => (
                 <StockRow
                   key={item.id}
                   item={item}
@@ -875,7 +888,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
               ))}
             </tbody>
             {(() => {
-              const inStock = filtered.filter(s => !neededStockIds.has(s.id));
+              const inStock = filtered;
               return inStock.length > 0 && (
               <tfoot>
                 <tr className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold text-xs">
