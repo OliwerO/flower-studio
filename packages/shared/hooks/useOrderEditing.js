@@ -26,6 +26,10 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   const [stockItems, setStockItems]           = useState([]);
   const [newFlowerForm, setNewFlowerForm]     = useState(null);
   const [pendingPO, setPendingPO]             = useState({});
+  // Premade reservations per stock item — used to warn the owner when a
+  // new order wants stems that are locked into a premade. Shape:
+  // { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
+  const [premadeMap, setPremadeMap]           = useState({});
 
   // ── Start editing ──────────────────────────────────────────────
   function startEditing(orderLines) {
@@ -47,6 +51,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
       apiClient.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
     }
     apiClient.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+    apiClient.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
   }
 
   // ── Line quantity manipulation ─────────────────────────────────
@@ -250,6 +255,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     stockItems,
     newFlowerForm, setNewFlowerForm,
     pendingPO,
+    premadeMap,
 
     // Computed
     editCostTotal, editSellTotal, editMargin,

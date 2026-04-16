@@ -19,7 +19,6 @@ const SORT_OPTIONS = [
 
 const VIEW_OPTIONS = [
   { key: 'all',       label: () => t.viewAll },
-  { key: 'shortfall', label: () => t.viewShortfall },
   { key: 'negative',  label: () => t.viewNegative },
   { key: 'low',       label: () => t.viewLow },
   { key: 'slow',      label: () => t.viewSlowMovers },
@@ -43,6 +42,8 @@ export default function StockPanelPage() {
   const [editMode, setEditMode]       = useState(false);
   const [showHelp, setShowHelp]       = useState(false);
   const [committedMap, setCommittedMap] = useState({}); // stockId → { committed, orders }
+  // Premade-bouquet reservations: { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
+  const [premadeMap, setPremadeMap] = useState({});
 
   // Search, sort, view
   const [search, setSearch]   = useState('');
@@ -54,12 +55,14 @@ export default function StockPanelPage() {
   async function fetchStock() {
     setLoading(true);
     try {
-      const [stockRes, committedRes] = await Promise.all([
+      const [stockRes, committedRes, premadeRes] = await Promise.all([
         client.get('/stock?includeEmpty=true'),
         client.get('/stock/committed'),
+        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStock(stockRes.data);
       setCommittedMap(committedRes.data);
+      setPremadeMap(premadeRes.data || {});
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
     finally   { setLoading(false); }
   }
@@ -115,14 +118,7 @@ export default function StockPanelPage() {
     }
 
     // View filter
-    if (view === 'shortfall') {
-      items = items.filter(s => {
-        const cd = committedMap[s.id];
-        if (!cd) return false;
-        const qty = Number(s['Current Quantity'] || 0);
-        return qty - cd.committed < 0;
-      });
-    } else if (view === 'negative') {
+    if (view === 'negative') {
       items = items.filter(s => (Number(s['Current Quantity']) || 0) < 0);
     } else if (view === 'low') {
       items = items.filter(s => {
@@ -151,34 +147,20 @@ export default function StockPanelPage() {
       );
     }
 
-    // Sort — negative and shortfall items always pinned to top
+    // Sort — negative items pinned to top (they're the true "owe stems" signal)
     const sortFn = SORT_FNS[sortKey] || SORT_FNS.name;
     const sorted = [...items].sort((a, b) => {
       const aNeg = (Number(a['Current Quantity']) || 0) < 0;
       const bNeg = (Number(b['Current Quantity']) || 0) < 0;
       if (aNeg !== bNeg) return aNeg ? -1 : 1;
-      const aShort = hasShortfall(a);
-      const bShort = hasShortfall(b);
-      if (aShort !== bShort) return aShort ? -1 : 1;
       const cmp = sortFn(a, b);
       return sortAsc ? cmp : -cmp;
     });
 
-    function hasShortfall(s) {
-      const cd = committedMap[s.id];
-      if (!cd) return false;
-      return (Number(s['Current Quantity'] || 0) - cd.committed) < 0;
-    }
-
     return sorted;
-  }, [stock, search, sortKey, sortAsc, view, committedMap, hideZero]);
+  }, [stock, search, sortKey, sortAsc, view, hideZero]);
 
   // Counts for view badges
-  const shortfallCount = useMemo(() => stock.filter(s => {
-    const cd = committedMap[s.id];
-    if (!cd) return false;
-    return (Number(s['Current Quantity'] || 0) - cd.committed) < 0;
-  }).length, [stock, committedMap]);
   const negativeCount = useMemo(() => stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length, [stock]);
   const lowCount = useMemo(() => stock.filter(s => {
     const qty = Number(s['Current Quantity']) || 0;
@@ -271,9 +253,6 @@ export default function StockPanelPage() {
               }`}
             >
               {v.label()}
-              {v.key === 'shortfall' && shortfallCount > 0 && (
-                <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{shortfallCount}</span>
-              )}
               {v.key === 'negative' && negativeCount > 0 && (
                 <span className="ml-1 px-1.5 py-0.5 rounded-full bg-white/20 text-[10px]">{negativeCount}</span>
               )}
@@ -332,6 +311,7 @@ export default function StockPanelPage() {
                 onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
                 onPatch={fields => handlePatch(item.id, fields)}
                 committedData={committedMap[item.id]}
+                premadeData={premadeMap[item.id]}
               />
             ))}
           </div>

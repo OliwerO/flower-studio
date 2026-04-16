@@ -14,7 +14,7 @@ import fmtDate from '../utils/formatDate.js';
  *
  * Tapping the row expands it to show which orders consume this flower.
  */
-export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatch, committedData }) {
+export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatch, committedData, premadeData }) {
   const navigate = useNavigate();
   const qty       = item['Current Quantity'] || 0;
   const dead      = item['Dead/Unsold Stems'] || 0;
@@ -24,6 +24,12 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
   const hasShortfall = committed > 0 && effective < 0;
   const isLow     = qty > 0 && qty <= threshold;
   const isOut     = qty <= 0;
+  // Premade reservations — stems physically locked into a premade bouquet.
+  // Already deducted from Current Quantity; shown as a chip so the florist
+  // knows they exist and which bouquets hold them.
+  const premadeQty = premadeData?.qty || 0;
+  const premadeBouquets = premadeData?.bouquets || [];
+  const [showPremade, setShowPremade] = useState(false);
 
   const [expanded, setExpanded]            = useState(false);
   const [showWriteOff, setShowWriteOff]    = useState(false);
@@ -128,8 +134,8 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
             </>
           ) : (
             <>
-              {/* Qty number + thin committed bar underneath */}
-              <div className="flex flex-col items-center w-9">
+              {/* Qty number + thin committed bar + premade chip */}
+              <div className="flex flex-col items-center w-12">
                 <span className={`font-bold text-[13px] leading-none ${qtyColor}`}>{qty}</span>
                 {committed > 0 && (
                   <div className="w-full h-[3px] rounded-full bg-gray-200 mt-1 overflow-hidden">
@@ -138,6 +144,14 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                       style={{ width: `${committedPct}%` }}
                     />
                   </div>
+                )}
+                {premadeQty > 0 && (
+                  <button
+                    onClick={e => { e.stopPropagation(); setShowPremade(v => !v); }}
+                    className="text-[9px] leading-tight text-indigo-600 font-medium mt-0.5 hover:text-indigo-800 whitespace-nowrap"
+                  >
+                    +{premadeQty} {t.inPremadesShort || 'premade'}
+                  </button>
                 )}
               </div>
               {qty > 0 && (
@@ -178,6 +192,24 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                   )}
                   <span className="text-[11px] font-semibold text-brand-600">{o.qty}</span>
                 </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Premade bouquets that hold stems of this flower — chip-triggered */}
+      {showPremade && premadeBouquets.length > 0 && (
+        <div className="px-3 pb-2 ml-4" onClick={e => e.stopPropagation()}>
+          <div className="mb-1 flex items-center justify-between text-[10px] text-indigo-600 font-semibold uppercase tracking-wide">
+            <span>{t.lockedInPremades || 'Locked in premades'}</span>
+            <span>{premadeQty} {t.stems}</span>
+          </div>
+          <div className="bg-indigo-50 rounded-lg border border-indigo-100 divide-y divide-indigo-100 overflow-hidden">
+            {premadeBouquets.map((b, i) => (
+              <div key={i} className="flex items-center justify-between px-2.5 py-1.5 text-[11px] text-indigo-900">
+                <span className="truncate">{b.name}</span>
+                <span className="tabular-nums font-semibold">{b.qty}</span>
               </div>
             ))}
           </div>
