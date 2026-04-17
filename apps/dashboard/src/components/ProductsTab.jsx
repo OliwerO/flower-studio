@@ -21,6 +21,12 @@ export default function ProductsTab() {
   const [search, setSearch] = useState('');
   const [expandedProduct, setExpandedProduct] = useState(null);
   const [catFilter, setCatFilter] = useState('');
+  // Add-to-category picker — only opens when a specific category is being
+  // filtered AND the owner wants to assign more bouquets to it. See the
+  // "+ Add bouquets to this category" button rendered next to the filter.
+  const [showAddToCategory, setShowAddToCategory] = useState(false);
+  const [addToCategorySelected, setAddToCategorySelected] = useState(() => new Set());
+  const [addingToCategory, setAddingToCategory] = useState(false);
   const { showToast } = useToast();
 
   const fetchProducts = useCallback(async () => {
@@ -137,6 +143,43 @@ export default function ProductsTab() {
     }
   }
 
+  // Add currently-filtered category to every selected bouquet's variants.
+  // Runs PATCH /products/:id once per variant (reuses the existing single-
+  // product endpoint). We append the category to the existing list rather
+  // than replacing, so a bouquet already in other categories keeps them.
+  async function addBouquetsToFilteredCategory() {
+    if (!catFilter || addToCategorySelected.size === 0) return;
+    setAddingToCategory(true);
+    try {
+      for (const wixProductId of addToCategorySelected) {
+        const group = grouped.find(g => g.wixProductId === wixProductId);
+        if (!group) continue;
+        const current = parseCats(group.variants[0]?.['Category']);
+        if (current.includes(catFilter)) continue; // already there
+        const next = [...current, catFilter];
+        await updateAllVariants(group, 'Category', next);
+      }
+      showToast(t.prodAddedToCategory || `Added ${addToCategorySelected.size} bouquets to ${catFilter}`, 'success');
+      setAddToCategorySelected(new Set());
+      setShowAddToCategory(false);
+      fetchProducts();
+    } catch {
+      showToast(t.error, 'error');
+    } finally {
+      setAddingToCategory(false);
+    }
+  }
+
+  // Products not yet in the currently-filtered category — that's the picker's
+  // contents. Memo-ish: cheap enough to recompute on every render since
+  // grouped is already derived.
+  const pickerCandidates = catFilter
+    ? grouped.filter(g => {
+        const cats = [...new Set(g.variants.flatMap(v => parseCats(v['Category'])))];
+        return !cats.includes(catFilter);
+      })
+    : [];
+
   return (
     <div>
       {/* Header */}
@@ -190,6 +233,18 @@ export default function ProductsTab() {
             {categories.map(cat => <option key={cat} value={cat}>{cat}</option>)}
           </select>
         )}
+        {/* Quick "add bouquets to this category" entry — only when a
+            specific category is filtered. Avoids the owner having to open
+            each bouquet card and tick the category checkbox individually. */}
+        {catFilter && (
+          <button
+            onClick={() => setShowAddToCategory(true)}
+            className="px-2.5 py-1.5 rounded-xl bg-brand-50 text-brand-700 border border-brand-200 text-xs font-medium hover:bg-brand-100"
+            title={t.prodAddToCategoryTooltip || 'Assign more bouquets to this category'}
+          >
+            + {t.prodAddToCategory || 'Add to category'}
+          </button>
+        )}
         <input type="text" placeholder={t.search} value={search} onChange={e => setSearch(e.target.value)}
           className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm flex-1 min-w-[200px]" />
         <span className="text-xs text-gray-400">{filtered.length} {t.prodProducts}</span>
@@ -206,7 +261,90 @@ export default function ProductsTab() {
               onToggle={() => setExpandedProduct(expandedProduct === group.wixProductId ? null : group.wixProductId)}
               onUpdate={updateVariant} onUpdateAll={updateAllVariants} />
           ))}
-          {filtered.length === 0 && <p className="text-center text-gray-400 py-8">{t.noResults}</p>}
+          {filtered.length === 0 && (
+            <div className="text-center py-8 space-y-3">
+              <p className="text-gray-400">{t.noResults}</p>
+              {catFilter && pickerCandidates.length > 0 && (
+                <button
+                  onClick={() => setShowAddToCategory(true)}
+                  className="px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
+                >
+                  + {t.prodAddBouquetsToCategory || `Add bouquets to "${catFilter}"`}
+                </button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Picker modal — owner selects bouquets to assign to the filtered category */}
+      {showAddToCategory && catFilter && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+          onClick={() => !addingToCategory && setShowAddToCategory(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col"
+            onClick={e => e.stopPropagation()}>
+            <div className="px-5 py-4 border-b border-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">
+                {t.prodAddToCategory || 'Add to category'}: <span className="text-brand-600">{catFilter}</span>
+              </h2>
+              <p className="text-xs text-gray-400 mt-1">
+                {t.prodAddToCategoryHint || 'Pick bouquets to assign. Their other categories stay intact.'}
+              </p>
+            </div>
+            <div className="flex-1 overflow-y-auto px-3 py-2">
+              {pickerCandidates.length === 0 ? (
+                <p className="text-center text-gray-400 py-6 text-sm">
+                  {t.prodAllAlreadyAssigned || 'All bouquets are already in this category.'}
+                </p>
+              ) : (
+                <div className="divide-y divide-gray-100">
+                  {pickerCandidates.map(g => {
+                    const checked = addToCategorySelected.has(g.wixProductId);
+                    const currentCats = [...new Set(g.variants.flatMap(v => parseCats(v['Category'])))];
+                    return (
+                      <label key={g.wixProductId}
+                        className={`flex items-center gap-3 px-2 py-2 cursor-pointer rounded-lg ${checked ? 'bg-brand-50' : 'hover:bg-gray-50'}`}>
+                        <input type="checkbox" checked={checked}
+                          onChange={() => {
+                            setAddToCategorySelected(prev => {
+                              const next = new Set(prev);
+                              if (next.has(g.wixProductId)) next.delete(g.wixProductId);
+                              else next.add(g.wixProductId);
+                              return next;
+                            });
+                          }}
+                          className="w-4 h-4 accent-brand-600" />
+                        {g.imageUrl ? (
+                          <img src={g.imageUrl} alt="" className="w-8 h-8 rounded object-cover flex-shrink-0" />
+                        ) : (
+                          <div className="w-8 h-8 rounded bg-gray-100 flex-shrink-0" />
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{g.name}</p>
+                          <p className="text-[11px] text-gray-400">
+                            {g.variants.length} {t.prodVariants}
+                            {currentCats.length > 0 && ` · ${currentCats.join(', ')}`}
+                          </p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+            <div className="px-5 py-3 border-t border-gray-100 flex gap-2">
+              <button onClick={() => { setAddToCategorySelected(new Set()); setShowAddToCategory(false); }}
+                disabled={addingToCategory}
+                className="flex-1 py-2 rounded-xl bg-gray-100 text-gray-600 text-sm font-medium">
+                {t.cancel}
+              </button>
+              <button onClick={addBouquetsToFilteredCategory}
+                disabled={addingToCategory || addToCategorySelected.size === 0}
+                className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold disabled:opacity-40">
+                {addingToCategory ? '...' : `${t.add || 'Add'} (${addToCategorySelected.size})`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

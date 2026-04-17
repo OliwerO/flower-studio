@@ -159,6 +159,9 @@ export default function PremadeBouquetCreatePage() {
           priceOverride={form.priceOverride}
           stock={stock}
           isOwner={isOwner}
+          /* Premade compose flow: only stems that physically exist today are
+             eligible. Avoids adding flowers that are still in a pending PO. */
+          onlyPhysicallyAvailable
           onStockRefresh={() => client
             .get('/stock?includeEmpty=true')
             .then(r => { setStock(r.data); setStockError(false); })

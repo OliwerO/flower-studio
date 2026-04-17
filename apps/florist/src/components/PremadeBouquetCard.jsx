@@ -133,10 +133,14 @@ export default function PremadeBouquetCard({ bouquet, isOwner, onRemoved, onUpda
     client.get('/stock').then(r => setStock(r.data)).catch(() => {});
   }, [showAddFlower]);
 
+  // Premade edit picker — only stems physically on hand. Pending-PO quantities
+  // are irrelevant here because the florist is assembling the bouquet right
+  // now; future stems can't be put into it.
   const filteredStock = useMemo(() => {
-    if (!flowerSearch.trim()) return stock.slice(0, 20);
+    const available = stock.filter(s => (Number(s['Current Quantity']) || 0) > 0);
+    if (!flowerSearch.trim()) return available.slice(0, 20);
     const q = flowerSearch.toLowerCase().trim();
-    return stock.filter(s =>
+    return available.filter(s =>
       (s['Display Name'] || '').toLowerCase().includes(q),
     ).slice(0, 20);
   }, [stock, flowerSearch]);

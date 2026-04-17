@@ -15,6 +15,11 @@ export default function Step2Bouquet({
   matchPremadeId = null,
   onSelectPremade = null,
   onUnlinkPremade = null,
+  // When true, the picker hides any stock item with Current Quantity <= 0,
+  // so premade-bouquet composition flows can't accidentally reserve stems
+  // that haven't physically arrived yet. Regular new-order flow keeps the
+  // current behaviour (shows depleted items for deferred demand).
+  onlyPhysicallyAvailable = false,
 }) {
   const premadeLocked = !!matchPremadeId;
   const lockedBouquet = premadeLocked && Array.isArray(premadeBouquets)
@@ -55,16 +60,19 @@ export default function Step2Bouquet({
   );
   const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
-  // Hide depleted dated batches (e.g. "Rose Red (14.Mar.)" at qty 0)
+  // Hide depleted dated batches (e.g. "Rose Red (14.Mar.)" at qty 0). When
+  // onlyPhysicallyAvailable is set (premade compose flow), also hide the base
+  // record when its qty is <= 0 — premade stems must exist right now.
   const visibleStock = useMemo(() => {
     const dateBatchPattern = /\(\d{1,2}\.\w{3,4}\.?\)$/;
     return stock.filter(s => {
       const qty = Number(s['Current Quantity']) || 0;
       const name = s['Display Name'] || '';
+      if (onlyPhysicallyAvailable && qty <= 0) return false;
       if (qty <= 0 && dateBatchPattern.test(name)) return false;
       return true;
     });
-  }, [stock]);
+  }, [stock, onlyPhysicallyAvailable]);
 
   const filteredStock = useMemo(() => {
     const q = flowerQuery.toLowerCase().trim();

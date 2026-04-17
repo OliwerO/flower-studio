@@ -224,7 +224,14 @@ export default function StockTab({ initialFilter, onNavigate }) {
 
   // Hide zero-stock items (default on)
   if (hideZero && view === 'all') {
-    filtered = filtered.filter(s => (s['Current Quantity'] || 0) !== 0);
+    // Keep zero-qty rows when premade bouquets still hold stems of that
+    // flower — the owner needs to see them to reconcile physical reality.
+    // Without this, ~30 stems locked in premades can be invisible.
+    filtered = filtered.filter(s => {
+      const qty = Number(s['Current Quantity']) || 0;
+      if (qty !== 0) return true;
+      return (premadeMap[s.id]?.qty || 0) > 0;
+    });
   }
 
   // Sort

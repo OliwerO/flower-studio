@@ -120,6 +120,8 @@ export default function PremadeBouquetCreateModal({ onClose, onCreated }) {
             orderLines={form.orderLines}
             priceOverride={form.priceOverride}
             stock={stock}
+            /* Physical compose flow — no pending-PO stems allowed. */
+            onlyPhysicallyAvailable
             onStockRefresh={() => client.get('/stock?includeEmpty=true').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}
