@@ -218,6 +218,84 @@ async function updateWixCategory(id, { name, description }) {
   }
 }
 
+// Schema identifying Wix Stores Collections in the Wix Multilingual Translation
+// Content API. Discovered by querying an existing collection's translation
+// content. Field keys: "collection-name" and "category-description".
+const STORES_COLLECTION_SCHEMA_ID = '5b35dfe1-da21-4071-aab5-2cec870459c0';
+const SECONDARY_LOCALES = ['pl', 'ru', 'uk'];
+
+/**
+ * Push PL/RU/UK translations to Wix Multilingual for a Stores collection.
+ * Wix hides untranslated store collections from non-primary language menus,
+ * so without this the category's menu link never renders on the PL/RU/UK
+ * sites. EN is the primary locale and lives directly on the Stores
+ * collection — updated via updateWixCategory().
+ *
+ * Flow: query → create missing locales, update existing locales.
+ * Skips any locale whose Airtable config has blank title + description,
+ * so we don't overwrite translations the owner added via Wix Translation
+ * Manager.
+ */
+async function pushCollectionTranslations(entityId, translations) {
+  if (!entityId || !translations) return;
+
+  const targetFields = {};
+  for (const locale of SECONDARY_LOCALES) {
+    const t = translations[locale];
+    if (!t) continue;
+    const fields = {};
+    if (t.title) fields['collection-name'] = { textValue: t.title, published: true, updatedBy: 'USER' };
+    if (t.description) fields['category-description'] = { textValue: t.description, published: true, updatedBy: 'USER' };
+    if (Object.keys(fields).length > 0) targetFields[locale] = fields;
+  }
+  if (Object.keys(targetFields).length === 0) return;
+
+  const qRes = await fetch(`${WIX_API_URL}/translation-content/v1/contents/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { filter: { entityId }, cursorPaging: { limit: 50 } } }),
+  });
+  if (!qRes.ok) {
+    throw new Error(`Translation query failed for ${entityId}: ${await qRes.text()}`);
+  }
+  const existingByLocale = ((await qRes.json()).contents || []).reduce((m, c) => {
+    m[c.locale] = c.id;
+    return m;
+  }, {});
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const [locale, fields] of Object.entries(targetFields)) {
+    if (existingByLocale[locale]) {
+      toUpdate.push({ content: { id: existingByLocale[locale], schemaId: STORES_COLLECTION_SCHEMA_ID, fields } });
+    } else {
+      toCreate.push({ schemaId: STORES_COLLECTION_SCHEMA_ID, entityId, locale, fields });
+    }
+  }
+
+  if (toCreate.length > 0) {
+    const cRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/create`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toCreate, returnEntity: false }),
+    });
+    if (!cRes.ok) {
+      throw new Error(`Translation bulk create failed for ${entityId}: ${await cRes.text()}`);
+    }
+  }
+
+  if (toUpdate.length > 0) {
+    const uRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/update`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toUpdate, returnEntity: false }),
+    });
+    if (!uRes.ok) {
+      throw new Error(`Translation bulk update failed for ${entityId}: ${await uRes.text()}`);
+    }
+  }
+}
+
 /**
  * Assign products to a Wix collection.
  * Adds products first, then removes ones that shouldn't be there.
@@ -626,6 +704,11 @@ export async function runPush() {
               description: enDesc || '',
             });
           }
+          try {
+            await pushCollectionTranslations(seasonalWixId, seasonal.translations);
+          } catch (err) {
+            stats.errors.push(`Seasonal translations: ${err.message}`);
+          }
           stats.categoriesSynced++;
         } catch (err) {
           stats.errors.push(`Seasonal: ${err.message}`);
@@ -642,8 +725,8 @@ export async function runPush() {
         // without this, the Wix-native collection label stays whatever the
         // owner typed when creating the collection, which meant Wix only
         // rendered the nav item in the primary (English) language.
+        const availEntry = (sc.auto || []).find(a => a && a.slug === 'available-today');
         try {
-          const availEntry = (sc.auto || []).find(a => a && a.slug === 'available-today');
           const enTitle = availEntry?.translations?.en?.title;
           const enDesc = availEntry?.translations?.en?.description;
           if (enTitle || enDesc) {
@@ -654,6 +737,11 @@ export async function runPush() {
           }
         } catch (err) {
           stats.errors.push(`Available Today category name: ${err.message}`);
+        }
+        try {
+          await pushCollectionTranslations(availTodayId, availEntry?.translations);
+        } catch (err) {
+          stats.errors.push(`Available Today translations: ${err.message}`);
         }
 
         const stockCheck = await db.list(TABLES.STOCK, {
