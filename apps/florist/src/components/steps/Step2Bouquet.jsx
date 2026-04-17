@@ -137,6 +137,12 @@ export default function Step2Bouquet({
   matchPremadeId = null,
   onSelectPremade = null,
   onUnlinkPremade = null,
+  // When true, hide any stock item with Current Quantity <= 0 from the picker
+  // regardless of pending-PO state. Used by the premade-bouquet composition
+  // flow where the florist is physically assembling the bouquet right now —
+  // she can only pick stems that actually exist, not stems expected from a
+  // future PO. Also suppresses the "show out of stock" toggle.
+  onlyPhysicallyAvailable = false,
 }) {
   const { showToast } = useToast();
   // Determine if the order is for a future date (not today).
@@ -215,9 +221,14 @@ export default function Step2Bouquet({
 
   const filteredStock = useMemo(() => {
     let result = visibleStock;
-    // #39: Filter to show only in-stock items by default,
-    // but always show items with pending PO quantities (they're coming)
-    if (!showOutOfStock) {
+    if (onlyPhysicallyAvailable) {
+      // Premade-compose mode — only real, countable stems. Pending POs don't
+      // count because the florist can't put future flowers into a physical
+      // bouquet today.
+      result = result.filter(s => (Number(s['Current Quantity']) || 0) > 0);
+    } else if (!showOutOfStock) {
+      // #39: Filter to show only in-stock items by default,
+      // but always show items with pending PO quantities (they're coming)
       result = result.filter(s =>
         (Number(s['Current Quantity']) || 0) > 0 || (pendingPO[s.id]?.ordered || 0) > 0
       );
@@ -377,12 +388,16 @@ export default function Step2Bouquet({
         <div className="flex items-center justify-between mb-1.5 px-1">
           <p className="ios-label !px-0 !mb-0">{t.searchFlowers}</p>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setShowOutOfStock(v => !v)}
-              className={`text-xs font-medium px-2 py-0.5 rounded-full ${showOutOfStock ? 'bg-gray-200 text-ios-label' : 'bg-brand-50 text-brand-600'}`}
-            >
-              {showOutOfStock ? t.showAll : t.inStockOnly}
-            </button>
+            {/* "Show out of stock" makes no sense when the picker is locked
+                to physically-available stems (premade compose mode). */}
+            {!onlyPhysicallyAvailable && (
+              <button
+                onClick={() => setShowOutOfStock(v => !v)}
+                className={`text-xs font-medium px-2 py-0.5 rounded-full ${showOutOfStock ? 'bg-gray-200 text-ios-label' : 'bg-brand-50 text-brand-600'}`}
+              >
+                {showOutOfStock ? t.showAll : t.inStockOnly}
+              </button>
+            )}
             <button onClick={() => {
               onStockRefresh();
               client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});

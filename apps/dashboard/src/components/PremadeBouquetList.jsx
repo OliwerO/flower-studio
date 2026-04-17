@@ -253,10 +253,13 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
     client.get('/stock').then(r => setStock(r.data)).catch(() => {});
   }, [showAddFlower, stock.length]);
 
+  // Premade compose/edit — only stems that physically exist. Mirrors the
+  // filter on the florist card so both apps behave the same way.
   const filteredStock = useMemo(() => {
-    if (!flowerSearch.trim()) return stock.slice(0, 20);
+    const available = stock.filter(s => (Number(s['Current Quantity']) || 0) > 0);
+    if (!flowerSearch.trim()) return available.slice(0, 20);
     const q = flowerSearch.toLowerCase().trim();
-    return stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(q)).slice(0, 20);
+    return available.filter(s => (s['Display Name'] || '').toLowerCase().includes(q)).slice(0, 20);
   }, [stock, flowerSearch]);
 
   async function handleSave() {

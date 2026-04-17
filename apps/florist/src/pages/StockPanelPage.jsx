@@ -114,7 +114,14 @@ export default function StockPanelPage() {
 
     // Hide zero-stock items (default on, same as dashboard)
     if (hideZero && view === 'all') {
-      items = items.filter(s => (Number(s['Current Quantity']) || 0) !== 0);
+      // Keep zero-qty rows when premade bouquets still hold stems — those
+      // stems physically exist on the shelf and must stay visible so the
+      // owner/florist can reconcile them.
+      items = items.filter(s => {
+        const qty = Number(s['Current Quantity']) || 0;
+        if (qty !== 0) return true;
+        return (premadeMap[s.id]?.qty || 0) > 0;
+      });
     }
 
     // View filter
@@ -158,7 +165,7 @@ export default function StockPanelPage() {
     });
 
     return sorted;
-  }, [stock, search, sortKey, sortAsc, view, hideZero]);
+  }, [stock, search, sortKey, sortAsc, view, hideZero, premadeMap]);
 
   // Counts for view badges
   const negativeCount = useMemo(() => stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length, [stock]);
