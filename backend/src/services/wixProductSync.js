@@ -637,6 +637,25 @@ export async function runPush() {
       const availTodayId = catMap['available-today'];
       console.log(`[PUSH] Available Today: wixCatId=${availTodayId}`);
       if (availTodayId) {
+        // Keep the Wix collection's own name/description in sync with the
+        // owner-configured EN translation. Mirrors the seasonal path above —
+        // without this, the Wix-native collection label stays whatever the
+        // owner typed when creating the collection, which meant Wix only
+        // rendered the nav item in the primary (English) language.
+        try {
+          const availEntry = (sc.auto || []).find(a => a && a.slug === 'available-today');
+          const enTitle = availEntry?.translations?.en?.title;
+          const enDesc = availEntry?.translations?.en?.description;
+          if (enTitle || enDesc) {
+            await updateWixCategory(availTodayId, {
+              name: enTitle || availEntry?.name || 'Available Today',
+              description: enDesc || '',
+            });
+          }
+        } catch (err) {
+          stats.errors.push(`Available Today category name: ${err.message}`);
+        }
+
         const stockCheck = await db.list(TABLES.STOCK, {
           filterByFormula: '{Active} = TRUE()',
           fields: ['Display Name', 'Current Quantity'],

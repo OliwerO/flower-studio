@@ -42,7 +42,17 @@ const DEFAULTS = {
       { name: 'Christmas',       slug: 'christmas',      from: '12-01', to: '12-26', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
     ],
     auto: [
-      { name: 'Available Today', slug: 'available-today', description: '', translations: { en: { title: '', description: '' }, pl: { title: '', description: '' }, ru: { title: '', description: '' }, uk: { title: '', description: '' } } },
+      {
+        name: 'Available Today',
+        slug: 'available-today',
+        description: 'Bouquets ready for same-day delivery or pickup.',
+        translations: {
+          en: { title: 'Available Today',   description: 'Bouquets ready for same-day delivery or pickup.' },
+          pl: { title: 'Dostępne dziś',     description: 'Bukiety gotowe do dostawy lub odbioru tego samego dnia.' },
+          ru: { title: 'Доступно сегодня',  description: 'Букеты, готовые к доставке или самовывозу сегодня.' },
+          uk: { title: 'Доступно сьогодні', description: 'Букети, готові до доставки або самовивозу сьогодні.' },
+        },
+      },
     ],
     autoSchedule: true,
     manualOverride: null,
@@ -94,6 +104,8 @@ async function loadConfig() {
         migrateSeasonalDates();
         // Migrate: convert permanent/auto from string arrays to object arrays
         migrateCategoryObjects();
+        // Migrate: backfill default translations for auto categories if empty
+        migrateAutoCategoryTranslations();
         // Migrate: floristRates from flat { name: number } to { name: { type: number } }
         migrateFloristRates();
       }
@@ -228,6 +240,54 @@ function migrateCategoryObjects() {
   if (changed) {
     saveConfig().catch(err =>
       console.error('[SETTINGS] Category migration save failed:', err.message)
+    );
+  }
+}
+
+/**
+ * Backfill default translations for auto categories (e.g. "Available Today")
+ * when the stored config has empty title/description strings. The Wix site's
+ * Velo code resolves menu labels by slug and falls through to the hardcoded
+ * English `cat.name` when translations are empty — which is why the menu only
+ * rendered in the English language. Filling in real EN/PL/RU/UK strings lets
+ * the menu label translate automatically across all languages.
+ */
+function migrateAutoCategoryTranslations() {
+  const sc = config.storefrontCategories;
+  if (!sc?.auto || !Array.isArray(sc.auto)) return;
+  let changed = false;
+
+  for (const stored of sc.auto) {
+    if (!stored || typeof stored !== 'object') continue;
+    const defaultEntry = (DEFAULTS.storefrontCategories.auto || [])
+      .find(d => d.slug === stored.slug);
+    if (!defaultEntry) continue;
+    if (!stored.translations) stored.translations = {};
+
+    for (const lang of ['en', 'pl', 'ru', 'uk']) {
+      const storedLang = stored.translations[lang] || {};
+      const defaultLang = defaultEntry.translations?.[lang] || {};
+      if (!storedLang.title && defaultLang.title) {
+        storedLang.title = defaultLang.title;
+        changed = true;
+      }
+      if (!storedLang.description && defaultLang.description) {
+        storedLang.description = defaultLang.description;
+        changed = true;
+      }
+      stored.translations[lang] = storedLang;
+    }
+
+    if (!stored.description && defaultEntry.description) {
+      stored.description = defaultEntry.description;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    console.log('[SETTINGS] Backfilled auto-category translations');
+    saveConfig().catch(err =>
+      console.error('[SETTINGS] Auto-category translation backfill save failed:', err.message)
     );
   }
 }
