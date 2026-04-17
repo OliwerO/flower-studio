@@ -164,6 +164,25 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
 
   const sellTotal = Number(bouquet['Computed Sell Total'] || 0);
 
+  // Live totals while editing — sell uses live stock Current Sell Price with
+  // fallback to the line's snapshot, matching the florist premade card and
+  // the order bouquet editor. Cost stays on the snapshot (true-paid value).
+  const editSellTotal = useMemo(() =>
+    editLines.reduce((sum, l) => {
+      const si = l.stockItemId ? stock.find(s => s.id === l.stockItemId) : null;
+      const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+      return sum + price * Number(l.quantity || 0);
+    }, 0),
+    [editLines, stock],
+  );
+  const editCostTotal = useMemo(() =>
+    editLines.reduce((s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0),
+    [editLines],
+  );
+  const editMargin = editSellTotal > 0 ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
+  // Delta vs saved sell total — red if composition got pricier, green if cheaper.
+  const sellDelta = sellTotal > 0 ? editSellTotal - sellTotal : 0;
+
   function startEditing() {
     setEditing(true);
     setEditName(bouquet.Name || '');
@@ -380,33 +399,65 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
         )}
 
         <div className="space-y-1">
-          {editLines.map((line, idx) => (
-            <div key={line.id || `new-${idx}`} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
-              <span className="flex-1 text-sm text-ios-label truncate">{line.flowerName}</span>
-              <div className="flex items-center gap-1.5">
+          {editLines.map((line, idx) => {
+            // Use live stock sell price when available so the per-line total
+            // matches the footer total computed from the same source.
+            const si = line.stockItemId ? stock.find(s => s.id === line.stockItemId) : null;
+            const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+            const lineTotal = liveSell * Number(line.quantity || 0);
+            return (
+              <div key={line.id || `new-${idx}`} className="flex items-center gap-2 bg-gray-50 rounded-xl px-3 py-2">
+                <div className="flex-1 min-w-0">
+                  <span className="text-sm text-ios-label truncate block">{line.flowerName}</span>
+                  <span className="text-[10px] text-ios-tertiary">
+                    {liveSell.toFixed(0)} zł × {line.quantity} = <strong className="text-brand-700">{lineTotal.toFixed(0)} zł</strong>
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => updateQty(idx, -1)}
+                    className="w-7 h-7 rounded-full bg-white border border-gray-200 text-sm flex items-center justify-center"
+                  >−</button>
+                  <span className="w-6 text-center text-sm font-semibold">{line.quantity}</span>
+                  <button
+                    type="button"
+                    onClick={() => updateQty(idx, 1)}
+                    className="w-7 h-7 rounded-full bg-white border border-gray-200 text-sm flex items-center justify-center"
+                  >+</button>
+                </div>
                 <button
                   type="button"
-                  onClick={() => updateQty(idx, -1)}
-                  className="w-7 h-7 rounded-full bg-white border border-gray-200 text-sm flex items-center justify-center"
-                >−</button>
-                <span className="w-6 text-center text-sm font-semibold">{line.quantity}</span>
-                <button
-                  type="button"
-                  onClick={() => updateQty(idx, 1)}
-                  className="w-7 h-7 rounded-full bg-white border border-gray-200 text-sm flex items-center justify-center"
-                >+</button>
+                  onClick={() => removeLine(idx)}
+                  className="text-red-400 text-sm ml-1"
+                >✕</button>
               </div>
-              <span className="text-xs text-ios-tertiary w-14 text-right">
-                {Math.round(line.sellPricePerUnit * line.quantity)} zł
-              </span>
-              <button
-                type="button"
-                onClick={() => removeLine(idx)}
-                className="text-red-400 text-sm ml-1"
-              >✕</button>
-            </div>
-          ))}
+            );
+          })}
         </div>
+
+        {/* Live totals footer — sell total with coloured delta vs saved,
+            plus cost total + margin so the owner can sanity-check pricing
+            while composing. Parity with the order bouquet editor. */}
+        {editLines.length > 0 && (
+          <div className="bg-white rounded-xl border border-gray-100 px-3 py-2 mt-2">
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
+              <div className="flex items-center gap-2">
+                {sellTotal > 0 && sellDelta !== 0 && (
+                  <span className={`text-xs font-bold ${sellDelta > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                    ({sellDelta > 0 ? '+' : ''}{sellDelta.toFixed(0)})
+                  </span>
+                )}
+                <span className="text-base font-bold text-brand-600">{Math.round(editSellTotal)} zł</span>
+              </div>
+            </div>
+            <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-50">
+              <span className="text-xs text-ios-tertiary">{t.costTotal} · {t.markup || 'Markup'}: {editMargin}%</span>
+              <span className="text-xs text-ios-tertiary font-medium">{Math.round(editCostTotal)} zł</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div>

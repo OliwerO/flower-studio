@@ -40,6 +40,11 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const [showReconcile, setShowReconcile] = useState(false);
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [hideZero, setHideZero]     = useState(true);
+  // Per-row "Reconcile" button on premade chips. Gated on a backend setting
+  // (Settings → Stock → Stock repair tools) so it syncs across devices and
+  // stays hidden from the florist's daily flow by default. The setting is
+  // fetched alongside the normal stock data below.
+  const [showRepairTools, setShowRepairTools] = useState(false);
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const [wasteGroupBy, setWasteGroupBy] = useState('supplier'); // 'supplier' | 'all'
   const [wasteSortBy, setWasteSortBy] = useState('date'); // 'date' | 'batch'
@@ -60,11 +65,12 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [stockRes, poRes, comRes, premadeRes] = await Promise.all([
+      const [stockRes, poRes, comRes, premadeRes, settingsRes] = await Promise.all([
         client.get('/stock?includeEmpty=true'),
         client.get('/stock/pending-po'),
         client.get('/stock/committed'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        client.get('/settings').catch(() => ({ data: { config: {} } })),
       ]);
       setStock(prev => {
         if (!stockLoaded.current) return stockRes.data;
@@ -79,6 +85,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
       setPendingPO(poRes.data);
       setCommittedMap(comRes.data);
       setPremadeMap(premadeRes.data || {});
+      setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
       stockLoaded.current = true;
     } catch {
       if (!silent) showToast(t.error, 'error');
@@ -762,6 +769,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
                   key={item.id}
                   item={item}
                   premade={premadeMap[item.id]}
+                  showRepairTools={showRepairTools}
                   onAdjust={adjustQty}
                   onWriteOff={writeOff}
                   onPatch={patchStock}
@@ -838,7 +846,7 @@ function InlineDate({ value, displayName, onSave }) {
 }
 
 // Individual stock row — flat: name, qty, cost, sell, markup, supplier, farmer, lot, threshold, days in stock, actions
-function StockRow({ item, premade, onAdjust, onWriteOff, onPatch, onNavigate }) {
+function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatch, onNavigate }) {
   const [showPremadeDetail, setShowPremadeDetail] = useState(false);
   const [woQty, setWoQty]       = useState(1);
   const [woReason, setWoReason] = useState('');
@@ -965,30 +973,31 @@ function StockRow({ item, premade, onAdjust, onWriteOff, onPatch, onNavigate }) 
                 </div>
               ))}
             </div>
-            {/* Historical repair: if premades were built before the stock-
-                deduction flow existed (or it failed silently on a rollback),
-                Current Quantity still includes the locked stems. One click
-                subtracts the premade qty so the big number reflects what's
-                actually free. Irreversible — confirmation required. */}
-            <div className="mt-2 pt-2 border-t border-indigo-200 flex items-center justify-between gap-2">
-              <span className="text-[11px] text-indigo-700">
-                {t.reconcilePremadeHint || 'If stock looks too high, subtract premade qty'}: {qty} − {premade.qty} = {qty - premade.qty}
-              </span>
-              <button
-                onClick={e => {
-                  e.stopPropagation();
-                  const target = qty - premade.qty;
-                  if (!window.confirm(
-                    `${t.reconcilePremadeConfirm || 'Subtract premade qty from Current Quantity?'}\n\n${item['Display Name']}: ${qty} → ${target}`,
-                  )) return;
-                  onAdjust(item.id, -premade.qty);
-                  setShowPremadeDetail(false);
-                }}
-                className="px-2.5 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold active-scale"
-              >
-                {t.reconcilePremade || 'Reconcile'} −{premade.qty}
-              </button>
-            </div>
+            {/* Historical repair button — gated behind a Settings toggle so
+                it doesn't show in normal daily view. Owner enables it from
+                the Stock-tab toolbar when she needs to fix an item where
+                premade deduction never fired. Irreversible — confirms first. */}
+            {showRepairTools && (
+              <div className="mt-2 pt-2 border-t border-indigo-200 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-indigo-700">
+                  {t.reconcilePremadeHint || 'If stock looks too high, subtract premade qty'}: {qty} − {premade.qty} = {qty - premade.qty}
+                </span>
+                <button
+                  onClick={e => {
+                    e.stopPropagation();
+                    const target = qty - premade.qty;
+                    if (!window.confirm(
+                      `${t.reconcilePremadeConfirm || 'Subtract premade qty from Current Quantity?'}\n\n${item['Display Name']}: ${qty} → ${target}`,
+                    )) return;
+                    onAdjust(item.id, -premade.qty);
+                    setShowPremadeDetail(false);
+                  }}
+                  className="px-2.5 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold active-scale"
+                >
+                  {t.reconcilePremade || 'Reconcile'} −{premade.qty}
+                </button>
+              </div>
+            )}
           </td>
         </tr>
       )}

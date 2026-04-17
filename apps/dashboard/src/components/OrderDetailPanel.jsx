@@ -225,8 +225,19 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const showPaymentMethod = o['Payment Status'] === 'Paid';
 
   // Price Override replaces flower total only; delivery fee always added on top.
-  const lineTotal = (o.orderLines || []).reduce((sum, l) =>
+  // While editing the bouquet, compute the line total from the in-memory editLines
+  // (using live stock sell prices) so the grand-total badge updates as quantities
+  // change. Parity with florist OrderCard.
+  const savedLineTotal = (o.orderLines || []).reduce((sum, l) =>
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
+  const editingLineTotal = editingBouquet
+    ? editLines.reduce((sum, l) => {
+        const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
+        const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+        return sum + price * Number(l.quantity || 0);
+      }, 0)
+    : null;
+  const lineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
   const deliveryFee = Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0);
   const effectivePrice = (o['Price Override'] || lineTotal) + deliveryFee;
 
@@ -480,10 +491,22 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
           </div>
 
           {editingBouquet ? (() => {
-            // Running totals — same as new order wizard
+            // Running totals — sell uses live stock price (fallback to snapshot)
+            // so if a stock sell price is edited elsewhere mid-edit, the editor
+            // reflects it immediately. Cost stays on the snapshot because cost
+            // rarely changes post-PO and the snapshot is the "true paid" value.
+            // Parity with florist OrderCard.
             const editCostTotal = editLines.reduce((s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0);
-            const editSellTotal = editLines.reduce((s, l) => s + Number(l.sellPricePerUnit || 0) * Number(l.quantity || 0), 0);
+            const editSellTotal = editLines.reduce((sum, l) => {
+              const si = l.stockItemId ? stockItems.find(x => x.id === l.stockItemId) : null;
+              const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+              return sum + price * Number(l.quantity || 0);
+            }, 0);
             const editMargin = editSellTotal > 0 ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
+            // Delta vs saved original so the owner sees how much the bouquet
+            // total has shifted since last save. Red over, green under.
+            const originalSellTotal = Number(o['Sell Total'] || 0);
+            const sellDelta = originalSellTotal > 0 ? editSellTotal - originalSellTotal : 0;
             // Detect quantity reductions that need stock decision (only for lines that had stock before)
             const hasReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
             // removedLines that already have explicit actions from the remove dialog
@@ -526,12 +549,22 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                 );
               })}
 
-              {/* Sell total + cost + margin — like order wizard */}
+              {/* Sell total + cost + margin — like order wizard. Sell total
+                  shows a coloured delta vs. saved original (red over, green
+                  under) so the owner sees at a glance how much an edit moved
+                  the price. Parity with florist "Flowers" footer. */}
               {editLines.length > 0 && (
                 <div className="bg-white rounded-xl border border-gray-100 px-3 py-2">
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold text-ios-label">{t.sellTotal}</span>
-                    <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} {t.zl}</span>
+                    <div className="flex items-center gap-2">
+                      {originalSellTotal > 0 && sellDelta !== 0 && (
+                        <span className={`text-xs font-bold ${sellDelta > 0 ? 'text-red-500' : 'text-green-600'}`}>
+                          ({sellDelta > 0 ? '+' : ''}{sellDelta.toFixed(0)})
+                        </span>
+                      )}
+                      <span className="text-base font-bold text-brand-600">{editSellTotal.toFixed(0)} {t.zl}</span>
+                    </div>
                   </div>
                   <div className="flex items-center justify-between mt-1 pt-1 border-t border-gray-50">
                     <span className="text-xs text-ios-tertiary">{t.costTotal} · {t.markup}: {editMargin}%</span>
