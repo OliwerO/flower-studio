@@ -234,33 +234,63 @@ export default function ProductCard({ group, stockMap, stockList, categories, ex
     ? Object.keys(wixTrans).length > 0
     : Boolean(wixTrans);
 
+  // Summary of active-state across variants — shown in the collapsed header so
+  // the owner can see "3/5 active" at a glance and flip the whole bouquet with
+  // one click instead of expanding + toggling each size individually.
+  const activeCount = group.variants.filter(v => v['Active']).length;
+  const totalCount = group.variants.length;
+  const partialActive = anyActive && !allActive;
+  async function toggleAllActive(e) {
+    e.stopPropagation(); // don't collapse/expand the card
+    // If any variant is off, flip everything ON. If all are on, flip everything OFF.
+    await onUpdateAll(group, 'Active', !allActive);
+  }
+
   return (
     <div className={`bg-white rounded-2xl border ${anyActive ? 'border-gray-200' : 'border-amber-200'} shadow-sm overflow-hidden`}>
-      <button onClick={onToggle} className="w-full px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors">
-        {group.imageUrl ? (
-          <img src={group.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
-        ) : (
-          <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />
-        )}
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-sm text-gray-900 truncate">{group.name}</span>
-            <span className="text-xs text-gray-400">({productType})</span>
-            {!allActive && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{t.prodNew}</span>}
-            {anyActive && (
-              <span className={`text-xs px-2 py-0.5 rounded-full ${hasStock ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
-                {hasStock ? t.prodStockOk : t.prodNoStock}
-              </span>
-            )}
-            {hasTranslations && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{t.prodHasTranslations}</span>}
+      <div className="w-full flex items-stretch">
+        <button onClick={onToggle} className="flex-1 px-4 py-3 flex items-center gap-3 text-left hover:bg-gray-50 transition-colors">
+          {group.imageUrl ? (
+            <img src={group.imageUrl} alt="" className="w-10 h-10 rounded-lg object-cover flex-shrink-0" />
+          ) : (
+            <div className="w-10 h-10 rounded-lg bg-gray-100 flex-shrink-0" />
+          )}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-medium text-sm text-gray-900 truncate">{group.name}</span>
+              <span className="text-xs text-gray-400">({productType})</span>
+              {!anyActive && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-100 text-amber-700">{t.prodNew}</span>}
+              {partialActive && <span className="text-xs px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">{activeCount}/{totalCount} {t.active || 'active'}</span>}
+              {anyActive && (
+                <span className={`text-xs px-2 py-0.5 rounded-full ${hasStock ? 'bg-green-50 text-green-600' : 'bg-red-50 text-red-500'}`}>
+                  {hasStock ? t.prodStockOk : t.prodNoStock}
+                </span>
+              )}
+              {hasTranslations && <span className="text-xs px-2 py-0.5 rounded-full bg-blue-50 text-blue-600">{t.prodHasTranslations}</span>}
+            </div>
+            <div className="flex items-center gap-2 mt-0.5">
+              <span className="text-xs text-gray-400">{group.variants.length} {t.prodVariants}</span>
+              {currentCats.length > 0 && <span className="text-xs text-gray-400">· {currentCats.join(', ')}</span>}
+            </div>
           </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <span className="text-xs text-gray-400">{group.variants.length} {t.prodVariants}</span>
-            {currentCats.length > 0 && <span className="text-xs text-gray-400">· {currentCats.join(', ')}</span>}
-          </div>
-        </div>
-        <span className="text-gray-300 text-lg">{expanded ? '\u2212' : '+'}</span>
-      </button>
+        </button>
+        {/* Bulk activate/deactivate — one click flips every size at once so the
+            owner doesn't have to expand the card and toggle each variant. */}
+        <button
+          onClick={toggleAllActive}
+          title={allActive ? (t.prodDeactivateAll || 'Deactivate all sizes') : (t.prodActivateAll || 'Activate all sizes')}
+          className={`px-3 flex items-center gap-1 text-xs font-medium border-l border-gray-100 transition-colors ${
+            allActive
+              ? 'text-amber-700 hover:bg-amber-50'
+              : 'text-brand-700 hover:bg-brand-50'
+          }`}
+        >
+          {allActive ? (t.prodDeactivateAll || 'Deactivate all') : (t.prodActivateAll || 'Activate all')}
+        </button>
+        <button onClick={onToggle} className="px-3 text-gray-300 text-lg border-l border-gray-100 hover:bg-gray-50">
+          {expanded ? '\u2212' : '+'}
+        </button>
+      </div>
 
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-3">
