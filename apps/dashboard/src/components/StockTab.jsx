@@ -40,20 +40,11 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const [showReconcile, setShowReconcile] = useState(false);
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [hideZero, setHideZero]     = useState(true);
-  // Per-row "Reconcile" button on premade chips. Off by default to avoid
-  // tempting the florist into rewriting Current Quantity in normal use.
-  // Owner flips it on (persisted per-device) when she needs to repair an
-  // item where the premade deduction never fired historically.
-  const [showRepairTools, setShowRepairTools] = useState(
-    () => localStorage.getItem('show-stock-repair-tools') === 'true',
-  );
-  function toggleRepairTools() {
-    setShowRepairTools(prev => {
-      const next = !prev;
-      localStorage.setItem('show-stock-repair-tools', String(next));
-      return next;
-    });
-  }
+  // Per-row "Reconcile" button on premade chips. Gated on a backend setting
+  // (Settings → Stock → Stock repair tools) so it syncs across devices and
+  // stays hidden from the florist's daily flow by default. The setting is
+  // fetched alongside the normal stock data below.
+  const [showRepairTools, setShowRepairTools] = useState(false);
   const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
   const [wasteGroupBy, setWasteGroupBy] = useState('supplier'); // 'supplier' | 'all'
   const [wasteSortBy, setWasteSortBy] = useState('date'); // 'date' | 'batch'
@@ -74,11 +65,12 @@ export default function StockTab({ initialFilter, onNavigate }) {
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [stockRes, poRes, comRes, premadeRes] = await Promise.all([
+      const [stockRes, poRes, comRes, premadeRes, settingsRes] = await Promise.all([
         client.get('/stock?includeEmpty=true'),
         client.get('/stock/pending-po'),
         client.get('/stock/committed'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        client.get('/settings').catch(() => ({ data: { config: {} } })),
       ]);
       setStock(prev => {
         if (!stockLoaded.current) return stockRes.data;
@@ -93,6 +85,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
       setPendingPO(poRes.data);
       setCommittedMap(comRes.data);
       setPremadeMap(premadeRes.data || {});
+      setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
       stockLoaded.current = true;
     } catch {
       if (!silent) showToast(t.error, 'error');
@@ -336,22 +329,6 @@ export default function StockTab({ initialFilter, onNavigate }) {
           }`}
         >
           {hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock')}
-        </button>
-
-        {/* Repair-tools gate. Off by default; persists per-device in
-            localStorage. When on, the per-row "Reconcile" button appears
-            inside the premade-detail expansion. Uses a small wrench icon
-            so it doesn't read as a primary control. */}
-        <button
-          onClick={toggleRepairTools}
-          title={t.showStockRepairTools || 'Show stock repair tools'}
-          className={`px-2.5 py-1.5 rounded-full text-xs font-medium transition-colors ${
-            showRepairTools
-              ? 'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200'
-              : 'bg-gray-100 text-ios-tertiary hover:bg-gray-200'
-          }`}
-        >
-          🔧
         </button>
 
         <div className="ml-auto flex gap-2">

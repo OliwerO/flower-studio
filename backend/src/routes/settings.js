@@ -59,6 +59,10 @@ const DEFAULTS = {
   availableTodayCutoff: '18:00',
   availableTodayTimezone: 'Europe/Warsaw',
   slotLeadTimeMinutes: 30,
+  // Shows the per-row "Reconcile premade" action on stock rows in the dashboard.
+  // Off by default — it's admin tooling for fixing historical data mismatches,
+  // not something the florist should tap in daily use.
+  showStockRepairTools: false,
 };
 
 // ── In-memory config (loaded from Airtable on startup) ──────

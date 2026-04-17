@@ -104,6 +104,25 @@ export default function SettingsTab() {
         <ConfigRow label={t.settingsSlotLeadTime} value={config.slotLeadTimeMinutes || 30} type="number" hint={t.settingsSlotLeadTimeHint} onSave={v => updateConfig({ slotLeadTimeMinutes: v })} />
       </Section>
 
+      {/* Stock tools — low-use admin toggles for the Stock tab */}
+      <Section title={t.settingsStock || 'Stock'}>
+        <div className="flex items-center justify-between py-3 border-b border-gray-100">
+          <div>
+            <span className="text-sm font-medium text-gray-700">{t.settingsStockRepairTools || 'Stock repair tools'}</span>
+            <p className="text-xs text-gray-400 mt-0.5">{t.settingsStockRepairToolsHint || 'Show per-row "Reconcile premade" button to fix items where premade deduction never fired. Off for daily use.'}</p>
+          </div>
+          <label className="relative inline-flex items-center cursor-pointer">
+            <input
+              type="checkbox"
+              checked={!!config.showStockRepairTools}
+              onChange={e => updateConfig({ showStockRepairTools: e.target.checked })}
+              className="sr-only peer"
+            />
+            <div className="w-11 h-6 bg-gray-200 peer-focus:ring-2 peer-focus:ring-brand-300 rounded-full peer peer-checked:bg-brand-600 transition-colors after:content-[''] after:absolute after:top-0.5 after:left-[2px] after:bg-white after:rounded-full after:h-5 after:w-5 after:transition-transform peer-checked:after:translate-x-full" />
+          </label>
+        </div>
+      </Section>
+
       {/* Marketing Spend */}
       <MarketingSpendSection sources={config.orderSources} />
 
