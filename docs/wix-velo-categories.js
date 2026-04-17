@@ -102,6 +102,58 @@ export async function getSeasonalDescription() {
   return result.description;
 }
 
+// ── Available Today helpers ──────────────────────────────────
+// Mirror of the seasonal helpers so masterPage.js can render the
+// "Available Today" nav item in every language (not just English).
+// Visibility is driven by `productCount` returned by the backend —
+// show only when there's at least one qualifying product.
+
+function findAuto(data, slug) {
+  if (!data) return null;
+  if (data.categoryMap && data.categoryMap[slug]) return data.categoryMap[slug];
+  return (data.auto || []).find(a => a && a.slug === slug) || null;
+}
+
+/**
+ * True when the "Available Today" category has qualifying products.
+ * `productCount` is set server-side in /api/public/categories.
+ * Returns false if the backend is unreachable (safer to hide than to
+ * show a category that leads to an empty page).
+ */
+export async function isAvailableTodayActive() {
+  const data = await getCategories();
+  const cat = findAuto(data, 'available-today');
+  if (!cat) return false;
+  return typeof cat.productCount === 'number' && cat.productCount > 0;
+}
+
+/**
+ * Get the "Available Today" category name for the NAV MENU — always CAPS.
+ * e.g., "AVAILABLE TODAY", "DOSTĘPNE DZIŚ", "ДОСТУПНО СЕГОДНЯ", "ДОСТУПНО СЬОГОДНІ".
+ */
+export async function getAvailableTodayMenuLabel() {
+  const data = await getCategories();
+  const cat = findAuto(data, 'available-today');
+  if (!cat) return 'AVAILABLE TODAY';
+  return applyLang(cat, getCurrentLang()).menuLabel;
+}
+
+/** Get the "Available Today" category title (normal case, for page headings). */
+export async function getAvailableTodayTitle() {
+  const data = await getCategories();
+  const cat = findAuto(data, 'available-today');
+  if (!cat) return 'Available Today';
+  return applyLang(cat, getCurrentLang()).name;
+}
+
+/** Get the "Available Today" category description (translated). */
+export async function getAvailableTodayDescription() {
+  const data = await getCategories();
+  const cat = findAuto(data, 'available-today');
+  if (!cat) return '';
+  return applyLang(cat, getCurrentLang()).description;
+}
+
 /**
  * Get full category structure with translations applied for current language.
  */
@@ -127,14 +179,42 @@ export async function getAllCategories() {
 // ────────────────────────────────────────────────────────────
 // MASTER PAGE CODE — paste this into masterPage.js
 // ────────────────────────────────────────────────────────────
+// masterPage.js runs on every language version of the site, so updating
+// element text here translates the menu items for EN / PL / RU / UK in
+// one place. Use placeholder text elements (e.g. #seasonalMenuText,
+// #availableTodayMenuText) inside your header menu and let Velo fill
+// them with the translated label.
 //
-// import { getSeasonalMenuLabel } from 'public/blossomCategories.js';
+// import {
+//   getSeasonalMenuLabel,
+//   getAvailableTodayMenuLabel,
+//   isAvailableTodayActive,
+// } from 'public/blossomCategories.js';
 //
 // $w.onReady(async function () {
+//   // Seasonal
 //   try {
 //     const menuLabel = await getSeasonalMenuLabel();
 //     $w('#seasonalMenuText').text = menuLabel;
-//   } catch (e) { console.error('Menu update failed:', e); }
+//   } catch (e) { console.error('Seasonal menu update failed:', e); }
+//
+//   // Available Today — show in ALL languages when products qualify,
+//   // hide when the backend reports productCount === 0 (e.g. no lead-time-0
+//   // items left after the cutoff).
+//   try {
+//     const [label, active] = await Promise.all([
+//       getAvailableTodayMenuLabel(),
+//       isAvailableTodayActive(),
+//     ]);
+//     $w('#availableTodayMenuText').text = label;
+//     if (active) {
+//       $w('#availableTodayMenu').expand();
+//       $w('#availableTodayMenu').show();
+//     } else {
+//       $w('#availableTodayMenu').collapse();
+//       $w('#availableTodayMenu').hide();
+//     }
+//   } catch (e) { console.error('Available Today menu update failed:', e); }
 // });
 //
 // ────────────────────────────────────────────────────────────

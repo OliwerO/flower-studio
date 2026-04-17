@@ -39,6 +39,78 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-17 — Wix "Available Today" now multilingual
+
+The "Available Today" nav item only rendered on the English version of the
+storefront. Adding products with Lead Time = 0 and the `Available Today`
+category assignment correctly populated the Wix collection, but:
+
+- Polish / Russian / Ukrainian visitors never saw the menu link.
+- Clicking the English link and then switching language kept an English
+  heading on the category page.
+
+### Root cause
+
+Three gaps all pointing at the same pattern:
+
+1. **`backend/src/routes/settings.js:44-56`** — the default auto-category
+   entry shipped with empty `en/pl/ru/uk` translations. The Velo helper
+   `applyLang()` in `docs/wix-velo-categories.js` falls through to the
+   hardcoded English `cat.name` when translation strings are empty, so
+   the menu label stayed in English for every locale.
+2. **`docs/wix-velo-categories.js`** — a `getSeasonalMenuLabel()` helper +
+   masterPage example existed for the seasonal category, but nothing
+   equivalent for Available Today, so the owner had no language-aware way
+   to swap the menu text or hide the item when `productCount === 0`.
+3. **`backend/src/services/wixProductSync.js:637-674`** — the push path
+   assigned products to the Wix collection but (unlike the seasonal path
+   a few lines above) never called `updateWixCategory()` to sync the
+   collection's own name + description, so Wix's native menu fallback
+   stayed in whatever language the owner used when creating the
+   collection manually.
+
+### Changes
+
+- `backend/src/routes/settings.js`
+  - Seeded `storefrontCategories.auto[Available Today]` defaults with real
+    `en/pl/ru/uk` titles and descriptions.
+  - New `migrateAutoCategoryTranslations()` — on startup, backfills any
+    empty title/description fields from the defaults so the Airtable-stored
+    config catches up without the owner re-saving the settings tab.
+- `docs/wix-velo-categories.js`
+  - New helpers: `getAvailableTodayMenuLabel()`, `getAvailableTodayTitle()`,
+    `getAvailableTodayDescription()`, `isAvailableTodayActive()`. Mirrors
+    the seasonal helpers and reads `productCount` from
+    `/api/public/categories` to drive visibility.
+  - Extended the masterPage.js usage example to show how to set the menu
+    label text and `.expand()/.collapse()` the nav item based on
+    `isAvailableTodayActive()`. masterPage.js runs on every language
+    version, so one piece of code handles EN/PL/RU/UK.
+- `backend/src/services/wixProductSync.js`
+  - `runPush()` now pushes the Available Today collection's EN title +
+    description to Wix (only when a translation is configured), mirroring
+    the seasonal path. Keeps the Wix-native collection label in sync with
+    the owner's translations and prevents the nav item from disappearing
+    in other languages when Wix Multilingual resolves the collection name.
+
+### What to watch for
+
+- **Backfill runs on the next backend restart.** The migration only writes
+  back to Airtable when it actually fills in missing values, so a steady
+  log line is `[SETTINGS] Backfilled auto-category translations` once,
+  then silence.
+- **Owner still needs a placeholder element** (`#availableTodayMenu` +
+  `#availableTodayMenuText`) on the Wix masterPage for the Velo helpers
+  to bind to. If those IDs don't exist yet, the console will show
+  "Available Today menu update failed"; the rest of the site is
+  unaffected.
+- **Cutoff behavior unchanged** — products are still removed from the
+  collection only by owner action (deactivating the product) or when
+  stock drops below `Min Stems`. The new visibility helper just mirrors
+  whatever the backend reports.
+
+---
+
 ## 2026-04-16 — Bouquet Editor UX (florist app): live totals + single return-to-stock prompt
 
 Two annoyances in the florist bouquet editor surfaced while editing an
