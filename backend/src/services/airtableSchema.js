@@ -54,6 +54,17 @@ const EXPECTED_WRITE_FIELDS = {
     'Premade Bouquets', 'Stock Item', 'Flower Name', 'Quantity',
     'Cost Price Per Unit', 'Sell Price Per Unit',
   ],
+  [TABLES.CUSTOMERS]: [
+    'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
+    'Home address', 'Sex / Business',
+    'Segment (client)',
+    'Found us from',
+    'Connected people (TO SORT into Key 1 & Key 2 person)',
+    'Key person 1 (Name + Contact details)',
+    'Key person 2 (Name + Contact details)',
+    'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
+    'Communication method', 'Order Source',
+  ],
 };
 
 /**
