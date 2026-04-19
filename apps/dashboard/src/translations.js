@@ -198,6 +198,24 @@ const en = {
   minOrderCount:    'Order count',
   minTotalSpend:    'Total spend',
 
+  // Customer detail view (Iteration 3)
+  keyPeople:                'Key people',
+  addKeyPerson:             'Add key person',
+  keyPersonLimit:           'Both slots filled',
+  keyPersonNamePlaceholder: 'Name + contact',
+  daysShort:                'd',
+  monthsShort:              'mo',
+  yearsShort:               'y',
+  lastOrderShort:           'Last',
+  doNotContactRibbon:       'DO NOT CONTACT — blacklisted customer',
+  timeline:                 'Order timeline',
+  allEvents:                'All',
+  appOrder:                 'App',
+  legacyOrder:              'Legacy',
+  otherFields:              'Other fields',
+  openInOrdersTab:          'Open in Orders tab',
+  noNotes:                  'No notes yet',
+
   // Day-to-day tab
   todaySummary:     'Today',
   revenue:          'Revenue',
@@ -991,6 +1009,24 @@ const ru = {
   lastOrderWithin:  'Последний заказ не позднее',
   minOrderCount:    'Кол-во заказов',
   minTotalSpend:    'Всего потрачено',
+
+  // Customer detail view (Iteration 3)
+  keyPeople:                'Контактные лица',
+  addKeyPerson:             'Добавить контакт',
+  keyPersonLimit:           'Оба слота заняты',
+  keyPersonNamePlaceholder: 'Имя + контакты',
+  daysShort:                'д',
+  monthsShort:              'мес',
+  yearsShort:               'г',
+  lastOrderShort:           'Заказ',
+  doNotContactRibbon:       'НЕ КОНТАКТИРОВАТЬ — клиент в чёрном списке',
+  timeline:                 'История заказов',
+  allEvents:                'Все',
+  appOrder:                 'Приложение',
+  legacyOrder:              'Архив',
+  otherFields:              'Другие поля',
+  openInOrdersTab:          'Открыть во вкладке Заказы',
+  noNotes:                  'Заметок пока нет',
 
   // Day-to-day tab
   todaySummary:     'Сегодня',
