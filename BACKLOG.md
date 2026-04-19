@@ -190,31 +190,43 @@ substitutes no longer silently fill in for the original, so the original can end
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
 
-### Tier 1 Bugs + Needs — New Reports (2026-04-07) [IMMEDIATE]
-- [ ] **Owner edit-everything** — owner needs full edit control of EVERY field on an order in EVERY stage (incl. delivery date after delivery is done). Critical: this is what removes the need for direct Airtable edits and unblocks the database migration.
-- [ ] **Florist + owner card text edit at any stage** — for existing orders, both florist and owner must be able to add/edit card text in every status (currently restricted)
-- [ ] **Date required, time optional** — make delivery/required date mandatory in order creation, but always editable later. Time selection stays optional.
-- [ ] **Florist app: prominent notes display** — show florist notes prominently in collapsed order view, clearly distinguished from card message
-- [ ] **Orders tab sort: bidirectional** — sort by column should toggle ascending/descending; currently broken / one-direction only
-- [ ] **Partial payment: missing amount input** — when "Partial" is selected, payment method shows but no field to enter the partial amount; on reopen, partial amount only shows flowers price not total (delivery missing)
-- [ ] **Order total wrong everywhere** — order summary in florist (and possibly dashboard) shows flowers-only price, not total including delivery fee
-- [ ] **Florist date filter broken** — Orders (all) view in florist app ignores date filter, shows all orders regardless
-- [ ] **"Lot Size" field unknown in dev Airtable** — frontend partially fixed (don't send default 1); add field to dev Airtable Stock table to be fully consistent with prod
+### Tier 1 Bugs — Blocking Daily Operations (consolidated 2026-04-19)
 
-### Tier 1 Bugs — Blocking Daily Operations (2026-04-03)
-- [ ] **Orders not shown in "All Orders"** — created & submitted order appears in CRM but not order list
-- [ ] **Dashboard ↔ Delivery app status sync** — orders marked delivered in dashboard stay as "New" on iPhone delivery app (SSE sync issue)
-- [ ] **Card text + notes lost after submit** — Greeting Card Text and important notes disappear after order submission (order 202603-038)
-- [ ] **Postcard text not visible after accepting** — even when text entered while accepting order, not visible once submitted
-- [ ] **Finished order stale after submit** — order stays on screen after submission, doesn't refresh
-- [x] **Florist "Add new flower" fails** — Airtable rejected `Lot Size` because the column on Stock had a trailing space (`appM8rLfcE9cbxduZ`). Renamed in Airtable, no code change. (2026-04-07)
-- [x] **Dashboard silently created orphan order lines** — `apps/dashboard/.../Step2Bouquet.jsx` had a `catch {}` that pushed lines with `stockItemId: null` whenever stock create failed. Now shows the real error toast and `orderService.createOrder` / `editBouquetLines` reject orphan lines server-side. (2026-04-07)
-- [x] **PO evaluate silently dropped lines without Stock Item** — `routes/stockOrders.js` `/evaluate` skipped the receive-into-stock block when a line had no Stock link, marking it `Processed` while the flowers vanished. Now throws per-line so the PO flips to `Eval Error` and the owner can fix the link. (2026-04-07)
-- [ ] **Purchase orders can't be saved** — PO save fails, blocks entire PO workflow
-- [ ] **New order doesn't create negative stock** — submitting order does not generate negative stock entries
-- [ ] **New flowers for future order not in negative stock** — flowers added to future order don't appear in negative stock view
-- [ ] **Florist app: black on grey unreadable** — text contrast too low, can't read on device
-- [ ] **Pink login button cut off** — button not fully visible on some screens
+Consolidated from two divergent sections ("2026-04-03" and "2026-04-07"
+reports). Each item below was re-validated against the current code on
+2026-04-19 with file:line or commit evidence.
+
+#### Open / migration-blocking
+- [ ] **Owner edit-everything (MIGRATION-CRITICAL)** — owner needs full edit control of every field on an order in every stage, including post-delivery. This is what removes the need for direct Airtable edits and unblocks the database migration. Three gates remain:
+  - `backend/src/services/orderService.js:311-316` — `editBouquetLines()` throws 400 when status ∈ {Delivered, Picked Up, Cancelled}
+  - `apps/florist/src/components/OrderCard.jsx:382` — `{!isTerminal && <edit bouquet>}` hides the button
+  - `apps/dashboard/src/components/OrderDetailPanel.jsx:468` — same `!isTerminal` guard
+  - What *does* work post-delivery today: status, payment, Required By, card text, delivery address/fee/driver, source. What's blocked: bouquet composition changes.
+
+- [ ] **Flowers for future order not in negative stock (PARTIAL)** — `apps/dashboard/src/components/DayToDayTab.jsx:560-602` surfaces deferred demand, but when a florist adds an unlisted flower mid-order with `stockDeferred=true`, it's unclear whether the newly-created Stock row feeds into "Flowers Needed" aggregation. Trace end-to-end and add a test.
+
+- [ ] **Partial payment reopen shows flowers-only total (PARTIAL)** — amount inputs now exist in both apps (OrderCard + OrderDetailPanel), but dashboard `OrderDetailPanel.jsx:242` recomputes `effectivePrice` from `o.orderLines`; when lines are stale/missing on reopen the flower cost collapses to 0 and the remaining-balance math is wrong. Prefer `o['Final Price']` when available.
+
+#### Fixed & verified (2026-04-19 validation)
+- [x] Orders not shown in "All Orders" (date filter) — `apps/dashboard/src/components/OrdersTab.jsx:61-74` defaults to `monthStart()`
+- [x] Dashboard ↔ Delivery app status sync (SSE) — `backend/src/routes/orders.js:364-381` broadcasts `order_status_changed`; delivery + dashboard apps subscribe in `useNotifications.js`
+- [x] Card text + notes lost after submit — `backend/src/services/orderService.js:85` writes `Greeting Card Text` onto the Order record (not the Delivery)
+- [x] Postcard text not visible after accepting — `apps/florist/src/components/OrderCard.jsx:332-335, 715` renders card text in both collapsed and expanded views
+- [x] Finished order stale after submit — `apps/florist/src/pages/NewOrderPage.jsx:293-295` resets form then navigates
+- [x] Purchase orders can't be saved — `backend/src/routes/stockOrders.js:382-384` validates lines before create; save path works end-to-end
+- [x] New order doesn't create negative stock — `backend/src/services/orderService.js:105-114` rejects orphan lines; `atomicStockAdjust(line.stockItemId, -line.quantity)` at `:137` creates negative rows
+- [x] Florist app: black-on-grey unreadable — dark-mode variants on every `bg-gray-100` (OrderCard, Step3Details, buttons throughout)
+- [x] Pink login button cut off — `apps/florist/src/pages/LoginPage.jsx:51` has `pb-16` for safe area
+- [x] Florist + owner card text edit at any stage — `EditableCardText` in `OrderDetailPage.jsx:101-140` + `OrderDetailPanel.jsx:920` has no status guard
+- [x] Date required, time optional — commit `e91083b` (2026-04-19) adds backend validation at `orders.js:277-279` + florist/dashboard `validateStep`; red `*` on both apps' Step3Details
+- [x] Florist app: prominent notes on collapsed card — `OrderCardSummary.jsx:124-133` renders a distinct blue-bordered note banner
+- [x] Orders tab sort: bidirectional — `OrdersTab.jsx:162-190, 312-317` wires `sortDir` toggle (↑/↓)
+- [x] Order total wrong everywhere (missing delivery fee) — every display path uses `Final Price`, which `orders.js` enriches as `(Price Override ‖ sellTotal) + delivFee`
+- [x] Florist date filter broken — `backend/src/routes/orders.js:55-58` applies `forDate` inside the `completedOnly` branch; `OrderListPage.jsx:125-127` sends it
+- [x] "Lot Size" field unknown in dev Airtable — frontend correctly doesn't send from order creation; `airtableSchema.js:35` expects it in `STOCK_ORDER_LINES` only. Close once the dev base has the column added (infra hygiene, no code change).
+
+#### Spin-off (discovered during 2026-04-19 validation)
+- [ ] **Hardcoded `'Nikita'` driver fallback** — `backend/src/routes/stockOrders.js:471` uses the literal name instead of `getDriverOfDay()`. Separate from the "PO can't be saved" bug. Per the "hardcoded fallbacks" rule in CLAUDE.md, swap to `getDriverOfDay()`. Tier 2 cleanup.
 
 ### Tier 2 UX Fixes — Daily Friction (2026-04-03)
 - [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
@@ -264,62 +276,6 @@ substitutes no longer silently fill in for the original, so the original can end
   - **Event operations UI** — separate quick-entry interface for high-volume peak days (Valentine's, Women's Day, etc.). Optimized for speed, event-specific metrics, composition planning starting ~3 weeks before event. Very different from standard order wizard.
   - **Event retrospective analysis** — per-event tracking: flowers used (species + qty), courier workload + pay per driver, full economics (revenue, flower cost, courier cost, profit), waste/overstock. Goal: plan next year using this year's data.
   - **Prerequisites:** Owner shares Excel files from 14.02 + 08.03 2026 for analysis. Additional cost categories TBD. Do NOT build without planning session.
-
-### Tier 1 Bugs — Blocking Daily Operations (2026-04-03)
-- [x] **Card text + notes lost after submit** — was saving to wrong table (Delivery instead of Order). Fixed: save to Order, added card text for pickup orders
-- [x] **Dashboard ↔ Delivery app status sync** — SSE broadcast for all status changes, Order→Delivery cascade, visibility-change refresh
-- [x] **New order doesn't create negative stock** — removed silent text-only fallback, show error if stock creation fails
-- [x] **Deferred demand not visible** — dashboard now shows deferred demand in Flowers Needed section
-- [x] **Finished order stale after submit** — form reset added before navigation
-- [x] **Orders not shown in "All Orders"** — default date filter changed to month start
-- [x] **Florist app: black on grey unreadable** — dark mode variants added to all bg-gray-100 elements
-- [x] **Pink login button cut off** — bottom padding added for iPhone safe area
-- [x] **Dashboard build error** — pre-existing syntax error in OrderDetailPanel ternary fixed
-- [ ] **Orders not shown in "All Orders"** — created & submitted order appears in CRM but not order list (verify after deploy)
-- [ ] **Dashboard ↔ Delivery app status sync** — orders marked delivered in dashboard stay as "New" on iPhone (verify after deploy)
-- [ ] **Purchase orders can't be saved** — PO save fails (verify after deploy — may be fixed by prior commit 6697aa3)
-
-### Tier 2 UX Fixes — Daily Friction (2026-04-03)
-- [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
-- [ ] **Delivery date should be required** — date required, time and address optional
-- [ ] **Time slots not in order** — sorting broken in time slot picker
-- [ ] **Delivery/pickup date not shown** — date missing from order display
-- [ ] **Sorting by delivery date not working** — sort function broken
-- [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back
-- [ ] **Florist should see important NOTE prominently** — notes not visible on order front page
-- [ ] **Total paid amount not shown** — only flower price visible, not full order total
-- [ ] **Show negative stock on top** in stock tab
-- [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
-- [ ] **PO add planned date** — visible in collapsed PO view
-- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10
-- [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
-- [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
-- [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
-- [ ] **Technical stock bilingual names** — Dasha has the list of items
-- [ ] **Different hourly rates for florists** — Standard, Wedding, Holidays (owner-activated)
-
-### CRM & Relationship Intelligence (2026-04-03, after bug fixes)
-- [ ] **Key People system** — new Airtable table (later PostgreSQL): linked to customer, tracks name, phone, relationship type (optional), notes. One key person can have multiple important dates.
-  - **Important Dates sub-table**: linked to key person, stores date + date type (Birthday, Anniversary, Wedding, Name Day, Valentine's, Women's Day, Other) + notes
-  - Architecture: 3-tier (Customer → Key People → Important Dates). Replaces flat Key person 1/2 fields. Migration script needed.
-  - Dashboard: expandable key people cards in Customer Detail Panel
-  - Florist: auto-match recipient to existing key people, offer to save new ones
-  - Fixes bug: "Important Days" widget doesn't show which client/order reminder is based on
-- [ ] **Order purpose/occasion tracking** — record reason for order (birthday, anniversary, corporate, etc.) for analysis and targeted campaigns
-- [ ] **Standalone recipe/pricing tool** — florist can build bouquet recipe + calculate price without creating order
-
-### Financial / Payment Tracking (2026-04-03)
-- [ ] **Stripe refund handling** — track payment status, cancellation, refund reflected in system
-- [ ] **Post-order website message** — change what customer sees after order even if payment failed (Wix-side)
-
-### Database Migration — Airtable → PostgreSQL (2026-04-03, after features stabilize)
-- [ ] **Migrate to PostgreSQL on Railway** — replace Airtable as primary database. Owner decision: all data managed through the app, no direct Airtable editing. Add on-demand export feature (to Airtable or Excel) for owner access.
-  - Phase A: Stock + POs (most rate-limit pain)
-  - Phase B: Orders + Lines + Deliveries
-  - Phase C: Customers + Key People + Dates
-  - Phase D: Config + Logs → decommission Airtable
-  - Prerequisites: all Tier 1+2 bugs fixed, key features stable, migration planning session
-  - Design principle: keep business logic in services/ (already done), centralize field names in config
 
 ### Open Investigation (2026-03-18)
 - [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
