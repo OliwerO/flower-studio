@@ -65,11 +65,13 @@ export default function BottomNav() {
     window.location.href = window.location.pathname + '?_cb=' + Date.now();
   }
 
-  // "More" menu items differ by role
+  // "More" menu items differ by role.
+  // Owner gets all florist actions plus owner-only ones (day summary, etc.).
   const moreItems = isOwner
     ? [
         { label: t.daySummary,    action: () => navigate('/day-summary') },
         { label: t.floristHours,  action: () => navigate('/hours') },
+        { label: t.stockEvaluation || 'Stock Evaluation', action: () => navigate('/stock-evaluation') },
         { label: t.help,          action: () => navigate('/orders') }, // Help handled by HelpPanel on OrderListPage
         { label: `↻ ${t.refresh}`, action: hardRefresh },
         { label: t.logout,        action: logout, destructive: true },

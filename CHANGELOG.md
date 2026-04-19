@@ -39,6 +39,48 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Owner can assign drivers from order detail + full florist parity
+
+The owner reported that after creating a delivery order linked to a premade
+bouquet, the full-page **OrderDetailPage** had no driver-picker (florist app,
+logged in as owner). The driver picker existed in the expandable `OrderCard`
+but not on the full-page detail view, so there was no way to assign a driver
+without bouncing back to the list and expanding the card. Same gap also
+existed for florists — neither role could assign a driver from the detail
+page. Separately, several florist-only entry points blocked the owner.
+
+### Frontend — `apps/florist/src/pages/OrderDetailPage.jsx`
+
+- Pulls `drivers` from `useConfigLists()`.
+- Adds a `patchDelivery()` helper that PATCHes `/deliveries/:id` (mirrors
+  `OrderCard.patchDelivery` so both views stay consistent).
+- Renders a driver-picker section after the read-only delivery details card,
+  guarded by `isDelivery && order.delivery && drivers.length > 0`. Tap to
+  toggle assignment; shows `t.noDriver` when none assigned.
+
+### Frontend — full owner parity in florist app
+
+- `apps/florist/src/App.jsx` — removed `FloristRoute` wrapper.
+  `/stock-evaluation` is now `PrivateRoute`, so the owner can use it too.
+- `apps/florist/src/pages/OrderListPage.jsx` — dropped the `!isOwner` guard on
+  the stock-evaluation banner; the owner now sees the same alert.
+- `apps/florist/src/components/BottomNav.jsx` — added "Stock Evaluation" entry
+  to the owner's More menu.
+- `apps/florist/CLAUDE.md` — `StockEvaluationPage` access changed from
+  `florist` to `all`.
+
+**Why it matters:** the owner uses the florist app on her phone for the same
+daily-task control she has on the dashboard. Anywhere a florist can act, she
+should be able to act too. Driver assignment from the detail page is the most
+visible miss; the role-gated routes/banners were the structural ones.
+
+**What to watch for:** the stock-evaluation flow assumes a single in-flight
+evaluator; if both the florist and the owner load the page at the same time
+they could race on accept/write-off actions. We don't have row-level locking
+in Airtable, so coordinate verbally for now or split orders across roles.
+
+---
+
 ## 2026-04-17 — Wix "Available Today" now multilingual
 
 The "Available Today" nav item only rendered on the English version of the

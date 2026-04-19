@@ -248,8 +248,8 @@ export default function OrderListPage() {
         </div>
       </header>
 
-      {/* Stock evaluation banner — florist only */}
-      {!isOwner && evalCount > 0 && (
+      {/* Stock evaluation banner — visible to florist and owner */}
+      {evalCount > 0 && (
         <div className="px-4 pt-3 max-w-2xl mx-auto">
           <button
             onClick={() => navigate('/stock-evaluation')}

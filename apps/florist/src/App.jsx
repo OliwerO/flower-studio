@@ -39,14 +39,8 @@ function OwnerRoute({ children }) {
   return children;
 }
 
-// FloristRoute — blocks the owner, allows florist role only.
-// Owner has her own pages for the same workflows (e.g. shopping support instead of evaluation).
-function FloristRoute({ children }) {
-  const { pin, role } = useAuth();
-  if (!pin) return <Navigate to="/login" replace />;
-  if (role === 'owner') return <Navigate to="/orders" replace />;
-  return children;
-}
+// (FloristRoute removed — the owner can do everything the florist can,
+// including stock evaluation. ShoppingSupportPage is still owner-only.)
 
 // Layout — wraps authenticated pages with the bottom tab bar.
 // Like mounting the factory floor signage above every workstation.
@@ -101,7 +95,7 @@ export default function App() {
         } />
 
         <Route path="/stock-evaluation" element={
-          <FloristRoute><Layout><StockEvaluationPage /></Layout></FloristRoute>
+          <PrivateRoute><Layout><StockEvaluationPage /></Layout></PrivateRoute>
         } />
 
         <Route path="/reconcile-substitutes" element={

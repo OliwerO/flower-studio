@@ -13,7 +13,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | OrderDetailPage | /orders/:id | all | Full-page order detail with inline editing, status transitions, bouquet editor |
 | NewOrderPage | /orders/new | all | 4-step wizard: Customer → Bouquet → Details → Review. AI text import shortcut. |
 | StockPanelPage | /stock | all | Inventory view with search, sort, filter, adjust, write-off, receive |
-| StockEvaluationPage | /stock-evaluation | florist | Quality inspection of incoming PO deliveries (accept/write-off per line) |
+| StockEvaluationPage | /stock-evaluation | all | Quality inspection of incoming PO deliveries (accept/write-off per line). Owner can do everything the florist can. |
 | PurchaseOrderPage | /purchase-orders | owner | PO management — create from negative stock, assign drivers, track lifecycle |
 | ShoppingSupportPage | /shopping-support | owner | Real-time supervision of active PO shopping runs (SSE + polling) |
 | FloristHoursPage | /hours | all | Florists log time windows; owner sees monthly payroll summary |
