@@ -5,7 +5,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import CustomerDetailPanel from './CustomerDetailPanel.jsx';
+import CustomerDetailView from './CustomerDetailView.jsx';
 import CustomerListPane from './CustomerListPane.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
 import {
@@ -23,7 +23,7 @@ const SEGMENT_COLORS = {
 
 const FILTERS_KEY = 'dashboard_customer_filters';
 
-export default function CustomersTab({ initialFilter }) {
+export default function CustomersTab({ initialFilter, onNavigate }) {
   const f = initialFilter || {};
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading]     = useState(false);
@@ -221,9 +221,10 @@ export default function CustomersTab({ initialFilter }) {
           </div>
           <div className="bg-white rounded-2xl shadow-sm overflow-auto">
             {selectedCustomer ? (
-              <CustomerDetailPanel
+              <CustomerDetailView
                 customerId={selectedCustomer.id}
                 onUpdate={fetchCustomers}
+                onNavigate={onNavigate}
               />
             ) : (
               <div className="h-full flex items-center justify-center text-ios-tertiary text-sm p-8 text-center">
