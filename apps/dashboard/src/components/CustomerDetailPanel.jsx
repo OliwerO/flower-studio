@@ -18,14 +18,12 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
       try {
         const [custRes, ordersRes] = await Promise.all([
           client.get(`/customers/${customerId}`),
-          client.get('/orders', { params: {} }),
+          client.get(`/customers/${customerId}/orders`),
         ]);
         setCust(custRes.data);
-        // Filter orders that belong to this customer
-        const custOrders = ordersRes.data.filter(o =>
-          o.Customer?.[0] === customerId
-        );
-        setOrders(custOrders);
+        // Backend returns merged legacy + app orders, already sorted date-desc
+        // and normalized: { id, source, date, description, amount, status, link, lines, raw }
+        setOrders(ordersRes.data);
       } catch {
         showToast(t.error, 'error');
       } finally {
@@ -60,13 +58,13 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
 
   return (
     <div className="border-t border-white/40 px-4 py-4 bg-white/20 space-y-4">
-      {/* Lifetime summary — computed from order history */}
+      {/* Lifetime summary — computed from order history (legacy + app combined) */}
       {orders.length > 0 && (() => {
-        const totalSpend = orders.reduce((sum, o) => sum + (o['Effective Price'] || o['Price Override'] || o['Final Price'] || 0), 0);
+        const totalSpend = orders.reduce((sum, o) => sum + (o.amount || 0), 0);
         const avgOrderValue = Math.round(totalSpend / orders.length);
 
-        // Avg days between orders
-        const sortedDates = orders.map(o => new Date(o['Order Date'])).filter(d => !isNaN(d)).sort((a, b) => a - b);
+        // Avg days between orders — works on the normalized ISO date string
+        const sortedDates = orders.map(o => new Date(o.date)).filter(d => !isNaN(d)).sort((a, b) => a - b);
         let avgDaysBetween = 0;
         if (sortedDates.length > 1) {
           const gaps = [];
@@ -76,10 +74,10 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
           avgDaysBetween = Math.round(gaps.reduce((s, g) => s + g, 0) / gaps.length);
         }
 
-        // Preferred source
+        // Preferred source — only app orders have Source; legacy falls into Unknown
         const sourceCounts = {};
         for (const o of orders) {
-          const src = o.Source || 'Unknown';
+          const src = o.raw?.Source || (o.source === 'legacy' ? 'Legacy' : 'Unknown');
           sourceCounts[src] = (sourceCounts[src] || 0) + 1;
         }
         const preferredSource = Object.entries(sourceCounts).sort(([,a],[,b]) => b - a)[0]?.[0] || '\u2014';
@@ -197,12 +195,13 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
         multiline
       />
 
-      {/* Flowers ordered — aggregated from all order bouquet summaries */}
+      {/* Flowers ordered — aggregated from app-order bouquet summaries.
+          Legacy orders have free-text descriptions that don't parse; skipped. */}
       {orders.length > 0 && (() => {
-        // Parse "5x Roses, 3x Tulips" from Bouquet Summary across all orders
+        // Parse "5x Roses, 3x Tulips" from raw Bouquet Summary across all orders
         const flowerMap = {};
         for (const o of orders) {
-          const summary = o['Bouquet Summary'] || '';
+          const summary = o.raw?.['Bouquet Summary'] || '';
           if (!summary) continue;
           for (const part of summary.split(',')) {
             const match = part.trim().match(/^(\d+)\s*[x×]\s*(.+)$/i);
@@ -255,13 +254,20 @@ export default function CustomerDetailPanel({ customerId, onUpdate }) {
               <tbody>
                 {orders.map(o => (
                   <tr key={o.id} className="border-b border-white/20">
-                    <td className="px-3 py-2 text-ios-tertiary">{o['Order Date']}</td>
-                    <td className="px-3 py-2 truncate max-w-[200px]">{o['Customer Request'] || '—'}</td>
+                    <td className="px-3 py-2 text-ios-tertiary whitespace-nowrap">
+                      {o.date || '—'}
+                      {o.source === 'legacy' && (
+                        <span className="ml-1.5 text-[10px] bg-gray-200 text-gray-600 px-1.5 py-0.5 rounded uppercase tracking-wide">
+                          legacy
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 truncate max-w-[240px]">{o.description || '—'}</td>
                     <td className="px-3 py-2">
-                      <span className="text-xs">{o.Status}</span>
+                      <span className="text-xs">{o.status || '—'}</span>
                     </td>
                     <td className="px-3 py-2 text-right font-medium">
-                      {(o['Final Price'] || o['Price Override'] || o['Sell Price Total'] || 0).toFixed(0)} {t.zl}
+                      {o.amount ? `${o.amount.toFixed(0)} ${t.zl}` : '—'}
                     </td>
                   </tr>
                 ))}
