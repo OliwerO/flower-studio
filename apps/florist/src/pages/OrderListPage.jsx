@@ -88,6 +88,7 @@ export default function OrderListPage() {
   const [viewMode, setViewMode]     = useState(VIEW_MODES.ACTIVE);
   const [date, setDate]             = useState(''); // only used in completed view
   const [status, setStatus]         = useState('');
+  const [noDateOnly, setNoDateOnly] = useState(false); // surface orphan-date orders
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
 
@@ -247,6 +248,34 @@ export default function OrderListPage() {
           </div>
         </div>
       </header>
+
+      {/* Orphan-date warning — orders with no Required By / Delivery Date end up
+          sorted unpredictably and are easy to miss. Surface them so they get
+          a date assigned promptly. Only shown in Active view (Completed orders
+          are by definition done — date doesn't matter for triage). */}
+      {viewMode === VIEW_MODES.ACTIVE && (() => {
+        const noDateCount = orders.filter(o => !o['Delivery Date'] && !o['Required By']).length;
+        if (noDateCount === 0) return null;
+        return (
+          <div className="px-4 pt-3 max-w-2xl mx-auto">
+            <button
+              onClick={() => setNoDateOnly(v => !v)}
+              className={`w-full flex items-center justify-between rounded-2xl px-4 py-3 active-scale border ${
+                noDateOnly
+                  ? 'bg-amber-100 border-amber-300'
+                  : 'bg-amber-50 border-amber-200'
+              }`}
+            >
+              <span className="text-sm font-semibold text-amber-700">
+                ⚠️ {t.ordersWithoutDate || 'Orders without a date'} ({noDateCount})
+              </span>
+              <span className="text-amber-600 text-sm font-medium">
+                {noDateOnly ? (t.showAll || 'Show all') : (t.showOnlyTheseOrders || 'Show only')} →
+              </span>
+            </button>
+          </div>
+        );
+      })()}
 
       {/* Stock evaluation banner — visible to florist and owner */}
       {evalCount > 0 && (
@@ -438,7 +467,12 @@ export default function OrderListPage() {
           </div>
         ) : (
           <div className="flex flex-col gap-2.5 mt-1">
-            {(viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(orders) : sortByStatus(orders)).map(order => (
+            {(() => {
+              const base = noDateOnly
+                ? orders.filter(o => !o['Delivery Date'] && !o['Required By'])
+                : orders;
+              return viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(base) : sortByStatus(base);
+            })().map(order => (
               <OrderCard
                 key={order.id}
                 order={order}

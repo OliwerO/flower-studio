@@ -110,7 +110,31 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
     setStep(1);
   }
 
+  // Match the florist app's blocking validation. Without these guards an
+  // owner can submit an order with no date — it then gets sorted to the
+  // bottom of every list view and looks "lost".
+  function validateStep(currentStep) {
+    if (currentStep === 1 && form.orderLines.length === 0) {
+      showToast(t.bouquetRequired || 'Add at least one item to the bouquet.', 'error');
+      return false;
+    }
+    if (currentStep === 2 && !form.deliveryDate) {
+      showToast(t.dateRequired || 'Date is required', 'error');
+      return false;
+    }
+    return true;
+  }
+
+  function handleNext() {
+    if (!validateStep(step)) return;
+    setStep(step + 1);
+  }
+
   async function handleSubmit() {
+    if (!form.customerId) { showToast(t.customerRequired || 'Customer is required.', 'error'); return; }
+    if (form.orderLines.length === 0) { showToast(t.bouquetRequired || 'Bouquet is required.', 'error'); return; }
+    if (!form.deliveryDate) { showToast(t.dateRequired || 'Date is required', 'error'); return; }
+
     setSubmitting(true);
     try {
       const body = {
@@ -259,7 +283,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
       {step >= 1 && step < 3 && (
         <div className="max-w-2xl mx-auto mt-6">
           <button
-            onClick={() => setStep(step + 1)}
+            onClick={handleNext}
             disabled={step === 1 && form.orderLines.length === 0}
             className="w-full h-14 rounded-2xl bg-brand-600 text-white text-base font-semibold
                        disabled:opacity-30 active:bg-brand-700 transition-colors shadow-lg"

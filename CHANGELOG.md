@@ -39,6 +39,63 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Block date-less orders + surface orphan-date orders
+
+After the owner created a premade-bouquet order on the dashboard with no
+delivery/pickup date, the order saved successfully but became invisible:
+the dashboard's default sort puts null dates at position `'9999'`
+(`OrdersTab.jsx`), the Today/upcoming filters drop them, and Airtable's
+`IS_BEFORE` on a null `Required By` behaves unpredictably. The order existed
+in Airtable but no list view showed it — it looked "lost".
+
+Three layers of defence so this can't happen again:
+
+### 1. Backend validation — `Required By` is now mandatory
+
+- `backend/src/routes/orders.js` `POST /orders` — rejects `400` if no
+  `requiredBy` (or `delivery.date`) in `YYYY-MM-DD` form.
+- `backend/src/routes/premadeBouquets.js` `POST /:id/match` — same check.
+
+The Wix webhook (`backend/src/services/wix.js`) bypasses these routes and
+writes orders directly via `db.create`, so it's unaffected; Wix payloads
+always include a delivery date.
+
+### 2. Dashboard frontend parity — date now blocks Next + Submit
+
+`apps/dashboard/src/components/NewOrderTab.jsx`:
+- New `validateStep()` and `handleNext()` mirror the florist's flow
+  (`apps/florist/src/pages/NewOrderPage.jsx`). Step 2 → 3 is blocked unless
+  a date is set; Submit double-checks at line 113.
+- `apps/dashboard/src/components/steps/Step3Details.jsx` — date label and
+  field now show the same red `*` and `ring-1 ring-ios-red/30` the florist
+  app uses, so the requirement is visible before the user tries to advance.
+
+### 3. Orphan-date banner in both apps
+
+If any legacy/imported order has `Required By` and `Delivery Date` both
+empty, an amber banner appears with the count and a "Show only these"
+toggle so the owner can triage them.
+
+- `apps/dashboard/src/components/OrdersTab.jsx` — banner above the list,
+  filter via `noDateOnly` state.
+- `apps/florist/src/pages/OrderListPage.jsx` — same pattern, only shown in
+  the Active view (terminal orders don't need triage).
+- New translation keys in both `translations.js` files
+  (`ordersWithoutDate`, `showOnlyTheseOrders`, `showAll`).
+
+**Why it matters:** the backend is the only layer that can't be bypassed,
+so it's the real fix. The dashboard validation gives the owner an instant
+toast instead of a 400 from the server. The banner recovers any existing
+orders that already slipped through (including the missing one from the
+incident that prompted this change).
+
+**What to watch for:** the new backend check fires on every `POST /orders`
+and `POST /premade-bouquets/:id/match`. If any other client (e.g. a future
+script, a manual `curl`) submits without a date, it now gets a 400 instead
+of silently losing the order.
+
+---
+
 ## 2026-04-19 — Owner can assign drivers from order detail + full florist parity
 
 The owner reported that after creating a delivery order linked to a premade

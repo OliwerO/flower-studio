@@ -254,6 +254,9 @@ const en = {
   // Stock evaluation
   stockEvaluation:       'Stock Evaluation',
   stockEvalBanner:       'Stock delivery to evaluate',
+  ordersWithoutDate:     'Orders without a date',
+  showOnlyTheseOrders:   'Show only these',
+  showAll:               'Show all',
   driverFound:           'Driver found',
   accept:                'Accept',
   writeOffQty:           'Write off',
@@ -776,6 +779,9 @@ const ru = {
   // Stock evaluation
   stockEvaluation:       'Оценка цветов',
   stockEvalBanner:       'Цветы для оценки',
+  ordersWithoutDate:     'Заказы без даты',
+  showOnlyTheseOrders:   'Показать только их',
+  showAll:               'Показать все',
   driverFound:           'Водитель нашёл',
   accept:                'Принять',
   writeOffQty:           'Списать',
