@@ -67,19 +67,23 @@ Premade Bouquet Lines, filter by `Stock Item[0] === stockId` in memory (can't
 use `filterByFormula` on linked records per CLAUDE.md pitfall), patch matching
 lines with the new `Cost Price Per Unit` / `Sell Price Per Unit`.
 
-### 3. Dashboard Orders tab — column headers + delivery date as primary
+### 3. Dashboard Orders tab — column headers + fulfilment date shown for pickup too
 
 - `apps/dashboard/src/components/OrdersTab.jsx` — added a header row above the
-  list (there were no column labels at all). Columns: #, Due date, Customer,
-  Bouquet, Status, Fulfilment, Total, Age (when unpaid-only filter is on).
-- Left date column no longer falls back to `Order Date`; it shows `Delivery
-  Date ‖ Required By` or `—`. Previously the fallback meant orders without a
-  delivery date silently showed the order-placed date, which is misleading for
-  triage.
+  list (there were no column labels at all). Columns: #, Order date,
+  Customer, Bouquet, Status, Fulfilment, Total, Age (when unpaid-only is on).
+- **Left date column** now shows `Order Date` (labelled "Order date") so the
+  row answers "when was this logged". An earlier iteration of this commit
+  tried showing the due date there, but with a "Due date" label the value
+  was ambiguous against the Fulfilment column.
+- **Fulfilment column** (right of the row, next to 🚗 / 🏪 icon) now shows
+  the due date for pickup orders too, not just deliveries — previously the
+  icon-only rendering for pickup made the due date invisible. Value is
+  `Delivery Date ‖ Required By` plus the time slot if set.
 - `OrderDetailPanel.jsx` — added a read-only Order Date row in the details
-  block so the number is still accessible one click in.
+  block as additional context.
 - New translation keys in both languages: `orderDate`, `colOrderId`,
-  `colDueDate`, `colCustomer`, `colBouquet`, `colFulfillment`, `colAge`.
+  `colCustomer`, `colBouquet`, `colFulfillment`, `colAge`.
 
 ### 4. Filter rework — unstick the "Orders without a date" banner + universal reset
 
