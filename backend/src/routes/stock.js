@@ -595,6 +595,9 @@ router.get('/:id/usage', async (req, res, next) => {
 // PATCH /api/stock/:id — update prices, threshold, etc.
 // When Reorder Threshold changes, sync it across all batches of the same flower
 // (matched by Purchase Name) so the threshold applies uniformly.
+// When Cost/Sell price changes, cascade to matching Premade Bouquet Lines so
+// premade bouquet totals reflect the new price. Delivered/Active orders keep
+// their snapshot prices unchanged — those are customer commitments.
 router.patch('/:id', async (req, res, next) => {
   try {
     const safeFields = pickAllowed(req.body, STOCK_PATCH_ALLOWED);
@@ -613,6 +616,28 @@ router.patch('/:id', async (req, res, next) => {
             'Reorder Threshold': safeFields['Reorder Threshold'],
           });
         }
+      }
+    }
+
+    // Cascade price changes to Premade Bouquet Lines that reference this stock
+    // item. Can't filterByFormula against a linked-record field (Airtable
+    // returns display names via ARRAYJOIN — see CLAUDE.md pitfalls), so list
+    // all lines and filter in memory. Volume is small (<500 lines in practice).
+    const costChanged = 'Current Cost Price' in safeFields;
+    const sellChanged = 'Current Sell Price' in safeFields;
+    if ((costChanged || sellChanged) && TABLES.PREMADE_BOUQUET_LINES) {
+      const allPremadeLines = await db.list(TABLES.PREMADE_BOUQUET_LINES, {
+        fields: ['Stock Item', 'Cost Price Per Unit', 'Sell Price Per Unit'],
+        maxRecords: 500,
+      });
+      const matching = allPremadeLines.filter(
+        l => Array.isArray(l['Stock Item']) && l['Stock Item'][0] === req.params.id,
+      );
+      for (const line of matching) {
+        const patch = {};
+        if (costChanged) patch['Cost Price Per Unit'] = Number(safeFields['Current Cost Price']) || 0;
+        if (sellChanged) patch['Sell Price Per Unit'] = Number(safeFields['Current Sell Price']) || 0;
+        await db.update(TABLES.PREMADE_BOUQUET_LINES, line.id, patch);
       }
     }
 

@@ -163,6 +163,7 @@ router.post('/:id/match', async (req, res, next) => {
         paymentMethod, priceOverride, requiredBy, cardText, deliveryTime,
         payment1Amount, payment1Method,
         createdBy: req.role === 'owner' ? 'Owner' : 'Florist',
+        isOwner: req.role === 'owner',
       }, { getConfig, getDriverOfDay, generateOrderId });
       res.status(201).json(result);
     } catch (matchErr) {

@@ -58,7 +58,7 @@ export async function createOrder(params, config, opts = {}) {
   const {
     customer, customerRequest, source, communicationMethod, deliveryType,
     orderLines, delivery, notes, paymentStatus, paymentMethod, priceOverride,
-    requiredBy, cardText, deliveryTime, createdBy,
+    requiredBy, cardText, deliveryTime, createdBy, isOwner,
     payment1Amount, payment1Method,
   } = params;
   const { getConfig, getDriverOfDay, generateOrderId } = config;
@@ -126,6 +126,59 @@ export async function createOrder(params, config, opts = {}) {
       });
       createdLines.push(created);
       createdLineIds.push(created.id);
+    }
+
+    // 2c. Owner price override — if the owner touched cost/sell per line for a
+    // flower that's currently out of stock (see Step2Bouquet gate on the UI
+    // side), write the new prices back to the Stock row + cascade to Premade
+    // Bouquet Lines. Run before deduction so the "out of stock" check reflects
+    // what the UI showed the owner, not the post-deduction value.
+    // Only owners trigger this; florists' line prices are snapshot-only.
+    if (isOwner) {
+      const stockUpdates = []; // [{ stockId, patch }]
+      for (const line of orderLines) {
+        if (!line.stockItemId) continue;
+        const stockRow = await db.getById(TABLES.STOCK, line.stockItemId).catch(() => null);
+        if (!stockRow) continue;
+        // Gate: only apply when the flower is currently out of stock. Matches
+        // the UI affordance in Step2Bouquet — in-stock items were priced at
+        // what was actually paid, so no override is meaningful.
+        if (Number(stockRow['Current Quantity']) > 0) continue;
+        const stockCost = Number(stockRow['Current Cost Price']) || 0;
+        const stockSell = Number(stockRow['Current Sell Price']) || 0;
+        const lineCost  = Number(line.costPricePerUnit) || 0;
+        const lineSell  = Number(line.sellPricePerUnit) || 0;
+        const patch = {};
+        if (lineCost && lineCost !== stockCost) patch['Current Cost Price'] = lineCost;
+        if (lineSell && lineSell !== stockSell) patch['Current Sell Price'] = lineSell;
+        if (Object.keys(patch).length > 0) {
+          stockUpdates.push({ stockId: line.stockItemId, patch });
+        }
+      }
+      if (stockUpdates.length > 0) {
+        for (const { stockId, patch } of stockUpdates) {
+          await db.update(TABLES.STOCK, stockId, patch);
+        }
+        // Cascade to Premade Bouquet Lines. Same pattern as PATCH /stock:id —
+        // fetch all lines once and filter in memory by Stock Item link
+        // (filterByFormula on linked records returns display names, not IDs).
+        if (TABLES.PREMADE_BOUQUET_LINES) {
+          const allPremadeLines = await db.list(TABLES.PREMADE_BOUQUET_LINES, {
+            fields: ['Stock Item'],
+            maxRecords: 500,
+          });
+          const stockToPatch = new Map(stockUpdates.map(u => [u.stockId, u.patch]));
+          for (const pbl of allPremadeLines) {
+            const linkedStockId = Array.isArray(pbl['Stock Item']) ? pbl['Stock Item'][0] : null;
+            const stockPatch = linkedStockId ? stockToPatch.get(linkedStockId) : null;
+            if (!stockPatch) continue;
+            const linePatch = {};
+            if ('Current Cost Price' in stockPatch) linePatch['Cost Price Per Unit'] = stockPatch['Current Cost Price'];
+            if ('Current Sell Price' in stockPatch) linePatch['Sell Price Per Unit'] = stockPatch['Current Sell Price'];
+            await db.update(TABLES.PREMADE_BOUQUET_LINES, pbl.id, linePatch);
+          }
+        }
+      }
     }
 
     // 3. Deduct stock (serialized through stockQueue).

@@ -447,6 +447,17 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         </Section>
       </div>
 
+      {/* Order date — read-only. Shown here (not in the list row) so the
+          collapsed view's date column can be the due date (delivery/pickup),
+          which is what the owner needs for triage. */}
+      {o['Order Date'] && (
+        <Section label={t.orderDate || 'Order date'}>
+          <span className="text-sm text-ios-label">
+            {new Date(o['Order Date'] + 'T12:00:00').toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
+          </span>
+        </Section>
+      )}
+
       {/* Customer request */}
       <Section label={t.request}>
         <InlineEdit

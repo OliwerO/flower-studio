@@ -258,7 +258,12 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
 
         {/* Premade toggle — switches the list to premade-bouquet inventory */}
         <button
-          onClick={() => setShowPremade(v => !v)}
+          onClick={() => {
+            // Cross-mode guard: drop noDateOnly when switching to Premade so
+            // the filter doesn't silently persist when the user returns.
+            setNoDateOnly(false);
+            setShowPremade(v => !v);
+          }}
           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
             showPremade ? 'bg-pink-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
           }`}
@@ -317,8 +322,10 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
         </button>
       </div>
 
-      {/* Active filter badges — show when cross-tab filters are active */}
-      {(sourceFilter || paidOnly || deliveryTypeFilter || paymentMethodFilter || excludeCancelled) && (
+      {/* Active filter badges — show when any filter is active so the user
+          always has a path to undo state. Used to only track cross-tab filters,
+          which let search / dates / noDateOnly silently persist. */}
+      {(sourceFilter || paidOnly || unpaidOnly || deliveryTypeFilter || paymentMethodFilter || excludeCancelled || statusFilter || search || noDateOnly) && (
         <div className="flex flex-wrap items-center gap-2 px-1">
           <span className="text-[11px] text-ios-tertiary">{t.activeFilters}:</span>
           {sourceFilter && (
@@ -351,19 +358,53 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
               <button onClick={() => setExcludeCancelled(false)} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
             </span>
           )}
+          {search && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+              {t.search}: "{search}"
+              <button onClick={() => setSearch('')} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+            </span>
+          )}
+          {noDateOnly && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-medium">
+              {t.ordersWithoutDate || 'No date'}
+              <button onClick={() => setNoDateOnly(false)} className="ml-0.5 text-amber-400 hover:text-amber-700">×</button>
+            </span>
+          )}
+          {statusFilter && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+              {t.labelStatus || 'Status'}: {statusFilter}
+              <button onClick={() => setStatus('')} className="ml-0.5 text-indigo-400 hover:text-indigo-700">×</button>
+            </span>
+          )}
+          {unpaidOnly && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">
+              {t.paymentStatus}: {t.unpaid}
+              <button onClick={() => setUnpaid(false)} className="ml-0.5 text-red-400 hover:text-red-700">×</button>
+            </span>
+          )}
           <button
-            onClick={() => { setSourceFilter(''); setPaidOnly(false); setUnpaid(false); setDeliveryType(''); setPaymentMethod(''); setStatus(''); setExcludeCancelled(false); }}
-            className="text-xs text-ios-secondary hover:text-ios-red underline"
+            onClick={() => {
+              setSourceFilter('');
+              setPaidOnly(false);
+              setUnpaid(false);
+              setDeliveryType('');
+              setPaymentMethod('');
+              setStatus('');
+              setExcludeCancelled(false);
+              setSearch('');
+              setNoDateOnly(false);
+            }}
+            className="text-xs text-ios-secondary hover:text-ios-red underline font-medium"
           >
-            {t.clearAll}
+            {t.resetFilters || t.clearAll}
           </button>
         </div>
       )}
 
-      {/* Orphan-date warning — orders with no Required By / Delivery Date get
-          sorted to the bottom and disappear from Today/upcoming views.
-          Surface them explicitly so they can be triaged. */}
-      {!showPremade && noDateCount > 0 && (
+      {/* Orphan-date filter. Visible whenever noDateOnly is on OR any orders
+          lack a date — never hidden while the filter is silently active
+          (that was the "stuck filter" bug). */}
+      {!showPremade && (noDateCount > 0 || noDateOnly) && (
         <button
           onClick={() => setNoDateOnly(v => !v)}
           className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border text-sm font-medium transition-colors ${
@@ -424,6 +465,25 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
         <div className="text-center py-12 text-ios-tertiary">{t.noResults}</div>
       )}
 
+      {/* Column headers — mirror the collapsed-row flex widths below. Until
+          now the order rows had no labels, so users had to guess what each
+          column represented. */}
+      {!showPremade && !loading && sorted.length > 0 && (
+        <div className="px-4 py-2 flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-ios-tertiary">
+          <span className="w-4 shrink-0" />
+          <span className="w-10 shrink-0">{t.colOrderId || '#'}</span>
+          <span className="w-20 shrink-0">{t.colDueDate || (t.deliveryDate + ' / ' + (t.pickup || 'Pickup'))}</span>
+          <span className="w-36">{t.colCustomer || t.customer || 'Customer'}</span>
+          <span className="flex-1">{t.colBouquet || t.bouquetComposition || 'Bouquet'}</span>
+          <span className="shrink-0 w-20 text-right">{t.labelStatus || 'Status'}</span>
+          <span className="shrink-0 w-28 text-right">{t.colFulfillment || (t.deliveryType || 'Fulfilment')}</span>
+          <span className="shrink-0 w-2" />{/* margin dot column */}
+          <span className="shrink-0 w-20 text-right">{t.orderTotal || t.total || 'Total'}</span>
+          {unpaidOnly && <span className="shrink-0 w-16 text-right">{t.colAge || t.daysOld || 'Age'}</span>}
+          <span className="shrink-0 w-4" />{/* chevron */}
+        </div>
+      )}
+
       {!showPremade && !loading && sorted.map(order => {
         const isExpanded = expandedId === order.id;
         const days = daysSince(order['Order Date']);
@@ -448,8 +508,11 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
               {order['App Order ID'] && (
                 <span className="text-[11px] font-mono text-ios-tertiary w-10 shrink-0">#{order['App Order ID']}</span>
               )}
-              <span className="text-xs text-ios-tertiary w-20 shrink-0" title={order['Order Date'] ? `Order: ${order['Order Date']}` : ''}>
-                {fmtDate(order['Delivery Date'] || order['Required By']) || fmtDate(order['Order Date']) || '—'}
+              {/* Delivery or pickup date — never Order Date. Order Date lives
+                  in the expanded detail panel so this column answers the
+                  owner's real question: "when does this need to go out?" */}
+              <span className="text-xs text-ios-tertiary w-20 shrink-0" title={order['Order Date'] ? `${t.orderDate || 'Order Date'}: ${order['Order Date']}` : ''}>
+                {fmtDate(order['Delivery Date'] || order['Required By']) || '—'}
               </span>
               <span className="text-sm font-medium text-ios-label w-36 truncate">
                 {order['Customer Name'] || '—'}
