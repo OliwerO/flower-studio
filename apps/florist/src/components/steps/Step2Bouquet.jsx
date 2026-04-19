@@ -28,7 +28,7 @@ const CONFIDENCE_STYLES = {
   none: 'border-l-4 border-l-red-300',
 };
 
-function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFutureOrder, onToggleDeferred, pendingPO }) {
+function CartLine({ line: l, stock, onChangeQty, onCommitQty, onCommitPrices, onRemove, isFutureOrder, onToggleDeferred, pendingPO, isOwner }) {
   const stockItem = stock.find(s => s.id === l.stockItemId);
   const availableQty = Number(stockItem?.['Current Quantity']) || 0;
   const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
@@ -36,9 +36,15 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFuture
   const confidence = l.confidence; // 'high' | 'low' | 'none' | undefined
   // Don't show over-stock warning for deferred lines (they don't pull from inventory)
   const overStock = l.stockItemId && !l.stockDeferred && l.quantity > availableQty;
+  // Owner can override cost/sell for flowers that are currently out of stock —
+  // the old snapshot reflects the last purchase price, which may be stale.
+  // In-stock items are priced at what was actually paid, so no override needed.
+  const canOverridePrices = isOwner && l.stockItemId && availableQty <= 0;
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState('');
+  const [costDraft, setCostDraft] = useState('');
+  const [sellDraft, setSellDraft] = useState('');
 
   function handleFocus(e) {
     setEditing(true);
@@ -122,6 +128,53 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onRemove, isFuture
           </div>
         );
       })()}
+      {canOverridePrices && (
+        <div className="mt-2 flex items-center gap-2 text-xs">
+          <span className="text-ios-tertiary">{t.overridePrices || 'Update prices'}:</span>
+          <label className="flex items-center gap-1">
+            <span className="text-ios-tertiary">{t.costPrice || 'Cost'}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={costDraft !== '' ? costDraft : (l.costPricePerUnit || '')}
+              placeholder="0"
+              onChange={e => setCostDraft(e.target.value)}
+              onBlur={() => {
+                const v = Number(costDraft);
+                if (costDraft !== '' && !Number.isNaN(v) && v !== Number(l.costPricePerUnit)) {
+                  onCommitPrices?.(l.stockItemId || l.flowerName, { costPricePerUnit: v });
+                }
+                setCostDraft('');
+              }}
+              className="w-16 text-right border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
+            />
+            <span className="text-ios-tertiary">zł</span>
+          </label>
+          <label className="flex items-center gap-1">
+            <span className="text-ios-tertiary">{t.sellPrice || 'Sell'}</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              min="0"
+              step="0.01"
+              value={sellDraft !== '' ? sellDraft : (l.sellPricePerUnit || '')}
+              placeholder="0"
+              onChange={e => setSellDraft(e.target.value)}
+              onBlur={() => {
+                const v = Number(sellDraft);
+                if (sellDraft !== '' && !Number.isNaN(v) && v !== Number(l.sellPricePerUnit)) {
+                  onCommitPrices?.(l.stockItemId || l.flowerName, { sellPricePerUnit: v });
+                }
+                setSellDraft('');
+              }}
+              className="w-16 text-right border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
+            />
+            <span className="text-ios-tertiary">zł</span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }
@@ -294,6 +347,15 @@ export default function Step2Bouquet({
 
   function removeLine(key) {
     onLinesChange(lines => lines.filter(l => !matchesKey(l, key)));
+  }
+
+  // Owner-only per-line cost/sell override (only exposed for out-of-stock
+  // flowers — see CartLine gate). Mutates the form line snapshot; the backend
+  // cascades the new prices to the Stock row on order submit.
+  function commitPrices(key, patch) {
+    onLinesChange(lines =>
+      lines.map(l => matchesKey(l, key) ? { ...l, ...patch } : l)
+    );
   }
 
   function toggleDeferred(key) {
@@ -635,8 +697,10 @@ export default function Step2Bouquet({
                   key={lineKey(l)}
                   line={l}
                   stock={stock}
+                  isOwner={isOwner}
                   onChangeQty={(key, delta) => changeQty(key, delta)}
                   onCommitQty={(key, val) => commitQty(key, val)}
+                  onCommitPrices={(key, patch) => commitPrices(key, patch)}
                   onRemove={(key) => removeLine(key)}
                   isFutureOrder={isFutureOrder}
                   onToggleDeferred={(key) => toggleDeferred(key)}

@@ -45,8 +45,7 @@ src/
 | notifications.js | SSE broadcast to all connected clients (heartbeat every 30s) |
 | wix.js | Wix webhook processor — parses payload, creates order + lines + delivery |
 | wixProductSync.js | Bidirectional Wix product pull/push with sync logging |
-| oversellCheck.js | Post-order stock check, sends Telegram alert if undersupply |
-| telegram.js | Telegram Bot API wrapper — alerts to owner + team |
+| telegram.js | Telegram Bot API wrapper — new-order alerts only (low-stock alerts removed 2026-04-19) |
 | intake-parser.js | Claude Haiku integration for parsing freeform text / Flowwow emails into structured orders |
 | analyticsService.js | Pure math functions for financial KPIs (no DB calls) |
 | webhookLog.js | Persists webhook events to Webhook Log table |

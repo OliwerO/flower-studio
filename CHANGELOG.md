@@ -39,6 +39,116 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Post-Tier-1 bug sweep (5 adjustments)
+
+Follow-ups from the owner after testing the Tier 1 sweep.
+
+### 1. Removed low/empty stock Telegram alerts
+
+The `oversellCheck.js` service ran after every Wix webhook order and sent an
+"OVERSELL ALERT" Telegram whenever any line exceeded current stock. Owner no
+longer wants these — they were redundant with the dashboard's Flowers Needed
+widget and noisy on peak days. Hard-deleted the service file and removed the
+call in `backend/src/services/wix.js` (was wrapped in try/catch, non-blocking,
+so removing it has no functional impact on order creation). Other Telegram
+alerts (new-order notifications, Available Today cutoff reminder) remain.
+Updated `backend/CLAUDE.md` services table.
+
+### 2. Stock price change cascades to Premade Bouquet Lines
+
+When the owner updates `Current Cost Price` or `Current Sell Price` on a Stock
+row, every Premade Bouquet Line that references that Stock item now receives
+the same price update, so premade bouquet totals follow. Delivered / Active
+order lines are deliberately untouched — those are customer commitments and
+must stay snapshot-based.
+
+`backend/src/routes/stock.js` PATCH /:id: after the Stock row is updated, list
+Premade Bouquet Lines, filter by `Stock Item[0] === stockId` in memory (can't
+use `filterByFormula` on linked records per CLAUDE.md pitfall), patch matching
+lines with the new `Cost Price Per Unit` / `Sell Price Per Unit`.
+
+### 3. Dashboard Orders tab — column headers + delivery date as primary
+
+- `apps/dashboard/src/components/OrdersTab.jsx` — added a header row above the
+  list (there were no column labels at all). Columns: #, Due date, Customer,
+  Bouquet, Status, Fulfilment, Total, Age (when unpaid-only filter is on).
+- Left date column no longer falls back to `Order Date`; it shows `Delivery
+  Date ‖ Required By` or `—`. Previously the fallback meant orders without a
+  delivery date silently showed the order-placed date, which is misleading for
+  triage.
+- `OrderDetailPanel.jsx` — added a read-only Order Date row in the details
+  block so the number is still accessible one click in.
+- New translation keys in both languages: `orderDate`, `colOrderId`,
+  `colDueDate`, `colCustomer`, `colBouquet`, `colFulfillment`, `colAge`.
+
+### 4. Filter rework — unstick the "Orders without a date" banner + universal reset
+
+Follow-up to the banner introduced earlier today. When a user toggled the
+orphan-date filter on and then switched to Premade view, the banner hid while
+the filter stayed active — coming back to orders showed an empty list with
+nothing to click. Also: the existing "Clear all" button only covered a
+subset of filters, leaving `search`, `dateFrom`, `dateTo`, and `noDateOnly`
+quietly applied.
+
+Based on a short research pass on filter UX patterns
+(Zendesk/Linear/Airtable style):
+- Banner visibility now bound to `noDateCount > 0 || noDateOnly` — the toggle
+  is never hidden while the filter is active. Same in florist
+  `OrderListPage.jsx`.
+- "Clear all" rebranded to "Reset filters", wired to clear every filter
+  state (including `search` and `noDateOnly`). Shown whenever any filter is
+  active (previously only when a cross-tab chip filter was set).
+- Added active-filter chips for `search`, `noDateOnly`, `statusFilter`,
+  `unpaidOnly` so they're visible and individually dismissible.
+- Cross-mode guard: toggling the Premade view (dashboard) or switching the
+  florist view away from Active resets `noDateOnly` so it can't silently
+  carry across modes.
+- New translation key: `resetFilters`.
+
+### 5. Owner per-line cost/sell override → writes back to Stock
+
+When the owner composes a new order using a flower that's currently out of
+stock (`Current Quantity ≤ 0`), the last-known cost/sell snapshot on the
+Stock row is likely stale — the owner knows the supplier's new price but had
+no way to update it at composition time. Now there's inline cost + sell
+inputs per out-of-stock line in both apps' bouquet builders, and on order
+submit the backend:
+
+- Writes the new prices to the Stock row (`Current Cost Price`,
+  `Current Sell Price`). Combined with #2, premade bouquets using that Stock
+  auto-recalc.
+- Uses the new prices on the Order Line snapshot (existing behavior).
+
+Gated owner-only on the backend (`isOwner` threaded from `POST /orders` and
+`POST /premade-bouquets/:id/match` → `createOrder` → Stock write-back loop).
+The UI hides the inputs for in-stock items since their prices reflect what
+was actually paid.
+
+Files:
+- `apps/florist/src/components/steps/Step2Bouquet.jsx` — `CartLine` gets
+  `isOwner` prop and inline cost/sell inputs; `commitPrices` handler in
+  Step2Bouquet mutates the line.
+- `apps/dashboard/src/components/steps/Step2Bouquet.jsx` — added a local
+  `PriceOverride` component + `commitPrices` handler. Dashboard is
+  PIN-gated to owner so no role check needed here.
+- `backend/src/services/orderService.js` — new step 2c in `createOrder` runs
+  pre-deduction: for each line, if the Stock row is at ≤0 qty and any price
+  differs, PATCH Stock + cascade to Premade Bouquet Lines (same pattern as
+  `PATCH /stock/:id`).
+- `backend/src/routes/orders.js` + `backend/src/routes/premadeBouquets.js` —
+  pass `isOwner: req.role === 'owner'` into `createOrder`.
+
+### What to watch for
+- Sandbox can't run vitest, so CI will verify. The new price-cascade logic
+  hasn't been covered by a test yet — worth adding one for
+  `stock.js PATCH /:id` once vitest has a supertest harness in this repo.
+- The owner override fires only when the Stock row is at ≤0 qty. If the
+  florist composes a bouquet with an in-stock flower and somehow ships with
+  a changed price snapshot, the Stock row won't update — intentional, since
+  in-stock items reflect what was actually paid.
+
+---
+
 ## 2026-04-19 — Owner can edit bouquet in any status (migration-blocker)
 
 Closed Tier 1 Bug 11 — the last thing that still required opening Airtable

@@ -255,7 +255,9 @@ export default function OrderListPage() {
           are by definition done — date doesn't matter for triage). */}
       {viewMode === VIEW_MODES.ACTIVE && (() => {
         const noDateCount = orders.filter(o => !o['Delivery Date'] && !o['Required By']).length;
-        if (noDateCount === 0) return null;
+        // Keep the banner visible while noDateOnly is on, even when the count
+        // drops to 0, so the user always has a path to toggle the filter off.
+        if (noDateCount === 0 && !noDateOnly) return null;
         return (
           <div className="px-4 pt-3 max-w-2xl mx-auto">
             <button
@@ -341,7 +343,7 @@ export default function OrderListPage() {
             {t.activeOrders}
           </button>
           <button
-            onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); }}
+            onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); setNoDateOnly(false); }}
             className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
               viewMode === VIEW_MODES.COMPLETED
                 ? 'bg-brand-600 text-white'
@@ -351,7 +353,7 @@ export default function OrderListPage() {
             {t.completedOrders}
           </button>
           <button
-            onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); }}
+            onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); setNoDateOnly(false); }}
             className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               viewMode === VIEW_MODES.PREMADE
                 ? 'bg-brand-600 text-white'

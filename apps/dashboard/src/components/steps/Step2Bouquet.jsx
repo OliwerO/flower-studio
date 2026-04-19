@@ -7,6 +7,61 @@ import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
 import { renderStockName } from '@flower-studio/shared';
 
+// Owner-only inline override for cost/sell when a flower is out of stock.
+// Onblur commits through the parent's line mutator. Empty draft means "no
+// change"; typing and blurring writes the new price to the line snapshot.
+function PriceOverride({ line, onCommit }) {
+  const [cost, setCost] = useState('');
+  const [sell, setSell] = useState('');
+  return (
+    <div className="mt-2 flex items-center gap-2 text-xs">
+      <span className="text-ios-tertiary">{t.overridePrices || 'Update prices'}:</span>
+      <label className="flex items-center gap-1">
+        <span className="text-ios-tertiary">{t.costPrice || 'Cost'}</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.01"
+          value={cost !== '' ? cost : (line.costPricePerUnit || '')}
+          placeholder="0"
+          onChange={e => setCost(e.target.value)}
+          onBlur={() => {
+            const v = Number(cost);
+            if (cost !== '' && !Number.isNaN(v) && v !== Number(line.costPricePerUnit)) {
+              onCommit({ costPricePerUnit: v });
+            }
+            setCost('');
+          }}
+          className="w-16 text-right border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
+        />
+        <span className="text-ios-tertiary">zł</span>
+      </label>
+      <label className="flex items-center gap-1">
+        <span className="text-ios-tertiary">{t.sellPrice || 'Sell'}</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          min="0"
+          step="0.01"
+          value={sell !== '' ? sell : (line.sellPricePerUnit || '')}
+          placeholder="0"
+          onChange={e => setSell(e.target.value)}
+          onBlur={() => {
+            const v = Number(sell);
+            if (sell !== '' && !Number.isNaN(v) && v !== Number(line.sellPricePerUnit)) {
+              onCommit({ sellPricePerUnit: v });
+            }
+            setSell('');
+          }}
+          className="w-16 text-right border border-gray-200 rounded-lg px-2 py-1 bg-white outline-none"
+        />
+        <span className="text-ios-tertiary">zł</span>
+      </label>
+    </div>
+  );
+}
+
 export default function Step2Bouquet({
   customerRequest, orderLines, priceOverride, stock, onStockRefresh,
   onChange, onLinesChange, requiredBy,
@@ -127,6 +182,15 @@ export default function Step2Bouquet({
   function toggleDeferred(key) {
     onLinesChange(lines =>
       lines.map(l => matchesKey(l, key) ? { ...l, stockDeferred: !l.stockDeferred } : l)
+    );
+  }
+
+  // Owner price override for out-of-stock flowers (dashboard is owner-only by
+  // PIN gate, so no role check needed here). Mutates the form line; backend
+  // cascades the new prices to the Stock row on order submit.
+  function commitPrices(key, patch) {
+    onLinesChange(lines =>
+      lines.map(l => matchesKey(l, key) ? { ...l, ...patch } : l)
     );
   }
 
@@ -406,6 +470,16 @@ export default function Step2Bouquet({
                   <div className="mt-1 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
                     {l.quantity - availableQty} {t.notInStock || 'not in stock'}
                   </div>
+                )}
+                {/* Owner price override — only for flowers currently out of
+                    stock. In-stock items were priced at what we actually paid,
+                    so no override needed. Inputs cascade to the Stock row on
+                    order submit, which in turn cascades to premade bouquets. */}
+                {l.stockItemId && availableQty <= 0 && (
+                  <PriceOverride
+                    line={l}
+                    onCommit={(patch) => commitPrices(key, patch)}
+                  />
                 )}
               </div>
               );

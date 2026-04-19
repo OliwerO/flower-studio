@@ -449,6 +449,7 @@ const en = {
   inStockOnly:        'In stock',
   costPrice:          'Cost price',
   sellPrice:          'Sell price',
+  overridePrices:     'Update prices',
 
   // Bottom nav tabs
   tabOrders:          'Orders',
@@ -974,6 +975,7 @@ const ru = {
   inStockOnly:        'В наличии',
   costPrice:          'Себестоимость',
   sellPrice:          'Цена продажи',
+  overridePrices:     'Обновить цены',
 
   // Bottom nav tabs
   tabOrders:          'Заказы',

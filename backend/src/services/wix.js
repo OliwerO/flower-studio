@@ -9,7 +9,6 @@ import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logWebhookEvent } from './webhookLog.js';
 import { generateOrderId } from '../routes/settings.js';
-import { checkOversell } from './oversellCheck.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
 
 
@@ -226,16 +225,6 @@ export async function processWixOrder(payload) {
       } else {
         log('7-STOCK', `No stock match for "${productName}" — text-only line`);
       }
-    }
-
-    // 9b. Oversell check — compare ordered quantities against stock.
-    // Doesn't block the order; just sends a Telegram alert if stock is short.
-    // Uses the lines we just created above instead of re-querying Airtable
-    // (ARRAYJOIN on linked fields returns display names, not record IDs).
-    try {
-      await checkOversell(order.id, createdLines, customerName, customerPhone);
-    } catch (oversellErr) {
-      console.error('[WIX] Oversell check failed (non-blocking):', oversellErr.message);
     }
 
     // 10. Create delivery record if shipping address present
