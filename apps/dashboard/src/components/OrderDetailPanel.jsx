@@ -912,13 +912,16 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         </div>
       )}
 
-      {/* Date & time — same for delivery and pickup, uses patchOrder (backend cascades to delivery) */}
+      {/* Date & time — same for delivery and pickup, uses patchOrder (backend cascades to delivery).
+          Section heading + date label follow the Delivery Type so a pickup
+          order isn't labelled "Delivery". */}
       <div>
         <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
-          {t.deliveryDate}
+          {o['Delivery Type'] === 'Pickup' ? (t.pickup || 'Pickup') : t.deliveryDate}
         </p>
         <div className="bg-white rounded-xl border border-gray-100 px-4 py-3 space-y-3">
-          <EditableRow label={t.deliveryDate} value={o['Required By'] || ''}
+          <EditableRow label={o['Delivery Type'] === 'Pickup' ? (t.pickupDate || t.requiredBy || t.pickup || 'Pickup date') : t.deliveryDate}
+            value={o['Required By'] || ''}
             onSave={v => patchOrder({ 'Required By': v || null })} disabled={saving} type="date" />
           <div className="flex items-start gap-3">
             <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryTime}</span>

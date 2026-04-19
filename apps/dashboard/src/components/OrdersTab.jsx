@@ -472,7 +472,7 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
         <div className="px-4 py-2 flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-ios-tertiary">
           <span className="w-4 shrink-0" />
           <span className="w-10 shrink-0">{t.colOrderId || '#'}</span>
-          <span className="w-20 shrink-0">{t.colDueDate || (t.deliveryDate + ' / ' + (t.pickup || 'Pickup'))}</span>
+          <span className="w-20 shrink-0">{t.orderDate || 'Order date'}</span>
           <span className="w-36">{t.colCustomer || t.customer || 'Customer'}</span>
           <span className="flex-1">{t.colBouquet || t.bouquetComposition || 'Bouquet'}</span>
           <span className="shrink-0 w-20 text-right">{t.labelStatus || 'Status'}</span>
@@ -508,11 +508,12 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
               {order['App Order ID'] && (
                 <span className="text-[11px] font-mono text-ios-tertiary w-10 shrink-0">#{order['App Order ID']}</span>
               )}
-              {/* Delivery or pickup date — never Order Date. Order Date lives
-                  in the expanded detail panel so this column answers the
-                  owner's real question: "when does this need to go out?" */}
-              <span className="text-xs text-ios-tertiary w-20 shrink-0" title={order['Order Date'] ? `${t.orderDate || 'Order Date'}: ${order['Order Date']}` : ''}>
-                {fmtDate(order['Delivery Date'] || order['Required By']) || '—'}
+              {/* Order Date — when the order was placed. The due date lives
+                  on the Fulfilment column (right of the row, next to the
+                  icon) so a single glance answers both "when was this
+                  logged" and "when does it go out". */}
+              <span className="text-xs text-ios-tertiary w-20 shrink-0">
+                {fmtDate(order['Order Date']) || '—'}
               </span>
               <span className="text-sm font-medium text-ios-label w-36 truncate">
                 {order['Customer Name'] || '—'}
@@ -525,14 +526,22 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
               }`}>
                 {order.Status}
               </span>
+              {/* Fulfilment — icon + due date for both delivery and pickup.
+                  Delivery Date is only set when the order has a delivery
+                  record; pickup orders keep their due date on Required By. */}
               <span className="text-xs shrink-0 flex items-center gap-1">
                 {order['Delivery Type'] === 'Delivery' ? '🚗' : '🏪'}
-                {order['Delivery Type'] === 'Delivery' && (order['Delivery Date'] || order['Delivery Time']) && (
-                  <span className="text-ios-tertiary">
-                    {fmtDate(order['Delivery Date'])}
-                    {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
-                  </span>
-                )}
+                {(() => {
+                  const dueDate = order['Delivery Date'] || order['Required By'];
+                  const dueTime = order['Delivery Time'];
+                  if (!dueDate && !dueTime) return null;
+                  return (
+                    <span className="text-ios-tertiary">
+                      {fmtDate(dueDate)}
+                      {dueTime ? ` · ${dueTime}` : ''}
+                    </span>
+                  );
+                })()}
               </span>
               {/* Margin dot — green ≥55%, amber ≥40%, red <40%, gray if unknown */}
               {(() => {
