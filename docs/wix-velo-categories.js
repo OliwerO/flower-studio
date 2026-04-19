@@ -179,43 +179,80 @@ export async function getAllCategories() {
 // ────────────────────────────────────────────────────────────
 // MASTER PAGE CODE — paste this into masterPage.js
 // ────────────────────────────────────────────────────────────
-// masterPage.js runs on every language version of the site, so updating
-// element text here translates the menu items for EN / PL / RU / UK in
-// one place. Use placeholder text elements (e.g. #seasonalMenuText,
-// #availableTodayMenuText) inside your header menu and let Velo fill
-// them with the translated label.
+// The Blossom site header uses a horizontal menu (`#horizontalMenu1`)
+// whose items are configured in the Wix Editor. masterPage.js runs on
+// every language version and mutates the menu's `menuItems` array to
+// rename the Seasonal + Available Today labels, and to add / remove
+// the Available Today entry based on `productCount` from the backend.
 //
-// import {
-//   getSeasonalMenuLabel,
-//   getAvailableTodayMenuLabel,
-//   isAvailableTodayActive,
-// } from 'public/blossomCategories.js';
+// IMPORTANT — owner action required for non-English languages:
+//   The horizontal menu's items are translated per-language in the Wix
+//   Editor. In each language (Polish, Russian, Ukrainian), open the
+//   header menu and add an "Available Today" menu item whose link is
+//   `/category/available-today` (the label is irrelevant — Velo
+//   overwrites it). Velo can rename, reorder, and remove existing menu
+//   items, but it cannot synthesize an item that isn't configured in
+//   the Editor menu for that language.
+//
+// import { getCategories } from 'backend/products.jsw';
+// import wixWindowFrontend from 'wix-window-frontend';
 //
 // $w.onReady(async function () {
-//   // Seasonal
 //   try {
-//     const menuLabel = await getSeasonalMenuLabel();
-//     $w('#seasonalMenuText').text = menuLabel;
-//   } catch (e) { console.error('Seasonal menu update failed:', e); }
+//     var categories = await getCategories();
+//     var seasonal = categories.seasonal;
+//     var lang = 'en';
+//     try { lang = wixWindowFrontend.multilingual.currentLanguage || 'en'; } catch (e) {}
 //
-//   // Available Today — show in ALL languages when products qualify,
-//   // hide when the backend reports productCount === 0 (e.g. no lead-time-0
-//   // items left after the cutoff).
-//   try {
-//     const [label, active] = await Promise.all([
-//       getAvailableTodayMenuLabel(),
-//       isAvailableTodayActive(),
-//     ]);
-//     $w('#availableTodayMenuText').text = label;
-//     if (active) {
-//       $w('#availableTodayMenu').expand();
-//       $w('#availableTodayMenu').show();
-//     } else {
-//       $w('#availableTodayMenu').collapse();
-//       $w('#availableTodayMenu').hide();
+//     // Seasonal label (rename SEASONAL / SPRING / WIOSNA / ВЕСНА → current translation).
+//     var seasonalLabel = null;
+//     if (seasonal && seasonal.name) {
+//       var st = seasonal.translations || {};
+//       var stitle = (st[lang] && st[lang].title) || (st.en && st.en.title) || seasonal.name;
+//       seasonalLabel = stitle.toUpperCase();
+//       try { $w('#button7').label = seasonalLabel; } catch (e) {}  // homepage seasonal button
 //     }
-//   } catch (e) { console.error('Available Today menu update failed:', e); }
+//
+//     // Available Today: translated label + visibility driven by productCount.
+//     var availToday = (categories.auto || []).find(function (a) { return a && a.slug === 'available-today'; });
+//     var showAvailToday = availToday && availToday.productCount > 0;
+//     var atT = availToday ? (availToday.translations || {}) : {};
+//     var atTitle = (atT[lang] && atT[lang].title) || (atT.en && atT.en.title) || 'Available Today';
+//
+//     var menu = $w('#horizontalMenu1');
+//     if (menu && menu.menuItems) {
+//       // 1. Rename seasonal menu item.
+//       var updated = menu.menuItems.map(function (item) {
+//         var upper = (item.label || '').toUpperCase();
+//         if (seasonalLabel && (upper === 'SEASONAL' || upper === 'WIOSNA' || upper === 'SPRING' || upper === 'ВЕСНА')) {
+//           return Object.assign({}, item, { label: seasonalLabel });
+//         }
+//         return item;
+//       });
+//
+//       // 2. Pull Available Today out; rename + reorder to first, or drop it entirely.
+//       var atItem = null;
+//       var rest = [];
+//       for (var i = 0; i < updated.length; i++) {
+//         if ((updated[i].link || '').indexOf('available-today') !== -1) atItem = updated[i];
+//         else rest.push(updated[i]);
+//       }
+//       if (showAvailToday && atItem) {
+//         updated = [Object.assign({}, atItem, { label: atTitle.toUpperCase() })].concat(rest);
+//       } else {
+//         updated = rest;  // productCount=0 OR item not configured in this language's menu
+//       }
+//       menu.menuItems = updated;
+//     }
+//   } catch (err) { console.error('[masterPage]', err.message); }
 // });
+//
+// Note: the getAvailableTodayMenuLabel() / getAvailableTodayTitle() /
+// getAvailableTodayDescription() / isAvailableTodayActive() helpers above
+// are useful when Available Today is bound to a standalone text or
+// container element (e.g. a category page heading). The deployed
+// masterPage.js does not use them — it inlines the translation lookup
+// against the horizontal menu's items directly.
 //
 // ────────────────────────────────────────────────────────────
 // CATEGORY PAGE CODE — works for ALL category pages

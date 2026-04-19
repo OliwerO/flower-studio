@@ -398,15 +398,59 @@ Three gaps all pointing at the same pattern:
   back to Airtable when it actually fills in missing values, so a steady
   log line is `[SETTINGS] Backfilled auto-category translations` once,
   then silence.
-- **Owner still needs a placeholder element** (`#availableTodayMenu` +
-  `#availableTodayMenuText`) on the Wix masterPage for the Velo helpers
-  to bind to. If those IDs don't exist yet, the console will show
-  "Available Today menu update failed"; the rest of the site is
-  unaffected.
 - **Cutoff behavior unchanged** — products are still removed from the
   collection only by owner action (deactivating the product) or when
   stock drops below `Min Stems`. The new visibility helper just mirrors
   whatever the backend reports.
+
+### Addendum — real root cause + follow-up fix
+
+Two earlier guesses about the root cause were wrong. What actually
+blocked the PL / RU / UK menu link:
+
+- Wix Stores menu items are Store-page links. They don't get per-language
+  translations from the Site Menu panel, and they don't get one from
+  `masterPage.js` renaming either — if the linked **Wix Stores collection
+  itself** has no translation for the visitor's locale, Wix strips the
+  link from the non-primary-language site entirely. No amount of Velo
+  mutation on `$w('#horizontalMenu1').menuItems` can add back a link
+  Wix refused to render in the first place.
+- 1fffa70 seeded PL / RU / UK strings in Airtable config and pushed the
+  EN title/description to the Wix collection via `updateWixCategory()`,
+  but never pushed the PL / RU / UK strings anywhere Wix would read them.
+
+**Follow-up fix (this addendum):**
+
+- New `pushCollectionTranslations()` helper in
+  `backend/src/services/wixProductSync.js`. Writes PL / RU / UK
+  titles + descriptions to the Wix Multilingual Translation Content
+  API (schema `5b35dfe1-da21-4071-aab5-2cec870459c0` — Wix Stores
+  collections; fields `collection-name` + `category-description`),
+  marking them `published: true`. Runs after the existing EN
+  `updateWixCategory()` call for both seasonal and Available Today.
+  Query-then-create-or-update so re-runs are idempotent; skips any
+  locale whose Airtable config has blank title + description so
+  translations the owner typed by hand in the Wix Translation Manager
+  aren't overwritten.
+- Locale codes verified against `/locale-settings/v2/settings` — the
+  site uses short codes (`en`, `pl`, `ru`, `uk`), not regional
+  variants (`en-us`).
+- One-shot API call from this session pushed the PL / RU / UK
+  translations for Available Today directly, so the nav link appears
+  on non-English sites without waiting for the next backend redeploy.
+
+### What the earlier Velo correction is still good for
+
+The masterPage example rewrite in `docs/wix-velo-categories.js`
+(committed earlier on this branch) is independently useful: it matches
+the deployed `blossom-wix/src/pages/masterPage.js` pattern
+(`$w('#horizontalMenu1').menuItems` mutation) instead of the fictional
+`#availableTodayMenu` / `#availableTodayMenuText` placeholder elements
+that were in 1fffa70. So a future paste won't conflict with the
+existing header wiring. The four helpers (`getAvailableTodayMenuLabel`,
+`getAvailableTodayTitle`, `getAvailableTodayDescription`,
+`isAvailableTodayActive`) remain available for any page that binds
+Available Today to a standalone text element.
 
 ---
 
