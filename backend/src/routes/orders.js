@@ -261,6 +261,13 @@ router.post('/', async (req, res, next) => {
     if (deliveryType === 'Delivery' && (!delivery || !delivery.address || typeof delivery.address !== 'string' || !delivery.address.trim())) {
       return res.status(400).json({ error: 'delivery.address is required and must be non-empty when deliveryType is "Delivery".' });
     }
+    // Required By is mandatory — orders without a date silently disappear
+    // from every default list view (sorted last in Orders, excluded from
+    // Today/upcoming filters). Fail loudly here instead.
+    const effectiveRequiredBy = requiredBy || delivery?.date;
+    if (!effectiveRequiredBy || typeof effectiveRequiredBy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveRequiredBy)) {
+      return res.status(400).json({ error: 'requiredBy (delivery/pickup date, YYYY-MM-DD) is required.' });
+    }
     if (priceOverride !== undefined && priceOverride !== null && (typeof priceOverride !== 'number' || priceOverride < 0)) {
       return res.status(400).json({ error: 'priceOverride must be a number >= 0 if provided.' });
     }

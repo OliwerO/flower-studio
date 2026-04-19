@@ -91,6 +91,7 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
   const [showPremade, setShowPremade] = useState(false);
   const [sortBy, setSortBy]       = useState('deliveryDate');
   const [sortDir, setSortDir]     = useState('asc'); // 'asc' | 'desc' — bidirectional sort
+  const [noDateOnly, setNoDateOnly] = useState(false); // surface orphan-date orders
   const { showToast }             = useToast();
 
   const initialLoaded = useRef(false);
@@ -141,14 +142,22 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders]);
 
+  // Orders with no delivery/pickup date — these get sorted to the bottom of
+  // every default view and become "lost". Counted from the unfiltered list so
+  // the banner reflects reality even after the user narrows by search.
+  const noDateCount = orders.filter(o => !o['Delivery Date'] && !o['Required By']).length;
+
   // Client-side search filter
-  const filtered = search
+  let filtered = search
     ? orders.filter(o => {
         const q = search.toLowerCase();
         return (o['Customer Name'] || '').toLowerCase().includes(q)
           || (o['Customer Request'] || '').toLowerCase().includes(q);
       })
     : orders;
+  if (noDateOnly) {
+    filtered = filtered.filter(o => !o['Delivery Date'] && !o['Required By']);
+  }
 
   // Sort orders based on selected sort option + direction (bidirectional)
   const dirMul = sortDir === 'desc' ? -1 : 1;
@@ -349,6 +358,25 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
             {t.clearAll}
           </button>
         </div>
+      )}
+
+      {/* Orphan-date warning — orders with no Required By / Delivery Date get
+          sorted to the bottom and disappear from Today/upcoming views.
+          Surface them explicitly so they can be triaged. */}
+      {!showPremade && noDateCount > 0 && (
+        <button
+          onClick={() => setNoDateOnly(v => !v)}
+          className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border text-sm font-medium transition-colors ${
+            noDateOnly
+              ? 'bg-amber-100 border-amber-300 text-amber-900'
+              : 'bg-amber-50 border-amber-200 text-amber-800 hover:bg-amber-100'
+          }`}
+        >
+          <span>⚠️ {t.ordersWithoutDate || 'Orders without a date'}: {noDateCount}</span>
+          <span className="text-xs underline">
+            {noDateOnly ? (t.showAll || 'Show all') : (t.showOnlyTheseOrders || 'Show only these')}
+          </span>
+        </button>
       )}
 
       {/* Premade inventory — replaces the orders list when the chip is active */}

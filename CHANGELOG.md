@@ -39,6 +39,105 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Block date-less orders + surface orphan-date orders
+
+After the owner created a premade-bouquet order on the dashboard with no
+delivery/pickup date, the order saved successfully but became invisible:
+the dashboard's default sort puts null dates at position `'9999'`
+(`OrdersTab.jsx`), the Today/upcoming filters drop them, and Airtable's
+`IS_BEFORE` on a null `Required By` behaves unpredictably. The order existed
+in Airtable but no list view showed it — it looked "lost".
+
+Three layers of defence so this can't happen again:
+
+### 1. Backend validation — `Required By` is now mandatory
+
+- `backend/src/routes/orders.js` `POST /orders` — rejects `400` if no
+  `requiredBy` (or `delivery.date`) in `YYYY-MM-DD` form.
+- `backend/src/routes/premadeBouquets.js` `POST /:id/match` — same check.
+
+The Wix webhook (`backend/src/services/wix.js`) bypasses these routes and
+writes orders directly via `db.create`, so it's unaffected; Wix payloads
+always include a delivery date.
+
+### 2. Dashboard frontend parity — date now blocks Next + Submit
+
+`apps/dashboard/src/components/NewOrderTab.jsx`:
+- New `validateStep()` and `handleNext()` mirror the florist's flow
+  (`apps/florist/src/pages/NewOrderPage.jsx`). Step 2 → 3 is blocked unless
+  a date is set; Submit double-checks at line 113.
+- `apps/dashboard/src/components/steps/Step3Details.jsx` — date label and
+  field now show the same red `*` and `ring-1 ring-ios-red/30` the florist
+  app uses, so the requirement is visible before the user tries to advance.
+
+### 3. Orphan-date banner in both apps
+
+If any legacy/imported order has `Required By` and `Delivery Date` both
+empty, an amber banner appears with the count and a "Show only these"
+toggle so the owner can triage them.
+
+- `apps/dashboard/src/components/OrdersTab.jsx` — banner above the list,
+  filter via `noDateOnly` state.
+- `apps/florist/src/pages/OrderListPage.jsx` — same pattern, only shown in
+  the Active view (terminal orders don't need triage).
+- New translation keys in both `translations.js` files
+  (`ordersWithoutDate`, `showOnlyTheseOrders`, `showAll`).
+
+**Why it matters:** the backend is the only layer that can't be bypassed,
+so it's the real fix. The dashboard validation gives the owner an instant
+toast instead of a 400 from the server. The banner recovers any existing
+orders that already slipped through (including the missing one from the
+incident that prompted this change).
+
+**What to watch for:** the new backend check fires on every `POST /orders`
+and `POST /premade-bouquets/:id/match`. If any other client (e.g. a future
+script, a manual `curl`) submits without a date, it now gets a 400 instead
+of silently losing the order.
+
+---
+
+## 2026-04-19 — Owner can assign drivers from order detail + full florist parity
+
+The owner reported that after creating a delivery order linked to a premade
+bouquet, the full-page **OrderDetailPage** had no driver-picker (florist app,
+logged in as owner). The driver picker existed in the expandable `OrderCard`
+but not on the full-page detail view, so there was no way to assign a driver
+without bouncing back to the list and expanding the card. Same gap also
+existed for florists — neither role could assign a driver from the detail
+page. Separately, several florist-only entry points blocked the owner.
+
+### Frontend — `apps/florist/src/pages/OrderDetailPage.jsx`
+
+- Pulls `drivers` from `useConfigLists()`.
+- Adds a `patchDelivery()` helper that PATCHes `/deliveries/:id` (mirrors
+  `OrderCard.patchDelivery` so both views stay consistent).
+- Renders a driver-picker section after the read-only delivery details card,
+  guarded by `isDelivery && order.delivery && drivers.length > 0`. Tap to
+  toggle assignment; shows `t.noDriver` when none assigned.
+
+### Frontend — full owner parity in florist app
+
+- `apps/florist/src/App.jsx` — removed `FloristRoute` wrapper.
+  `/stock-evaluation` is now `PrivateRoute`, so the owner can use it too.
+- `apps/florist/src/pages/OrderListPage.jsx` — dropped the `!isOwner` guard on
+  the stock-evaluation banner; the owner now sees the same alert.
+- `apps/florist/src/components/BottomNav.jsx` — added "Stock Evaluation" entry
+  to the owner's More menu.
+- `apps/florist/CLAUDE.md` — `StockEvaluationPage` access changed from
+  `florist` to `all`.
+
+**Why it matters:** the owner uses the florist app on her phone for the same
+daily-task control she has on the dashboard. Anywhere a florist can act, she
+should be able to act too. Driver assignment from the detail page is the most
+visible miss; the role-gated routes/banners were the structural ones.
+
+**What to watch for:** the stock-evaluation flow assumes a single in-flight
+evaluator; if both the florist and the owner load the page at the same time
+they could race on accept/write-off actions. We don't have row-level locking
+in Airtable, so coordinate verbally for now or split orders across roles.
+
+---
+
 ## 2026-04-17 — Wix "Available Today" now multilingual
 
 The "Available Today" nav item only rendered on the English version of the

@@ -146,6 +146,11 @@ router.post('/:id/match', async (req, res, next) => {
     if (deliveryType === 'Delivery' && (!delivery || !delivery.address || typeof delivery.address !== 'string' || !delivery.address.trim())) {
       return res.status(400).json({ error: 'delivery.address is required when deliveryType is "Delivery".' });
     }
+    // Required By is mandatory — see POST /orders for the rationale.
+    const effectiveRequiredBy = requiredBy || delivery?.date;
+    if (!effectiveRequiredBy || typeof effectiveRequiredBy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveRequiredBy)) {
+      return res.status(400).json({ error: 'requiredBy (delivery/pickup date, YYYY-MM-DD) is required.' });
+    }
     if (paymentStatus && !VALID_PAYMENT_STATUSES.includes(paymentStatus)) {
       return res.status(400).json({ error: `paymentStatus must be one of: ${VALID_PAYMENT_STATUSES.join(', ')}` });
     }

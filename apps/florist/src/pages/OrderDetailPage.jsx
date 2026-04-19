@@ -143,7 +143,7 @@ export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const { paymentMethods, timeSlots } = useConfigLists();
+  const { paymentMethods, timeSlots, drivers } = useConfigLists();
 
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -178,6 +178,24 @@ export default function OrderDetailPage() {
       showToast('Updated!', 'success');
     } catch (err) {
       const msg = err.response?.data?.error || 'Failed to update order.';
+      showToast(msg, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Patch the linked delivery record (address, recipient, fee, driver assignment).
+  // Mirrors OrderCard.patchDelivery so the full-page detail and the list card stay in sync.
+  async function patchDelivery(fields) {
+    const deliveryId = order?.delivery?.id;
+    if (!deliveryId) return;
+    setSaving(true);
+    try {
+      await client.patch(`/deliveries/${deliveryId}`, fields);
+      setOrder(prev => prev ? { ...prev, delivery: { ...prev.delivery, ...fields } } : prev);
+      showToast(t.updated || 'Updated!', 'success');
+    } catch (err) {
+      const msg = err.response?.data?.error || t.updateError || 'Failed to update delivery.';
       showToast(msg, 'error');
     } finally {
       setSaving(false);
@@ -484,6 +502,36 @@ export default function OrderDetailPage() {
                     </div>
                   )}
                   <Row label={t.deliveryFee || 'Fee'} value={order.delivery['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
+                </div>
+              </div>
+            )}
+
+            {/* Driver assignment — same picker as the expanded OrderCard. */}
+            {isDelivery && order.delivery && drivers.length > 0 && (
+              <div>
+                <p className="ios-label">{t.assignedDriver}</p>
+                <div className="ios-card p-4">
+                  <div className="flex flex-wrap gap-1.5">
+                    {drivers.map(driver => (
+                      <button
+                        key={driver}
+                        onClick={() => patchDelivery({
+                          'Assigned Driver': order.delivery['Assigned Driver'] === driver ? '' : driver,
+                        })}
+                        disabled={saving}
+                        className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                          order.delivery['Assigned Driver'] === driver
+                            ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                            : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                        }`}
+                      >
+                        {driver}
+                      </button>
+                    ))}
+                  </div>
+                  {!order.delivery['Assigned Driver'] && (
+                    <p className="text-xs text-ios-tertiary mt-2">{t.noDriver}</p>
+                  )}
                 </div>
               </div>
             )}

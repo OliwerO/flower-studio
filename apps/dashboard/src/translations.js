@@ -30,6 +30,13 @@ const en = {
 
   // Orders tab
   allStatuses:      'All',
+  ordersWithoutDate: 'Orders without a date',
+  showOnlyTheseOrders: 'Show only these',
+  showAll:          'Show all',
+  dateRequired:     'Date is required.',
+  customerRequired: 'Customer is required.',
+  bouquetRequired:  'Bouquet is required.',
+  selectDate:       'Select date',
   statusNew:        'New',
   statusAccepted:   'Accepted',
   statusInPreparation: 'In Preparation',
@@ -766,6 +773,13 @@ const ru = {
 
   // Orders tab
   allStatuses:      'Все',
+  ordersWithoutDate: 'Заказы без даты',
+  showOnlyTheseOrders: 'Показать только их',
+  showAll:          'Показать все',
+  dateRequired:     'Укажите дату.',
+  customerRequired: 'Укажите клиента.',
+  bouquetRequired:  'Добавьте хотя бы один цветок.',
+  selectDate:       'Выберите дату',
   statusNew:        'Новый',
   statusAccepted:   'Accepted',
   statusInPreparation: 'В подготовке',
