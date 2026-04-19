@@ -25,6 +25,18 @@ import { DELIVERY_STATUS } from '../constants/statuses.js';
 export async function processWixOrder(payload) {
   const log = (step, msg) => console.log(`[WIX] ${step}: ${msg}`);
 
+  // Temporary diagnostic: if DEBUG_WIX_PAYLOAD=1, dump the full raw payload
+  // to Railway logs so we can see the exact field shape Wix is sending. Turn
+  // on for 24h after the next failing order, then off again. Remove this
+  // block once the parser is confirmed to handle every shape correctly.
+  if (process.env.DEBUG_WIX_PAYLOAD === '1') {
+    try {
+      console.log('[WIX-DIAGNOSTIC-PAYLOAD]', JSON.stringify(payload));
+    } catch (jsonErr) {
+      console.log('[WIX-DIAGNOSTIC-PAYLOAD] (could not stringify)', jsonErr.message);
+    }
+  }
+
   try {
     // 1. Parse — Wix Automations sends different payload shapes than Wix Webhooks.
     //    Automations: { data: { id, lineItems, ... } }
@@ -151,13 +163,18 @@ export async function processWixOrder(payload) {
       || Number(wixOrder.total?.amount)
       || 0;
 
-    // 8. Create the App Order
+    // 8. Create the App Order.
+    // Wix is delivery-only today — no in-store pickup flow on the storefront.
+    // We used to flip to Pickup when shippingAddress parsing returned null,
+    // but that was a false negative (the parser missed some address shapes,
+    // not that the order was actually pickup). Default to Delivery; if
+    // pickup ever gets added to Wix, add an explicit signal.
     const appOrderId = await generateOrderId();
     const order = await db.create(TABLES.ORDERS, {
       Customer: [customerId],
       'Customer Request': customerRequest,
       Source: 'Wix',
-      'Delivery Type': hasDelivery ? 'Delivery' : 'Pickup',
+      'Delivery Type': 'Delivery',
       'Order Date': new Date().toISOString().split('T')[0],
       'Notes Original': `Wix Order #${wixOrderId}`,
       'Greeting Card Text': '',
@@ -227,24 +244,26 @@ export async function processWixOrder(payload) {
       }
     }
 
-    // 10. Create delivery record if shipping address present
-    if (hasDelivery) {
-      await db.create(TABLES.DELIVERIES, {
-        'Linked Order': [order.id],
-        'Delivery Address': deliveryAddress,
-        'Recipient Name': recipientName,
-        'Recipient Phone': recipientPhone,
-        'Delivery Date': shipping.deliveryDate
-          || shipping.shipmentDetails?.deliveryDate
-          || shipping.expectedDeliveryDate
-          || wixOrder.fulfillments?.[0]?.expectedDeliveryDate
-          || new Date().toISOString().split('T')[0],
-        'Delivery Time': '',
-        'Delivery Fee': 0, // studio adjusts later
-        Status: DELIVERY_STATUS.PENDING,
-      });
-      log('8-DELIVERY', `Delivery created → ${deliveryAddress}`);
-    }
+    // 10. Create the delivery record. Always created for Wix orders because
+    //     Wix is delivery-only today. If the address parse failed (payload
+    //     shape mismatch), the florist fills it in later — better than
+    //     leaving the order with Delivery Type='Delivery' and no delivery
+    //     sub-record, which breaks driver assignment and list enrichment.
+    await db.create(TABLES.DELIVERIES, {
+      'Linked Order': [order.id],
+      'Delivery Address': deliveryAddress,
+      'Recipient Name': recipientName,
+      'Recipient Phone': recipientPhone,
+      'Delivery Date': shipping.deliveryDate
+        || shipping.shipmentDetails?.deliveryDate
+        || shipping.expectedDeliveryDate
+        || wixOrder.fulfillments?.[0]?.expectedDeliveryDate
+        || new Date().toISOString().split('T')[0],
+      'Delivery Time': '',
+      'Delivery Fee': 0, // studio adjusts later
+      Status: DELIVERY_STATUS.PENDING,
+    });
+    log('8-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
 
     // Note: translation feature was removed (commit c04a8b8).
     // Wix buyer notes are stored as-is in Notes Original.

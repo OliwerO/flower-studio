@@ -39,6 +39,43 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Wix order defaults + diagnostic mode
+
+Owner reported that a new Wix order (#11b47468…) came in as Pickup (Wix is
+delivery-only today) with blank line items, price, payment method, and
+delivery info. Three separate causes:
+
+1. **Wrong fulfilment type.** `wix.js` flipped `Delivery Type` to `'Pickup'`
+   whenever `shippingAddress` parsing returned null. That's a false negative
+   — the parser missed some payload shapes, not that the order was pickup.
+   Hard-coded to `'Delivery'` since Wix doesn't offer in-store pickup. The
+   delivery record is now always created (previously skipped when no address
+   was parsed, which left Delivery Type='Delivery' with no sub-record and
+   broke driver assignment).
+
+2. **"DELIVERY" header on Pickup orders in the detail panel.** Cosmetic but
+   confusing. `OrderDetailPanel.jsx` now uses a type-aware label: the section
+   heading and date row label read "Pickup" when `Delivery Type === 'Pickup'`,
+   "Delivery" otherwise.
+
+3. **Line items, prices, address, payment method still blank on new Wix
+   orders.** Root cause: the payload shape Wix is sending doesn't match any
+   of the field paths the parser tries. Can't fix blind — need the raw
+   payload. Added a `DEBUG_WIX_PAYLOAD=1` env flag to `wix.js` that dumps
+   the full payload to Railway logs on every incoming webhook. Owner: set
+   that env var, wait for the next real Wix order, share the log, then turn
+   it back off. The diagnostic block is small and gated so it's safe to
+   leave merged even when disabled.
+
+### What to watch for
+- Once we have a real payload, expect a follow-up commit that rewrites the
+  line-item / price / address / payment-method extraction paths in `wix.js`
+  and then removes the `DEBUG_WIX_PAYLOAD` block.
+- If the env flag is left on for long, the Railway log table grows faster
+  and payloads can include PII (email, phone, address). 24h is enough.
+
+---
+
 ## 2026-04-19 — Post-Tier-1 bug sweep (5 adjustments)
 
 Follow-ups from the owner after testing the Tier 1 sweep.
