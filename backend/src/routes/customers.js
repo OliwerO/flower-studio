@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 const router = Router();
 router.use(authorize('customers'));
@@ -144,16 +145,29 @@ async function getAggregateMap() {
 }
 
 // GET /api/customers
-// Returns ALL customers (~1094 rows, ~30KB gzipped), each enriched with
-// _agg: { lastOrderDate, orderCount, totalSpend } computed over legacy + app
-// orders combined. Universal search and filtering happen client-side against
-// this one payload (see Customer Tab v2.0 plan).
+// Without ?search: returns ALL customers (~1094 rows), each enriched with
+// _agg: { lastOrderDate, orderCount, totalSpend } computed over legacy + app.
+// With ?search=X: applies the old server-side OR(SEARCH()) filter across
+// Name/Nickname/Phone/Link/Email so the legacy Customer tab's search input
+// keeps working until the v2.0 frontend lands with client-side universal search.
 router.get('/', async (req, res, next) => {
   try {
+    const { search } = req.query;
+
+    const listOptions = { sort: [{ field: 'Name', direction: 'asc' }] };
+    if (search) {
+      const q = sanitizeFormulaValue(search);
+      listOptions.filterByFormula = `OR(
+        SEARCH(LOWER('${q}'), LOWER({Name})),
+        SEARCH(LOWER('${q}'), LOWER({Nickname})),
+        SEARCH('${q}', {Phone}),
+        SEARCH(LOWER('${q}'), LOWER({Link})),
+        SEARCH(LOWER('${q}'), LOWER({Email}))
+      )`;
+    }
+
     const [customers, aggMap] = await Promise.all([
-      db.list(TABLES.CUSTOMERS, {
-        sort: [{ field: 'Name', direction: 'asc' }],
-      }),
+      db.list(TABLES.CUSTOMERS, listOptions),
       getAggregateMap(),
     ]);
 
