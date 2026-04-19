@@ -197,11 +197,7 @@ reports). Each item below was re-validated against the current code on
 2026-04-19 with file:line or commit evidence.
 
 #### Open / migration-blocking
-- [ ] **Owner edit-everything (MIGRATION-CRITICAL)** — owner needs full edit control of every field on an order in every stage, including post-delivery. This is what removes the need for direct Airtable edits and unblocks the database migration. Three gates remain:
-  - `backend/src/services/orderService.js:311-316` — `editBouquetLines()` throws 400 when status ∈ {Delivered, Picked Up, Cancelled}
-  - `apps/florist/src/components/OrderCard.jsx:382` — `{!isTerminal && <edit bouquet>}` hides the button
-  - `apps/dashboard/src/components/OrderDetailPanel.jsx:468` — same `!isTerminal` guard
-  - What *does* work post-delivery today: status, payment, Required By, card text, delivery address/fee/driver, source. What's blocked: bouquet composition changes.
+- [x] **Owner edit-everything (MIGRATION-CRITICAL)** — fixed 2026-04-19. Owner can now edit the bouquet on an order in any status, including Delivered / Picked Up / Cancelled. Backend: `orderService.js:311-316` now bypasses the status gate when `isOwner === true`; Ready→New auto-revert still fires but never touches terminal statuses. UI: dropped `!isTerminal` guard on the edit-bouquet button in `OrderCard.jsx:382` (florist, gated by `isOwner` prop), `OrderDetailPage.jsx:289` (florist, role from `useAuth`), and `OrderDetailPanel.jsx:468` (dashboard, PIN-gated to owner at login). Covered by `backend/src/__tests__/editBouquetLines.test.js`.
 
 - [ ] **Flowers for future order not in negative stock (PARTIAL)** — `apps/dashboard/src/components/DayToDayTab.jsx:560-602` surfaces deferred demand, but when a florist adds an unlisted flower mid-order with `stockDeferred=true`, it's unclear whether the newly-created Stock row feeds into "Flowers Needed" aggregation. Trace end-to-end and add a test.
 

@@ -39,6 +39,56 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Owner can edit bouquet in any status (migration-blocker)
+
+Closed Tier 1 Bug 11 — the last thing that still required opening Airtable
+directly. The owner can now add, remove, and adjust flowers on any order
+regardless of status (Delivered, Picked Up, Cancelled included). This is
+what lets the Airtable → Postgres migration proceed — Phase 0's stated
+prerequisite "all reasons to edit the source of truth directly are gone"
+is satisfied.
+
+### Backend — `backend/src/services/orderService.js`
+
+`editBouquetLines(orderId, body, isOwner)` now bypasses the editable-status
+check when `isOwner === true`. Florists still get a 400 on terminal
+statuses. The existing `Ready → New` auto-revert fires only when the
+pre-edit status is literally `READY`, so editing a Delivered order never
+rewrites it back to NEW (that would undo the delivery).
+
+### Frontend — three UI gates removed
+
+- `apps/florist/src/components/OrderCard.jsx:382` — edit-bouquet button
+  shown when `(!isTerminal || isOwner) && !editingBouquet`. `isOwner` was
+  already a prop from `OrderListPage`.
+- `apps/florist/src/pages/OrderDetailPage.jsx:289` — same condition.
+  Added `useAuth` import + `const isOwner = role === 'owner'`, since this
+  page previously didn't know the role.
+- `apps/dashboard/src/components/OrderDetailPanel.jsx:468` — dropped the
+  `!isTerminal` guard entirely. The dashboard is PIN-gated to owner at
+  login, so every user who reaches it is an owner. Backend still enforces
+  the role check, so this can't leak to a florist via spoofed HTTP calls.
+
+### Test — `backend/src/__tests__/editBouquetLines.test.js`
+
+New Vitest file with 9 cases:
+- owner allowed on Delivered / Picked Up / Cancelled (3)
+- non-owner rejected with 400 on Delivered / Picked Up (2)
+- non-owner allowed on New / Ready (2)
+- Ready → New auto-revert fires on owner edit (1)
+- Delivered / Cancelled status NOT reverted on owner edit (2)
+
+### What to watch for
+
+When the owner removes a flower from a Delivered order, the existing
+return-to-stock / write-off dialog still applies — the florist chooses
+the action per line. Adding a flower to a Delivered order deducts stock
+immediately. This is intentional: a Delivered-order edit reflects a
+correction of the historical record (late substitution, price fix), so
+stock bookkeeping must match reality.
+
+---
+
 ## 2026-04-19 — Florist Completed view no longer hides date-less orders
 
 Follow-up to the orphan-date fixes below. The owner spotted order

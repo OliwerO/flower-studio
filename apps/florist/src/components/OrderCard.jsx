@@ -379,7 +379,7 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
-                    {!isTerminal && !editingBouquet && (
+                    {(!isTerminal || isOwner) && !editingBouquet && (
                       <button onClick={async () => {
                         setEditLines(detail.orderLines.map(l => ({
                           id: l.id, stockItemId: l['Stock Item']?.[0] || null,
