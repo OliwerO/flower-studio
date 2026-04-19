@@ -465,7 +465,11 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
             <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
               {t.bouquetComposition}
             </p>
-            {!isTerminal && !editingBouquet && (
+            {/* Dashboard is owner-only (PIN-gated at login), so bouquet
+                editing stays available in every status, including Delivered,
+                Picked Up, and Cancelled. The backend still enforces owner
+                role for terminal-status edits in editBouquetLines(). */}
+            {!editingBouquet && (
               <button
                 onClick={() => {
                   setEditLines(o.orderLines.map(l => ({

@@ -57,8 +57,18 @@ router.get('/', async (req, res, next) => {
         const d = sanitizeFormulaValue(forDate);
         filters.push(`OR(DATESTR({Order Date}) = '${d}', DATESTR({Required By}) = '${d}')`);
       } else if (!dateFrom) {
+        // Legacy orders (imported or created before the requiredBy validation)
+        // may have a blank Required By. Fall back to Order Date for the cutoff
+        // so they don't silently disappear from Completed — Airtable's
+        // IS_BEFORE returns empty on a blank field, and NOT(empty) is falsy,
+        // which would otherwise drop every null-date row.
         const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
-        filters.push(`NOT(IS_BEFORE({Required By}, '${cutoff}'))`);
+        filters.push(
+          `OR(` +
+            `NOT(IS_BEFORE({Required By}, '${cutoff}')),` +
+            `AND({Required By} = BLANK(), NOT(IS_BEFORE({Order Date}, '${cutoff}')))` +
+          `)`
+        );
       }
     } else if (upcoming) {
       // "upcoming" mode: today + future by delivery/pickup date.

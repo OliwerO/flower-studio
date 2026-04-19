@@ -308,8 +308,14 @@ export async function cancelWithStockReturn(orderId) {
  */
 export async function editBouquetLines(orderId, { lines = [], removedLines = [] }, isOwner) {
   const order = await db.getById(TABLES.ORDERS, orderId);
+  // Non-owner roles can only edit bouquets while the order is still being
+  // prepared. Owner can edit in any status — this is the last thing that
+  // still required opening Airtable directly (e.g. recording a late
+  // substitution on a Delivered order or fixing a Cancelled order's record
+  // before reopening it). Removing this gate is what unblocks the
+  // Airtable → Postgres migration.
   const editableStatuses = [ORDER_STATUS.NEW, ORDER_STATUS.READY];
-  if (!editableStatuses.includes(order.Status)) {
+  if (!isOwner && !editableStatuses.includes(order.Status)) {
     const err = new Error(`Cannot edit bouquet in "${order.Status}" status.`);
     err.statusCode = 400;
     throw err;

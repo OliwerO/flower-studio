@@ -5,6 +5,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
@@ -142,6 +143,8 @@ function EditableCardText({ value, onSave, disabled }) {
 export default function OrderDetailPage() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { role } = useAuth();
+  const isOwner = role === 'owner';
   const { showToast } = useToast();
   const { paymentMethods, timeSlots, drivers } = useConfigLists();
 
@@ -286,7 +289,7 @@ export default function OrderDetailPage() {
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <p className="ios-label !mb-0">{t.bouquetContents || 'Bouquet'}</p>
-                  {!isTerminal && !editingBouquet && (
+                  {(!isTerminal || isOwner) && !editingBouquet && (
                     <button
                       onClick={() => {
                         setEditLines(order.orderLines.map(l => ({
