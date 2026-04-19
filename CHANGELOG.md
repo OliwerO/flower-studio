@@ -39,6 +39,46 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-19 — Florist Completed view no longer hides date-less orders
+
+Follow-up to the orphan-date fixes below. The owner spotted order
+`#202604-025` (Aleksander Sushko, Delivered) in the dashboard but **not**
+in the florist app's Completed → Delivered view. Both queries hit the same
+endpoint but with different params, so the filter divergence was hidden.
+
+### Root cause
+
+`backend/src/routes/orders.js` `completedOnly` branch used:
+```
+NOT(IS_BEFORE({Required By}, cutoff))
+```
+Airtable's `IS_BEFORE` returns empty on a blank field and `NOT(empty)` is
+falsy, so every row with `Required By = null` was silently excluded. The
+dashboard's `upcoming` branch happens to include blanks (its post-enrichment
+filter treats `!dd` as "show"), so null-date orders were visible there —
+creating the perceived discrepancy.
+
+### Fix
+
+Completed branch now also includes rows where `Required By` is blank but
+`Order Date` is within the 30-day cutoff:
+```
+OR(
+  NOT(IS_BEFORE({Required By}, cutoff)),
+  AND({Required By} = BLANK(), NOT(IS_BEFORE({Order Date}, cutoff)))
+)
+```
+Order Date is always set on creation (`orderService.js:82`), so this is a
+safe fallback for legacy/imported rows.
+
+**What to watch for:** orders with blank `Required By` will sort at the
+bottom of the Completed list (Airtable sorts blanks last in `desc` order).
+If the list gets long, the orphan-date banner on the florist app still
+gives a one-tap path to find them. Going forward the backend validation
+added earlier today prevents any new date-less orders from being created.
+
+---
+
 ## 2026-04-19 — Block date-less orders + surface orphan-date orders
 
 After the owner created a premade-bouquet order on the dashboard with no
