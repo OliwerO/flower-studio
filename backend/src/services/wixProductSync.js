@@ -102,33 +102,46 @@ async function updateWixVariantPrice(productId, variantId, price) {
 }
 
 /**
- * Update a variant's availability on Wix.
+ * Update ALL variants of a Wix product in a single PATCH.
  *
- * Two modes:
- *   - tracked (`{ quantity: N }`): pushes `trackQuantity=true` and the real count.
- *     Wix enforces the cap in cart/checkout and decrements on each sale.
- *   - untracked (`{ active: true|false }`): pushes `trackQuantity=false`,
- *     toggling inStock without a real count — the legacy "available / sold out"
- *     switch for variants that don't yet have a Quantity value.
+ * Why batched: Wix's `trackQuantity` flag is stored at the product level,
+ * not per variant. Iterating variants and PATCHing one at a time flips
+ * the product's trackQuantity on every call — the last PATCH wins and
+ * earlier tracked quantities get silently discarded. Pushing all variants
+ * together in one call with a single, consistent `trackQuantity` avoids
+ * the flip-flop.
  *
- * Callers pick the mode per row: use `quantity` when the Airtable row has
- * a numeric `Quantity`, otherwise fall back to `active`.
+ * Product-level tracking rule: if ANY variant of this product has a
+ * numeric Airtable Quantity, the whole product goes into tracked mode.
+ *   - tracked + active + numeric Quantity → push that quantity as cap
+ *   - tracked + active + no Quantity      → push 9999 (effectively unlimited)
+ *   - tracked + inactive                  → push quantity 0 (sold out)
+ *   - untracked + active                  → push inStock: true (legacy)
+ *   - untracked + inactive                → push inStock: false (legacy)
+ *
+ * @param productId Wix product ID
+ * @param variantStates Array of { variantId, active, quantity? } — one per variant
  */
-async function updateWixInventory(productId, variantId, opts) {
-  const tracked = opts && typeof opts.quantity === 'number' && opts.quantity >= 0;
-  const body = tracked
-    ? {
-      inventoryItem: {
-        trackQuantity: true,
-        variants: [{ variantId, quantity: opts.quantity }],
-      },
+async function updateWixInventory(productId, variantStates) {
+  const anyTracked = variantStates.some(v =>
+    v.active === true && typeof v.quantity === 'number' && v.quantity >= 0
+  );
+
+  const variants = variantStates.map(v => {
+    if (anyTracked) {
+      if (v.active !== true) return { variantId: v.variantId, quantity: 0 };
+      const q = typeof v.quantity === 'number' && v.quantity >= 0 ? v.quantity : 9999;
+      return { variantId: v.variantId, quantity: q };
     }
-    : {
-      inventoryItem: {
-        trackQuantity: false,
-        variants: [{ variantId, inStock: opts && opts.active === true }],
-      },
-    };
+    return { variantId: v.variantId, inStock: v.active === true };
+  });
+
+  const body = {
+    inventoryItem: {
+      trackQuantity: anyTracked,
+      variants,
+    },
+  };
 
   const res = await fetch(
     `${WIX_API_URL}/stores/v2/inventoryItems/product/${productId}`,
@@ -138,7 +151,7 @@ async function updateWixInventory(productId, variantId, opts) {
   if (!res.ok) {
     const text = await res.text();
     if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
-    throw new Error(`Wix inventory update failed for ${productId}/${variantId}: ${text}`);
+    throw new Error(`Wix inventory update failed for ${productId}: ${text}`);
   }
 }
 
@@ -651,54 +664,57 @@ export async function runPush() {
     }
 
     // ── Availability (inventory-based) ─────────────────
-    // Per variant:
-    //   Active=false               → out of stock on Wix (untracked).
-    //   Active=true + no Quantity  → in stock (untracked, unlimited).
-    //   Active=true + Quantity=N   → tracked inventory with cap N; Wix
-    //                                enforces the cap in cart/checkout
-    //                                and decrements on each sale.
-    // The Airtable Quantity column is optional during rollout — rows
-    // without it keep the old untracked "available / sold out" behavior.
+    // Per product (batched across all its variants — see updateWixInventory
+    // for why batching matters):
+    //   Any variant has a numeric Quantity → whole product tracked.
+    //     active + Quantity=N → cap N; active + no Quantity → cap 9999;
+    //     inactive → cap 0.
+    //   No variant has Quantity → whole product untracked, legacy inStock
+    //     toggle per variant driven by Active.
+    // The Airtable Quantity column is optional during rollout — products
+    // whose variants all lack Quantity keep the old behavior.
     const allVariantRows = await db.list(TABLES.PRODUCT_CONFIG, {
       fields: ['Wix Product ID', 'Wix Variant ID', 'Active', 'Quantity'],
     });
 
-    // Track stale Wix product IDs across this phase — one aggregated
-    // warning at the end beats N identical 404 errors per variant.
-    const staleInventoryIds = new Map(); // productId -> variant row count
-
+    // Group rows by product so we can push each product's variants in one call.
+    const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+    const byProduct = new Map();
     for (const row of allVariantRows) {
       const pid = row['Wix Product ID'];
       const vid = row['Wix Variant ID'];
-      const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
       if (!pid || !vid || vid === ZERO_UUID) continue;
-      const active = row['Active'] === true;
+      if (!byProduct.has(pid)) byProduct.set(pid, []);
       const rawQty = row['Quantity'];
       const qty = typeof rawQty === 'number' ? rawQty : Number(rawQty);
-      const hasQuantity = Number.isFinite(qty) && qty >= 0;
+      byProduct.get(pid).push({
+        variantId: vid,
+        active: row['Active'] === true,
+        quantity: Number.isFinite(qty) && qty >= 0 ? qty : undefined,
+      });
+    }
 
-      // Active + Quantity → tracked; Active without Quantity → untracked in-stock;
-      // Inactive → untracked out-of-stock (regardless of Quantity).
-      const opts = active
-        ? (hasQuantity ? { quantity: qty } : { active: true })
-        : { active: false };
+    // Track stale Wix product IDs — one aggregated warning at the end
+    // beats N identical 404 errors.
+    const staleInventoryIds = new Set();
 
+    for (const [pid, variantStates] of byProduct) {
       try {
-        await updateWixInventory(pid, vid, opts);
-        stats.stockSynced++;
+        await updateWixInventory(pid, variantStates);
+        stats.stockSynced += variantStates.length;
       } catch (err) {
         if (err instanceof WixProductNotFoundError) {
-          staleInventoryIds.set(pid, (staleInventoryIds.get(pid) || 0) + 1);
+          staleInventoryIds.add(pid);
           continue;
         }
-        stats.errors.push(`Availability ${pid}/${vid}: ${err.message}`);
+        stats.errors.push(`Availability ${pid}: ${err.message}`);
       }
     }
 
     if (staleInventoryIds.size > 0) {
-      const detail = [...staleInventoryIds].map(([pid, n]) => `${pid} (${n} variant${n === 1 ? '' : 's'})`).join(', ');
+      const ids = [...staleInventoryIds].join(', ');
       stats.errors.push(
-        `${staleInventoryIds.size} Wix product${staleInventoryIds.size === 1 ? '' : 's'} referenced by PRODUCT_CONFIG no longer exist in Wix: ${detail}. ` +
+        `${staleInventoryIds.size} Wix product${staleInventoryIds.size === 1 ? '' : 's'} referenced by PRODUCT_CONFIG no longer exist in Wix: ${ids}. ` +
         `Clear the Wix Product ID on those Airtable rows (or delete the rows) to stop this warning.`
       );
     }
