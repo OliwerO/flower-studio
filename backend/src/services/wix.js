@@ -244,6 +244,50 @@ export async function processWixOrder(payload) {
       }
     }
 
+    // 9b. Decrement tracked inventory on PRODUCT_CONFIG.
+    //     For each line item, look up the Airtable row by (Wix Product ID,
+    //     Wix Variant ID) and reduce `Quantity` by the ordered amount
+    //     (clamped at 0). Rows without a numeric `Quantity` are
+    //     "untracked/unlimited" and left alone. Idempotent at the order
+    //     level thanks to the dedup check above — if the webhook re-fires
+    //     for the same Wix Order ID, we never reach this block.
+    for (const li of lineItems) {
+      const wixProductId = li.catalogReference?.catalogItemId
+        || li.productId
+        || li.catalogItemId;
+      const wixVariantId = li.catalogReference?.options?.variantId
+        || li.productOptions?.variantId
+        || li.variantId;
+      const orderedQty = Number(li.quantity) || 1;
+
+      if (!wixProductId || !wixVariantId) {
+        log('9-DECREMENT', `Skip (no Wix Product/Variant ID): "${li.name}"`);
+        continue;
+      }
+
+      try {
+        const matches = await db.list(TABLES.PRODUCT_CONFIG, {
+          filterByFormula: `AND({Wix Product ID} = '${sanitizeFormulaValue(wixProductId)}', {Wix Variant ID} = '${sanitizeFormulaValue(wixVariantId)}')`,
+          maxRecords: 1,
+        });
+        if (matches.length === 0) {
+          log('9-DECREMENT', `No PRODUCT_CONFIG row for ${wixProductId}/${wixVariantId}`);
+          continue;
+        }
+        const row = matches[0];
+        const currentQty = row['Quantity'];
+        if (typeof currentQty !== 'number') {
+          log('9-DECREMENT', `Row ${row.id} has no Quantity — untracked, skipping`);
+          continue;
+        }
+        const newQty = Math.max(0, currentQty - orderedQty);
+        await db.update(TABLES.PRODUCT_CONFIG, row.id, { Quantity: newQty });
+        log('9-DECREMENT', `Row ${row.id}: ${currentQty} → ${newQty} (ordered ${orderedQty})`);
+      } catch (decErr) {
+        console.error('[WIX] decrement failed for', wixProductId, wixVariantId, decErr.message);
+      }
+    }
+
     // 10. Create the delivery record. Always created for Wix orders because
     //     Wix is delivery-only today. If the address parse failed (payload
     //     shape mismatch), the florist fills it in later — better than

@@ -143,19 +143,32 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
   const lt = Number(variant['Lead Time Days'] ?? 1);
   const active = variant['Active'] || false;
   const minStems = Number(variant['Min Stems'] || 0);
+  // Quantity is optional — an empty cell means "untracked / unlimited"
+  // and shouldn't coerce to 0, which would push the variant out of stock.
+  const rawQty = variant['Quantity'];
+  const qty = rawQty === undefined || rawQty === null || rawQty === '' ? '' : Number(rawQty);
 
   // Local draft state — only commits on blur/Enter to prevent
   // mid-edit filtering (e.g. typing "1" on the way to "2")
   const [draftPrice, setDraftPrice] = useState(price);
   const [draftLt, setDraftLt] = useState(lt);
+  const [draftQty, setDraftQty] = useState(qty);
   useEffect(() => { setDraftPrice(price); }, [price]);
   useEffect(() => { setDraftLt(lt); }, [lt]);
+  useEffect(() => { setDraftQty(qty); }, [qty]);
 
   function commitPrice() {
     if (draftPrice !== price) onUpdate(variant.id, 'Price', draftPrice);
   }
   function commitLt() {
     if (draftLt !== lt) onUpdate(variant.id, 'Lead Time Days', draftLt);
+  }
+  function commitQty() {
+    // Empty string clears the cell (back to untracked). Numeric string
+    // sets a tracked quantity. Ignore no-op commits.
+    if (draftQty === qty) return;
+    const value = draftQty === '' ? null : Number(draftQty);
+    onUpdate(variant.id, 'Quantity', value);
   }
   function handleKeyDown(e, commitFn) {
     if (e.key === 'Enter') { e.target.blur(); commitFn(); }
@@ -203,6 +216,13 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
       <td className="py-2 px-2 text-center">
         <input type="number" value={draftLt} onChange={e => setDraftLt(Number(e.target.value))}
           onBlur={commitLt} onKeyDown={e => handleKeyDown(e, commitLt)}
+          className="w-14 text-center border border-gray-200 rounded-lg px-1 py-1 text-sm" min="0" />
+      </td>
+      <td className="py-2 px-2 text-center">
+        <input type="number" value={draftQty}
+          onChange={e => setDraftQty(e.target.value === '' ? '' : Number(e.target.value))}
+          onBlur={commitQty} onKeyDown={e => handleKeyDown(e, commitQty)}
+          placeholder="—"
           className="w-14 text-center border border-gray-200 rounded-lg px-1 py-1 text-sm" min="0" />
       </td>
       <td className="py-2 px-2 text-center">
@@ -336,6 +356,7 @@ export default function ProductCard({ group, stockMap, stockList, categories, ex
                   <th className="text-right py-1 px-2">{t.price} (zl)</th>
                   {productType === 'mono' && <th className="text-right py-1 px-2">{t.prodSuggested}</th>}
                   <th className="text-center py-1 px-2">{t.prodLeadTime}</th>
+                  <th className="text-center py-1 px-2">{t.prodQuantity}</th>
                   <th className="text-center py-1 px-2">{t.prodActive}</th>
                 </tr>
               </thead>
