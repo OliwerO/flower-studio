@@ -568,10 +568,39 @@ export async function runPull() {
       }
     }
 
-    // Deactivate rows whose Wix product/variant no longer exists
+    // Reconcile rows whose Wix product/variant no longer exists.
+    //
+    // Two cases, two behaviors:
+    //
+    //  1. The Wix PRODUCT is still alive but this specific variant ID is
+    //     gone. That happens when the owner removes a variant option in
+    //     the Wix Editor (e.g., drops the "Bouquet: 1/2/3/4/5" option and
+    //     goes back to a single default variant). The old Airtable row is
+    //     orphaned — its Product Name becomes misleading as the product
+    //     gets renamed, and it clutters the dashboard as a ghost group.
+    //     → Delete the row.
+    //
+    //  2. The whole Wix PRODUCT is gone (deleted from the store). We don't
+    //     delete the Airtable row because the owner may want to review
+    //     history before removing it, and downstream references (order
+    //     lines, sync log) might still point to it.
+    //     → Deactivate only (legacy behavior).
+    const wixProductIds = new Set(wixProducts.map(p => p.id));
+
     for (const row of existingRows) {
       const key = `${row['Wix Product ID']}::${row['Wix Variant ID']}`;
-      if (!seenKeys.has(key) && row['Active']) {
+      if (seenKeys.has(key)) continue;
+
+      const productStillAlive = wixProductIds.has(row['Wix Product ID']);
+
+      if (productStillAlive) {
+        try {
+          await db.deleteRecord(TABLES.PRODUCT_CONFIG, row.id);
+          stats.deleted = (stats.deleted || 0) + 1;
+        } catch (err) {
+          stats.errors.push(`Delete orphaned variant ${row['Product Name']}/${row['Variant Name']}: ${err.message}`);
+        }
+      } else if (row['Active']) {
         try {
           await db.update(TABLES.PRODUCT_CONFIG, row.id, { 'Active': false });
           stats.deactivated++;
