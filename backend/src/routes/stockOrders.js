@@ -550,7 +550,7 @@ async function purchaseAlreadyRecorded(poId, lineId, variant) {
 // sensible defaults without requiring the florist to fill a form.
 //
 // Sell price uses the global targetMarkup setting: sellPrice = costPerStem * markup.
-async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerStem, originalStockItem, today) {
+async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerStem, originalStockItem, originalStockId, today) {
   const trimmedName = (altFlowerName || '').trim();
   if (!trimmedName) {
     throw new Error('Cannot receive substitute with empty flower name');
@@ -564,7 +564,20 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
     maxRecords: 1,
   });
   if (existing.length > 0) {
-    return existing[0].id;
+    const found = existing[0];
+    // Phase B: stack multiple originals onto one substitute card. If this
+    // substitute was previously created for a different original flower,
+    // append the current originalStockId so the reconciliation query can
+    // find all affected originals from the substitute side.
+    if (originalStockId) {
+      const currentLinks = Array.isArray(found['Substitute For']) ? found['Substitute For'] : [];
+      if (!currentLinks.includes(originalStockId)) {
+        await db.update(TABLES.STOCK, found.id, {
+          'Substitute For': [...currentLinks, originalStockId],
+        });
+      }
+    }
+    return found.id;
   }
 
   // Not found → create a brand-new stock card for the substitute.
@@ -585,6 +598,7 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
     'Reorder Threshold':  originalStockItem?.['Reorder Threshold'] || 0,
     Active:               true,
     'Last Restocked':     today,
+    ...(originalStockId ? { 'Substitute For': [originalStockId] } : {}),
   });
   console.log(`[STOCK-ORDER] Created substitute stock card "${trimmedName}" (${created.id}) — cost ${costPerStem} zł, sell ${sellPerStem} zł`);
   return created.id;
@@ -794,7 +808,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               ? await db.getById(TABLES.STOCK, stockItemId)
               : null;
             substituteStockId = await findOrCreateSubstituteStock(
-              altFlowerName, altSupplier, altCostPerStem, originalStockItem, evalDate
+              altFlowerName, altSupplier, altCostPerStem, originalStockItem, stockItemId, evalDate
             );
             const markup = Number(getConfig('targetMarkup')) || 1;
             const altSellPerStem = Math.round(altCostPerStem * markup * 100) / 100;

@@ -46,6 +46,7 @@ const EXPECTED_WRITE_FIELDS = {
     'Display Name', 'Purchase Name', 'Category',
     'Current Quantity', 'Current Cost Price', 'Current Sell Price',
     'Supplier', 'Unit', 'Reorder Threshold', 'Active', 'Last Restocked',
+    'Substitute For',
   ],
   [TABLES.PREMADE_BOUQUETS]: [
     'Name', 'Created By', 'Price Override', 'Notes', 'Lines',
