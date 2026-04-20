@@ -6,6 +6,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import CustomerDetailView from './CustomerDetailView.jsx';
+import CustomerDrawer from './CustomerDrawer.jsx';
 import CustomerListPane from './CustomerListPane.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
 import {
@@ -84,14 +85,6 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
     }));
   }
 
-  // Insights-bar RFM card click: toggle rfmSegment filter
-  const toggleRfm = useCallback(segKey => {
-    setFilters(prev => ({
-      ...prev,
-      rfmSegment: prev.rfmSegment === segKey ? null : segKey,
-    }));
-  }, []);
-
   // Insights-bar source pill click: toggle membership in sources Set
   const toggleSource = useCallback(src => {
     setFilters(prev => {
@@ -111,42 +104,22 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
     [customers, selectedId]
   );
 
+  // Toggle membership in the segments Set (same pattern as Acquisition Source).
+  // Reuses the existing filters.segments state so the + Filter chip and these
+  // pills stay in sync as a single source of truth.
+  const toggleSegment = useCallback(seg => {
+    setFilters(prev => {
+      const next = new Set(prev.segments);
+      if (next.has(seg)) next.delete(seg); else next.add(seg);
+      return { ...prev, segments: next };
+    });
+  }, []);
+
   return (
     <div className="space-y-4">
-      {/* Insights bar — unchanged visually; clicks now mutate filter state */}
-      {insights?.rfm?.summary && (
-        <div className="mb-4">
-          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">{t.customerHealth}</p>
-          <div className="grid grid-cols-5 gap-3">
-            {[
-              { key: 'Champions', color: 'bg-emerald-50 border-emerald-200 text-emerald-700', icon: '\u2605' },
-              { key: 'Loyal',     color: 'bg-blue-50 border-blue-200 text-blue-700', icon: '\u2665' },
-              { key: 'At Risk',   color: 'bg-amber-50 border-amber-200 text-amber-700', icon: '\u26A0' },
-              { key: 'Lost',      color: 'bg-rose-50 border-rose-200 text-rose-700', icon: '\u2717' },
-              { key: 'New',       color: 'bg-purple-50 border-purple-200 text-purple-700', icon: '\u2726' },
-            ].map(seg => {
-              const count = insights.rfm.summary[seg.key] || 0;
-              const rev = insights.rfm.revenue?.[seg.key] || 0;
-              const active = filters.rfmSegment === seg.key;
-              return (
-                <button key={seg.key}
-                  onClick={() => toggleRfm(seg.key)}
-                  className={`rounded-xl border p-3 text-center transition-all ${seg.color} ${
-                    active ? 'ring-2 ring-brand-400 shadow-md' : 'hover:shadow-sm'
-                  }`}>
-                  <div className="text-lg">{seg.icon}</div>
-                  <div className="text-2xl font-bold">{count}</div>
-                  <div className="text-xs font-medium">{t[`rfm${seg.key.replace(' ', '')}`] || seg.key}</div>
-                  {rev > 0 && <div className="text-xs opacity-70 mt-0.5">{Math.round(rev)} {t.zl}</div>}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      )}
-
+      {/* Acquisition Source pills — click to toggle the 'sources' multi-filter */}
       {insights?.acquisitionBySource && Object.keys(insights.acquisitionBySource).length > 0 && (
-        <div className="mb-4">
+        <div>
           <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">{t.acquisitionSource}</p>
           <div className="flex flex-wrap gap-2">
             {Object.entries(insights.acquisitionBySource)
@@ -168,43 +141,46 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
         </div>
       )}
 
-      {insights && (
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-          {Object.entries(insights.segments || {}).map(([seg, count]) => (
-            <div key={seg} className="bg-white rounded-2xl shadow-sm px-4 py-3 text-center">
-              <p className="text-2xl font-bold text-ios-label">{count}</p>
-              <p className={`text-xs font-medium mt-1 inline-block px-2 py-0.5 rounded-full ${
-                SEGMENT_COLORS[seg] || 'bg-gray-100 text-gray-600'
-              }`}>
-                {seg}
-              </p>
-              {insights.segmentRevenue?.[seg] > 0 && (
-                <p className="text-xs text-ios-tertiary mt-1">{Math.round(insights.segmentRevenue[seg])} {t.zl}</p>
-              )}
-            </div>
-          ))}
-
-          {insights.churnRisk?.length > 0 && (
-            <div
-              onClick={toggleChurn}
-              className={`bg-white rounded-2xl shadow-sm px-4 py-3 text-center cursor-pointer hover:bg-ios-orange/10 transition-colors ${
-                filters.churnRisk ? 'ring-2 ring-ios-orange' : ''
-              }`}>
-              <p className="text-2xl font-bold text-ios-orange">{insights.churnRisk.length}</p>
-              <p className="text-xs text-ios-orange font-medium mt-1">{t.churnRisk}</p>
-              {insights.totalRevenueAtRisk > 0 && (
-                <span className="text-xs text-rose-500 font-medium ml-1">
-                  {Math.round(insights.totalRevenueAtRisk)} {t.zl} {t.revenueAtRisk}
-                </span>
-              )}
-            </div>
-          )}
+      {/* Segment (client) pills — click to toggle the 'segments' multi-filter.
+           Same interaction model as Acquisition Source for a single mental model. */}
+      {insights && Object.keys(insights.segments || {}).length > 0 && (
+        <div>
+          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">{t.segment}</p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(insights.segments || {})
+              .sort(([,a], [,b]) => b - a)
+              .map(([seg, count]) => {
+                const active = filters.segments.has(seg);
+                const color = SEGMENT_COLORS[seg] || 'bg-gray-100 text-ios-label';
+                return (
+                  <button key={seg}
+                    onClick={() => toggleSegment(seg)}
+                    className={`px-3 py-1 rounded-full text-sm transition-all ${
+                      active ? 'bg-brand-600 text-white shadow-sm' : `${color} hover:opacity-80`
+                    }`}>
+                    {seg}{' '}
+                    <span className={active ? 'text-white/70' : 'opacity-60'}>{count}</span>
+                  </button>
+                );
+              })}
+            {insights.churnRisk?.length > 0 && (
+              <button onClick={toggleChurn}
+                className={`px-3 py-1 rounded-full text-sm transition-all ${
+                  filters.churnRisk ? 'bg-ios-orange text-white shadow-sm' : 'bg-ios-orange/15 text-ios-orange hover:bg-ios-orange/25'
+                }`}>
+                {t.churnRisk}{' '}
+                <span className={filters.churnRisk ? 'text-white/70' : 'opacity-60'}>{insights.churnRisk.length}</span>
+              </button>
+            )}
+          </div>
         </div>
       )}
 
       {loading && <SkeletonTable rows={6} cols={4} />}
 
-      {/* Split view: list pane left, detail pane right (or below on narrow viewports) */}
+      {/* Desktop split-view (≥1280px): list + inline detail pane side by side.
+           Below 1280px the inline detail pane is hidden (xl:block); a
+           CustomerDrawer slides in instead — see below. */}
       {!loading && (
         <div className="grid grid-cols-1 xl:grid-cols-[420px_1fr] gap-4" style={{ height: '70vh', minHeight: 500 }}>
           <div className="h-full">
@@ -219,7 +195,7 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
               onClearAll={clearAll}
             />
           </div>
-          <div className="bg-white rounded-2xl shadow-sm overflow-auto">
+          <div className="hidden xl:block bg-white rounded-2xl shadow-sm overflow-auto">
             {selectedCustomer ? (
               <CustomerDetailView
                 customerId={selectedCustomer.id}
@@ -234,6 +210,16 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
           </div>
         </div>
       )}
+
+      {/* Narrow-viewport drawer (<1280px). Hidden on desktop via xl:hidden
+           inside the component, so on wide screens the inline pane above
+           handles the detail view. */}
+      <CustomerDrawer
+        customerId={selectedCustomer?.id || null}
+        onUpdate={fetchCustomers}
+        onNavigate={onNavigate}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

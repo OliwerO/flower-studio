@@ -177,6 +177,9 @@ const en = {
   // Customer Tab v2.0 — list + filter bar
   searchAnyField:   'Search any field...',
   addFilter:        'Filter',
+  chooseValues:     'choose…',
+  showingSingleOrder: 'Focused on a single order from customer profile',
+  showAllOrders:    'Show all orders',
   remove:           'Remove',
   customers:        'customers',
   sortBy:           'Sort by',
@@ -989,6 +992,9 @@ const ru = {
   // Customer Tab v2.0 — list + filter bar
   searchAnyField:   'Поиск по любому полю...',
   addFilter:        'Фильтр',
+  chooseValues:     'выбрать…',
+  showingSingleOrder: 'Показан один заказ из профиля клиента',
+  showAllOrders:    'Показать все заказы',
   remove:           'Убрать',
   customers:        'клиентов',
   sortBy:           'Сортировка',

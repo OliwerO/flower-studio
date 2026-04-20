@@ -28,10 +28,45 @@ const LEGACY_FIELD_ORDER = [
 const APP_FIELD_ORDER = [
   'Order Date',
   'Status',
+  'Delivery Type',
+  'Delivery Date',
+  'Delivery Time',
+  'Payment Status',
   'Customer Request',
+  'Bouquet Summary',
   'Price Override',
+  'Final Price',
   'Order Lines',
 ];
+
+// Status → pill color. Same palette as OrdersTab so the owner reads the same
+// colors everywhere on the dashboard. Unknown statuses fall back to gray.
+const STATUS_COLORS = {
+  New:               'bg-indigo-100 text-indigo-700',
+  Ready:             'bg-amber-100 text-amber-700',
+  'Out for Delivery':'bg-sky-100 text-sky-700',
+  Delivered:         'bg-emerald-100 text-emerald-700',
+  'Picked Up':       'bg-teal-100 text-teal-700',
+  Cancelled:         'bg-rose-100 text-rose-700',
+};
+
+// Best-effort description for the collapsed row. Falls through a chain so
+// orders never show "—" when the backend actually has something useful.
+function rowDescription(order) {
+  if (order.description) return order.description;
+  const r = order.raw || {};
+  if (order.source === 'app') {
+    if (r['Bouquet Summary']) return r['Bouquet Summary'];
+    if (r['Customer Request']) return r['Customer Request'];
+    const lineCount = Array.isArray(r['Order Lines']) ? r['Order Lines'].length : 0;
+    if (lineCount > 0) return `${lineCount} \u00D7 ${lineCount === 1 ? 'line item' : 'line items'}`;
+  } else {
+    if (r['Flowers+Details of order']) return r['Flowers+Details of order'];
+    if (r['Order Reason']) return r['Order Reason'];
+    if (r['Oder Number'] || r['Order Number']) return r['Oder Number'] || r['Order Number'];
+  }
+  return '\u2014';
+}
 
 export default function CustomerTimeline({ orders, onNavigate }) {
   const [typeFilter, setTypeFilter] = useState('all');
@@ -91,8 +126,13 @@ export default function CustomerTimeline({ orders, onNavigate }) {
 }
 
 function TimelineRow({ order, expanded, onToggle, onNavigate }) {
-  const { source, date, description, amount, status } = order;
+  const { source, date, amount, status, raw = {} } = order;
   const isLegacy = source === 'legacy';
+  const description = rowDescription(order);
+  const deliveryType = raw['Delivery Type'];
+  const paymentStatus = raw['Payment Status'];
+  const isUnpaid = paymentStatus === 'Unpaid';
+  const fulfilmentIcon = deliveryType === 'Delivery' ? '\uD83D\uDE97' : deliveryType === 'Pickup' ? '\uD83C\uDFEA' : null;
 
   return (
     <div className="border-b border-white/30 last:border-b-0">
@@ -111,11 +151,23 @@ function TimelineRow({ order, expanded, onToggle, onNavigate }) {
         }`}>
           {isLegacy ? t.legacyOrder : t.appOrder}
         </span>
+        {fulfilmentIcon && (
+          <span className="text-sm shrink-0" title={deliveryType}>{fulfilmentIcon}</span>
+        )}
         <span className="text-sm text-ios-label truncate flex-1 min-w-0">
-          {description || '—'}
+          {description}
         </span>
+        {isUnpaid && (
+          <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-rose-100 text-rose-700 shrink-0 uppercase tracking-wide">
+            {t.unpaid || 'Unpaid'}
+          </span>
+        )}
         {status && (
-          <span className="text-xs text-ios-secondary shrink-0">{status}</span>
+          <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${
+            STATUS_COLORS[status] || 'bg-gray-100 text-gray-600'
+          }`}>
+            {status}
+          </span>
         )}
         <span className="text-sm font-medium text-ios-label shrink-0 w-20 text-right">
           {amount ? `${amount.toFixed(0)} ${t.zl}` : '—'}
