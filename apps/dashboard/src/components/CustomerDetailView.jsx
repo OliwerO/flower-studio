@@ -1,8 +1,6 @@
 // CustomerDetailView — right pane of the Customer Tab v2.0 split view.
 // Composes all profile sections and owns the data load (parallel customer +
-// orders fetch). Replaces the legacy CustomerDetailPanel.jsx once smoke-
-// tested — kept side-by-side during the transition so the old component can
-// be deleted in a single follow-up commit.
+// orders fetch).
 
 import { useState, useEffect, useMemo } from 'react';
 import client from '../api/client.js';

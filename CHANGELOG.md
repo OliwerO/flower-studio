@@ -39,6 +39,82 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-20 — Customer Tab v2.0 complete + legacy cleanup
+
+Final iteration of the Customer Tab v2.0 rollout (PRs #101 + #102). The goal
+of this work was for the owner to stop reaching for Airtable for CRM — every
+order detail, every editable field, every filter she relied on in Airtable is
+now available on the Dashboard.
+
+### What landed across iterations
+
+- **Split-view layout** (≥1280px) — left list pane (react-window virtualized,
+  1094 customers), right detail pane. Below 1280px a `CustomerDrawer` slides
+  in from the right, preserving list context.
+- **Merged legacy + app order timeline** — `CustomerTimeline.jsx` fetches both
+  `Legacy Orders` and `App Orders` via new `GET /customers/:id/orders`, sorted
+  date-desc. Every row expands to reveal every raw Airtable field (ordered
+  fields first, then "Other fields" catchall so nothing silently hides). App
+  orders get an "Open in Orders tab" button that focuses the list to that
+  single order with a dismissable banner (was the #1 pain point of the first
+  iteration — it used to just expand the order buried in a long list).
+- **Chip-based Key People** (`KeyPersonChips.jsx`) over the flat
+  `Key person 1 (Name + Contact details)` / `Key person 2 (...)` fields.
+  Designed so the future Postgres many-to-many migration needs no frontend
+  rewrite — the UI already behaves like N slots.
+- **Universal search + composable filter bar** (`CustomerFilterBar.jsx` +
+  `utils/customerFilters.js`) — search walks every string field on the
+  customer record plus `_agg.lastOrderDate`. Filters stack with AND logic.
+  13 filter dimensions (Segment, Language, Sex/Business, Communication,
+  Order Source, Found us from, Has Phone/Instagram/Email/KeyPerson, Last
+  order within N days, Min order count, Min total spend, Churn risk). Filter
+  state persisted to `localStorage` with a version tag for safe migration.
+- **Segment + Acquisition Source pills** are clickable filters with the same
+  interaction model (owner feedback: having two visually different control
+  systems for the same job was confusing). Removed the top "Customer Health"
+  RFM strip entirely — owner didn't find it useful.
+- **Fixed the + Filter dropdown** — picking a multi-select dimension (e.g.
+  Sex/Business) now actually opens the value picker. Previously the chip only
+  rendered once the set was non-empty, but values could only be picked from
+  inside the chip, so the picker was unreachable. Now `displayDims` includes
+  whichever dimension is currently being edited.
+- **Richer timeline rows** — description fallback chain
+  (`Bouquet Summary → Customer Request → N × line items`), delivery/pickup
+  icon, Unpaid badge, color-coded status pill matching the OrdersTab palette.
+- **Cleanup (this commit)** — deleted legacy `CustomerDetailPanel.jsx`
+  (~320 LOC, fully superseded), updated `apps/dashboard/CLAUDE.md` component
+  table, updated `docs/technical-breakdown.md` component list.
+
+### Backend changes
+
+- `backend/src/routes/customers.js`: fixed `Segment (client)` /
+  `Key person 1/2 (Name + Contact details)` field-name aliases in
+  `CUSTOMERS_FIELD_MAP` — PATCH requests against these fields were silently
+  no-oping, and `/insights` reported most customers as "Unassigned" because
+  `c.Segment` read a non-existent field.
+- New `GET /customers/:id/orders` — merges legacy + app orders with a single
+  normalized shape `{ id, source, date, description, amount, status, raw }`.
+- `GET /customers` now enriches each row with
+  `_agg: { lastOrderDate, orderCount, totalSpend }` (60-sec in-process cache)
+  so filter predicates run client-side without extra round-trips.
+- Schema validator (`airtableSchema.js`) now covers the 20 writable Customer
+  fields; future renames fail loudly at boot.
+
+### Trade-offs to know
+
+- `_agg` cold-load adds ~1.5–2.5s on the first `/customers` call per session
+  (extra Airtable fetches). 60-sec cache absorbs repeat loads. At 10× the
+  customer volume this will need moving to a backend-persisted aggregate.
+- `CustomerDetailPanel.jsx` is fully removed, so if an older branch still
+  imports it the merge will break — grep before rebasing any long-lived
+  feature branch that predates 2026-04-20.
+- The RFM distributions from `/insights` shifted significantly once the
+  Segment field-name bug was fixed (Rare: 0 → 584, DO NOT CONTACT: 0 → 99).
+  Anything downstream that hardcoded "Unassigned" as the dominant bucket
+  needs re-reading.
+
+---
+
 ## 2026-04-19 — Wix order defaults + diagnostic mode
 
 Owner reported that a new Wix order (#11b47468…) came in as Pickup (Wix is

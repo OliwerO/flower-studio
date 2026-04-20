@@ -138,7 +138,7 @@ flower-studio/
 │           ├── pages/                 # DashboardPage (tab container)
 │           ├── components/            # OrdersTab, StockTab, CustomersTab,
 │           │   └── steps/             #   DayToDayTab, FinancialTab, NewOrderTab,
-│           │                          #   OrderDetailPanel, CustomerDetailPanel,
+│           │                          #   OrderDetailPanel, CustomerDetailView, CustomerDrawer,
 │           │                          #   KanbanBoard, SourceChart, SummaryCard, etc.
 │           ├── context/               # ToastContext, LanguageContext (no AuthContext)
 │           ├── hooks/                 # useNotifications (SSE)
