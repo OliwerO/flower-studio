@@ -257,6 +257,12 @@ async function updateWixCategory(id, { name, description }) {
 // Content API. Discovered by querying an existing collection's translation
 // content. Field keys: "collection-name" and "category-description".
 const STORES_COLLECTION_SCHEMA_ID = '5b35dfe1-da21-4071-aab5-2cec870459c0';
+
+// Schema identifying Wix Stores Products in the Wix Multilingual Translation
+// Content API. Discovered by querying an existing product's translation
+// content. Field keys: "product-name" and "product-description".
+const STORES_PRODUCT_SCHEMA_ID = 'b8f0a427-14d8-47b5-870e-21645dd3a507';
+
 const SECONDARY_LOCALES = ['pl', 'ru', 'uk'];
 
 /**
@@ -327,6 +333,80 @@ async function pushCollectionTranslations(entityId, translations) {
     });
     if (!uRes.ok) {
       throw new Error(`Translation bulk update failed for ${entityId}: ${await uRes.text()}`);
+    }
+  }
+}
+
+/**
+ * Push PL/RU/UK translations to Wix Multilingual for a Stores product.
+ * The product's EN name + description live directly on the Stores product
+ * (see updateWixProductContent). Without PL/RU/UK records in the
+ * Multilingual Translation Content API, non-primary-language sites fall
+ * back to the EN text — which is why the PL storefront was showing
+ * English product descriptions even though translations existed in the
+ * Florist dashboard.
+ *
+ * Mirrors pushCollectionTranslations: query existing content, split into
+ * create-or-update, skip locales whose translation is blank so we don't
+ * clobber anything the owner edited directly in the Wix Translation
+ * Manager.
+ */
+async function pushProductTranslations(entityId, translations) {
+  if (!entityId || !translations) return;
+
+  const targetFields = {};
+  for (const locale of SECONDARY_LOCALES) {
+    const t = translations[locale];
+    if (!t) continue;
+    const fields = {};
+    if (t.title) fields['product-name'] = { textValue: t.title, published: true, updatedBy: 'USER' };
+    if (t.description) fields['product-description'] = { textValue: textToHtml(t.description), published: true, updatedBy: 'USER' };
+    if (Object.keys(fields).length > 0) targetFields[locale] = fields;
+  }
+  if (Object.keys(targetFields).length === 0) return;
+
+  const qRes = await fetch(`${WIX_API_URL}/translation-content/v1/contents/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { filter: { entityId }, cursorPaging: { limit: 50 } } }),
+  });
+  if (!qRes.ok) {
+    throw new Error(`Product translation query failed for ${entityId}: ${await qRes.text()}`);
+  }
+  const existingByLocale = ((await qRes.json()).contents || []).reduce((m, c) => {
+    m[c.locale] = c.id;
+    return m;
+  }, {});
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const [locale, fields] of Object.entries(targetFields)) {
+    if (existingByLocale[locale]) {
+      toUpdate.push({ content: { id: existingByLocale[locale], schemaId: STORES_PRODUCT_SCHEMA_ID, fields } });
+    } else {
+      toCreate.push({ schemaId: STORES_PRODUCT_SCHEMA_ID, entityId, locale, fields });
+    }
+  }
+
+  if (toCreate.length > 0) {
+    const cRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/create`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toCreate, returnEntity: false }),
+    });
+    if (!cRes.ok) {
+      throw new Error(`Product translation bulk create failed for ${entityId}: ${await cRes.text()}`);
+    }
+  }
+
+  if (toUpdate.length > 0) {
+    const uRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/update`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toUpdate, returnEntity: false }),
+    });
+    if (!uRes.ok) {
+      throw new Error(`Product translation bulk update failed for ${entityId}: ${await uRes.text()}`);
     }
   }
 }
@@ -707,12 +787,15 @@ export async function runPush() {
     });
 
     // Group rows by product so we can push each product's variants in one call.
-    const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+    // A zero-UUID variant ID is the legitimate default variant for products
+    // with no options (Wix uses 00000000-...-000000000000 as the variant ID
+    // in that case). We DO want to push inventory for those — skipping them
+    // meant the Qty cap never reached Wix for any single-variant product.
     const byProduct = new Map();
     for (const row of allVariantRows) {
       const pid = row['Wix Product ID'];
       const vid = row['Wix Variant ID'];
-      if (!pid || !vid || vid === ZERO_UUID) continue;
+      if (!pid || !vid) continue;
       if (!byProduct.has(pid)) byProduct.set(pid, []);
       const rawQty = row['Quantity'];
       const qty = typeof rawQty === 'number' ? rawQty : Number(rawQty);
@@ -880,15 +963,19 @@ export async function runPush() {
     }
 
     // ── Product Descriptions ────────────────────────────
-    // Push EN name + description from Translations field to Wix.
-    // Like updating product labels on the showroom shelf.
+    // EN lives directly on the Wix product (name + description fields);
+    // PL/RU/UK live in the Wix Multilingual Translation Content API.
+    // Without that second push, non-primary-language sites fall back to
+    // the EN text — which is why the PL storefront was showing English
+    // product descriptions even though translations existed in Airtable.
     try {
       const descRows = await db.list(TABLES.PRODUCT_CONFIG, {
         filterByFormula: '{Active} = TRUE()',
         fields: ['Wix Product ID', 'Description', 'Translations'],
       });
 
-      // Group by product — one description per Wix product
+      // Group by product — one description per Wix product. Keep the
+      // raw translations object so we can push PL/RU/UK alongside EN.
       const descByProduct = new Map();
       for (const row of descRows) {
         const pid = row['Wix Product ID'];
@@ -903,15 +990,20 @@ export async function runPush() {
         const enTitle = translations?.en?.title;
         const enDesc = translations?.en?.description || row['Description'] || '';
         if (enTitle || enDesc) {
-          descByProduct.set(pid, { name: enTitle, description: textToHtml(enDesc) });
+          descByProduct.set(pid, {
+            name: enTitle,
+            description: textToHtml(enDesc),
+            translations,
+          });
         }
       }
 
       let descSynced = 0;
+      let transSynced = 0;
       const staleDescIds = new Set();
       for (const [productId, content] of descByProduct) {
         try {
-          await updateWixProductContent(productId, content);
+          await updateWixProductContent(productId, { name: content.name, description: content.description });
           descSynced++;
         } catch (err) {
           if (err instanceof WixProductNotFoundError) {
@@ -920,8 +1012,22 @@ export async function runPush() {
           }
           stats.errors.push(`Description ${productId}: ${err.message}`);
         }
+
+        // Push PL/RU/UK translations to Wix Multilingual. Skipping this
+        // leaves the non-primary-language storefront falling back to the
+        // EN description, which was the root cause of "translations not
+        // showing on the PL site" even though Airtable had them.
+        try {
+          await pushProductTranslations(productId, content.translations);
+          if (content.translations && Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
+            transSynced++;
+          }
+        } catch (err) {
+          stats.errors.push(`Product translations ${productId}: ${err.message}`);
+        }
       }
       if (descSynced > 0) console.log(`[PUSH] Descriptions synced: ${descSynced}`);
+      if (transSynced > 0) console.log(`[PUSH] Product translations synced: ${transSynced}`);
       if (staleDescIds.size > 0) {
         console.warn(`[PUSH] Skipped description update for ${staleDescIds.size} deleted Wix product(s) — see inventory warning for IDs`);
       }
