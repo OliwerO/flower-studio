@@ -22,7 +22,8 @@ The owner needs two things: (1) daily operational control — same visibility as
 |-----------|---------|
 | OrderDetailPanel.jsx | Side panel for editing an order — status, payment (partial support), bouquet, delivery, cost/margin. |
 | StockOrderPanel.jsx | PO management — create, send, edit lines, evaluate. Same PO lifecycle as florist PurchaseOrderPage. |
-| CustomerDetailPanel.jsx | Customer detail with order history, contact info, segmentation data. |
+| CustomerDetailView.jsx | Customer detail v2.0 — split-view right pane. Composes CustomerHeader, stat strip, inline-editable profile grid, KeyPersonChips, CustomerTimeline (merged legacy + app orders with expandable rows exposing every raw field). |
+| CustomerDrawer.jsx | Narrow-viewport (<1280px) slide-over wrapper around CustomerDetailView — replaces the inline right pane when the desktop split doesn't fit. |
 | KanbanBoard.jsx | Drag-style board for Today tab — orders grouped by status columns. |
 | StockReceiveForm.jsx | Record incoming supplier deliveries with batch tracking. |
 | BouquetSection.jsx / DeliverySection.jsx | Sub-sections of OrderDetailPanel for bouquet editing and delivery info. |
