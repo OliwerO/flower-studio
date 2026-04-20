@@ -56,8 +56,24 @@ export default function CustomerFilterBar({ filters, setFilters, customers, onCl
   const [editingDim, setEditingDim]   = useState(null);
   const rootRef = useRef(null);
 
-  const activeDims = useMemo(() => DIMENSIONS.filter(d => isActive(filters, d)), [filters]);
-  const inactiveDims = useMemo(() => DIMENSIONS.filter(d => !isActive(filters, d)), [filters]);
+  // displayDims includes every currently-active filter PLUS whichever
+  // dimension the owner just picked from "+ Filter" (editingDim). Without
+  // the editingDim bit, activating a multi-select dimension was invisible
+  // — its chip didn't render until a value was picked, but the picker lives
+  // inside the chip, so there was no way to pick one. Think of it as
+  // opening the workstation toolbox before any parts are selected.
+  const activeKeys = useMemo(
+    () => new Set(DIMENSIONS.filter(d => isActive(filters, d)).map(d => d.key)),
+    [filters]
+  );
+  const displayDims = useMemo(
+    () => DIMENSIONS.filter(d => activeKeys.has(d.key) || editingDim === d.key),
+    [activeKeys, editingDim]
+  );
+  const addableDims = useMemo(
+    () => DIMENSIONS.filter(d => !activeKeys.has(d.key) && editingDim !== d.key),
+    [activeKeys, editingDim]
+  );
   const count = activeFilterCount(filters);
 
   // Close popovers on outside click
@@ -106,7 +122,7 @@ export default function CustomerFilterBar({ filters, setFilters, customers, onCl
 
   return (
     <div ref={rootRef} className="flex flex-wrap items-center gap-1.5 relative">
-      {activeDims.map(dim => (
+      {displayDims.map(dim => (
         <FilterChip
           key={dim.key}
           dim={dim}
@@ -115,7 +131,7 @@ export default function CustomerFilterBar({ filters, setFilters, customers, onCl
           customers={customers}
           editing={editingDim === dim.key}
           onToggleEditor={() => setEditingDim(editingDim === dim.key ? null : dim.key)}
-          onClear={() => clearDimension(dim)}
+          onClear={() => { clearDimension(dim); setEditingDim(null); }}
         />
       ))}
 
@@ -126,9 +142,9 @@ export default function CustomerFilterBar({ filters, setFilters, customers, onCl
         >
           + {t.addFilter}
         </button>
-        {addMenuOpen && inactiveDims.length > 0 && (
+        {addMenuOpen && addableDims.length > 0 && (
           <div className="absolute z-20 left-0 mt-1 bg-white rounded-lg shadow-lg border border-gray-200 min-w-[200px] py-1 max-h-80 overflow-y-auto">
-            {inactiveDims.map(dim => (
+            {addableDims.map(dim => (
               <button
                 key={dim.key}
                 onClick={() => activateDimension(dim)}
@@ -162,6 +178,7 @@ function FilterChip({ dim, filters, setFilters, customers, editing, onToggleEdit
     const values = [...set];
     if (values.length === 1) display = `${label}: ${values[0]}`;
     else if (values.length > 1) display = `${label}: ${values[0]} +${values.length - 1}`;
+    else display = `${label}: ${t.chooseValues || '…'}`;
   } else if (dim.kind === 'withinDays') {
     display = `${label} ${filters.lastOrderWithinDays}d`;
   } else if (dim.kind === 'minNumber') {

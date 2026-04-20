@@ -86,6 +86,10 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
   const [paymentMethodFilter, setPaymentMethod] = useState(f.paymentMethod || '');
   const [excludeCancelled, setExcludeCancelled] = useState(!!f.excludeCancelled);
   const [expandedId, setExpanded] = useState(f.orderId || null);
+  // When the owner navigates here from a customer timeline, only the clicked
+  // order should be visible — otherwise it's buried among all other orders
+  // in the date range. A dismissable banner lets them return to the full list.
+  const [focusOrderId, setFocusOrderId] = useState(f.orderId || null);
   const [selected, setSelected]   = useState(new Set());
   const [upcomingMode, setUpcoming] = useState(!f.dateFrom && !f.orderId);
   const [showPremade, setShowPremade] = useState(false);
@@ -157,6 +161,9 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
     : orders;
   if (noDateOnly) {
     filtered = filtered.filter(o => !o['Delivery Date'] && !o['Required By']);
+  }
+  if (focusOrderId) {
+    filtered = filtered.filter(o => o.id === focusOrderId);
   }
 
   // Sort orders based on selected sort option + direction (bidirectional)
@@ -321,6 +328,24 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
           {sortDir === 'asc' ? '↑' : '↓'}
         </button>
       </div>
+
+      {/* Focused-order banner — when navigating from a customer timeline, we
+          hide every other order so the target row is always visible without
+          scrolling. The banner keeps an obvious escape hatch back to the full
+          list (otherwise the list would look mysteriously empty). */}
+      {focusOrderId && (
+        <div className="flex items-center justify-between px-4 py-2.5 rounded-xl bg-brand-50 border border-brand-200">
+          <span className="text-sm text-brand-700 font-medium">
+            📌 {t.showingSingleOrder || 'Focused on a single order from customer profile'}
+          </span>
+          <button
+            onClick={() => setFocusOrderId(null)}
+            className="text-xs text-brand-700 hover:text-brand-800 font-medium underline"
+          >
+            {t.showAllOrders || 'Show all orders'}
+          </button>
+        </div>
+      )}
 
       {/* Active filter badges — show when any filter is active so the user
           always has a path to undo state. Used to only track cross-tab filters,
