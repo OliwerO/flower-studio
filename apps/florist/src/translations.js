@@ -474,6 +474,8 @@ const en = {
   noEntries:          'No entries this month',
   daySummary:         'Day summary',
   refresh:            'Refresh',
+  refreshed:          'Refreshed',
+  refreshFailed:      'Could not refresh. Check your connection and try again.',
   help:               'Help',
 
   // Premade bouquets
@@ -1013,6 +1015,8 @@ const ru = {
   noEntries:          'Нет записей за этот месяц',
   daySummary:         'Итог дня',
   refresh:            'Обновить',
+  refreshed:          'Обновлено',
+  refreshFailed:      'Не удалось обновить. Проверьте соединение.',
   help:               'Помощь',
 
   // Premade bouquets
