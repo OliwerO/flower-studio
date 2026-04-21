@@ -11,7 +11,7 @@
 import { useEffect } from 'react';
 import CustomerDetailView from './CustomerDetailView.jsx';
 
-export default function CustomerDrawer({ customerId, onUpdate, onNavigate, onClose }) {
+export default function CustomerDrawer({ customerId, onLocalPatch, onNavigate, onClose }) {
   useEffect(() => {
     function onKey(e) { if (e.key === 'Escape') onClose(); }
     document.addEventListener('keydown', onKey);
@@ -34,7 +34,7 @@ export default function CustomerDrawer({ customerId, onUpdate, onNavigate, onClo
         </button>
         <CustomerDetailView
           customerId={customerId}
-          onUpdate={onUpdate}
+          onLocalPatch={onLocalPatch}
           onNavigate={onNavigate}
         />
       </div>

@@ -24,7 +24,10 @@ const PHONE_RE = /^[\d\s+()\-]{5,}$/;
 const validateEmail = v => (!v || EMAIL_RE.test(v)) ? null : t.invalidEmail;
 const validatePhone = v => (!v || PHONE_RE.test(v)) ? null : t.invalidPhone;
 
-export default function CustomerDetailView({ customerId, onUpdate, onNavigate }) {
+// `onLocalPatch(id, updates)` lets the parent CRM list merge the changed fields
+// into its in-memory row without a full re-fetch — avoids the 3-second skeleton
+// reload of 1094 customers every time a single field changes.
+export default function CustomerDetailView({ customerId, onLocalPatch, onNavigate }) {
   const [cust, setCust]       = useState(null);
   const [orders, setOrders]   = useState([]);
   const [loading, setLoading] = useState(true);
@@ -56,7 +59,9 @@ export default function CustomerDetailView({ customerId, onUpdate, onNavigate })
     try {
       await client.patch(`/customers/${customerId}`, { [field]: value });
       setCust(prev => ({ ...prev, [field]: value }));
-      onUpdate?.();
+      // Update just this customer in the parent list instead of triggering a
+      // full re-fetch. Server and client state converge without a visible reload.
+      onLocalPatch?.(customerId, { [field]: value });
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
     }

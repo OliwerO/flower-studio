@@ -36,7 +36,7 @@ const DELIVERY_TYPES = [
   { value: 'Pickup',   label: '🏪 ' + t.pickup },
 ];
 
-export default function OrderDetailPanel({ orderId, onUpdate }) {
+export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   const { paymentMethods: pmList, orderSources: srcList, timeSlots, targetMarkup } = useConfigLists();
   const PAYMENT_METHODS = pmList.map(v => ({ value: v, label: v }));
   const SOURCES = srcList.map(v => ({ value: v, label: v }));
@@ -271,8 +271,39 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const hasP1 = p1Amount > 0 && p1Method;
   const remainingAfterP1 = effectivePrice - p1Amount;
 
+  // First linked customer ID — the owner-facing "click to open CRM profile" target.
+  // Orders may technically link to multiple customers in Airtable but the
+  // convention in this base is one primary customer per order, so we use [0].
+  const customerId = o.Customer?.[0];
+  const customerDisplayName = o['Customer Name'] || o['Customer Nickname'] || '';
+
   return (
     <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/70 space-y-5">
+      {/* Customer — clickable link that jumps to the Customers tab with this
+           customer pre-selected. Keeps the owner from having to search by name
+           after opening an order (a frequent pain point during busy days). */}
+      {customerDisplayName && (
+        <Section label={t.customer}>
+          {customerId && onNavigate ? (
+            <button
+              type="button"
+              onClick={() => onNavigate({ tab: 'customers', filter: { selectedId: customerId } })}
+              className="text-sm font-medium text-ios-blue hover:underline flex items-center gap-1.5"
+              title={t.openInCustomersTab}
+            >
+              <span aria-hidden="true">👤</span>
+              <span>{customerDisplayName}</span>
+              {o['Customer Nickname'] && o['Customer Nickname'] !== customerDisplayName && (
+                <span className="text-ios-tertiary font-normal">({o['Customer Nickname']})</span>
+              )}
+              <span className="text-ios-tertiary" aria-hidden="true">›</span>
+            </button>
+          ) : (
+            <span className="text-sm font-medium text-ios-label">{customerDisplayName}</span>
+          )}
+        </Section>
+      )}
+
       {/* Status */}
       <Section label={t.status}>
         <Pills
