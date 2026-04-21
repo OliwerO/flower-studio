@@ -46,6 +46,7 @@ const EXPECTED_WRITE_FIELDS = {
     'Display Name', 'Purchase Name', 'Category',
     'Current Quantity', 'Current Cost Price', 'Current Sell Price',
     'Supplier', 'Unit', 'Reorder Threshold', 'Active', 'Last Restocked',
+    'Substitute For',
   ],
   [TABLES.PREMADE_BOUQUETS]: [
     'Name', 'Created By', 'Price Override', 'Notes', 'Lines',
@@ -53,6 +54,26 @@ const EXPECTED_WRITE_FIELDS = {
   [TABLES.PREMADE_BOUQUET_LINES]: [
     'Premade Bouquets', 'Stock Item', 'Flower Name', 'Quantity',
     'Cost Price Per Unit', 'Sell Price Per Unit',
+  ],
+  [TABLES.CUSTOMERS]: [
+    'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
+    'Home address', 'Sex / Business',
+    'Segment (client)',
+    'Found us from',
+    'Connected people (TO SORT into Key 1 & Key 2 person)',
+    'Key person 1 (Name + Contact details)',
+    'Key person 2 (Name + Contact details)',
+    'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
+    'Communication method', 'Order Source',
+  ],
+  // Partial entries — only fields added by the owner-notes feature are
+  // validated here. Older ORDERS / DELIVERIES fields rely on runtime 422
+  // failures since this guard was added after those fields were in use.
+  [TABLES.ORDERS]: [
+    'Florist Note',
+  ],
+  [TABLES.DELIVERIES]: [
+    'Driver Instructions',
   ],
 };
 

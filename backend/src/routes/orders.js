@@ -20,7 +20,7 @@ router.use(authorize('orders'));
 
 const ORDERS_PATCH_ALLOWED = [
   'Status', 'Payment Status', 'Payment Method', 'Price Override',
-  'Notes Original', 'Greeting Card Text', 'Customer Request',
+  'Notes Original', 'Florist Note', 'Greeting Card Text', 'Customer Request',
   'Delivery Type', 'Required By', 'Source', 'Delivery Fee', 'Delivery Time',
   'Payment 1 Amount', 'Payment 1 Method', 'Payment 2 Amount', 'Payment 2 Method',
 ];
@@ -118,7 +118,7 @@ router.get('/', async (req, res, next) => {
         maxRecords: 1000,
       }),
       listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
-        fields: ['Name', 'Nickname'],
+        fields: ['Name', 'Nickname', 'Phone'],
       }),
       listByIds(TABLES.DELIVERIES, allDeliveryIds, {
         fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver', 'Delivery Method', 'Status'],
@@ -155,6 +155,7 @@ router.get('/', async (req, res, next) => {
     for (const order of orders) {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      order['Customer Phone'] = customerMap[custId]?.Phone || '';
 
       if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
         order['Sell Total'] = totalByOrder[order.id];
@@ -244,7 +245,7 @@ router.post('/', async (req, res, next) => {
   try {
     const {
       customer, customerRequest, source, communicationMethod, deliveryType,
-      orderLines = [], delivery, notes, paymentStatus, paymentMethod,
+      orderLines = [], delivery, notes, floristNote, paymentStatus, paymentMethod,
       priceOverride, requiredBy, cardText, deliveryTime,
       payment1Amount, payment1Method,
     } = req.body;
@@ -289,7 +290,7 @@ router.post('/', async (req, res, next) => {
     try {
       const result = await createOrder({
         customer, customerRequest, source, communicationMethod, deliveryType,
-        orderLines, delivery, notes,
+        orderLines, delivery, notes, floristNote,
         paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
         paymentMethod, priceOverride, requiredBy, cardText, deliveryTime,
         payment1Amount, payment1Method,
@@ -409,7 +410,7 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       return res.status(400).json({ error: 'Delivery record already exists for this order.' });
     }
 
-    const { address, recipientName, recipientPhone, date, time, fee, driver } = req.body;
+    const { address, recipientName, recipientPhone, date, time, fee, driver, driverInstructions } = req.body;
 
     const delivery = await db.create(TABLES.DELIVERIES, {
       'Linked Order':     [req.params.id],
@@ -420,6 +421,7 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       'Delivery Time':    time || order['Delivery Time'] || '',
       'Assigned Driver':  driver || getDriverOfDay() || null,
       'Delivery Fee':     fee ?? getConfig('defaultDeliveryFee'),
+      'Driver Instructions': driverInstructions || '',
       'Delivery Method': 'Driver',
       'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
       Status:             DELIVERY_STATUS.PENDING,

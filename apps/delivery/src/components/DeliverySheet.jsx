@@ -3,6 +3,7 @@
 
 import { useState, useEffect } from 'react';
 import t from '../translations.js';
+import { CallButton, NavButtons } from '@flower-studio/shared';
 
 export default function DeliverySheet({ delivery, onClose, onStatusChange, onProblem, onSaveNote }) {
   const d = delivery;
@@ -30,14 +31,12 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
   const customerPhone  = d['Customer Phone'] || '';
   const orderContents  = d['Order Contents'] || '';
   const specialInstr   = d['Special Instructions'] || '';
+  // Owner-authored instructions take priority; legacy translated note
+  // is the fallback for data that existed before the new field.
+  const driverInstr    = d['Driver Instructions'] || specialInstr;
   const paymentStatus  = d['Payment Status'] || '';
   // Only show customer info when it differs from recipient (gift orders)
   const showCustomer = customerPhone && customerPhone !== phone;
-
-  const mapsUrl = address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    : null;
-  const telUrl = phone ? `tel:${phone.replace(/\s/g, '')}` : null;
 
   async function handleSaveNote() {
     setSaving(true);
@@ -61,10 +60,31 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
 
         <div className="px-5 pb-8 space-y-4">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-ios-label">{recipient}</h2>
-            <button onClick={onClose} className="text-ios-tertiary text-sm font-medium">{t.close}</button>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-ios-tertiary">{t.recipient}</p>
+              <h2 className="text-lg font-bold text-ios-label truncate">{recipient}</h2>
+              {customerName && customerName !== recipient && (
+                <p className="text-xs text-ios-tertiary mt-0.5">
+                  <span className="font-semibold uppercase tracking-wide">{t.customer}:</span> {customerName}
+                </p>
+              )}
+            </div>
+            <button onClick={onClose} className="text-ios-tertiary text-sm font-medium shrink-0">{t.close}</button>
           </div>
+
+          {/* Owner's instructions — promoted to the top, above the info card,
+              because it's the single most important message when present. */}
+          {driverInstr && (
+            <div className="bg-orange-50 border-l-4 border-orange-500 rounded-xl px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700 mb-1">
+                ⚠ {t.driverInstructions}
+              </p>
+              <p className="text-sm text-ios-label whitespace-pre-wrap leading-relaxed">
+                {driverInstr}
+              </p>
+            </div>
+          )}
 
           {/* Info rows */}
           <div className="ios-card divide-y divide-gray-100 overflow-hidden">
@@ -76,18 +96,11 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
               </div>
             )}
 
-            {/* Address */}
+            {/* Address (plain) — nav buttons live in their own section below */}
             {address && (
-              <div className="flex items-center justify-between px-4 py-3">
-                <span className="text-sm text-ios-tertiary">{t.address}</span>
-                <a
-                  href={mapsUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-sm font-medium text-ios-blue text-right max-w-[60%] active:underline"
-                >
-                  📍 {address}
-                </a>
+              <div className="flex items-start justify-between px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary shrink-0">{t.address}</span>
+                <span className="text-sm font-medium text-ios-label text-right">📍 {address}</span>
               </div>
             )}
 
@@ -95,9 +108,7 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
             {phone && (
               <div className="flex items-center justify-between px-4 py-3">
                 <span className="text-sm text-ios-tertiary">{t.phone}</span>
-                <a href={telUrl} className="text-sm font-medium text-ios-blue active:underline">
-                  📱 {phone}
-                </a>
+                <CallButton phone={phone} label={phone} icon="📱" variant="subtle" />
               </div>
             )}
 
@@ -105,13 +116,11 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
             {showCustomer && (
               <div className="flex items-center justify-between px-4 py-3 bg-brand-50/30">
                 <span className="text-sm text-ios-tertiary">{t.orderedBy}</span>
-                <div className="text-right">
+                <div className="flex flex-col items-end gap-1">
                   {customerName && (
                     <p className="text-sm font-medium text-ios-label">{customerName}</p>
                   )}
-                  <a href={`tel:${customerPhone.replace(/\s/g, '')}`} className="text-sm text-ios-blue active:underline">
-                    📱 {customerPhone}
-                  </a>
+                  <CallButton phone={customerPhone} label={customerPhone} icon="📱" variant="subtle" />
                 </div>
               </div>
             )}
@@ -134,6 +143,14 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
             )}
           </div>
 
+          {/* Three-way navigation */}
+          {address && (
+            <div>
+              <p className="ios-label">{t.navigate || 'Navigate'}</p>
+              <NavButtons address={address} />
+            </div>
+          )}
+
           {/* Payment status badge */}
           {paymentStatus && (
             <div className="flex items-center gap-2">
@@ -146,16 +163,6 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
               {paymentStatus === 'Partial' && (
                 <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 text-amber-700">{t.partialBadge}</span>
               )}
-            </div>
-          )}
-
-          {/* Special instructions */}
-          {specialInstr && (
-            <div>
-              <p className="ios-label">{t.specialInstructions}</p>
-              <div className="ios-card px-4 py-3 border border-amber-200 bg-amber-50/50">
-                <p className="text-sm text-ios-label">⚠ {specialInstr}</p>
-              </div>
             </div>
           )}
 

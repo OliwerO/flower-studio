@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "main": "index.js",
+  "scripts": {
+    "test": "vitest run"
+  },
   "peerDependencies": {
     "react": "^18.0.0",
     "axios": "^1.0.0"

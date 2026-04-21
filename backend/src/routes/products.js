@@ -125,10 +125,10 @@ router.get('/sync-log', async (req, res, next) => {
 });
 
 // ── PATCH /api/products/:id — update a Product Config row ──
-// Owner can edit: Price, Lead Time Days, Active, Visible in Wix,
+// Owner can edit: Price, Quantity, Lead Time Days, Active, Visible in Wix,
 // Category, Key Flower, Product Type, Min Stems, Available From/To
 const EDITABLE_FIELDS = [
-  'Price', 'Lead Time Days', 'Active', 'Visible in Wix',
+  'Price', 'Quantity', 'Lead Time Days', 'Active', 'Visible in Wix',
   'Category', 'Key Flower', 'Product Type', 'Min Stems',
   'Sort Order', 'Available From', 'Available To',
   'Description', 'Translations',

@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
+import { useToast } from '../context/ToastContext.jsx';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import PremadeBouquetCard from '../components/PremadeBouquetCard.jsx';
@@ -82,9 +83,11 @@ export default function OrderListPage() {
   const navigate         = useNavigate();
   const { role } = useAuth();
   const isOwner = role === 'owner';
+  const { showToast } = useToast();
   const [orders, setOrders]         = useState([]);
   const [premadeBouquets, setPremadeBouquets] = useState([]);
   const [loading, setLoading]       = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode]     = useState(VIEW_MODES.ACTIVE);
   const [date, setDate]             = useState(''); // only used in completed view
   const [status, setStatus]         = useState('');
@@ -142,10 +145,29 @@ export default function OrderListPage() {
       initialLoaded.current = true;
     } catch (err) {
       console.error(err);
+      // Re-throw so the manual refresh handler can surface a toast.
+      // Background polls still swallow via their own try/catch.
+      throw err;
     } finally {
       setLoading(false);
     }
   }, [viewMode, date, status]);
+
+  // Manual refresh — spin the icon, use silent-merge so the list doesn't
+  // flash to the skeleton, and toast the outcome so the owner knows the
+  // tap registered even when data is unchanged.
+  const handleRefresh = useCallback(async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    try {
+      await fetchOrders(true);
+      showToast(t.refreshed || 'Refreshed', 'success');
+    } catch (err) {
+      showToast(err.response?.data?.error || t.refreshFailed || 'Refresh failed', 'error');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchOrders, refreshing, showToast]);
 
   // Premade count — shown as a badge on the filter chip even when not in premade view.
   const [premadeCount, setPremadeCount] = useState(0);
@@ -166,10 +188,12 @@ export default function OrderListPage() {
 
   useEffect(() => {
     initialLoaded.current = false;
-    fetchOrders();
+    // Background fetches swallow errors — fetchOrders now throws so the
+    // manual Refresh handler can toast, but polls stay quiet.
+    fetchOrders().catch(() => {});
     // Silent poll every 30s — merges data without resetting expanded cards
-    const interval = setInterval(() => { if (!document.hidden) fetchOrders(true); }, 30000);
-    function onVisible() { if (!document.hidden) fetchOrders(true); }
+    const interval = setInterval(() => { if (!document.hidden) fetchOrders(true).catch(() => {}); }, 30000);
+    function onVisible() { if (!document.hidden) fetchOrders(true).catch(() => {}); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders]);
@@ -241,8 +265,13 @@ export default function OrderListPage() {
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <img src="/logo.png" alt="Blossom" className="h-7" />
           <div className="flex items-center gap-2">
-            <button onClick={fetchOrders} className="h-8 w-8 rounded-full bg-white/80 border border-ios-separator flex items-center justify-center text-ios-tertiary active:bg-ios-fill">
-              ↻
+            <button
+              onClick={handleRefresh}
+              disabled={refreshing}
+              aria-label={t.refresh}
+              className="h-8 w-8 rounded-full bg-white/80 border border-ios-separator flex items-center justify-center text-ios-tertiary active:bg-ios-fill disabled:opacity-60"
+            >
+              <span className={`inline-block ${refreshing ? 'animate-spin' : ''}`}>↻</span>
             </button>
             <LangToggle />
           </div>

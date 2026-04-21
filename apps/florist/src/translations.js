@@ -141,6 +141,7 @@ const en = {
   recipientPhone:   'Recipient phone',
   deliveryAddress:  'Delivery address',
   cardText:         'Card message',
+  cardTextPlaceholder: 'Card message for the recipient…',
   orderNotes:       'Notes',
   paymentStatus:    'Payment',
   paymentUnpaid:    'Unpaid',
@@ -473,6 +474,8 @@ const en = {
   noEntries:          'No entries this month',
   daySummary:         'Day summary',
   refresh:            'Refresh',
+  refreshed:          'Refreshed',
+  refreshFailed:      'Could not refresh. Check your connection and try again.',
   help:               'Help',
 
   // Premade bouquets
@@ -527,6 +530,18 @@ const en = {
   noMismatches:             'All stock quantities match',
   applyFixes:               'Apply corrections',
   fixesApplied:             'Corrections applied',
+
+  // Owner-authored role-specific notes + customer call
+  customerNote:                 'Customer note',
+  floristNote:                  'Florist note',
+  driverInstructions:           'Driver instructions',
+  floristNotePlaceholder:       'Note for the florist…',
+  driverInstructionsPlaceholder:'Instructions for the driver…',
+  callCustomer:                 'Call customer',
+  callRecipient:                'Call recipient',
+  customer:                     'Customer',
+  recipient:                    'Recipient',
+  details:                      'Details',
 };
 
 const ru = {
@@ -667,6 +682,7 @@ const ru = {
   recipientPhone:   'Телефон получателя',
   deliveryAddress:  'Адрес доставки',
   cardText:         'Текст открытки',
+  cardTextPlaceholder: 'Текст открытки для получателя…',
   orderNotes:       'Заметки',
   paymentStatus:    'Оплата',
   paymentUnpaid:    'Не оплачен',
@@ -999,6 +1015,8 @@ const ru = {
   noEntries:          'Нет записей за этот месяц',
   daySummary:         'Итог дня',
   refresh:            'Обновить',
+  refreshed:          'Обновлено',
+  refreshFailed:      'Не удалось обновить. Проверьте соединение.',
   help:               'Помощь',
 
   // Premade bouquets
@@ -1053,6 +1071,18 @@ const ru = {
   noMismatches:             'Расхождений не найдено',
   applyFixes:               'Применить корректировки',
   fixesApplied:             'Корректировки применены',
+
+  // Owner-authored role-specific notes + customer call
+  customerNote:                 'Заметка клиента',
+  floristNote:                  'Заметка для флориста',
+  driverInstructions:           'Инструкции водителю',
+  floristNotePlaceholder:       'Заметка для флориста…',
+  driverInstructionsPlaceholder:'Инструкции водителю…',
+  callCustomer:                 'Позвонить клиенту',
+  callRecipient:                'Позвонить получателю',
+  customer:                     'Клиент',
+  recipient:                    'Получатель',
+  details:                      'Подробнее',
 };
 
 // ── Proxy-based dynamic translation ──

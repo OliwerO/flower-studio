@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -949,7 +949,8 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
             <EditableRow label={t.recipientName} value={o.delivery['Recipient Name']}
               onSave={v => patchDelivery({ 'Recipient Name': v })} disabled={saving} />
             <EditableRow label={t.phone} value={o.delivery['Recipient Phone']}
-              onSave={v => patchDelivery({ 'Recipient Phone': v })} disabled={saving} />
+              onSave={v => patchDelivery({ 'Recipient Phone': v })} disabled={saving}
+              trailing={<CallButton phone={o.delivery['Recipient Phone']} label={t.callRecipient} variant="subtle" />} />
             <EditableRow label={t.deliveryAddress} value={o.delivery['Delivery Address']}
               onSave={v => patchDelivery({ 'Delivery Address': v })} disabled={saving} multiline />
             <EditableRow label={t.deliveryFee} value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}
@@ -959,15 +960,48 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
         </div>
       )}
 
-      {/* Notes */}
+      {/* Notes — owner writes separate guidance for florist and driver */}
       <Section label={t.notes}>
-        <InlineEdit
-          value={o['Notes Original'] || ''}
-          multiline
-          placeholder="—"
-          onSave={v => patchOrder({ 'Notes Original': v })}
-          disabled={saving}
-        />
+        <div className="space-y-3">
+          <div>
+            <p className="text-[10px] font-semibold text-ios-tertiary uppercase tracking-wide mb-1">
+              {t.customerNote}
+            </p>
+            <InlineEdit
+              value={o['Notes Original'] || ''}
+              multiline
+              placeholder="—"
+              onSave={v => patchOrder({ 'Notes Original': v })}
+              disabled={saving}
+            />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-green-700 uppercase tracking-wide mb-1">
+              🌸 {t.floristNote}
+            </p>
+            <InlineEdit
+              value={o['Florist Note'] || ''}
+              multiline
+              placeholder={t.floristNotePlaceholder}
+              onSave={v => patchOrder({ 'Florist Note': v })}
+              disabled={saving}
+            />
+          </div>
+          {o.delivery && (
+            <div>
+              <p className="text-[10px] font-semibold text-orange-700 uppercase tracking-wide mb-1">
+                🚗 {t.driverInstructions}
+              </p>
+              <InlineEdit
+                value={o.delivery['Driver Instructions'] || ''}
+                multiline
+                placeholder={t.driverInstructionsPlaceholder}
+                onSave={v => patchDelivery({ 'Driver Instructions': v })}
+                disabled={saving}
+              />
+            </div>
+          )}
+        </div>
       </Section>
 
       {/* Action buttons */}
@@ -1051,11 +1085,11 @@ function Section({ label, children }) {
 }
 
 // Editable key-value row for delivery info
-function EditableRow({ label, value, onSave, disabled, multiline, type, suffix }) {
+function EditableRow({ label, value, onSave, disabled, multiline, type, suffix, trailing }) {
   return (
     <div className="flex items-start gap-3">
       <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{label}</span>
-      <div className="flex-1 flex items-center gap-1">
+      <div className="flex-1 flex items-center gap-2">
         <InlineEdit
           value={value || ''}
           onSave={onSave}
@@ -1065,6 +1099,7 @@ function EditableRow({ label, value, onSave, disabled, multiline, type, suffix }
           placeholder="—"
         />
         {suffix && value && <span className="text-xs text-ios-tertiary">{suffix}</span>}
+        {trailing}
       </div>
     </div>
   );

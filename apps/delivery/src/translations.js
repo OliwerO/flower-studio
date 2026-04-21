@@ -113,6 +113,14 @@ const en = {
   packs:         'packs',
   lotsFound:     'Lots found',
   totalStems:    'Total stems',
+
+  // Owner-authored driver instructions + customer call + expand + nav
+  driverInstructions: 'Driver instructions',
+  callCustomer:       'Call customer',
+  callRecipient:      'Call recipient',
+  customer:           'Customer',
+  details:            'Details',
+  navigate:           'Navigate',
 };
 
 const ru = {
@@ -227,6 +235,14 @@ const ru = {
   packs:         'уп.',
   lotsFound:     'Упаковок найдено',
   totalStems:    'Всего штук',
+
+  // Owner-authored driver instructions + customer call + expand + nav
+  driverInstructions: 'Инструкции водителю',
+  callCustomer:       'Позвонить клиенту',
+  callRecipient:      'Позвонить получателю',
+  customer:           'Клиент',
+  details:            'Подробнее',
+  navigate:           'Навигация',
 };
 
 // ── Proxy-based dynamic translation ──

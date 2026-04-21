@@ -128,6 +128,7 @@ Features and improvements tracked against original build phases.
 - [x] **Dashboard Step2Bouquet key fix** — uses stable identity key (no quantity)
 - [x] **Dark mode (florist app)** — system preference + manual toggle, iOS dark palette, ThemeContext
 - [x] **Premade bouquets** (2026-04-11) — florist composes display bouquets without a customer; inventory view with "Sold"/"Return to stock" actions; match-to-client flow creates an order and consumes the premade; supports both paths (from inventory card or picked inside Step 2 of the new-order wizard). Cross-app parity on florist + dashboard. Backend: new `Premade Bouquets` + `Premade Bouquet Lines` tables, `premadeBouquetService.js`, 7 routes, 9 unit tests.
+- [x] **Customer Tab v2.0** (2026-04-18 → 2026-04-20, PRs #101 + #102) — full CRM redesign so the owner stops reaching for Airtable. Split-view (list + detail pane on ≥1280px, slide-over `CustomerDrawer` below). Merged legacy + app order timeline with per-row expand exposing every raw Airtable field and cross-tab "Open in Orders tab" that focuses a single order (dismissable banner). Chip-based Key People over the flat `Key person 1/2` fields (survives future Postgres migration). Universal search + stackable composable filters (Segment, Language, Sex/Business, Communication, Order Source, Found us from, Has Phone/Instagram/Email/KeyPerson, Last order within N days, Min order count, Min total spend, Churn risk). Segment + Acquisition Source rows are clickable filter pills — same interaction model for both. Fixed the broken + Filter dropdown (multi-select picker now opens immediately). Timeline row shows delivery/pickup icon + Unpaid badge + color-coded status pill + richer description fallback chain. Backend: fixed `Segment (client)` / `Key person (Name + Contact details)` field-name aliases (was silently no-oping PATCHes), new `GET /customers/:id/orders` returns merged legacy + app with `{ source, date, description, amount, status, raw }`, `_agg` enrichment on `/customers` (`lastOrderDate`, `orderCount`, `totalSpend`) with 60s cache. Removed the Customer Health RFM strip per owner feedback (not useful). Deleted legacy `CustomerDetailPanel.jsx` (replaced by `CustomerDetailView.jsx`).
 
 ---
 
@@ -189,6 +190,14 @@ substitutes no longer silently fill in for the original, so the original can end
 - [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
+
+### Owner-notes + customer call + driver nav (2026-04-21)
+- [x] Split owner-authored notes by audience: `Florist Note` (ORDERS) + `Driver Instructions` (DELIVERIES), each prominent on the right role's collapsed card; customer's note stays as `Notes Original`, driver's own note stays as `Driver Notes`.
+- [x] Editable at every order stage from dashboard + florist app (no status gate) — owner can add a post-delivery note if needed.
+- [x] Customer phone rendered as a one-tap `CallButton` on florist collapsed card, delivery collapsed card, and both detail views. Dashboard recipient phone is also a call link.
+- [x] Delivery card: explicit "Details ▾" button for discoverable expand (card body still tappable).
+- [x] Three-way navigation strip on delivery card + sheet: Google Maps / Waze / Apple Maps (text-address based — no geocoding).
+- [ ] Consider adding a tiny `Florist Note` field to the new-order wizard Step 3 so the owner can capture it at creation time (today she has to open the order after creation).
 
 ### Tier 1 Bugs — Blocking Daily Operations (consolidated 2026-04-19)
 

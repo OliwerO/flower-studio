@@ -319,6 +319,50 @@ export async function processWixOrder(payload) {
         : `"${productName}" (no stock match — text-only)`);
     }
 
+    // 11b. Decrement tracked inventory on PRODUCT_CONFIG.
+    //      For each line item, look up the Airtable row by
+    //      (Wix Product ID, Wix Variant ID) and reduce `Quantity` by the
+    //      ordered amount (clamped at 0). Rows without a numeric `Quantity`
+    //      are "untracked/unlimited" and left alone. Idempotent at the
+    //      order level — webhook re-fires for the same Wix Order ID exit
+    //      at the dedup check above.
+    for (const li of lineItems) {
+      const wixProductId = li.catalogReference?.catalogItemId
+        || li.productId
+        || li.catalogItemId;
+      const wixVariantId = li.catalogReference?.options?.variantId
+        || li.productOptions?.variantId
+        || li.variantId;
+      const orderedQty = Number(li.quantity) || 1;
+
+      if (!wixProductId || !wixVariantId) {
+        log('11b-INV', `Skip (no Wix Product/Variant ID): "${localizedText(li.productName) || li.name || 'Item'}"`);
+        continue;
+      }
+
+      try {
+        const matches = await db.list(TABLES.PRODUCT_CONFIG, {
+          filterByFormula: `AND({Wix Product ID} = '${sanitizeFormulaValue(wixProductId)}', {Wix Variant ID} = '${sanitizeFormulaValue(wixVariantId)}')`,
+          maxRecords: 1,
+        });
+        if (matches.length === 0) {
+          log('11b-INV', `No PRODUCT_CONFIG row for ${wixProductId}/${wixVariantId}`);
+          continue;
+        }
+        const row = matches[0];
+        const currentQty = row['Quantity'];
+        if (typeof currentQty !== 'number') {
+          log('11b-INV', `Row ${row.id} has no Quantity — untracked, skipping`);
+          continue;
+        }
+        const newQty = Math.max(0, currentQty - orderedQty);
+        await db.update(TABLES.PRODUCT_CONFIG, row.id, { Quantity: newQty });
+        log('11b-INV', `Row ${row.id}: ${currentQty} → ${newQty} (ordered ${orderedQty})`);
+      } catch (decErr) {
+        console.error('[WIX] decrement failed for', wixProductId, wixVariantId, decErr.message);
+      }
+    }
+
     // 12. Always create the delivery record (Wix is delivery-only today).
     //     If address or contact info is missing, the florist fills it in
     //     later; leaving the delivery sub-record absent would break driver

@@ -13,6 +13,21 @@ import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/se
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
+// Thrown when a Wix Stores endpoint returns 404 PRODUCT_NOT_FOUND.
+// The push loop dedupes these by product ID so the owner sees one
+// actionable warning instead of N identical errors per variant.
+class WixProductNotFoundError extends Error {
+  constructor(productId) {
+    super(`Wix product ${productId} not found`);
+    this.name = 'WixProductNotFoundError';
+    this.productId = productId;
+  }
+}
+
+function isProductNotFound(status, text) {
+  return status === 404 && text.includes('PRODUCT_NOT_FOUND');
+}
+
 // ── Wix API helpers ────────────────────────────────────────
 
 function wixHeaders() {
@@ -81,43 +96,62 @@ async function updateWixVariantPrice(productId, variantId, price) {
 
   if (!res.ok) {
     const text = await res.text();
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
     throw new Error(`Wix price update failed for ${productId}/${variantId}: ${text}`);
   }
 }
 
 /**
- * Update Wix inventory for a product variant.
- * Uses the Wix Inventory API to push stock quantities.
+ * Update ALL variants of a Wix product in a single PATCH.
+ *
+ * Why batched: Wix's `trackQuantity` flag is stored at the product level,
+ * not per variant. Iterating variants and PATCHing one at a time flips
+ * the product's trackQuantity on every call — the last PATCH wins and
+ * earlier tracked quantities get silently discarded. Pushing all variants
+ * together in one call with a single, consistent `trackQuantity` avoids
+ * the flip-flop.
+ *
+ * Product-level tracking rule: if ANY variant of this product has a
+ * numeric Airtable Quantity, the whole product goes into tracked mode.
+ *   - tracked + active + numeric Quantity → push that quantity as cap
+ *   - tracked + active + no Quantity      → push 9999 (effectively unlimited)
+ *   - tracked + inactive                  → push quantity 0 (sold out)
+ *   - untracked + active                  → push inStock: true (legacy)
+ *   - untracked + inactive                → push inStock: false (legacy)
+ *
+ * @param productId Wix product ID
+ * @param variantStates Array of { variantId, active, quantity? } — one per variant
  */
-/**
- * Update a variant's availability on Wix using untracked inventory.
- * trackQuantity=false means we just toggle inStock on/off — no real
- * inventory counting. Like a simple "available / sold out" switch.
- */
-async function updateWixInventory(productId, variantId, quantity) {
-  const inStock = quantity > 0;
+async function updateWixInventory(productId, variantStates) {
+  const anyTracked = variantStates.some(v =>
+    v.active === true && typeof v.quantity === 'number' && v.quantity >= 0
+  );
 
-  // Wix Inventory v2 endpoint — update by product ID
+  const variants = variantStates.map(v => {
+    if (anyTracked) {
+      if (v.active !== true) return { variantId: v.variantId, quantity: 0 };
+      const q = typeof v.quantity === 'number' && v.quantity >= 0 ? v.quantity : 9999;
+      return { variantId: v.variantId, quantity: q };
+    }
+    return { variantId: v.variantId, inStock: v.active === true };
+  });
+
+  const body = {
+    inventoryItem: {
+      trackQuantity: anyTracked,
+      variants,
+    },
+  };
+
   const res = await fetch(
     `${WIX_API_URL}/stores/v2/inventoryItems/product/${productId}`,
-    {
-      method: 'PATCH',
-      headers: wixHeaders(),
-      body: JSON.stringify({
-        inventoryItem: {
-          trackQuantity: false,
-          variants: [{
-            variantId,
-            inStock,
-          }],
-        },
-      }),
-    }
+    { method: 'PATCH', headers: wixHeaders(), body: JSON.stringify(body) }
   );
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`Wix inventory update failed for ${productId}/${variantId}: ${text}`);
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
+    throw new Error(`Wix inventory update failed for ${productId}: ${text}`);
   }
 }
 
@@ -165,6 +199,7 @@ async function updateWixProductContent(productId, { name, description }) {
 
   if (!res.ok) {
     const text = await res.text();
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
     throw new Error(`Wix product content update failed for ${productId}: ${text}`);
   }
 }
@@ -215,6 +250,164 @@ async function updateWixCategory(id, { name, description }) {
   if (!res.ok) {
     const text = await res.text();
     throw new Error(`Wix category update failed for ${id}: ${text}`);
+  }
+}
+
+// Schema identifying Wix Stores Collections in the Wix Multilingual Translation
+// Content API. Discovered by querying an existing collection's translation
+// content. Field keys: "collection-name" and "category-description".
+const STORES_COLLECTION_SCHEMA_ID = '5b35dfe1-da21-4071-aab5-2cec870459c0';
+
+// Schema identifying Wix Stores Products in the Wix Multilingual Translation
+// Content API. Discovered by querying an existing product's translation
+// content. Field keys: "product-name" and "product-description".
+const STORES_PRODUCT_SCHEMA_ID = 'b8f0a427-14d8-47b5-870e-21645dd3a507';
+
+const SECONDARY_LOCALES = ['pl', 'ru', 'uk'];
+
+/**
+ * Push PL/RU/UK translations to Wix Multilingual for a Stores collection.
+ * Wix hides untranslated store collections from non-primary language menus,
+ * so without this the category's menu link never renders on the PL/RU/UK
+ * sites. EN is the primary locale and lives directly on the Stores
+ * collection — updated via updateWixCategory().
+ *
+ * Flow: query → create missing locales, update existing locales.
+ * Skips any locale whose Airtable config has blank title + description,
+ * so we don't overwrite translations the owner added via Wix Translation
+ * Manager.
+ */
+async function pushCollectionTranslations(entityId, translations) {
+  if (!entityId || !translations) return;
+
+  const targetFields = {};
+  for (const locale of SECONDARY_LOCALES) {
+    const t = translations[locale];
+    if (!t) continue;
+    const fields = {};
+    if (t.title) fields['collection-name'] = { textValue: t.title, published: true, updatedBy: 'USER' };
+    if (t.description) fields['category-description'] = { textValue: t.description, published: true, updatedBy: 'USER' };
+    if (Object.keys(fields).length > 0) targetFields[locale] = fields;
+  }
+  if (Object.keys(targetFields).length === 0) return;
+
+  const qRes = await fetch(`${WIX_API_URL}/translation-content/v1/contents/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { filter: { entityId }, cursorPaging: { limit: 50 } } }),
+  });
+  if (!qRes.ok) {
+    throw new Error(`Translation query failed for ${entityId}: ${await qRes.text()}`);
+  }
+  const existingByLocale = ((await qRes.json()).contents || []).reduce((m, c) => {
+    m[c.locale] = c.id;
+    return m;
+  }, {});
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const [locale, fields] of Object.entries(targetFields)) {
+    if (existingByLocale[locale]) {
+      toUpdate.push({ content: { id: existingByLocale[locale], schemaId: STORES_COLLECTION_SCHEMA_ID, fields } });
+    } else {
+      toCreate.push({ schemaId: STORES_COLLECTION_SCHEMA_ID, entityId, locale, fields });
+    }
+  }
+
+  if (toCreate.length > 0) {
+    const cRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/create`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toCreate, returnEntity: false }),
+    });
+    if (!cRes.ok) {
+      throw new Error(`Translation bulk create failed for ${entityId}: ${await cRes.text()}`);
+    }
+  }
+
+  if (toUpdate.length > 0) {
+    const uRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/update`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toUpdate, returnEntity: false }),
+    });
+    if (!uRes.ok) {
+      throw new Error(`Translation bulk update failed for ${entityId}: ${await uRes.text()}`);
+    }
+  }
+}
+
+/**
+ * Push PL/RU/UK translations to Wix Multilingual for a Stores product.
+ * The product's EN name + description live directly on the Stores product
+ * (see updateWixProductContent). Without PL/RU/UK records in the
+ * Multilingual Translation Content API, non-primary-language sites fall
+ * back to the EN text — which is why the PL storefront was showing
+ * English product descriptions even though translations existed in the
+ * Florist dashboard.
+ *
+ * Mirrors pushCollectionTranslations: query existing content, split into
+ * create-or-update, skip locales whose translation is blank so we don't
+ * clobber anything the owner edited directly in the Wix Translation
+ * Manager.
+ */
+async function pushProductTranslations(entityId, translations) {
+  if (!entityId || !translations) return;
+
+  const targetFields = {};
+  for (const locale of SECONDARY_LOCALES) {
+    const t = translations[locale];
+    if (!t) continue;
+    const fields = {};
+    if (t.title) fields['product-name'] = { textValue: t.title, published: true, updatedBy: 'USER' };
+    if (t.description) fields['product-description'] = { textValue: textToHtml(t.description), published: true, updatedBy: 'USER' };
+    if (Object.keys(fields).length > 0) targetFields[locale] = fields;
+  }
+  if (Object.keys(targetFields).length === 0) return;
+
+  const qRes = await fetch(`${WIX_API_URL}/translation-content/v1/contents/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { filter: { entityId }, cursorPaging: { limit: 50 } } }),
+  });
+  if (!qRes.ok) {
+    throw new Error(`Product translation query failed for ${entityId}: ${await qRes.text()}`);
+  }
+  const existingByLocale = ((await qRes.json()).contents || []).reduce((m, c) => {
+    m[c.locale] = c.id;
+    return m;
+  }, {});
+
+  const toCreate = [];
+  const toUpdate = [];
+  for (const [locale, fields] of Object.entries(targetFields)) {
+    if (existingByLocale[locale]) {
+      toUpdate.push({ content: { id: existingByLocale[locale], schemaId: STORES_PRODUCT_SCHEMA_ID, fields } });
+    } else {
+      toCreate.push({ schemaId: STORES_PRODUCT_SCHEMA_ID, entityId, locale, fields });
+    }
+  }
+
+  if (toCreate.length > 0) {
+    const cRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/create`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toCreate, returnEntity: false }),
+    });
+    if (!cRes.ok) {
+      throw new Error(`Product translation bulk create failed for ${entityId}: ${await cRes.text()}`);
+    }
+  }
+
+  if (toUpdate.length > 0) {
+    const uRes = await fetch(`${WIX_API_URL}/translation-content/v1/bulk/contents/update`, {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ contents: toUpdate, returnEntity: false }),
+    });
+    if (!uRes.ok) {
+      throw new Error(`Product translation bulk update failed for ${entityId}: ${await uRes.text()}`);
+    }
   }
 }
 
@@ -455,10 +648,39 @@ export async function runPull() {
       }
     }
 
-    // Deactivate rows whose Wix product/variant no longer exists
+    // Reconcile rows whose Wix product/variant no longer exists.
+    //
+    // Two cases, two behaviors:
+    //
+    //  1. The Wix PRODUCT is still alive but this specific variant ID is
+    //     gone. That happens when the owner removes a variant option in
+    //     the Wix Editor (e.g., drops the "Bouquet: 1/2/3/4/5" option and
+    //     goes back to a single default variant). The old Airtable row is
+    //     orphaned — its Product Name becomes misleading as the product
+    //     gets renamed, and it clutters the dashboard as a ghost group.
+    //     → Delete the row.
+    //
+    //  2. The whole Wix PRODUCT is gone (deleted from the store). We don't
+    //     delete the Airtable row because the owner may want to review
+    //     history before removing it, and downstream references (order
+    //     lines, sync log) might still point to it.
+    //     → Deactivate only (legacy behavior).
+    const wixProductIds = new Set(wixProducts.map(p => p.id));
+
     for (const row of existingRows) {
       const key = `${row['Wix Product ID']}::${row['Wix Variant ID']}`;
-      if (!seenKeys.has(key) && row['Active']) {
+      if (seenKeys.has(key)) continue;
+
+      const productStillAlive = wixProductIds.has(row['Wix Product ID']);
+
+      if (productStillAlive) {
+        try {
+          await db.deleteRecord(TABLES.PRODUCT_CONFIG, row.id);
+          stats.deleted = (stats.deleted || 0) + 1;
+        } catch (err) {
+          stats.errors.push(`Delete orphaned variant ${row['Product Name']}/${row['Variant Name']}: ${err.message}`);
+        }
+      } else if (row['Active']) {
         try {
           await db.update(TABLES.PRODUCT_CONFIG, row.id, { 'Active': false });
           stats.deactivated++;
@@ -551,27 +773,62 @@ export async function runPush() {
     }
 
     // ── Availability (inventory-based) ─────────────────
-    // Active checkbox controls per-variant availability on Wix:
-    // Active = true → inventory 999 (available to buy)
-    // Active = false/undefined → inventory 0 (out of stock on Wix)
-    // We don't track real inventory in Wix — just available/not-available.
+    // Per product (batched across all its variants — see updateWixInventory
+    // for why batching matters):
+    //   Any variant has a numeric Quantity → whole product tracked.
+    //     active + Quantity=N → cap N; active + no Quantity → cap 9999;
+    //     inactive → cap 0.
+    //   No variant has Quantity → whole product untracked, legacy inStock
+    //     toggle per variant driven by Active.
+    // The Airtable Quantity column is optional during rollout — products
+    // whose variants all lack Quantity keep the old behavior.
     const allVariantRows = await db.list(TABLES.PRODUCT_CONFIG, {
-      fields: ['Wix Product ID', 'Wix Variant ID', 'Active'],
+      fields: ['Wix Product ID', 'Wix Variant ID', 'Active', 'Quantity'],
     });
 
+    // Group rows by product so we can push each product's variants in one call.
+    // A zero-UUID variant ID is the legitimate default variant for products
+    // with no options (Wix uses 00000000-...-000000000000 as the variant ID
+    // in that case). We DO want to push inventory for those — skipping them
+    // meant the Qty cap never reached Wix for any single-variant product.
+    const byProduct = new Map();
     for (const row of allVariantRows) {
       const pid = row['Wix Product ID'];
       const vid = row['Wix Variant ID'];
-      const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
-      if (!pid || !vid || vid === ZERO_UUID) continue;
-      const shouldBeAvailable = row['Active'] === true;
-      const targetQty = shouldBeAvailable ? 999 : 0;
+      if (!pid || !vid) continue;
+      if (!byProduct.has(pid)) byProduct.set(pid, []);
+      const rawQty = row['Quantity'];
+      const qty = typeof rawQty === 'number' ? rawQty : Number(rawQty);
+      byProduct.get(pid).push({
+        variantId: vid,
+        active: row['Active'] === true,
+        quantity: Number.isFinite(qty) && qty >= 0 ? qty : undefined,
+      });
+    }
+
+    // Track stale Wix product IDs — one aggregated warning at the end
+    // beats N identical 404 errors.
+    const staleInventoryIds = new Set();
+
+    for (const [pid, variantStates] of byProduct) {
       try {
-        await updateWixInventory(pid, vid, targetQty);
-        stats.stockSynced++;
+        await updateWixInventory(pid, variantStates);
+        stats.stockSynced += variantStates.length;
       } catch (err) {
-        stats.errors.push(`Availability ${pid}/${vid}: ${err.message}`);
+        if (err instanceof WixProductNotFoundError) {
+          staleInventoryIds.add(pid);
+          continue;
+        }
+        stats.errors.push(`Availability ${pid}: ${err.message}`);
       }
+    }
+
+    if (staleInventoryIds.size > 0) {
+      const ids = [...staleInventoryIds].join(', ');
+      stats.errors.push(
+        `${staleInventoryIds.size} Wix product${staleInventoryIds.size === 1 ? '' : 's'} referenced by PRODUCT_CONFIG no longer exist in Wix: ${ids}. ` +
+        `Clear the Wix Product ID on those Airtable rows (or delete the rows) to stop this warning.`
+      );
     }
 
     // ── Categories ──────────────────────────────────────
@@ -626,6 +883,11 @@ export async function runPush() {
               description: enDesc || '',
             });
           }
+          try {
+            await pushCollectionTranslations(seasonalWixId, seasonal.translations);
+          } catch (err) {
+            stats.errors.push(`Seasonal translations: ${err.message}`);
+          }
           stats.categoriesSynced++;
         } catch (err) {
           stats.errors.push(`Seasonal: ${err.message}`);
@@ -642,8 +904,8 @@ export async function runPush() {
         // without this, the Wix-native collection label stays whatever the
         // owner typed when creating the collection, which meant Wix only
         // rendered the nav item in the primary (English) language.
+        const availEntry = (sc.auto || []).find(a => a && a.slug === 'available-today');
         try {
-          const availEntry = (sc.auto || []).find(a => a && a.slug === 'available-today');
           const enTitle = availEntry?.translations?.en?.title;
           const enDesc = availEntry?.translations?.en?.description;
           if (enTitle || enDesc) {
@@ -654,6 +916,11 @@ export async function runPush() {
           }
         } catch (err) {
           stats.errors.push(`Available Today category name: ${err.message}`);
+        }
+        try {
+          await pushCollectionTranslations(availTodayId, availEntry?.translations);
+        } catch (err) {
+          stats.errors.push(`Available Today translations: ${err.message}`);
         }
 
         const stockCheck = await db.list(TABLES.STOCK, {
@@ -696,15 +963,19 @@ export async function runPush() {
     }
 
     // ── Product Descriptions ────────────────────────────
-    // Push EN name + description from Translations field to Wix.
-    // Like updating product labels on the showroom shelf.
+    // EN lives directly on the Wix product (name + description fields);
+    // PL/RU/UK live in the Wix Multilingual Translation Content API.
+    // Without that second push, non-primary-language sites fall back to
+    // the EN text — which is why the PL storefront was showing English
+    // product descriptions even though translations existed in Airtable.
     try {
       const descRows = await db.list(TABLES.PRODUCT_CONFIG, {
         filterByFormula: '{Active} = TRUE()',
         fields: ['Wix Product ID', 'Description', 'Translations'],
       });
 
-      // Group by product — one description per Wix product
+      // Group by product — one description per Wix product. Keep the
+      // raw translations object so we can push PL/RU/UK alongside EN.
       const descByProduct = new Map();
       for (const row of descRows) {
         const pid = row['Wix Product ID'];
@@ -719,20 +990,47 @@ export async function runPush() {
         const enTitle = translations?.en?.title;
         const enDesc = translations?.en?.description || row['Description'] || '';
         if (enTitle || enDesc) {
-          descByProduct.set(pid, { name: enTitle, description: textToHtml(enDesc) });
+          descByProduct.set(pid, {
+            name: enTitle,
+            description: textToHtml(enDesc),
+            translations,
+          });
         }
       }
 
       let descSynced = 0;
+      let transSynced = 0;
+      const staleDescIds = new Set();
       for (const [productId, content] of descByProduct) {
         try {
-          await updateWixProductContent(productId, content);
+          await updateWixProductContent(productId, { name: content.name, description: content.description });
           descSynced++;
         } catch (err) {
+          if (err instanceof WixProductNotFoundError) {
+            staleDescIds.add(productId);
+            continue;
+          }
           stats.errors.push(`Description ${productId}: ${err.message}`);
+        }
+
+        // Push PL/RU/UK translations to Wix Multilingual. Skipping this
+        // leaves the non-primary-language storefront falling back to the
+        // EN description, which was the root cause of "translations not
+        // showing on the PL site" even though Airtable had them.
+        try {
+          await pushProductTranslations(productId, content.translations);
+          if (content.translations && Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
+            transSynced++;
+          }
+        } catch (err) {
+          stats.errors.push(`Product translations ${productId}: ${err.message}`);
         }
       }
       if (descSynced > 0) console.log(`[PUSH] Descriptions synced: ${descSynced}`);
+      if (transSynced > 0) console.log(`[PUSH] Product translations synced: ${transSynced}`);
+      if (staleDescIds.size > 0) {
+        console.warn(`[PUSH] Skipped description update for ${staleDescIds.size} deleted Wix product(s) — see inventory warning for IDs`);
+      }
     } catch (err) {
       stats.errors.push(`Description phase: ${err.message}`);
     }

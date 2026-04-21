@@ -27,6 +27,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-18 | Florist Hours | New field: `Rate Type` (Single line text) — stores rate type name per entry | ❌ |
 | 2026-04-11 | Premade Bouquets | **New table** — standalone bouquet compositions the florist prepares before any order. Fields: `Name` (Single line text, required), `Created At` (Created time, auto), `Created By` (Single line text), `Price Override` (Number, optional), `Notes` (Long text), `Lines` (link → Premade Bouquet Lines). | ❌ |
 | 2026-04-11 | Premade Bouquet Lines | **New table** — line items for a premade bouquet. Fields: `Premade Bouquet` (link → Premade Bouquets), `Stock Item` (link → Stock, required), `Flower Name` (Single line text), `Quantity` (Number), `Cost Price Per Unit` (Number, snapshot), `Sell Price Per Unit` (Number, snapshot). | ❌ |
+| 2026-04-21 | App Orders | New field: `Florist Note` (Long text) — owner-authored guidance for the florist, separate from the customer's `Notes Original`. Visible on florist collapsed card + editable at every order stage from both dashboard and florist app. | ❌ |
+| 2026-04-21 | Deliveries | New field: `Driver Instructions` (Long text) — owner-authored instructions for the driver, separate from the driver's own `Driver Notes`. Visible on delivery collapsed card + editable from dashboard and florist app. | ❌ |
 
 ### Env vars
 
@@ -36,6 +38,135 @@ Add to `.env.dev` and `.env` (before the feature ships):
 AIRTABLE_PREMADE_BOUQUETS_TABLE=tbl...       # Premade Bouquets table ID
 AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 ```
+
+---
+
+## 2026-04-21 — Role-specific owner notes, customer call button, driver nav options
+
+The owner needed to direct the florist and the driver with separate
+instructions on every order, and the florist / driver needed a one-tap
+call to the customer (not the recipient). The driver card hid its
+expand affordance behind call and navigate links, and Google Maps was
+the only navigation option.
+
+### Airtable schema (owner action required before deploy)
+- **App Orders → new field `Florist Note` (Long text)** — owner-authored note for the florist, shown as a green 🌸 block on the florist card. Distinct from the customer's `Notes Original` (kept as a blue 📝 block).
+- **Deliveries → new field `Driver Instructions` (Long text)** — owner-authored instructions for the driver, shown as an orange ⚠ block on the delivery card. Distinct from the driver's own `Driver Notes` (kept as the driver-editable note).
+
+### Backend (`backend/src/`)
+- `routes/orders.js` — `Florist Note` added to `ORDERS_PATCH_ALLOWED`; POST /orders accepts `floristNote`; convert-to-delivery accepts `driverInstructions`; list endpoint now enriches `Customer Phone` so florist cards can call the customer without an extra fetch.
+- `routes/deliveries.js` — `Driver Instructions` added to `DELIVERIES_PATCH_ALLOWED`.
+- `services/orderService.js` — `createOrder` writes `Florist Note` on order + `Driver Instructions` on delivery at creation time.
+- `services/airtableSchema.js` — startup validator now checks both new fields so a missing field fails the boot instead of silently 422'ing PATCH calls.
+
+### Shared package (`packages/shared/`)
+- New `utils/phone.js` (`cleanPhone`, `telHref`) + tests.
+- New `utils/navigation.js` (`googleMapsUrl`, `wazeUrl`, `appleMapsUrl`) + tests.
+- New `components/CallButton.jsx` — consistent green click-to-call pill with `stopPropagation` so it can sit inside clickable cards.
+- New `components/NavButtons.jsx` — three-up Google / Waze / Apple nav strip.
+- 12 tests, all green. Package-level `npm test` script added.
+
+### Dashboard (`apps/dashboard/`)
+- `OrderDetailPanel.jsx` — Notes section restructured into three rows: customer note (read-only, `Notes Original`), florist note (editable, `Florist Note`), driver instructions (editable, delivery orders only). Recipient phone row gains a `CallButton` via the new `trailing` prop on `EditableRow`.
+- New translation keys added (EN + RU): `customerNote`, `floristNote`, `driverInstructions`, placeholders, `callCustomer`, `callRecipient`, `customer`, `recipient`.
+
+### Florist app (`apps/florist/`)
+- `OrderCardSummary.jsx` — collapsed card now shows florist note in a green block (first) and customer note in the existing blue block; customer phone sits next to the customer name as a `CallButton`.
+- `OrderCard.jsx` (expanded) — two inline editors added (green for florist note, orange for driver instructions). Editable at every status so the owner can add instructions after "Delivered" if needed.
+- `OrderDetailPage.jsx` — same two editors, customer phone converted to `CallButton`.
+- New translation keys mirroring the dashboard set.
+
+### Delivery app (`apps/delivery/`)
+- `DeliveryCard.jsx` — address is now plain text above the three-way nav strip (Google / Waze / Apple), two `CallButton`s (customer + recipient), owner's `Driver Instructions` shown in an orange block (falls back to the legacy `Special Instructions` for old data), explicit "Details ▾" button makes the expand action discoverable without competing with call/navigate.
+- `DeliverySheet.jsx` — nav strip in its own section, both phone rows converted to `CallButton`, owner's driver instructions rendered read-only above the driver's own notes editor.
+- New translation keys: `driverInstructions`, `callCustomer`, `callRecipient`, `customer`, `details`, `navigate`.
+
+### Why it matters
+- The owner now has a single, clear authoring surface (dashboard + florist mobile) to talk to each role independently; florists and drivers read the message meant for them on the collapsed card, not buried in the sheet.
+- Drivers no longer have to guess where to tap to expand — the explicit "Details" button removes that ambiguity — and can choose their preferred map app instead of being forced into Google Maps.
+- Customer phone is one tap away on every card the florist or driver touches, with `CallButton` centralizing formatting (`cleanPhone` strips spaces once, instead of four times).
+
+### What to watch for
+- `Driver Instructions` is separate from the existing `Driver Notes`. The driver's own post-delivery observations still live in `Driver Notes`; only the owner writes `Driver Instructions`. If anyone starts re-using `Driver Notes` for owner messages, it will collide with what the driver types.
+- The florist card's florist-note block renders only when `Florist Note` is non-empty. Orders created before this deploy will have no green block — that's expected, not a regression.
+- Apple Maps on Android falls back to Google Maps in the browser; this is acceptable but means Android drivers effectively see "Google Google Waze". Worth confirming on a real Android device during verification.
+- `airtableSchema.js` will now fail boot if either new field is missing from the base. Create both in Airtable before deploying the backend.
+
+---
+
+## 2026-04-20 — Customer Tab v2.0 complete + legacy cleanup
+
+Final iteration of the Customer Tab v2.0 rollout (PRs #101 + #102). The goal
+of this work was for the owner to stop reaching for Airtable for CRM — every
+order detail, every editable field, every filter she relied on in Airtable is
+now available on the Dashboard.
+
+### What landed across iterations
+
+- **Split-view layout** (≥1280px) — left list pane (react-window virtualized,
+  1094 customers), right detail pane. Below 1280px a `CustomerDrawer` slides
+  in from the right, preserving list context.
+- **Merged legacy + app order timeline** — `CustomerTimeline.jsx` fetches both
+  `Legacy Orders` and `App Orders` via new `GET /customers/:id/orders`, sorted
+  date-desc. Every row expands to reveal every raw Airtable field (ordered
+  fields first, then "Other fields" catchall so nothing silently hides). App
+  orders get an "Open in Orders tab" button that focuses the list to that
+  single order with a dismissable banner (was the #1 pain point of the first
+  iteration — it used to just expand the order buried in a long list).
+- **Chip-based Key People** (`KeyPersonChips.jsx`) over the flat
+  `Key person 1 (Name + Contact details)` / `Key person 2 (...)` fields.
+  Designed so the future Postgres many-to-many migration needs no frontend
+  rewrite — the UI already behaves like N slots.
+- **Universal search + composable filter bar** (`CustomerFilterBar.jsx` +
+  `utils/customerFilters.js`) — search walks every string field on the
+  customer record plus `_agg.lastOrderDate`. Filters stack with AND logic.
+  13 filter dimensions (Segment, Language, Sex/Business, Communication,
+  Order Source, Found us from, Has Phone/Instagram/Email/KeyPerson, Last
+  order within N days, Min order count, Min total spend, Churn risk). Filter
+  state persisted to `localStorage` with a version tag for safe migration.
+- **Segment + Acquisition Source pills** are clickable filters with the same
+  interaction model (owner feedback: having two visually different control
+  systems for the same job was confusing). Removed the top "Customer Health"
+  RFM strip entirely — owner didn't find it useful.
+- **Fixed the + Filter dropdown** — picking a multi-select dimension (e.g.
+  Sex/Business) now actually opens the value picker. Previously the chip only
+  rendered once the set was non-empty, but values could only be picked from
+  inside the chip, so the picker was unreachable. Now `displayDims` includes
+  whichever dimension is currently being edited.
+- **Richer timeline rows** — description fallback chain
+  (`Bouquet Summary → Customer Request → N × line items`), delivery/pickup
+  icon, Unpaid badge, color-coded status pill matching the OrdersTab palette.
+- **Cleanup (this commit)** — deleted legacy `CustomerDetailPanel.jsx`
+  (~320 LOC, fully superseded), updated `apps/dashboard/CLAUDE.md` component
+  table, updated `docs/technical-breakdown.md` component list.
+
+### Backend changes
+
+- `backend/src/routes/customers.js`: fixed `Segment (client)` /
+  `Key person 1/2 (Name + Contact details)` field-name aliases in
+  `CUSTOMERS_FIELD_MAP` — PATCH requests against these fields were silently
+  no-oping, and `/insights` reported most customers as "Unassigned" because
+  `c.Segment` read a non-existent field.
+- New `GET /customers/:id/orders` — merges legacy + app orders with a single
+  normalized shape `{ id, source, date, description, amount, status, raw }`.
+- `GET /customers` now enriches each row with
+  `_agg: { lastOrderDate, orderCount, totalSpend }` (60-sec in-process cache)
+  so filter predicates run client-side without extra round-trips.
+- Schema validator (`airtableSchema.js`) now covers the 20 writable Customer
+  fields; future renames fail loudly at boot.
+
+### Trade-offs to know
+
+- `_agg` cold-load adds ~1.5–2.5s on the first `/customers` call per session
+  (extra Airtable fetches). 60-sec cache absorbs repeat loads. At 10× the
+  customer volume this will need moving to a backend-persisted aggregate.
+- `CustomerDetailPanel.jsx` is fully removed, so if an older branch still
+  imports it the merge will break — grep before rebasing any long-lived
+  feature branch that predates 2026-04-20.
+- The RFM distributions from `/insights` shifted significantly once the
+  Segment field-name bug was fixed (Rare: 0 → 584, DO NOT CONTACT: 0 → 99).
+  Anything downstream that hardcoded "Unassigned" as the dominant bucket
+  needs re-reading.
 
 ---
 
@@ -439,15 +570,59 @@ Three gaps all pointing at the same pattern:
   back to Airtable when it actually fills in missing values, so a steady
   log line is `[SETTINGS] Backfilled auto-category translations` once,
   then silence.
-- **Owner still needs a placeholder element** (`#availableTodayMenu` +
-  `#availableTodayMenuText`) on the Wix masterPage for the Velo helpers
-  to bind to. If those IDs don't exist yet, the console will show
-  "Available Today menu update failed"; the rest of the site is
-  unaffected.
 - **Cutoff behavior unchanged** — products are still removed from the
   collection only by owner action (deactivating the product) or when
   stock drops below `Min Stems`. The new visibility helper just mirrors
   whatever the backend reports.
+
+### Addendum — real root cause + follow-up fix
+
+Two earlier guesses about the root cause were wrong. What actually
+blocked the PL / RU / UK menu link:
+
+- Wix Stores menu items are Store-page links. They don't get per-language
+  translations from the Site Menu panel, and they don't get one from
+  `masterPage.js` renaming either — if the linked **Wix Stores collection
+  itself** has no translation for the visitor's locale, Wix strips the
+  link from the non-primary-language site entirely. No amount of Velo
+  mutation on `$w('#horizontalMenu1').menuItems` can add back a link
+  Wix refused to render in the first place.
+- 1fffa70 seeded PL / RU / UK strings in Airtable config and pushed the
+  EN title/description to the Wix collection via `updateWixCategory()`,
+  but never pushed the PL / RU / UK strings anywhere Wix would read them.
+
+**Follow-up fix (this addendum):**
+
+- New `pushCollectionTranslations()` helper in
+  `backend/src/services/wixProductSync.js`. Writes PL / RU / UK
+  titles + descriptions to the Wix Multilingual Translation Content
+  API (schema `5b35dfe1-da21-4071-aab5-2cec870459c0` — Wix Stores
+  collections; fields `collection-name` + `category-description`),
+  marking them `published: true`. Runs after the existing EN
+  `updateWixCategory()` call for both seasonal and Available Today.
+  Query-then-create-or-update so re-runs are idempotent; skips any
+  locale whose Airtable config has blank title + description so
+  translations the owner typed by hand in the Wix Translation Manager
+  aren't overwritten.
+- Locale codes verified against `/locale-settings/v2/settings` — the
+  site uses short codes (`en`, `pl`, `ru`, `uk`), not regional
+  variants (`en-us`).
+- One-shot API call from this session pushed the PL / RU / UK
+  translations for Available Today directly, so the nav link appears
+  on non-English sites without waiting for the next backend redeploy.
+
+### What the earlier Velo correction is still good for
+
+The masterPage example rewrite in `docs/wix-velo-categories.js`
+(committed earlier on this branch) is independently useful: it matches
+the deployed `blossom-wix/src/pages/masterPage.js` pattern
+(`$w('#horizontalMenu1').menuItems` mutation) instead of the fictional
+`#availableTodayMenu` / `#availableTodayMenuText` placeholder elements
+that were in 1fffa70. So a future paste won't conflict with the
+existing header wiring. The four helpers (`getAvailableTodayMenuLabel`,
+`getAvailableTodayTitle`, `getAvailableTodayDescription`,
+`isAvailableTodayActive`) remain available for any page that binds
+Available Today to a standalone text element.
 
 ---
 

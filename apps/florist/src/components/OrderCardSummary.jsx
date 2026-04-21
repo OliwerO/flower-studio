@@ -1,5 +1,6 @@
 import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
+import { CallButton } from '@flower-studio/shared';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
@@ -85,7 +86,10 @@ export default function OrderCardSummary({ order, d, currentStatus, currentPaid,
         )}
       </div>
 
-      <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
+      <div className="flex items-center gap-2 flex-wrap">
+        <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
+        <CallButton phone={order['Customer Phone']} label={t.callCustomer} variant="subtle" />
+      </div>
       {request && (
         <p className={`text-sm text-ios-tertiary mt-0.5 ${expanded ? '' : 'line-clamp-1'}`}>{request}</p>
       )}
@@ -120,11 +124,22 @@ export default function OrderCardSummary({ order, d, currentStatus, currentPaid,
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
-      {/* Florist note — prominent, distinct from card message */}
+      {/* Florist note — owner-authored guidance to the florist */}
+      {!expanded && order['Florist Note'] && (
+        <div className="mt-2 bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500 rounded-lg px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 dark:text-green-300 mb-0.5">
+            🌸 {t.floristNote}
+          </p>
+          <p className="text-sm text-ios-label dark:text-gray-200 leading-snug whitespace-pre-wrap line-clamp-2">
+            {order['Florist Note']}
+          </p>
+        </div>
+      )}
+      {/* Customer note — original request from the buyer */}
       {!expanded && (order['Notes Original'] || order['Notes Translated']) && (
         <div className="mt-2 bg-blue-50 dark:bg-blue-900/30 border-l-4 border-blue-400 rounded-lg px-3 py-2">
           <p className="text-[10px] font-bold uppercase tracking-wide text-blue-700 dark:text-blue-300 mb-0.5">
-            📝 {t.note || 'Note'}
+            📝 {t.customerNote || t.note || 'Note'}
           </p>
           <p className="text-sm text-ios-label dark:text-gray-200 leading-snug whitespace-pre-wrap line-clamp-2">
             {order['Notes Translated'] || order['Notes Original']}
