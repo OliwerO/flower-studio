@@ -141,6 +141,7 @@ const en = {
   recipientPhone:   'Recipient phone',
   deliveryAddress:  'Delivery address',
   cardText:         'Card message',
+  cardTextPlaceholder: 'Card message for the recipient…',
   orderNotes:       'Notes',
   paymentStatus:    'Payment',
   paymentUnpaid:    'Unpaid',
@@ -473,6 +474,8 @@ const en = {
   noEntries:          'No entries this month',
   daySummary:         'Day summary',
   refresh:            'Refresh',
+  refreshed:          'Refreshed',
+  refreshFailed:      'Could not refresh. Check your connection and try again.',
   help:               'Help',
 
   // Premade bouquets
@@ -679,6 +682,7 @@ const ru = {
   recipientPhone:   'Телефон получателя',
   deliveryAddress:  'Адрес доставки',
   cardText:         'Текст открытки',
+  cardTextPlaceholder: 'Текст открытки для получателя…',
   orderNotes:       'Заметки',
   paymentStatus:    'Оплата',
   paymentUnpaid:    'Не оплачен',
@@ -1011,6 +1015,8 @@ const ru = {
   noEntries:          'Нет записей за этот месяц',
   daySummary:         'Итог дня',
   refresh:            'Обновить',
+  refreshed:          'Обновлено',
+  refreshFailed:      'Не удалось обновить. Проверьте соединение.',
   help:               'Помощь',
 
   // Premade bouquets
