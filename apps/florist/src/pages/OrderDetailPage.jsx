@@ -368,6 +368,9 @@ export default function OrderDetailPage() {
                               const name = (s['Display Name'] || '').toLowerCase();
                               const qty = Number(s['Current Quantity']) || 0;
                               if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                              // Hide exactly-zero base rows — keep negatives visible
+                              // (they're unfulfilled demand for the next PO).
+                              if (qty === 0) return false;
                               if (editLines.some(l => l.stockItemId === s.id)) return false;
                               if (flowerSearch) return name.includes(flowerSearch.toLowerCase());
                               return true;

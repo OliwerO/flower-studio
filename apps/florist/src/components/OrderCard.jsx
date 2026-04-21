@@ -495,14 +495,18 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
                             autoFocus />
                           <div className="max-h-36 overflow-y-auto divide-y divide-gray-50">
-                            {/* Stock results — only items with qty > 0 */}
+                            {/* Stock results — positive OR negative qty; hide empties */}
                             {flowerSearch.length >= 1 && stockItems
                               .filter(s => {
                                 const name = (s['Display Name'] || '').toLowerCase();
                                 const q = flowerSearch.toLowerCase();
                                 const qty = Number(s['Current Quantity']) || 0;
-                                // Hide depleted dated batches
+                                // Hide depleted dated batches (e.g. "Rose (14.Mar.)")
                                 if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                                // Hide exactly-zero base rows — they're clutter
+                                // (duplicate records from earlier manual entries, etc.).
+                                // Negative stock stays: it's implicit demand for the next PO.
+                                if (qty === 0) return false;
                                 return name.includes(q) && !editLines.some(l => l.stockItemId === s.id);
                               })
                               .slice(0, 6)
