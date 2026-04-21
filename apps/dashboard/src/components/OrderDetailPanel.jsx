@@ -36,7 +36,7 @@ const DELIVERY_TYPES = [
   { value: 'Pickup',   label: '🏪 ' + t.pickup },
 ];
 
-export default function OrderDetailPanel({ orderId, onUpdate }) {
+export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   const { paymentMethods: pmList, orderSources: srcList, timeSlots, targetMarkup } = useConfigLists();
   const PAYMENT_METHODS = pmList.map(v => ({ value: v, label: v }));
   const SOURCES = srcList.map(v => ({ value: v, label: v }));
@@ -158,8 +158,10 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
       }
     }
     try {
+      // includeEmpty=true so the picker can reselect negative-stock items
+      // (they represent unfulfilled demand rolling into the next PO).
       const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock'),
+        client.get('/stock?includeEmpty=true'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStockItems(stockRes.data);
@@ -271,8 +273,39 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const hasP1 = p1Amount > 0 && p1Method;
   const remainingAfterP1 = effectivePrice - p1Amount;
 
+  // First linked customer ID — the owner-facing "click to open CRM profile" target.
+  // Orders may technically link to multiple customers in Airtable but the
+  // convention in this base is one primary customer per order, so we use [0].
+  const customerId = o.Customer?.[0];
+  const customerDisplayName = o['Customer Name'] || o['Customer Nickname'] || '';
+
   return (
     <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/70 space-y-5">
+      {/* Customer — clickable link that jumps to the Customers tab with this
+           customer pre-selected. Keeps the owner from having to search by name
+           after opening an order (a frequent pain point during busy days). */}
+      {customerDisplayName && (
+        <Section label={t.customer}>
+          {customerId && onNavigate ? (
+            <button
+              type="button"
+              onClick={() => onNavigate({ tab: 'customers', filter: { selectedId: customerId } })}
+              className="text-sm font-medium text-ios-blue hover:underline flex items-center gap-1.5"
+              title={t.openInCustomersTab}
+            >
+              <span aria-hidden="true">👤</span>
+              <span>{customerDisplayName}</span>
+              {o['Customer Nickname'] && o['Customer Nickname'] !== customerDisplayName && (
+                <span className="text-ios-tertiary font-normal">({o['Customer Nickname']})</span>
+              )}
+              <span className="text-ios-tertiary" aria-hidden="true">›</span>
+            </button>
+          ) : (
+            <span className="text-sm font-medium text-ios-label">{customerDisplayName}</span>
+          )}
+        </Section>
+      )}
+
       {/* Status */}
       <Section label={t.status}>
         <Pills
@@ -516,7 +549,9 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
                   setFlowerSearch('');
                   setEditingBouquet(true);
                   if (stockItems.length === 0) {
-                    client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                    // includeEmpty=true so negative-stock (unfulfilled demand)
+                    // flowers appear in the picker — prevents duplicate Stock rows.
+                    client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
                   }
                   client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
                   client.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));

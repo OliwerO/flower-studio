@@ -727,6 +727,7 @@ const en = {
   moreFields:               'More fields',
   invalidEmail:             'Invalid email address',
   invalidPhone:             'Invalid phone number',
+  openInCustomersTab:       'Open in Customers tab',
 
   // Florist Hours (Financial tab + Settings)
   floristHours:             'Florist hours',
@@ -1562,6 +1563,7 @@ const ru = {
   moreFields:               'Ещё поля',
   invalidEmail:             'Неверный формат email',
   invalidPhone:             'Неверный формат телефона',
+  openInCustomersTab:       'Открыть в клиентах',
 
   // Florist Hours (Financial tab + Settings)
   floristHours:             'Часы флористов',

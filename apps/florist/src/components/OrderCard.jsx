@@ -412,9 +412,12 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                         setAddingFlower(false);
                         setFlowerSearch('');
                         setEditingBouquet(true);
-                        // Lazy-load stock for the flower picker
+                        // Lazy-load stock for the flower picker.
+                        // includeEmpty=true so negative-stock flowers (implicit
+                        // demand for next PO) are selectable — otherwise the user
+                        // retypes the name and creates a duplicate Stock row.
                         if (stockItems.length === 0) {
-                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {
+                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {
                             showToast(t.loadError || 'Failed to load stock', 'error');
                           });
                         }

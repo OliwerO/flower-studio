@@ -320,7 +320,9 @@ export default function OrderDetailPage() {
                         setFlowerSearch('');
                         setEditingBouquet(true);
                         if (stockItems.length === 0) {
-                          client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                          // includeEmpty=true so negative-stock flowers are
+                          // selectable in the picker (matches new-order wizard).
+                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
                         }
                       }}
                       className="text-xs text-brand-600 font-medium px-1"

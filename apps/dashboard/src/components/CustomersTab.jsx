@@ -29,13 +29,23 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading]     = useState(false);
   const [insights, setInsights]   = useState(null);
-  const [selectedId, setSelected] = useState(null);
+  // `selectedId` can be seeded from a cross-tab navigation (e.g. clicking the
+  // customer link on an Order expanded view) so landing here already opens the
+  // right record — no extra click needed.
+  const [selectedId, setSelected] = useState(f.selectedId || null);
   const [search, setSearch]       = useState(f.search || '');
   const [filters, setFilters]     = useState(() => {
     try { return deserializeFilters(localStorage.getItem(FILTERS_KEY)); }
     catch { return { ...EMPTY_FILTERS }; }
   });
   const { showToast } = useToast();
+
+  // Merges changed fields into the one customer row, instead of re-fetching
+  // the whole 1094-row list. Called by CustomerDetailView after a PATCH succeeds.
+  // Without this, every inline field edit triggered ~3s of skeleton + list reload.
+  const patchCustomerLocal = useCallback((id, updates) => {
+    setCustomers(prev => prev.map(c => c.id === id ? { ...c, ...updates } : c));
+  }, []);
 
   // Fetch all customers once (backend returns full 1094 enriched with _agg)
   const fetchCustomers = useCallback(async () => {
@@ -199,7 +209,7 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
             {selectedCustomer ? (
               <CustomerDetailView
                 customerId={selectedCustomer.id}
-                onUpdate={fetchCustomers}
+                onLocalPatch={patchCustomerLocal}
                 onNavigate={onNavigate}
               />
             ) : (
@@ -216,7 +226,7 @@ export default function CustomersTab({ initialFilter, onNavigate }) {
            handles the detail view. */}
       <CustomerDrawer
         customerId={selectedCustomer?.id || null}
-        onUpdate={fetchCustomers}
+        onLocalPatch={patchCustomerLocal}
         onNavigate={onNavigate}
         onClose={() => setSelected(null)}
       />
