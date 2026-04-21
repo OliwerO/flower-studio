@@ -826,6 +826,12 @@ const en = {
   callRecipient:                'Call recipient',
   customer:                     'Customer',
   recipient:                    'Recipient',
+
+  // Owner-only hard-delete
+  deleteOrder:                  'Delete order',
+  deleteOrderConfirm:           'Delete this order permanently? Lines and delivery will also be removed. This cannot be undone.',
+  deleteOrderConfirmYes:        'Delete permanently',
+  orderDeleted:                 'Order deleted',
 };
 
 const ru = {
@@ -1653,6 +1659,12 @@ const ru = {
   callRecipient:                'Позвонить получателю',
   customer:                     'Клиент',
   recipient:                    'Получатель',
+
+  // Owner-only hard-delete
+  deleteOrder:                  'Удалить заказ',
+  deleteOrderConfirm:           'Удалить этот заказ навсегда? Позиции и доставка также будут удалены. Это действие нельзя отменить.',
+  deleteOrderConfirmYes:        'Удалить навсегда',
+  orderDeleted:                 'Заказ удалён',
 };
 
 // ── Proxy-based dynamic translation ──

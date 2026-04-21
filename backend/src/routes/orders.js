@@ -11,6 +11,7 @@ import {
   createOrder,
   transitionStatus,
   cancelWithStockReturn,
+  deleteOrder,
   editBouquetLines,
 } from '../services/orderService.js';
 import { broadcast } from '../services/notifications.js';
@@ -396,6 +397,30 @@ router.post('/:id/cancel-with-return', async (req, res, next) => {
   } catch (err) {
     if (err.statusCode === 400) {
       return res.status(400).json({ error: err.message });
+    }
+    next(err);
+  }
+});
+
+// DELETE /api/orders/:id — hard-delete the order, its lines, and linked
+// delivery. Owner-only. Stock is returned for non-terminal orders so a
+// deleted "holding" order doesn't leave a ghost deduction.
+//
+// Intended for the "this order shouldn't exist at all" case (test
+// orders, accidental duplicates, webhook noise). Cancellation is still
+// the right tool for business-reason cancellations that need an audit
+// trail.
+router.delete('/:id', async (req, res, next) => {
+  if (req.role !== 'owner') {
+    return res.status(403).json({ error: 'Only the owner can delete orders.' });
+  }
+  try {
+    const result = await deleteOrder(req.params.id);
+    broadcast({ type: 'order_deleted', orderId: req.params.id });
+    res.json(result);
+  } catch (err) {
+    if (err.statusCode) {
+      return res.status(err.statusCode).json({ error: err.message });
     }
     next(err);
   }

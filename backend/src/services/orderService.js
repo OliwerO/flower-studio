@@ -357,6 +357,78 @@ export async function cancelWithStockReturn(orderId) {
 }
 
 /**
+ * Hard-delete an order and every record tied to it — lines and linked
+ * delivery — so nothing orphaned is left behind in Airtable.
+ *
+ * Stock return rule: the same rule as cancel. If the order is still
+ * "holding" stock (not Delivered / Picked Up / Cancelled), returning
+ * its lines' quantities is right — otherwise stock deducted at order
+ * creation would become a ghost deduction forever. Terminal orders
+ * either already consumed the stock (Delivered / Picked Up) or already
+ * returned it on cancel, so we skip the return in those cases.
+ *
+ * Ordering matters: we return stock FIRST (while we still have line
+ * data), then delete lines, then the delivery, then the order record
+ * itself. If anything fails mid-way we stop — leaves the order record
+ * present so the owner can retry, rather than a half-torn-down state.
+ *
+ * @param {string} orderId Airtable record ID
+ * @returns {{ deleted: true, orderId, returnedItems, deletedLineCount, deletedDeliveryCount }}
+ */
+export async function deleteOrder(orderId) {
+  const order = await db.getById(TABLES.ORDERS, orderId);
+  const currentStatus = order.Status || ORDER_STATUS.NEW;
+  const isTerminal = [
+    ORDER_STATUS.DELIVERED,
+    ORDER_STATUS.PICKED_UP,
+    ORDER_STATUS.CANCELLED,
+  ].includes(currentStatus);
+
+  const lineIds = order['Order Lines'] || [];
+  const deliveryIds = order['Deliveries'] || [];
+  const returnedItems = [];
+
+  // 1. Return stock for non-terminal orders.
+  if (!isTerminal && lineIds.length > 0) {
+    const lines = await listByIds(TABLES.ORDER_LINES, lineIds);
+    for (const line of lines) {
+      const stockId = line['Stock Item']?.[0];
+      const qty = Number(line.Quantity || 0);
+      if (stockId && qty > 0) {
+        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        returnedItems.push({
+          stockId,
+          flowerName: line['Flower Name'] || '?',
+          quantityReturned: qty,
+          newStockQty: newQty,
+        });
+      }
+    }
+  }
+
+  // 2. Delete order lines.
+  for (const lineId of lineIds) {
+    await db.deleteRecord(TABLES.ORDER_LINES, lineId);
+  }
+
+  // 3. Delete linked delivery records.
+  for (const deliveryId of deliveryIds) {
+    await db.deleteRecord(TABLES.DELIVERIES, deliveryId);
+  }
+
+  // 4. Delete the order record itself.
+  await db.deleteRecord(TABLES.ORDERS, orderId);
+
+  return {
+    deleted: true,
+    orderId,
+    returnedItems,
+    deletedLineCount: lineIds.length,
+    deletedDeliveryCount: deliveryIds.length,
+  };
+}
+
+/**
  * Edit bouquet lines — handle removals (return/writeoff), new lines, qty changes.
  * Auto-reverts status from Ready → New if owner edits.
  * @returns {{ updated: true, createdLines }}
