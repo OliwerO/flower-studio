@@ -663,7 +663,13 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                       .filter(s => {
                         const name = (s['Display Name'] || '').toLowerCase();
                         const qty = Number(s['Current Quantity']) || 0;
+                        const poQty = pendingPO[s.id]?.ordered || 0;
                         if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                        // Hide exactly-zero base rows with no pending PO — those
+                        // are clutter (duplicates, stale records). Negative stock
+                        // stays (implicit demand); qty=0 with a pending PO stays
+                        // (stems arriving soon). Parity with Step2Bouquet.
+                        if (qty === 0 && poQty === 0) return false;
                         if (editLines.some(l => l.stockItemId === s.id)) return false;
                         if (flowerSearch) return name.includes(flowerSearch.toLowerCase());
                         return true;
