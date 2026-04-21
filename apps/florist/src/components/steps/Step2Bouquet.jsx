@@ -281,10 +281,17 @@ export default function Step2Bouquet({
       result = result.filter(s => (Number(s['Current Quantity']) || 0) > 0);
     } else if (!showOutOfStock) {
       // #39: Filter to show only in-stock items by default,
-      // but always show items with pending PO quantities (they're coming)
-      result = result.filter(s =>
-        (Number(s['Current Quantity']) || 0) > 0 || (pendingPO[s.id]?.ordered || 0) > 0
-      );
+      // but always show items with pending PO quantities (they're coming).
+      // 2026-04: also keep items at NEGATIVE stock — they're implicit demand
+      // for the next PO, so the owner should be able to select them when a new
+      // order needs more of the same flower. Typing the name manually was
+      // producing duplicate Stock rows (especially after the Lot Size field
+      // was added). Only qty === 0 with no pending PO is hidden by default.
+      result = result.filter(s => {
+        const qty = Number(s['Current Quantity']) || 0;
+        const onOrder = pendingPO[s.id]?.ordered || 0;
+        return qty !== 0 || onOrder > 0;
+      });
     }
     const q = flowerQuery.toLowerCase().trim();
     if (!q) return result;
@@ -535,7 +542,14 @@ export default function Step2Bouquet({
                       {isOwner && <span> · {(Number(s['Current Cost Price']) || 0).toFixed(0)} zł {t.costPrice}</span>}
                       <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                      {/* qty < 0 → will roll into next PO; label it clearly so the
+                          owner knows she's adding to pre-existing demand, not a bug. */}
+                      {qty < 0 && !poQty && (
+                        <span className="text-orange-600 font-medium"> · {t.addsToNextPO || 'next PO'}</span>
+                      )}
+                      {qty === 0 && !poQty && (
+                        <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>
+                      )}
                       {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
                     </div>
                   </div>

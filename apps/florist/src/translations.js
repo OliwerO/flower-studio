@@ -251,6 +251,7 @@ const en = {
   negativeStockWarning:  'Some items went below zero stock. Create a purchase order?',
   outOfStock:            'Out of stock',
   onOrder:               'on order',
+  addsToNextPO:          'adds to next PO',
 
   // Stock evaluation
   stockEvaluation:       'Stock Evaluation',
@@ -858,6 +859,7 @@ const ru = {
   negativeStockWarning:  'Некоторые позиции ушли в минус. Создать заказ поставщику?',
   outOfStock:            'Нет в наличии',
   onOrder:               'в заказе',
+  addsToNextPO:          'в следующую закупку',
 
   // Stock evaluation
   stockEvaluation:       'Оценка цветов',
