@@ -45,6 +45,16 @@ export default function useConfigLists() {
       };
       if (merged.categories) merged.categories = [...merged.categories].sort((a, b) => a.localeCompare(b));
       if (merged.suppliers) merged.suppliers = [...merged.suppliers].sort((a, b) => a.localeCompare(b));
+      // Time slots must sort by start time, not lexicographically — "08:00-10:00"
+      // still sorts right as plain string, but explicit parse is safer if a slot
+      // like "9:00-11:00" (no leading zero) is ever entered.
+      if (merged.timeSlots) {
+        merged.timeSlots = [...merged.timeSlots].sort((a, b) => {
+          const [ah, am] = (a.split('-')[0] || '').split(':').map(Number);
+          const [bh, bm] = (b.split('-')[0] || '').split(':').map(Number);
+          return (ah * 60 + (am || 0)) - (bh * 60 + (bm || 0));
+        });
+      }
       cached = merged;
       setLists(cached);
     });
