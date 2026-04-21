@@ -4,6 +4,7 @@ import { processWixOrder } from '../services/wix.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import { listByIds } from '../utils/batchQuery.js';
 
 const router = Router();
 
@@ -139,11 +140,14 @@ router.get('/wix-order/:id', authenticate, authorize('admin'), async (req, res) 
 // field from canonical Wix data. Use this when Wix won't re-fire a webhook
 // and you need to correct orders that came in under an older buggy parser.
 //
-// Scope: safe on blank/broken orders because there's nothing to lose.
-// DO NOT run on orders the florist has composed or edited manually —
-// delete+recreate wipes local edits.
+// SAFETY GATE: refuses to touch orders that look composed or edited —
+// any Order Line with a Stock Item link OR any Status other than 'New'.
+// Responds 409 with the reasons so the caller can see why it refused.
+// If you *really* need to reprocess a composed order (accepting data loss),
+// pass ?force=true.
 router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async (req, res) => {
   const wixOrderId = req.params.id;
+  const force = req.query.force === 'true' || req.query.force === '1';
   try {
     // 1. Find the App Order row by Wix Order ID.
     const matches = await db.list(TABLES.ORDERS, {
@@ -156,6 +160,35 @@ router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async 
     const existing = matches[0];
     const lineIds = existing['Order Lines'] || [];
     const deliveryIds = existing['Deliveries'] || [];
+
+    // 1b. SAFETY CHECK — refuse to delete anything that looks composed or
+    //     touched. Two independent signals: status beyond 'New', or any line
+    //     with a Stock Item link (Wix lines never get stock-linked by the
+    //     parser, so presence of a link means the florist added real flowers).
+    if (!force) {
+      const reasons = [];
+      if (existing.Status && existing.Status !== 'New') {
+        reasons.push(`Status is "${existing.Status}" (not 'New').`);
+      }
+      if (lineIds.length > 0) {
+        const lineRecords = await listByIds(TABLES.ORDER_LINES, lineIds, {
+          fields: ['Stock Item', 'Flower Name', 'Quantity'],
+        });
+        const composed = lineRecords.filter(l => Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0);
+        if (composed.length > 0) {
+          const names = composed.map(l => `${l.Quantity || '?'}× ${l['Flower Name'] || '?'}`).join(', ');
+          reasons.push(`${composed.length} line(s) have Stock Item links (composed bouquet): ${names}.`);
+        }
+      }
+      if (reasons.length > 0) {
+        return res.status(409).json({
+          error: 'Reprocess refused — order appears composed or edited.',
+          reasons,
+          hint: 'Pass ?force=true if you truly want to delete and recreate (accepts data loss).',
+          appOrderId: existing['App Order ID'] || existing.id,
+        });
+      }
+    }
 
     // 2. Delete linked order lines and delivery records first so nothing
     //    orphans. Swallow per-record failures — the main goal is the
@@ -187,6 +220,7 @@ router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async 
     return res.json({
       deleted: { orderId: existing.id, lineCount: lineIds.length, deliveryCount: deliveryIds.length },
       created: created[0] || null,
+      forced: force,
     });
   } catch (err) {
     console.error('[REPROCESS] failed:', err);
