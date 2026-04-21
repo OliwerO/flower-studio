@@ -1,6 +1,10 @@
 // Wix webhook order processor — converts a Wix eCommerce payload into
 // our internal order structure. Like an EDI translator between a supplier's
 // system and your ERP: parse their format, map to your fields, create records.
+//
+// Webhook bodies from Wix are often partial or event-shaped. We rely on the
+// authoritative order data by fetching /ecom/v1/orders/:id from Wix right
+// after receiving the webhook — that's the canonical shape we parse against.
 
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
@@ -11,37 +15,81 @@ import { logWebhookEvent } from './webhookLog.js';
 import { generateOrderId } from '../routes/settings.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
 
+const WIX_API_URL = 'https://www.wixapis.com';
+
+function wixHeaders() {
+  return {
+    'Content-Type': 'application/json',
+    'Authorization': process.env.WIX_API_KEY || '',
+    'wix-site-id': process.env.WIX_SITE_ID || '',
+  };
+}
+
+/**
+ * Fetch the canonical order from Wix eCommerce v3 API.
+ * Returns the unwrapped order object (not { order: { ... } }).
+ * Returns null if credentials missing, endpoint 404, or network error —
+ * callers fall back to parsing the webhook payload.
+ */
+async function fetchWixOrderById(orderId) {
+  if (!process.env.WIX_API_KEY || !process.env.WIX_SITE_ID) {
+    console.warn('[WIX-API] Credentials missing — cannot fetch canonical order');
+    return null;
+  }
+  try {
+    const res = await fetch(
+      `${WIX_API_URL}/ecom/v1/orders/${encodeURIComponent(orderId)}`,
+      { method: 'GET', headers: wixHeaders() },
+    );
+    if (!res.ok) {
+      console.warn(`[WIX-API] GET orders/${orderId} → ${res.status}`);
+      return null;
+    }
+    const body = await res.json();
+    return body?.order || body || null;
+  } catch (err) {
+    console.error(`[WIX-API] GET orders/${orderId} error:`, err.message);
+    return null;
+  }
+}
+
+// Wix eCommerce v3 stores prices as { amount: "195.00", formattedAmount: ... }
+// where amount is a decimal STRING. Always parse defensively.
+function moneyAmount(m) {
+  if (!m) return 0;
+  const raw = typeof m === 'string' ? m : m.amount;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// Wix v3 localizable strings are { original, translated }. Some older
+// payloads still send plain strings. Prefer the original (not translated),
+// since the original is what the buyer saw at checkout.
+function localizedText(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v;
+  return v.original || v.translated || '';
+}
 
 /**
  * Process a Wix order payload asynchronously.
  * Called fire-and-forget after the webhook returns 200.
  *
  * Pipeline:
- * 1. Parse Wix payload → extract customer, items, shipping
+ * 1. Extract order ID from the webhook payload
  * 2. Dedup by Wix Order ID
- * 3. Match/create customer
- * 4. Create App Order + Order Lines + Delivery
+ * 3. Fetch canonical order from Wix API (fall back to webhook payload)
+ * 4. Match/create customer
+ * 5. Create App Order + Order Lines + Delivery
  */
 export async function processWixOrder(payload) {
   const log = (step, msg) => console.log(`[WIX] ${step}: ${msg}`);
 
-  // Always dump the raw payload to Railway logs on every Wix webhook until
-  // the parser is rewritten to handle every payload shape Wix sends. Grep
-  // Railway logs for [WIX-RAW] to retrieve. Remove this block (and the
-  // rawPayload param on logWebhookEvent) once the parser is confirmed good.
   try {
-    console.log('[WIX-RAW]', JSON.stringify(payload));
-  } catch (jsonErr) {
-    console.log('[WIX-RAW] (could not stringify)', jsonErr.message);
-  }
-
-  try {
-    // 1. Parse — Wix Automations sends different payload shapes than Wix Webhooks.
-    //    Automations: { data: { id, lineItems, ... } }
-    //    Webhooks:    { data: { order: { id, lineItems, ... } } }
-    //    Direct:      { id, lineItems, ... }
-    const wixOrder = payload?.data?.order || payload?.data || payload?.order || payload;
-    const wixOrderId = wixOrder?.id || wixOrder?.orderId || wixOrder?.number?.toString() || wixOrder?.cartId || '';
+    // 1. Extract the order ID from the webhook payload. Shape varies
+    //    (Automations vs native Webhooks vs test tools), so try several.
+    const webhookOrder = payload?.data?.order || payload?.data || payload?.order || payload || {};
+    const wixOrderId = webhookOrder?.id || webhookOrder?.orderId || webhookOrder?.number?.toString() || webhookOrder?.cartId || '';
 
     if (!wixOrderId) {
       log('SKIP', 'No Wix Order ID found in payload');
@@ -61,10 +109,29 @@ export async function processWixOrder(payload) {
     }
     log('2-DEDUP', 'New order — processing');
 
-    // 3. Extract customer info from Wix payload
+    // 3. Fetch the canonical order from Wix. This is the source of truth —
+    //    webhooks often send partial/event-shaped bodies. If the fetch fails,
+    //    we fall back to the webhook payload (best-effort).
+    const canonical = await fetchWixOrderById(wixOrderId);
+    const wixOrder = canonical || webhookOrder;
+    if (canonical) {
+      log('3-FETCH', `Canonical order loaded (number: ${wixOrder.number || '?'})`);
+    } else {
+      log('3-FETCH', 'Canonical fetch failed — parsing webhook payload instead');
+    }
+
+    // 4. Extract customer info. v3 shape:
+    //    buyerInfo: { contactId, email, visitorId }       — no name/phone here
+    //    shippingInfo.shipmentDetails.address.contactDetails: { firstName, lastName, phone }
+    //    billingInfo.contactDetails: { firstName, lastName, phone }
     const buyer = wixOrder.buyerInfo || wixOrder.buyer || {};
     const shipping = wixOrder.shippingInfo || wixOrder.shipping || {};
-    const shippingContact = shipping.shipmentDetails?.address?.contactDetails
+    const shippingAddress = shipping.shipmentDetails?.address
+      || shipping.destination?.address
+      || shipping.address
+      || null;
+    const shippingContact = shippingAddress?.contactDetails
+      || shipping.shipmentDetails?.address?.contactDetails
       || shipping.destination?.contactDetails
       || shipping.contact
       || {};
@@ -72,46 +139,36 @@ export async function processWixOrder(payload) {
       || wixOrder.billingInfo?.address?.contactDetails
       || {};
 
-    const customerName = buyer.firstName && buyer.lastName
-      ? `${buyer.firstName} ${buyer.lastName}`
-      : buyer.name || shippingContact.firstName
-        ? `${shippingContact.firstName || ''} ${shippingContact.lastName || ''}`.trim()
-        : billingContact.firstName
-          ? `${billingContact.firstName || ''} ${billingContact.lastName || ''}`.trim()
-          : 'Wix Customer';
+    // Prefer shipping contact (that's the recipient + buyer for delivery orders).
+    // Billing as fallback. Buyer's email is on buyerInfo directly.
+    const firstName = shippingContact.firstName || billingContact.firstName || '';
+    const lastName  = shippingContact.lastName  || billingContact.lastName  || '';
+    const customerName = `${firstName} ${lastName}`.trim() || buyer.name || 'Wix Customer';
+    const customerEmail = buyer.email || billingContact.email || '';
+    const customerPhone = shippingContact.phone || billingContact.phone || buyer.phone || '';
 
-    const customerEmail = buyer.email || '';
-    const customerPhone = buyer.phone
-      || shippingContact.phone
-      || billingContact.phone
-      || '';
+    log('4-CUSTOMER', `Name: ${customerName}, Email: ${customerEmail}, Phone: ${customerPhone}`);
 
-    log('3-CUSTOMER', `Name: ${customerName}, Email: ${customerEmail}, Phone: ${customerPhone}`);
-
-    // 4. Match or create customer
+    // 5. Match or create customer
     let customerId = null;
     if (customerPhone || customerEmail) {
       const searchFilters = [];
       if (customerPhone) {
-        // Search by phone — strip spaces for flexible matching
         const cleanPhone = sanitizeFormulaValue(customerPhone.replace(/\s/g, ''));
         searchFilters.push(`SEARCH('${cleanPhone}', SUBSTITUTE({Phone}, ' ', ''))`);
       }
       if (customerEmail) {
         searchFilters.push(`SEARCH(LOWER('${sanitizeFormulaValue(customerEmail)}'), LOWER({Email}))`);
       }
-
       const matches = await db.list(TABLES.CUSTOMERS, {
         filterByFormula: `OR(${searchFilters.join(',')})`,
         maxRecords: 1,
       });
-
       if (matches.length > 0) {
         customerId = matches[0].id;
-        log('4-MATCH', `Found existing customer: ${matches[0].Name || matches[0].id}`);
+        log('5-MATCH', `Found existing customer: ${matches[0].Name || matches[0].id}`);
       }
     }
-
     if (!customerId) {
       const newCustomer = await db.create(TABLES.CUSTOMERS, {
         Name: customerName,
@@ -120,89 +177,112 @@ export async function processWixOrder(payload) {
         'Communication method': 'Wix',
       });
       customerId = newCustomer.id;
-      log('4-CREATE', `New customer created: ${newCustomer.id}`);
+      log('5-CREATE', `New customer created: ${newCustomer.id}`);
     }
 
-    // 5. Parse line items from Wix
+    // 6. Parse line items. v3 shape:
+    //    li.productName.original            → display name
+    //    li.catalogReference.catalogItemId  → Wix product ID (for stock match)
+    //    li.quantity                        → qty
+    //    li.price.amount                    → unit price (STRING)
+    //    li.totalPriceBeforeTax.amount      → line total (STRING)
+    //    li.descriptionLines                → size/variant options, text lines
     const lineItems = wixOrder.lineItems || wixOrder.line_items || [];
     const customerRequest = lineItems
       .map(li => {
-        const name = li.name || li.productName || li.catalogReference?.catalogItemName || 'Item';
+        const name = localizedText(li.productName) || li.name || 'Item';
         const qty = li.quantity || 1;
         return `${qty}× ${name}`;
       })
       .join(', ') || 'Wix order';
+    log('6-ITEMS', `${lineItems.length} line items: ${customerRequest}`);
 
-    log('5-ITEMS', `${lineItems.length} line items: ${customerRequest}`);
-
-    // 6. Determine delivery info
-    const shippingAddress = shipping.shipmentDetails?.address
-      || shipping.destination?.address
-      || shipping.address
-      || null;
-
-    const hasDelivery = !!shippingAddress;
+    // 7. Delivery address (human-readable single string). v3 fields:
+    //    address.addressLine (primary), addressLine2 (secondary), city, postalCode
     const deliveryAddress = shippingAddress
       ? [
-          shippingAddress.streetAddress?.value || shippingAddress.addressLine1 || shippingAddress.street || '',
+          shippingAddress.addressLine
+            || shippingAddress.streetAddress?.value
+            || shippingAddress.addressLine1
+            || shippingAddress.street
+            || '',
+          shippingAddress.addressLine2 || '',
           shippingAddress.city || '',
           shippingAddress.postalCode || '',
         ].filter(Boolean).join(', ')
       : '';
+    const recipientName = `${firstName} ${lastName}`.trim() || customerName;
+    const recipientPhone = customerPhone;
 
-    const recipientName = shippingContact.firstName
-      ? `${shippingContact.firstName || ''} ${shippingContact.lastName || ''}`.trim()
-      : customerName;
-    const recipientPhone = shippingContact.phone || customerPhone;
-
-    // 7. Get order total
-    const totalPrice = Number(wixOrder.priceSummary?.total?.amount)
-      || Number(wixOrder.totals?.total)
-      || Number(wixOrder.total?.amount)
+    // 8. Totals + shipping fee. v3 shape: priceSummary.totalPrice + shipping.
+    //    Fall back to older field names for other payload shapes.
+    const totalPrice = moneyAmount(wixOrder.priceSummary?.totalPrice)
+      || moneyAmount(wixOrder.priceSummary?.total)
+      || moneyAmount(wixOrder.totals?.total)
+      || moneyAmount(wixOrder.total);
+    const shippingFee = moneyAmount(wixOrder.priceSummary?.shipping)
+      || moneyAmount(wixOrder.shippingInfo?.shippingFee)
       || 0;
 
-    // 8. Create the App Order.
-    // Wix is delivery-only today — no in-store pickup flow on the storefront.
-    // We used to flip to Pickup when shippingAddress parsing returned null,
-    // but that was a false negative (the parser missed some address shapes,
-    // not that the order was actually pickup). Default to Delivery; if
-    // pickup ever gets added to Wix, add an explicit signal.
+    // Payment method — v3 doesn't inline this on the order; it's on a separate
+    // transactions resource. Leave as a placeholder that the owner can edit
+    // once seen. Better than guessing wrong. (If you want this populated
+    // accurately, we'd add a second API call to /ecom/v1/orders/:id/transactions.)
+    const paymentMethodLabel = 'Wix Online';
+
+    // 9. Delivery date — Wix may or may not set this, depending on shipping
+    //    method configuration. Try a few known paths; fall back to today.
+    const deliveryDate = shipping.deliveryTime?.rangeStartTime
+      || shipping.deliveryTime?.deliveryDate
+      || shipping.shipmentDetails?.deliveryDate
+      || shipping.deliveryDate
+      || shipping.expectedDeliveryDate
+      || wixOrder.fulfillments?.[0]?.expectedDeliveryDate
+      || null;
+    // Normalise to YYYY-MM-DD. Wix may send ISO timestamp or date-only string.
+    const deliveryDateIso = deliveryDate
+      ? String(deliveryDate).slice(0, 10)
+      : new Date().toISOString().split('T')[0];
+
+    // 10. Create the App Order. Wix is delivery-only today — hard-code the type.
+    //     Price Override carries the total the buyer paid (flowers + shipping)
+    //     so the dashboard shows exactly what Wix charged.
     const appOrderId = await generateOrderId();
+    const humanOrderNumber = wixOrder.number || wixOrderId;
     const order = await db.create(TABLES.ORDERS, {
       Customer: [customerId],
       'Customer Request': customerRequest,
       Source: 'Wix',
       'Delivery Type': 'Delivery',
       'Order Date': new Date().toISOString().split('T')[0],
-      'Notes Original': `Wix Order #${wixOrderId}`,
+      'Required By': deliveryDateIso,
+      'Notes Original': `Wix Order #${humanOrderNumber}`,
       'Greeting Card Text': '',
-      'Payment Status': 'Paid',
-      'Payment Method': 'Wix Online',
+      'Payment Status': wixOrder.paymentStatus === 'NOT_PAID' ? 'Unpaid' : 'Paid',
+      'Payment Method': paymentMethodLabel,
       'Price Override': totalPrice > 0 ? totalPrice : null,
       'App Order ID': appOrderId,
       Status: 'New',
       'Created By': 'Wix Webhook',
       'Wix Order ID': wixOrderId,
     });
-    log('6-ORDER', `Created order: ${order.id}`);
+    log('10-ORDER', `Created order: ${order.id}`);
 
-    // 9. Create order lines — attempt fuzzy match to stock items
-    // First, fetch all active stock for matching
+    // 11. Create order lines. Fuzzy-match to stock by name so the bouquet
+    //     editor can pull live cost/sell for those flowers; Wix "product"
+    //     names rarely match the florist's actual stock cards 1:1, so most
+    //     lines will land as text-only — florist composes manually later.
     const stock = await db.list(TABLES.STOCK, {
       filterByFormula: '{Active} = TRUE()',
       fields: ['Display Name', 'Current Quantity', 'Current Cost Price', 'Current Sell Price'],
     });
-
     const stockByName = {};
     for (const s of stock) {
       stockByName[(s['Display Name'] || '').toLowerCase()] = s;
     }
-
     function fuzzyMatchStock(productName) {
       const name = (productName || '').toLowerCase();
-      // Exact match
       if (stockByName[name]) return stockByName[name];
-      // Partial match — stock name is contained in product name or vice versa
       for (const [key, item] of Object.entries(stockByName)) {
         if (name.includes(key) || key.includes(name)) return item;
       }
@@ -211,10 +291,12 @@ export async function processWixOrder(payload) {
 
     const createdLines = [];
     for (const li of lineItems) {
-      const productName = li.name || li.productName || li.catalogReference?.catalogItemName || 'Wix Item';
+      const productName = localizedText(li.productName) || li.name || 'Wix Item';
       const qty = li.quantity || 1;
-      const unitPrice = Number(li.price?.amount) || Number(li.priceData?.price) || 0;
-
+      const unitPrice = moneyAmount(li.price)
+        || moneyAmount(li.lineItemPrice)
+        || moneyAmount(li.priceBeforeDiscounts)
+        || moneyAmount(li.priceData?.price);
       const matched = fuzzyMatchStock(productName);
 
       const lineFields = {
@@ -224,10 +306,7 @@ export async function processWixOrder(payload) {
         'Cost Price Per Unit': matched ? Number(matched['Current Cost Price'] || 0) : 0,
         'Sell Price Per Unit': matched ? Number(matched['Current Sell Price'] || 0) : unitPrice,
       };
-
-      if (matched) {
-        lineFields['Stock Item'] = [matched.id];
-      }
+      if (matched) lineFields['Stock Item'] = [matched.id];
 
       const createdLine = await db.create(TABLES.ORDER_LINES, lineFields);
       createdLines.push(createdLine);
@@ -235,38 +314,28 @@ export async function processWixOrder(payload) {
       // No stock deduction for Wix orders — Wix "bouquets" don't map to
       // individual flower stock items. The florist opens the order later and
       // manually composes the real bouquet from actual stock.
-      if (matched) {
-        log('7-STOCK', `Matched "${productName}" to stock "${matched['Display Name']}" (no deduction — florist composes manually)`);
-      } else {
-        log('7-STOCK', `No stock match for "${productName}" — text-only line`);
-      }
+      log('11-LINE', matched
+        ? `"${productName}" matched stock "${matched['Display Name']}"`
+        : `"${productName}" (no stock match — text-only)`);
     }
 
-    // 10. Create the delivery record. Always created for Wix orders because
-    //     Wix is delivery-only today. If the address parse failed (payload
-    //     shape mismatch), the florist fills it in later — better than
-    //     leaving the order with Delivery Type='Delivery' and no delivery
-    //     sub-record, which breaks driver assignment and list enrichment.
+    // 12. Always create the delivery record (Wix is delivery-only today).
+    //     If address or contact info is missing, the florist fills it in
+    //     later; leaving the delivery sub-record absent would break driver
+    //     assignment and the list enrichment pipeline.
     await db.create(TABLES.DELIVERIES, {
       'Linked Order': [order.id],
       'Delivery Address': deliveryAddress,
       'Recipient Name': recipientName,
       'Recipient Phone': recipientPhone,
-      'Delivery Date': shipping.deliveryDate
-        || shipping.shipmentDetails?.deliveryDate
-        || shipping.expectedDeliveryDate
-        || wixOrder.fulfillments?.[0]?.expectedDeliveryDate
-        || new Date().toISOString().split('T')[0],
+      'Delivery Date': deliveryDateIso,
       'Delivery Time': '',
-      'Delivery Fee': 0, // studio adjusts later
+      'Delivery Fee': shippingFee,
       Status: DELIVERY_STATUS.PENDING,
     });
-    log('8-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
+    log('12-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
 
-    // Note: translation feature was removed (commit c04a8b8).
-    // Wix buyer notes are stored as-is in Notes Original.
-
-    log('DONE', `Order ${order.id} created successfully from Wix #${wixOrderId}`);
+    log('DONE', `Order ${order.id} created from Wix #${humanOrderNumber}`);
     await logWebhookEvent({ status: 'Success', wixOrderId, appOrderId: order.id });
 
     // Broadcast to all connected SSE clients (florist app, dashboard)
@@ -283,8 +352,8 @@ export async function processWixOrder(payload) {
       source: 'Wix',
       customerName,
       request: customerRequest,
-      deliveryType: shipping ? 'Delivery' : 'Pickup',
-      price: order['Final Price'] || order['Sell Price Total'] || null,
+      deliveryType: 'Delivery',
+      price: totalPrice || null,
     }).catch(err => console.error('[TELEGRAM] Wix notification error:', err.message));
 
     return order;
