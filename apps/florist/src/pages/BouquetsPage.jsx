@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, X, Flower2 } from 'lucide-react';
+import { ArrowLeft, Search, X, Flower2, RefreshCw, Loader2 } from 'lucide-react';
 import {
   IconButton,
   EmptyState,
@@ -26,6 +26,7 @@ export default function BouquetsPage() {
   const [search, setSearch]   = useState('');
   const [loading, setLoading] = useState(true);
   const [pushing, setPushing] = useState(false);
+  const [pulling, setPulling] = useState(false);
   // Tracks bouquet product IDs that have been modified locally since the last
   // successful push. Cleared on a successful POST /products/push.
   const [dirtyIds, setDirtyIds] = useState(() => new Set());
@@ -103,15 +104,40 @@ export default function BouquetsPage() {
     }
   }
 
+  // Pull — brings fresh data from Wix back into Airtable (new products, price
+  // changes, image updates). Use this when the owner added a bouquet on Wix
+  // directly and wants it visible here without waiting for a scheduled sync.
+  async function pullFromWix() {
+    if (pulling) return;
+    setPulling(true);
+    try {
+      // Backend returns the stats object directly (no wrapping).
+      // Pull shape: { new, updated, deactivated, errors }
+      const { data } = await client.post('/products/pull', {});
+      const parts = [];
+      if (data?.new) parts.push(`+${data.new}`);
+      if (data?.updated) parts.push(`~${data.updated}`);
+      if (data?.deactivated) parts.push(`−${data.deactivated}`);
+      const summary = parts.length ? ` · ${parts.join(' ')}` : '';
+      showToast(`${t.pullSuccess || 'Updated from Wix'}${summary}`, 'success');
+      await loadAll();
+    } catch (err) {
+      const msg = err.response?.data?.error || t.pullFailed || 'Pull failed';
+      showToast(msg, 'error');
+    } finally {
+      setPulling(false);
+    }
+  }
+
   async function pushToWix() {
     setPushing(true);
     try {
+      // Push shape: { pricesSynced, stockSynced, categoriesSynced, errors }
       const { data } = await client.post('/products/push', {});
-      const stats = data?.stats || {};
       const parts = [];
-      if (stats.pricesSynced) parts.push(`${stats.pricesSynced} prices`);
-      if (stats.visibilitySynced) parts.push(`${stats.visibilitySynced} visibility`);
-      if (stats.stockSynced) parts.push(`${stats.stockSynced} stock`);
+      if (data?.pricesSynced) parts.push(`${data.pricesSynced} prices`);
+      if (data?.stockSynced) parts.push(`${data.stockSynced} stock`);
+      if (data?.categoriesSynced) parts.push(`${data.categoriesSynced} categories`);
       showToast(`${t.syncSuccess}${parts.length ? ' · ' + parts.join(', ') : ''}`, 'success');
       setDirtyIds(new Set());
     } catch (err) {
@@ -140,6 +166,14 @@ export default function BouquetsPage() {
         <h1 className="text-base font-semibold text-ios-label dark:text-dark-label flex-1">
           {t.bouquetsTitle}
         </h1>
+        <IconButton
+          onClick={pullFromWix}
+          disabled={pulling || pushing}
+          ariaLabel={t.pullFromWix || 'Pull from Wix'}
+          variant="tinted"
+        >
+          {pulling ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
+        </IconButton>
       </header>
 
       <div className="container-mobile py-3">
