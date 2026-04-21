@@ -133,4 +133,65 @@ router.get('/wix-order/:id', authenticate, authorize('admin'), async (req, res) 
   return res.status(502).json({ error: 'All Wix endpoints failed', attempts });
 });
 
+// POST /api/webhook/wix-order/:id/reprocess — admin-only. Deletes the
+// existing App Order (+ its lines and delivery record) for the given Wix
+// Order ID, then re-runs processWixOrder so the new parser populates every
+// field from canonical Wix data. Use this when Wix won't re-fire a webhook
+// and you need to correct orders that came in under an older buggy parser.
+//
+// Scope: safe on blank/broken orders because there's nothing to lose.
+// DO NOT run on orders the florist has composed or edited manually —
+// delete+recreate wipes local edits.
+router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async (req, res) => {
+  const wixOrderId = req.params.id;
+  try {
+    // 1. Find the App Order row by Wix Order ID.
+    const matches = await db.list(TABLES.ORDERS, {
+      filterByFormula: `{Wix Order ID} = '${wixOrderId}'`,
+      maxRecords: 1,
+    });
+    if (matches.length === 0) {
+      return res.status(404).json({ error: `No App Order found with Wix Order ID ${wixOrderId}.` });
+    }
+    const existing = matches[0];
+    const lineIds = existing['Order Lines'] || [];
+    const deliveryIds = existing['Deliveries'] || [];
+
+    // 2. Delete linked order lines and delivery records first so nothing
+    //    orphans. Swallow per-record failures — the main goal is the
+    //    App Order itself.
+    for (const lineId of lineIds) {
+      await db.deleteRecord(TABLES.ORDER_LINES, lineId).catch(err => {
+        console.warn(`[REPROCESS] delete line ${lineId}:`, err.message);
+      });
+    }
+    for (const delId of deliveryIds) {
+      await db.deleteRecord(TABLES.DELIVERIES, delId).catch(err => {
+        console.warn(`[REPROCESS] delete delivery ${delId}:`, err.message);
+      });
+    }
+
+    // 3. Delete the App Order.
+    await db.deleteRecord(TABLES.ORDERS, existing.id);
+
+    // 4. Re-run the canonical pipeline with a synthetic webhook payload —
+    //    processWixOrder's dedup will miss (record just deleted) and fall
+    //    through to the Wix API fetch + fresh create.
+    await processWixOrder({ id: wixOrderId });
+
+    // 5. Return the newly created App Order so the UI can refresh.
+    const created = await db.list(TABLES.ORDERS, {
+      filterByFormula: `{Wix Order ID} = '${wixOrderId}'`,
+      maxRecords: 1,
+    });
+    return res.json({
+      deleted: { orderId: existing.id, lineCount: lineIds.length, deliveryCount: deliveryIds.length },
+      created: created[0] || null,
+    });
+  } catch (err) {
+    console.error('[REPROCESS] failed:', err);
+    return res.status(500).json({ error: err.message || 'Reprocess failed.' });
+  }
+});
+
 export default router;

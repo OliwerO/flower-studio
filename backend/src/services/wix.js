@@ -53,6 +53,48 @@ async function fetchWixOrderById(orderId) {
   }
 }
 
+/**
+ * Fetch the human-readable payment method for a Wix order.
+ * The v3 Orders endpoint doesn't inline this; it lives on a separate
+ * transactions resource. Tries the v3 Orders transactions endpoint first,
+ * falls back to the Payments domain if the shape differs by site.
+ * Returns a best-guess method string (e.g. "CreditCard", "Stripe", "PayPal",
+ * "Cash") or null if nothing is found — callers keep the "Wix Online"
+ * placeholder in that case.
+ */
+export async function fetchWixPaymentMethod(orderId) {
+  if (!process.env.WIX_API_KEY || !process.env.WIX_SITE_ID) return null;
+  const endpoints = [
+    `${WIX_API_URL}/ecom/v1/orders/${encodeURIComponent(orderId)}/transactions`,
+    `${WIX_API_URL}/payments/v1/payments?orderId=${encodeURIComponent(orderId)}`,
+  ];
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, { method: 'GET', headers: wixHeaders() });
+      if (!res.ok) continue;
+      const body = await res.json();
+      // Possible shapes across Wix API versions/domains:
+      //   { transactions: [{ payment: { paymentMethod }, ... }] }
+      //   { transactions: [{ paymentMethod, ... }] }
+      //   { payments: [{ paymentMethod, provider, ... }] }
+      //   [{ paymentMethod }]
+      const list = body.transactions || body.payments || (Array.isArray(body) ? body : []);
+      if (!Array.isArray(list) || list.length === 0) continue;
+      for (const item of list) {
+        const method = item.payment?.paymentMethod
+          || item.paymentMethod
+          || item.provider
+          || item.method
+          || item.gatewayName;
+        if (method) return String(method);
+      }
+    } catch (err) {
+      console.error(`[WIX-API] Payment method fetch failed at ${url}:`, err.message);
+    }
+  }
+  return null;
+}
+
 // Wix eCommerce v3 stores prices as { amount: "195.00", formattedAmount: ... }
 // where amount is a decimal STRING. Always parse defensively.
 function moneyAmount(m) {
@@ -225,10 +267,12 @@ export async function processWixOrder(payload) {
       || 0;
 
     // Payment method — v3 doesn't inline this on the order; it's on a separate
-    // transactions resource. Leave as a placeholder that the owner can edit
-    // once seen. Better than guessing wrong. (If you want this populated
-    // accurately, we'd add a second API call to /ecom/v1/orders/:id/transactions.)
-    const paymentMethodLabel = 'Wix Online';
+    // transactions resource. Fetch it directly; fall back to "Wix Online" if
+    // the site uses a provider we can't parse out of the response. Owner can
+    // add new payment methods to Settings whenever Wix reports a new one.
+    const paymentMethodFromWix = await fetchWixPaymentMethod(wixOrderId);
+    const paymentMethodLabel = paymentMethodFromWix || 'Wix Online';
+    if (paymentMethodFromWix) log('8b-PAY', `Payment method: ${paymentMethodFromWix}`);
 
     // 9. Delivery date — Wix may or may not set this, depending on shipping
     //    method configuration. Try a few known paths; fall back to today.
