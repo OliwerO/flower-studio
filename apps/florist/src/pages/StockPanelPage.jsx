@@ -207,6 +207,16 @@ export default function StockPanelPage() {
           </button>
         )}
 
+        {/* Waste log shortcut — both roles. Keeps the log one tap away from the
+            inventory screen where dead stems usually get noticed. */}
+        <button
+          onClick={() => navigate('/stock/waste')}
+          className="w-full mb-3 h-11 rounded-2xl bg-red-50 dark:bg-red-900/20 text-ios-red
+                     text-sm font-semibold active:bg-red-100 active-scale flex items-center justify-center gap-2"
+        >
+          🗑 {t.wasteLog}
+        </button>
+
         {/* Pending arrivals — PO overview */}
         <PendingArrivalsSection
           stock={stock}

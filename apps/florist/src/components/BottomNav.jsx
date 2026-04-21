@@ -1,14 +1,45 @@
 // BottomNav — fixed tab bar at the bottom of every authenticated screen.
-// Replaces the crowded header icon buttons with a clean 4-tab layout.
-// Think of it as the main corridor signage in a factory — always visible,
-// showing you the 4 most important departments at a glance.
-// The "More" tab opens a slide-up menu for less-frequent actions.
+// Owner sees 5 tabs (Orders · Stock · Catalog · Shopping · More); florists see
+// 4 (Orders · Stock · Hours · More). On very narrow viewports (< 360 px) the
+// owner's Shopping tab collapses into More so we always keep 4 primary tabs
+// within comfortable touch reach.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
+import {
+  ClipboardList,
+  Package,
+  Flower2,
+  ShoppingCart,
+  Clock,
+  Menu as MenuIcon,
+  Sun,
+  Moon,
+  RefreshCw,
+  LogOut,
+  BarChart3,
+  ClipboardCheck,
+  Trash2,
+  HelpCircle,
+  Truck,
+} from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import t from '../translations.js';
+
+// Track current viewport width so the owner's Shopping tab can gracefully
+// fall into the More menu on iPhone SE 1st-gen (320 px) style devices.
+function useNarrowViewport(threshold = 360) {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < threshold : false
+  );
+  useEffect(() => {
+    function onResize() { setNarrow(window.innerWidth < threshold); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [threshold]);
+  return narrow;
+}
 
 export default function BottomNav() {
   const navigate = useNavigate();
@@ -17,25 +48,33 @@ export default function BottomNav() {
   const { dark, toggle: toggleDark } = useTheme();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOwner = role === 'owner';
+  const narrow = useNarrowViewport(360);
 
-  // Tab configuration differs by role — florists see Hours, owner sees Shopping
-  const tabs = isOwner
-    ? [
-        { key: 'orders',   icon: '📋', label: t.tabOrders,   path: '/orders' },
-        { key: 'stock',    icon: '📦', label: t.tabStock,    path: '/stock' },
-        { key: 'shopping', icon: '🛒', label: t.tabShopping, path: '/shopping-support' },
-        { key: 'more',     icon: '☰',  label: t.tabMore,     path: null },
-      ]
-    : [
-        { key: 'orders', icon: '📋', label: t.tabOrders, path: '/orders' },
-        { key: 'stock',  icon: '📦', label: t.tabStock,  path: '/stock' },
-        { key: 'hours',  icon: '⏱',  label: t.tabHours,  path: '/hours' },
-        { key: 'more',   icon: '☰',  label: t.tabMore,   path: null },
-      ];
+  // Primary tabs depend on role (and, for the owner on very narrow devices,
+  // on viewport width — Shopping moves into More when the bar would be cramped).
+  let tabs;
+  if (isOwner) {
+    const ownerTabs = [
+      { key: 'orders',   Icon: ClipboardList, label: t.tabOrders,   path: '/orders' },
+      { key: 'stock',    Icon: Package,       label: t.tabStock,    path: '/stock' },
+      { key: 'catalog',  Icon: Flower2,       label: t.tabCatalog,  path: '/catalog/bouquets' },
+      { key: 'shopping', Icon: ShoppingCart,  label: t.tabShopping, path: '/shopping-support' },
+    ];
+    tabs = narrow
+      ? [...ownerTabs.slice(0, 3), { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null }]
+      : [...ownerTabs, { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null }];
+  } else {
+    tabs = [
+      { key: 'orders', Icon: ClipboardList, label: t.tabOrders, path: '/orders' },
+      { key: 'stock',  Icon: Package,       label: t.tabStock,  path: '/stock' },
+      { key: 'hours',  Icon: Clock,         label: t.tabHours,  path: '/hours' },
+      { key: 'more',   Icon: MenuIcon,      label: t.tabMore,   path: null },
+    ];
+  }
 
   function isActive(tab) {
     if (!tab.path) return false;
-    // Match exact path or child paths (e.g. /orders/123 → orders tab active)
+    if (tab.key === 'catalog') return location.pathname.startsWith('/catalog');
     return location.pathname === tab.path || location.pathname.startsWith(tab.path + '/');
   }
 
@@ -49,50 +88,53 @@ export default function BottomNav() {
   }
 
   async function hardRefresh() {
-    // 1. Clear all Cache Storage (Vite precache, Vercel edge cache, etc.)
     if ('caches' in window) {
       const names = await caches.keys();
       await Promise.all(names.map(n => caches.delete(n)));
     }
-    // 2. Unregister any service workers
     if ('serviceWorker' in navigator) {
       const regs = await navigator.serviceWorker.getRegistrations();
       await Promise.all(regs.map(r => r.unregister()));
     }
-    // 3. Clear localStorage/sessionStorage caches
     try { sessionStorage.clear(); } catch {}
-    // 4. Navigate with cache-busting query to force fresh asset fetch
     window.location.href = window.location.pathname + '?_cb=' + Date.now();
   }
 
-  // "More" menu items differ by role.
-  // Owner gets all florist actions plus owner-only ones (day summary, etc.).
-  const moreItems = isOwner
-    ? [
-        { label: t.daySummary,    action: () => navigate('/day-summary') },
-        { label: t.floristHours,  action: () => navigate('/hours') },
-        { label: t.stockEvaluation || 'Stock Evaluation', action: () => navigate('/stock-evaluation') },
-        { label: t.help,          action: () => navigate('/orders') }, // Help handled by HelpPanel on OrderListPage
-        { label: `↻ ${t.refresh}`, action: hardRefresh },
-        { label: t.logout,        action: logout, destructive: true },
-      ]
-    : [
-        { label: t.stockEvaluation || 'Stock Evaluation', action: () => navigate('/stock-evaluation') },
-        { label: `↻ ${t.refresh}`, action: hardRefresh },
-        { label: t.logout,        action: logout, destructive: true },
-      ];
+  // More menu — owner gets all florist actions plus owner-only ones.
+  // Waste Log is accessible to both roles (backend allows florist CRUD too).
+  const baseItems = [
+    { Icon: Trash2,         label: t.wasteLog,        action: () => navigate('/stock/waste') },
+    { Icon: ClipboardCheck, label: t.stockEvaluation, action: () => navigate('/stock-evaluation') },
+  ];
+  const ownerOnlyItems = [
+    { Icon: BarChart3, label: t.daySummary,   action: () => navigate('/day-summary') },
+    { Icon: Clock,     label: t.floristHours, action: () => navigate('/hours') },
+    { Icon: Truck,     label: t.purchaseOrders || 'Закупки', action: () => navigate('/purchase-orders') },
+  ];
+  const shoppingWhenNarrow = (isOwner && narrow)
+    ? [{ Icon: ShoppingCart, label: t.tabShopping, action: () => navigate('/shopping-support') }]
+    : [];
+  const helpItem = isOwner
+    ? [{ Icon: HelpCircle, label: t.help || 'Help', action: () => navigate('/orders') }]
+    : [];
+
+  const moreItems = [
+    ...shoppingWhenNarrow,
+    ...(isOwner ? ownerOnlyItems : []),
+    ...baseItems,
+    ...helpItem,
+    { Icon: RefreshCw, label: t.refresh, action: hardRefresh },
+    { Icon: LogOut,    label: t.logout, action: logout, destructive: true },
+  ];
 
   return (
     <>
       {/* More menu overlay */}
       {moreOpen && (
         <div className="fixed inset-0 z-40" onClick={() => setMoreOpen(false)}>
-          {/* Semi-transparent backdrop */}
           <div className="absolute inset-0 bg-black/30" />
-
-          {/* Slide-up card */}
           <div
-            className="absolute bottom-16 left-0 right-0 animate-slide-up"
+            className="absolute bottom-20 left-0 right-0 animate-slide-up safe-area-bottom"
             onClick={e => e.stopPropagation()}
           >
             <div className="mx-3 mb-2 bg-white dark:bg-dark-elevated rounded-2xl shadow-lg overflow-hidden">
@@ -100,43 +142,53 @@ export default function BottomNav() {
                 <button
                   key={i}
                   onClick={() => { setMoreOpen(false); item.action(); }}
-                  className={`w-full text-left px-5 py-3.5 text-sm font-medium active:bg-gray-100 dark:active:bg-gray-700
+                  className={`w-full min-h-[48px] flex items-center gap-3 px-5 py-3 text-sm font-medium text-left
+                    active:bg-gray-100 dark:active:bg-gray-700
                     ${i > 0 ? 'border-t border-gray-100 dark:border-gray-700' : ''}
                     ${item.destructive ? 'text-red-500' : 'text-ios-label dark:text-dark-label'}`}
                 >
-                  {item.label}
+                  <item.Icon size={20} className="shrink-0" />
+                  <span className="flex-1">{item.label}</span>
                 </button>
               ))}
 
-              {/* Dark mode toggle inside More menu */}
+              {/* Dark mode toggle — separate row because it's a toggle, not a navigation action. */}
               <button
                 onClick={toggleDark}
-                className="w-full text-left px-5 py-3.5 text-sm font-medium active:bg-gray-100 dark:active:bg-gray-700
-                  border-t border-gray-100 dark:border-gray-700 text-ios-label dark:text-dark-label"
+                className="w-full min-h-[48px] flex items-center gap-3 px-5 py-3 text-sm font-medium text-left
+                  border-t border-gray-100 dark:border-gray-700
+                  active:bg-gray-100 dark:active:bg-gray-700 text-ios-label dark:text-dark-label"
               >
-                {dark ? '☀️ Light mode' : '🌙 Dark mode'}
+                {dark ? <Sun size={20} className="shrink-0" /> : <Moon size={20} className="shrink-0" />}
+                <span className="flex-1">{dark ? (t.lightMode || 'Light mode') : (t.darkMode || 'Dark mode')}</span>
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* Tab bar */}
-      <nav className="fixed bottom-0 left-0 right-0 z-30 glass-bar h-16 safe-area-bottom">
-        <div className="flex items-center justify-around h-full max-w-lg mx-auto">
+      {/* Tab bar — 64 px tall + safe-area padding. Each tab is min-56 px tall
+          which keeps icon + label comfortably above the iOS HIG 44 px target. */}
+      <nav className="fixed bottom-0 left-0 right-0 z-30 glass-bar safe-area-bottom">
+        <div className="flex items-stretch justify-around max-w-lg mx-auto h-16">
           {tabs.map(tab => {
             const active = isActive(tab);
             return (
               <button
                 key={tab.key}
                 onClick={() => handleTab(tab)}
-                className={`flex flex-col items-center justify-center gap-0.5 flex-1 h-full active-scale
+                className={`relative flex-1 min-w-[44px] flex flex-col items-center justify-center gap-0.5 active-scale
                   ${active ? 'text-brand-600' : 'text-ios-tertiary dark:text-gray-500'}`}
+                aria-label={tab.label}
               >
-                <span className="text-lg leading-none">{tab.icon}</span>
-                <span className={`text-[10px] leading-none ${active ? 'font-semibold' : 'font-medium'}`}>
+                <tab.Icon size={22} strokeWidth={active ? 2.25 : 2} />
+                <span className={`text-[11px] leading-tight ${active ? 'font-semibold' : 'font-medium'}`}>
                   {tab.label}
                 </span>
+                {/* Active indicator — a subtle pink bar under the selected tab. */}
+                {active && (
+                  <span className="absolute bottom-0 left-1/2 -translate-x-1/2 w-8 h-0.5 rounded-full bg-brand-600" />
+                )}
               </button>
             );
           })}

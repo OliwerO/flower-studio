@@ -88,7 +88,25 @@ router.post('/', async (req, res, next) => {
       await db.atomicStockAdjust(stockItemId, -Number(quantity));
     }
 
-    res.status(201).json(record);
+    // Enrich response so the mobile UI can optimistically render without a
+    // second GET. Mirrors the GET handler's enrichment shape.
+    let enriched = record;
+    if (stockItemId) {
+      try {
+        const stock = await db.getById(TABLES.STOCK, stockItemId);
+        enriched = {
+          ...record,
+          flowerName: stock?.['Display Name'] || stock?.['Purchase Name'] || '—',
+          supplier: stock?.Supplier || '—',
+          costPrice: stock?.['Current Cost Price'] || 0,
+          lastRestocked: stock?.['Last Restocked'] || null,
+        };
+      } catch {
+        // Enrichment is best-effort; raw record is still valid.
+      }
+    }
+
+    res.status(201).json(enriched);
   } catch (err) {
     next(err);
   }
