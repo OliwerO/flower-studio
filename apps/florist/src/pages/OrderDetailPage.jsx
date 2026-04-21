@@ -153,6 +153,7 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -184,6 +185,23 @@ export default function OrderDetailPage() {
       const msg = err.response?.data?.error || 'Failed to update order.';
       showToast(msg, 'error');
     } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    setSaving(true);
+    try {
+      const res = await client.delete(`/orders/${id}`);
+      const returned = res.data.returnedItems || [];
+      const summary = returned.length > 0
+        ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
+        : '';
+      showToast(`${t.orderDeleted || 'Order deleted'}${summary ? '. ' + summary : ''}`, 'success');
+      navigate('/orders');
+    } catch (err) {
+      showToast(err.response?.data?.error || t.updateError || 'Failed to delete order.', 'error');
+      setConfirmDelete(false);
       setSaving(false);
     }
   }
@@ -627,6 +645,43 @@ export default function OrderDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* Danger zone — owner only. Two-tap delete. */}
+            {isOwner && (
+              <div className="pt-4 border-t border-dashed border-gray-200">
+                {!confirmDelete ? (
+                  <button
+                    onClick={() => setConfirmDelete(true)}
+                    disabled={saving}
+                    className="w-full py-2.5 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
+                  >
+                    🗑 {t.deleteOrder || 'Delete order'}
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-ios-red font-semibold text-center">
+                      {t.deleteOrderConfirm || 'Delete this order permanently? This cannot be undone.'}
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={handleDelete}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl bg-ios-red text-white text-sm font-semibold active-scale disabled:opacity-50"
+                      >
+                        🗑 {t.deleteOrderConfirmYes || 'Delete permanently'}
+                      </button>
+                      <button
+                        onClick={() => setConfirmDelete(false)}
+                        disabled={saving}
+                        className="flex-1 py-2.5 rounded-xl bg-gray-100 text-ios-label text-sm font-medium active-scale"
+                      >
+                        {t.cancel}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>

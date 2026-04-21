@@ -75,13 +75,14 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated, isOwner }) {
+export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwner }) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
   const [detail, setDetail]       = useState(null);
   const [loading, setLoading]     = useState(false);
   const [saving, setSaving]       = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -122,6 +123,25 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
         .catch(() => showToast(t.loadError, 'error'))
         .finally(() => setLoading(false));
     }
+  }
+
+  async function handleDelete() {
+    setSaving(true);
+    try {
+      const res = await client.delete(`/orders/${order.id}`);
+      const returned = res.data.returnedItems || [];
+      const summary = returned.length > 0
+        ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
+        : '';
+      showToast(`${t.orderDeleted || 'Order deleted'}${summary ? '. ' + summary : ''}`, 'success');
+      onOrderDeleted?.(order.id);
+    } catch (err) {
+      showToast(err.response?.data?.error || t.updateError, 'error');
+      setConfirmDelete(false);
+      setSaving(false);
+    }
+    // Note: on success the parent unmounts this card, so we don't
+    // clear saving — the component is about to disappear anyway.
   }
 
   async function patch(fields) {
@@ -1063,6 +1083,47 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 )}
               </div>
             </>
+          )}
+
+          {/* ── Danger zone — hard-delete the order (owner only). Distinct
+              from Cancel: Cancel keeps the record for audit, Delete makes
+              it disappear. Intended for test / duplicate / webhook-noise
+              orders. Two-tap confirm so a fat-fingered swipe can't wipe
+              a real order. */}
+          {isOwner && !editingBouquet && (
+            <div className="pt-3 border-t border-dashed border-gray-200 dark:border-gray-700">
+              {!confirmDelete ? (
+                <button
+                  onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}
+                  disabled={saving}
+                  className="w-full py-2 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
+                >
+                  🗑 {t.deleteOrder || 'Delete order'}
+                </button>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs text-ios-red font-semibold text-center">
+                    {t.deleteOrderConfirm || 'Delete this order permanently? This cannot be undone.'}
+                  </p>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={(e) => { e.stopPropagation(); handleDelete(); }}
+                      disabled={saving}
+                      className="flex-1 py-2 rounded-xl bg-ios-red text-white text-sm font-semibold active-scale disabled:opacity-50"
+                    >
+                      🗑 {t.deleteOrderConfirmYes || 'Delete permanently'}
+                    </button>
+                    <button
+                      onClick={(e) => { e.stopPropagation(); setConfirmDelete(false); }}
+                      disabled={saving}
+                      className="flex-1 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-label text-sm font-medium active-scale"
+                    >
+                      {t.cancel}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* Collapse button */}

@@ -46,6 +46,7 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -179,6 +180,26 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
       showToast(t.orderUpdated);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete() {
+    setSaving(true);
+    try {
+      const res = await client.delete(`/orders/${orderId}`);
+      const returned = res.data.returnedItems || [];
+      if (returned.length > 0) {
+        const summary = returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ');
+        showToast(`${t.orderDeleted || 'Order deleted'}. ${t.stockReturned || 'Returned'}: ${summary}`, 'success');
+      } else {
+        showToast(t.orderDeleted || 'Order deleted', 'success');
+      }
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+      setConfirmDelete(false);
     } finally {
       setSaving(false);
     }
@@ -1053,6 +1074,39 @@ export default function OrderDetailPanel({ orderId, onUpdate }) {
               </div>
             )}
           </>
+        )}
+
+        {/* Delete — hard-remove the order from Airtable. Distinct from
+            Cancel: Cancel keeps the record for audit; Delete makes it
+            disappear. Use for test orders / duplicates / webhook noise. */}
+        {!confirmDelete ? (
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="px-4 py-2 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium hover:bg-ios-red/5"
+          >
+            🗑 {t.deleteOrder || 'Delete order'}
+          </button>
+        ) : (
+          <div className="space-y-2">
+            <span className="text-xs text-ios-red font-semibold block">
+              {t.deleteOrderConfirm || 'Delete this order permanently? This cannot be undone.'}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDelete}
+                disabled={saving}
+                className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold disabled:opacity-50"
+              >
+                🗑 {t.deleteOrderConfirmYes || 'Delete permanently'}
+              </button>
+              <button
+                onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs"
+              >
+                {t.cancel}
+              </button>
+            </div>
+          </div>
         )}
       </div>
       <DissolvePremadesDialog

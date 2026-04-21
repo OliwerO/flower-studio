@@ -512,6 +512,9 @@ export default function OrderListPage() {
                 onOrderUpdated={(id, patch) => {
                   setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
                 }}
+                onOrderDeleted={(id) => {
+                  setOrders(prev => prev.filter(o => o.id !== id));
+                }}
               />
             ))}
           </div>

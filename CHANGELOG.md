@@ -41,6 +41,61 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-21 — Owner can hard-delete orders (dashboard + florist app)
+
+The owner now has a hard-delete action separate from Cancel. Cancel
+keeps the record around for audit (useful for business-reason
+cancellations); Delete makes the order disappear entirely — intended
+for test orders, accidental duplicates, and webhook noise from Wix
+that never should have turned into a record in the first place.
+
+### Backend
+- `services/orderService.js` — new `deleteOrder(orderId)` cascades:
+  returns stock for non-terminal orders (same rule as cancel, so a
+  deleted "holding" order doesn't leave a ghost deduction), then
+  deletes all order lines, the linked delivery, and finally the order
+  itself. Terminal orders (Delivered / Picked Up / Cancelled) skip the
+  stock return since stock was already consumed or returned.
+- `routes/orders.js` — new `DELETE /api/orders/:id`, owner-only (403
+  for other roles), broadcasts `order_deleted` over SSE so other open
+  clients refresh.
+
+### Dashboard (`apps/dashboard/src/components/OrderDetailPanel.jsx`)
+- Red outlined "🗑 Delete order" button next to the existing Cancel
+  button, with a two-step inline confirm. On delete, toast includes
+  any returned stock summary and `onUpdate()` refreshes the list —
+  which closes the panel since the order is gone.
+
+### Florist app
+- `components/OrderCard.jsx` — owner-only "Danger zone" block at the
+  bottom of the expanded card with the same two-step confirm. Parent
+  `OrderListPage` removes the card on success via new `onOrderDeleted`
+  callback.
+- `pages/OrderDetailPage.jsx` — owner-only delete block at the bottom;
+  on success navigates back to `/orders`.
+
+### Translations
+- EN + RU in both florist and dashboard: `deleteOrder`,
+  `deleteOrderConfirm`, `deleteOrderConfirmYes`, `orderDeleted`.
+
+### Why it matters
+- Cancel and Delete now mean different things. Cancel = "this order
+  was a real order that fell through" (keep for stats, revenue
+  tracking, refund audit). Delete = "this order should never have
+  existed" (wipe so reports stay clean).
+- Stock-return logic is reused so a non-terminal delete unwinds the
+  reservation, matching what the owner would expect from cancel.
+
+### What to watch for
+- This is a hard-delete. Once an order is deleted, there is no undo —
+  only the Airtable record's revision history (kept for a few weeks
+  on the current Airtable plan).
+- The route is owner-role only. If the florist logs in and sees the
+  delete button, the UI hides it (`isOwner` gate), but the backend
+  would also reject it with 403 — so no downgrade risk.
+
+---
+
 ## 2026-04-21 — Role-specific owner notes, customer call button, driver nav options
 
 The owner needed to direct the florist and the driver with separate
