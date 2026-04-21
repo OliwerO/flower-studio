@@ -84,17 +84,21 @@ export default function BouquetCard({ group, onToggleAll, onToggleVariant }) {
             : <ChevronDown size={18} className="text-ios-tertiary shrink-0" />}
         </button>
 
-        {/* Single-tap toggle for the whole bouquet. Tap target is comfortably
-            wider than 44 px so thumbs don't mis-hit the card-expand area. */}
+        {/* Single-tap toggle for the whole bouquet. Styled as an iOS switch —
+            track + knob match the dashboard's SettingsTab.jsx pattern so the
+            feel is consistent across both apps.
+            Tap target is the full 44×24 track plus the surrounding padding,
+            which comfortably exceeds the 44 px iOS minimum. */}
         <button
           onClick={() => onToggleAll(group, !allOn)}
           aria-label={allOn ? t.bouquetDeactivateAll : t.bouquetActivateAll}
-          className={`relative w-12 h-7 rounded-full transition-colors shrink-0
+          aria-pressed={allOn}
+          className={`relative w-11 h-6 rounded-full transition-colors shrink-0
                      ${allOn ? 'bg-emerald-500' : anyOn ? 'bg-amber-400' : 'bg-gray-300 dark:bg-gray-600'}`}
         >
           <span
-            className={`absolute top-0.5 w-6 h-6 rounded-full bg-white shadow transition-transform
-                       ${allOn ? 'translate-x-5' : 'translate-x-0.5'}`}
+            className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform
+                       ${allOn ? 'translate-x-5' : 'translate-x-0'}`}
           />
         </button>
       </div>
