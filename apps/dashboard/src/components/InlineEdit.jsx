@@ -1,9 +1,14 @@
 // InlineEdit — click text to edit, blur/enter to save.
 // Like a paper form field: shows the current value, click to write over it.
+// Optional `validate(draft)` returns an error string to block the save;
+// the invalid draft is discarded and `onValidationError(msg)` is notified.
 
 import { useState, useEffect } from 'react';
 
-export default function InlineEdit({ value, onSave, type = 'text', placeholder, multiline, disabled }) {
+export default function InlineEdit({
+  value, onSave, type = 'text', placeholder, multiline, disabled,
+  validate, onValidationError,
+}) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft]     = useState(value);
 
@@ -11,8 +16,18 @@ export default function InlineEdit({ value, onSave, type = 'text', placeholder, 
   useEffect(() => { setDraft(value); }, [value]);
 
   function commit() {
+    if (draft === value) { setEditing(false); return; }
+    if (validate) {
+      const err = validate(draft);
+      if (err) {
+        onValidationError?.(err);
+        setDraft(value);        // revert so the bad value doesn't persist in the input
+        setEditing(false);
+        return;
+      }
+    }
     setEditing(false);
-    if (draft !== value) onSave(draft);
+    onSave(draft);
   }
 
   if (!editing) {

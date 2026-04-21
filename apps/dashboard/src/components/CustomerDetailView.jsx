@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
+import useConfigLists from '../hooks/useConfigLists.js';
 import t from '../translations.js';
 import InlineEdit from './InlineEdit.jsx';
 import CustomerHeader from './CustomerHeader.jsx';
@@ -12,6 +13,16 @@ import CustomerTimeline from './CustomerTimeline.jsx';
 import KeyPersonChips from './KeyPersonChips.jsx';
 
 const SEGMENT_OPTIONS = ['', 'New', 'Constant', 'Rare', 'DO NOT CONTACT'];
+const LANGUAGE_OPTIONS = ['', 'RU', 'UK', 'PL', 'EN', 'TR'];
+// Matches the pill options in Step1Customer.jsx — keep in sync if the set changes.
+const SEX_BIZ_OPTIONS = ['', 'Female', 'Male', 'Business'];
+
+// Permissive validators: empty is valid (clearing the field); otherwise must match.
+// Phone accepts digits, spaces, +, (), -; at least 5 chars so "1" isn't accepted.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const PHONE_RE = /^[\d\s+()\-]{5,}$/;
+const validateEmail = v => (!v || EMAIL_RE.test(v)) ? null : t.invalidEmail;
+const validatePhone = v => (!v || PHONE_RE.test(v)) ? null : t.invalidPhone;
 
 export default function CustomerDetailView({ customerId, onUpdate, onNavigate }) {
   const [cust, setCust]       = useState(null);
@@ -69,7 +80,7 @@ export default function CustomerDetailView({ customerId, onUpdate, onNavigate })
 
       <StatStrip orders={orders} />
 
-      <ProfileGrid cust={cust} onPatch={patchField} />
+      <ProfileGrid cust={cust} onPatch={patchField} onInvalid={msg => showToast(msg, 'error')} />
 
       <KeyPersonChips cust={cust} onPatch={patchField} />
 
@@ -173,7 +184,32 @@ function StatCard({ value, label }) {
   );
 }
 
-function ProfileGrid({ cust, onPatch }) {
+function ProfileGrid({ cust, onPatch, onInvalid }) {
+  const { orderSources } = useConfigLists();
+
+  // Airtable occasionally returns single-element arrays for fields that were
+  // linked records at some point in the past — coerce to scalar before using.
+  const commCurrent   = scalar(cust['Communication method']);
+  const sourceCurrent = scalar(cust['Order Source']);
+
+  // Preserve the currently stored value even if the owner later removed it
+  // from Settings — otherwise the select would silently jump to another option.
+  const commOptions = useMemo(
+    () => dedupe(['', ...orderSources, commCurrent]),
+    [orderSources, commCurrent]
+  );
+  const sourceOptions = useMemo(
+    () => dedupe(['', ...orderSources, sourceCurrent]),
+    [orderSources, sourceCurrent]
+  );
+
+  const sexBizLabels = {
+    '':         '—',
+    'Female':   t.female,
+    'Male':     t.male,
+    'Business': t.business,
+  };
+
   return (
     <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
       <Field label={t.name}>
@@ -183,36 +219,105 @@ function ProfileGrid({ cust, onPatch }) {
         <InlineEdit value={cust.Nickname || ''} onSave={v => onPatch('Nickname', v || null)} />
       </Field>
       <Field label={t.phone}>
-        <InlineEdit value={cust.Phone || ''} onSave={v => onPatch('Phone', v || null)} />
+        <InlineEdit
+          value={cust.Phone || ''}
+          type="tel"
+          onSave={v => onPatch('Phone', v || null)}
+          validate={validatePhone}
+          onValidationError={onInvalid}
+        />
       </Field>
       <Field label={t.email}>
-        <InlineEdit value={cust.Email || ''} onSave={v => onPatch('Email', v || null)} />
+        <InlineEdit
+          value={cust.Email || ''}
+          type="email"
+          onSave={v => onPatch('Email', v || null)}
+          validate={validateEmail}
+          onValidationError={onInvalid}
+        />
       </Field>
       <Field label={t.instagram}>
         <InlineEdit value={cust.Link || ''} onSave={v => onPatch('Link', v || null)} />
       </Field>
       <Field label={t.segment}>
-        <select
-          value={cust.Segment || ''}
-          onChange={e => onPatch('Segment', e.target.value || null)}
-          className="text-sm field-input w-full"
-        >
-          {SEGMENT_OPTIONS.map(s => (
-            <option key={s || 'none'} value={s}>{s || '—'}</option>
-          ))}
-        </select>
+        <SelectField
+          value={cust.Segment}
+          onChange={v => onPatch('Segment', v || null)}
+          options={SEGMENT_OPTIONS.map(s => ({ value: s, label: s || '—' }))}
+        />
       </Field>
       <Field label={t.homeAddress}>
         <InlineEdit value={cust['Home address'] || ''} onSave={v => onPatch('Home address', v || null)} />
       </Field>
       <Field label={t.language}>
-        <InlineEdit value={cust.Language || ''} onSave={v => onPatch('Language', v || null)} />
+        <SelectField
+          value={cust.Language}
+          onChange={v => onPatch('Language', v || null)}
+          options={LANGUAGE_OPTIONS.map(l => ({ value: l, label: l || '—' }))}
+        />
+      </Field>
+      <Field label={t.sex}>
+        <SelectField
+          value={cust['Sex / Business']}
+          onChange={v => onPatch('Sex / Business', v || null)}
+          options={SEX_BIZ_OPTIONS.map(s => ({ value: s, label: sexBizLabels[s] || s }))}
+        />
+      </Field>
+      <Field label={t.communicationMethod}>
+        <SelectField
+          value={commCurrent}
+          onChange={v => onPatch('Communication method', v || null)}
+          options={commOptions.map(s => ({ value: s, label: s || '—' }))}
+        />
+      </Field>
+      <Field label={t.orderSource}>
+        <SelectField
+          value={sourceCurrent}
+          onChange={v => onPatch('Order Source', v || null)}
+          options={sourceOptions.map(s => ({ value: s, label: s || '—' }))}
+        />
       </Field>
       <Field label={t.foundUsFrom}>
         <InlineEdit value={cust['Found us from'] || ''} onSave={v => onPatch('Found us from', v || null)} />
       </Field>
     </div>
   );
+}
+
+// Controlled <select> wrapper. Coerces value to a scalar string so React
+// never sees an array (which triggers a "must be scalar" warning).
+function SelectField({ value, onChange, options }) {
+  return (
+    <select
+      value={scalar(value)}
+      onChange={e => onChange(e.target.value)}
+      className="text-sm field-input w-full"
+    >
+      {options.map(o => (
+        <option key={o.value || 'none'} value={o.value}>{o.label}</option>
+      ))}
+    </select>
+  );
+}
+
+function dedupe(arr) {
+  const seen = new Set();
+  const out  = [];
+  for (const v of arr) {
+    const k = v == null ? '' : v;
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(k);
+  }
+  return out;
+}
+
+// Coerce Airtable's mixed scalar/array returns into a single string for
+// controlled <select> elements. Empty arrays and nullish values become ''.
+function scalar(v) {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v[0] == null ? '' : String(v[0]);
+  return String(v);
 }
 
 function Field({ label, children }) {

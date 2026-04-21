@@ -725,6 +725,8 @@ const en = {
   male:                     'Male',
   business:                 'Business',
   moreFields:               'More fields',
+  invalidEmail:             'Invalid email address',
+  invalidPhone:             'Invalid phone number',
 
   // Florist Hours (Financial tab + Settings)
   floristHours:             'Florist hours',
@@ -1558,6 +1560,8 @@ const ru = {
   male:                     'Мужчина',
   business:                 'Бизнес',
   moreFields:               'Ещё поля',
+  invalidEmail:             'Неверный формат email',
+  invalidPhone:             'Неверный формат телефона',
 
   // Florist Hours (Financial tab + Settings)
   floristHours:             'Часы флористов',
