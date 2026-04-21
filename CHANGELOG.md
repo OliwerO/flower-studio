@@ -27,6 +27,8 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-03-18 | Florist Hours | New field: `Rate Type` (Single line text) — stores rate type name per entry | ❌ |
 | 2026-04-11 | Premade Bouquets | **New table** — standalone bouquet compositions the florist prepares before any order. Fields: `Name` (Single line text, required), `Created At` (Created time, auto), `Created By` (Single line text), `Price Override` (Number, optional), `Notes` (Long text), `Lines` (link → Premade Bouquet Lines). | ❌ |
 | 2026-04-11 | Premade Bouquet Lines | **New table** — line items for a premade bouquet. Fields: `Premade Bouquet` (link → Premade Bouquets), `Stock Item` (link → Stock, required), `Flower Name` (Single line text), `Quantity` (Number), `Cost Price Per Unit` (Number, snapshot), `Sell Price Per Unit` (Number, snapshot). | ❌ |
+| 2026-04-21 | App Orders | New field: `Florist Note` (Long text) — owner-authored guidance for the florist, separate from the customer's `Notes Original`. Visible on florist collapsed card + editable at every order stage from both dashboard and florist app. | ❌ |
+| 2026-04-21 | Deliveries | New field: `Driver Instructions` (Long text) — owner-authored instructions for the driver, separate from the driver's own `Driver Notes`. Visible on delivery collapsed card + editable from dashboard and florist app. | ❌ |
 
 ### Env vars
 
@@ -36,6 +38,59 @@ Add to `.env.dev` and `.env` (before the feature ships):
 AIRTABLE_PREMADE_BOUQUETS_TABLE=tbl...       # Premade Bouquets table ID
 AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 ```
+
+---
+
+## 2026-04-21 — Role-specific owner notes, customer call button, driver nav options
+
+The owner needed to direct the florist and the driver with separate
+instructions on every order, and the florist / driver needed a one-tap
+call to the customer (not the recipient). The driver card hid its
+expand affordance behind call and navigate links, and Google Maps was
+the only navigation option.
+
+### Airtable schema (owner action required before deploy)
+- **App Orders → new field `Florist Note` (Long text)** — owner-authored note for the florist, shown as a green 🌸 block on the florist card. Distinct from the customer's `Notes Original` (kept as a blue 📝 block).
+- **Deliveries → new field `Driver Instructions` (Long text)** — owner-authored instructions for the driver, shown as an orange ⚠ block on the delivery card. Distinct from the driver's own `Driver Notes` (kept as the driver-editable note).
+
+### Backend (`backend/src/`)
+- `routes/orders.js` — `Florist Note` added to `ORDERS_PATCH_ALLOWED`; POST /orders accepts `floristNote`; convert-to-delivery accepts `driverInstructions`; list endpoint now enriches `Customer Phone` so florist cards can call the customer without an extra fetch.
+- `routes/deliveries.js` — `Driver Instructions` added to `DELIVERIES_PATCH_ALLOWED`.
+- `services/orderService.js` — `createOrder` writes `Florist Note` on order + `Driver Instructions` on delivery at creation time.
+- `services/airtableSchema.js` — startup validator now checks both new fields so a missing field fails the boot instead of silently 422'ing PATCH calls.
+
+### Shared package (`packages/shared/`)
+- New `utils/phone.js` (`cleanPhone`, `telHref`) + tests.
+- New `utils/navigation.js` (`googleMapsUrl`, `wazeUrl`, `appleMapsUrl`) + tests.
+- New `components/CallButton.jsx` — consistent green click-to-call pill with `stopPropagation` so it can sit inside clickable cards.
+- New `components/NavButtons.jsx` — three-up Google / Waze / Apple nav strip.
+- 12 tests, all green. Package-level `npm test` script added.
+
+### Dashboard (`apps/dashboard/`)
+- `OrderDetailPanel.jsx` — Notes section restructured into three rows: customer note (read-only, `Notes Original`), florist note (editable, `Florist Note`), driver instructions (editable, delivery orders only). Recipient phone row gains a `CallButton` via the new `trailing` prop on `EditableRow`.
+- New translation keys added (EN + RU): `customerNote`, `floristNote`, `driverInstructions`, placeholders, `callCustomer`, `callRecipient`, `customer`, `recipient`.
+
+### Florist app (`apps/florist/`)
+- `OrderCardSummary.jsx` — collapsed card now shows florist note in a green block (first) and customer note in the existing blue block; customer phone sits next to the customer name as a `CallButton`.
+- `OrderCard.jsx` (expanded) — two inline editors added (green for florist note, orange for driver instructions). Editable at every status so the owner can add instructions after "Delivered" if needed.
+- `OrderDetailPage.jsx` — same two editors, customer phone converted to `CallButton`.
+- New translation keys mirroring the dashboard set.
+
+### Delivery app (`apps/delivery/`)
+- `DeliveryCard.jsx` — address is now plain text above the three-way nav strip (Google / Waze / Apple), two `CallButton`s (customer + recipient), owner's `Driver Instructions` shown in an orange block (falls back to the legacy `Special Instructions` for old data), explicit "Details ▾" button makes the expand action discoverable without competing with call/navigate.
+- `DeliverySheet.jsx` — nav strip in its own section, both phone rows converted to `CallButton`, owner's driver instructions rendered read-only above the driver's own notes editor.
+- New translation keys: `driverInstructions`, `callCustomer`, `callRecipient`, `customer`, `details`, `navigate`.
+
+### Why it matters
+- The owner now has a single, clear authoring surface (dashboard + florist mobile) to talk to each role independently; florists and drivers read the message meant for them on the collapsed card, not buried in the sheet.
+- Drivers no longer have to guess where to tap to expand — the explicit "Details" button removes that ambiguity — and can choose their preferred map app instead of being forced into Google Maps.
+- Customer phone is one tap away on every card the florist or driver touches, with `CallButton` centralizing formatting (`cleanPhone` strips spaces once, instead of four times).
+
+### What to watch for
+- `Driver Instructions` is separate from the existing `Driver Notes`. The driver's own post-delivery observations still live in `Driver Notes`; only the owner writes `Driver Instructions`. If anyone starts re-using `Driver Notes` for owner messages, it will collide with what the driver types.
+- The florist card's florist-note block renders only when `Florist Note` is non-empty. Orders created before this deploy will have no green block — that's expected, not a regression.
+- Apple Maps on Android falls back to Google Maps in the browser; this is acceptable but means Android drivers effectively see "Google Google Waze". Worth confirming on a real Android device during verification.
+- `airtableSchema.js` will now fail boot if either new field is missing from the base. Create both in Airtable before deploying the backend.
 
 ---
 

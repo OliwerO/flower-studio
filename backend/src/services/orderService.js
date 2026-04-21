@@ -57,7 +57,7 @@ export async function autoMatchStock(lines) {
 export async function createOrder(params, config, opts = {}) {
   const {
     customer, customerRequest, source, communicationMethod, deliveryType,
-    orderLines, delivery, notes, paymentStatus, paymentMethod, priceOverride,
+    orderLines, delivery, notes, floristNote, paymentStatus, paymentMethod, priceOverride,
     requiredBy, cardText, deliveryTime, createdBy, isOwner,
     payment1Amount, payment1Method,
   } = params;
@@ -82,6 +82,7 @@ export async function createOrder(params, config, opts = {}) {
       'Order Date':         new Date().toISOString().split('T')[0],
       'Required By':        requiredBy || delivery?.date || null,
       'Notes Original':     notes || '',
+      'Florist Note':       floristNote || '',
       'Greeting Card Text': cardText || delivery?.cardText || '',
       'Delivery Time':      deliveryTime || delivery?.time || '',
       'Payment Status':     paymentStatus,
@@ -204,6 +205,7 @@ export async function createOrder(params, config, opts = {}) {
         'Delivery Time':    delivery.time || '',
         'Assigned Driver':  delivery.driver || getDriverOfDay() || null,
         'Delivery Fee':     delivery.fee ?? getConfig('defaultDeliveryFee'),
+        'Driver Instructions': delivery.driverInstructions || '',
         'Delivery Method':  'Driver',
         'Driver Payout':    getConfig('driverCostPerDelivery') || 0,
         Status:             DELIVERY_STATUS.PENDING,

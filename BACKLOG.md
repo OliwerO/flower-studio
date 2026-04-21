@@ -191,6 +191,14 @@ substitutes no longer silently fill in for the original, so the original can end
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
 
+### Owner-notes + customer call + driver nav (2026-04-21)
+- [x] Split owner-authored notes by audience: `Florist Note` (ORDERS) + `Driver Instructions` (DELIVERIES), each prominent on the right role's collapsed card; customer's note stays as `Notes Original`, driver's own note stays as `Driver Notes`.
+- [x] Editable at every order stage from dashboard + florist app (no status gate) — owner can add a post-delivery note if needed.
+- [x] Customer phone rendered as a one-tap `CallButton` on florist collapsed card, delivery collapsed card, and both detail views. Dashboard recipient phone is also a call link.
+- [x] Delivery card: explicit "Details ▾" button for discoverable expand (card body still tappable).
+- [x] Three-way navigation strip on delivery card + sheet: Google Maps / Waze / Apple Maps (text-address based — no geocoding).
+- [ ] Consider adding a tiny `Florist Note` field to the new-order wizard Step 3 so the owner can capture it at creation time (today she has to open the order after creation).
+
 ### Tier 1 Bugs — Blocking Daily Operations (consolidated 2026-04-19)
 
 Consolidated from two divergent sections ("2026-04-03" and "2026-04-07"

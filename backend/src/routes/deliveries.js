@@ -12,7 +12,8 @@ router.use(authorize('deliveries'));
 const DELIVERIES_PATCH_ALLOWED = [
   'Delivery Address', 'Recipient Name', 'Recipient Phone',
   'Delivery Date', 'Delivery Time', 'Assigned Driver', 'Status',
-  'Driver Payment Status', 'Driver Notes', 'Delivered At', 'Delivery Fee',
+  'Driver Payment Status', 'Driver Notes', 'Driver Instructions',
+  'Delivered At', 'Delivery Fee',
   'Delivery Result', 'Delivery Method', 'Driver Payout', 'Taxi Cost',
 ];
 
