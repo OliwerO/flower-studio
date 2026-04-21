@@ -66,6 +66,15 @@ const EXPECTED_WRITE_FIELDS = {
     'Key person 1 (important DATE)', 'Key person 2 (important DATE)',
     'Communication method', 'Order Source',
   ],
+  // Partial entries — only fields added by the owner-notes feature are
+  // validated here. Older ORDERS / DELIVERIES fields rely on runtime 422
+  // failures since this guard was added after those fields were in use.
+  [TABLES.ORDERS]: [
+    'Florist Note',
+  ],
+  [TABLES.DELIVERIES]: [
+    'Driver Instructions',
+  ],
 };
 
 /**

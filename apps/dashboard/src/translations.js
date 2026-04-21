@@ -815,6 +815,17 @@ const en = {
   fixesApplied:             'Corrections applied',
   currentStock:             'Current',
   expectedDeduction:        'Expected deduction',
+
+  // Owner-authored role-specific notes + customer call
+  customerNote:                 'Customer note',
+  floristNote:                  'Florist note',
+  driverInstructions:           'Driver instructions',
+  floristNotePlaceholder:       'Note for the florist…',
+  driverInstructionsPlaceholder:'Instructions for the driver…',
+  callCustomer:                 'Call customer',
+  callRecipient:                'Call recipient',
+  customer:                     'Customer',
+  recipient:                    'Recipient',
 };
 
 const ru = {
@@ -1631,6 +1642,17 @@ const ru = {
   fixesApplied:             'Корректировки применены',
   currentStock:             'Текущий',
   expectedDeduction:        'Ожидаемое списание',
+
+  // Owner-authored role-specific notes + customer call
+  customerNote:                 'Заметка клиента',
+  floristNote:                  'Заметка для флориста',
+  driverInstructions:           'Инструкции водителю',
+  floristNotePlaceholder:       'Заметка для флориста…',
+  driverInstructionsPlaceholder:'Инструкции водителю…',
+  callCustomer:                 'Позвонить клиенту',
+  callRecipient:                'Позвонить получателю',
+  customer:                     'Клиент',
+  recipient:                    'Получатель',
 };
 
 // ── Proxy-based dynamic translation ──

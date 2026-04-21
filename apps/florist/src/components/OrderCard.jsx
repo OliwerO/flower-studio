@@ -1018,13 +1018,45 @@ export default function OrderCard({ order, onOrderUpdated, isOwner }) {
                 </div>
               )}
 
-              {/* ── Order date + Notes ── */}
-              {(d['Order Date'] || detail['Notes Original']) && (
+              {/* ── Order date ── */}
+              {d['Order Date'] && (
                 <div className="bg-gray-50 rounded-xl px-3 py-1 space-y-0">
-                  {d['Order Date'] && <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />}
-                  {detail['Notes Original'] && <Row label={t.labelNotes} value={detail['Notes Original']} />}
+                  <Row label={t.labelOrderDate} value={fmtDate(d['Order Date'])} />
+                  {detail['Notes Original'] && <Row label={t.customerNote} value={detail['Notes Original']} />}
                 </div>
               )}
+
+              {/* ── Owner-authored notes (editable at any stage) ── */}
+              <div className="space-y-2">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 dark:text-green-300 mb-1">
+                    🌸 {t.floristNote}
+                  </p>
+                  <textarea
+                    defaultValue={detail['Florist Note'] || ''}
+                    onBlur={e => { if (e.target.value !== (detail['Florist Note'] || '')) patch({ 'Florist Note': e.target.value }); }}
+                    placeholder={t.floristNotePlaceholder}
+                    disabled={saving}
+                    rows={2}
+                    className="w-full text-sm text-ios-label bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40 whitespace-pre-wrap"
+                  />
+                </div>
+                {isDelivery && detail.delivery && (
+                  <div>
+                    <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700 dark:text-orange-300 mb-1">
+                      🚗 {t.driverInstructions}
+                    </p>
+                    <textarea
+                      defaultValue={detail.delivery['Driver Instructions'] || ''}
+                      onBlur={e => { if (e.target.value !== (detail.delivery['Driver Instructions'] || '')) patchDelivery({ 'Driver Instructions': e.target.value }); }}
+                      placeholder={t.driverInstructionsPlaceholder}
+                      disabled={saving}
+                      rows={2}
+                      className="w-full text-sm text-ios-label bg-orange-50 dark:bg-orange-900/30 border border-orange-200 dark:border-orange-700 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40 whitespace-pre-wrap"
+                    />
+                  </div>
+                )}
+              </div>
             </>
           )}
 

@@ -9,6 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
+import { CallButton } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -266,11 +267,9 @@ export default function OrderDetailPage() {
                   <Row label="Nickname" value={order['Customer Nickname']} />
                 )}
                 {order['Customer Phone'] && (
-                  <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
-                    <span className="text-sm text-ios-tertiary shrink-0">Phone</span>
-                    <a href={`tel:${order['Customer Phone']}`} className="text-sm text-brand-600 font-medium">
-                      {order['Customer Phone']}
-                    </a>
+                  <div className="flex justify-between items-center gap-4 py-2 border-b border-gray-100 last:border-0">
+                    <span className="text-sm text-ios-tertiary shrink-0">{t.labelPhone || 'Phone'}</span>
+                    <CallButton phone={order['Customer Phone']} label={order['Customer Phone']} variant="subtle" />
                   </div>
                 )}
               </div>
@@ -586,16 +585,48 @@ export default function OrderDetailPage() {
               </div>
             </div>
 
-            {/* Source + notes */}
+            {/* Source + customer note (read-only display) */}
             {(order['Source'] || order['Notes Original']) && (
               <div>
                 <p className="ios-label">Info</p>
                 <div className="ios-card px-4 py-2">
                   <Row label="Source" value={order['Source']} />
-                  <Row label="Notes"  value={order['Notes Original']} />
+                  <Row label={t.customerNote} value={order['Notes Original']} />
                 </div>
               </div>
             )}
+
+            {/* Owner-authored notes (editable at any stage) */}
+            <div className="space-y-2">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 mb-1">
+                  🌸 {t.floristNote}
+                </p>
+                <textarea
+                  defaultValue={order['Florist Note'] || ''}
+                  onBlur={e => { if (e.target.value !== (order['Florist Note'] || '')) patch({ 'Florist Note': e.target.value }); }}
+                  placeholder={t.floristNotePlaceholder}
+                  disabled={saving}
+                  rows={2}
+                  className="w-full text-sm text-ios-label bg-green-50 border border-green-200 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40 whitespace-pre-wrap"
+                />
+              </div>
+              {order.delivery && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700 mb-1">
+                    🚗 {t.driverInstructions}
+                  </p>
+                  <textarea
+                    defaultValue={order.delivery['Driver Instructions'] || ''}
+                    onBlur={e => { if (e.target.value !== (order.delivery['Driver Instructions'] || '')) patchDelivery({ 'Driver Instructions': e.target.value }); }}
+                    placeholder={t.driverInstructionsPlaceholder}
+                    disabled={saving}
+                    rows={2}
+                    className="w-full text-sm text-ios-label bg-orange-50 border border-orange-200 rounded-lg px-2.5 py-1.5 outline-none disabled:opacity-40 whitespace-pre-wrap"
+                  />
+                </div>
+              )}
+            </div>
           </>
         )}
       </div>

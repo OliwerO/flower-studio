@@ -11,3 +11,7 @@ export { computePremadeShortfalls } from './utils/dissolvePremades.js';
 export { default as apiClient, setClientPin, getClientPin } from './api/client.js';
 export { LanguageProvider, useLanguage, LangToggle } from './context/LanguageContext.jsx';
 export { AuthProvider, useAuth } from './context/AuthContext.jsx';
+export { default as CallButton } from './components/CallButton.jsx';
+export { default as NavButtons } from './components/NavButtons.jsx';
+export { cleanPhone, telHref } from './utils/phone.js';
+export { googleMapsUrl, wazeUrl, appleMapsUrl } from './utils/navigation.js';

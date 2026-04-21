@@ -1,8 +1,11 @@
 // DeliveryCard — a compact card for each delivery in the list.
-// Tap the card to open the detail sheet. Quick-action buttons for Maps and phone.
-// Think of it as a dispatch slip: recipient, address, time, and one-tap actions.
+// Tap the card (or the explicit "Details" button) to open the detail
+// sheet. Call and navigation buttons open their respective apps
+// without triggering expand, so the driver can decide: expand, call,
+// or navigate — without accidental taps.
 
 import t from '../translations.js';
+import { CallButton, NavButtons } from '@flower-studio/shared';
 
 export default function DeliveryCard({ delivery, onTap, onStatusChange, onProblem, dimmed }) {
   const d = delivery;
@@ -11,16 +14,17 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
   const isOut      = status === 'Out for Delivery';
   const isDone     = status === 'Delivered';
 
-  const address       = d['Delivery Address'] || '';
-  const phone         = d['Recipient Phone'] || '';
-  const time          = d['Delivery Time'] || '';
-  const recipient     = d['Recipient Name'] || 'Unknown';
-  const fee           = d['Delivery Fee'];
-  const deliveredAt     = d['Delivered At'];
-  const deliveryResult  = d['Delivery Result'] || '';
-  const orderContents   = d['Order Contents'] || '';
-  const specialInstr  = d['Special Instructions'] || '';
-  const paymentStatus = d['Payment Status'] || '';
+  const address          = d['Delivery Address'] || '';
+  const recipientPhone   = d['Recipient Phone'] || '';
+  const customerPhone    = d['Customer Phone'] || '';
+  const time             = d['Delivery Time'] || '';
+  const recipient        = d['Recipient Name'] || 'Unknown';
+  const deliveredAt      = d['Delivered At'];
+  const deliveryResult   = d['Delivery Result'] || '';
+  // Owner-authored instructions (new) fall back to the legacy translated
+  // customer note so existing data still renders.
+  const driverInstr      = d['Driver Instructions'] || d['Special Instructions'] || '';
+  const paymentStatus    = d['Payment Status'] || '';
 
   // Payment status badge styling
   function paymentBadge() {
@@ -38,14 +42,6 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
   function handleStatusChange(newStatus) {
     onStatusChange(newStatus);
   }
-
-  // Build Google Maps URL for the address
-  const mapsUrl = address
-    ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
-    : null;
-
-  // Build tel: link
-  const telUrl = phone ? `tel:${phone.replace(/\s/g, '')}` : null;
 
   return (
     <div
@@ -81,35 +77,47 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
           </div>
         </div>
 
-        {/* Address — tappable to open Maps */}
+        {/* Address — plain text; nav strip below offers three map apps */}
         {address && (
-          <a
-            href={mapsUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => e.stopPropagation()}
-            className="flex items-start gap-1.5 text-xs text-ios-blue active:underline"
-          >
+          <p className="flex items-start gap-1.5 text-xs text-ios-label">
             <span className="shrink-0 mt-0.5">📍</span>
             <span className="line-clamp-2">{address}</span>
-          </a>
+          </p>
         )}
 
-        {/* Phone — tappable to call */}
-        {phone && (
-          <a
-            href={telUrl}
-            onClick={e => e.stopPropagation()}
-            className="flex items-center gap-1.5 text-xs text-ios-blue active:underline"
-          >
-            <span className="shrink-0">📱</span>
-            <span>{phone}</span>
-          </a>
+        {/* Three-way navigation: Google / Waze / Apple */}
+        {address && <NavButtons address={address} />}
+
+        {/* Call buttons — customer (who placed) and recipient (who receives) */}
+        {(customerPhone || recipientPhone) && (
+          <div className="flex flex-wrap gap-2">
+            {customerPhone && (
+              <CallButton
+                phone={customerPhone}
+                label={t.callCustomer}
+                variant="subtle"
+              />
+            )}
+            {recipientPhone && (
+              <CallButton
+                phone={recipientPhone}
+                label={t.callRecipient}
+                variant="subtle"
+              />
+            )}
+          </div>
         )}
 
-        {/* Special instructions */}
-        {specialInstr && (
-          <p className="text-xs text-ios-orange line-clamp-2">⚠ {specialInstr}</p>
+        {/* Owner's instructions to the driver */}
+        {driverInstr && (
+          <div className="bg-orange-50 border-l-4 border-orange-400 rounded-lg px-3 py-1.5">
+            <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700 mb-0.5">
+              ⚠ {t.driverInstructions}
+            </p>
+            <p className="text-xs text-ios-label leading-snug whitespace-pre-wrap line-clamp-2">
+              {driverInstr}
+            </p>
+          </div>
         )}
 
         {/* Delivered timestamp */}
@@ -123,6 +131,15 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
             <span className="text-orange-500 font-medium">{deliveryResult}</span>
           )}
         </div>
+
+        {/* Explicit "Details" button — makes the expand action discoverable
+            even when call/nav buttons occupy most of the card. */}
+        <button
+          onClick={e => { e.stopPropagation(); onTap?.(); }}
+          className="w-full text-center text-xs font-medium text-ios-tertiary py-1.5 border-t border-gray-100 active-scale"
+        >
+          {t.details || 'Details'} ▾
+        </button>
 
         {/* Action button */}
         {!dimmed && (isPending || isOut) && (
