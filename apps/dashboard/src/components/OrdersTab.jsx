@@ -599,6 +599,7 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
               <OrderDetailPanel
                 orderId={order.id}
                 onUpdate={fetchOrders}
+                onNavigate={onNavigate}
               />
             )}
           </div>
