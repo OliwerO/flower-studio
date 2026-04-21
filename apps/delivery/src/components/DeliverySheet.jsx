@@ -60,10 +60,31 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
 
         <div className="px-5 pb-8 space-y-4">
           {/* Header */}
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold text-ios-label">{recipient}</h2>
-            <button onClick={onClose} className="text-ios-tertiary text-sm font-medium">{t.close}</button>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-ios-tertiary">{t.recipient}</p>
+              <h2 className="text-lg font-bold text-ios-label truncate">{recipient}</h2>
+              {customerName && customerName !== recipient && (
+                <p className="text-xs text-ios-tertiary mt-0.5">
+                  <span className="font-semibold uppercase tracking-wide">{t.customer}:</span> {customerName}
+                </p>
+              )}
+            </div>
+            <button onClick={onClose} className="text-ios-tertiary text-sm font-medium shrink-0">{t.close}</button>
           </div>
+
+          {/* Owner's instructions — promoted to the top, above the info card,
+              because it's the single most important message when present. */}
+          {driverInstr && (
+            <div className="bg-orange-50 border-l-4 border-orange-500 rounded-xl px-4 py-3">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-orange-700 mb-1">
+                ⚠ {t.driverInstructions}
+              </p>
+              <p className="text-sm text-ios-label whitespace-pre-wrap leading-relaxed">
+                {driverInstr}
+              </p>
+            </div>
+          )}
 
           {/* Info rows */}
           <div className="ios-card divide-y divide-gray-100 overflow-hidden">
@@ -142,16 +163,6 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
               {paymentStatus === 'Partial' && (
                 <span className="text-xs font-semibold px-3 py-1 rounded-full bg-amber-100 text-amber-700">{t.partialBadge}</span>
               )}
-            </div>
-          )}
-
-          {/* Owner's instructions to the driver (read-only) */}
-          {driverInstr && (
-            <div>
-              <p className="ios-label">{t.driverInstructions}</p>
-              <div className="ios-card px-4 py-3 border border-orange-200 bg-orange-50/50">
-                <p className="text-sm text-ios-label whitespace-pre-wrap">⚠ {driverInstr}</p>
-              </div>
             </div>
           )}
 

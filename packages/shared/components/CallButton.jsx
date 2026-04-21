@@ -14,7 +14,7 @@ export default function CallButton({
   const href = telHref(phone);
   if (!href) return null;
 
-  const base = 'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-sm font-semibold active-scale whitespace-nowrap';
+  const base = 'inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-xl text-sm font-semibold active-scale whitespace-nowrap';
   const styles = variant === 'subtle'
     ? 'bg-ios-green/10 text-ios-green'
     : 'bg-ios-green text-white';
