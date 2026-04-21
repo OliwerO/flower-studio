@@ -158,8 +158,10 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
       }
     }
     try {
+      // includeEmpty=true so the picker can reselect negative-stock items
+      // (they represent unfulfilled demand rolling into the next PO).
       const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock'),
+        client.get('/stock?includeEmpty=true'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStockItems(stockRes.data);
@@ -547,7 +549,9 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                   setFlowerSearch('');
                   setEditingBouquet(true);
                   if (stockItems.length === 0) {
-                    client.get('/stock').then(r => setStockItems(r.data)).catch(() => {});
+                    // includeEmpty=true so negative-stock (unfulfilled demand)
+                    // flowers appear in the picker — prevents duplicate Stock rows.
+                    client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
                   }
                   client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
                   client.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
