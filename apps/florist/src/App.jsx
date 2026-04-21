@@ -22,6 +22,8 @@ import DaySummaryPage          from './pages/DaySummaryPage.jsx';
 import ShoppingSupportPage     from './pages/ShoppingSupportPage.jsx';
 import PurchaseOrderPage       from './pages/PurchaseOrderPage.jsx';
 import FloristHoursPage        from './pages/FloristHoursPage.jsx';
+import BouquetsPage            from './pages/BouquetsPage.jsx';
+import WasteLogPage            from './pages/WasteLogPage.jsx';
 import Toast                   from './components/Toast.jsx';
 import BottomNav               from './components/BottomNav.jsx';
 
@@ -116,6 +118,18 @@ export default function App() {
 
         <Route path="/hours" element={
           <PrivateRoute><Layout><FloristHoursPage /></Layout></PrivateRoute>
+        } />
+
+        {/* Catalog (owner-only) — Wix bouquet management. /catalog is a shortcut
+            that redirects to the default sub-view. */}
+        <Route path="/catalog" element={<Navigate to="/catalog/bouquets" replace />} />
+        <Route path="/catalog/bouquets" element={
+          <OwnerRoute><Layout><BouquetsPage /></Layout></OwnerRoute>
+        } />
+
+        {/* Waste Log — both roles can view + CRUD (backend permits florist too). */}
+        <Route path="/stock/waste" element={
+          <PrivateRoute><Layout><WasteLogPage /></Layout></PrivateRoute>
         } />
 
         {/* Default: send logged-in users to orders, others to login */}

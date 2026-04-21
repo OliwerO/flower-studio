@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import t from '../translations.js';
-import { stockBaseName, renderDateTag } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag, LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
 import fmtDate from '../utils/formatDate.js';
 
 /**
@@ -338,8 +338,9 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
             className="w-full text-xs border border-red-100 rounded-lg px-2 py-1 bg-white outline-none text-ios-label"
           >
             <option value="">{t.writeOffReason}</option>
-            <option value="Wilted">{t.reasonWilted || 'Wilted'}</option>
-            <option value="Damaged">{t.reasonDamaged || 'Broken at delivery'}</option>
+            {LOSS_REASONS.map(r => (
+              <option key={r} value={r}>{reasonLabel(t, r)}</option>
+            ))}
           </select>
         </div>
       )}

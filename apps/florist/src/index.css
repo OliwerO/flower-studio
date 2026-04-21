@@ -157,4 +157,33 @@
     transform: translateY(0);
     transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
   }
+
+  /* Safe-area padding for iPhone notch + home indicator. Referenced by
+     BottomNav + Sheet since 2026-04. */
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+
+  /* Page container — full-width on phone, max-w-2xl on tablet and up.
+     Lets new pages (Bouquets, Waste Log) use every pixel on iPhone SE (375 px)
+     while staying comfortable at 672 px on iPad. */
+  .container-mobile {
+    max-width: 100%;
+    padding-left: 1rem;
+    padding-right: 1rem;
+  }
+  @media (min-width: 640px) {
+    .container-mobile {
+      max-width: 42rem;
+      margin-left: auto;
+      margin-right: auto;
+    }
+  }
+
+  /* Hide scrollbars on horizontal filter chip rows while keeping scroll. */
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
 }
