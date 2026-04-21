@@ -25,16 +25,14 @@ import { DELIVERY_STATUS } from '../constants/statuses.js';
 export async function processWixOrder(payload) {
   const log = (step, msg) => console.log(`[WIX] ${step}: ${msg}`);
 
-  // Temporary diagnostic: if DEBUG_WIX_PAYLOAD=1, dump the full raw payload
-  // to Railway logs so we can see the exact field shape Wix is sending. Turn
-  // on for 24h after the next failing order, then off again. Remove this
-  // block once the parser is confirmed to handle every shape correctly.
-  if (process.env.DEBUG_WIX_PAYLOAD === '1') {
-    try {
-      console.log('[WIX-DIAGNOSTIC-PAYLOAD]', JSON.stringify(payload));
-    } catch (jsonErr) {
-      console.log('[WIX-DIAGNOSTIC-PAYLOAD] (could not stringify)', jsonErr.message);
-    }
+  // Always dump the raw payload to Railway logs on every Wix webhook until
+  // the parser is rewritten to handle every payload shape Wix sends. Grep
+  // Railway logs for [WIX-RAW] to retrieve. Remove this block (and the
+  // rawPayload param on logWebhookEvent) once the parser is confirmed good.
+  try {
+    console.log('[WIX-RAW]', JSON.stringify(payload));
+  } catch (jsonErr) {
+    console.log('[WIX-RAW] (could not stringify)', jsonErr.message);
   }
 
   try {

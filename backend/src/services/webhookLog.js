@@ -12,7 +12,7 @@ import { TABLES } from '../config/airtable.js';
  * @param {string} [errorMessage] - error details if failed
  * @param {object} [rawPayload] - full webhook payload for debugging
  */
-export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMessage }) {
+export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMessage, rawPayload }) {
   try {
     if (!TABLES.WEBHOOK_LOG) {
       console.warn('[WEBHOOK_LOG] Table ID not configured — skipping log');
@@ -33,6 +33,10 @@ export async function logWebhookEvent({ status, wixOrderId, appOrderId, errorMes
     if (errorMessage) {
       fields['Error'] = errorMessage.slice(0, 1000);
     }
+    // rawPayload intentionally not persisted here — Airtable's Error short-
+    // text field caps at ~1000 chars and Wix payloads are 10-30 KB. The
+    // payload is dumped to Railway logs via console.log in wix.js instead.
+    void rawPayload;
 
     await db.create(TABLES.WEBHOOK_LOG, fields);
   } catch (err) {
