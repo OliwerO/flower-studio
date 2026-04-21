@@ -192,6 +192,14 @@ export async function processWixOrder(payload) {
     log('4-CUSTOMER', `Name: ${customerName}, Email: ${customerEmail}, Phone: ${customerPhone}`);
 
     // 5. Match or create customer
+    // Customer matching — three passes, strongest to weakest:
+    //   1. Phone (normalised) OR email exact
+    //   2. Exact full name (firstName + lastName, case-insensitive)
+    //   3. No match → create
+    // Name-matching is a fallback because Wix often only gives us an email
+    // that may not be on the existing customer record. Duplicates from this
+    // path are possible (two different people with the same name) but less
+    // damaging than the silent duplication we saw when phone/email miss.
     let customerId = null;
     if (customerPhone || customerEmail) {
       const searchFilters = [];
@@ -208,7 +216,32 @@ export async function processWixOrder(payload) {
       });
       if (matches.length > 0) {
         customerId = matches[0].id;
-        log('5-MATCH', `Found existing customer: ${matches[0].Name || matches[0].id}`);
+        log('5-MATCH', `Found existing customer by phone/email: ${matches[0].Name || matches[0].id}`);
+      }
+    }
+    // Pass 2: name fallback. Only run if we actually have a composed
+    // first+last name — avoid matching on 'Wix Customer' or a bare first
+    // name, which could merge unrelated records.
+    if (!customerId && firstName && lastName) {
+      const fullName = `${firstName} ${lastName}`.trim();
+      const nameMatches = await db.list(TABLES.CUSTOMERS, {
+        filterByFormula: `LOWER({Name}) = LOWER('${sanitizeFormulaValue(fullName)}')`,
+        maxRecords: 1,
+      });
+      if (nameMatches.length > 0) {
+        customerId = nameMatches[0].id;
+        log('5-MATCH', `Found existing customer by name: ${nameMatches[0].Name || nameMatches[0].id}`);
+        // Patch email/phone onto the matched record if we have new data Wix
+        // provided and the existing fields are empty — so the next order
+        // matches on the stronger signal.
+        const patch = {};
+        if (customerEmail && !nameMatches[0].Email) patch.Email = customerEmail;
+        if (customerPhone && !nameMatches[0].Phone) patch.Phone = customerPhone;
+        if (Object.keys(patch).length > 0) {
+          db.update(TABLES.CUSTOMERS, customerId, patch).catch(err => {
+            console.error('[WIX] Customer enrich failed:', err.message);
+          });
+        }
       }
     }
     if (!customerId) {
@@ -274,8 +307,11 @@ export async function processWixOrder(payload) {
     const paymentMethodLabel = paymentMethodFromWix || 'Wix Online';
     if (paymentMethodFromWix) log('8b-PAY', `Payment method: ${paymentMethodFromWix}`);
 
-    // 9. Delivery date — Wix may or may not set this, depending on shipping
-    //    method configuration. Try a few known paths; fall back to today.
+    // 9. Delivery date — Wix sends this only when the storefront offers a
+    //    picker. If empty, leave it null so the dashboard's orphan-date
+    //    banner surfaces the order for the owner to set the real date.
+    //    Previously we fell back to "today", which silently mis-dated any
+    //    order reprocessed after the fact.
     const deliveryDate = shipping.deliveryTime?.rangeStartTime
       || shipping.deliveryTime?.deliveryDate
       || shipping.shipmentDetails?.deliveryDate
@@ -284,9 +320,7 @@ export async function processWixOrder(payload) {
       || wixOrder.fulfillments?.[0]?.expectedDeliveryDate
       || null;
     // Normalise to YYYY-MM-DD. Wix may send ISO timestamp or date-only string.
-    const deliveryDateIso = deliveryDate
-      ? String(deliveryDate).slice(0, 10)
-      : new Date().toISOString().split('T')[0];
+    const deliveryDateIso = deliveryDate ? String(deliveryDate).slice(0, 10) : null;
 
     // 10. Create the App Order. Wix is delivery-only today — hard-code the type.
     //     Price Override carries the total the buyer paid (flowers + shipping)
