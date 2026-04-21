@@ -92,4 +92,45 @@ router.get('/log', authenticate, authorize('admin'), async (req, res, next) => {
   }
 });
 
+// GET /api/webhook/wix-order/:id — admin-only passthrough to Wix's eCommerce
+// API. Fetches an order by ID so we can see the exact payload shape Wix
+// sends, without needing to intercept a live webhook. Used to debug orders
+// that came in before diagnostic logging was deployed.
+// Tries the eCommerce v3 Orders endpoint first, then falls back to the older
+// Stores v2 Orders endpoint. Returns whichever responds 200.
+router.get('/wix-order/:id', authenticate, authorize('admin'), async (req, res) => {
+  const apiKey = process.env.WIX_API_KEY;
+  const siteId = process.env.WIX_SITE_ID;
+  if (!apiKey || !siteId) {
+    return res.status(500).json({ error: 'Wix API credentials not configured.' });
+  }
+  const headers = {
+    Authorization: apiKey,
+    'wix-site-id': siteId,
+    'Content-Type': 'application/json',
+  };
+  const endpoints = [
+    `https://www.wixapis.com/ecom/v1/orders/${encodeURIComponent(req.params.id)}`,
+    `https://www.wixapis.com/stores/v2/orders/${encodeURIComponent(req.params.id)}`,
+  ];
+  const attempts = [];
+  for (const url of endpoints) {
+    try {
+      const r = await fetch(url, { method: 'GET', headers });
+      const text = await r.text();
+      attempts.push({ url, status: r.status, ok: r.ok });
+      if (r.ok) {
+        try {
+          return res.json({ source: url, order: JSON.parse(text) });
+        } catch {
+          return res.json({ source: url, raw: text });
+        }
+      }
+    } catch (err) {
+      attempts.push({ url, error: err.message });
+    }
+  }
+  return res.status(502).json({ error: 'All Wix endpoints failed', attempts });
+});
+
 export default router;
