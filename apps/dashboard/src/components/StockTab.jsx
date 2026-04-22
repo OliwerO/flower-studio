@@ -97,7 +97,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
   useEffect(() => {
     stockLoaded.current = false;
     fetchStock();
-    const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 60000);
+    const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 120000);
     function onVisible() { if (!document.hidden) fetchStock(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
