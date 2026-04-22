@@ -43,3 +43,11 @@ export {
   reasonBadgeClass,
 } from './utils/lossReasons.js';
 export { getEffectiveStock, hasStockShortfall } from './utils/stockMath.js';
+export {
+  matchesSearch,
+  matchesFilters,
+  EMPTY_FILTERS,
+  serializeFilters,
+  deserializeFilters,
+  activeFilterCount,
+} from './utils/customerFilters.js';

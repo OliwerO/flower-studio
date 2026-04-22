@@ -13,7 +13,7 @@ import {
   EMPTY_FILTERS,
   serializeFilters,
   deserializeFilters,
-} from '../utils/customerFilters.js';
+} from '@flower-studio/shared';
 
 const SEGMENT_COLORS = {
   Constant:         'bg-ios-green/15 text-ios-green',
