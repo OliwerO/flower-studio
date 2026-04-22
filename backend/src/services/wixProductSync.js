@@ -674,8 +674,15 @@ export async function runPull() {
           if (Math.abs(existingPrice - wixPrice) > 0.01) {
             updates['Price'] = wixPrice;
           }
-          // Active is Airtable-owned — never overwrite from Wix pull.
-          // Only sync Visible in Wix (what Wix reports) for informational purposes.
+          // Active follows Wix "Show in online store". The earlier policy
+          // treated Active as Airtable-owned, but in practice that caused
+          // drift: a product re-listed on Wix stayed inactive in Airtable
+          // forever (seen with "Mix of the day 1 - L/S": live on the
+          // storefront, shown as 0/1 active in the florist app). Wix is
+          // authoritative for whether a product is being sold; local
+          // deactivation should happen via Push (Airtable→Wix), not by
+          // editing Airtable directly and hoping Pull won't overwrite.
+          if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
           const existingCats = parseCategoryField(existing['Category']);
           if (existingCats.length === 0 && importedCategories.length > 0) {
