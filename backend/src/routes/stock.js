@@ -17,18 +17,28 @@ const STOCK_PATCH_ALLOWED = [
   'Last Restocked',
 ];
 
-// GET /api/stock?category=Roses&includeEmpty=true
-// By default hides items with qty=0 (old depleted batches). Pass includeEmpty=true to see all.
+// GET /api/stock?category=Roses&includeEmpty=true&includeInactive=true
+// Defaults hide qty=0 (old depleted batches) and Active=false rows.
+//  - includeEmpty=true   → also return rows with qty ≤ 0 (e.g. negative stock
+//                          already owed to customers)
+//  - includeInactive=true → also return rows that have been manually deactivated
+//                          in Airtable (the bouquet picker needs this so it can
+//                          surface stale-but-still-demanded records and prevent
+//                          duplicate-row creation when the owner re-types a name)
 router.get('/', async (req, res, next) => {
   try {
-    const { category, includeEmpty } = req.query;
-    const filters = ['{Active} = TRUE()'];
+    const { category, includeEmpty, includeInactive } = req.query;
+    const filters = [];
 
+    if (includeInactive !== 'true') filters.push('{Active} = TRUE()');
     if (includeEmpty !== 'true') filters.push('{Current Quantity} > 0');
     if (category) filters.push(`{Category} = '${sanitizeFormulaValue(category)}'`);
 
     const stock = await db.list(TABLES.STOCK, {
-      filterByFormula: `AND(${filters.join(', ')})`,
+      // When no filters are active we must pass an empty string — Airtable
+      // rejects `AND()` with zero clauses. This only happens if the caller
+      // opts into both includeEmpty and includeInactive.
+      filterByFormula: filters.length ? `AND(${filters.join(', ')})` : '',
       sort: [
         { field: 'Category', direction: 'asc' },
         { field: 'Display Name', direction: 'asc' },

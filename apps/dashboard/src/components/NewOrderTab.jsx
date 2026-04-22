@@ -33,7 +33,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
   const [premadeBouquets, setPremadeBouquets] = useState([]);
 
   useEffect(() => {
-    client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(console.error);
+    client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data)).catch(console.error);
     client.get('/premade-bouquets').then(r => setPremadeBouquets(r.data || [])).catch(() => {});
   }, []);
 
@@ -185,7 +185,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
       setForm(emptyForm);
       setStep(0);
       // Refresh stock to reflect deductions (negative stock)
-      client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(console.error);
+      client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data)).catch(console.error);
       // Navigate to orders tab to see the new order
       onNavigate?.({ tab: 'orders' });
     } catch (err) {
@@ -258,7 +258,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
             orderLines={form.orderLines}
             priceOverride={form.priceOverride}
             stock={stock}
-            onStockRefresh={() => client.get('/stock?includeEmpty=true').then(r => setStock(r.data))}
+            onStockRefresh={() => client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={form.deliveryDate}

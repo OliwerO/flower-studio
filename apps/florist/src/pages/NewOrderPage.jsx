@@ -41,7 +41,7 @@ export default function NewOrderPage() {
   const [premadeBouquets, setPremadeBouquets] = useState([]);
 
   useEffect(() => {
-    client.get('/stock?includeEmpty=true')
+    client.get('/stock?includeEmpty=true&includeInactive=true')
       .then(r => { setStock(r.data); setStockError(false); })
       .catch(err => {
         console.error('Failed to load stock:', err);
@@ -357,7 +357,7 @@ export default function NewOrderPage() {
             </span>
             <button
               onClick={() => {
-                client.get('/stock?includeEmpty=true')
+                client.get('/stock?includeEmpty=true&includeInactive=true')
                   .then(r => { setStock(r.data); setStockError(false); })
                   .catch(() => showToast(t.stockLoadError || 'Still unable to load stock', 'error'));
               }}
@@ -401,7 +401,7 @@ export default function NewOrderPage() {
             priceOverride={form.priceOverride}
             stock={stock}
             isOwner={isOwner}
-            onStockRefresh={() => client.get('/stock?includeEmpty=true').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
+            onStockRefresh={() => client.get('/stock?includeEmpty=true&includeInactive=true').then(r => { setStock(r.data); setStockError(false); }).catch(() => { setStockError(true); showToast(t.stockLoadError, 'error'); })}
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={form.deliveryDate || form.requiredBy}

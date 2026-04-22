@@ -250,7 +250,7 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
     }
     try {
       const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true'),
+        client.get('/stock?includeEmpty=true&includeInactive=true'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStockItems(stockRes.data);
@@ -417,7 +417,7 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                         // demand for next PO) are selectable — otherwise the user
                         // retypes the name and creates a duplicate Stock row.
                         if (stockItems.length === 0) {
-                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {
+                          client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {
                             showToast(t.loadError || 'Failed to load stock', 'error');
                           });
                         }
