@@ -42,3 +42,4 @@ export {
   REASON_COLORS,
   reasonBadgeClass,
 } from './utils/lossReasons.js';
+export { getEffectiveStock, hasStockShortfall } from './utils/stockMath.js';

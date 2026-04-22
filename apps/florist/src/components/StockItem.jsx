@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import t from '../translations.js';
-import { stockBaseName, renderDateTag, LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag, LOSS_REASONS, reasonLabel, getEffectiveStock, hasStockShortfall } from '@flower-studio/shared';
 import fmtDate from '../utils/formatDate.js';
 
 /**
@@ -20,8 +20,11 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
   const dead      = item['Dead/Unsold Stems'] || 0;
   const threshold = item['Reorder Threshold'] || 5;
   const committed = committedData?.committed || 0;
-  const effective = qty - committed;
-  const hasShortfall = committed > 0 && effective < 0;
+  // Use the shared helper — inline `qty - committed` was double-counting when
+  // qty is already negative (the negative already reflects the same orders).
+  // See packages/shared/utils/stockMath.js + root CLAUDE.md pitfall #7.
+  const effective = getEffectiveStock(qty, committed);
+  const hasShortfall = hasStockShortfall(qty, committed);
   const isLow     = qty > 0 && qty <= threshold;
   const isOut     = qty <= 0;
   // Premade reservations — stems physically locked into a premade bouquet.
