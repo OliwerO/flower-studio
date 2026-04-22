@@ -139,6 +139,65 @@ sync, and the cracks showed. Fix is mechanical — surface the error
 array the backend was already collecting, stop pretending it was a
 success.
 
+### Zero-UUID variant price fix (simple Wix products)
+
+Once the owner saw actual error messages, a second bug surfaced:
+
+```
+Price <productId>::00000000-0000-0000-0000-000000000000:
+  requirement failed: Product variants must be managed
+```
+
+Wix represents products in two shapes: products WITH managed variants
+(size/color options, each variant has a real UUID) and simple products
+WITHOUT variants (single SKU — Wix exposes a synthetic "default variant"
+with the all-zero UUID). The `PATCH /products/{id}/variants` endpoint
+only works for the first shape. For simple products, price lives on
+the product itself and has to be PATCHed via `/products/{id}`.
+
+Inventory handling for zero-UUID variants was already fixed in commit
+`8148b45` (the `updateWixInventory` batch endpoint accepts them), but
+price had been missed — every push on a simple product generated one
+of these errors.
+
+**Fix** (`backend/src/services/wixProductSync.js`):
+- New `updateWixProductPrice(productId, price)` helper using
+  `PATCH /stores/v1/products/{id}` with `{ product: { priceData: { price } } }`.
+  Same pattern as the existing `updateWixProductContent` helper.
+- The push loop now branches: zero-UUID variant → product endpoint;
+  real UUID → variant batch endpoint.
+
+### Telegram alerts for Wix sync errors (owner-only)
+
+Added `notifyWixSyncError({ direction, errors })` to
+`backend/src/services/telegram.js`. Owner-only (uses `sendAlert`, not
+`broadcastAlert` — florists don't need these pings). Formatted as:
+
+```
+🔴 Wix sync — Push errors
+3 errors
+
+• Price <id>: Wix price update failed for ...
+• Price <id>: Wix price update failed for ...
+• Price <id>: Wix price update failed for ...
+…and 1 more
+```
+
+First 3 errors shown verbatim (truncated to 200 chars each); remainder
+summarised. HTML-escaped inside `<code>` spans so angle brackets in
+Wix payloads don't confuse Telegram's HTML parser.
+
+Wired into both `runPull()` and `runPush()` after `logSync()`. Fires
+when `stats.errors.length > 0`. No new env vars — reuses the existing
+`TELEGRAM_BOT_TOKEN` + `TELEGRAM_OWNER_CHAT_ID` that already power
+new-order alerts. If creds aren't set, `sendAlert` no-ops gracefully.
+
+**Why this matters**: sync can run without anyone watching the app
+(scheduled runs, webhook-triggered refreshes, rapid manual taps). A
+toast only helps if the owner happens to be looking at the screen.
+Telegram routes the alert to her pocket so a failing token or API
+change doesn't go unnoticed for hours.
+
 ---
 
 ## 2026-04-21 — Owner can hard-delete orders (dashboard + florist app)
