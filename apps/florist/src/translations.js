@@ -551,7 +551,7 @@ const en = {
   orderDeleted:                 'Order deleted',
 
   // ── Catalog / Bouquets (2026-04) ──
-  tabCatalog:            'Catalog',
+  tabCatalog:            'Wix',
   bouquetsTitle:         'Bouquets',
   bouquetsCount:         'bouquets',
   bouquetsActive:        'active',
@@ -569,6 +569,8 @@ const en = {
   bouquetMix:            'mix',
   pushToWix:             'Push to Wix',
   pullFromWix:           'Pull from Wix',
+  pullShort:             'Pull',
+  pushShort:             'Push',
   pullSuccess:           'Updated from Wix',
   pullFailed:            'Pull from Wix failed',
   pushing:               'Syncing…',
@@ -1159,7 +1161,7 @@ const ru = {
   orderDeleted:                 'Заказ удалён',
 
   // ── Catalog / Bouquets (2026-04) ──
-  tabCatalog:            'Каталог',
+  tabCatalog:            'Wix',
   bouquetsTitle:         'Букеты',
   bouquetsCount:         'букетов',
   bouquetsActive:        'активных',
@@ -1177,6 +1179,8 @@ const ru = {
   bouquetMix:            'микс',
   pushToWix:             'Отправить в Wix',
   pullFromWix:           'Загрузить из Wix',
+  pullShort:             'Загрузить',
+  pushShort:             'Отправить',
   pullSuccess:           'Обновлено из Wix',
   pullFailed:            'Не удалось загрузить из Wix',
   pushing:               'Синхронизация…',

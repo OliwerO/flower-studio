@@ -41,6 +41,72 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-22 — Florist app cleanup (Phase A): nav trim + Shopping→Stock + Wix tab polish
+
+Owner feedback made clear the florist app had accumulated UX debt: Catalog
+tab didn't match its Wix content, Pull/Push sync wasn't discoverable
+(single ambiguous refresh icon), Stock-adjacent workflows were scattered
+across bottom nav + burger + inline buttons, and the burger had dead
+entries. First PR of a three-part cleanup.
+
+### Navigation
+- **`components/BottomNav.jsx`** — Owner bottom nav trimmed from 5 to 4
+  tabs (Shopping removed; folded into Stock page). Burger menu dropped
+  Day Summary (unused), Purchase Orders + Waste Log (reachable from Stock
+  now). Florist burger dropped Waste Log (same reason). The narrow-viewport
+  collapse logic was removed since both roles now fit 4 tabs comfortably;
+  Phase B will reintroduce it when the Customers tab becomes the 5th.
+
+### Wix tab (was "Catalog")
+- **`translations.js`** — `tabCatalog` renamed "Catalog"→"Wix" (EN) /
+  "Каталог"→"Wix" (RU). Route `/catalog/bouquets` unchanged.
+- **`pages/BouquetsPage.jsx`** — the single `RefreshCw` icon in the
+  header is replaced by two explicit labeled buttons: blue
+  `⬇ Pull` (bg-blue-50) and emerald `⬆ Push` (bg-emerald-50). Both
+  always visible, backed by the existing `POST /products/pull` and
+  `POST /products/push` endpoints — no backend changes.
+- **`components/bouquets/PushBar.jsx`** — converted from a prominent
+  brand-colored CTA button to a passive `role="status"` banner. Push is
+  now one trigger (the header button); PushBar is a pure "N changes
+  pending" indicator when scrolled. Still shows a "Syncing…" spinner
+  while a push is in flight.
+- **Translations** — new short keys `pullShort` ("Pull"/"Загрузить") and
+  `pushShort` ("Push"/"Отправить") for the header buttons — the full
+  "Pull from Wix" / "Отправить в Wix" strings were too long to fit
+  alongside the title on narrow phones.
+
+### Stock page
+- **`pages/StockPanelPage.jsx`** — the three stacked full-width buttons
+  (Purchase Orders, Waste Log, Receive Stock) are replaced for the owner
+  with a compact 2×2 Operations tile grid: Purchase Orders · Active
+  Shopping · Stock Evaluation · Waste Log. A new inline `OpsTile`
+  sub-component renders each tile (icon-over-label, 80px tall, rounded
+  2xl). Florist still sees only the red Waste Log button (PO + Shopping
+  are owner-only flows).
+
+### Why it matters
+- **Discoverability.** The old refresh icon on the Wix tab gave no signal
+  that sync was bidirectional. With two labeled buttons, the mental model
+  "I can push changes to Wix from here" forms immediately.
+- **Fewer buttons, more breathing room.** Stock page went from 3 stacked
+  CTAs to a tidy 2×2 grid (same footprint, less visual noise).
+- **Silent misconfigs now surface.** A missing `WIX_API_KEY` on Railway
+  used to hide behind the ambiguous refresh icon — next pull/push tap
+  now shows the backend error as a toast.
+
+### What to watch for
+- `/shopping-support` and `/day-summary` routes stay live (nothing
+  deleted) — direct URL access still works even though the nav entries
+  are gone. If owner confirms Day Summary truly isn't used, the page can
+  be deleted in a follow-up.
+- `runPush()` is idempotent — tapping Push on a clean catalog is a
+  no-op on the Wix side. No confirmation dialog needed.
+- Phase B (next PR) wires a new **Customers** tab into the 4th owner
+  nav slot and adds it to the florist burger; Phase C wires
+  order-card customer names to navigate there.
+
+---
+
 ## 2026-04-21 — Owner can hard-delete orders (dashboard + florist app)
 
 The owner now has a hard-delete action separate from Cancel. Cancel
