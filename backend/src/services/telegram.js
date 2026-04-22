@@ -73,3 +73,46 @@ export async function notifyNewOrder({ source, customerName, request, deliveryTy
   ].filter(Boolean);
   await broadcastAlert(lines.join('\n'));
 }
+
+/**
+ * Owner-only alert when Wix pull/push completes with errors.
+ *
+ * Why owner-only: Wix sync is the owner's workflow — florists don't need
+ * these pings and would get noise. Uses `sendAlert` (single-chat) not
+ * `broadcastAlert`.
+ *
+ * Format: title line + error count + up to 3 truncated error messages.
+ * Full error list lives in the app toast + Railway logs — this is just
+ * a signal that something needs attention.
+ *
+ * @param direction "pull" | "push"
+ * @param errors array of error strings from stats.errors
+ */
+export async function notifyWixSyncError({ direction, errors }) {
+  if (!errors || errors.length === 0) return;
+  const dirLabel = direction === 'pull' ? 'Pull' : 'Push';
+  const shown = errors.slice(0, 3).map(e => {
+    // Truncate very long messages so the Telegram message stays readable.
+    const s = String(e);
+    return s.length > 200 ? s.slice(0, 200) + '…' : s;
+  });
+  const moreLine = errors.length > 3 ? `\n<i>…and ${errors.length - 3} more</i>` : '';
+  const lines = [
+    `🔴 <b>Wix sync — ${dirLabel} errors</b>`,
+    `${errors.length} error${errors.length === 1 ? '' : 's'}`,
+    '',
+    ...shown.map(e => `• <code>${escapeHtml(e)}</code>`),
+    moreLine,
+  ].filter(Boolean);
+  await sendAlert(lines.join('\n'));
+}
+
+// Telegram parses HTML in message bodies (parse_mode: 'HTML'), so raw
+// angle brackets in Wix error payloads would confuse the parser. Escape
+// only inside <code> blocks where the owner sees the raw error.
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}

@@ -8,7 +8,7 @@
 
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { sendAlert } from './telegram.js';
+import { sendAlert, notifyWixSyncError } from './telegram.js';
 import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
@@ -98,6 +98,45 @@ async function updateWixVariantPrice(productId, variantId, price) {
     const text = await res.text();
     if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
     throw new Error(`Wix price update failed for ${productId}/${variantId}: ${text}`);
+  }
+}
+
+/**
+ * Update a simple (no-variants) Wix product's price at the product level.
+ *
+ * Wix represents products in two shapes:
+ *   1. Products WITH managed variants (e.g. Small / Medium / Large) — each
+ *      variant has a real UUID and its own `priceData`. Use the batch
+ *      variants endpoint via `updateWixVariantPrice` above.
+ *   2. Products WITHOUT managed variants (simple single-SKU products) —
+ *      Wix exposes a synthetic "default variant" with ID
+ *      00000000-0000-0000-0000-000000000000 on READ, but the price lives
+ *      on the product itself. Attempting `PATCH /products/{id}/variants`
+ *      with that zero-UUID returns "requirement failed: Product variants
+ *      must be managed".
+ *
+ * This helper is the product-level endpoint for shape #2 — same URL
+ * pattern as `updateWixProductContent`, just with a `priceData` payload
+ * instead of name/description.
+ */
+async function updateWixProductPrice(productId, price) {
+  const res = await fetch(
+    `${WIX_API_URL}/stores/v1/products/${productId}`,
+    {
+      method: 'PATCH',
+      headers: wixHeaders(),
+      body: JSON.stringify({
+        product: {
+          priceData: { price },
+        },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
+    throw new Error(`Wix product price update failed for ${productId}: ${text}`);
   }
 }
 
@@ -730,6 +769,12 @@ export async function runPull() {
   }
 
   await logSync('pull', stats);
+  // Ping the owner on Telegram if the sync collected any errors — the
+  // frontend toast is only seen when she's looking at the app; a sync
+  // run can also be triggered by automation without anyone watching.
+  if (stats.errors.length > 0) {
+    await notifyWixSyncError({ direction: 'pull', errors: stats.errors });
+  }
   return stats;
 }
 
@@ -758,13 +803,24 @@ export async function runPush() {
       }
     }
 
+    // Zero-UUID = Wix's default-variant placeholder for products without
+    // managed variants. Those need the product-level price endpoint, not
+    // the variant batch endpoint (see `updateWixProductPrice` above).
+    const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+
     for (const row of configRows) {
-      const key = `${row['Wix Product ID']}::${row['Wix Variant ID']}`;
+      const pid = row['Wix Product ID'];
+      const vid = row['Wix Variant ID'];
+      const key = `${pid}::${vid}`;
       const airtablePrice = Number(row['Price'] || 0);
       const wixPrice = wixPriceMap.get(key);
       if (wixPrice !== undefined && Math.abs(airtablePrice - wixPrice) > 0.01) {
         try {
-          await updateWixVariantPrice(row['Wix Product ID'], row['Wix Variant ID'], airtablePrice);
+          if (vid === ZERO_UUID) {
+            await updateWixProductPrice(pid, airtablePrice);
+          } else {
+            await updateWixVariantPrice(pid, vid, airtablePrice);
+          }
           stats.pricesSynced++;
         } catch (err) {
           stats.errors.push(`Price ${key}: ${err.message}`);
@@ -1042,6 +1098,9 @@ export async function runPush() {
   }
 
   await logSync('push', stats);
+  if (stats.errors.length > 0) {
+    await notifyWixSyncError({ direction: 'push', errors: stats.errors });
+  }
   return stats;
 }
 
