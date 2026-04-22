@@ -613,6 +613,78 @@ const en = {
   darkMode:              'Dark mode',
   lightMode:             'Light mode',
   purchaseOrders:        'Purchase orders',
+
+  // ── Customer Tab v2.0 (2026-04) ──
+  tabCustomers:              'Customers',
+  customers:                 'Customers',
+
+  // Header / badges
+  doNotContactRibbon:        'DO NOT CONTACT',
+  daysShort:                 'd',
+  monthsShort:               'mo',
+  yearsShort:                'y',
+  lastOrderShort:            'Last',
+
+  // Key people
+  keyPeople:                 'Key people',
+  addKeyPerson:              'Add',
+  keyPersonLimit:            'Both slots filled',
+  keyPersonNamePlaceholder:  'Name + contact',
+  importantDate:             'Important date',
+
+  // Timeline
+  timeline:                  'Timeline',
+  allEvents:                 'All',
+  appOrder:                  'App',
+  legacyOrder:               'Legacy',
+  otherFields:               'Other fields',
+  openInOrdersTab:           'Open order',
+  zl:                        'zł',
+
+  // List pane
+  searchAnyField:            'Search any field…',
+  sortBy:                    'Sort',
+  lastOrderDesc:             'Last order',
+  totalSpendDesc:            'Total spend',
+  orderCountDesc:            'Order count',
+  nameAsc:                   'Name',
+
+  // Filter sheet
+  filters:                   'Filters',
+  apply:                     'Apply',
+  presenceToggles:           'Must have',
+  noMinimum:                 'Any',
+  close:                     'Close',
+  clear:                     'Clear',
+
+  // Filter dimensions
+  segment:                   'Segment',
+  commMethod:                'Communication',
+  orderSource:               'Order source',
+  sexBusiness:               'Sex / Business',
+  foundUsFrom:               'Found us from',
+  hasPhone:                  'Has phone',
+  hasInstagram:              'Has Instagram',
+  hasEmail:                  'Has email',
+  hasKeyPerson:              'Has key person',
+  churnRisk:                 'Churn risk',
+  doNotContact:              'DO NOT CONTACT',
+  lastOrderWithin:           'Last order within',
+  minOrderCount:             'Order count',
+  minTotalSpend:             'Total spend',
+
+  // Detail view sections
+  preferences:               'Preferences',
+  noNotes:                   'No notes yet',
+  flowersOrdered:            'Flowers ordered',
+  orderCount:                'Orders',
+  avgOrderVal:               'Avg value',
+  avgTimeBetween:            'Avg between',
+  preferredChannel:          'Preferred',
+  communicationMethod:       'Communication method',
+  sex:                       'Sex / Business',
+  invalidEmail:              'Invalid email',
+  invalidPhone:              'Invalid phone',
 };
 
 const ru = {
@@ -1225,6 +1297,78 @@ const ru = {
   darkMode:              'Тёмная тема',
   lightMode:             'Светлая тема',
   purchaseOrders:        'Закупки',
+
+  // ── Customer Tab v2.0 (2026-04) ──
+  tabCustomers:              'Клиенты',
+  customers:                 'Клиенты',
+
+  // Header / badges
+  doNotContactRibbon:        'НЕ КОНТАКТИРОВАТЬ',
+  daysShort:                 'д',
+  monthsShort:               'мес',
+  yearsShort:                'г',
+  lastOrderShort:            'Последний',
+
+  // Key people
+  keyPeople:                 'Ключевые люди',
+  addKeyPerson:              'Добавить',
+  keyPersonLimit:            'Оба слота заполнены',
+  keyPersonNamePlaceholder:  'Имя и контакты',
+  importantDate:             'Важная дата',
+
+  // Timeline
+  timeline:                  'История',
+  allEvents:                 'Все',
+  appOrder:                  'Приложение',
+  legacyOrder:               'Старые',
+  otherFields:               'Другие поля',
+  openInOrdersTab:           'Открыть заказ',
+  zl:                        'zł',
+
+  // List pane
+  searchAnyField:            'Поиск по всем полям…',
+  sortBy:                    'Сортировка',
+  lastOrderDesc:             'Последний заказ',
+  totalSpendDesc:            'Сумма покупок',
+  orderCountDesc:            'Кол-во заказов',
+  nameAsc:                   'Имя',
+
+  // Filter sheet
+  filters:                   'Фильтры',
+  apply:                     'Применить',
+  presenceToggles:           'Должен быть',
+  noMinimum:                 'Любое',
+  close:                     'Закрыть',
+  clear:                     'Очистить',
+
+  // Filter dimensions
+  segment:                   'Сегмент',
+  commMethod:                'Способ связи',
+  orderSource:               'Источник заказа',
+  sexBusiness:               'Пол / Бизнес',
+  foundUsFrom:               'Откуда узнали',
+  hasPhone:                  'Есть телефон',
+  hasInstagram:              'Есть Instagram',
+  hasEmail:                  'Есть email',
+  hasKeyPerson:              'Есть ключевое лицо',
+  churnRisk:                 'Риск оттока',
+  doNotContact:              'НЕ КОНТАКТИРОВАТЬ',
+  lastOrderWithin:           'Последний заказ за',
+  minOrderCount:             'Кол-во заказов',
+  minTotalSpend:             'Сумма покупок',
+
+  // Detail view sections
+  preferences:               'Предпочтения',
+  noNotes:                   'Заметок ещё нет',
+  flowersOrdered:            'Заказанные цветы',
+  orderCount:                'Заказов',
+  avgOrderVal:               'Ср. сумма',
+  avgTimeBetween:            'Ср. интервал',
+  preferredChannel:          'Основной канал',
+  communicationMethod:       'Способ связи',
+  sex:                       'Пол / Бизнес',
+  invalidEmail:              'Неверный email',
+  invalidPhone:              'Неверный телефон',
 };
 
 // ── Proxy-based dynamic translation ──

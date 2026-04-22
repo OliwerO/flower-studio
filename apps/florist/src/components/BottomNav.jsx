@@ -1,10 +1,11 @@
 // BottomNav — fixed tab bar at the bottom of every authenticated screen.
-// Owner sees 4 tabs (Orders · Stock · Wix · More); florists see 4 too
-// (Orders · Stock · Hours · More). Shopping was folded into the Stock tab
-// Operations row in 2026-04. Phase B will add a Customers tab in the 4th slot
-// for the owner; florist picks up Customers via the More burger menu.
+// Owner sees 5 tabs (Orders · Stock · Customers · Wix · More); florists see
+// 4 (Orders · Stock · Hours · More). On narrow viewports (<360px) the owner's
+// Wix tab drops to the More burger menu so the remaining 4 primary tabs stay
+// within comfortable touch reach. Customers ranks ahead of Wix because CRM
+// lookups are daily-use; Wix sync is occasional.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ClipboardList,
@@ -18,10 +19,26 @@ import {
   LogOut,
   ClipboardCheck,
   HelpCircle,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import t from '../translations.js';
+
+// Re-introduced after Phase B adds the 5th owner tab. On iPhone SE 1st-gen
+// (320px) five 64px tabs don't fit comfortably — the owner's Wix tab moves
+// to the More burger so the bar stays at 4 primary tabs.
+function useNarrowViewport(threshold = 360) {
+  const [narrow, setNarrow] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < threshold : false
+  );
+  useEffect(() => {
+    function onResize() { setNarrow(window.innerWidth < threshold); }
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [threshold]);
+  return narrow;
+}
 
 export default function BottomNav() {
   const navigate = useNavigate();
@@ -30,23 +47,32 @@ export default function BottomNav() {
   const { dark, toggle: toggleDark } = useTheme();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOwner = role === 'owner';
+  const narrow = useNarrowViewport(360);
 
-  // Primary tabs depend on role. After 2026-04 cleanup, both roles show
-  // exactly 4 tabs — no narrow-viewport collapse needed. Phase B will add
-  // a 5th tab (Customers) for the owner and reintroduce the narrow logic.
-  const tabs = isOwner
-    ? [
-        { key: 'orders',  Icon: ClipboardList, label: t.tabOrders,  path: '/orders' },
-        { key: 'stock',   Icon: Package,       label: t.tabStock,   path: '/stock' },
-        { key: 'catalog', Icon: Flower2,       label: t.tabCatalog, path: '/catalog/bouquets' },
-        { key: 'more',    Icon: MenuIcon,      label: t.tabMore,    path: null },
-      ]
-    : [
-        { key: 'orders', Icon: ClipboardList, label: t.tabOrders, path: '/orders' },
-        { key: 'stock',  Icon: Package,       label: t.tabStock,  path: '/stock' },
-        { key: 'hours',  Icon: Clock,         label: t.tabHours,  path: '/hours' },
-        { key: 'more',   Icon: MenuIcon,      label: t.tabMore,   path: null },
-      ];
+  // Owner tabs ordering: Orders · Stock · Customers · Wix. Customers is
+  // 3rd (kept on narrow) because the owner uses it daily; Wix is 4th
+  // (drops to burger on narrow) because its sync buttons are used
+  // occasionally.
+  let tabs;
+  if (isOwner) {
+    const ownerTabs = [
+      { key: 'orders',    Icon: ClipboardList, label: t.tabOrders,    path: '/orders' },
+      { key: 'stock',     Icon: Package,       label: t.tabStock,     path: '/stock' },
+      { key: 'customers', Icon: Users,         label: t.tabCustomers, path: '/customers' },
+      { key: 'catalog',   Icon: Flower2,       label: t.tabCatalog,   path: '/catalog/bouquets' },
+    ];
+    const moreTab = { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null };
+    tabs = narrow
+      ? [...ownerTabs.slice(0, 3), moreTab]    // 3 primary + More = 4; Wix in burger
+      : [...ownerTabs, moreTab];               // 4 primary + More = 5
+  } else {
+    tabs = [
+      { key: 'orders', Icon: ClipboardList, label: t.tabOrders, path: '/orders' },
+      { key: 'stock',  Icon: Package,       label: t.tabStock,  path: '/stock' },
+      { key: 'hours',  Icon: Clock,         label: t.tabHours,  path: '/hours' },
+      { key: 'more',   Icon: MenuIcon,      label: t.tabMore,   path: null },
+    ];
+  }
 
   function isActive(tab) {
     if (!tab.path) return false;
@@ -76,11 +102,18 @@ export default function BottomNav() {
     window.location.href = window.location.pathname + '?_cb=' + Date.now();
   }
 
-  // More menu — trimmed in 2026-04 per owner feedback. Waste Log, Purchase
-  // Orders and Day Summary were removed from here because Waste Log + PO are
-  // reachable from the Stock tab's Operations tile row, and Day Summary wasn't
-  // being used. Stock Evaluation stays as the one remaining stock-adjacent
-  // entry that doesn't yet have an Operations tile (owner + florist both use it).
+  // More menu composition:
+  //  - floristOnlyItems: Customers (florist reaches it here, not bottom nav)
+  //  - wixWhenNarrow: Wix tab falls here on owner <360px viewports
+  //  - ownerOnlyItems: Florist Hours
+  //  - baseItems: Stock Evaluation (both roles)
+  //  - helpItem: Help (owner only)
+  const floristOnlyItems = !isOwner
+    ? [{ Icon: Users, label: t.tabCustomers || t.customers || 'Customers', action: () => navigate('/customers') }]
+    : [];
+  const wixWhenNarrow = (isOwner && narrow)
+    ? [{ Icon: Flower2, label: t.tabCatalog, action: () => navigate('/catalog/bouquets') }]
+    : [];
   const baseItems = [
     { Icon: ClipboardCheck, label: t.stockEvaluation, action: () => navigate('/stock-evaluation') },
   ];
@@ -92,6 +125,8 @@ export default function BottomNav() {
     : [];
 
   const moreItems = [
+    ...floristOnlyItems,
+    ...wixWhenNarrow,
     ...(isOwner ? ownerOnlyItems : []),
     ...baseItems,
     ...helpItem,

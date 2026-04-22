@@ -24,6 +24,8 @@ import PurchaseOrderPage       from './pages/PurchaseOrderPage.jsx';
 import FloristHoursPage        from './pages/FloristHoursPage.jsx';
 import BouquetsPage            from './pages/BouquetsPage.jsx';
 import WasteLogPage            from './pages/WasteLogPage.jsx';
+import CustomerListPage        from './pages/CustomerListPage.jsx';
+import CustomerDetailPage      from './pages/CustomerDetailPage.jsx';
 import Toast                   from './components/Toast.jsx';
 import BottomNav               from './components/BottomNav.jsx';
 
@@ -130,6 +132,16 @@ export default function App() {
         {/* Waste Log — both roles can view + CRUD (backend permits florist too). */}
         <Route path="/stock/waste" element={
           <PrivateRoute><Layout><WasteLogPage /></Layout></PrivateRoute>
+        } />
+
+        {/* Customers — both roles. Florist is view-only (enforced in
+            CustomerDetailView via canEdit=role==='owner'); owner gets the
+            same edit capabilities as the dashboard Customer tab. */}
+        <Route path="/customers" element={
+          <PrivateRoute><Layout><CustomerListPage /></Layout></PrivateRoute>
+        } />
+        <Route path="/customers/:id" element={
+          <PrivateRoute><Layout><CustomerDetailPage /></Layout></PrivateRoute>
         } />
 
         {/* Default: send logged-in users to orders, others to login */}
