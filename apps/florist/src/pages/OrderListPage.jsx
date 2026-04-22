@@ -98,6 +98,15 @@ export default function OrderListPage() {
   // Stock shortfall data: { stockId: { committed, name, currentQty, effective, orders } }
   const [stockShortfalls, setStockShortfalls] = useState({});
 
+  // Editor stock — the list the bouquet picker needs inside OrderCard's edit
+  // mode. Hoisted to the page so all cards share one fetch instead of each
+  // one hitting /stock independently the first time it's expanded-and-edited.
+  // Uses includeEmpty=true so negative-stock flowers remain selectable, and
+  // includeInactive=true so the picker can surface deactivated batches the
+  // owner may still want to reference (prevents duplicate-row creation).
+  const [editorStockItems, setEditorStockItems] = useState([]);
+  const [editorPremadeMap, setEditorPremadeMap] = useState({});
+
   // Stock evaluation pending count (florist) / shopping POs count (owner)
   const [evalCount, setEvalCount] = useState(0);
   const [shoppingCount, setShoppingCount] = useState(0);
@@ -153,6 +162,16 @@ export default function OrderListPage() {
     }
   }, [viewMode, date, status]);
 
+  // Stable identities so React.memo inside OrderCard can skip re-renders.
+  // Using the functional setter form means the callbacks never close over
+  // stale state — `prev` is always the latest.
+  const handleOrderUpdated = useCallback((id, patch) => {
+    setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
+  }, []);
+  const handleOrderDeleted = useCallback((id) => {
+    setOrders(prev => prev.filter(o => o.id !== id));
+  }, []);
+
   // Manual refresh — spin the icon, use silent-merge so the list doesn't
   // flash to the skeleton, and toast the outcome so the owner knows the
   // tap registered even when data is unchanged.
@@ -182,7 +201,9 @@ export default function OrderListPage() {
       }
     }
     fetchCount();
-    const interval = setInterval(fetchCount, 30000);
+    // Premade inventory changes rarely — 60s is plenty. The main order poll
+    // stays at 30s below so florists still see new incoming orders quickly.
+    const interval = setInterval(fetchCount, 60000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [orders.length, premadeBouquets.length]);
 
@@ -206,6 +227,25 @@ export default function OrderListPage() {
       .then(r => setDashData(r.data))
       .catch(() => {}); // non-critical — silently ignore
   }, [isOwner]);
+
+  // Shared editor stock fetch — fires once on mount instead of once per
+  // OrderCard the first time each is expanded-and-edited. `refreshEditorStock`
+  // is passed to OrderCard so the card can ask for fresh data after mutations
+  // (e.g. after dissolving a premade during save).
+  const refreshEditorStock = useCallback(async () => {
+    try {
+      const [stockRes, premadeRes] = await Promise.all([
+        client.get('/stock?includeEmpty=true&includeInactive=true'),
+        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+      ]);
+      setEditorStockItems(stockRes.data);
+      setEditorPremadeMap(premadeRes.data || {});
+    } catch {
+      // non-critical — cards fall back to stale-or-empty; the edit save itself
+      // will surface a backend error if something is genuinely wrong.
+    }
+  }, []);
+  useEffect(() => { refreshEditorStock(); }, [refreshEditorStock]);
 
   // Fetch committed stock data for shortfall warnings
   useEffect(() => {
@@ -509,12 +549,11 @@ export default function OrderListPage() {
                 order={order}
                 isOwner={isOwner}
                 stockShortfalls={stockShortfalls}
-                onOrderUpdated={(id, patch) => {
-                  setOrders(prev => prev.map(o => o.id === id ? { ...o, ...patch } : o));
-                }}
-                onOrderDeleted={(id) => {
-                  setOrders(prev => prev.filter(o => o.id !== id));
-                }}
+                editorStockItems={editorStockItems}
+                editorPremadeMap={editorPremadeMap}
+                onStockRefresh={refreshEditorStock}
+                onOrderUpdated={handleOrderUpdated}
+                onOrderDeleted={handleOrderDeleted}
               />
             ))}
           </div>

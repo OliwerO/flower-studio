@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useDebouncedValue } from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -47,6 +48,9 @@ export default function StockPanelPage() {
 
   // Search, sort, view
   const [search, setSearch]   = useState('');
+  // Debounce so the filter+sort compute over ~300 stock rows doesn't run on
+  // every keystroke. Input stays responsive; results settle after 300ms.
+  const debouncedSearch       = useDebouncedValue(search, 300);
   const [sortKey, setSortKey] = useState('name');
   const [sortAsc, setSortAsc] = useState(true);
   const [view, setView]       = useState('all');
@@ -145,8 +149,8 @@ export default function StockPanelPage() {
     }
 
     // Search filter
-    if (search.trim()) {
-      const q = search.toLowerCase().trim();
+    if (debouncedSearch.trim()) {
+      const q = debouncedSearch.toLowerCase().trim();
       items = items.filter(s =>
         (s['Display Name'] || '').toLowerCase().includes(q) ||
         (s.Supplier || '').toLowerCase().includes(q) ||
@@ -165,7 +169,7 @@ export default function StockPanelPage() {
     });
 
     return sorted;
-  }, [stock, search, sortKey, sortAsc, view, hideZero, premadeMap]);
+  }, [stock, debouncedSearch, sortKey, sortAsc, view, hideZero, premadeMap]);
 
   // Counts for view badges
   const negativeCount = useMemo(() => stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length, [stock]);
