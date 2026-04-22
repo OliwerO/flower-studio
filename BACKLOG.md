@@ -167,13 +167,19 @@ Phase A shipped: when driver brings a substitute, it lands as its own stock card
 (find-by-name or create-new) with the REAL per-stem cost and sell price = cost × targetMarkup.
 Primary Not-Found stays at 0 stems. Florist manually swaps in bouquet builder for affected orders.
 
-Phase B (built 2026-04-13): reconciliation screen for negative-stock-driven POs.
+Phase B v1 (built 2026-04-13): reconciliation screen for negative-stock-driven POs.
 - [x] Trigger: `POST /:id/evaluate` detects substitutions and broadcasts `substitute_reconciliation_needed` SSE
 - [x] UI: notification banner (SSE handler in `useNotifications.js`) + evaluation page shows impacted orders
 - [x] Backend: `POST /orders/:id/swap-bouquet-line` — reassigns a bouquet line from original → substitute
 - [x] Reconciliation screen: `SubstituteReconciliationPage.jsx` (florist) + `ReconciliationSection.jsx` (dashboard)
 - [ ] Demand suppression: skip original from PO demand when substitute exists (deferred — needs STOCK_PURCHASES notes scanning)
 - Kickoff prompt saved at: `scripts/prompts/phase-b-po-substitution-reconciliation.md`
+
+Phase B v2 rewrite — server-side substitute pairing via `Substitute For` link (2026-04-20 → in progress):
+- [x] **Commit 1** (PR #105, 2026-04-20) — `findOrCreateSubstituteStock` writes `Substitute For` link on both create and find branches so multiple substitutes can stack on one card. Schema validator updated at `airtableSchema.js:49`.
+- [x] **Commit 2** (2026-04-21, owner-side) — `Substitute For` link-to-another-record field (multi-record → Stock) added to prod Airtable Stock table.
+- [x] **Commit 3** (2026-04-22, branch `feat/phase-b-reconciliation-commit-3`) — rewrote `GET /stock/reconciliation` to substitute-aware shape (`{ items: [{ originalStockId, substitutes[], affectedLines[] }] }`) joining `Substitute For` links against non-terminal order lines; rewrote the only consumer `ReconciliationSection.jsx` with per-line Swap button (calls `POST /orders/:id/swap-bouquet-line`); deleted `POST /stock/reconciliation/apply`. Drift detection sacrificed — revisit as `/stock/drift` if owner asks.
+- [ ] **Commit 4** — migrate florist `SubstituteReconciliationPage.jsx` to the same new endpoint for consistency (currently uses `/stock/committed` + in-memory pairing). Optional rename to `ReconciliationPage.jsx`.
 
 ### Wix Stock Sync — accurate inventory projection to storefront (2026-04-08) [WIX-STOCK-PROJECTION]
 Currently Wix storefront does NOT track exact stock per product — it just knows "available" or "out of stock"
@@ -236,7 +242,7 @@ reports). Each item below was re-validated against the current code on
 ### Tier 2 UX Fixes — Daily Friction (2026-04-03)
 - [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
 - [ ] **Delivery date should be required** — date required, time and address optional
-- [ ] **Time slots not in order** — sorting broken in time slot picker
+- [x] **Time slots not in order** — fixed in PR #125 / commit `191a0df` (2026-04-22). `useConfigLists` now sorts delivery time slots chronologically.
 - [ ] **Delivery/pickup date not shown** — date missing from order display
 - [ ] **Sorting by delivery date not working** — sort function broken
 - [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back

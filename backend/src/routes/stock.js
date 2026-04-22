@@ -754,40 +754,75 @@ router.post('/:id/write-off', async (req, res, next) => {
   }
 });
 
-// GET /api/stock/reconciliation — detect stock mismatches.
-// Checks ALL non-terminal orders (including future ones). Only counts order
-// lines where Stock Deferred is NOT true (these should have been deducted
-// from stock at order creation). Compares expected deduction totals against
-// actual stock qty to surface discrepancies.
+// GET /api/stock/reconciliation — list substitute pairs that still have
+// unswapped bouquet lines. Backed by the `Substitute For` link written by
+// findOrCreateSubstituteStock (PO evaluation → substitute receive flow).
+//
+// Response shape:
+//   { items: [{ originalStockId, originalName, originalQty,
+//               substitutes: [{ stockId, name, availableQty }],
+//               affectedLines: [{ lineId, orderId, appOrderId, customerName,
+//                                 requiredBy, orderStatus, quantity, suggestedSwapQty }] }] }
+//
+// An "item" is one original flower the owner has a substitute for, plus the
+// non-terminal order lines still pointing at that original. The owner picks a
+// substitute (usually there is one; sometimes multiple if the same original was
+// substituted more than once) and hits Swap per affected line. When every line
+// has been swapped off, the original stops appearing here.
 router.get('/reconciliation', async (req, res, next) => {
   try {
-    // Fetch active stock items
+    // 1. Fetch all active stock — need `Substitute For` to find substitutes and
+    //    `Current Quantity` for both the original (shown, may be negative) and
+    //    the substitute (shown, must cover the swap qty).
     const stockItems = await db.list(TABLES.STOCK, {
       filterByFormula: '{Active} = TRUE()',
-      fields: ['Display Name', 'Current Quantity', 'Dead/Unsold Stems'],
+      fields: ['Display Name', 'Current Quantity', 'Substitute For'],
     });
 
-    // Fetch ALL non-terminal orders (no date filter — deferred flag is what matters)
+    // Index: originalStockId → [substituteStockId, ...]
+    // Airtable's `Substitute For` is a linked-record array of stock IDs.
+    const substitutesByOriginal = {};
+    const stockMap = {};
+    for (const item of stockItems) {
+      stockMap[item.id] = item;
+      const originals = Array.isArray(item['Substitute For']) ? item['Substitute For'] : [];
+      for (const origId of originals) {
+        if (!substitutesByOriginal[origId]) substitutesByOriginal[origId] = [];
+        substitutesByOriginal[origId].push(item.id);
+      }
+    }
+    const originalIds = Object.keys(substitutesByOriginal);
+    if (originalIds.length === 0) return res.json({ items: [] });
+
+    // 2. Originals may be deactivated after substitution — fetch by ID so we
+    //    can still show the card regardless of Active status.
+    const originals = await listByIds(TABLES.STOCK, originalIds, {
+      fields: ['Display Name', 'Current Quantity'],
+    });
+    const originalMap = {};
+    for (const o of originals) originalMap[o.id] = o;
+
+    // 3. Non-terminal orders + lines — find which lines still reference an
+    //    original so the owner knows which orders need swapping.
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
       fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
       maxRecords: 1000,
     });
-
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const allLines = allLineIds.length > 0
       ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name', 'Stock Deferred'],
+          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
         })
       : [];
 
-    // Customer names for display
     const custIds = [...new Set(orders.flatMap(o => o.Customer || []))];
     const custs = custIds.length > 0
       ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
       : [];
     const custMap = {};
     for (const c of custs) custMap[c.id] = c;
+
     const orderMap = {};
     for (const o of orders) {
       const cid = o.Customer?.[0];
@@ -799,107 +834,71 @@ router.get('/reconciliation', async (req, res, next) => {
       };
     }
 
-    // Only count NON-deferred lines — these had their stock deducted at creation
-    const deductions = {};
+    // Bucket affected lines by original stockId. Skip qty=0 lines (already
+    // swapped or zeroed out — no work left).
+    const linesByOriginal = {};
+    const originalIdSet = new Set(originalIds);
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
+      if (!stockId || !originalIdSet.has(stockId)) continue;
       const qty = Number(line.Quantity || 0);
       if (qty <= 0) continue;
-      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
-      if (isDeferred) continue; // deferred lines did NOT deduct stock — skip
-
-      if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
-      deductions[stockId].expected += qty;
       const oid = line.Order?.[0];
       const oi = oid ? orderMap[oid] : null;
-      if (oi) {
-        deductions[stockId].orders.push({
-          orderId: oid,
-          appOrderId: oi.appOrderId,
-          customerName: oi.customerName,
-          requiredBy: oi.requiredBy,
-          qty,
-          status: oi.status,
-          deferred: false,
-        });
-      }
-    }
-
-    // Also flag deferred lines that SHOULD have been deducted but weren't
-    // (lines in the same order as non-deferred lines = inconsistency)
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
-      if (!isDeferred) continue; // already counted above
-
-      const oid = line.Order?.[0];
-      const oi = oid ? orderMap[oid] : null;
-      // Check if same order has non-deferred lines (mixed deferred = likely bug)
-      const sameOrderNonDeferred = allLines.some(l =>
-        l.Order?.[0] === oid && l.id !== line.id &&
-        !(l['Stock Deferred'] === true || l['Stock Deferred'] === 'true')
-      );
-      if (sameOrderNonDeferred) {
-        // This is suspicious: same order has both deferred and non-deferred lines
-        if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
-        deductions[stockId].expected += qty;
-        if (oi) {
-          deductions[stockId].orders.push({
-            orderId: oid,
-            appOrderId: oi.appOrderId,
-            customerName: oi.customerName,
-            requiredBy: oi.requiredBy,
-            qty,
-            status: oi.status,
-            deferred: true,
-            mixedDeferredFlag: true,
-          });
-        }
-      }
-    }
-
-    // Build index of stock items
-    const stockMap = {};
-    for (const item of stockItems) stockMap[item.id] = item;
-
-    // Report items where deductions exist — owner reviews and decides
-    const items = [];
-    for (const [stockId, d] of Object.entries(deductions)) {
-      const item = stockMap[stockId];
-      if (!item) continue;
-      items.push({
-        stockId,
-        name: item['Display Name'] || '',
-        currentQty: Number(item['Current Quantity'] || 0),
-        deductionExpected: d.expected,
-        orders: d.orders,
+      if (!oi) continue;
+      if (!linesByOriginal[stockId]) linesByOriginal[stockId] = [];
+      linesByOriginal[stockId].push({
+        lineId: line.id,
+        orderId: oid,
+        appOrderId: oi.appOrderId,
+        customerName: oi.customerName,
+        requiredBy: oi.requiredBy,
+        orderStatus: oi.status,
+        quantity: qty,
+        suggestedSwapQty: qty,
       });
     }
 
-    res.json(items);
-  } catch (err) {
-    next(err);
-  }
-});
+    // 4. Build response: only include originals that still have affected lines.
+    //    Fully-reconciled pairs disappear so the UI stays focused on work left.
+    const items = [];
+    for (const origId of originalIds) {
+      const affectedLines = linesByOriginal[origId];
+      if (!affectedLines || affectedLines.length === 0) continue;
+      const original = originalMap[origId];
+      if (!original) continue;
 
-// POST /api/stock/reconciliation/apply — apply stock corrections in bulk
-router.post('/reconciliation/apply', async (req, res, next) => {
-  try {
-    const adjustments = req.body;
-    if (!Array.isArray(adjustments)) {
-      return res.status(400).json({ error: 'Expected array of { stockId, adjustDelta }' });
+      const subIds = substitutesByOriginal[origId] || [];
+      const substitutes = subIds
+        .map(sid => {
+          const s = stockMap[sid];
+          if (!s) return null;
+          return {
+            stockId: sid,
+            name: s['Display Name'] || '',
+            availableQty: Number(s['Current Quantity'] || 0),
+          };
+        })
+        .filter(Boolean);
+
+      // FIFO by delivery date — earliest first, owner reconciles in delivery order.
+      affectedLines.sort((a, b) =>
+        (a.requiredBy || '').localeCompare(b.requiredBy || '')
+      );
+
+      items.push({
+        originalStockId: origId,
+        originalName: original['Display Name'] || '',
+        originalQty: Number(original['Current Quantity'] || 0),
+        substitutes,
+        affectedLines,
+      });
     }
-    const results = [];
-    for (const { stockId, adjustDelta } of adjustments) {
-      if (!stockId || typeof adjustDelta !== 'number' || adjustDelta === 0) continue;
-      const result = await db.atomicStockAdjust(stockId, adjustDelta);
-      results.push(result);
-    }
-    res.json({ applied: results.length, results });
+
+    // Most-affected originals first — owner tackles the biggest impact pairs first.
+    items.sort((a, b) => b.affectedLines.length - a.affectedLines.length);
+
+    res.json({ items });
   } catch (err) {
     next(err);
   }
