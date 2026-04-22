@@ -124,6 +124,11 @@ export async function createOrder(params, config, opts = {}) {
         Quantity:              line.quantity,
         'Cost Price Per Unit': line.costPricePerUnit || 0,
         'Sell Price Per Unit': line.sellPricePerUnit || 0,
+        // Persist the deferred flag so the dashboard's "Flowers Needed" panel
+        // (which filters {Stock Deferred} = TRUE) actually surfaces this demand.
+        // Without this write, deferred lines deducted no stock AND vanished
+        // from the purchase-planning view — the worst of both worlds.
+        ...(line.stockDeferred === true ? { 'Stock Deferred': true } : {}),
       });
       createdLines.push(created);
       createdLineIds.push(created.id);
@@ -512,6 +517,10 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
         Quantity: line.quantity,
         'Cost Price Per Unit': line.costPricePerUnit || 0,
         'Sell Price Per Unit': line.sellPricePerUnit || 0,
+        // Mirror createOrder: persist the deferred flag so "Flowers Needed"
+        // aggregation sees it. Without this, lines added mid-edit with the
+        // deferred toggle on were invisible to purchase planning.
+        ...(line.stockDeferred === true ? { 'Stock Deferred': true } : {}),
       });
       createdLines.push(created);
       if (line.stockItemId && !line.stockDeferred) {
