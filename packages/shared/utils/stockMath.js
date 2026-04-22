@@ -1,51 +1,56 @@
-// Stock math — the single source of truth for how Current Quantity and
-// Committed combine. Exists because the two numbers measure overlapping
-// events and naive subtraction produces a double-count bug (see
-// "Known Pitfalls" in root CLAUDE.md, entry #7).
+// Stock math — single source of truth for "how many stems are available/short".
 //
-// Background:
-//   - Current Quantity on a Stock record is decremented IMMEDIATELY when an
-//     order is created (in orderService.js via atomicStockAdjust). So if
-//     stock was 0 and an order for 2 stems comes in, Current Quantity = -2.
-//   - GET /api/stock/committed sums all non-terminal future-dated order
-//     lines grouped by Stock Item — it does NOT care whether those lines
-//     have already been deducted. It's a raw demand signal.
-//   - These two are therefore in OVERLAPPING measurement frames. If you do
-//     `qty - committed` when qty is already negative, you count the same
-//     order twice (−2 − 2 = −4 when the true shortfall is just −2).
+// The model (locked 2026-04-22 after a long diagnosis):
+//   - `Current Quantity` on a Stock record is decremented IMMEDIATELY when an
+//     order is created (orderService.js → atomicStockAdjust). Every pending
+//     order's demand is therefore ALREADY reflected in `Current Quantity`.
+//   - `GET /api/stock/committed` returns the LIST of orders that consume each
+//     stock item — purely for traceability (tap-to-expand detail). The number
+//     it reports is the same demand already baked into Current Quantity.
+//   - Therefore `effective = qty - committed` DOUBLE-COUNTS. Always.
 //
-// Rule used below (matches the 2026-04-16 dashboard fix, commit 9e7b470):
-//   - qty >= 0: `committed` represents real pending deductions; subtract.
-//               Result is "what's still available after pending orders".
-//   - qty <  0: the negative ALREADY reflects all current deductions; the
-//               committed number is redundant for this flower. Return qty.
+// Previous code (pre-2026-04-22) computed `qty - committed`, which made
+// Hydrangea Pink show "Effective: -4" when qty was -2 and committed was 2
+// — the same order, subtracted twice. A 2026-04-16 patch tried to fix this
+// with a `qty < 0 ? qty : qty - committed` branch, but that destroyed the
+// legitimate cumulative-shortfall case (qty=-5, committed=3 should show -8,
+// not -5). Both variants are wrong for the same reason: committed is
+// redundant with qty.
 //
-// If you ever need "future shortfall beyond current negatives", that is a
-// different calculation and should NOT be derived via subtraction here.
+// The correct answer is `effective = qty`. Period. `committed` is an
+// informational breakdown, never a subtraction.
+//
+// If qty ever drifts from the true physical count, that is a data integrity
+// problem (missing receipt event, silent premade deduction, manual Airtable
+// edit) to be detected via reconciliation — NOT papered over by formula
+// tweaks here.
 
 /**
- * Compute effective stock after accounting for committed (pending) orders.
- * Do NOT inline `qty - committed` anywhere — always call this helper.
+ * Effective stems available for new orders.
+ *
+ * Always returns `qty`. The `committed` parameter is accepted for backward
+ * compatibility with existing call sites and is intentionally ignored — see
+ * the file header for the full explanation.
  *
  * @param {number} qty        Current Quantity from the Stock record
- * @param {number} committed  Sum of pending-order demand for this stock item
- * @returns {number} effective stock (may be negative if orders exceed supply)
+ * @param {number} [_committed] Ignored. Kept in signature so old callers do
+ *                              not silently break; do not rely on it.
+ * @returns {number} effective stock (equals qty; may be negative)
  */
-export function getEffectiveStock(qty, committed) {
-  const q = Number(qty) || 0;
-  const c = Math.max(0, Number(committed) || 0);
-  if (q >= 0) return q - c;
-  return q;
+// eslint-disable-next-line no-unused-vars
+export function getEffectiveStock(qty, _committed) {
+  return Number(qty) || 0;
 }
 
 /**
- * True when there IS a shortfall the owner needs to act on.
- * - committed > 0 AND effective < 0 → someone's waiting on stems we don't have
- * - qty < 0                         → we're already short (negative = IOU)
+ * True when the stock row is in genuine shortfall — `qty < 0`.
+ * A negative Current Quantity means orders have been composed against stems
+ * we don't physically have; the owner needs to buy more.
+ *
+ * @param {number} qty        Current Quantity from the Stock record
+ * @param {number} [_committed] Ignored — see file header.
  */
-export function hasStockShortfall(qty, committed) {
-  const q = Number(qty) || 0;
-  const c = Math.max(0, Number(committed) || 0);
-  if (q < 0) return true;
-  return c > 0 && q - c < 0;
+// eslint-disable-next-line no-unused-vars
+export function hasStockShortfall(qty, _committed) {
+  return (Number(qty) || 0) < 0;
 }

@@ -152,10 +152,16 @@ router.get('/premade-committed', async (req, res, next) => {
   }
 });
 
-// GET /api/stock/committed — aggregate committed quantities per stock item for
-// future-dated non-terminal orders. Returns raw demand regardless of whether
-// the order already deducted stock at creation; the frontend compares this to
-// Current Quantity to decide whether to flag the flower as "needed".
+// GET /api/stock/committed — informational breakdown of which orders consume
+// each stock item, for the tap-to-expand detail view on the stock panel.
+// Returns demand for future-dated non-terminal orders.
+//
+// IMPORTANT: stock is deducted from `Current Quantity` at order creation
+// (orderService.js → atomicStockAdjust). The `committed` number this endpoint
+// returns is the SAME demand, viewed from the other side — it is already
+// baked into Current Quantity. The frontend must NOT subtract committed from
+// qty: that would double-count. See root CLAUDE.md "Known Pitfalls" #7 and
+// packages/shared/utils/stockMath.js.
 // Returns { stockId: { committed: N, orders: [{ orderId, appOrderId, customerName, requiredBy, qty }] } }
 router.get('/committed', async (req, res, next) => {
   try {

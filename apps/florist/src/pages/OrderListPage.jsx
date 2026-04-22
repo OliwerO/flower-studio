@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
+import { getEffectiveStock } from '@flower-studio/shared';
 import client from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import PremadeBouquetCard from '../components/PremadeBouquetCard.jsx';
@@ -263,7 +264,10 @@ export default function OrderListPage() {
           const item = stockMap[stockId];
           if (!item) continue;
           const currentQty = Number(item['Current Quantity'] || 0);
-          const effective = currentQty - data.committed;
+          // Route through the shared helper so the ban on inline
+          // `qty - committed` stays watertight (see stockMath.js). Helper
+          // currently returns qty; committed is informational only.
+          const effective = getEffectiveStock(currentQty, data.committed);
           shortfalls[stockId] = {
             committed: data.committed,
             name: item['Display Name'] || '?',
