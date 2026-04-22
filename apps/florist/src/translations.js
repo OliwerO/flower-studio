@@ -439,6 +439,8 @@ const en = {
   noUsageData:        'No history found.',
   usageOrder:         'Order',
   usagePurchase:      'Purchase',
+  usagePremade:       'Premade',
+  ongoing:            'ongoing',
 
   // Block 5 — florist UX
   assignedDriver:     'Driver',
@@ -1046,6 +1048,8 @@ const ru = {
   trace:              'Движение',
   noUsageData:        'История не найдена.',
   usageOrder:         'Заказ',
+  usagePremade:       'Премейд',
+  ongoing:            'текущий',
   usagePurchase:      'Закупка',
 
   // Block 5 — florist UX

@@ -260,24 +260,29 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                         <span className={`text-[9px] font-medium px-1 py-0.5 rounded ${
                           entry.type === 'order' ? 'bg-brand-100 text-brand-700' :
                           entry.type === 'writeoff' ? 'bg-red-100 text-red-700' :
+                          entry.type === 'premade' ? 'bg-indigo-100 text-indigo-700' :
                           'bg-green-100 text-green-700'
                         }`}>
                           {entry.type === 'order' ? (t.usageOrder || 'Order') :
                            entry.type === 'writeoff' ? (t.writeOff || 'W/O') :
+                           entry.type === 'premade' ? (t.usagePremade || 'Premade') :
                            (t.usagePurchase || 'Purchase')}
                         </span>
                         <span className={`text-[10px] truncate ${entry.type === 'order' && entry.orderRecordId ? 'text-brand-600' : 'text-ios-label'}`}>
                           {entry.type === 'order' ? `${entry.orderId} ${entry.customer}` :
                            entry.type === 'writeoff' ? entry.reason :
+                           entry.type === 'premade' ? entry.bouquetName :
                            entry.supplier}
                         </span>
                       </div>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {entry.date && (
+                        {entry.date ? (
                           <span className="text-[9px] text-ios-tertiary">
                             {entry.date}{entry.type === 'order' && entry.requiredBy ? ` → ${entry.requiredBy}` : ''}
                           </span>
-                        )}
+                        ) : entry.type === 'premade' ? (
+                          <span className="text-[9px] text-indigo-500 font-medium">{t.ongoing || 'ongoing'}</span>
+                        ) : null}
                         <span className={`text-[11px] font-semibold tabular-nums ${entry.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
                           {entry.quantity > 0 ? '+' : ''}{entry.quantity}
                         </span>

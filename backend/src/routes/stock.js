@@ -437,7 +437,21 @@ router.post('/', async (req, res, next) => {
 });
 
 // GET /api/stock/:id/usage — trace where flowers went: orders that used this stock item,
-// write-offs, and PO receipts. Returns a chronological audit trail.
+// write-offs, PO receipts, and stems locked in active premade bouquets.
+//
+// Goal: sum(trail.quantity) should equal the Stock row's Current Quantity, for
+// every row, always. If it doesn't, something changed qty without emitting an
+// event here — that's a data-integrity gap to investigate. See root CLAUDE.md
+// pitfall #7 + packages/shared/utils/stockMath.js for the model.
+//
+// Event types:
+//   - 'order'     — order line consuming stems (negative qty)
+//   - 'writeoff'  — stock loss log entry (negative qty)
+//   - 'purchase'  — stock purchase or PO receipt (positive qty)
+//   - 'premade'   — stems currently locked in an active premade bouquet
+//                   (negative qty; dated null because premade lines have no
+//                   creation timestamp in Airtable today — they show at the
+//                   top of the chronological list as "ongoing").
 router.get('/:id/usage', async (req, res, next) => {
   try {
     const stockItem = await db.getById(TABLES.STOCK, req.params.id);
@@ -595,8 +609,48 @@ router.get('/:id/usage', async (req, res, next) => {
       });
     } catch { /* table may not exist */ }
 
-    // Combine and sort chronologically (newest first)
-    const trail = [...usageOrders, ...usageLosses, ...usagePurchases]
+    // 4. Active premade bouquet lines — stems physically locked in a premade
+    // that hasn't been sold/dissolved yet. These were deducted from qty when
+    // the premade was created; the trace must surface them or the arithmetic
+    // won't reconcile. Dissolved/consumed premades don't appear (the line
+    // record is deleted and the stems either flowed into an order or were
+    // returned to stock via a reverse atomicStockAdjust — both of which are
+    // already represented in the 'order' and 'purchase' trails respectively).
+    let usagePremades = [];
+    if (TABLES.PREMADE_BOUQUETS && TABLES.PREMADE_BOUQUET_LINES) {
+      try {
+        const bouquets = await db.list(TABLES.PREMADE_BOUQUETS, {
+          fields: ['Name', 'Lines'],
+          maxRecords: 500,
+        });
+        const allLineIds = bouquets.flatMap(b => b['Lines'] || []);
+        const allLines = allLineIds.length > 0
+          ? await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds, {
+              fields: ['Premade Bouquets', 'Stock Item', 'Quantity', 'Flower Name'],
+            })
+          : [];
+        const bouquetMap = {};
+        for (const b of bouquets) bouquetMap[b.id] = b;
+        usagePremades = allLines
+          .filter(l => siblingIds.has(l['Stock Item']?.[0]))
+          .map(l => {
+            const bouquetId = l['Premade Bouquets']?.[0];
+            const bouquet = bouquetId ? bouquetMap[bouquetId] : null;
+            return {
+              type: 'premade',
+              date: null, // no timestamp on premade lines in Airtable
+              quantity: -(Number(l.Quantity) || 0),
+              bouquetId: bouquetId || '',
+              bouquetName: bouquet?.Name || '?',
+              flowerName: l['Flower Name'] || displayName,
+            };
+          });
+      } catch { /* premade tables may not exist in some envs */ }
+    }
+
+    // Combine and sort chronologically (newest first).
+    // Premade entries have null date — they sort to the top as "ongoing".
+    const trail = [...usageOrders, ...usageLosses, ...usagePurchases, ...usagePremades]
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     res.json({
