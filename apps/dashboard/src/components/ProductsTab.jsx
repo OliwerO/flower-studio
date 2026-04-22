@@ -94,6 +94,15 @@ export default function ProductsTab() {
     try {
       const res = await client.post('/products/pull');
       const s = res.data;
+      // Defensive: runPull() in wixProductSync.js wraps its entire body in a
+      // try/catch that pushes fatal errors into stats.errors and STILL returns
+      // 200. Without this check a failed Wix API call (bad token, network
+      // error) looks like a no-op success with zero counts. Surface the actual
+      // errors so they can be diagnosed.
+      if (s.errors?.length > 0) {
+        showToast(s.errors.join(' · '), 'error');
+        return;
+      }
       showToast(`${t.prodPullDone}: ${s.new} ${t.prodNew}, ${s.updated} ${t.prodUpdated}`, 'success');
       fetchProducts();
     } catch {
@@ -108,16 +117,22 @@ export default function ProductsTab() {
     try {
       const res = await client.post('/products/push');
       const s = res.data;
+      // Same silent-catch pattern as handlePull — surface actual errors
+      // instead of just a count, which didn't help the owner diagnose
+      // what's broken (was showing "3 errors" with no explanation).
+      if (s.errors?.length > 0) {
+        showToast(s.errors.join(' · '), 'error');
+        fetchProducts();
+        return;
+      }
       const parts = [];
       if (s.pricesSynced) parts.push(`${s.pricesSynced} ${t.prodPriceSyncs}`);
       if (s.visibilitySynced) parts.push(`${s.visibilitySynced} ${t.prodVisibility}`);
       if (s.stockSynced) parts.push(`${s.stockSynced} ${t.prodStockSyncs}`);
       if (s.categoriesSynced) parts.push(`${s.categoriesSynced} ${t.prodCategorySyncs}`);
-      const errCount = s.errors?.length || 0;
-      if (errCount) parts.push(`${errCount} ${t.prodErrors || 'errors'}`);
       showToast(
         `${t.prodPushDone}${parts.length ? ': ' + parts.join(', ') : ''}`,
-        errCount ? 'warning' : 'success'
+        'success'
       );
       fetchProducts();
     } catch {

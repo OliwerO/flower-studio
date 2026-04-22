@@ -114,6 +114,16 @@ export default function BouquetsPage() {
       // Backend returns the stats object directly (no wrapping).
       // Pull shape: { new, updated, deactivated, errors }
       const { data } = await client.post('/products/pull', {});
+      // Defensive: runPull() in wixProductSync.js wraps its entire body in a
+      // try/catch that pushes fatal errors into stats.errors and STILL returns
+      // 200. Without checking here, a failed Wix API call (bad token, expired
+      // session, network error) looks like a no-op success — the toast just
+      // says "Updated from Wix" with zero counts and the owner thinks the
+      // sync worked. Surface the actual errors so they can be diagnosed.
+      if (data?.errors?.length > 0) {
+        showToast(data.errors.join(' · '), 'error');
+        return;
+      }
       const parts = [];
       if (data?.new) parts.push(`+${data.new}`);
       if (data?.updated) parts.push(`~${data.updated}`);
@@ -134,6 +144,11 @@ export default function BouquetsPage() {
     try {
       // Push shape: { pricesSynced, stockSynced, categoriesSynced, errors }
       const { data } = await client.post('/products/push', {});
+      // Same silent-catch pattern as pullFromWix — see comment there.
+      if (data?.errors?.length > 0) {
+        showToast(data.errors.join(' · '), 'error');
+        return;
+      }
       const parts = [];
       if (data?.pricesSynced) parts.push(`${data.pricesSynced} prices`);
       if (data?.stockSynced) parts.push(`${data.stockSynced} stock`);
