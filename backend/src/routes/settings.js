@@ -68,6 +68,14 @@ const DEFAULTS = {
   deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
   availableTodayCutoff: '18:00',
   availableTodayTimezone: 'Europe/Warsaw',
+  // Last date (YYYY-MM-DD in the configured TZ) on which the Available
+  // Today cutoff reminder was sent. Persisted so the dedup flag survives
+  // backend restarts / redeploys / multi-replica scaling. Used to be a
+  // module-level variable which reset on every boot — if a Railway
+  // redeploy happened after 18:00 with active Available Today products,
+  // a fresh reminder fired within a minute of the new process starting,
+  // causing the owner's "multiple reminders" bug.
+  cutoffReminderLastDate: null,
   slotLeadTimeMinutes: 30,
   // Shows the per-row "Reconcile premade" action on stock rows in the dashboard.
   // Off by default — it's admin tooling for fixing historical data mismatches,
@@ -326,7 +334,11 @@ loadConfig();
 // ── Available Today cutoff reminder ─────────────────────────
 // Checks every minute. Once per day, after cutoff, if there are still
 // active Available Today products, sends a Telegram reminder to the owner.
-let cutoffReminderSentDate = null;
+//
+// Dedup flag (`cutoffReminderLastDate`) is persisted in the App Config
+// Airtable row, not held in module memory. That way a redeploy after
+// 18:00 — which previously reset the in-memory flag and caused the
+// "multiple reminders per evening" bug — no longer re-fires.
 
 setInterval(async () => {
   try {
@@ -340,7 +352,7 @@ setInterval(async () => {
     const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
 
     if (timeStr < cutoff) return; // not past cutoff yet
-    if (cutoffReminderSentDate === todayStr) return; // already sent today
+    if (config.cutoffReminderLastDate === todayStr) return; // already sent today
 
     // Check if any active products with lead time 0 exist
     if (!TABLES.PRODUCT_CONFIG) return;
@@ -356,7 +368,11 @@ setInterval(async () => {
         + `It's past ${cutoff} — you still have products marked as Available Today.\n`
         + `Deactivate them in the dashboard if they're no longer available.`
       );
-      cutoffReminderSentDate = todayStr;
+      // Persist immediately so a crash-restart in the next second can't
+      // fire a second reminder. updateConfig writes to Airtable in the
+      // background (fire-and-forget) and sets the in-memory value
+      // synchronously, which is what the guard on the next tick reads.
+      updateConfig('cutoffReminderLastDate', todayStr);
       console.log('[SETTINGS] Cutoff reminder sent');
     }
   } catch (err) {

@@ -201,6 +201,39 @@ co-owner, technical helper — for Wix sync error alerts through env
 config alone, no code change required. `sendAlert` broadcasts to
 every ID in the list.
 
+### "Available Today" cutoff reminder dedup now survives restarts
+
+Owner was receiving multiple "⏰ Available Today reminder" Telegram
+pings per evening. Root cause: the dedup flag lived in module memory
+as `let cutoffReminderSentDate = null` (`settings.js:329`) — every
+Railway redeploy, health-check restart, or multi-replica scale-out
+reset it to null. If a deploy happened after the 18:00 cutoff while
+Available Today products were still active, the fresh process's
+setInterval tick fired a new reminder within ~60 seconds. With the
+frequent deploys during active development, the owner could see
+3–5 reminders in one evening.
+
+**Fix** (`backend/src/routes/settings.js`):
+- New key `cutoffReminderLastDate` added to `DEFAULTS` and persisted
+  via the existing App Config Airtable row (same mechanism as
+  `suppliers`, `deliveryZones`, etc.).
+- The setInterval guard now reads `config.cutoffReminderLastDate`
+  instead of the module-level variable.
+- On successful send, `updateConfig('cutoffReminderLastDate',
+  todayStr)` writes both in-memory (synchronous, so the next-minute
+  tick sees it immediately) and to Airtable (background save, so
+  restarts load it back into memory via `loadConfig()`).
+
+Survives redeploys, health-check restarts, and — assuming Airtable
+writes land — also handles multi-replica scenarios where each
+replica reads the same config row on its own next tick.
+
+IE framing: the "reminder already sent" sign used to live on a
+whiteboard inside the factory — every shift change (process
+restart) wiped the whiteboard and the same reminder got sent again.
+Now it lives in the warehouse records (App Config table) — shift
+changes don't affect the memo.
+
 **Why this matters**: sync can run without anyone watching the app
 (scheduled runs, webhook-triggered refreshes, rapid manual taps). A
 toast only helps if the owner happens to be looking at the screen.
