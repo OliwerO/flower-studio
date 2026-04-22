@@ -140,7 +140,7 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
   useEffect(() => {
     initialLoaded.current = false;
     fetchOrders();
-    const interval = setInterval(() => { if (!document.hidden) fetchOrders(true); }, 30000);
+    const interval = setInterval(() => { if (!document.hidden) fetchOrders(true); }, 60000);
     function onVisible() { if (!document.hidden) fetchOrders(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };

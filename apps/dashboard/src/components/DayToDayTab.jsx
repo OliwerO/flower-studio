@@ -152,10 +152,12 @@ export default function DayToDayTab({ onNavigate }) {
   useEffect(() => {
     fetchData();
 
-    // Silent poll every 60s — updates data without disrupting UI
+    // Silent poll every 120s — updates data without disrupting UI.
+    // Low cadence because visibility-change refresh + SSE cover active use;
+    // this interval is just a safety net to catch anything missed.
     const interval = setInterval(() => {
       if (!document.hidden) fetchData(true);
-    }, 60000);
+    }, 120000);
 
     function handleVisibility() {
       if (!document.hidden) fetchData(true);
