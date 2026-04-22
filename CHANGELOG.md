@@ -41,6 +41,127 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-22 — Florist app cleanup (Phase B): Customers tab on mobile
+
+Second PR of the three-part florist cleanup plan. Phase A shipped the nav
+trim + Wix Pull/Push + stock ops grid. Phase B adds a full Customer tab
+to the florist app so the owner can run CRM workflows from her phone —
+same data, same filter logic, same segmentation as the dashboard
+Customer tab v2.0, with mobile-native layout and a view-only gate for
+florist role.
+
+### Shared package
+- **Moved** `customerFilters.js` from `apps/dashboard/src/utils/` to
+  `packages/shared/utils/` (git-tracked rename). Dashboard's three
+  import sites (`CustomersTab.jsx`, `CustomerListPane.jsx`,
+  `CustomerFilterBar.jsx`) now import from `@flower-studio/shared`.
+  Florist's Customer tab imports from the same location — single
+  source of truth for filter/search semantics.
+- **New tests** at `packages/shared/test/customerFilters.test.js`
+  (33 assertions covering matchesSearch, matchesFilters, serialize
+  round-trip, activeFilterCount, churn-risk via fake timers). The
+  original dashboard file had no test coverage; this move upgrades it.
+- Known gap: `packages/shared` can't `npm test` standalone (vitest only
+  in backend/node_modules). Tests run via the backend vitest binary.
+  Follow-up will add vitest as a shared devDep.
+
+### New florist app surface (`apps/florist/src/`)
+- `pages/CustomerListPage.jsx` — full-page list shell; loads
+  `/customers` + `/customers/insights` in parallel; manages filter
+  state persisted to localStorage (`florist_customer_filters`, version
+  1); renders CustomerListPane.
+- `pages/CustomerDetailPage.jsx` — reads `:id` from route, derives
+  `canEdit = role === 'owner'`, renders CustomerDetailView; back
+  button returns to the list with scroll preserved.
+- `components/CustomerListPane.jsx` — mobile variant of dashboard's
+  same-named component. Search, "Filters (N)" sheet trigger, sort
+  dropdown, virtualized `react-window` list of 1094 rows. Tap row →
+  `onSelect(id)` → parent routes.
+- `components/CustomerFilterSheet.jsx` — bottom-sheet filter UX using
+  the shared `Sheet` primitive. All 15 filter dimensions as
+  always-visible sections (pill rows for multi-selects, toggles for
+  presence, preset chips for recency, number inputs for minimums).
+  Same state shape as dashboard's CustomerFilterBar — owner can save
+  a filter on mobile and see it interpreted identically on the laptop.
+- `components/CustomerDetailView.jsx` — mobile single-column detail.
+  Composes CustomerHeader, ContactQuickLinks, StatStrip, ProfileGrid,
+  KeyPersonChips, NotesSection, FlowersOrderedChips, CustomerTimeline.
+  `canEdit` prop gates every InlineEdit/SelectField via new
+  `EditOrText` / `SelectOrText` wrappers — florist sees values as
+  plain text, owner sees full edit UI. Belt-and-braces guard in
+  `patchField` blocks PATCH calls if the UI gate is ever bypassed.
+- `components/CustomerHeader.jsx`, `CustomerTimeline.jsx`,
+  `KeyPersonChips.jsx`, `InlineEdit.jsx` — ported from dashboard.
+  KeyPersonChips gained a `canEdit` prop for view-only; other three
+  are verbatim ports for visual parity.
+
+### Navigation
+- `components/BottomNav.jsx` — owner now sees 5 tabs (Orders · Stock ·
+  **Customers** · Wix · More). Restored the `useNarrowViewport(360)`
+  hook that Phase A removed — on narrow viewports (<360px) the Wix
+  tab moves to the More burger to keep the primary bar at 4 tabs.
+  Customers is 3rd (always on-screen) because CRM lookups are daily;
+  Wix sync is occasional.
+- Florist burger gained a Customers entry; florist's bottom nav
+  unchanged (still Orders · Stock · Hours · More).
+
+### Routes (`App.jsx`)
+- `/customers`     → `CustomerListPage`    (PrivateRoute — both roles)
+- `/customers/:id` → `CustomerDetailPage`  (PrivateRoute — both roles;
+  edit capability gated by role inside the view)
+
+### Dependencies
+- Added `react-window: ^2.2.7` to `apps/florist/package.json` (same
+  version dashboard already uses). Needed for the virtualized 1094-row
+  list; mobile Safari handles it smoothly.
+
+### Translations (~60 new keys × 2 languages)
+Added to `apps/florist/src/translations.js` under a new "Customer Tab
+v2.0" section. Covers the tab label, header badges, key-people chips,
+timeline filters, list pane search/sort, filter-sheet dimensions,
+detail-view stats, and the RU equivalents. English fallbacks in every
+component mean missing keys degrade gracefully rather than crashing.
+
+### Why it matters
+- **Owner can run CRM from her phone.** Previously she had to switch
+  to Airtable or the desktop dashboard to look up a customer, add a
+  key person, or check last-order freshness. Same capabilities now
+  fit in her pocket.
+- **Florist gets customer context without risk.** Florist can see
+  name, nickname, segment, key people, notes, timeline — useful for
+  personalizing a delivery or reading context on a phone order —
+  without any edit affordance. `canEdit=false` renders text instead
+  of inputs, the `patchField` guard blocks any stray PATCH that
+  somehow slipped past the UI.
+- **Shared filter logic.** A filter state saved in localStorage on the
+  phone interprets identically on the desktop because both apps run
+  the exact same `matchesSearch` / `matchesFilters` predicates from
+  `@flower-studio/shared`. One place to fix a rule, both apps update.
+
+### What to watch for
+- **Parity debt**: `CustomerHeader`, `CustomerTimeline`,
+  `KeyPersonChips`, and `CustomerDetailView` now exist in both
+  `apps/dashboard/src/components/` and
+  `apps/florist/src/components/`. A future refactor should extract
+  shared bodies to `packages/shared/components/` with thin app-specific
+  wrappers; until then, any CRM-side change needs to land in both.
+  Added to the "Parallel implementations" convention.
+- **Backend role-gate**: view-only is enforced at the UI level today.
+  A florist with devtools + a PIN can still PATCH the backend directly.
+  Backend role enforcement is filed as a follow-up and is low-priority
+  because the florist role doesn't currently escalate privilege through
+  any other path either.
+- **`onLocalPatch` no-op**: dashboard uses this callback to merge
+  field changes into its in-memory customer list without a full
+  refetch. On mobile the list page is a separate route, so I didn't
+  wire this — next visit to the list re-fetches fresh data. Fine for
+  1094 rows; revisit if the list gets bigger.
+
+Builds: florist 595 KB / 168 KB gz (+47 KB from Phase A baseline).
+Dashboard unchanged. Backend unchanged. Shared tests 33/33 pass.
+
+---
+
 ## 2026-04-22 — Florist app cleanup (Phase A): nav trim + Shopping→Stock + Wix tab polish
 
 Owner feedback made clear the florist app had accumulated UX debt: Catalog
