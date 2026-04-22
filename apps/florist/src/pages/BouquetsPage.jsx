@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Search, X, Flower2, RefreshCw, Loader2 } from 'lucide-react';
+import { ArrowLeft, Search, X, Flower2, Download, Upload, Loader2 } from 'lucide-react';
 import {
   IconButton,
   EmptyState,
@@ -166,14 +166,30 @@ export default function BouquetsPage() {
         <h1 className="text-base font-semibold text-ios-label dark:text-dark-label flex-1">
           {t.bouquetsTitle}
         </h1>
-        <IconButton
+        {/* Explicit Pull + Push buttons so both sync directions are discoverable.
+            Replaces the old generic RefreshCw icon that looked like a page refresh. */}
+        <button
+          type="button"
           onClick={pullFromWix}
           disabled={pulling || pushing}
-          ariaLabel={t.pullFromWix || 'Pull from Wix'}
-          variant="tinted"
+          aria-label={t.pullFromWix}
+          className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/20
+                     text-ios-blue text-sm font-semibold active-scale disabled:opacity-50"
         >
-          {pulling ? <Loader2 size={20} className="animate-spin" /> : <RefreshCw size={20} />}
-        </IconButton>
+          {pulling ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
+          <span>{t.pullShort}</span>
+        </button>
+        <button
+          type="button"
+          onClick={pushToWix}
+          disabled={pulling || pushing}
+          aria-label={t.pushToWix}
+          className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/20
+                     text-emerald-700 dark:text-emerald-400 text-sm font-semibold active-scale disabled:opacity-50"
+        >
+          {pushing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+          <span>{t.pushShort}</span>
+        </button>
       </header>
 
       <div className="container-mobile py-3">
@@ -234,7 +250,7 @@ export default function BouquetsPage() {
         ))}
       </div>
 
-      <PushBar count={dirtyIds.size} pushing={pushing} onPush={pushToWix} />
+      <PushBar count={dirtyIds.size} pushing={pushing} />
     </div>
   );
 }

@@ -1,45 +1,27 @@
 // BottomNav — fixed tab bar at the bottom of every authenticated screen.
-// Owner sees 5 tabs (Orders · Stock · Catalog · Shopping · More); florists see
-// 4 (Orders · Stock · Hours · More). On very narrow viewports (< 360 px) the
-// owner's Shopping tab collapses into More so we always keep 4 primary tabs
-// within comfortable touch reach.
+// Owner sees 4 tabs (Orders · Stock · Wix · More); florists see 4 too
+// (Orders · Stock · Hours · More). Shopping was folded into the Stock tab
+// Operations row in 2026-04. Phase B will add a Customers tab in the 4th slot
+// for the owner; florist picks up Customers via the More burger menu.
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import {
   ClipboardList,
   Package,
   Flower2,
-  ShoppingCart,
   Clock,
   Menu as MenuIcon,
   Sun,
   Moon,
   RefreshCw,
   LogOut,
-  BarChart3,
   ClipboardCheck,
-  Trash2,
   HelpCircle,
-  Truck,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import t from '../translations.js';
-
-// Track current viewport width so the owner's Shopping tab can gracefully
-// fall into the More menu on iPhone SE 1st-gen (320 px) style devices.
-function useNarrowViewport(threshold = 360) {
-  const [narrow, setNarrow] = useState(() =>
-    typeof window !== 'undefined' ? window.innerWidth < threshold : false
-  );
-  useEffect(() => {
-    function onResize() { setNarrow(window.innerWidth < threshold); }
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [threshold]);
-  return narrow;
-}
 
 export default function BottomNav() {
   const navigate = useNavigate();
@@ -48,29 +30,23 @@ export default function BottomNav() {
   const { dark, toggle: toggleDark } = useTheme();
   const [moreOpen, setMoreOpen] = useState(false);
   const isOwner = role === 'owner';
-  const narrow = useNarrowViewport(360);
 
-  // Primary tabs depend on role (and, for the owner on very narrow devices,
-  // on viewport width — Shopping moves into More when the bar would be cramped).
-  let tabs;
-  if (isOwner) {
-    const ownerTabs = [
-      { key: 'orders',   Icon: ClipboardList, label: t.tabOrders,   path: '/orders' },
-      { key: 'stock',    Icon: Package,       label: t.tabStock,    path: '/stock' },
-      { key: 'catalog',  Icon: Flower2,       label: t.tabCatalog,  path: '/catalog/bouquets' },
-      { key: 'shopping', Icon: ShoppingCart,  label: t.tabShopping, path: '/shopping-support' },
-    ];
-    tabs = narrow
-      ? [...ownerTabs.slice(0, 3), { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null }]
-      : [...ownerTabs, { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null }];
-  } else {
-    tabs = [
-      { key: 'orders', Icon: ClipboardList, label: t.tabOrders, path: '/orders' },
-      { key: 'stock',  Icon: Package,       label: t.tabStock,  path: '/stock' },
-      { key: 'hours',  Icon: Clock,         label: t.tabHours,  path: '/hours' },
-      { key: 'more',   Icon: MenuIcon,      label: t.tabMore,   path: null },
-    ];
-  }
+  // Primary tabs depend on role. After 2026-04 cleanup, both roles show
+  // exactly 4 tabs — no narrow-viewport collapse needed. Phase B will add
+  // a 5th tab (Customers) for the owner and reintroduce the narrow logic.
+  const tabs = isOwner
+    ? [
+        { key: 'orders',  Icon: ClipboardList, label: t.tabOrders,  path: '/orders' },
+        { key: 'stock',   Icon: Package,       label: t.tabStock,   path: '/stock' },
+        { key: 'catalog', Icon: Flower2,       label: t.tabCatalog, path: '/catalog/bouquets' },
+        { key: 'more',    Icon: MenuIcon,      label: t.tabMore,    path: null },
+      ]
+    : [
+        { key: 'orders', Icon: ClipboardList, label: t.tabOrders, path: '/orders' },
+        { key: 'stock',  Icon: Package,       label: t.tabStock,  path: '/stock' },
+        { key: 'hours',  Icon: Clock,         label: t.tabHours,  path: '/hours' },
+        { key: 'more',   Icon: MenuIcon,      label: t.tabMore,   path: null },
+      ];
 
   function isActive(tab) {
     if (!tab.path) return false;
@@ -100,26 +76,22 @@ export default function BottomNav() {
     window.location.href = window.location.pathname + '?_cb=' + Date.now();
   }
 
-  // More menu — owner gets all florist actions plus owner-only ones.
-  // Waste Log is accessible to both roles (backend allows florist CRUD too).
+  // More menu — trimmed in 2026-04 per owner feedback. Waste Log, Purchase
+  // Orders and Day Summary were removed from here because Waste Log + PO are
+  // reachable from the Stock tab's Operations tile row, and Day Summary wasn't
+  // being used. Stock Evaluation stays as the one remaining stock-adjacent
+  // entry that doesn't yet have an Operations tile (owner + florist both use it).
   const baseItems = [
-    { Icon: Trash2,         label: t.wasteLog,        action: () => navigate('/stock/waste') },
     { Icon: ClipboardCheck, label: t.stockEvaluation, action: () => navigate('/stock-evaluation') },
   ];
   const ownerOnlyItems = [
-    { Icon: BarChart3, label: t.daySummary,   action: () => navigate('/day-summary') },
-    { Icon: Clock,     label: t.floristHours, action: () => navigate('/hours') },
-    { Icon: Truck,     label: t.purchaseOrders || 'Закупки', action: () => navigate('/purchase-orders') },
+    { Icon: Clock, label: t.floristHours, action: () => navigate('/hours') },
   ];
-  const shoppingWhenNarrow = (isOwner && narrow)
-    ? [{ Icon: ShoppingCart, label: t.tabShopping, action: () => navigate('/shopping-support') }]
-    : [];
   const helpItem = isOwner
     ? [{ Icon: HelpCircle, label: t.help || 'Help', action: () => navigate('/orders') }]
     : [];
 
   const moreItems = [
-    ...shoppingWhenNarrow,
     ...(isOwner ? ownerOnlyItems : []),
     ...baseItems,
     ...helpItem,

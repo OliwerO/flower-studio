@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { Truck, ShoppingCart, ClipboardCheck, Trash2 } from 'lucide-react';
 import { useDebouncedValue } from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -201,25 +202,29 @@ export default function StockPanelPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-5 pb-28">
 
-        {/* Owner: Purchase Orders button */}
-        {role === 'owner' && (
+        {/* Owner operations — a compact 2×2 tile grid replaces the stacked
+            Purchase Orders + Waste Log buttons from before. Moved here in 2026-04
+            to consolidate every stock-adjacent workflow under the Stock tab
+            (Shopping was its own bottom-nav tab before; Purchase Orders and
+            Waste Log were in the burger menu). */}
+        {role === 'owner' ? (
+          <div className="grid grid-cols-2 gap-2 mb-3">
+            <OpsTile Icon={Truck}          label={t.po?.title || 'Purchase Orders'} onClick={() => navigate('/purchase-orders')} />
+            <OpsTile Icon={ShoppingCart}   label={t.tabShopping}                    onClick={() => navigate('/shopping-support')} />
+            <OpsTile Icon={ClipboardCheck} label={t.stockEvaluation}                onClick={() => navigate('/stock-evaluation')} />
+            <OpsTile Icon={Trash2}         label={t.wasteLog}                       onClick={() => navigate('/stock/waste')} variant="muted" />
+          </div>
+        ) : (
+          /* Florist: only Waste Log — stock-adjacent ops like POs and Shopping
+             are owner-only workflows. */
           <button
-            onClick={() => navigate('/purchase-orders')}
-            className="w-full mb-3 h-12 rounded-2xl bg-indigo-600 text-white text-base font-semibold shadow-sm active:bg-indigo-700 active-scale"
+            onClick={() => navigate('/stock/waste')}
+            className="w-full mb-3 h-11 rounded-2xl bg-red-50 dark:bg-red-900/20 text-ios-red
+                       text-sm font-semibold active:bg-red-100 active-scale flex items-center justify-center gap-2"
           >
-            {t.po?.title || 'Purchase Orders'}
+            <Trash2 size={16} /> {t.wasteLog}
           </button>
         )}
-
-        {/* Waste log shortcut — both roles. Keeps the log one tap away from the
-            inventory screen where dead stems usually get noticed. */}
-        <button
-          onClick={() => navigate('/stock/waste')}
-          className="w-full mb-3 h-11 rounded-2xl bg-red-50 dark:bg-red-900/20 text-ios-red
-                     text-sm font-semibold active:bg-red-100 active-scale flex items-center justify-center gap-2"
-        >
-          🗑 {t.wasteLog}
-        </button>
 
         {/* Pending arrivals — PO overview */}
         <PendingArrivalsSection
@@ -365,5 +370,28 @@ export default function StockPanelPage() {
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
     </div>
+  );
+}
+
+// Compact operations tile used in the owner's 2×2 grid at the top of the
+// Stock page. Icon over label, 80 px tall, rounded-2xl. The "muted" variant
+// uses the red palette for destructive-ish actions (Waste Log) so it reads
+// as the "exception" tile in the grid.
+function OpsTile({ Icon, label, onClick, variant = 'default' }) {
+  const palette = variant === 'muted'
+    ? 'bg-red-50 dark:bg-red-900/20 text-ios-red'
+    : 'bg-brand-50 dark:bg-brand-900/20 text-brand-700 dark:text-brand-300';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`h-20 rounded-2xl flex flex-col items-center justify-center gap-1
+                  active-scale ${palette}`}
+    >
+      <Icon size={22} />
+      <span className="text-[12px] font-semibold text-center px-2 leading-tight line-clamp-2">
+        {label}
+      </span>
+    </button>
   );
 }
