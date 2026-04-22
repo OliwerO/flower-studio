@@ -1,8 +1,13 @@
 // SubstituteReconciliationPage — reconcile orders after PO substitution.
-// When a flower was substituted during PO evaluation, orders that need the
-// original flower are listed here for one-tap swap to the substitute.
+// Reads substitute pairs from /stock/reconciliation (Phase B Commit 3 server
+// shape) and lets the florist swap affected bouquet lines onto the substitute
+// card via POST /orders/:id/swap-bouquet-line.
+//
+// Migrated 2026-04-22 (Phase B Commit 4) from the previous in-memory pairing
+// against /stock/committed. The backend now owns the join via the
+// `Substitute For` link, so the UI doesn't need to figure out pairs itself.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
 import client from '../api/client.js';
@@ -11,81 +16,43 @@ import t from '../translations.js';
 export default function SubstituteReconciliationPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  const [stock, setStock] = useState([]);
-  const [committed, setCommitted] = useState({});
-  const [purchases, setPurchases] = useState([]);
+  const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  // Track in-flight swap keyed by `${orderId}-${lineId}` so only the pressed
+  // row shows a spinner.
   const [swapping, setSwapping] = useState(null);
 
-  useEffect(() => {
-    Promise.all([
-      client.get('/stock?includeEmpty=true'),
-      client.get('/stock/committed'),
-    ]).then(([stockRes, comRes]) => {
-      setStock(stockRes.data);
-      setCommitted(comRes.data);
-    }).catch(() => {})
-    .finally(() => setLoading(false));
-  }, []);
-
-  const stockMap = useMemo(() => {
-    const m = {};
-    for (const s of stock) m[s.id] = s;
-    return m;
-  }, [stock]);
-
-  // Find substitution pairs: stock items with negative qty that have committed orders,
-  // AND a recently-created substitute stock card (detected by matching names or STOCK_PURCHASES).
-  // Simpler approach: show all negative-stock items with committed orders — let the owner
-  // manually pick which substitute to use from available positive-stock items.
-  const reconcilableItems = useMemo(() => {
-    const items = [];
-    for (const [stockId, cd] of Object.entries(committed)) {
-      if (!cd.orders?.length) continue;
-      const item = stockMap[stockId];
-      if (!item) continue;
-      const qty = Number(item['Current Quantity'] || 0);
-      if (qty >= 0) continue; // only show negative (unresolved) items
-      items.push({
-        stockId,
-        name: item['Display Name'] || '',
-        currentQty: qty,
-        committed: cd.committed,
-        orders: cd.orders.sort((a, b) => (a.requiredBy || '').localeCompare(b.requiredBy || '')),
-      });
-    }
-    return items;
-  }, [committed, stockMap]);
-
-  // Find potential substitutes: positive-stock items that could replace the original
-  const getSubstitutes = (originalName) => {
-    return stock.filter(s => {
-      const qty = Number(s['Current Quantity'] || 0);
-      return qty > 0 && s.id; // any in-stock flower could be a substitute
-    });
-  };
-
-  async function handleSwap(orderId, lineId, fromStockId, toStockId, qty) {
-    setSwapping(`${orderId}-${lineId}`);
+  async function load() {
+    setLoading(true);
     try {
-      await client.post(`/orders/${orderId}/swap-bouquet-line`, {
-        fromStockItemId: fromStockId,
-        toStockItemId: toStockId,
-        lineId,
-        newQty: qty,
-      });
-      showToast(t.swapComplete, 'success');
-      // Refresh data
-      const [stockRes, comRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true'),
-        client.get('/stock/committed'),
-      ]);
-      setStock(stockRes.data);
-      setCommitted(comRes.data);
+      const { data } = await client.get('/stock/reconciliation');
+      setItems(data.items || []);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setLoading(false);
     }
-    setSwapping(null);
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleSwap(item, line, substituteStockId) {
+    setSwapping(`${line.orderId}-${line.lineId}`);
+    try {
+      await client.post(`/orders/${line.orderId}/swap-bouquet-line`, {
+        fromStockItemId: item.originalStockId,
+        toStockItemId: substituteStockId,
+        lineId: line.lineId,
+        newQty: line.suggestedSwapQty,
+      });
+      showToast(t.swapComplete, 'success');
+      // Refresh — swapped line drops off, pair disappears when all lines are gone.
+      await load();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setSwapping(null);
+    }
   }
 
   return (
@@ -93,7 +60,7 @@ export default function SubstituteReconciliationPage() {
       <header className="glass-nav sticky top-0 z-30">
         <div className="max-w-2xl mx-auto px-4 h-14 flex items-center justify-between">
           <button onClick={() => navigate('/stock')} className="text-brand-600 text-sm font-medium">
-            ← {t.stockTitle || 'Stock'}
+            ← {t.stockTitle}
           </button>
           <h1 className="text-base font-semibold text-ios-label">{t.reconcileSubstitutes}</h1>
           <div className="w-16" />
@@ -102,18 +69,17 @@ export default function SubstituteReconciliationPage() {
 
       <main className="max-w-2xl mx-auto px-4 py-5 pb-28">
         {loading ? (
-          <p className="text-center text-ios-tertiary py-10">{t.loading}...</p>
-        ) : reconcilableItems.length === 0 ? (
+          <p className="text-center text-ios-tertiary py-10">{t.loading}</p>
+        ) : items.length === 0 ? (
           <div className="text-center py-10">
             <p className="text-ios-tertiary">{t.noMismatches}</p>
           </div>
         ) : (
           <div className="space-y-4">
-            {reconcilableItems.map(item => (
+            {items.map(item => (
               <ReconcileCard
-                key={item.stockId}
+                key={item.originalStockId}
                 item={item}
-                stockMap={stockMap}
                 swapping={swapping}
                 onSwap={handleSwap}
                 onOrderClick={(id) => navigate(`/orders/${id}`)}
@@ -126,75 +92,90 @@ export default function SubstituteReconciliationPage() {
   );
 }
 
-function ReconcileCard({ item, stockMap, swapping, onSwap, onOrderClick }) {
-  const [selectedSub, setSelectedSub] = useState('');
-
-  const subStock = selectedSub ? stockMap[selectedSub] : null;
-  const subQty = subStock ? Number(subStock['Current Quantity'] || 0) : 0;
+// Card: one original → substitute(s) pair + its still-affected order lines.
+// When multiple substitutes exist for the same original (same flower substituted
+// more than once), the florist picks which one to use. The first substitute is
+// pre-selected as the sensible default.
+function ReconcileCard({ item, swapping, onSwap, onOrderClick }) {
+  const [selectedSub, setSelectedSub] = useState(item.substitutes[0]?.stockId || '');
+  const substitute = item.substitutes.find(s => s.stockId === selectedSub);
 
   return (
     <div className="ios-card overflow-hidden">
-      <div className="bg-red-50 px-4 py-2.5 flex items-center justify-between">
-        <div>
-          <p className="text-sm font-semibold text-red-700">{item.name}</p>
-          <p className="text-[10px] text-red-500">
-            {t.currentStock}: {item.currentQty} · {t.committedToOrders}: {item.committed}
-          </p>
-        </div>
+      {/* Original header — red for negative, muted otherwise */}
+      <div className="bg-red-50 px-4 py-2.5">
+        <p className="text-sm font-semibold text-red-700">{item.originalName}</p>
+        <p className="text-[10px] text-red-500">
+          {t.currentStock}: {item.originalQty}
+        </p>
       </div>
 
-      {/* Substitute selector */}
+      {/* Substitute selector — single substitute collapses to plain text, >1
+          renders a dropdown so the florist picks which to apply per card. */}
       <div className="px-4 py-2 bg-indigo-50/50 border-b border-indigo-100">
-        <label className="text-[10px] text-indigo-600 uppercase font-semibold">{t.swapFlower} →</label>
-        <select
-          value={selectedSub}
-          onChange={e => setSelectedSub(e.target.value)}
-          className="ml-2 text-sm px-2 py-1 border rounded-lg"
-        >
-          <option value="">— select substitute —</option>
-          {Object.values(stockMap)
-            .filter(s => Number(s['Current Quantity'] || 0) > 0 && s.id !== item.stockId)
-            .sort((a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''))
-            .map(s => (
-              <option key={s.id} value={s.id}>
-                {s['Display Name']} ({s['Current Quantity']} {t.stems})
-              </option>
-            ))
-          }
-        </select>
-        {subStock && (
-          <span className="ml-2 text-xs text-indigo-600">{subQty} {t.stems} {t.remainingAfterSwap}</span>
+        {item.substitutes.length === 0 ? (
+          <p className="text-[11px] text-red-500">{t.noSubstitutes}</p>
+        ) : item.substitutes.length === 1 ? (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[10px] text-indigo-600 uppercase font-semibold">
+              {t.swapFlower} →
+            </span>
+            <span className="text-sm font-medium text-indigo-700">
+              {item.substitutes[0].name}
+            </span>
+            <span className="text-[10px] text-indigo-500">
+              ({item.substitutes[0].availableQty} {t.stems})
+            </span>
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <label className="text-[10px] text-indigo-600 uppercase font-semibold">
+              {t.swapFlower} →
+            </label>
+            <select
+              value={selectedSub}
+              onChange={e => setSelectedSub(e.target.value)}
+              className="text-sm px-2 py-1 border rounded-lg"
+            >
+              {item.substitutes.map(s => (
+                <option key={s.stockId} value={s.stockId}>
+                  {s.name} ({s.availableQty})
+                </option>
+              ))}
+            </select>
+          </div>
         )}
       </div>
 
-      {/* Affected orders (FIFO by date) */}
+      {/* Affected order lines — FIFO by delivery date, one Swap button each.
+          Tap the row body to jump to the order; tap Swap to move the line. */}
       <div className="divide-y divide-gray-50">
-        {item.orders.map(order => {
-          // Find the specific order line that references this stock item
-          // For now, show the order with a swap button
-          const isSwapping = swapping === `${order.orderId}-swap`;
+        {item.affectedLines.map(line => {
+          const key = `${line.orderId}-${line.lineId}`;
+          const isSwapping = swapping === key;
+          // Disable Swap if no substitute picked or the substitute doesn't have
+          // enough stems to cover this specific line.
+          const canSwap = !!substitute && substitute.availableQty >= line.quantity;
           return (
-            <div key={order.orderId} className="flex items-center justify-between px-4 py-2.5">
+            <div key={key} className="flex items-center justify-between px-4 py-2.5">
               <div
-                className="cursor-pointer active:underline min-w-0"
-                onClick={() => onOrderClick(order.orderId)}
+                className="cursor-pointer active:underline min-w-0 flex-1"
+                onClick={() => onOrderClick(line.orderId)}
               >
                 <p className="text-sm font-medium text-ios-label">
-                  #{order.appOrderId} — {order.customerName}
+                  #{line.appOrderId} — {line.customerName || '—'}
                 </p>
                 <p className="text-[10px] text-ios-tertiary">
-                  {order.requiredBy || '—'} · {order.qty} {t.stems}
+                  {line.requiredBy || '—'} · {line.quantity} {t.stems}
                 </p>
               </div>
-              {selectedSub && (
-                <button
-                  disabled={isSwapping || subQty < order.qty}
-                  onClick={() => onSwap(order.orderId, null, item.stockId, selectedSub, order.qty)}
-                  className="px-3 py-1 rounded-lg text-xs font-semibold bg-brand-600 text-white active:bg-brand-700 disabled:opacity-40"
-                >
-                  {isSwapping ? '...' : t.swapFlower}
-                </button>
-              )}
+              <button
+                disabled={isSwapping || !canSwap}
+                onClick={() => onSwap(item, line, selectedSub)}
+                className="px-3 py-1 rounded-lg text-xs font-semibold bg-brand-600 text-white active:bg-brand-700 disabled:opacity-40"
+              >
+                {isSwapping ? '...' : t.swapFlower}
+              </button>
             </div>
           );
         })}
