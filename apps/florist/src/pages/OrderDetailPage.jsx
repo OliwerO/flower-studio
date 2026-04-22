@@ -322,7 +322,7 @@ export default function OrderDetailPage() {
                         if (stockItems.length === 0) {
                           // includeEmpty=true so negative-stock flowers are
                           // selectable in the picker (matches new-order wizard).
-                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
+                          client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
                         }
                       }}
                       className="text-xs text-brand-600 font-medium px-1"
