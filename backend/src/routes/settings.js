@@ -336,49 +336,62 @@ loadConfig();
 // active Available Today products, sends a Telegram reminder to the owner.
 //
 // Dedup flag (`cutoffReminderLastDate`) is persisted in the App Config
-// Airtable row, not held in module memory. That way a redeploy after
-// 18:00 — which previously reset the in-memory flag and caused the
-// "multiple reminders per evening" bug — no longer re-fires.
+// Airtable row, not held in module memory — so a redeploy after 18:00
+// doesn't reset the flag and re-fire the reminder.
+//
+// DISABLED BY DEFAULT as of 2026-04-22 per owner request ("silence all
+// the Available Today reminders for now"). To re-enable without code
+// changes, set the env var on Railway:
+//
+//     AVAILABLE_TODAY_REMINDER_ENABLED=true
+//
+// Any other value — including unset — leaves the reminder silent. The
+// dedup state + Airtable-persisted `cutoffReminderLastDate` stay ready,
+// so the day you flip the env var the first-tick-after-restart-bug stays
+// fixed and you'll get exactly one reminder per evening as designed.
+if (process.env.AVAILABLE_TODAY_REMINDER_ENABLED === 'true') {
+  setInterval(async () => {
+    try {
+      if (!configLoaded) return;
+      const cutoff = config.availableTodayCutoff || '18:00';
+      const tz = config.availableTodayTimezone || 'Europe/Warsaw';
+      const now = new Date();
+      const timeStr = new Intl.DateTimeFormat('en-GB', {
+        hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
+      }).format(now);
+      const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
 
-setInterval(async () => {
-  try {
-    if (!configLoaded) return;
-    const cutoff = config.availableTodayCutoff || '18:00';
-    const tz = config.availableTodayTimezone || 'Europe/Warsaw';
-    const now = new Date();
-    const timeStr = new Intl.DateTimeFormat('en-GB', {
-      hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz,
-    }).format(now);
-    const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
+      if (timeStr < cutoff) return; // not past cutoff yet
+      if (config.cutoffReminderLastDate === todayStr) return; // already sent today
 
-    if (timeStr < cutoff) return; // not past cutoff yet
-    if (config.cutoffReminderLastDate === todayStr) return; // already sent today
+      // Check if any active products with lead time 0 exist
+      if (!TABLES.PRODUCT_CONFIG) return;
+      const rows = await db.list(TABLES.PRODUCT_CONFIG, {
+        filterByFormula: "AND({Active} = TRUE(), {Lead Time Days} = 0)",
+        maxRecords: 1,
+        fields: ['Product Name'],
+      });
 
-    // Check if any active products with lead time 0 exist
-    if (!TABLES.PRODUCT_CONFIG) return;
-    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
-      filterByFormula: "AND({Active} = TRUE(), {Lead Time Days} = 0)",
-      maxRecords: 1,
-      fields: ['Product Name'],
-    });
-
-    if (rows.length > 0) {
-      await sendAlert(
-        `⏰ Available Today reminder\n\n`
-        + `It's past ${cutoff} — you still have products marked as Available Today.\n`
-        + `Deactivate them in the dashboard if they're no longer available.`
-      );
-      // Persist immediately so a crash-restart in the next second can't
-      // fire a second reminder. updateConfig writes to Airtable in the
-      // background (fire-and-forget) and sets the in-memory value
-      // synchronously, which is what the guard on the next tick reads.
-      updateConfig('cutoffReminderLastDate', todayStr);
-      console.log('[SETTINGS] Cutoff reminder sent');
+      if (rows.length > 0) {
+        await sendAlert(
+          `⏰ Available Today reminder\n\n`
+          + `It's past ${cutoff} — you still have products marked as Available Today.\n`
+          + `Deactivate them in the dashboard if they're no longer available.`
+        );
+        // Persist immediately so a crash-restart in the next second can't
+        // fire a second reminder. updateConfig writes to Airtable in the
+        // background (fire-and-forget) and sets the in-memory value
+        // synchronously, which is what the guard on the next tick reads.
+        updateConfig('cutoffReminderLastDate', todayStr);
+        console.log('[SETTINGS] Cutoff reminder sent');
+      }
+    } catch (err) {
+      console.error('[SETTINGS] Cutoff reminder error:', err.message);
     }
-  } catch (err) {
-    console.error('[SETTINGS] Cutoff reminder error:', err.message);
-  }
-}, 60_000); // check every minute
+  }, 60_000); // check every minute
+} else {
+  console.log('[SETTINGS] Available Today reminder disabled (set AVAILABLE_TODAY_REMINDER_ENABLED=true to enable)');
+}
 
 // ── Daily settings (auto-reset at midnight) ─────────────────
 const daily = {

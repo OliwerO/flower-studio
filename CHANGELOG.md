@@ -234,6 +234,21 @@ restart) wiped the whiteboard and the same reminder got sent again.
 Now it lives in the warehouse records (App Config table) — shift
 changes don't affect the memo.
 
+**Reminder silenced by default as of 2026-04-22** — per owner request
+("silence all the Available Today reminders for now"). The entire
+`setInterval(...)` is now gated behind an env var:
+
+```
+AVAILABLE_TODAY_REMINDER_ENABLED=true   # set on Railway to resume
+```
+
+Unset (or any other value) → no reminder ever fires. Startup logs
+`[SETTINGS] Available Today reminder disabled` to make the state
+obvious. Dedup logic and persisted `cutoffReminderLastDate` stay
+intact, so the moment the env var flips to `true` reminders resume
+with the restart-survival fix already in place — one per evening,
+dedup survives redeploys.
+
 **Why this matters**: sync can run without anyone watching the app
 (scheduled runs, webhook-triggered refreshes, rapid manual taps). A
 toast only helps if the owner happens to be looking at the screen.
