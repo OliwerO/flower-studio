@@ -5,6 +5,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
 import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
+import { sendDeliveryCompleteAlert } from '../services/orderService.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -141,6 +142,17 @@ router.patch('/:id', async (req, res, next) => {
         ? 'Cancelled'  // ORDER_STATUS.CANCELLED — orders use same string
         : fields.Status;
       await db.update(TABLES.ORDERS, linkedOrderId, { Status: orderStatus });
+
+      // Owner's Telegram ping when the driver marks Delivered. This
+      // branch catches the driver-app path; the dashboard/florist path
+      // flows through transitionStatus() in orderService.js and alerts
+      // there — each HTTP request hits exactly one of the two paths, so
+      // there's no double-send risk.
+      if (fields.Status === DELIVERY_STATUS.DELIVERED) {
+        sendDeliveryCompleteAlert(linkedOrderId).catch(err =>
+          console.error('[TELEGRAM] delivery-complete alert failed:', err.message),
+        );
+      }
     }
     res.json(updated);
   } catch (err) {

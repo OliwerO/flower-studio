@@ -4,7 +4,7 @@
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
-import { notifyNewOrder } from './telegram.js';
+import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
 import { listByIds } from '../utils/batchQuery.js';
 import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
@@ -314,7 +314,65 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}) {
     });
   }
 
+  // Owner's Telegram ping on delivery completion. Fire-and-forget so
+  // a slow Telegram API doesn't stretch the HTTP response.
+  if (newStatus === ORDER_STATUS.DELIVERED) {
+    sendDeliveryCompleteAlert(orderId).catch(err =>
+      console.error('[TELEGRAM] delivery-complete alert failed:', err.message),
+    );
+  }
+
   return order;
+}
+
+/**
+ * Gather the context needed for the owner's "delivered" Telegram alert
+ * (order, customer, delivery, bouquet summary) and hand it to the pure
+ * formatter in telegram.js. Safe to call fire-and-forget — any failure
+ * here is logged, never thrown, because the delivery itself has already
+ * been recorded successfully by the time we reach this function.
+ */
+export async function sendDeliveryCompleteAlert(orderId) {
+  try {
+    const order = await db.getById(TABLES.ORDERS, orderId);
+    const customerId = order.Customer?.[0];
+    const deliveryId = order.Deliveries?.[0];
+    const lineIds = order['Order Lines'] || [];
+
+    const [customer, delivery, lineRecords] = await Promise.all([
+      customerId
+        ? db.getById(TABLES.CUSTOMERS, customerId).catch(() => null)
+        : Promise.resolve(null),
+      deliveryId
+        ? db.getById(TABLES.DELIVERIES, deliveryId).catch(() => null)
+        : Promise.resolve(null),
+      lineIds.length > 0
+        ? listByIds(TABLES.ORDER_LINES, lineIds, {
+            fields: ['Flower Name', 'Quantity'],
+          }).catch(() => [])
+        : Promise.resolve([]),
+    ]);
+
+    const bouquetSummary = lineRecords
+      .map(l => `${Number(l.Quantity || 0)}× ${l['Flower Name'] || '?'}`)
+      .filter(s => s && !s.startsWith('0×'))
+      .join(', ');
+
+    await notifyDeliveryComplete({
+      customerName: customer?.Name || customer?.Nickname || '',
+      appOrderId: order['App Order ID'] || '',
+      bouquetSummary,
+      recipientName: delivery?.['Recipient Name'] || '',
+      // Slot may be stored on either the order or the delivery — prefer
+      // the delivery's value because the delivery cascade keeps that in
+      // sync with any later edits.
+      plannedSlot: delivery?.['Delivery Time'] || order['Delivery Time'] || '',
+      deliveredAtIso: delivery?.['Delivered At'] || new Date().toISOString(),
+      driver: delivery?.['Assigned Driver'] || '',
+    });
+  } catch (err) {
+    console.error('[TELEGRAM] sendDeliveryCompleteAlert failed:', err.message);
+  }
 }
 
 /**
