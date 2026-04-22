@@ -3,7 +3,7 @@
 // No overlays, no fixed positioning — just normal DOM flow. Like flipping
 // a kanban card over to see the full work order on the back.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -75,7 +75,19 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwner }) {
+// Stock data (`editorStockItems`, `editorPremadeMap`) is hoisted to
+// OrderListPage so a single shared fetch covers every card on screen.
+// `onStockRefresh` lets the card ask the parent for fresh data after a
+// mutation (e.g. after dissolving a premade bouquet mid-save).
+function OrderCard({
+  order,
+  onOrderUpdated,
+  onOrderDeleted,
+  isOwner,
+  editorStockItems: stockItems = [],
+  editorPremadeMap: premadeMap = {},
+  onStockRefresh,
+}) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
@@ -90,8 +102,6 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
   const [stockAction, setStockAction] = useState(null); // null | 'pending' — shown before save when qty reduced
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
-  const [stockItems, setStockItems] = useState([]);
-  const [premadeMap, setPremadeMap] = useState({});
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
 
   const status     = order['Status'] || 'New';
@@ -248,14 +258,11 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
         showToast(err.response?.data?.error || t.updateError, 'error');
       }
     }
-    try {
-      const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true&includeInactive=true'),
-        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-      ]);
-      setStockItems(stockRes.data);
-      setPremadeMap(premadeRes.data || {});
-    } catch {}
+    // Ask the parent to re-fetch so stock + premade counts reflect the
+    // dissolve before the retry runs its shortfall check.
+    if (onStockRefresh) {
+      try { await onStockRefresh(); } catch {}
+    }
     await doSave(action, { skipShortfallCheck: true });
   }
 
@@ -412,16 +419,13 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                         setAddingFlower(false);
                         setFlowerSearch('');
                         setEditingBouquet(true);
-                        // Lazy-load stock for the flower picker.
-                        // includeEmpty=true so negative-stock flowers (implicit
-                        // demand for next PO) are selectable — otherwise the user
-                        // retypes the name and creates a duplicate Stock row.
-                        if (stockItems.length === 0) {
-                          client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {
-                            showToast(t.loadError || 'Failed to load stock', 'error');
-                          });
+                        // Stock + premade map come in as props (hoisted to
+                        // OrderListPage). If the parent's list looks empty —
+                        // e.g. its initial fetch is still in flight — ask it
+                        // to refresh so the picker has data to show.
+                        if (stockItems.length === 0 && onStockRefresh) {
+                          onStockRefresh();
                         }
-                        client.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
                       }} className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
                     )}
                   </div>
@@ -1160,3 +1164,46 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
     </div>
   );
 }
+
+// Fields on the `order` prop that drive visible card state. Restricted to
+// what's actually shown in the collapsed + summary view — anything needed
+// only inside the expanded detail lives in the fetched `detail` object,
+// which isn't a prop.
+const ORDER_COMPARE_FIELDS = [
+  'Status',
+  'Payment Status',
+  'Delivery Date',
+  'Required By',
+  'Delivery Time',
+  'Customer Name',
+  'Customer Request',
+  'Sell Total',
+  'Delivery Fee',
+  'Final Price',
+  'Price Override',
+  'Delivery Type',
+  'Bouquet Summary',
+  'App Order ID',
+  'Source',
+];
+
+function arePropsEqual(prev, next) {
+  if (prev.order.id !== next.order.id) return false;
+  if (prev.isOwner !== next.isOwner) return false;
+  if (prev.editorStockItems !== next.editorStockItems) return false;
+  if (prev.editorPremadeMap !== next.editorPremadeMap) return false;
+  if (prev.onStockRefresh !== next.onStockRefresh) return false;
+  if (prev.onOrderUpdated !== next.onOrderUpdated) return false;
+  if (prev.onOrderDeleted !== next.onOrderDeleted) return false;
+  // stockShortfalls is keyed by stockId; the parent rebuilds it on every
+  // shortfall poll. Compare by reference — if the parent is smart enough to
+  // keep the same reference when content is unchanged, we skip re-render;
+  // otherwise we re-render, which is the no-memo baseline anyway.
+  if (prev.stockShortfalls !== next.stockShortfalls) return false;
+  for (const k of ORDER_COMPARE_FIELDS) {
+    if (prev.order[k] !== next.order[k]) return false;
+  }
+  return true;
+}
+
+export default memo(OrderCard, arePropsEqual);

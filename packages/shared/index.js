@@ -1,6 +1,7 @@
 export { default as useOrderEditing } from './hooks/useOrderEditing.js';
 export { default as useOrderPatching } from './hooks/useOrderPatching.js';
 export { default as useLongPress } from './hooks/useLongPress.js';
+export { default as useDebouncedValue } from './hooks/useDebouncedValue.js';
 export { default as parseBatchName } from './utils/parseBatchName.js';
 export { getAvailableSlots } from './utils/timeSlots.js';
 export { renderStockName, stockBaseName, renderDateTag } from './utils/stockName.jsx';
