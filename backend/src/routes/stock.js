@@ -484,35 +484,53 @@ router.get('/:id/usage', async (req, res, next) => {
     const siblingIds = new Set(siblingStocks.map(s => s.id));
     const siblingNames = siblingStocks.map(s => s['Display Name']).filter(Boolean);
 
-    // 1. Order lines — build an OR-formula that matches any of the sibling
-    //    display names (the Flower Name stamped on each line at creation).
-    //    Then keep only lines whose Stock Item link resolves to one of the
-    //    siblings, so we don't accidentally pick up unrelated records that
-    //    happen to share a name fragment.
-    const orSafeNames = siblingNames.map(n => `{Flower Name} = '${sanitizeFormulaValue(n)}'`);
-    const orderLineFormula = orSafeNames.length > 0 ? `OR(${orSafeNames.join(', ')})` : `{Flower Name} = '${safeBase}'`;
-    const orderLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: orderLineFormula,
-      fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
+    // 1. Order lines — walk from the Orders side.
+    //
+    // Previous implementation filtered Order Lines by `Flower Name` text
+    // matching the sibling Display Names. That's fragile: if any past order
+    // was created with a subtly different Flower Name (legacy casing, extra
+    // whitespace, a rename after the line was stamped, a flower whose stock
+    // row was since renamed/deleted), the line is invisible to the trace
+    // even though its Stock Item link DID deduct qty via atomicStockAdjust.
+    //
+    // The Stock Item link is the authoritative relationship; `Flower Name` is
+    // just a display snapshot taken at creation time. So we fetch recent
+    // orders (past year + anything with no Order Date), pull their line IDs,
+    // then JS-filter lines whose Stock Item resolves to one of the siblings.
+    //
+    // Trade-off: two round-trips (Orders, Order Lines) instead of one, and
+    // a larger result set. For a small shop (<2000 orders/year) both queries
+    // return in well under a second via the rate-limited queue.
+    const orderCutoff = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
+    const recentOrders = await db.list(TABLES.ORDERS, {
+      filterByFormula: `OR({Order Date} = '', NOT(IS_BEFORE({Order Date}, '${orderCutoff}')))`,
+      fields: ['Order Lines', 'App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
+      maxRecords: 2000,
     });
-    const matchedLines = orderLines.filter(l => {
-      const linkedId = l['Stock Item']?.[0];
-      // No link → still keep if the name matched, so orphan lines are surfaced.
-      if (!linkedId) return true;
-      return siblingIds.has(linkedId);
-    });
-
-    // Fetch parent orders for context
-    const orderIds = [...new Set(matchedLines.flatMap(l => l.Order || []))];
-    const orders = orderIds.length > 0
-      ? await listByIds(TABLES.ORDERS, orderIds, {
-          fields: ['App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
+    const allLineIds = recentOrders.flatMap(o => o['Order Lines'] || []);
+    const allLines = allLineIds.length > 0
+      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
+          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
         })
       : [];
-    const orderMap = {};
-    for (const o of orders) orderMap[o.id] = o;
+    // Keep only lines whose Stock Item link resolves to one of our siblings.
+    // Orphan lines (no link) don't affect qty (atomicStockAdjust needs a
+    // stock ID), so dropping them is harmless.
+    const matchedLines = allLines.filter(l => siblingIds.has(l['Stock Item']?.[0]));
 
-    const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+    // Build the order map from the orders we already fetched — no second
+    // round-trip needed.
+    const orderMap = {};
+    for (const o of recentOrders) orderMap[o.id] = o;
+
+    // Fetch only the customers whose orders actually matched this stock —
+    // otherwise we'd pull every customer from the past year.
+    const matchedOrderIds = new Set(matchedLines.flatMap(l => l.Order || []));
+    const customerIds = [...new Set(
+      recentOrders
+        .filter(o => matchedOrderIds.has(o.id))
+        .flatMap(o => o.Customer || [])
+    )];
     const customers = customerIds.length > 0
       ? await listByIds(TABLES.CUSTOMERS, customerIds, { fields: ['Name', 'Nickname'] })
       : [];
