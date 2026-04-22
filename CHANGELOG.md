@@ -105,6 +105,40 @@ entries. First PR of a three-part cleanup.
   nav slot and adds it to the florist burger; Phase C wires
   order-card customer names to navigate there.
 
+### Bug surfaced — silent Wix sync failures now visible
+
+When the explicit Pull/Push buttons went live, the owner hit a
+pre-existing silent-failure bug: Wix sync would report "completed"
+but nothing would actually sync to Wix. Root cause was in
+`backend/src/services/wixProductSync.js` — both `runPull()` (lines
+727–730) and `runPush()` (lines 1039–1042) wrap their entire bodies
+in try/catch blocks that push fatal errors into `stats.errors` and
+still return HTTP 200. The frontend never inspected `data.errors`,
+so a failed sync (expired token, Wix API error, network issue)
+looked identical to a clean no-op success toast.
+
+**Frontend fix** (both apps, maintains parity per CLAUDE.md):
+- `apps/florist/src/pages/BouquetsPage.jsx` — `pullFromWix` and
+  `pushToWix` now check `data.errors` before showing success. If
+  errors present, show them joined with ` · ` as a red error toast.
+- `apps/dashboard/src/components/ProductsTab.jsx` — `handlePull` and
+  `handlePush` same check. Previously `handlePush` showed a count
+  like "3 errors" with no explanation; now shows the actual error
+  messages so the owner can diagnose (token expired, Wix API 429, etc.).
+
+**Follow-up** (not in this PR): the backend should return HTTP 500
+when `stats.errors.length > 0`. That's the proper contract — would
+catch the issue in the frontend's existing `catch` block without
+needing a defensive check — but changes endpoint behaviour for all
+callers. Deferred to a separate ticket.
+
+**Why this matters**: the old `RefreshCw` icon only ran Pull and
+rarely got tapped on a failing setup, so the silent failure sat
+hidden. Phase A's explicit buttons invited the owner to actually use
+sync, and the cracks showed. Fix is mechanical — surface the error
+array the backend was already collecting, stop pretending it was a
+success.
+
 ---
 
 ## 2026-04-21 — Owner can hard-delete orders (dashboard + florist app)
