@@ -40,13 +40,24 @@ async function sendTo(token, chatId, text) {
 }
 
 /**
- * Send a text message to the owner's chat only (backwards compat).
+ * Send a text message to owner-tier chats (owner + any additional recipients
+ * who should see owner-level alerts like Wix sync errors — e.g. a co-owner,
+ * a technical helper).
+ *
+ * TELEGRAM_OWNER_CHAT_ID accepts either a single chat ID (legacy) or a
+ * comma-separated list. Single values stay backward-compatible, multi-value
+ * lets the owner add a second recipient by editing the env var alone.
+ *
+ * For team-wide broadcasts (new-order alerts that everyone sees), use
+ * `broadcastAlert` instead — it reads TELEGRAM_CHAT_IDS.
  */
 export async function sendAlert(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_OWNER_CHAT_ID;
-  if (!token || !chatId) return null;
-  await sendTo(token, chatId, text);
+  const raw = process.env.TELEGRAM_OWNER_CHAT_ID;
+  if (!token || !raw) return null;
+  const chatIds = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (chatIds.length === 0) return null;
+  await Promise.all(chatIds.map(id => sendTo(token, id, text)));
 }
 
 /**

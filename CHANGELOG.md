@@ -192,6 +192,15 @@ when `stats.errors.length > 0`. No new env vars — reuses the existing
 `TELEGRAM_BOT_TOKEN` + `TELEGRAM_OWNER_CHAT_ID` that already power
 new-order alerts. If creds aren't set, `sendAlert` no-ops gracefully.
 
+**Multi-recipient owner alerts** — `TELEGRAM_OWNER_CHAT_ID` now
+accepts a comma-separated list of chat IDs (e.g.
+`123456789,987654321`). A single value stays backward-compatible;
+the split-parse pattern mirrors the existing `TELEGRAM_CHAT_IDS`
+broadcast var. Lets the owner add a second owner-tier recipient —
+co-owner, technical helper — for Wix sync error alerts through env
+config alone, no code change required. `sendAlert` broadcasts to
+every ID in the list.
+
 **Why this matters**: sync can run without anyone watching the app
 (scheduled runs, webhook-triggered refreshes, rapid manual taps). A
 toast only helps if the owner happens to be looking at the screen.
