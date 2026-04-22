@@ -93,6 +93,7 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 4. **Feature gates** — check that conditional rendering (`isDelivery &&`, `!isTerminal &&`, `isOwner &&`) doesn't accidentally exclude valid use cases. Example: unpaid warnings should show for ALL order types, not just pickup.
 5. **Silent catch blocks** — every `catch` should either show a toast with the backend error message or log meaningfully. Never `catch(() => {})`.
 6. **PO lines need identity** — every PO line must have either a Stock Item link or a Flower Name. Validate on creation, not during evaluation.
+7. **Stock / Committed double-count** — `Current Quantity` is decremented immediately when an order is created (`orderService.js` → `atomicStockAdjust`). `GET /stock/committed` separately sums all pending order-line demand. The two overlap: the SAME order affects both. Never inline `qty - committed` when `qty` might be negative — use `getEffectiveStock(qty, committed)` from `packages/shared/utils/stockMath.js`. Any stock-math change must be audited on BOTH `apps/florist/src/components/StockItem.jsx` AND `apps/dashboard/src/components/StockTab.jsx`.
 
 ## Key Files
 - `BACKLOG.md` — feature tracking, open items, known issues
