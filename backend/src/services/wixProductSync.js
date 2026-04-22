@@ -665,6 +665,15 @@ export async function runPull() {
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
+          // Price: Wix is the source of truth — reconcile any drift on every pull.
+          // Without this, a price edit made on Wix never flows back to Airtable
+          // (it only imported on initial row creation). Epsilon guards against
+          // float noise in round-trip comparisons.
+          const wixPrice = Number(variantPrice) || 0;
+          const existingPrice = Number(existing['Price'] || 0);
+          if (Math.abs(existingPrice - wixPrice) > 0.01) {
+            updates['Price'] = wixPrice;
+          }
           // Active is Airtable-owned — never overwrite from Wix pull.
           // Only sync Visible in Wix (what Wix reports) for informational purposes.
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
