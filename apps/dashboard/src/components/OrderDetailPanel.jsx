@@ -262,7 +262,16 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
     : null;
   const lineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
   const deliveryFee = Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0);
-  const effectivePrice = (o['Price Override'] || lineTotal) + deliveryFee;
+  // Prefer backend-enriched Final Price when NOT editing. It's the
+  // authoritative order total and survives cases where o.orderLines goes
+  // stale or empty (e.g. a partial-paid order that was cancelled and then
+  // reopened — the remaining-balance math was collapsing to -p1Amount
+  // because lineTotal became 0). While editing the bouquet we still compute
+  // live from editLines so the grand-total badge tracks the in-progress edit.
+  const savedFinalPrice = Number(o['Final Price'] || 0);
+  const effectivePrice = editingLineTotal != null
+    ? (o['Price Override'] || editingLineTotal) + deliveryFee
+    : (savedFinalPrice > 0 ? savedFinalPrice : (o['Price Override'] || lineTotal) + deliveryFee);
 
   // Partial payment state
   const isPartial = o['Payment Status'] === 'Partial';

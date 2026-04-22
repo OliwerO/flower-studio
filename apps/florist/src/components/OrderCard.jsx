@@ -285,7 +285,14 @@ function OrderCard({
   const detailLineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
   const detailDeliveryFee = Number(detail?.delivery?.['Delivery Fee'] || d['Delivery Fee'] || 0);
   const flowerTotal = detailLineTotal > 0 ? detailLineTotal : (Number(d['Sell Total']) || 0);
-  const currentPrice = (d['Price Override'] || flowerTotal) + detailDeliveryFee;
+  // Prefer backend-enriched Final Price when NOT editing. Matches the summary
+  // view at line 115 and survives cases where d.orderLines + d['Sell Total']
+  // both go stale (partial-paid cancel + reopen). While editing, fall through
+  // to the live computed flower total so the running total tracks edits.
+  const savedFinalPrice = Number(d['Final Price'] || 0);
+  const currentPrice = editingLineTotal != null
+    ? (d['Price Override'] || editingLineTotal) + detailDeliveryFee
+    : (savedFinalPrice > 0 ? savedFinalPrice : (d['Price Override'] || flowerTotal) + detailDeliveryFee);
 
   function statusLabel(s) {
     return STATUS_LABELS[s]?.() || s;
