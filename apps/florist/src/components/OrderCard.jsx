@@ -826,6 +826,44 @@ function OrderCard({
                 )}
               </div>
 
+              {/* Mismatch banner — Paid orders where the price has since moved above
+                  the recorded payment. Owner either collects the remainder (flip
+                  to Partial + existing Payment 2 flow handles the rest) or accepts
+                  the current state (backfill P1 to match the total, silencing the
+                  banner without fabricating data beyond the new total). */}
+              {(() => {
+                const p1 = Number(d['Payment 1 Amount'] || 0);
+                const p2 = Number(d['Payment 2 Amount'] || 0);
+                const paid = p1 + p2;
+                const showMismatch = d['Payment Status'] === 'Paid'
+                  && paid > 0 && currentPrice > 0 && paid < currentPrice;
+                if (!showMismatch) return null;
+                const delta = currentPrice - paid;
+                return (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-2">
+                    <p className="text-xs font-semibold text-amber-800">⚠ {t.priceExceedsPaid}</p>
+                    <p className="text-xs text-amber-700">
+                      {t.paidAmount}: {paid} zł · {t.grandTotal || 'Total'}: {currentPrice} zł · {t.remaining}: <span className="font-semibold">{delta} zł</span>
+                    </p>
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => patch({ 'Payment Status': 'Partial' })}
+                        disabled={saving}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white active:bg-amber-700"
+                      >{t.collectRemainder}</button>
+                      <button
+                        onClick={() => patch({
+                          'Payment 1 Amount': currentPrice,
+                          'Payment 1 Method': d['Payment 1 Method'] || d['Payment Method'] || null,
+                        })}
+                        disabled={saving}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 active:bg-amber-100"
+                      >{t.markAsFullyPaid}</button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* ── Payment controls ── */}
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelPayment}</p>

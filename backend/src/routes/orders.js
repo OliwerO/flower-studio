@@ -348,6 +348,34 @@ router.patch('/:id', async (req, res, next) => {
       }
     }
 
+    // Backfill Payment 1 Amount when the caller flips Payment Status to Paid
+    // without recording the split. Keeps the "price-exceeds-paid" banner honest
+    // on future bouquet edits — without this, Paid orders have no baseline and
+    // a later edit can't distinguish a real mismatch from a pre-feature order.
+    if (otherFields['Payment Status'] === PAYMENT_STATUS.PAID
+        && otherFields['Payment 1 Amount'] == null) {
+      const current = await db.getById(TABLES.ORDERS, req.params.id).catch(() => null);
+      const existingP1 = Number(current?.['Payment 1 Amount']) || 0;
+      if (existingP1 === 0) {
+        const lineIds = current?.['Order Lines'] || [];
+        const lines = lineIds.length > 0 ? await listByIds(TABLES.ORDER_LINES, lineIds) : [];
+        const flowerTotal = lines.reduce(
+          (s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0
+        );
+        const deliveryIdsForPrice = current?.['Deliveries'] || [];
+        const deliv = deliveryIdsForPrice[0] ? await db.getById(TABLES.DELIVERIES, deliveryIdsForPrice[0]).catch(() => null) : null;
+        const delivFee = current?.['Delivery Type'] === 'Delivery'
+          ? Number(current?.['Delivery Fee'] ?? deliv?.['Delivery Fee'] ?? 0) : 0;
+        const finalPrice = (Number(current?.['Price Override']) || flowerTotal) + delivFee;
+        if (finalPrice > 0) {
+          otherFields['Payment 1 Amount'] = finalPrice;
+          if (!otherFields['Payment 1 Method'] && (otherFields['Payment Method'] || current?.['Payment Method'])) {
+            otherFields['Payment 1 Method'] = otherFields['Payment Method'] || current['Payment Method'];
+          }
+        }
+      }
+    }
+
     // No status change — just update other fields
     const order = await db.update(TABLES.ORDERS, req.params.id, otherFields);
 

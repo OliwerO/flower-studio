@@ -6,7 +6,7 @@ import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { listByIds } from '../utils/batchQuery.js';
-import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 
 // ── Status transition state machine ──
 // Exported so routes + tests can reference it.
@@ -73,6 +73,22 @@ export async function createOrder(params, config, opts = {}) {
   try {
     const appOrderId = await generateOrderId();
 
+    // Backfill Payment 1 for orders created as Paid so the mismatch banner has
+    // a baseline to compare against when the bouquet is later edited. Without
+    // this, a price-raising edit on a Paid order has no "what was originally
+    // paid" reference and the banner can't distinguish real mismatches from
+    // legacy orders. Respect an explicitly-provided payment1Amount.
+    const resolvedDeliveryFee = deliveryType === 'Delivery'
+      ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0;
+    const flowerTotal = orderLines.reduce(
+      (sum, l) => sum + (Number(l.sellPricePerUnit) || 0) * (Number(l.quantity) || 0), 0
+    );
+    const finalPriceAtCreate = (Number(priceOverride) || flowerTotal) + resolvedDeliveryFee;
+    const p1AmountBackfill = paymentStatus === PAYMENT_STATUS.PAID
+      && payment1Amount == null && finalPriceAtCreate > 0
+      ? finalPriceAtCreate : null;
+    const p1MethodBackfill = p1AmountBackfill != null && !payment1Method ? (paymentMethod || null) : null;
+
     // 1. Create parent order
     order = await db.create(TABLES.ORDERS, {
       Customer:             [customer],
@@ -89,7 +105,9 @@ export async function createOrder(params, config, opts = {}) {
       'Payment Method':     paymentMethod || null,
       ...(payment1Amount != null ? { 'Payment 1 Amount': Number(payment1Amount) } : {}),
       ...(payment1Method ? { 'Payment 1 Method': payment1Method } : {}),
-      'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
+      ...(p1AmountBackfill != null ? { 'Payment 1 Amount': p1AmountBackfill } : {}),
+      ...(p1MethodBackfill ? { 'Payment 1 Method': p1MethodBackfill } : {}),
+      'Delivery Fee':       resolvedDeliveryFee,
       'Price Override':     priceOverride || null,
       'App Order ID':       appOrderId,
       Status:               ORDER_STATUS.NEW,

@@ -364,6 +364,44 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
 
       {/* Payment row */}
       <div className="space-y-3">
+        {/* Mismatch banner — Paid orders whose recorded payment no longer covers
+            the current total (usually because a bouquet edit raised the price).
+            Two escapes: Collect remainder (→ Partial + existing P2 flow) or
+            Mark as fully paid (→ bump P1 to match the new total, quieting the
+            banner without inventing data beyond the new total). */}
+        {(() => {
+          const p1 = Number(o['Payment 1 Amount'] || 0);
+          const p2 = Number(o['Payment 2 Amount'] || 0);
+          const paid = p1 + p2;
+          const showMismatch = o['Payment Status'] === 'Paid'
+            && paid > 0 && effectivePrice > 0 && paid < effectivePrice;
+          if (!showMismatch) return null;
+          const delta = effectivePrice - paid;
+          return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-2">
+              <p className="text-xs font-semibold text-amber-800">⚠ {t.priceExceedsPaid}</p>
+              <p className="text-xs text-amber-700">
+                {t.paidAmount}: {paid.toFixed(0)} {t.zl} · {t.price}: {effectivePrice.toFixed(0)} {t.zl} · {t.remaining}: <span className="font-semibold">{delta.toFixed(0)} {t.zl}</span>
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => patchOrder({ 'Payment Status': 'Partial' })}
+                  disabled={saving}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700"
+                >{t.collectRemainder}</button>
+                <button
+                  onClick={() => patchOrder({
+                    'Payment 1 Amount': effectivePrice,
+                    'Payment 1 Method': o['Payment 1 Method'] || o['Payment Method'] || null,
+                  })}
+                  disabled={saving}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100"
+                >{t.markAsFullyPaid}</button>
+              </div>
+            </div>
+          );
+        })()}
+
         <Section label={t.paymentStatus}>
           <Pills
             options={PAYMENT_STATUSES}

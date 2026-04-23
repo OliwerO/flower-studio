@@ -579,11 +579,26 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
                   : 'bg-rose-400';
                 return <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={margin !== null ? `${t.margin}: ${margin.toFixed(0)}%` : ''} />;
               })()}
-              <span className={`text-sm font-semibold w-20 text-right shrink-0 ${
-                order['Payment Status'] === 'Unpaid' ? 'text-ios-red' : 'text-ios-label'
-              }`}>
-                {(order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0).toFixed(0)} {t.zl}
-              </span>
+              {/* Price column — for Partial, show remaining underneath so the owner
+                  sees outstanding money without expanding the row. */}
+              {(() => {
+                const total = Number(order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0);
+                const isPartial = order['Payment Status'] === 'Partial';
+                const paid = Number(order['Payment 1 Amount'] || 0) + Number(order['Payment 2 Amount'] || 0);
+                const remaining = isPartial ? Math.max(0, total - paid) : 0;
+                return (
+                  <span className={`w-20 text-right shrink-0 flex flex-col ${
+                    order['Payment Status'] === 'Unpaid' ? 'text-ios-red' : 'text-ios-label'
+                  }`}>
+                    <span className="text-sm font-semibold leading-tight">{total.toFixed(0)} {t.zl}</span>
+                    {isPartial && remaining > 0 && (
+                      <span className="text-[10px] font-medium text-orange-600 leading-tight">
+                        −{remaining.toFixed(0)} {t.zl}
+                      </span>
+                    )}
+                  </span>
+                );
+              })()}
               {unpaidOnly && (
                 <span className={`text-xs font-medium w-16 text-right shrink-0 ${
                   isCritical ? 'text-ios-red' : isOverdue ? 'text-ios-orange' : 'text-ios-tertiary'
