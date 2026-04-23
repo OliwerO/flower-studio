@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'rea
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import { stockBaseName, renderDateTag, parseBatchName } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import ReconciliationSection from './ReconciliationSection.jsx';
@@ -494,7 +494,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
                   <select value={wasteEditForm.reason}
                     onChange={ev => setWasteEditForm(f => ({ ...f, reason: ev.target.value }))}
                     className="text-xs px-1 py-0.5 border rounded">
-                    {['Wilted','Damaged','Arrived Broken','Overstock','Other'].map(r => <option key={r} value={r}>{r}</option>)}
+                    {LOSS_REASONS.map(r => <option key={r} value={r}>{reasonLabel(t, r)}</option>)}
                   </select>
                 </td>
                 <td className="px-3 py-1.5 text-xs text-right whitespace-nowrap">
