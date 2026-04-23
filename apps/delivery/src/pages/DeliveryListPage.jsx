@@ -26,8 +26,8 @@ function todayStr() {
 
 function formatDateHeader() {
   const d = new Date();
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const days = t.dayNamesShort;
+  const months = t.monthNamesShort;
   return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
 }
 
@@ -190,7 +190,7 @@ export default function DeliveryListPage() {
     try {
       await client.patch(`/deliveries/${id}`, { 'Driver Notes': note });
       setDeliveries(prev => prev.map(d => d.id === id ? { ...d, 'Driver Notes': note } : d));
-      showToast('Note saved');
+      showToast(t.noteSaved);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
     }
@@ -222,7 +222,7 @@ export default function DeliveryListPage() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-lg font-bold text-ios-label">{t.deliveries}</h1>
-            <p className="text-xs text-ios-tertiary">{formatDateHeader()} · {driverName || 'Driver'}</p>
+            <p className="text-xs text-ios-tertiary">{formatDateHeader()} · {driverName || t.driver}</p>
           </div>
           <div className="flex items-center gap-3">
             <button
@@ -338,7 +338,7 @@ export default function DeliveryListPage() {
               <section>
                 <p className="ios-label flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-purple-500" />
-                  {t.upcoming || 'Upcoming'}
+                  {t.upcoming}
                 </p>
                 {Object.entries(upcomingByDate).map(([date, list]) => (
                   <div key={date} className="space-y-2 mb-4">
