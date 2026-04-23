@@ -215,6 +215,15 @@ export async function createOrder(params, config, opts = {}) {
         'Driver Payout':    getConfig('driverCostPerDelivery') || 0,
         Status:             DELIVERY_STATUS.PENDING,
       });
+      // Explicitly write the back-link on the Order row. Airtable is meant
+      // to auto-populate the reciprocal `Deliveries` field when you set
+      // `Linked Order` on the delivery side, but this has been observed to
+      // be eventually-consistent — GET /orders/:id right after creation can
+      // come back with `Deliveries: []`, which makes the florist's
+      // `detail?.delivery` gate false, which hides the driver picker. Writing
+      // the back-link explicitly guarantees it's persisted before we return.
+      await db.update(TABLES.ORDERS, order.id, { 'Deliveries': [createdDelivery.id] })
+        .catch(err => console.error('[ORDER] Back-link write failed (non-fatal, Airtable auto-sync should recover):', err.message));
     }
 
     // 5. Update customer record (non-blocking)

@@ -170,10 +170,29 @@ function OrderCard({
   }
 
   async function patchDelivery(fields) {
-    const deliveryId = detail?.delivery?.id;
-    if (!deliveryId) return;
     setSaving(true);
     try {
+      // If no delivery record is attached yet (Airtable's back-link from
+      // Deliveries → Orders can be eventually-consistent, and some older
+      // Delivery orders were created before the explicit back-link write
+      // in orderService), create one on-the-fly. /convert-to-delivery 400s
+      // if a record exists on the server; in that case, refetch to pull
+      // the now-attached delivery before patching.
+      let deliveryId = detail?.delivery?.id;
+      if (!deliveryId) {
+        try {
+          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
+          deliveryId = res.data.id;
+          setDetail(prev => prev ? { ...prev, 'Delivery Type': 'Delivery', delivery: res.data } : prev);
+        } catch (convertErr) {
+          if (convertErr.response?.status === 400) {
+            const fresh = await client.get(`/orders/${order.id}`);
+            deliveryId = fresh.data.delivery?.id;
+            if (deliveryId) setDetail(fresh.data);
+          }
+          if (!deliveryId) throw convertErr;
+        }
+      }
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setDetail(prev => ({
         ...prev,
@@ -1035,18 +1054,26 @@ function OrderCard({
                 </div>
               )}
 
-              {/* ── Driver assignment ── */}
-              {isDelivery && detail?.delivery && drivers.length > 0 && (
+              {/* ── Driver assignment ──
+                  Gate on `isDelivery && drivers.length` only: do NOT require
+                  `detail?.delivery` here. For fresh Delivery orders the
+                  Airtable back-link from Deliveries → Orders can take a
+                  moment to populate, and legacy orders may have been created
+                  before the explicit back-link write. The click handler
+                  below (patchDelivery) auto-creates a delivery record via
+                  /convert-to-delivery when one is missing, so the picker
+                  can work even when `detail.delivery` is undefined. */}
+              {isDelivery && drivers.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {drivers.map(driver => (
                       <button
                         key={driver}
-                        onClick={() => patchDelivery({ 'Assigned Driver': detail.delivery['Assigned Driver'] === driver ? '' : driver })}
+                        onClick={() => patchDelivery({ 'Assigned Driver': detail?.delivery?.['Assigned Driver'] === driver ? '' : driver })}
                         disabled={saving}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                          detail.delivery['Assigned Driver'] === driver
+                          detail?.delivery?.['Assigned Driver'] === driver
                             ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                             : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
@@ -1055,7 +1082,7 @@ function OrderCard({
                       </button>
                     ))}
                   </div>
-                  {!detail.delivery['Assigned Driver'] && (
+                  {!detail?.delivery?.['Assigned Driver'] && (
                     <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
                   )}
                 </div>
