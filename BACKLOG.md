@@ -240,18 +240,18 @@ reports). Each item below was re-validated against the current code on
 - [ ] **Hardcoded `'Nikita'` driver fallback** — `backend/src/routes/stockOrders.js:471` uses the literal name instead of `getDriverOfDay()`. Separate from the "PO can't be saved" bug. Per the "hardcoded fallbacks" rule in CLAUDE.md, swap to `getDriverOfDay()`. Tier 2 cleanup.
 
 ### Tier 2 UX Fixes — Daily Friction (2026-04-03)
-- [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
-- [ ] **Delivery date should be required** — date required, time and address optional
+- [x] **Can't submit order without address** — fixed 2026-04-23 in PR #143. `orders.js:273` + `premadeBouquets.js:146` both dropped the required-address check on Delivery orders. Date still mandatory.
+- [x] **Delivery date should be required** — fixed earlier (2026-04-19, commit `e91083b`). Backend at `orders.js:277-279` + florist/dashboard `validateStep`; red `*` on both apps' Step3Details.
 - [x] **Time slots not in order** — fixed in PR #125 / commit `191a0df` (2026-04-22). `useConfigLists` now sorts delivery time slots chronologically.
-- [ ] **Delivery/pickup date not shown** — date missing from order display
-- [ ] **Sorting by delivery date not working** — sort function broken
-- [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back
-- [ ] **Florist should see important NOTE prominently** — notes not visible on order front page
-- [x] **Total paid amount not shown** — fixed 2026-04-23. Collapsed card in florist (`OrderCardSummary.jsx`) + dashboard (`OrdersTab.jsx` price column) now shows `Оплачено X · Остаток Y` for Partial orders. Bouquet-edit raising the price on a Paid order surfaces an amber mismatch banner with two actions: `Collect remainder` (→ Partial + existing Payment 2 flow) and `Mark as fully paid` (→ bumps `Payment 1 Amount` to match new total). Backend now backfills `Payment 1 Amount` + `Method` when status flips to Paid via create or PATCH so the banner has a baseline. Legacy Paid orders with P1=0 stay silent.
-- [ ] **Show negative stock on top** in stock tab
+- [x] **Delivery/pickup date not shown** — verified working 2026-04-23. Florist `OrderCardSummary.jsx:142` + `OrderCard.jsx:380` render `fmtDate(order['Delivery Date'] || order['Required By'])` on every card; dashboard shows the same in `OrdersTab.jsx` row.
+- [x] **Sorting by delivery date not working** — verified working 2026-04-23. Dashboard `OrdersTab.jsx:170-180` sorts by `Delivery Date || Required By` with bidirectional toggle; florist `OrderListPage.jsx:62` default-sorts active orders by earliest needed.
+- [x] **Cancelled status irreversible** — verified working 2026-04-23. `ALLOWED_TRANSITIONS['Cancelled'] = ['New']` in florist `OrderCard.jsx:44` + `OrderCardSummary.jsx:32` + `OrderDetailPage.jsx:29`, and the status-button loop renders transitions from that map. Clicking Cancelled reveals a `New` button that reopens the order. Backend comment at `statuses.js:19` confirms the exception.
+- [x] **Florist should see important NOTE prominently** — fixed earlier (Tier 1 list). `OrderCardSummary.jsx:124-133` renders a distinct blue-bordered note banner.
+- [x] **Total paid amount not shown** — fixed 2026-04-23 in PR #146. Collapsed card in florist (`OrderCardSummary.jsx`) + dashboard (`OrdersTab.jsx` price column) now shows `Оплачено X · Остаток Y` for Partial orders. Bouquet-edit raising the price on a Paid order surfaces an amber mismatch banner with two actions: `Collect remainder` (→ Partial + existing Payment 2 flow) and `Mark as fully paid` (→ bumps `Payment 1 Amount` to match new total). Backend now backfills `Payment 1 Amount` + `Method` when status flips to Paid via create or PATCH so the banner has a baseline. Legacy Paid orders with P1=0 stay silent.
+- [x] **Show negative stock on top in stock tab** — confirmed working 2026-04-23 by owner.
 - [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
-- [ ] **PO add planned date** — visible in collapsed PO view
-- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10
+- [x] **PO add planned date** — verified working 2026-04-23. Florist `PurchaseOrderPage.jsx:481` + dashboard `StockOrderPanel.jsx:585-587` render `Planned Date` in the collapsed PO view.
+- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10. Also: show aggregate PO total on creation so the owner knows how much cash the driver needs for suppliers.
 - [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
 - [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
 - [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
