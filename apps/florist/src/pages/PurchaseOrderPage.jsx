@@ -144,11 +144,22 @@ export default function PurchaseOrderPage() {
         notes: formNotes,
         driver: formDriver,
         plannedDate: formPlannedDate || null,
-        lines: formLines.filter(l => l.flowerName).map(l => ({
-          ...l,
-          costPrice: Number(l.costPrice) || 0,
-          sellPrice: Number(l.sellPrice) || 0,
-        })),
+        // Lot-round the stored quantity so it matches what the create-form's
+        // grandCost math showed the owner. Without this, `Quantity Needed`
+        // would store the raw stem count (e.g. 7) but the cost badge rendered
+        // the lot-rounded value (10 stems at `Math.ceil(7/10)*10`), making
+        // the persisted-PO total inconsistent with what the owner confirmed.
+        lines: formLines.filter(l => l.flowerName).map(l => {
+          const ls = Number(l.lotSize) || 0;
+          const rawQty = Number(l.quantity) || 0;
+          const quantity = ls > 1 ? Math.ceil(rawQty / ls) * ls : rawQty;
+          return {
+            ...l,
+            quantity,
+            costPrice: Number(l.costPrice) || 0,
+            sellPrice: Number(l.sellPrice) || 0,
+          };
+        }),
       });
       showToast(t.po?.created || 'PO created');
       setShowForm(false);
