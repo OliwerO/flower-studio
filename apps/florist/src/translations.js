@@ -159,6 +159,9 @@ const en = {
   payment2:         'Payment 2',
   remaining:        'Remaining',
   paidAmount:       'Paid',
+  priceExceedsPaid: 'Price exceeds paid amount',
+  collectRemainder: 'Collect remainder',
+  markAsFullyPaid:  'Mark as fully paid',
   paymentPartial:   'Partial',
   partialAmountPaid:'Amount paid',
 
@@ -843,6 +846,9 @@ const ru = {
   payment2:         'Оплата 2',
   remaining:        'Остаток',
   paidAmount:       'Оплачено',
+  priceExceedsPaid: 'Цена превышает сумму оплаты',
+  collectRemainder: 'Взять доплату',
+  markAsFullyPaid:  'Считать полностью оплаченным',
   paymentPartial:   'Частичная',
   partialAmountPaid:'Оплачено сейчас',
 

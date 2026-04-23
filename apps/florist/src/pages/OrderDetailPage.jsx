@@ -608,6 +608,40 @@ export default function OrderDetailPage() {
             <div>
               <p className="ios-label">Payment</p>
               <div className="ios-card p-4 flex flex-col gap-3">
+                {/* Mismatch banner — Paid with P1 below current total. See
+                    OrderCard.jsx for the rationale. */}
+                {(() => {
+                  const p1 = Number(order['Payment 1 Amount'] || 0);
+                  const p2 = Number(order['Payment 2 Amount'] || 0);
+                  const paid = p1 + p2;
+                  const total = Number(order['Final Price'] || 0);
+                  if (order['Payment Status'] !== 'Paid' || paid === 0 || total === 0 || paid >= total) return null;
+                  const delta = total - paid;
+                  return (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-2">
+                      <p className="text-xs font-semibold text-amber-800">⚠ {t.priceExceedsPaid}</p>
+                      <p className="text-xs text-amber-700">
+                        {t.paidAmount}: {paid} zł · {t.grandTotal || 'Total'}: {total} zł · {t.remaining}: <span className="font-semibold">{delta} zł</span>
+                      </p>
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => patch({ 'Payment Status': 'Partial' })}
+                          disabled={saving}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white active:bg-amber-700"
+                        >{t.collectRemainder}</button>
+                        <button
+                          onClick={() => patch({
+                            'Payment 1 Amount': total,
+                            'Payment 1 Method': order['Payment 1 Method'] || order['Payment Method'] || null,
+                          })}
+                          disabled={saving}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 active:bg-amber-100"
+                        >{t.markAsFullyPaid}</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <Pills
                   value={order['Payment Status'] || 'Unpaid'}
                   onChange={val => patch({
