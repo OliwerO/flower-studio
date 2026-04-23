@@ -531,23 +531,40 @@ async function fetchWixData() {
   const wixProducts = await fetchAllWixProducts();
 
   const wixCategoryIdToName = {};
+  // Set of Airtable category names that successfully mapped to a Wix
+  // collection this pull. Used by runPull to decide which categories on an
+  // existing row are Wix-tracked (safe to remove if Wix says so) vs
+  // Airtable-only (preserved — could be user-private labels or collections
+  // we don't currently track in config).
+  const mappedNames = new Set();
   let wixCategories = [];
   try {
     wixCategories = await fetchWixCategories();
     const sc = getConfig('storefrontCategories') || {};
-    const ourNames = [...(sc.permanent || []).map(p => typeof p === 'string' ? p : p.name), ...(sc.seasonal || []).map(s => s.name)];
+    // Include auto categories (e.g. "Available Today") so Pull can
+    // reconcile their membership back from Wix. Previously only permanent
+    // and seasonal were mapped, which meant a product removed from Wix's
+    // Available Today collection kept its stale Airtable flag forever.
+    const ourNames = [
+      ...(sc.permanent || []).map(p => typeof p === 'string' ? p : p.name),
+      ...(sc.seasonal || []).map(s => s.name),
+      ...(sc.auto || []).map(a => a.name),
+    ];
     for (const wc of wixCategories) {
       const match = ourNames.find(n =>
         n.toLowerCase().replace(/[^a-z0-9]+/g, '-') === wc.slug
         || n.toLowerCase() === wc.name.toLowerCase()
       );
-      if (match) wixCategoryIdToName[wc.id] = match;
+      if (match) {
+        wixCategoryIdToName[wc.id] = match;
+        mappedNames.add(match);
+      }
     }
   } catch (err) {
     console.warn('[SYNC] Could not fetch Wix categories:', err.message);
   }
 
-  return { wixProducts, wixCategories, wixCategoryIdToName };
+  return { wixProducts, wixCategories, wixCategoryIdToName, mappedNames };
 }
 
 /** Write a sync log entry to Airtable + alert on failure. */
@@ -589,7 +606,7 @@ export async function runPull() {
 
   try {
     console.log('[PULL] Fetching products from Wix...');
-    const { wixProducts, wixCategories, wixCategoryIdToName } = await fetchWixData();
+    const { wixProducts, wixCategories, wixCategoryIdToName, mappedNames } = await fetchWixData();
     console.log(`[PULL] Found ${wixProducts.length} products in Wix`);
 
     // Load existing Product Config rows
@@ -684,9 +701,21 @@ export async function runPull() {
           // editing Airtable directly and hoping Pull won't overwrite.
           if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
+          // Category reconciliation: Wix is authoritative for any category
+          // that maps to a tracked Wix collection (mappedNames). Airtable-
+          // only categories are preserved — they could be user-private
+          // labels, or mapped entries we failed to match this pull because
+          // the Wix category fetch partially failed. Previous policy was
+          // "fill only when empty", which let stale Wix-driven flags like
+          // "Available Today" linger in Airtable forever after a product
+          // was removed from the collection on Wix.
           const existingCats = parseCategoryField(existing['Category']);
-          if (existingCats.length === 0 && importedCategories.length > 0) {
-            updates['Category'] = importedCategories;
+          const preservedCats = existingCats.filter(c => !mappedNames.has(c));
+          const reconciledCats = [...new Set([...preservedCats, ...importedCategories])];
+          const existingSorted = [...existingCats].sort().join('|');
+          const reconciledSorted = [...reconciledCats].sort().join('|');
+          if (existingSorted !== reconciledSorted) {
+            updates['Category'] = reconciledCats;
           }
           if (!existing['Description'] && productDescription) {
             updates['Description'] = productDescription;
