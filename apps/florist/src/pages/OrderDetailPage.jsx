@@ -209,10 +209,29 @@ export default function OrderDetailPage() {
   // Patch the linked delivery record (address, recipient, fee, driver assignment).
   // Mirrors OrderCard.patchDelivery so the full-page detail and the list card stay in sync.
   async function patchDelivery(fields) {
-    const deliveryId = order?.delivery?.id;
-    if (!deliveryId) return;
     setSaving(true);
     try {
+      // See OrderCard.patchDelivery for the full rationale: Airtable's
+      // reciprocal back-link Deliveries → Orders is eventually-consistent,
+      // so a freshly-created Delivery order may arrive here without
+      // order.delivery populated. Heal via convert-to-delivery when needed;
+      // if that 400s ("already exists"), refetch to pull the delivery that
+      // has since been linked.
+      let deliveryId = order?.delivery?.id;
+      if (!deliveryId) {
+        try {
+          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
+          deliveryId = res.data.id;
+          setOrder(prev => prev ? { ...prev, 'Delivery Type': 'Delivery', delivery: res.data } : prev);
+        } catch (convertErr) {
+          if (convertErr.response?.status === 400) {
+            const fresh = await client.get(`/orders/${order.id}`);
+            deliveryId = fresh.data.delivery?.id;
+            if (deliveryId) setOrder(fresh.data);
+          }
+          if (!deliveryId) throw convertErr;
+        }
+      }
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setOrder(prev => prev ? { ...prev, delivery: { ...prev.delivery, ...fields } } : prev);
       showToast(t.updated || 'Updated!', 'success');
@@ -531,8 +550,12 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Driver assignment — same picker as the expanded OrderCard. */}
-            {isDelivery && order.delivery && drivers.length > 0 && (
+            {/* Driver assignment — same picker as the expanded OrderCard.
+                Gate on `isDelivery && drivers.length` only. Do NOT require
+                `order.delivery` — patchDelivery auto-heals a missing
+                delivery record via /convert-to-delivery. See OrderCard.jsx
+                for the full rationale. */}
+            {isDelivery && drivers.length > 0 && (
               <div>
                 <p className="ios-label">{t.assignedDriver}</p>
                 <div className="ios-card p-4">
@@ -541,11 +564,11 @@ export default function OrderDetailPage() {
                       <button
                         key={driver}
                         onClick={() => patchDelivery({
-                          'Assigned Driver': order.delivery['Assigned Driver'] === driver ? '' : driver,
+                          'Assigned Driver': order.delivery?.['Assigned Driver'] === driver ? '' : driver,
                         })}
                         disabled={saving}
                         className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                          order.delivery['Assigned Driver'] === driver
+                          order.delivery?.['Assigned Driver'] === driver
                             ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                             : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
@@ -554,7 +577,7 @@ export default function OrderDetailPage() {
                       </button>
                     ))}
                   </div>
-                  {!order.delivery['Assigned Driver'] && (
+                  {!order.delivery?.['Assigned Driver'] && (
                     <p className="text-xs text-ios-tertiary mt-2">{t.noDriver}</p>
                   )}
                 </div>
