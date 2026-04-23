@@ -270,12 +270,10 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ error: `orderLines[${i}].sellPricePerUnit must be >= 0 if provided.` });
       }
     }
-    if (deliveryType === 'Delivery' && (!delivery || !delivery.address || typeof delivery.address !== 'string' || !delivery.address.trim())) {
-      return res.status(400).json({ error: 'delivery.address is required and must be non-empty when deliveryType is "Delivery".' });
-    }
-    // Required By is mandatory — orders without a date silently disappear
-    // from every default list view (sorted last in Orders, excluded from
-    // Today/upcoming filters). Fail loudly here instead.
+    // Address is intentionally optional on Delivery orders — the owner often
+    // opens an order before the recipient address is known (corporate senders
+    // confirm the drop-off point later the same day). Date stays mandatory:
+    // without it, orders disappear from default list views.
     const effectiveRequiredBy = requiredBy || delivery?.date;
     if (!effectiveRequiredBy || typeof effectiveRequiredBy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveRequiredBy)) {
       return res.status(400).json({ error: 'requiredBy (delivery/pickup date, YYYY-MM-DD) is required.' });

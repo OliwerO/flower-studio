@@ -143,9 +143,7 @@ router.post('/:id/match', async (req, res, next) => {
     if (!customer || typeof customer !== 'string') {
       return res.status(400).json({ error: 'customer (Airtable record ID) is required.' });
     }
-    if (deliveryType === 'Delivery' && (!delivery || !delivery.address || typeof delivery.address !== 'string' || !delivery.address.trim())) {
-      return res.status(400).json({ error: 'delivery.address is required when deliveryType is "Delivery".' });
-    }
+    // Address optional on Delivery — see POST /orders for the rationale.
     // Required By is mandatory — see POST /orders for the rationale.
     const effectiveRequiredBy = requiredBy || delivery?.date;
     if (!effectiveRequiredBy || typeof effectiveRequiredBy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveRequiredBy)) {

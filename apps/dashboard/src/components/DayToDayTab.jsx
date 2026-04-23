@@ -281,7 +281,7 @@ export default function DayToDayTab({ onNavigate }) {
             onClick={() => setKanbanOpen(!kanbanOpen)}
             className="text-[11px] text-ios-secondary hover:text-ios-label transition-colors"
           >
-            {kanbanOpen ? '✕ Close' : '▦ Board'}
+            {kanbanOpen ? `✕ ${t.close}` : `▦ ${t.board}`}
           </button>
         </div>
         <div className="grid grid-cols-6 gap-1">
@@ -460,7 +460,7 @@ export default function DayToDayTab({ onNavigate }) {
                 </div>
                 <div className="text-right">
                   <span className="text-xs font-medium text-brand-600">
-                    {r.daysUntil === 0 ? 'Today!' : `${r.daysUntil} ${t.daysUntil}`}
+                    {r.daysUntil === 0 ? t.todayBang : `${r.daysUntil} ${t.daysUntil}`}
                   </span>
                   <span className="text-[10px] text-ios-tertiary ml-2">{r.date}</span>
                 </div>
