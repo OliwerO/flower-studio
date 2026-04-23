@@ -281,6 +281,15 @@ reports). Each item below was re-validated against the current code on
   - Prerequisites: all Tier 1+2 bugs fixed, key features stable, migration planning session
   - Design principle: keep business logic in services/ (already done), centralize field names in config
 
+### Post-Migration Follow-ups (blocked on having a real dev environment)
+Items that could be shipped today as Airtable one-liners but are held back
+because the fix touches a high-risk production-only integration (webhooks
+with no replay safety net, or flows that depend on live Wix state). Pick
+them up after the Postgres migration stands up a true dev/staging env.
+
+- [ ] **Wix webhook — explicit delivery back-link write** — mirror the PR #144 fix (2026-04-23) into `backend/src/services/wix.js` line ~448. After `db.create(TABLES.DELIVERIES, { 'Linked Order': [order.id], ... })`, add `await db.update(TABLES.ORDERS, order.id, { 'Deliveries': [delivery.id] })`. Same Airtable eventual-consistency risk (back-link missing immediately after create) is theoretically present for Wix-webhook-created orders; the florist-created path was confirmed-and-fixed but Wix path wasn't validated because we have no way to replay a Wix webhook safely against production. Needs dev env to stage a webhook hit and verify the back-link lands before we push.
+  - Findable tag: `WIX-BACKLINK`
+
 ### Promo & Event Features (2026-04-03)
 - [ ] **Promo bouquets** — new order type: customer pays nothing, but flower cost (supplier) and courier cost are tracked as business expense. Add "Promo" option when creating a new order. Promo orders must still deduct stock, track supplier costs, and track courier payment — all flow into business cost reporting, not customer billing. Reporting should show promo orders separately from paid orders.
 - [ ] **Seasonal event mode** — major feature requiring dedicated planning session. Two parts:
