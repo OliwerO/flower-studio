@@ -86,6 +86,25 @@ export default function OrderCardSummary({ order, d, currentStatus, currentPaid,
         )}
       </div>
 
+      {/* Partial: show paid + remaining inline so the owner doesn't have to
+          expand the card just to see how much is still outstanding. Paid mismatch
+          banner lives in the expanded view (it carries action buttons). */}
+      {d['Payment Status'] === 'Partial' && currentPrice > 0 && (() => {
+        const paid = Number(d['Payment 1 Amount'] || 0) + Number(d['Payment 2 Amount'] || 0);
+        const remaining = Math.max(0, currentPrice - paid);
+        return (
+          <p className="text-xs text-ios-tertiary mb-1">
+            {t.paidAmount || 'Paid'}: <span className="font-medium text-green-600">{paid} zł</span>
+            {remaining > 0 && (
+              <>
+                {' · '}
+                {t.remaining || 'Remaining'}: <span className="font-semibold text-orange-600">{remaining} zł</span>
+              </>
+            )}
+          </p>
+        );
+      })()}
+
       <div className="flex items-center gap-2 flex-wrap">
         <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
         <CallButton phone={order['Customer Phone']} label={t.callCustomer} variant="subtle" />
