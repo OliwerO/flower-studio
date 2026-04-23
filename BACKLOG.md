@@ -247,7 +247,7 @@ reports). Each item below was re-validated against the current code on
 - [ ] **Sorting by delivery date not working** — sort function broken
 - [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back
 - [ ] **Florist should see important NOTE prominently** — notes not visible on order front page
-- [ ] **Total paid amount not shown** — only flower price visible, not full order total
+- [x] **Total paid amount not shown** — fixed 2026-04-23. Collapsed card in florist (`OrderCardSummary.jsx`) + dashboard (`OrdersTab.jsx` price column) now shows `Оплачено X · Остаток Y` for Partial orders. Bouquet-edit raising the price on a Paid order surfaces an amber mismatch banner with two actions: `Collect remainder` (→ Partial + existing Payment 2 flow) and `Mark as fully paid` (→ bumps `Payment 1 Amount` to match new total). Backend now backfills `Payment 1 Amount` + `Method` when status flips to Paid via create or PATCH so the banner has a baseline. Legacy Paid orders with P1=0 stay silent.
 - [ ] **Show negative stock on top** in stock tab
 - [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
 - [ ] **PO add planned date** — visible in collapsed PO view
