@@ -41,8 +41,11 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
 
   const fetchOrders = useCallback(async () => {
     try {
+      // include=lines lets us render the per-PO cost total inline (how much
+      // cash the driver needs for suppliers) without an extra round-trip
+      // per row. Backend already supports it (stockOrders.js:84).
       const [res, comRes] = await Promise.all([
-        client.get('/stock-orders'),
+        client.get('/stock-orders?include=lines'),
         client.get('/stock/committed'),
       ]);
       setOrders(res.data);
@@ -566,7 +569,14 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
         <p className="text-sm text-ios-tertiary text-center py-8">{t.noStockOrders}</p>
       ) : (
         <div className="space-y-2">
-          {orders.map(order => (
+          {orders.map(order => {
+            // Cost total from pre-fetched lines (backend returns them via
+            // ?include=lines). Owner can scan PO list and see cash needed
+            // per run without expanding each row.
+            const costTotal = (order.lines || []).reduce(
+              (sum, l) => sum + (Number(l['Quantity Needed']) || 0) * (Number(l['Cost Price']) || 0), 0
+            );
+            return (
             <div key={order.id} className="glass-card overflow-hidden">
               <div
                 onClick={() => toggleExpand(order.id)}
@@ -579,6 +589,11 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                   <span className="text-sm font-medium text-ios-label">
                     PO #{order['Stock Order ID'] || '—'}
                   </span>
+                  {costTotal > 0 && (
+                    <span className="text-xs font-semibold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full">
+                      {costTotal.toFixed(0)} {t.zl}
+                    </span>
+                  )}
                   {order['Assigned Driver'] && (
                     <span className="text-xs text-ios-secondary">{order['Assigned Driver']}</span>
                   )}
@@ -618,6 +633,21 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         onAdd={addPersistedLine}
                         suppliers={SUPPLIERS}
                       />
+
+                      {/* Live cost total — reads from expandedLines so it
+                          reflects in-progress edits rather than the stale
+                          snapshot on order.lines from the list fetch. */}
+                      {(() => {
+                        const liveTotal = expandedLines.reduce(
+                          (s, l) => s + (Number(l['Quantity Needed']) || 0) * (Number(l['Cost Price']) || 0), 0
+                        );
+                        return liveTotal > 0 ? (
+                          <div className="text-sm px-1 pt-1">
+                            <span className="text-ios-tertiary">{t.costTotal}: </span>
+                            <span className="font-semibold text-ios-label">{liveTotal.toFixed(0)} {t.zl}</span>
+                          </div>
+                        ) : null;
+                      })()}
 
                       <div className="flex items-center gap-2 pt-2">
                         <select
@@ -782,7 +812,8 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                 </div>
               )}
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

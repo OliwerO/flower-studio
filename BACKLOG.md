@@ -251,7 +251,7 @@ reports). Each item below was re-validated against the current code on
 - [x] **Show negative stock on top in stock tab** — confirmed working 2026-04-23 by owner.
 - [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
 - [x] **PO add planned date** — verified working 2026-04-23. Florist `PurchaseOrderPage.jsx:481` + dashboard `StockOrderPanel.jsx:585-587` render `Planned Date` in the collapsed PO view.
-- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10. Also: show aggregate PO total on creation so the owner knows how much cash the driver needs for suppliers.
+- [x] **PO total cost by lot size + aggregate total** — fixed 2026-04-23. Florist save path now lot-rounds stored `Quantity Needed` to match the create-form cost badge (dashboard already stored lot-rounded). Aggregate PO total now renders on every saved PO: compact `X zł` badge in the collapsed row + "Cost total" line in the expanded editable view. Both apps fetch `/stock-orders?include=lines` for the client-side sum so the owner knows how much cash the driver needs before sending the run.
 - [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
 - [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
 - [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
