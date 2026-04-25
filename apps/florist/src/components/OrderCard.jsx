@@ -381,6 +381,22 @@ function OrderCard({
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
+      {/* Florist note — owner-authored operational guidance for the florist.
+          Shown on the collapsed card (not just on expand / detail page) so
+          important "read this first" instructions aren't buried. Styled
+          distinctly from the customer's greeting card text below: green
+          accent + bold label so it reads as staff-facing, not customer-
+          facing. Line-clamp-2 keeps a long note from ballooning the card. */}
+      {!expanded && order['Florist Note'] && (
+        <div className="mt-2 bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500 rounded-lg px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 dark:text-green-300 mb-0.5">
+            🌸 {t.floristNote}
+          </p>
+          <p className="text-sm text-ios-label dark:text-gray-200 leading-snug whitespace-pre-wrap line-clamp-2">
+            {order['Florist Note']}
+          </p>
+        </div>
+      )}
       {/* Card text hint — truncated in collapsed view, full text in expanded */}
       {!expanded && order['Greeting Card Text'] && (
         <div className="relative mt-2 bg-amber-50 rounded-lg px-3 py-1.5 overflow-hidden" style={{ maxHeight: '2.2em' }}>
