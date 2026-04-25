@@ -249,6 +249,11 @@ router.get('/categories', (_req, res) => {
     categoryMap[s.slug] = { name: s.name, slug: s.slug, description: s.description || '', translations: s.translations || {} };
   }
 
+  // All seasonal slugs (current + historic) so Velo can detect any prior
+  // seasonal menu item (Valentine's, Easter, Christmas, …) and rewrite it
+  // to the currently active one — independent of the item's display label.
+  const seasonalSlugs = (sc.seasonal || []).map(s => s.slug).filter(Boolean);
+
   res.json({
     permanent: permanentNames,
     seasonal: seasonal
@@ -263,6 +268,7 @@ router.get('/categories', (_req, res) => {
     all,
     allCategories,
     categoryMap,
+    seasonalSlugs,
   });
 });
 

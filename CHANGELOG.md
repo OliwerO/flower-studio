@@ -41,6 +41,55 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-25 — Wix mobile menu: seasonal slot self-heals across PL/UK/RU
+
+Mobile menu in Polish / Ukrainian / Russian still showed the previous
+seasonal (Valentine's labelled "Walentynki" / "Валентинки" / "День
+Валентина") and clicked through to `/category/valentines-day` even after
+the owner flipped the active seasonal in the dashboard to peonies.
+UK additionally had a generic "СЕЗОННІ БУКЕТИ" item plus a manually-added
+"ПІОНИ" item — three candidates for the same slot. Desktop was fine —
+`#button7` is renamed directly by `masterPage.js` and its link was
+updated per language manually. Mobile relied on `transformMenuItems`,
+which only matched 4 hardcoded English/Polish-spring labels (`SEASONAL`,
+`WIOSNA`, `SPRING`, `ВЕСНА`), only rewrote the **label** (never the
+link), and didn't dedupe duplicates.
+
+The canonical seasonal URL across all four languages is `/category/seasonal`
+— a single Wix Stores category whose product membership flips automatically
+as the active seasonal changes. Same pattern as `/category/available-today`.
+
+Fix:
+- `backend/src/routes/public.js` — `/api/public/categories` now returns
+  `seasonalSlugs: [...]` (every configured seasonal slug, current + past).
+- `Blossom-Wix/src/pages/masterPage.js`:
+  1. Detect seasonal items three ways — link is `/category/seasonal`
+     (canonical, EN today), OR link contains any historic seasonal slug
+     (Valentine's, Easter, Christmas, …), OR label contains a seasonal
+     stem (`SEASONAL`, `SEZON`, `СЕЗОН`, `SPRING`, `WIOSN`, `ВЕСН`).
+     Stems chosen so UK "ВЕСІЛЛЯ" (Weddings) does NOT false-match `ВЕСН`
+     (4th char differs).
+  2. Rewrite BOTH label AND link of matched items — label = active
+     seasonal title in user's language, link = `/category/seasonal`.
+  3. Dedupe — keep only the first item pointing at `/category/seasonal`,
+     drop later duplicates so UK's three candidates collapse to one.
+
+Net effect: when the owner flips the seasonal in the dashboard, every
+language and every menu element (`HorizontalMenu`, `VerticalMenu`,
+`ExpandableMenu`, `DropDownMenu`) picks up the new label, URL, and
+duplicate-free structure on the next page load — including EN, whose
+"PEONIES" label will now auto-update when the seasonal flips. No
+per-language Editor edits needed.
+
+Out of scope (would require option B / canonical menu generation): the
+PL mobile menu is missing an "Accessories" item the desktop has, and
+Ukrainian "Available Today" / Russian "Доступно сегодня" are truncated
+in the editor item width. Both fixable later by generating the full
+mobile menu from category data instead of trusting per-language Editor
+items.
+
+---
+
 ## 2026-04-22 — Florist app cleanup (Phase B): Customers tab on mobile
 
 Second PR of the three-part florist cleanup plan. Phase A shipped the nav
