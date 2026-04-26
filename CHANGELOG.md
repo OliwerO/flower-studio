@@ -41,6 +41,21 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-26 — Wix mobile menu: Contact label localized across PL/UK/RU
+
+The "Contact" menu item rendered as `CONTACT` (Latin) in PL/UK/RU mobile
+menus because the owner only translated EN in the Wix Editor — same
+drift pattern as the seasonal slot, but for a static label instead of
+a dynamic one.
+
+`Blossom-Wix/src/pages/masterPage.js` — `transformMenuItems` now also
+rewrites any item whose label contains the stem `CONTACT` / `KONTAKT` /
+`КОНТАКТ` to the user's language: `CONTACT` (en), `KONTAKT` (pl),
+`КОНТАКТИ` (uk), `КОНТАКТЫ` (ru). Link is left untouched — only the
+label was wrong.
+
+---
+
 ## 2026-04-25 — Wix mobile menu: seasonal slot self-heals across PL/UK/RU
 
 Mobile menu in Polish / Ukrainian / Russian still showed the previous
