@@ -57,6 +57,12 @@ export default function ProductsTab() {
   function isAvailableToday(variant) {
     if (!variant['Active']) return false;
     if (Number(variant['Lead Time Days'] ?? 1) !== 0) return false;
+    // Must carry the "Available Today" Category tag — this is what the Wix
+    // storefront filters on (see backend/src/routes/public.js productCount
+    // and the push criteria in wixProductSync.js). Without this gate the
+    // dashboard reports any LT=0 product as Available Today, while Wix only
+    // shows the ones tagged in the collection.
+    if (!parseCats(variant['Category']).includes('Available Today')) return false;
     const keyFlower = variant['Key Flower'];
     const stockId = Array.isArray(keyFlower) ? keyFlower[0] : keyFlower;
     if (!stockId) return true;

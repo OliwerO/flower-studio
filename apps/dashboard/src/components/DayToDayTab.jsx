@@ -136,7 +136,14 @@ export default function DayToDayTab({ onNavigate }) {
       setAnalytics(analyticsRes.data);
       setDriverOfDay(settingsRes.data.driverOfDay || null);
       setDrivers(settingsRes.data.drivers || []);
-      const available = (productsRes.data.products || []).filter(p => p.availableToday);
+      // Match the Wix storefront definition: LT=0 + stock (p.availableToday)
+      // AND tagged with the "Available Today" category. Without the tag check
+      // every LT=0 product would show here, while the actual Wix nav only
+      // surfaces the manually-tagged ones (see backend/src/routes/public.js
+      // productCount).
+      const available = (productsRes.data.products || []).filter(
+        p => p.availableToday && (p.category || []).includes('Available Today')
+      );
       setWixProducts(available);
       setFetchError(false);
     } catch {
