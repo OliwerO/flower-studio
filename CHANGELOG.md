@@ -394,6 +394,61 @@ change doesn't go unnoticed for hours.
 
 ---
 
+## 2026-04-22 — Owner Telegram ping when a delivery lands (with on-time check)
+
+The owner wanted to know the moment a bouquet is delivered, and
+whether it landed inside the slot promised to the customer — without
+having to refresh the dashboard to find out.
+
+### Backend
+- `services/telegram.js` — new `notifyDeliveryComplete({...})` formatter.
+  Compares the planned slot (`HH:MM-HH:MM`, hyphen or en-dash) against
+  the actual `Delivered At` converted to Europe/Warsaw via
+  `Intl.DateTimeFormat` (handles CET/CEST transitions automatically).
+  Output: `✅ on time`, `⚡ early by 15m`, or `⚠ late by 1h 30m`. HTML
+  values are escaped since the module sends with `parse_mode: HTML`.
+- `services/orderService.js` — new `sendDeliveryCompleteAlert(orderId)`
+  that batches the three Airtable reads (order, customer, order lines /
+  delivery) and hands structured data to the formatter. Called
+  fire-and-forget from both code paths:
+  - `transitionStatus()` when the owner marks Delivered from the
+    dashboard or florist app.
+  - `routes/deliveries.js` PATCH when the driver marks Delivered from
+    the delivery app.
+  Each HTTP request hits exactly one of those paths (the cascades are
+  internal `db.update` calls), so there's no double-send risk.
+- Notifications go to the owner only (`sendAlert` — reads
+  `TELEGRAM_OWNER_CHAT_ID`), matching the user's request. Florists are
+  not pinged — they already know the delivery landed.
+
+### Tests
+- New `backend/src/__tests__/telegram.test.js` — 18 tests covering slot
+  parsing (hyphen + en-dash), minute-diff formatting, DST-aware
+  timezone conversion (summer vs winter offsets), and every branch of
+  the on-time judgement (inside slot, early, late, boundary cases,
+  unparseable input). `_internals` export used so the pure helpers are
+  testable without touching the public API.
+
+### Why it matters
+- Tightens the feedback loop: the owner sees delivery quality in real
+  time, not when she next opens the app.
+- Catches slipping delivery windows early — if late-by-an-hour alerts
+  start repeating, it's a dispatch problem worth investigating.
+
+### What to watch for
+- `TELEGRAM_BOT_TOKEN` and `TELEGRAM_OWNER_CHAT_ID` must be set in the
+  backend env; otherwise `sendAlert` silently no-ops, matching the
+  existing new-order behavior.
+- The timing comparison uses Europe/Warsaw. If the studio ever moves
+  to a different timezone, update the `'Europe/Warsaw'` literal in
+  `telegram.js`.
+- Slot parser accepts `HH:MM-HH:MM` and `HH:MM–HH:MM` only. If
+  `Delivery Time` is empty or free-text ("whenever"), the alert still
+  fires but without the punctuality verdict — just shows the delivered
+  time. Not a bug; the owner-facing copy degrades gracefully.
+
+---
+
 ## 2026-04-21 — Owner can hard-delete orders (dashboard + florist app)
 
 The owner now has a hard-delete action separate from Cancel. Cancel
