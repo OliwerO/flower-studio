@@ -1,0 +1,2 @@
+wixProductId,name,imageUrl,category,minPrice,inStock,availableToday,variants,lastSynced
+example-001,Example Product,https://example.com/image.jpg,"[""All Bouquets""]",165,true,true,"[{""name"":""S"",""price"":165}]",2026-03-16T00:00:00Z
