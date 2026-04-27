@@ -1,12 +1,17 @@
 // AdminTab — owner-only raw-data view backed by Postgres.
-// Phase 2.5 scope: read-only audit-log viewer. Per-entity raw-edit
-// panels arrive in Phase 3+ as entities migrate to PG (each new entity
-// is registered in components/admin/entityRegistry.js).
+//
+// Phase 2.5 shipped the audit-log viewer. Phase 3 adds:
+//   • Stock backend mode banner (airtable / shadow / postgres) so the
+//     owner can see the cutover state at a glance.
+//   • Stock raw-data table (top 50 by updated_at) — proves the PG row
+//     mirrors what's in Airtable during shadow.
+//   • Parity dashboard — counts by mismatch kind plus a Recheck button
+//     that triggers a full diff (slow; for quiet hours).
 //
 // Why this tab exists: when something looks wrong in the regular UI, the
 // owner needs a way to see the underlying row + its history without
-// dropping into psql. The audit log is the ground truth — every PG-side
-// write lands there in the same transaction as the entity write.
+// dropping into psql. The audit log is the ground truth; parity_log
+// proves shadow-write is safe to flip.
 
 import { Fragment, useEffect, useState } from 'react';
 import api from '../api/client.js';
@@ -36,44 +41,77 @@ function ActionPill({ action }) {
   );
 }
 
+function ModeBadge({ mode }) {
+  const cfg = {
+    airtable: { color: 'bg-gray-100 text-gray-700',   label: t.adminBackendModeAirtable },
+    shadow:   { color: 'bg-amber-100 text-amber-800', label: t.adminBackendModeShadow   },
+    postgres: { color: 'bg-green-100 text-green-700', label: t.adminBackendModePostgres },
+  };
+  const c = cfg[mode] || cfg.airtable;
+  return (
+    <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ${c.color}`}>
+      {c.label}
+    </div>
+  );
+}
+
 export default function AdminTab() {
-  const [rows, setRows]           = useState([]);
-  const [stats, setStats]         = useState(null);
-  const [loading, setLoading]     = useState(true);
-  const [error, setError]         = useState(null);
-  const [postgresUp, setPostgresUp] = useState(true);
-  const [expandedId, setExpandedId] = useState(null);
+  const [rows, setRows]                 = useState([]);
+  const [stats, setStats]               = useState(null);
+  const [status, setStatus]             = useState(null);
+  const [stockRows, setStockRows]       = useState([]);
+  const [parity, setParity]             = useState({ rows: [], countsByKind: {} });
+  const [parityRunning, setParityRunning] = useState(false);
+  const [loading, setLoading]           = useState(true);
+  const [error, setError]               = useState(null);
+  const [postgresUp, setPostgresUp]     = useState(true);
+  const [expandedId, setExpandedId]     = useState(null);
 
   const entities = listEntities();
+  const stockMode = status?.backends?.stock || 'airtable';
 
-  useEffect(() => {
-    let cancelled = false;
-    async function load() {
-      try {
-        setLoading(true);
-        const [auditRes, statsRes] = await Promise.all([
-          api.get('/admin/audit?limit=100'),
-          api.get('/admin/audit/stats'),
-        ]);
-        if (cancelled) return;
-        setRows(auditRes.data);
-        setStats(statsRes.data);
-        setError(null);
-        setPostgresUp(true);
-      } catch (err) {
-        if (cancelled) return;
-        if (err.response?.status === 503) {
-          setPostgresUp(false);
-        } else {
-          setError(err.response?.data?.error || t.error);
-        }
-      } finally {
-        if (!cancelled) setLoading(false);
+  async function loadAll() {
+    try {
+      setLoading(true);
+      const [auditRes, statsRes, statusRes, stockRes, parityRes] = await Promise.all([
+        api.get('/admin/audit?limit=100'),
+        api.get('/admin/audit/stats'),
+        api.get('/admin/status'),
+        api.get('/admin/stock?limit=50').catch(() => ({ data: [] })),
+        api.get('/admin/parity/stock').catch(() => ({ data: { rows: [], countsByKind: {} } })),
+      ]);
+      setRows(auditRes.data);
+      setStats(statsRes.data);
+      setStatus(statusRes.data);
+      setStockRows(stockRes.data);
+      setParity(parityRes.data);
+      setError(null);
+      setPostgresUp(true);
+    } catch (err) {
+      if (err.response?.status === 503) {
+        setPostgresUp(false);
+      } else {
+        setError(err.response?.data?.error || t.error);
       }
+    } finally {
+      setLoading(false);
     }
-    load();
-    return () => { cancelled = true; };
-  }, []);
+  }
+
+  useEffect(() => { loadAll(); }, []);
+
+  async function runParityRecheck() {
+    setParityRunning(true);
+    try {
+      await api.post('/admin/parity/stock/recheck');
+      const fresh = await api.get('/admin/parity/stock');
+      setParity(fresh.data);
+    } catch (err) {
+      setError(err.response?.data?.error || t.error);
+    } finally {
+      setParityRunning(false);
+    }
+  }
 
   if (!postgresUp) {
     return (
@@ -84,6 +122,8 @@ export default function AdminTab() {
     );
   }
 
+  const totalParityIssues = Object.values(parity.countsByKind || {}).reduce((sum, n) => sum + n, 0);
+
   return (
     <div className="space-y-6">
       <header className="flex items-baseline justify-between">
@@ -93,19 +133,86 @@ export default function AdminTab() {
         </div>
       </header>
 
+      {/* ── Backend mode banner (Phase 3) ── */}
       <section className="bg-white border border-ios-border rounded-xl p-4">
-        <h3 className="font-semibold mb-2">{t.adminEntitiesTitle}</h3>
-        {entities.length === 0 ? (
-          <p className="text-sm text-ios-secondary">{t.adminNoEntitiesYet}</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h3 className="font-semibold mb-1">{t.adminBackendModeTitle}</h3>
+            <ModeBadge mode={stockMode} />
+          </div>
+          <div className="text-sm text-ios-secondary">
+            {entities.length === 0
+              ? t.adminNoEntitiesYet
+              : entities.map(e => `${e.labelEn} (${e.key})`).join(' · ')}
+          </div>
+        </div>
+      </section>
+
+      {/* ── Stock parity dashboard (Phase 3) ── */}
+      <section className="bg-white border border-ios-border rounded-xl p-4">
+        <header className="flex items-center justify-between mb-3">
+          <h3 className="font-semibold">{t.adminParityTitle}</h3>
+          <button
+            type="button"
+            onClick={runParityRecheck}
+            disabled={parityRunning}
+            className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
+          >
+            {parityRunning ? t.adminParityRunning : t.adminParityRecheckBtn}
+          </button>
+        </header>
+        {totalParityIssues === 0 ? (
+          <p className="text-sm text-green-700">{t.adminParityNoMismatches}</p>
         ) : (
           <ul className="text-sm space-y-1">
-            {entities.map(e => (
-              <li key={e.key} className="text-ios-label">{e.labelEn} <span className="text-ios-tertiary">({e.key})</span></li>
-            ))}
+            {parity.countsByKind.missing_pg     ? <li>{t.adminParityKindMissingPg}: <b>{parity.countsByKind.missing_pg}</b></li> : null}
+            {parity.countsByKind.missing_at     ? <li>{t.adminParityKindMissingAt}: <b>{parity.countsByKind.missing_at}</b></li> : null}
+            {parity.countsByKind.field_mismatch ? <li>{t.adminParityKindFieldMismatch}: <b>{parity.countsByKind.field_mismatch}</b></li> : null}
+            {parity.countsByKind.write_failed   ? <li>{t.adminParityKindWriteFailed}: <b>{parity.countsByKind.write_failed}</b></li> : null}
           </ul>
         )}
       </section>
 
+      {/* ── Stock raw-data table (Phase 3) ── */}
+      <section className="bg-white border border-ios-border rounded-xl overflow-hidden">
+        <header className="px-4 py-3 border-b border-ios-border">
+          <h3 className="font-semibold">{t.adminStockTableTitle}</h3>
+        </header>
+        {stockRows.length === 0 ? (
+          <div className="p-6 text-sm text-ios-secondary">{t.adminStockEmpty}</div>
+        ) : (
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-ios-secondary uppercase tracking-wide">
+              <tr>
+                <th className="text-left px-3 py-2">{t.adminStockColName}</th>
+                <th className="text-left px-3 py-2">{t.adminStockColCategory}</th>
+                <th className="text-right px-3 py-2">{t.adminStockColQty}</th>
+                <th className="text-right px-3 py-2">{t.adminStockColCost}</th>
+                <th className="text-right px-3 py-2">{t.adminStockColSell}</th>
+                <th className="text-left px-3 py-2">{t.adminStockColUpdated}</th>
+                <th className="text-left px-3 py-2">{t.adminStockColAirtableId}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {stockRows.map(row => (
+                <tr key={row.id} className="border-t border-ios-border hover:bg-gray-50">
+                  <td className="px-3 py-2 font-medium">{row.display_name}</td>
+                  <td className="px-3 py-2 text-ios-secondary">{row.category || ''}</td>
+                  <td className={`px-3 py-2 text-right ${row.current_quantity < 0 ? 'text-red-600 font-semibold' : ''}`}>
+                    {row.current_quantity}
+                  </td>
+                  <td className="px-3 py-2 text-right">{row.current_cost_price ?? ''}</td>
+                  <td className="px-3 py-2 text-right">{row.current_sell_price ?? ''}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ios-secondary">{formatDate(row.updated_at)}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ios-tertiary">{row.airtable_id || '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </section>
+
+      {/* ── Audit log (Phase 2.5) ── */}
       <section className="bg-white border border-ios-border rounded-xl overflow-hidden">
         <header className="px-4 py-3 border-b border-ios-border flex items-center justify-between">
           <h3 className="font-semibold">{t.adminAuditLogTitle}</h3>

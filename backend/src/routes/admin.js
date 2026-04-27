@@ -54,6 +54,19 @@ router.get('/entities', (_req, res) => {
   });
 });
 
+// GET /api/admin/status — per-entity backend mode + general PG health.
+// Drives the AdminTab's "Stock backend: shadow" banner so the owner can
+// see at a glance which phase the cutover is in, without needing to peek
+// at Railway env vars.
+router.get('/status', (_req, res) => {
+  res.json({
+    databaseUrlConfigured: isPostgresConfigured,
+    backends: {
+      stock: stockRepo.getBackendMode(),
+    },
+  });
+});
+
 // ── Audit log reader (entity-agnostic) ──
 
 // GET /api/admin/audit?entityType=stock&entityId=...&limit=100
