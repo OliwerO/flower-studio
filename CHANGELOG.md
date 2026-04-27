@@ -41,6 +41,107 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-27 — SQL migration Phase 2.5: audit log + Admin tab
+
+Cross-cutting primitives shipped before any entity migrates, so Phase 3
+(Stock cutover) inherits them for free.
+
+**Backend:**
+- `backend/src/db/schema.js` — added `audit_log` table (bigserial PK, text
+  entity_id so it accepts uuids OR `recXXX` ids during the shadow window,
+  jsonb diff column, indexes on `(entity_type, entity_id, created_at)` and
+  `(created_at)`).
+- `backend/src/db/migrations/0001_audit_log.sql` — applied to Railway prod.
+- `backend/src/db/audit.js` — `recordAudit(tx, {...})` helper. Computes a
+  minimal diff (only changed keys) and writes inside the caller's
+  transaction so audit + entity write are atomic.
+- `backend/src/__tests__/audit.test.js` — pins minimalDiff edge cases
+  (create/delete/update/array-equality/no-change). 9/9 pass.
+- `backend/src/routes/admin.js` — owner-only (`authorize('admin')`),
+  503s when Postgres isn't configured. Phase 2.5 endpoints:
+  `GET /admin/entities`, `GET /admin/audit?entityType=&entityId=&limit=`,
+  `GET /admin/audit/stats`. Per-entity list/patch/restore/purge handlers
+  arrive with the entityRegistry in Phase 3+.
+- `backend/src/index.js` — admin route mounted at `/api/admin`.
+
+**Dashboard:**
+- `apps/dashboard/src/components/AdminTab.jsx` — read-only audit-log
+  viewer with row-expand-to-show-diff. Renders an explanatory empty state
+  when Postgres returns 503 (current state on prod, until Phase 3
+  cutover). Tap-to-expand reveals the JSON diff.
+- `apps/dashboard/src/components/admin/entityRegistry.js` — empty
+  declarative registry; `stock` lands here with Phase 3.
+- `apps/dashboard/src/pages/DashboardPage.jsx` — new `Admin` tab pill
+  (between Products and Settings).
+- `apps/dashboard/src/translations.js` — EN + RU keys for the new tab.
+
+**Why:** The audit log + Admin tab are the migration's force multiplier.
+Without them, every Phase 3+ entity would have to re-litigate "how do I
+log writes" and "how does the owner inspect raw rows when something looks
+off". Building these once now keeps Phases 3–6 to "just" repo + cutover
+work per entity.
+
+**Verification:**
+- `audit.test.js` — 9/9 pass.
+- `claude_ro` SELECT on `audit_log` confirmed live (default privileges
+  auto-applied to the new table).
+- `npx vite build` on dashboard succeeds.
+- `node -e "import('./src/routes/admin.js')"` smoke-test green.
+- Tab visible in dev when `VITE_OWNER_PIN` is set; 503 banner shown until
+  the prod backend redeploys with `DATABASE_URL`.
+
+---
+
+## 2026-04-27 — SQL migration Phase 1: Postgres infra scaffolded (Railway)
+
+Provider locked: Railway Postgres (vendor consolidation + `psql` introspection
+for Claude). Strategic plan saved at
+`docs/migration/execution-plan-2026-04-27.md`.
+
+**Backend additions** (no entity migrated; nothing in routes changed):
+- `backend/drizzle.config.js` — drizzle-kit config.
+- `backend/src/db/index.js` — singleton `pg.Pool` + Drizzle handle, gated on
+  `DATABASE_URL`. `connectPostgres()` no-ops when unset; called from boot
+  after `validateAirtableSchema()` in `backend/src/index.js`.
+- `backend/src/db/schema.js` — Drizzle schema. Phase 1 ships only
+  `system_meta` (key/value tracking — entities arrive per-phase).
+- `backend/src/db/migrate.js` — standalone migration runner.
+- `backend/src/db/migrations/0000_init.sql` — first SQL migration.
+- `backend/src/db/README.md` — file-layout doc + workflow.
+- `backend/package.json` — `drizzle-orm@0.38.4`, `pg@8.13.1` deps;
+  `drizzle-kit@0.30.6` devDep; new `db:generate` / `db:migrate` /
+  `db:studio` scripts. (Side fix: `dev` script pointed at the long-removed
+  `.env.dev` — corrected to `.env` so `npm run dev` works again.)
+- `railway.toml` — env-var notes for `DATABASE_URL`,
+  `PGSSL_REJECT_UNAUTHORIZED`, `PGSSL_DISABLE`.
+
+**Owner-side actions completed via Railway CLI on 2026-04-27:**
+1. Postgres plugin provisioned in Railway production environment
+   (service name: `Postgres`, image: `postgres-ssl:18`, region: EU West).
+2. `DATABASE_URL` set on `flower-studio-backend` service pointing to the
+   internal hostname `postgres.railway.internal:5432`.
+3. `npm run db:migrate` applied via the public proxy URL — `system_meta`
+   table created, `__drizzle_migrations` tracking table initialised.
+4. Read-only role `claude_ro` created with random password. Verified:
+   `SELECT` succeeds, `INSERT/UPDATE/DELETE` denied. DSN stored in local
+   memory file (`memory/project_postgres_access.md`) — owner should mirror
+   to 1Password as a backup. Rotate via
+   `ALTER ROLE claude_ro PASSWORD '<new>';`.
+
+**Verification:**
+- Backend boots without `DATABASE_URL`: `[PG] DATABASE_URL not set —
+  Postgres disabled.` Confirmed.
+- `npm run db:generate` produces SQL migration. Confirmed.
+- Existing tests still pass except one pre-existing `analyticsService`
+  failure unrelated to this work.
+
+**Why this matters now:** stock-math drift, manual rollback ladders in
+`orderService.js`, and the serialised `stockQueue` are all symptoms of
+Airtable's lack of transactional writes. Phase 3 retires
+`atomicStockAdjust`; the scaffolding here is what makes that possible.
+
+---
+
 ## 2026-04-26 — Wix mobile menu: Contact label localized across PL/UK/RU
 
 The "Contact" menu item rendered as `CONTACT` (Latin) in PL/UK/RU mobile

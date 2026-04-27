@@ -26,3 +26,8 @@ restartPolicyMaxRetries = 3
 #   PIN_DRIVER_NIKITA=xxxx
 #   PIN_DRIVER_DMITRI=xxxx
 #   CORS_ORIGINS=https://florist.vercel.app,https://delivery.vercel.app,https://dashboard.vercel.app
+#
+# Postgres (added when the Railway PG plugin is provisioned — set 2026-04-27):
+#   DATABASE_URL=postgres://...                  # auto-injected by Railway PG plugin
+#   PGSSL_REJECT_UNAUTHORIZED=false              # default; flip to true once a CA is pinned
+#   PGSSL_DISABLE=false                          # set true only for local dev against a non-TLS PG

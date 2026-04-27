@@ -7,6 +7,7 @@ import helmet from 'helmet';
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { validateAirtableSchema } from './services/airtableSchema.js';
+import { connectPostgres, disconnectPostgres } from './db/index.js';
 
 import authRoutes          from './routes/auth.js';
 import customerRoutes      from './routes/customers.js';
@@ -27,6 +28,7 @@ import productRoutes       from './routes/products.js';
 import stockOrderRoutes    from './routes/stockOrders.js';
 import floristHoursRoutes from './routes/floristHours.js';
 import premadeBouquetRoutes from './routes/premadeBouquets.js';
+import adminRoutes         from './routes/admin.js';
 
 // Validate required env vars on startup — fail early instead of silently breaking at runtime.
 const REQUIRED_ENV = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'PIN_OWNER', 'PIN_FLORIST'];
@@ -94,6 +96,7 @@ app.use('/api/products',        productRoutes);
 app.use('/api/stock-orders',    stockOrderRoutes);
 app.use('/api/florist-hours',  floristHoursRoutes);
 app.use('/api/premade-bouquets', premadeBouquetRoutes);
+app.use('/api/admin',           adminRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);
@@ -105,6 +108,10 @@ const PORT = process.env.PORT || 3001;
 // See backend/src/services/airtableSchema.js for the rationale.
 await validateAirtableSchema();
 
+// Postgres — no-op when DATABASE_URL is unset (Phase 1 scaffolding).
+// Becomes mandatory once entity cutovers begin in Phase 3.
+await connectPostgres();
+
 const server = app.listen(PORT, () => {
   console.log(`Flower Studio backend running on http://localhost:${PORT}`);
   console.log(`Health check: http://localhost:${PORT}/api/health`);
@@ -114,7 +121,8 @@ const server = app.listen(PORT, () => {
 // Like stopping a production line: finish current pieces, then power down.
 process.on('SIGTERM', () => {
   console.log('[SHUTDOWN] SIGTERM received — closing server gracefully');
-  server.close(() => {
+  server.close(async () => {
+    await disconnectPostgres();
     console.log('[SHUTDOWN] Server closed');
     process.exit(0);
   });
