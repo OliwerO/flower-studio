@@ -1,21 +1,19 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
+import { actorFromReq } from '../utils/actor.js';
 import { ORDER_STATUS, PO_STATUS, LOSS_REASON } from '../constants/statuses.js';
 
 const router = Router();
 router.use(authorize('stock'));
 
-const STOCK_PATCH_ALLOWED = [
-  'Display Name', 'Purchase Name', 'Category', 'Current Quantity', 'Unit',
-  'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
-  'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size', 'Farmer',
-  'Last Restocked',
-];
+// Stock-table allowlist now lives on stockRepo.STOCK_WRITE_ALLOWED — the repo
+// applies it to every create/update so no caller can bypass it. The export is
+// imported here only for any future read-side validation.
 
 // GET /api/stock?category=Roses&includeEmpty=true&includeInactive=true
 // Defaults hide qty=0 (old depleted batches) and Active=false rows.
@@ -34,7 +32,7 @@ router.get('/', async (req, res, next) => {
     if (includeEmpty !== 'true') filters.push('{Current Quantity} > 0');
     if (category) filters.push(`{Category} = '${sanitizeFormulaValue(category)}'`);
 
-    const stock = await db.list(TABLES.STOCK, {
+    const stock = await stockRepo.list({
       // When no filters are active we must pass an empty string — Airtable
       // rejects `AND()` with zero clauses. This only happens if the caller
       // opts into both includeEmpty and includeInactive.
@@ -43,6 +41,12 @@ router.get('/', async (req, res, next) => {
         { field: 'Category', direction: 'asc' },
         { field: 'Display Name', direction: 'asc' },
       ],
+      // PG-mode equivalent — used when STOCK_BACKEND=postgres flips on.
+      pg: {
+        includeInactive: includeInactive === 'true',
+        includeEmpty:    includeEmpty === 'true',
+        category:        category || undefined,
+      },
     });
 
     res.json(stock);
@@ -277,10 +281,11 @@ router.get('/pending-po', async (req, res, next) => {
       for (const name of uniqueNames) {
         try {
           const safe = sanitizeFormulaValue(name);
-          const matches = await db.list(TABLES.STOCK, {
+          const matches = await stockRepo.list({
             filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
             fields: ['Display Name', 'Current Cost Price', 'Current Sell Price'],
             maxRecords: 1,
+            pg: { active: true, includeEmpty: true },  // PG-mode falls back to JS-side name match
           });
           if (matches.length > 0) {
             nameToId[name] = matches[0].id;
@@ -289,18 +294,18 @@ router.get('/pending-po', async (req, res, next) => {
             if (!existing['Current Cost Price'] && !existing['Current Sell Price']) {
               const poLine = allLines[unlinked.find(x => x.name === name)?.idx];
               if (poLine && (Number(poLine['Cost Price']) || Number(poLine['Sell Price']))) {
-                db.update(TABLES.STOCK, existing.id, {
+                stockRepo.update(existing.id, {
                   'Current Cost Price': Number(poLine['Cost Price']) || 0,
                   'Current Sell Price': Number(poLine['Sell Price']) || 0,
                   ...(poLine.Supplier ? { Supplier: poLine.Supplier } : {}),
-                }).catch(() => {});
+                }, { actor: actorFromReq(req) }).catch(() => {});
               }
             }
           } else {
             // Auto-create stock item so the flower shows up in pickers.
             // Pull cost/sell from the PO line that triggered this.
             const poLine = allLines[unlinked.find(x => x.name === name)?.idx];
-            const created = await db.create(TABLES.STOCK, {
+            const created = await stockRepo.create({
               'Display Name': name,
               'Purchase Name': name,
               'Current Quantity': 0,
@@ -309,13 +314,15 @@ router.get('/pending-po', async (req, res, next) => {
               Supplier: poLine?.Supplier || '',
               Category: 'Other',
               Active: true,
-            });
+            }, { actor: actorFromReq(req) });
             nameToId[name] = created.id;
             console.log(`[STOCK] Auto-created "${name}" (${created.id}) from pending PO line`);
           }
         } catch { /* skip */ }
       }
       // Link resolved/created stock items back to PO lines (fire-and-forget)
+      // Stays on direct db.update — this writes to STOCK_ORDER_LINES, not the
+      // stock table itself, so it isn't part of the Phase 3 cutover.
       for (const u of unlinked) {
         if (nameToId[u.name]) {
           allLines[u.idx]._resolvedStockId = nameToId[u.name];
@@ -382,8 +389,7 @@ router.get('/pending-po', async (req, res, next) => {
       for (let i = 0; i < ids.length; i += CHUNK) {
         const chunk = ids.slice(i, i + CHUNK);
         try {
-          const items = await db.list(TABLES.STOCK, {
-            filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+          const items = await stockRepo.listByIds(chunk, {
             fields: ['Current Cost Price', 'Current Sell Price'],
           });
           for (const item of items) {
@@ -391,11 +397,11 @@ router.get('/pending-po', async (req, res, next) => {
             const hasSell = Number(item['Current Sell Price']) > 0;
             if (!hasCost || !hasSell) {
               const src = backfillCandidates[item.id];
-              db.update(TABLES.STOCK, item.id, {
+              stockRepo.update(item.id, {
                 ...(!hasCost && src.cost > 0 ? { 'Current Cost Price': src.cost } : {}),
                 ...(!hasSell && src.sell > 0 ? { 'Current Sell Price': src.sell } : {}),
                 ...(src.supplier ? { Supplier: src.supplier } : {}),
-              }).catch(() => {});
+              }, { actor: actorFromReq(req) }).catch(() => {});
             }
           }
         } catch { /* skip batch */ }
@@ -429,7 +435,7 @@ router.post('/', async (req, res, next) => {
     if (lotSize)    fields['Lot Size'] = Number(lotSize);
     if (farmer)     fields['Farmer'] = farmer;
 
-    const item = await db.create(TABLES.STOCK, fields);
+    const item = await stockRepo.create(fields, { actor: actorFromReq(req) });
     res.status(201).json(item);
   } catch (err) {
     next(err);
@@ -454,7 +460,7 @@ router.post('/', async (req, res, next) => {
 //                   top of the chronological list as "ongoing").
 router.get('/:id/usage', async (req, res, next) => {
   try {
-    const stockItem = await db.getById(TABLES.STOCK, req.params.id);
+    const stockItem = await stockRepo.getById(req.params.id);
     const displayName = stockItem['Display Name'] || '';
     const stockId = req.params.id;
 
@@ -471,9 +477,12 @@ router.get('/:id/usage', async (req, res, next) => {
     // "<base> (dd.Mmm.)" dated batches.
     let siblingStocks = [];
     try {
-      siblingStocks = await db.list(TABLES.STOCK, {
+      siblingStocks = await stockRepo.list({
         filterByFormula: `OR({Display Name} = '${safeBase}', FIND('${safeBase} (', {Display Name} & '') = 1)`,
         fields: ['Display Name', 'Current Quantity'],
+        // PG-mode: no formula equivalent — caller filters on returned rows.
+        // Return all active stock for the base name; JS filter below handles the variant match.
+        pg: { active: true, includeEmpty: true },
       });
     } catch {
       siblingStocks = [stockItem];
@@ -688,21 +697,25 @@ router.get('/:id/usage', async (req, res, next) => {
 // their snapshot prices unchanged — those are customer commitments.
 router.patch('/:id', async (req, res, next) => {
   try {
-    const safeFields = pickAllowed(req.body, STOCK_PATCH_ALLOWED);
-    const item = await db.update(TABLES.STOCK, req.params.id, safeFields);
+    // The repo applies the allowlist (STOCK_WRITE_ALLOWED) — passing the
+    // raw body is safe; disallowed keys are silently dropped.
+    const item = await stockRepo.update(req.params.id, req.body, { actor: actorFromReq(req) });
+    const safeFields = req.body; // for the cascade checks below
 
     // Sync threshold across batches of the same base flower
     if ('Reorder Threshold' in safeFields && item['Purchase Name']) {
       const baseName = item['Purchase Name'];
-      const siblings = await db.list(TABLES.STOCK, {
+      const siblings = await stockRepo.list({
         filterByFormula: `AND({Purchase Name} = '${sanitizeFormulaValue(baseName)}', RECORD_ID() != '${req.params.id}')`,
         fields: ['Reorder Threshold'],
+        pg: { active: true, includeEmpty: true },
       });
       for (const sib of siblings) {
+        if (sib.id === req.params.id) continue;  // PG-mode safety: filter formula not applied
         if (sib['Reorder Threshold'] !== safeFields['Reorder Threshold']) {
-          await db.update(TABLES.STOCK, sib.id, {
+          await stockRepo.update(sib.id, {
             'Reorder Threshold': safeFields['Reorder Threshold'],
-          });
+          }, { actor: actorFromReq(req) });
         }
       }
     }
@@ -745,7 +758,7 @@ router.post('/:id/adjust', async (req, res, next) => {
       return res.status(400).json({ error: 'delta must be a number (positive or negative).' });
     }
 
-    const item = await db.getById(TABLES.STOCK, req.params.id);
+    const item = await stockRepo.getById(req.params.id);
     const currentQty = item['Current Quantity'] || 0;
     const newQty = currentQty + delta;
 
@@ -753,9 +766,9 @@ router.post('/:id/adjust', async (req, res, next) => {
       console.warn(`[STOCK] Negative stock: ${req.params.id} going to ${newQty} (current: ${currentQty}, delta: ${delta})`);
     }
 
-    const updated = await db.update(TABLES.STOCK, req.params.id, {
+    const updated = await stockRepo.update(req.params.id, {
       'Current Quantity': newQty,
-    });
+    }, { actor: actorFromReq(req) });
 
     res.json(updated);
   } catch (err) {
@@ -774,7 +787,7 @@ router.post('/:id/write-off', async (req, res, next) => {
       return res.status(400).json({ error: 'quantity must be a positive number.' });
     }
 
-    const item = await db.getById(TABLES.STOCK, req.params.id);
+    const item = await stockRepo.getById(req.params.id);
     const currentQty = item['Current Quantity'] || 0;
     const currentDead = item['Dead/Unsold Stems'] || 0;
 
@@ -800,7 +813,7 @@ router.post('/:id/write-off', async (req, res, next) => {
       fields['Supplier Notes'] = existing ? `${existing}\n${entry}` : entry;
     }
 
-    const updated = await db.update(TABLES.STOCK, req.params.id, fields);
+    const updated = await stockRepo.update(req.params.id, fields, { actor: actorFromReq(req) });
 
     // Also log to Stock Loss Log table for analytics breakdown
     if (TABLES.STOCK_LOSS_LOG && actualWriteOff > 0) {
@@ -852,9 +865,10 @@ router.get('/reconciliation', async (req, res, next) => {
     // 1. Fetch all active stock — need `Substitute For` to find substitutes and
     //    `Current Quantity` for both the original (shown, may be negative) and
     //    the substitute (shown, must cover the swap qty).
-    const stockItems = await db.list(TABLES.STOCK, {
+    const stockItems = await stockRepo.list({
       filterByFormula: '{Active} = TRUE()',
       fields: ['Display Name', 'Current Quantity', 'Substitute For'],
+      pg: { active: true, includeEmpty: true },
     });
 
     // Index: originalStockId → [substituteStockId, ...]
@@ -874,7 +888,7 @@ router.get('/reconciliation', async (req, res, next) => {
 
     // 2. Originals may be deactivated after substitution — fetch by ID so we
     //    can still show the card regardless of Active status.
-    const originals = await listByIds(TABLES.STOCK, originalIds, {
+    const originals = await stockRepo.listByIds(originalIds, {
       fields: ['Display Name', 'Current Quantity'],
     });
     const originalMap = {};

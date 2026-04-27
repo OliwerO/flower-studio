@@ -7,6 +7,7 @@
 // Airtable owns: prices, lead times, stock, categories, active status
 
 import * as db from './airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sendAlert, notifyWixSyncError } from './telegram.js';
 import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
@@ -1024,9 +1025,10 @@ export async function runPush() {
           stats.errors.push(`Available Today translations: ${err.message}`);
         }
 
-        const stockCheck = await db.list(TABLES.STOCK, {
+        const stockCheck = await stockRepo.list({
           filterByFormula: '{Active} = TRUE()',
           fields: ['Display Name', 'Current Quantity'],
+          pg: { active: true, includeEmpty: true },
         });
         const stockLookup = Object.fromEntries(
           stockCheck.map(s => [s['Display Name'], Number(s['Current Quantity'] || 0)])

@@ -15,6 +15,13 @@
       "when": 1777320207942,
       "tag": "0001_audit_log",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1777325059711,
+      "tag": "0002_stock_and_parity_log",
+      "breakpoints": true
     }
   ]
 }

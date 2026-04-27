@@ -272,14 +272,15 @@ reports). Each item below was re-validated against the current code on
 - [ ] **Stripe refund handling** — track payment status, cancellation, refund reflected in system
 - [ ] **Post-order website message** — change what customer sees after order even if payment failed (Wix-side)
 
-### Database Migration — Airtable → PostgreSQL (2026-04-03, after features stabilize)
-- [ ] **Migrate to PostgreSQL on Railway** — replace Airtable as primary database. Owner decision: all data managed through the app, no direct Airtable editing. Add on-demand export feature (to Airtable or Excel) for owner access.
-  - Phase A: Stock + POs (most rate-limit pain)
-  - Phase B: Orders + Lines + Deliveries
-  - Phase C: Customers + Key People + Dates
-  - Phase D: Config + Logs → decommission Airtable
-  - Prerequisites: all Tier 1+2 bugs fixed, key features stable, migration planning session
-  - Design principle: keep business logic in services/ (already done), centralize field names in config
+### Database Migration — Airtable → PostgreSQL (in progress, see `docs/migration/execution-plan-2026-04-27.md`)
+- [x] **Phase 1 — Postgres infra** (2026-04-27) — Railway PG provisioned, Drizzle wired, `system_meta` migration applied, `claude_ro` read-only role created.
+- [x] **Phase 2.5 — Audit log + Admin tab** (2026-04-27) — `audit_log` table + `recordAudit()` helper. Owner-only Admin tab with audit-log viewer. Per-entity registry empty until Phase 3 populates it.
+- [x] **Phase 3 — Stock cutover scaffolding** (2026-04-27) — `stock` + `parity_log` tables, `stockRepo` with three-mode backend (`airtable | shadow | postgres`), full route wiring (stock.js, dashboard.js, orderService autoMatchStock + atomicStockAdjust, wixProductSync), backfill script, AdminTab parity endpoints. **Default behaviour unchanged** (`STOCK_BACKEND=airtable`); cutover gated on env var flip.
+- [ ] **Phase 3 cutover** — owner action: apply migration on prod (`npm run db:migrate`), run `node scripts/backfill-stock.js`, set `STOCK_BACKEND=shadow`, watch parity_log for ~1 week (especially a full Saturday), then flip to `postgres`.
+- [ ] **Phase 4 — Orders + Lines + Deliveries** — biggest win: collapse the 538-line manual rollback in `orderService.js` into a single PG transaction. Riskiest consumer: Wix webhook (must be tested against a recorded payload before flip).
+- [ ] **Phase 5 — Customer dedup + cutover** — Universe A (legacy) + B (app) merge with auto-merge on exact phone/email + owner-review modal for ambiguous pairs.
+- [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.
+- [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.
 
 ### Post-Migration Follow-ups (blocked on having a real dev environment)
 Items that could be shipped today as Airtable one-liners but are held back
