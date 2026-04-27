@@ -251,6 +251,7 @@ export default function OrderDetailPage() {
   const isPaid     = order?.['Payment Status'] === 'Paid';
   const isDelivery = order?.['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(order?.Status);
+  const customerId = order?.['Customer']?.[0];
 
   return (
     <div className="min-h-screen">
@@ -264,9 +265,19 @@ export default function OrderDetailPage() {
             ←
           </button>
           <div className="flex-1 min-w-0">
-            <p className="text-base font-semibold text-ios-label truncate">
-              {order?.['Customer Name'] || '—'}
-            </p>
+            {customerId ? (
+              <button
+                onClick={() => navigate(`/customers/${customerId}`)}
+                className="text-base font-semibold text-ios-blue truncate flex items-center gap-1 active:underline"
+              >
+                <span className="truncate">{order?.['Customer Name'] || '—'}</span>
+                <span className="text-ios-tertiary text-sm shrink-0" aria-hidden="true">›</span>
+              </button>
+            ) : (
+              <p className="text-base font-semibold text-ios-label truncate">
+                {order?.['Customer Name'] || '—'}
+              </p>
+            )}
             <p className="text-xs text-ios-tertiary">
               {order?.['Order Date']} · {isDelivery ? 'Delivery' : 'Pickup'}
               {price > 0 && ` · ${price} zł`}
@@ -299,7 +310,20 @@ export default function OrderDetailPage() {
             <div>
               <p className="ios-label">Customer</p>
               <div className="ios-card px-4 py-2">
-                <Row label="Name" value={order['Customer Name']} />
+                {customerId ? (
+                  <button
+                    onClick={() => navigate(`/customers/${customerId}`)}
+                    className="w-full flex justify-between items-center gap-4 py-2 border-b border-gray-100 last:border-0 active-scale"
+                  >
+                    <span className="text-sm text-ios-tertiary shrink-0">Name</span>
+                    <span className="text-sm text-ios-blue font-medium text-right flex items-center gap-1">
+                      <span>{order['Customer Name'] || '—'}</span>
+                      <span className="text-ios-tertiary" aria-hidden="true">›</span>
+                    </span>
+                  </button>
+                ) : (
+                  <Row label="Name" value={order['Customer Name']} />
+                )}
                 {order['Customer Nickname'] && order['Customer Nickname'] !== order['Customer Name'] && (
                   <Row label="Nickname" value={order['Customer Nickname']} />
                 )}

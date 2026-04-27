@@ -4,6 +4,7 @@
 // a kanban card over to see the full work order on the back.
 
 import { useState, useEffect, memo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -103,6 +104,10 @@ function OrderCard({
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
+
+  const navigate   = useNavigate();
+  // Customer linked record from Airtable — array of IDs, take the first.
+  const customerId = order['Customer']?.[0] || detail?.['Customer']?.[0];
 
   const status     = order['Status'] || 'New';
   const styles     = STATUS_STYLES[status] || STATUS_STYLES['New'];
@@ -367,7 +372,17 @@ function OrderCard({
         )}
       </div>
 
-      <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
+      {customerId ? (
+        <button
+          onClick={(e) => { e.stopPropagation(); navigate(`/customers/${customerId}`); }}
+          className="text-base font-semibold text-ios-blue active:underline flex items-center gap-1"
+        >
+          <span>{d['Customer Name'] || order['Customer Name'] || '—'}</span>
+          <span className="text-ios-tertiary text-sm" aria-hidden="true">›</span>
+        </button>
+      ) : (
+        <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
+      )}
       {request && (
         <p className={`text-sm text-ios-tertiary mt-0.5 ${expanded ? '' : 'line-clamp-1'}`}>{request}</p>
       )}
