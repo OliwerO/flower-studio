@@ -227,6 +227,27 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     }
   }
 
+  // Draft-only one-tap add: POST a blank line and let the owner fill it
+  // inline via DraftLineEditor. The backend allows missing identity fields
+  // for Draft POs (see stockOrders.js POST /lines), and the /send endpoint
+  // refuses to transition Draft→Sent until every line has a flower name or
+  // stock item link, so blank rows cannot reach the driver.
+  async function addBlankDraftLine(orderId) {
+    try {
+      await client.post(`/stock-orders/${orderId}/lines`, {
+        flowerName: '',
+        quantity: 1,
+        costPrice: 0,
+        lotSize: 0,
+      });
+      const res = await client.get(`/stock-orders/${orderId}`);
+      setExpandedLines(res.data.lines || []);
+    } catch (err) {
+      console.error('PO blank-line add failed:', err.response?.data || err.message);
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
   // Add a brand-new line to an existing PO — all required fields must be
   // present up front (flower name, supplier, qty, cost). POSTs straight to
   // the backend; no "temp local line" that can silently vanish on refresh.
@@ -628,11 +649,25 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                           suppliers={SUPPLIERS}
                         />
                       ))}
-                      <AddLineInlineForm
-                        orderId={order.id}
-                        onAdd={addPersistedLine}
-                        suppliers={SUPPLIERS}
-                      />
+                      {order.Status === 'Draft' ? (
+                        // Draft: one-tap add. Backend allows blank line, owner
+                        // fills it inline via DraftLineEditor. /send blocks
+                        // Draft→Sent until every line has identity.
+                        <button
+                          onClick={() => addBlankDraftLine(order.id)}
+                          className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg hover:bg-brand-100 transition-colors"
+                        >
+                          + {t.addLine || 'Add line'}
+                        </button>
+                      ) : (
+                        // Sent/Shopping: off-plan flower, all fields required up front.
+                        <AddLineInlineForm
+                          orderId={order.id}
+                          onAdd={addPersistedLine}
+                          suppliers={SUPPLIERS}
+                          status={order.Status}
+                        />
+                      )}
 
                       {/* Live cost total — reads from expandedLines so it
                           reflects in-progress edits rather than the stale
@@ -1068,8 +1103,14 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     setSellPriceManual(true);
   }
 
+  // A line lacks identity if neither flower name nor stock item is set.
+  // The /send endpoint refuses Draft→Sent while any such line exists, so we
+  // surface that visually with an amber border + hint.
+  const stockItemLinked = Array.isArray(line['Stock Item']) && line['Stock Item'].length > 0;
+  const isBlank = !flowerName.trim() && !stockItemLinked;
+
   return (
-    <div className="bg-gray-50 rounded-lg px-3 py-2 space-y-1.5">
+    <div className={`rounded-lg px-3 py-2 space-y-1.5 ${isBlank ? 'bg-amber-50 ring-1 ring-amber-300' : 'bg-gray-50'}`}>
       {/* Row 1: Item + Qty + Supplier + Remove */}
       <div className="flex items-center gap-2">
         <div className="flex-1">
@@ -1187,6 +1228,11 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           />
         </div>
       </div>
+      {isBlank && (
+        <p className="text-[11px] text-amber-700">
+          {t.blankLineHint || 'Pick a flower or type a name before sending the PO.'}
+        </p>
+      )}
     </div>
   );
 }
@@ -1197,7 +1243,9 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
 // qty is raw stems. Cost is explicitly per-stem with a live total preview
 // so the owner sees exactly what she's committing before submit.
 // All fields required up front; POST only fires on submit — no silent drops.
-function AddLineInlineForm({ orderId, onAdd, suppliers = [] }) {
+// Sent/Shopping-only: an "off-plan" line bought at the supplier. Draft uses
+// the one-tap add button + DraftLineEditor instead — see the call site.
+function AddLineInlineForm({ orderId, onAdd, suppliers = [], status }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({

@@ -379,7 +379,12 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
     const { stockItemId: rawStockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
-    if (!rawStockItemId && !flowerName?.trim()) {
+    // Identity rule (root CLAUDE.md known-pitfall #6): every PO line must have
+    // either a Stock Item link or a Flower Name *by the time the PO is sent*.
+    // For Draft, allow a blank line so the owner can tap "+ Add line" and edit
+    // the row inline (matches the wizard flow). The /send endpoint enforces
+    // the rule on Draft→Sent so blank rows can never reach the driver.
+    if (!rawStockItemId && !flowerName?.trim() && po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: 'PO line must have a stock item or flower name.' });
     }
     // Auto-link or auto-create stock item
@@ -469,6 +474,28 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
   try {
     const { driverName } = req.body;
     const resolvedDriver = driverName || getDriverOfDay();
+    // Enforce the line-identity rule on Draft→Sent. Sent→Sent re-sends (driver
+    // reassignment) skip the check because their lines were already validated
+    // on the previous send. Without this gate, blank Draft lines would reach
+    // the driver as "what am I buying?" rows.
+    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    if (po.Status === PO_STATUS.DRAFT) {
+      const lineIds = po['Order Lines'] || [];
+      if (lineIds.length === 0) {
+        return res.status(400).json({ error: 'Cannot send an empty PO. Add at least one line first.' });
+      }
+      const lines = await listByIds(TABLES.STOCK_ORDER_LINES, lineIds);
+      const blankCount = lines.filter(l => {
+        const hasStockItem = Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0;
+        const hasFlowerName = String(l['Flower Name'] || '').trim() !== '';
+        return !hasStockItem && !hasFlowerName;
+      }).length;
+      if (blankCount > 0) {
+        return res.status(400).json({
+          error: `Fill flower name on ${blankCount} blank line(s) before sending.`,
+        });
+      }
+    }
     const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
       Status: PO_STATUS.SENT,
       'Assigned Driver': resolvedDriver,
