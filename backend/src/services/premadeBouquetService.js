@@ -94,7 +94,7 @@ export async function listPremadeBouquets() {
  * @returns {Promise<{ bouquet, lines }>}
  */
 export async function createPremadeBouquet(params) {
-  const { name, lines, priceOverride, notes, createdBy } = params;
+  const { name, lines, priceOverride, notes, createdBy, actor = createdBy || 'system' } = params;
 
   // Validation
   if (!name || typeof name !== 'string' || !name.trim()) {
@@ -161,7 +161,13 @@ export async function createPremadeBouquet(params) {
     // 3. Deduct stock (serialized through stockQueue)
     for (const line of lines) {
       if (line.stockItemId) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        await db.atomicStockAdjust(line.stockItemId, -line.quantity, {
+          reason: 'premade_create',
+          sourceType: 'premade_bouquet',
+          sourceId: bouquet.id,
+          actor,
+          note: line.flowerName ? `Premade "${name.trim()}": ${line.flowerName}` : undefined,
+        });
         stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
       }
     }
@@ -179,7 +185,15 @@ export async function createPremadeBouquet(params) {
     const rollbackErrors = [];
 
     for (const adj of stockAdjustments) {
-      try { await db.atomicStockAdjust(adj.stockId, -adj.delta); }
+      try {
+        await db.atomicStockAdjust(adj.stockId, -adj.delta, {
+          reason: 'rollback',
+          sourceType: 'premade_bouquet',
+          sourceId: bouquet?.id,
+          actor,
+          note: 'Premade creation failed — reversing stock deduction',
+        });
+      }
       catch (e) { rollbackErrors.push(`stock ${adj.stockId}: ${e.message}`); }
     }
     for (const lineId of createdLineIds) {
@@ -218,14 +232,20 @@ export async function updatePremadeBouquet(id, patch) {
  * @param {Array}  params.removedLines - [{ lineId?, stockItemId, quantity }]
  * @returns {{ updated: true, createdLines }}
  */
-export async function editPremadeBouquetLines(id, { lines = [], removedLines = [] }) {
+export async function editPremadeBouquetLines(id, { lines = [], removedLines = [] }, actor = 'system') {
   // Verify bouquet exists
   await db.getById(TABLES.PREMADE_BOUQUETS, id);
 
   // 1. Handle removed lines — always return to stock (no writeoff for premade)
   for (const rem of removedLines) {
     if (rem.stockItemId && rem.quantity > 0) {
-      await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
+      await db.atomicStockAdjust(rem.stockItemId, rem.quantity, {
+        reason: 'premade_edit',
+        sourceType: 'premade_bouquet',
+        sourceId: id,
+        actor,
+        note: rem.flowerName ? `Premade edit removed: ${rem.flowerName}` : 'Premade edit removed line',
+      });
     }
     if (rem.lineId) {
       await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, rem.lineId).catch(() => {});
@@ -258,7 +278,13 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
       if (line._originalQty != null && line.quantity !== line._originalQty) {
         const delta = line._originalQty - line.quantity;
         if (line.stockItemId && delta !== 0) {
-          await db.atomicStockAdjust(line.stockItemId, delta);
+          await db.atomicStockAdjust(line.stockItemId, delta, {
+            reason: 'premade_edit',
+            sourceType: 'premade_bouquet',
+            sourceId: id,
+            actor,
+            note: `Premade qty edit: ${line._originalQty} → ${line.quantity}`,
+          });
         }
         await db.update(TABLES.PREMADE_BOUQUET_LINES, line.id, { Quantity: line.quantity });
       }
@@ -274,7 +300,13 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
       });
       createdLines.push(created);
       if (line.stockItemId) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        await db.atomicStockAdjust(line.stockItemId, -line.quantity, {
+          reason: 'premade_edit',
+          sourceType: 'premade_bouquet',
+          sourceId: id,
+          actor,
+          note: line.flowerName ? `Premade edit added: ${line.flowerName}` : 'Premade edit added line',
+        });
       }
     }
   }
@@ -287,7 +319,7 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
  * Mirrors cancelWithStockReturn() in orderService.js.
  * @returns {{ message, returnedItems }}
  */
-export async function returnPremadeBouquetToStock(id) {
+export async function returnPremadeBouquetToStock(id, actor = 'system') {
   const bouquet = await db.getById(TABLES.PREMADE_BOUQUETS, id);
   const lineIds = bouquet['Lines'] || [];
   const returnedItems = [];
@@ -298,7 +330,13 @@ export async function returnPremadeBouquetToStock(id) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        const { newQty } = await db.atomicStockAdjust(stockId, qty, {
+          reason: 'premade_delete',
+          sourceType: 'premade_bouquet',
+          sourceId: id,
+          actor,
+          note: line['Flower Name'] ? `Premade returned: ${line['Flower Name']}` : 'Premade returned',
+        });
         returnedItems.push({
           stockId,
           flowerName: line['Flower Name'] || '?',

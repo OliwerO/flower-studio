@@ -62,7 +62,7 @@ export async function createOrder(params, config, opts = {}) {
     payment1Amount, payment1Method,
   } = params;
   const { getConfig, getDriverOfDay, generateOrderId } = config;
-  const { skipStockDeduction = false } = opts;
+  const { skipStockDeduction = false, actor = 'system' } = opts;
 
   // Rollback tracking
   let order = null;
@@ -211,7 +211,13 @@ export async function createOrder(params, config, opts = {}) {
     if (!skipStockDeduction) {
       for (const line of orderLines) {
         if (line.stockItemId && !line.stockDeferred) {
-          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+          await db.atomicStockAdjust(line.stockItemId, -line.quantity, {
+            reason: 'order_create',
+            sourceType: 'order',
+            sourceId: order.id,
+            actor,
+            note: line.flowerName ? `Created order line: ${line.flowerName}` : undefined,
+          });
           stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
         }
       }
@@ -276,7 +282,15 @@ export async function createOrder(params, config, opts = {}) {
     const rollbackErrors = [];
 
     for (const adj of stockAdjustments) {
-      try { await db.atomicStockAdjust(adj.stockId, -adj.delta); }
+      try {
+        await db.atomicStockAdjust(adj.stockId, -adj.delta, {
+          reason: 'rollback',
+          sourceType: 'order',
+          sourceId: order?.id,
+          actor,
+          note: 'Order creation failed — reversing stock deduction',
+        });
+      }
       catch (e) { rollbackErrors.push(`stock ${adj.stockId}: ${e.message}`); }
     }
     for (const lineId of createdLineIds) {
@@ -353,7 +367,7 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}) {
  * Cancel an order and return all stock to inventory.
  * @returns {{ order, returnedItems }}
  */
-export async function cancelWithStockReturn(orderId) {
+export async function cancelWithStockReturn(orderId, actor = 'system') {
   const order = await db.getById(TABLES.ORDERS, orderId);
   const currentStatus = order.Status || ORDER_STATUS.NEW;
 
@@ -372,7 +386,13 @@ export async function cancelWithStockReturn(orderId) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        const { newQty } = await db.atomicStockAdjust(stockId, qty, {
+          reason: 'order_cancel_return',
+          sourceType: 'order',
+          sourceId: orderId,
+          actor,
+          note: line['Flower Name'] ? `Cancelled order: returned ${line['Flower Name']}` : undefined,
+        });
         returnedItems.push({
           stockId,
           flowerName: line['Flower Name'] || '?',
@@ -407,7 +427,7 @@ export async function cancelWithStockReturn(orderId) {
  * @param {string} orderId Airtable record ID
  * @returns {{ deleted: true, orderId, returnedItems, deletedLineCount, deletedDeliveryCount }}
  */
-export async function deleteOrder(orderId) {
+export async function deleteOrder(orderId, actor = 'system') {
   const order = await db.getById(TABLES.ORDERS, orderId);
   const currentStatus = order.Status || ORDER_STATUS.NEW;
   const isTerminal = [
@@ -427,7 +447,13 @@ export async function deleteOrder(orderId) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        const { newQty } = await db.atomicStockAdjust(stockId, qty, {
+          reason: 'order_cancel_return',
+          sourceType: 'order',
+          sourceId: orderId,
+          actor,
+          note: line['Flower Name'] ? `Deleted order: returned ${line['Flower Name']}` : undefined,
+        });
         returnedItems.push({
           stockId,
           flowerName: line['Flower Name'] || '?',
@@ -465,7 +491,7 @@ export async function deleteOrder(orderId) {
  * Auto-reverts status from Ready → New if owner edits.
  * @returns {{ updated: true, createdLines }}
  */
-export async function editBouquetLines(orderId, { lines = [], removedLines = [] }, isOwner) {
+export async function editBouquetLines(orderId, { lines = [], removedLines = [] }, isOwner, actor = 'system') {
   const order = await db.getById(TABLES.ORDERS, orderId);
   // Non-owner roles can only edit bouquets while the order is still being
   // prepared. Owner can edit in any status — this is the last thing that
@@ -484,7 +510,13 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
   for (const rem of removedLines) {
     if (rem.stockItemId && rem.quantity > 0) {
       if (rem.action === 'return') {
-        await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
+        await db.atomicStockAdjust(rem.stockItemId, rem.quantity, {
+          reason: 'order_edit_remove',
+          sourceType: 'order',
+          sourceId: orderId,
+          actor,
+          note: rem.flowerName ? `Edit removed: ${rem.flowerName} (returned)` : 'Edit removed (returned)',
+        });
       } else if (rem.action === 'writeoff') {
         await db.create(TABLES.STOCK_LOSS_LOG, {
           'Stock Item': [rem.stockItemId],
@@ -531,7 +563,13 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       if (line._originalQty !== null && line._originalQty !== undefined && line.quantity !== line._originalQty) {
         const delta = line._originalQty - line.quantity;
         if (line.stockItemId && !line.stockDeferred && delta !== 0 && !explicitStockIds.has(line.stockItemId)) {
-          await db.atomicStockAdjust(line.stockItemId, delta);
+          await db.atomicStockAdjust(line.stockItemId, delta, {
+            reason: 'order_edit_swap',
+            sourceType: 'order_line',
+            sourceId: line.id,
+            actor,
+            note: `Quantity edit: ${line._originalQty} → ${line.quantity}`,
+          });
         }
         await db.update(TABLES.ORDER_LINES, line.id, { Quantity: line.quantity });
       }
@@ -551,7 +589,13 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       });
       createdLines.push(created);
       if (line.stockItemId && !line.stockDeferred) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        await db.atomicStockAdjust(line.stockItemId, -line.quantity, {
+          reason: 'order_create',
+          sourceType: 'order_line',
+          sourceId: created.id,
+          actor,
+          note: line.flowerName ? `Edit added: ${line.flowerName}` : 'Edit added line',
+        });
       }
     }
   }

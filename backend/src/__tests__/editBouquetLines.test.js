@@ -182,7 +182,9 @@ describe('editBouquetLines — persists Stock Deferred on new lines', () => {
     const [, createdFields] = db.create.mock.calls[0];
     expect(createdFields).not.toHaveProperty('Stock Deferred');
 
-    // Non-deferred line = stock deducted by its quantity.
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', -3);
+    // Non-deferred line = stock deducted by its quantity. Third arg is the
+    // ledger ctx — reason/sourceType/actor — which we don't pin down here
+    // since it's the ledger test's job to validate that shape.
+    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', -3, expect.any(Object));
   });
 });

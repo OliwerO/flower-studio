@@ -295,7 +295,7 @@ router.post('/', async (req, res, next) => {
         payment1Amount, payment1Method,
         createdBy: req.role === 'owner' ? 'Owner' : 'Florist',
         isOwner: req.role === 'owner',
-      }, { getConfig, getDriverOfDay, generateOrderId });
+      }, { getConfig, getDriverOfDay, generateOrderId }, { actor: req.driverName || req.role || 'system' });
 
       res.status(201).json(result);
     } catch (creationErr) {
@@ -320,6 +320,7 @@ router.put('/:id/lines', async (req, res, next) => {
       req.params.id,
       req.body,
       req.role === 'owner',
+      req.driverName || req.role || 'system',
     );
     res.json(result);
   } catch (err) {
@@ -418,7 +419,7 @@ router.patch('/:id', async (req, res, next) => {
 // POST /api/orders/:id/cancel-with-return — cancel order AND return stock quantities.
 router.post('/:id/cancel-with-return', async (req, res, next) => {
   try {
-    const result = await cancelWithStockReturn(req.params.id);
+    const result = await cancelWithStockReturn(req.params.id, req.driverName || req.role || 'system');
     res.json(result);
   } catch (err) {
     if (err.statusCode === 400) {
@@ -441,7 +442,7 @@ router.delete('/:id', async (req, res, next) => {
     return res.status(403).json({ error: 'Only the owner can delete orders.' });
   }
   try {
-    const result = await deleteOrder(req.params.id);
+    const result = await deleteOrder(req.params.id, req.driverName || req.role || 'system');
     broadcast({ type: 'order_deleted', orderId: req.params.id });
     res.json(result);
   } catch (err) {
@@ -517,13 +518,26 @@ router.post('/:id/swap-bouquet-line', async (req, res, next) => {
     // Fetch substitute stock item for cost/sell/name
     const substituteStock = await db.getById(TABLES.STOCK, toStockItemId);
 
+    const swapActor = req.driverName || req.role || 'system';
     // Return stock to original (undo the deduction)
     if (oldQty > 0) {
-      await db.atomicStockAdjust(fromStockItemId, +oldQty);
+      await db.atomicStockAdjust(fromStockItemId, +oldQty, {
+        reason: 'order_edit_swap',
+        sourceType: 'order_line',
+        sourceId: lineId,
+        actor: swapActor,
+        note: `Substitute swap: returning ${oldQty} to original stock item`,
+      });
     }
     // Deduct from substitute
     if (qty > 0) {
-      await db.atomicStockAdjust(toStockItemId, -qty);
+      await db.atomicStockAdjust(toStockItemId, -qty, {
+        reason: 'order_edit_swap',
+        sourceType: 'order_line',
+        sourceId: lineId,
+        actor: swapActor,
+        note: `Substitute swap: deducting ${qty} from ${substituteStock['Display Name'] || substituteStock['Purchase Name'] || 'substitute'}`,
+      });
     }
 
     // Update the order line to point to the substitute

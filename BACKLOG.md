@@ -152,6 +152,23 @@ Features and improvements tracked against original build phases.
 - [ ] **Map legacy customers** — match Excel customer names to existing Clients (B2C) records
 - [ ] **Handle data quality** — missing fields, inconsistent naming, currency conversion
 
+### Stock Ledger — append-only event log (2026-04-27)
+
+Append-only audit log for `Current Quantity` so every stock change has a
+timestamped row with reason, source record, and actor. Lays the foundation
+for the eventual SQL migration: the ledger model maps 1:1 to a Postgres
+`stock_ledger` table.
+
+- [x] Backend: `atomicStockAdjust(stockId, delta, ctx)` writes a ledger row on every change (`backend/src/services/airtable.js:107`).
+- [x] Backend: bypasses of `atomicStockAdjust` in `routes/stock.js` (`/:id/adjust`, `/:id/write-off`) routed through it so the ledger is gap-free.
+- [x] Backend: PO receive flow (`stockOrders.js` `receiveIntoStock`) creates the new batch row with qty=0 then adjusts up via `atomicStockAdjust`, so receipts show in the ledger.
+- [x] Backend: read endpoints — `GET /api/stock/:id/ledger` (per-item history) and `GET /api/stock/ledger-reconcile` (drift report comparing `Current Quantity` to `sum(deltas)`).
+- [x] Tests: `backend/src/__tests__/stockLedger.test.js` covers ctx propagation, defaults, and best-effort failure semantics. Existing tests updated for the new ctx parameter.
+- [x] Schema validator: ledger table is opt-in until env var set, won't block boot.
+- [ ] **Owner action: create the `Stock Ledger` table in production Airtable** per `CHANGELOG.md` field checklist, set `AIRTABLE_STOCK_LEDGER_TABLE` on Railway, restart backend.
+- [ ] **Frontend (next session)**: surface `/stock/:id/ledger` on Stock detail (florist + dashboard) so the owner can see history per item without going to Airtable.
+- [ ] **Backfill (optional)**: one-off script that reconstructs ledger rows for past orders / PO receipts / loss events so pre-cutover history shows up too. Drift-vs-current is the integrity check.
+
 ### Infrastructure
 - [ ] **Go-live** — see `CHANGELOG.md` Go-Live Checklist (Airtable tables, env vars, deployment)
 - [ ] **Custom domain** — e.g., app.blossomflowers.pl
@@ -274,6 +291,8 @@ reports). Each item below was re-validated against the current code on
 
 ### Database Migration — Airtable → PostgreSQL (2026-04-03, after features stabilize)
 - [ ] **Migrate to PostgreSQL on Railway** — replace Airtable as primary database. Owner decision: all data managed through the app, no direct Airtable editing. Add on-demand export feature (to Airtable or Excel) for owner access.
+  - **Provider locked (2026-04-25): Railway Postgres** — same Railway account/region as the backend so no second vendor, no cross-region latency. Estimated $8–15/month total burn (backend + DB on Hobby tier); set a $25 monthly spending cap in Railway project settings as a safety net.
+  - Schema lives in repo as versioned migration files (`migrations/NNN_*.sql`); applied via `psql` or a migration runner like `node-pg-migrate`. Claude can author and apply them via Railway CLI + `psql $DATABASE_URL`.
   - Phase A: Stock + POs (most rate-limit pain)
   - Phase B: Orders + Lines + Deliveries
   - Phase C: Customers + Key People + Dates
@@ -290,6 +309,12 @@ them up after the Postgres migration stands up a true dev/staging env.
 - [ ] **Wix webhook — explicit delivery back-link write** — mirror the PR #144 fix (2026-04-23) into `backend/src/services/wix.js` line ~448. After `db.create(TABLES.DELIVERIES, { 'Linked Order': [order.id], ... })`, add `await db.update(TABLES.ORDERS, order.id, { 'Deliveries': [delivery.id] })`. Same Airtable eventual-consistency risk (back-link missing immediately after create) is theoretically present for Wix-webhook-created orders; the florist-created path was confirmed-and-fixed but Wix path wasn't validated because we have no way to replay a Wix webhook safely against production. Needs dev env to stage a webhook hit and verify the back-link lands before we push.
   - Findable tag: `WIX-BACKLINK`
 
+- [ ] **Manual stock adjustment audit logging — DB trigger** (2026-04-25) — every mutation to `stock.current_quantity` must leave a row in `stock_adjustments` (delta, before, after, source, user role, timestamp). On Postgres this becomes a `BEFORE UPDATE ON stock` trigger that fires regardless of which code path mutates the row, so we can't accidentally introduce a silent path again. Eliminates the loophole that `POST /api/stock/:id/adjust` currently has (no audit trail, no way to attribute a discrepancy to a manual edit). Deliberately deferred until after the Postgres migration — the Airtable equivalent (a separate `Stock Adjustments` table written from each endpoint manually) is fragile and bypassable; the trigger version is structurally sound. Surfaces as the 5th event source in `/stock/:id/usage` once live.
+  - Findable tag: `STOCK-AUDIT-TRIGGER`
+
+- [ ] **Stock history chart per flower** (2026-04-25) — line graph of total stems-on-hand over time with colored markers per transaction type (order=orange, PO receipt=green, write-off=red, premade lock=indigo, manual adjustment=gray). Click a flower in `StockTab.jsx` (dashboard) or `StockItem.jsx` (florist) → existing expanded usage row renders the chart above the trace list it already shows. Reconciliation header surfaces `sum(trail) vs current_quantity`; any mismatch is a data-integrity gap worth investigating. Recharts already in dashboard (`apps/dashboard/package.json:18`), needs adding to florist. Shared component lives at `packages/shared/components/StockHistoryChart.jsx`. Plan file (still valid): `~/.claude/plans/we-need-to-understand-adaptive-thimble.md`. Deferred with the audit-trigger item above so the chart can show all 5 sources from day one — shipping it on Airtable now would render an incomplete picture until the trigger lands. Direct diagnostic for the **Bouquet edit stock deduction** Open Investigation below.
+  - Findable tag: `STOCK-HISTORY-CHART`
+
 ### Promo & Event Features (2026-04-03)
 - [ ] **Promo bouquets** — new order type: customer pays nothing, but flower cost (supplier) and courier cost are tracked as business expense. Add "Promo" option when creating a new order. Promo orders must still deduct stock, track supplier costs, and track courier payment — all flow into business cost reporting, not customer billing. Reporting should show promo orders separately from paid orders.
 - [ ] **Seasonal event mode** — major feature requiring dedicated planning session. Two parts:
@@ -299,3 +324,4 @@ them up after the Postgres migration stands up a true dev/staging env.
 
 ### Open Investigation (2026-03-18)
 - [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
+  - **Definitive diagnosis blocked on `STOCK-HISTORY-CHART` + `STOCK-AUDIT-TRIGGER`** — once both ship post-migration, the chart will show whether the deduction event is missing (deduction path is broken) or present but quantity diverges anyway (silent manual adjust elsewhere). Until then, log inspection is the only tool.

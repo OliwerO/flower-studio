@@ -29,6 +29,7 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-04-11 | Premade Bouquet Lines | **New table** — line items for a premade bouquet. Fields: `Premade Bouquet` (link → Premade Bouquets), `Stock Item` (link → Stock, required), `Flower Name` (Single line text), `Quantity` (Number), `Cost Price Per Unit` (Number, snapshot), `Sell Price Per Unit` (Number, snapshot). | ❌ |
 | 2026-04-21 | App Orders | New field: `Florist Note` (Long text) — owner-authored guidance for the florist, separate from the customer's `Notes Original`. Visible on florist collapsed card + editable at every order stage from both dashboard and florist app. | ❌ |
 | 2026-04-21 | Deliveries | New field: `Driver Instructions` (Long text) — owner-authored instructions for the driver, separate from the driver's own `Driver Notes`. Visible on delivery collapsed card + editable from dashboard and florist app. | ❌ |
+| 2026-04-27 | Stock Ledger | **New table** — append-only event log for every change to `Current Quantity` on Stock. Fields below. Backend writes a row through `atomicStockAdjust`; reads via `GET /api/stock/:id/ledger` and `GET /api/stock/ledger-reconcile`. | ❌ |
 
 ### Env vars
 
@@ -37,7 +38,31 @@ Add to `.env.dev` and `.env` (before the feature ships):
 ```
 AIRTABLE_PREMADE_BOUQUETS_TABLE=tbl...       # Premade Bouquets table ID
 AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
+AIRTABLE_STOCK_LEDGER_TABLE=tbl...           # Stock Ledger table ID
 ```
+
+### Stock Ledger — table setup checklist (owner action required)
+
+The backend writes ledger rows automatically once `AIRTABLE_STOCK_LEDGER_TABLE`
+is set. Until then, ledger features no-op (degrades gracefully — every other
+flow keeps working). Create the table in Airtable with these fields:
+
+| Field name | Type | Notes |
+|------------|------|-------|
+| `Stock Item` | Link to Stock | Required. Single record per row. |
+| `Delta` | Number (1 decimal) | Negative = deduction, positive = return/receipt. |
+| `Previous Quantity` | Number (1 decimal) | Stock value BEFORE this change. |
+| `New Quantity` | Number (1 decimal) | Stock value AFTER this change. |
+| `Reason` | Single select | Options: `order_create`, `order_cancel_return`, `order_edit_remove`, `order_edit_swap`, `po_receive`, `loss_writeoff`, `manual_correction`, `premade_create`, `premade_edit`, `premade_delete`, `rollback`, `unknown`. |
+| `Source Type` | Single select | Options: `order`, `order_line`, `stock_order`, `stock_loss`, `premade_bouquet`, `manual`. |
+| `Source ID` | Single line text | Airtable record ID of the source record (e.g. `recAbc123`). |
+| `Actor` | Single line text | `owner`, `florist`, driver name, or `system` (rollback / webhook). |
+| `Note` | Long text | Free-text human-readable context. |
+| `Created` | Created time | Auto-populated by Airtable — used for chronological sort. |
+
+After creating: copy the table ID into `.env` as `AIRTABLE_STOCK_LEDGER_TABLE`,
+restart the Railway backend. Schema validator will then verify all 9 write
+fields exist on boot — if any name is wrong, it'll log the typo and exit.
 
 ---
 

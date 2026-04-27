@@ -89,9 +89,10 @@ describe('createPremadeBouquet', () => {
 
     // Parent + 2 lines created
     expect(db.create).toHaveBeenCalledTimes(3);
-    // Stock deducted twice, with negative deltas
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock1', -3);
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', -2);
+    // Stock deducted twice, with negative deltas. Third arg is the ledger
+    // ctx — covered in stockLedger.test.js, here we only assert quantity.
+    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock1', -3, expect.any(Object));
+    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', -2, expect.any(Object));
     // Broadcast fired
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'premade_bouquet_created',
@@ -163,8 +164,8 @@ describe('returnPremadeBouquetToStock', () => {
     const result = await returnPremadeBouquetToStock('recBouquet1');
 
     // Stock adjusted with POSITIVE deltas (returning to inventory)
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock1', 3);
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', 2);
+    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock1', 3, expect.any(Object));
+    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', 2, expect.any(Object));
     // Lines deleted
     expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine1');
     expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine2');

@@ -75,6 +75,14 @@ const EXPECTED_WRITE_FIELDS = {
   [TABLES.DELIVERIES]: [
     'Driver Instructions',
   ],
+  // Stock Ledger is opt-in: the entry is only added once the env var is set,
+  // so backends booted before the owner creates the table don't fail validation.
+  ...(TABLES.STOCK_LEDGER ? {
+    [TABLES.STOCK_LEDGER]: [
+      'Stock Item', 'Delta', 'Previous Quantity', 'New Quantity',
+      'Reason', 'Source Type', 'Source ID', 'Actor', 'Note',
+    ],
+  } : {}),
 };
 
 /**

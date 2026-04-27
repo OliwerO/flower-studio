@@ -436,6 +436,107 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// GET /api/stock/:id/ledger — append-only event log of every Current Quantity
+// change for this stock item. Each row was written by atomicStockAdjust at the
+// moment the change happened, so unlike /usage (which retroactively reconstructs
+// history from orders/loss/PO records) the ledger captures the change even if
+// the source record is later edited or deleted. Returned in chronological order,
+// oldest first — sum(deltas) should equal Current Quantity for any healthy item.
+//
+// Returns 200 with empty array if the Stock Ledger table isn't configured yet
+// (graceful degradation — owner hasn't created the table in Airtable).
+router.get('/:id/ledger', async (req, res, next) => {
+  try {
+    if (!TABLES.STOCK_LEDGER) {
+      return res.json({ stockId: req.params.id, entries: [], ledgerSum: null, currentQty: null, drift: null, configured: false });
+    }
+    const stockItem = await db.getById(TABLES.STOCK, req.params.id);
+
+    // Linked-record lookups by ID need ARRAYJOIN(...) wrapped in FIND, but
+    // ARRAYJOIN returns display names not IDs (CLAUDE.md Airtable rule). The
+    // safe pattern: pull recent rows then filter in JS by the link array.
+    // 500 rows is enough for ~6 months of activity per item; raise if needed.
+    const recent = await db.list(TABLES.STOCK_LEDGER, {
+      sort: [{ field: 'Created', direction: 'desc' }],
+      maxRecords: 500,
+    }).catch(() => []);
+
+    const entries = recent
+      .filter(r => Array.isArray(r['Stock Item']) && r['Stock Item'].includes(req.params.id))
+      .map(r => ({
+        id: r.id,
+        timestamp: r.Created || null,
+        delta: Number(r.Delta) || 0,
+        previousQty: Number(r['Previous Quantity']) || 0,
+        newQty: Number(r['New Quantity']) || 0,
+        reason: r.Reason || 'unknown',
+        sourceType: r['Source Type'] || null,
+        sourceId: r['Source ID'] || null,
+        actor: r.Actor || null,
+        note: r.Note || null,
+      }))
+      .reverse(); // chronological, oldest first
+
+    const ledgerSum = entries.reduce((s, e) => s + e.delta, 0);
+    const currentQty = Number(stockItem['Current Quantity']) || 0;
+    res.json({
+      stockId: req.params.id,
+      displayName: stockItem['Display Name'] || stockItem['Purchase Name'] || null,
+      currentQty,
+      ledgerSum,
+      drift: currentQty - ledgerSum,
+      entries,
+      configured: true,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stock/ledger-reconcile — find drift between Current Quantity and
+// the sum of ledger deltas across every stock item. Healthy items have
+// drift = 0 (assuming the ledger has been live since the row's creation).
+// Items with non-zero drift are either pre-ledger (legacy data) or had a write
+// that bypassed atomicStockAdjust — both worth investigating.
+//
+// Note: distinct from /reconciliation (substitute-reconciliation feature).
+// Owner-only because it walks every stock item + every ledger row.
+router.get('/ledger-reconcile', authorize('stock', ['owner']), async (req, res, next) => {
+  try {
+    if (!TABLES.STOCK_LEDGER) {
+      return res.json({ items: [], configured: false });
+    }
+    const [stockItems, ledger] = await Promise.all([
+      db.list(TABLES.STOCK, { fields: ['Display Name', 'Purchase Name', 'Current Quantity', 'Active'], maxRecords: 1000 }),
+      db.list(TABLES.STOCK_LEDGER, { fields: ['Stock Item', 'Delta'], maxRecords: 5000 }),
+    ]);
+
+    const ledgerByStock = new Map();
+    for (const row of ledger) {
+      const stockId = Array.isArray(row['Stock Item']) ? row['Stock Item'][0] : null;
+      if (!stockId) continue;
+      ledgerByStock.set(stockId, (ledgerByStock.get(stockId) || 0) + (Number(row.Delta) || 0));
+    }
+
+    const items = stockItems.map(s => {
+      const currentQty = Number(s['Current Quantity']) || 0;
+      const ledgerSum = ledgerByStock.get(s.id) || 0;
+      return {
+        stockId: s.id,
+        displayName: s['Display Name'] || s['Purchase Name'] || '?',
+        active: s.Active !== false,
+        currentQty,
+        ledgerSum,
+        drift: currentQty - ledgerSum,
+      };
+    }).filter(i => i.drift !== 0);
+
+    res.json({ items, configured: true, generatedAt: new Date().toISOString() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/stock/:id/usage — trace where flowers went: orders that used this stock item,
 // write-offs, PO receipts, and stems locked in active premade bouquets.
 //
@@ -739,24 +840,28 @@ router.patch('/:id', async (req, res, next) => {
 // Body: { delta: 5 } or { delta: -3 }
 router.post('/:id/adjust', async (req, res, next) => {
   try {
-    const { delta } = req.body;
+    const { delta, note } = req.body;
 
     if (typeof delta !== 'number') {
       return res.status(400).json({ error: 'delta must be a number (positive or negative).' });
     }
 
-    const item = await db.getById(TABLES.STOCK, req.params.id);
-    const currentQty = item['Current Quantity'] || 0;
-    const newQty = currentQty + delta;
-
-    if (newQty < 0) {
-      console.warn(`[STOCK] Negative stock: ${req.params.id} going to ${newQty} (current: ${currentQty}, delta: ${delta})`);
-    }
-
-    const updated = await db.update(TABLES.STOCK, req.params.id, {
-      'Current Quantity': newQty,
+    // Route through atomicStockAdjust so concurrent calls serialize and the
+    // change appears in the Stock Ledger. Previously this wrote Current
+    // Quantity directly — that bypassed the stock queue (race condition risk
+    // when two browsers adjust at the same time) and the ledger.
+    const { newQty } = await db.atomicStockAdjust(req.params.id, delta, {
+      reason: 'manual_correction',
+      sourceType: 'manual',
+      actor: req.driverName || req.role || 'system',
+      note: note || `Manual ${delta >= 0 ? '+' : ''}${delta} adjustment`,
     });
 
+    if (newQty < 0) {
+      console.warn(`[STOCK] Negative stock: ${req.params.id} now at ${newQty} (delta: ${delta})`);
+    }
+
+    const updated = await db.getById(TABLES.STOCK, req.params.id);
     res.json(updated);
   } catch (err) {
     next(err);
@@ -786,10 +891,20 @@ router.post('/:id/write-off', async (req, res, next) => {
     }
     const actualWriteOff = Math.min(quantity, physicalStock);
 
-    // Build update fields
+    // Quantity goes through atomicStockAdjust so the ledger captures the
+    // write-off. The "Dead/Unsold Stems" counter and Supplier Notes append
+    // are stock-row metadata not tracked by the ledger, so they go in a
+    // separate update() call afterwards.
+    await db.atomicStockAdjust(req.params.id, -actualWriteOff, {
+      reason: 'loss_writeoff',
+      sourceType: 'stock_loss',
+      sourceId: req.params.id,
+      actor: req.driverName || req.role || 'system',
+      note: reason ? `Write-off: ${reason.trim()}` : 'Write-off',
+    });
+
     const fields = {
-      'Current Quantity':   currentQty - actualWriteOff,
-      'Dead/Unsold Stems':  currentDead + actualWriteOff,
+      'Dead/Unsold Stems': currentDead + actualWriteOff,
     };
 
     // Append write-off reason to Supplier Notes with timestamp

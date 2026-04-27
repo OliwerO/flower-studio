@@ -615,7 +615,7 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
 //
 // Returns the new batch's stock item ID.
 const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
-async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today) {
+async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today, ledgerCtx = {}) {
   const stockItem = await db.getById(TABLES.STOCK, stockItemId);
   const existingQty = Number(stockItem['Current Quantity']) || 0;
 
@@ -633,14 +633,23 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
   if (existingQty < 0) {
     batchQty = qty + existingQty; // e.g. 25 + (-5) = 20
     if (batchQty < 0) batchQty = 0; // edge: received less than deficit
-    await db.atomicStockAdjust(stockItemId, -existingQty); // zero it out
+    await db.atomicStockAdjust(stockItemId, -existingQty, {
+      reason: 'po_receive',
+      sourceType: 'stock_order',
+      sourceId: ledgerCtx.poId,
+      actor: ledgerCtx.actor || 'system',
+      note: `PO receipt absorbed deficit: ${existingQty} → 0 on original record`,
+    }); // zero it out
   }
 
+  // Batch starts at 0 then gets adjusted up via atomicStockAdjust so the
+  // arrival shows up in the Stock Ledger. Without this, PO receipts created
+  // a new row with qty=N directly, leaving the ledger blind to the arrival.
   const newBatch = await db.create(TABLES.STOCK, {
     'Display Name':       `${baseName} (${batchLabel})`,
     'Purchase Name':      stockItem['Purchase Name'] || baseName,
     Category:             stockItem.Category || 'Other',
-    'Current Quantity':   batchQty,
+    'Current Quantity':   0,
     'Current Cost Price': costPrice || stockItem['Current Cost Price'] || 0,
     'Current Sell Price': sellPrice || stockItem['Current Sell Price'] || 0,
     Supplier:             supplier || stockItem.Supplier || '',
@@ -649,6 +658,15 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
     Active:               true,
     'Last Restocked':     today,
   });
+  if (batchQty > 0) {
+    await db.atomicStockAdjust(newBatch.id, batchQty, {
+      reason: 'po_receive',
+      sourceType: 'stock_order',
+      sourceId: ledgerCtx.poId,
+      actor: ledgerCtx.actor || 'system',
+      note: `PO receipt: ${batchQty} ${stockItem.Unit || 'stems'} of ${baseName}`,
+    });
+  }
 
   // Update prices on the original record too so the "template" stays current
   await db.update(TABLES.STOCK, stockItemId, {
@@ -765,7 +783,10 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         if (stockItemId && accepted > 0) {
           const already = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'primary');
           if (!already) {
-            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate);
+            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate, {
+              poId: req.params.id,
+              actor: req.driverName || req.role || 'system',
+            });
 
             // Audit trail — marker must match purchaseAlreadyRecorded() exactly.
             await db.create(TABLES.STOCK_PURCHASES, {
@@ -813,7 +834,10 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             const markup = Number(getConfig('targetMarkup')) || 1;
             const altSellPerStem = Math.round(altCostPerStem * markup * 100) / 100;
             const altFinalId = await receiveIntoStock(
-              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate
+              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate, {
+                poId: req.params.id,
+                actor: req.driverName || req.role || 'system',
+              }
             );
             substituteStockId = altFinalId; // may be a new batch id
 

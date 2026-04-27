@@ -85,7 +85,13 @@ router.post('/', async (req, res, next) => {
 
     // Deduct from stock if linked
     if (stockItemId) {
-      await db.atomicStockAdjust(stockItemId, -Number(quantity));
+      await db.atomicStockAdjust(stockItemId, -Number(quantity), {
+        reason: 'loss_writeoff',
+        sourceType: 'stock_loss',
+        sourceId: record.id,
+        actor: req.driverName || req.role || 'system',
+        note: reason ? `Loss: ${reason}` : 'Loss logged',
+      });
     }
 
     // Enrich response so the mobile UI can optimistically render without a
@@ -139,7 +145,13 @@ router.patch('/:id', async (req, res, next) => {
     const delta = oldQty - newQty; // positive = reduced loss → restore stock
 
     if (delta !== 0 && stockItemId) {
-      await db.atomicStockAdjust(stockItemId, delta);
+      await db.atomicStockAdjust(stockItemId, delta, {
+        reason: 'loss_writeoff',
+        sourceType: 'stock_loss',
+        sourceId: req.params.id,
+        actor: req.driverName || req.role || 'system',
+        note: `Loss edited: qty ${oldQty} → ${newQty}`,
+      });
       // Adjust Dead/Unsold Stems counter
       const stockItem = await db.getById(TABLES.STOCK, stockItemId);
       const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
@@ -167,7 +179,13 @@ router.delete('/:id', async (req, res, next) => {
     const stockItemId = current['Stock Item']?.[0];
 
     if (stockItemId && qty > 0) {
-      await db.atomicStockAdjust(stockItemId, +qty);
+      await db.atomicStockAdjust(stockItemId, +qty, {
+        reason: 'loss_writeoff',
+        sourceType: 'stock_loss',
+        sourceId: req.params.id,
+        actor: req.driverName || req.role || 'system',
+        note: `Loss entry deleted: returning ${qty} to stock`,
+      });
       const stockItem = await db.getById(TABLES.STOCK, stockItemId);
       const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
       await db.update(TABLES.STOCK, stockItemId, {

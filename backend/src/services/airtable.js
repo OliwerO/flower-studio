@@ -103,8 +103,24 @@ export async function deleteRecord(tableId, recordId) {
  * Atomically adjust a stock item's quantity by a delta (negative = deduct, positive = add).
  * Runs through stockQueue (concurrency 1) so concurrent orders are serialized.
  * Returns { previousQty, newQty } for rollback tracking.
+ *
+ * @param {string} stockId
+ * @param {number} delta
+ * @param {object} [ctx] - ledger context. Optional for back-compat, but every
+ *   new call site should pass it. Without ctx the row still writes (reason
+ *   defaults to 'unknown') so the ledger never silently drops a change.
+ * @param {string} [ctx.reason]      - enum: order_create | order_cancel_return |
+ *                                     order_edit_remove | order_edit_swap |
+ *                                     po_receive | loss_writeoff |
+ *                                     manual_correction | premade_create |
+ *                                     premade_edit | premade_delete | rollback
+ * @param {string} [ctx.sourceType]  - enum: order | order_line | stock_order |
+ *                                     stock_loss | premade_bouquet | manual
+ * @param {string} [ctx.sourceId]    - Airtable record ID of the source record
+ * @param {string} [ctx.actor]       - role/name (e.g. 'owner', 'florist', driver name)
+ * @param {string} [ctx.note]        - free-text human-readable context
  */
-export async function atomicStockAdjust(stockId, delta) {
+export async function atomicStockAdjust(stockId, delta, ctx = {}) {
   return stockQueue.add(async () => {
     // 1. Read current quantity — fresh, not from a stale snapshot
     const item = await enqueue(async () => {
@@ -118,6 +134,35 @@ export async function atomicStockAdjust(stockId, delta) {
     await enqueue(() =>
       base(TABLES.STOCK).update(stockId, { 'Current Quantity': newQty }, { typecast: true })
     );
+
+    // 3. Append ledger row (best-effort — never fails the parent operation).
+    // If the ledger table isn't configured yet, skip silently. If the write
+    // itself fails, log loudly so the gap is visible but don't roll back the
+    // stock change (rolling back makes the inconsistency worse, not better).
+    // We DO await the write so callers have stable timing — "best-effort"
+    // means failures don't propagate, not that we abandon the write.
+    if (TABLES.STOCK_LEDGER) {
+      const fields = {
+        'Stock Item': [stockId],
+        'Delta': delta,
+        'Previous Quantity': previousQty,
+        'New Quantity': newQty,
+        'Reason': ctx.reason || 'unknown',
+        'Source Type': ctx.sourceType || 'manual',
+      };
+      if (ctx.sourceId) fields['Source ID'] = ctx.sourceId;
+      if (ctx.actor)    fields['Actor'] = ctx.actor;
+      if (ctx.note)     fields['Note'] = ctx.note;
+
+      try {
+        await enqueue(() => base(TABLES.STOCK_LEDGER).create(fields, { typecast: true }));
+      } catch (err) {
+        console.error(
+          `[STOCK LEDGER] Failed to record adjustment for ${stockId} ` +
+          `(delta=${delta}, reason=${ctx.reason || 'unknown'}): ${err.message}`
+        );
+      }
+    }
 
     return { stockId, previousQty, newQty };
   });
