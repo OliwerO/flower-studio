@@ -51,7 +51,9 @@ export default function PurchaseOrderPage() {
 
   const fetchOrders = useCallback(async () => {
     try {
-      const res = await client.get('/stock-orders');
+      // include=lines lets us render the per-PO cost total without an extra
+      // round-trip per row. Backend already supports it (stockOrders.js:84).
+      const res = await client.get('/stock-orders?include=lines');
       setOrders(res.data);
     } catch {
       showToast(t.error, 'error');
@@ -144,11 +146,22 @@ export default function PurchaseOrderPage() {
         notes: formNotes,
         driver: formDriver,
         plannedDate: formPlannedDate || null,
-        lines: formLines.filter(l => l.flowerName).map(l => ({
-          ...l,
-          costPrice: Number(l.costPrice) || 0,
-          sellPrice: Number(l.sellPrice) || 0,
-        })),
+        // Lot-round the stored quantity so it matches what the create-form's
+        // grandCost math showed the owner. Without this, `Quantity Needed`
+        // would store the raw stem count (e.g. 7) but the cost badge rendered
+        // the lot-rounded value (10 stems at `Math.ceil(7/10)*10`), making
+        // the persisted-PO total inconsistent with what the owner confirmed.
+        lines: formLines.filter(l => l.flowerName).map(l => {
+          const ls = Number(l.lotSize) || 0;
+          const rawQty = Number(l.quantity) || 0;
+          const quantity = ls > 1 ? Math.ceil(rawQty / ls) * ls : rawQty;
+          return {
+            ...l,
+            quantity,
+            costPrice: Number(l.costPrice) || 0,
+            sellPrice: Number(l.sellPrice) || 0,
+          };
+        }),
       });
       showToast(t.po?.created || 'PO created');
       setShowForm(false);
@@ -455,7 +468,14 @@ export default function PurchaseOrderPage() {
           <p className="text-sm text-ios-tertiary text-center py-12">{t.po?.noOrders || 'No purchase orders'}</p>
         ) : (
           <div className="space-y-2">
-            {orders.map(order => (
+            {orders.map(order => {
+              // Cost total from pre-fetched lines (backend returns them when
+              // we pass ?include=lines). Owner sees at a glance how much cash
+              // this PO will need; avoids mentally summing the line prices.
+              const costTotal = (order.lines || []).reduce(
+                (sum, l) => sum + (Number(l['Quantity Needed']) || 0) * (Number(l['Cost Price']) || 0), 0
+              );
+              return (
               <div key={order.id} className="ios-card overflow-hidden">
                 {/* PO header row */}
                 <button
@@ -470,6 +490,11 @@ export default function PurchaseOrderPage() {
                       <span className="text-sm font-medium text-ios-label">
                         PO #{order['Stock Order ID'] || '—'}
                       </span>
+                      {costTotal > 0 && (
+                        <span className="text-xs font-semibold text-ios-label bg-blue-50 text-blue-700 px-2 py-0.5 rounded-full">
+                          {costTotal.toFixed(0)} zł
+                        </span>
+                      )}
                     </div>
                     <span className="text-xs text-ios-tertiary">{order['Created Date']}</span>
                   </div>
@@ -507,6 +532,21 @@ export default function PurchaseOrderPage() {
                           onAdd={addPersistedLine}
                           suppliers={SUPPLIERS}
                         />
+
+                        {/* Cost total from the live expanded-lines state so it
+                            tracks in-progress edits, not the stale snapshot on
+                            order.lines from the list fetch. */}
+                        {(() => {
+                          const liveTotal = expandedLines.reduce(
+                            (s, l) => s + (Number(l['Quantity Needed']) || 0) * (Number(l['Cost Price']) || 0), 0
+                          );
+                          return liveTotal > 0 ? (
+                            <div className="text-sm px-1 pt-1">
+                              <span className="text-ios-tertiary">{t.po?.costTotal || 'Cost total'}: </span>
+                              <span className="font-semibold text-ios-label">{liveTotal.toFixed(0)} zł</span>
+                            </div>
+                          ) : null;
+                        })()}
 
                         <div className="flex items-center gap-2 pt-2">
                           <select
@@ -625,7 +665,8 @@ export default function PurchaseOrderPage() {
                   </div>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </main>

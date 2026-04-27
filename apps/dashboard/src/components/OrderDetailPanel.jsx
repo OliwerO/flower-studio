@@ -161,7 +161,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
       // includeEmpty=true so the picker can reselect negative-stock items
       // (they represent unfulfilled demand rolling into the next PO).
       const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true'),
+        client.get('/stock?includeEmpty=true&includeInactive=true'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStockItems(stockRes.data);
@@ -262,7 +262,16 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
     : null;
   const lineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
   const deliveryFee = Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0);
-  const effectivePrice = (o['Price Override'] || lineTotal) + deliveryFee;
+  // Prefer backend-enriched Final Price when NOT editing. It's the
+  // authoritative order total and survives cases where o.orderLines goes
+  // stale or empty (e.g. a partial-paid order that was cancelled and then
+  // reopened — the remaining-balance math was collapsing to -p1Amount
+  // because lineTotal became 0). While editing the bouquet we still compute
+  // live from editLines so the grand-total badge tracks the in-progress edit.
+  const savedFinalPrice = Number(o['Final Price'] || 0);
+  const effectivePrice = editingLineTotal != null
+    ? (o['Price Override'] || editingLineTotal) + deliveryFee
+    : (savedFinalPrice > 0 ? savedFinalPrice : (o['Price Override'] || lineTotal) + deliveryFee);
 
   // Partial payment state
   const isPartial = o['Payment Status'] === 'Partial';
@@ -355,6 +364,44 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
 
       {/* Payment row */}
       <div className="space-y-3">
+        {/* Mismatch banner — Paid orders whose recorded payment no longer covers
+            the current total (usually because a bouquet edit raised the price).
+            Two escapes: Collect remainder (→ Partial + existing P2 flow) or
+            Mark as fully paid (→ bump P1 to match the new total, quieting the
+            banner without inventing data beyond the new total). */}
+        {(() => {
+          const p1 = Number(o['Payment 1 Amount'] || 0);
+          const p2 = Number(o['Payment 2 Amount'] || 0);
+          const paid = p1 + p2;
+          const showMismatch = o['Payment Status'] === 'Paid'
+            && paid > 0 && effectivePrice > 0 && paid < effectivePrice;
+          if (!showMismatch) return null;
+          const delta = effectivePrice - paid;
+          return (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-2">
+              <p className="text-xs font-semibold text-amber-800">⚠ {t.priceExceedsPaid}</p>
+              <p className="text-xs text-amber-700">
+                {t.paidAmount}: {paid.toFixed(0)} {t.zl} · {t.price}: {effectivePrice.toFixed(0)} {t.zl} · {t.remaining}: <span className="font-semibold">{delta.toFixed(0)} {t.zl}</span>
+              </p>
+              <div className="flex gap-2 flex-wrap">
+                <button
+                  onClick={() => patchOrder({ 'Payment Status': 'Partial' })}
+                  disabled={saving}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white hover:bg-amber-700"
+                >{t.collectRemainder}</button>
+                <button
+                  onClick={() => patchOrder({
+                    'Payment 1 Amount': effectivePrice,
+                    'Payment 1 Method': o['Payment 1 Method'] || o['Payment Method'] || null,
+                  })}
+                  disabled={saving}
+                  className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 hover:bg-amber-100"
+                >{t.markAsFullyPaid}</button>
+              </div>
+            </div>
+          );
+        })()}
+
         <Section label={t.paymentStatus}>
           <Pills
             options={PAYMENT_STATUSES}
@@ -551,7 +598,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                   if (stockItems.length === 0) {
                     // includeEmpty=true so negative-stock (unfulfilled demand)
                     // flowers appear in the picker — prevents duplicate Stock rows.
-                    client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
+                    client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
                   }
                   client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
                   client.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));

@@ -40,13 +40,24 @@ async function sendTo(token, chatId, text) {
 }
 
 /**
- * Send a text message to the owner's chat only (backwards compat).
+ * Send a text message to owner-tier chats (owner + any additional recipients
+ * who should see owner-level alerts like Wix sync errors — e.g. a co-owner,
+ * a technical helper).
+ *
+ * TELEGRAM_OWNER_CHAT_ID accepts either a single chat ID (legacy) or a
+ * comma-separated list. Single values stay backward-compatible, multi-value
+ * lets the owner add a second recipient by editing the env var alone.
+ *
+ * For team-wide broadcasts (new-order alerts that everyone sees), use
+ * `broadcastAlert` instead — it reads TELEGRAM_CHAT_IDS.
  */
 export async function sendAlert(text) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
-  const chatId = process.env.TELEGRAM_OWNER_CHAT_ID;
-  if (!token || !chatId) return null;
-  await sendTo(token, chatId, text);
+  const raw = process.env.TELEGRAM_OWNER_CHAT_ID;
+  if (!token || !raw) return null;
+  const chatIds = raw.split(',').map(s => s.trim()).filter(Boolean);
+  if (chatIds.length === 0) return null;
+  await Promise.all(chatIds.map(id => sendTo(token, id, text)));
 }
 
 /**
@@ -74,19 +85,55 @@ export async function notifyNewOrder({ source, customerName, request, deliveryTy
   await broadcastAlert(lines.join('\n'));
 }
 
-// ── Delivery-complete notification (owner only) ─────────────────
-//
-// Owner wants to know the moment a bouquet lands AND whether it was
-// delivered inside the customer's promised window. All time comparisons
-// run in Europe/Warsaw — the `Delivered At` timestamp is UTC but the
-// `Delivery Time` slot is a local "HH:MM-HH:MM" string.
-
+// Telegram parses HTML in message bodies (parse_mode: 'HTML'), so raw
+// angle brackets in user-controlled fields would confuse the parser.
+// Coerce-with-?? keeps undefined / null safe.
 function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
 }
+
+/**
+ * Owner-only alert when Wix pull/push completes with errors.
+ *
+ * Why owner-only: Wix sync is the owner's workflow — florists don't need
+ * these pings and would get noise. Uses `sendAlert` (single-chat) not
+ * `broadcastAlert`.
+ *
+ * Format: title line + error count + up to 3 truncated error messages.
+ * Full error list lives in the app toast + Railway logs — this is just
+ * a signal that something needs attention.
+ *
+ * @param direction "pull" | "push"
+ * @param errors array of error strings from stats.errors
+ */
+export async function notifyWixSyncError({ direction, errors }) {
+  if (!errors || errors.length === 0) return;
+  const dirLabel = direction === 'pull' ? 'Pull' : 'Push';
+  const shown = errors.slice(0, 3).map(e => {
+    // Truncate very long messages so the Telegram message stays readable.
+    const s = String(e);
+    return s.length > 200 ? s.slice(0, 200) + '…' : s;
+  });
+  const moreLine = errors.length > 3 ? `\n<i>…and ${errors.length - 3} more</i>` : '';
+  const lines = [
+    `🔴 <b>Wix sync — ${dirLabel} errors</b>`,
+    `${errors.length} error${errors.length === 1 ? '' : 's'}`,
+    '',
+    ...shown.map(e => `• <code>${escapeHtml(e)}</code>`),
+    moreLine,
+  ].filter(Boolean);
+  await sendAlert(lines.join('\n'));
+}
+
+// ── Delivery-complete notification (owner only) ─────────────────
+//
+// Owner wants to know the moment a bouquet lands AND whether it was
+// delivered inside the customer's promised window. All time comparisons
+// run in Europe/Warsaw — the `Delivered At` timestamp is UTC but the
+// `Delivery Time` slot is a local "HH:MM-HH:MM" string.
 
 function toMinutes(hhmm) {
   const [h, m] = hhmm.split(':').map(Number);

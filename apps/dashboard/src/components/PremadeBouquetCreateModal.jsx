@@ -26,7 +26,7 @@ export default function PremadeBouquetCreateModal({ onClose, onCreated }) {
   const [stock, setStock] = useState([]);
 
   useEffect(() => {
-    client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(console.error);
+    client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data)).catch(console.error);
   }, []);
 
   function updateForm(patch) {
@@ -122,7 +122,7 @@ export default function PremadeBouquetCreateModal({ onClose, onCreated }) {
             stock={stock}
             /* Physical compose flow — no pending-PO stems allowed. */
             onlyPhysicallyAvailable
-            onStockRefresh={() => client.get('/stock?includeEmpty=true').then(r => setStock(r.data))}
+            onStockRefresh={() => client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data))}
             onChange={updateForm}
             onLinesChange={updateLines}
             requiredBy={null}

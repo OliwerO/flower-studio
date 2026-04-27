@@ -17,18 +17,28 @@ const STOCK_PATCH_ALLOWED = [
   'Last Restocked',
 ];
 
-// GET /api/stock?category=Roses&includeEmpty=true
-// By default hides items with qty=0 (old depleted batches). Pass includeEmpty=true to see all.
+// GET /api/stock?category=Roses&includeEmpty=true&includeInactive=true
+// Defaults hide qty=0 (old depleted batches) and Active=false rows.
+//  - includeEmpty=true   → also return rows with qty ≤ 0 (e.g. negative stock
+//                          already owed to customers)
+//  - includeInactive=true → also return rows that have been manually deactivated
+//                          in Airtable (the bouquet picker needs this so it can
+//                          surface stale-but-still-demanded records and prevent
+//                          duplicate-row creation when the owner re-types a name)
 router.get('/', async (req, res, next) => {
   try {
-    const { category, includeEmpty } = req.query;
-    const filters = ['{Active} = TRUE()'];
+    const { category, includeEmpty, includeInactive } = req.query;
+    const filters = [];
 
+    if (includeInactive !== 'true') filters.push('{Active} = TRUE()');
     if (includeEmpty !== 'true') filters.push('{Current Quantity} > 0');
     if (category) filters.push(`{Category} = '${sanitizeFormulaValue(category)}'`);
 
     const stock = await db.list(TABLES.STOCK, {
-      filterByFormula: `AND(${filters.join(', ')})`,
+      // When no filters are active we must pass an empty string — Airtable
+      // rejects `AND()` with zero clauses. This only happens if the caller
+      // opts into both includeEmpty and includeInactive.
+      filterByFormula: filters.length ? `AND(${filters.join(', ')})` : '',
       sort: [
         { field: 'Category', direction: 'asc' },
         { field: 'Display Name', direction: 'asc' },
@@ -142,10 +152,16 @@ router.get('/premade-committed', async (req, res, next) => {
   }
 });
 
-// GET /api/stock/committed — aggregate committed quantities per stock item for
-// future-dated non-terminal orders. Returns raw demand regardless of whether
-// the order already deducted stock at creation; the frontend compares this to
-// Current Quantity to decide whether to flag the flower as "needed".
+// GET /api/stock/committed — informational breakdown of which orders consume
+// each stock item, for the tap-to-expand detail view on the stock panel.
+// Returns demand for future-dated non-terminal orders.
+//
+// IMPORTANT: stock is deducted from `Current Quantity` at order creation
+// (orderService.js → atomicStockAdjust). The `committed` number this endpoint
+// returns is the SAME demand, viewed from the other side — it is already
+// baked into Current Quantity. The frontend must NOT subtract committed from
+// qty: that would double-count. See root CLAUDE.md "Known Pitfalls" #7 and
+// packages/shared/utils/stockMath.js.
 // Returns { stockId: { committed: N, orders: [{ orderId, appOrderId, customerName, requiredBy, qty }] } }
 router.get('/committed', async (req, res, next) => {
   try {
@@ -421,7 +437,21 @@ router.post('/', async (req, res, next) => {
 });
 
 // GET /api/stock/:id/usage — trace where flowers went: orders that used this stock item,
-// write-offs, and PO receipts. Returns a chronological audit trail.
+// write-offs, PO receipts, and stems locked in active premade bouquets.
+//
+// Goal: sum(trail.quantity) should equal the Stock row's Current Quantity, for
+// every row, always. If it doesn't, something changed qty without emitting an
+// event here — that's a data-integrity gap to investigate. See root CLAUDE.md
+// pitfall #7 + packages/shared/utils/stockMath.js for the model.
+//
+// Event types:
+//   - 'order'     — order line consuming stems (negative qty)
+//   - 'writeoff'  — stock loss log entry (negative qty)
+//   - 'purchase'  — stock purchase or PO receipt (positive qty)
+//   - 'premade'   — stems currently locked in an active premade bouquet
+//                   (negative qty; dated null because premade lines have no
+//                   creation timestamp in Airtable today — they show at the
+//                   top of the chronological list as "ongoing").
 router.get('/:id/usage', async (req, res, next) => {
   try {
     const stockItem = await db.getById(TABLES.STOCK, req.params.id);
@@ -454,35 +484,53 @@ router.get('/:id/usage', async (req, res, next) => {
     const siblingIds = new Set(siblingStocks.map(s => s.id));
     const siblingNames = siblingStocks.map(s => s['Display Name']).filter(Boolean);
 
-    // 1. Order lines — build an OR-formula that matches any of the sibling
-    //    display names (the Flower Name stamped on each line at creation).
-    //    Then keep only lines whose Stock Item link resolves to one of the
-    //    siblings, so we don't accidentally pick up unrelated records that
-    //    happen to share a name fragment.
-    const orSafeNames = siblingNames.map(n => `{Flower Name} = '${sanitizeFormulaValue(n)}'`);
-    const orderLineFormula = orSafeNames.length > 0 ? `OR(${orSafeNames.join(', ')})` : `{Flower Name} = '${safeBase}'`;
-    const orderLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: orderLineFormula,
-      fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
+    // 1. Order lines — walk from the Orders side.
+    //
+    // Previous implementation filtered Order Lines by `Flower Name` text
+    // matching the sibling Display Names. That's fragile: if any past order
+    // was created with a subtly different Flower Name (legacy casing, extra
+    // whitespace, a rename after the line was stamped, a flower whose stock
+    // row was since renamed/deleted), the line is invisible to the trace
+    // even though its Stock Item link DID deduct qty via atomicStockAdjust.
+    //
+    // The Stock Item link is the authoritative relationship; `Flower Name` is
+    // just a display snapshot taken at creation time. So we fetch recent
+    // orders (past year + anything with no Order Date), pull their line IDs,
+    // then JS-filter lines whose Stock Item resolves to one of the siblings.
+    //
+    // Trade-off: two round-trips (Orders, Order Lines) instead of one, and
+    // a larger result set. For a small shop (<2000 orders/year) both queries
+    // return in well under a second via the rate-limited queue.
+    const orderCutoff = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
+    const recentOrders = await db.list(TABLES.ORDERS, {
+      filterByFormula: `OR({Order Date} = '', NOT(IS_BEFORE({Order Date}, '${orderCutoff}')))`,
+      fields: ['Order Lines', 'App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
+      maxRecords: 2000,
     });
-    const matchedLines = orderLines.filter(l => {
-      const linkedId = l['Stock Item']?.[0];
-      // No link → still keep if the name matched, so orphan lines are surfaced.
-      if (!linkedId) return true;
-      return siblingIds.has(linkedId);
-    });
-
-    // Fetch parent orders for context
-    const orderIds = [...new Set(matchedLines.flatMap(l => l.Order || []))];
-    const orders = orderIds.length > 0
-      ? await listByIds(TABLES.ORDERS, orderIds, {
-          fields: ['App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
+    const allLineIds = recentOrders.flatMap(o => o['Order Lines'] || []);
+    const allLines = allLineIds.length > 0
+      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
+          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
         })
       : [];
-    const orderMap = {};
-    for (const o of orders) orderMap[o.id] = o;
+    // Keep only lines whose Stock Item link resolves to one of our siblings.
+    // Orphan lines (no link) don't affect qty (atomicStockAdjust needs a
+    // stock ID), so dropping them is harmless.
+    const matchedLines = allLines.filter(l => siblingIds.has(l['Stock Item']?.[0]));
 
-    const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
+    // Build the order map from the orders we already fetched — no second
+    // round-trip needed.
+    const orderMap = {};
+    for (const o of recentOrders) orderMap[o.id] = o;
+
+    // Fetch only the customers whose orders actually matched this stock —
+    // otherwise we'd pull every customer from the past year.
+    const matchedOrderIds = new Set(matchedLines.flatMap(l => l.Order || []));
+    const customerIds = [...new Set(
+      recentOrders
+        .filter(o => matchedOrderIds.has(o.id))
+        .flatMap(o => o.Customer || [])
+    )];
     const customers = customerIds.length > 0
       ? await listByIds(TABLES.CUSTOMERS, customerIds, { fields: ['Name', 'Nickname'] })
       : [];
@@ -579,8 +627,48 @@ router.get('/:id/usage', async (req, res, next) => {
       });
     } catch { /* table may not exist */ }
 
-    // Combine and sort chronologically (newest first)
-    const trail = [...usageOrders, ...usageLosses, ...usagePurchases]
+    // 4. Active premade bouquet lines — stems physically locked in a premade
+    // that hasn't been sold/dissolved yet. These were deducted from qty when
+    // the premade was created; the trace must surface them or the arithmetic
+    // won't reconcile. Dissolved/consumed premades don't appear (the line
+    // record is deleted and the stems either flowed into an order or were
+    // returned to stock via a reverse atomicStockAdjust — both of which are
+    // already represented in the 'order' and 'purchase' trails respectively).
+    let usagePremades = [];
+    if (TABLES.PREMADE_BOUQUETS && TABLES.PREMADE_BOUQUET_LINES) {
+      try {
+        const bouquets = await db.list(TABLES.PREMADE_BOUQUETS, {
+          fields: ['Name', 'Lines'],
+          maxRecords: 500,
+        });
+        const allLineIds = bouquets.flatMap(b => b['Lines'] || []);
+        const allLines = allLineIds.length > 0
+          ? await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds, {
+              fields: ['Premade Bouquets', 'Stock Item', 'Quantity', 'Flower Name'],
+            })
+          : [];
+        const bouquetMap = {};
+        for (const b of bouquets) bouquetMap[b.id] = b;
+        usagePremades = allLines
+          .filter(l => siblingIds.has(l['Stock Item']?.[0]))
+          .map(l => {
+            const bouquetId = l['Premade Bouquets']?.[0];
+            const bouquet = bouquetId ? bouquetMap[bouquetId] : null;
+            return {
+              type: 'premade',
+              date: null, // no timestamp on premade lines in Airtable
+              quantity: -(Number(l.Quantity) || 0),
+              bouquetId: bouquetId || '',
+              bouquetName: bouquet?.Name || '?',
+              flowerName: l['Flower Name'] || displayName,
+            };
+          });
+      } catch { /* premade tables may not exist in some envs */ }
+    }
+
+    // Combine and sort chronologically (newest first).
+    // Premade entries have null date — they sort to the top as "ongoing".
+    const trail = [...usageOrders, ...usageLosses, ...usagePurchases, ...usagePremades]
       .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
     res.json({
@@ -744,40 +832,75 @@ router.post('/:id/write-off', async (req, res, next) => {
   }
 });
 
-// GET /api/stock/reconciliation — detect stock mismatches.
-// Checks ALL non-terminal orders (including future ones). Only counts order
-// lines where Stock Deferred is NOT true (these should have been deducted
-// from stock at order creation). Compares expected deduction totals against
-// actual stock qty to surface discrepancies.
+// GET /api/stock/reconciliation — list substitute pairs that still have
+// unswapped bouquet lines. Backed by the `Substitute For` link written by
+// findOrCreateSubstituteStock (PO evaluation → substitute receive flow).
+//
+// Response shape:
+//   { items: [{ originalStockId, originalName, originalQty,
+//               substitutes: [{ stockId, name, availableQty }],
+//               affectedLines: [{ lineId, orderId, appOrderId, customerName,
+//                                 requiredBy, orderStatus, quantity, suggestedSwapQty }] }] }
+//
+// An "item" is one original flower the owner has a substitute for, plus the
+// non-terminal order lines still pointing at that original. The owner picks a
+// substitute (usually there is one; sometimes multiple if the same original was
+// substituted more than once) and hits Swap per affected line. When every line
+// has been swapped off, the original stops appearing here.
 router.get('/reconciliation', async (req, res, next) => {
   try {
-    // Fetch active stock items
+    // 1. Fetch all active stock — need `Substitute For` to find substitutes and
+    //    `Current Quantity` for both the original (shown, may be negative) and
+    //    the substitute (shown, must cover the swap qty).
     const stockItems = await db.list(TABLES.STOCK, {
       filterByFormula: '{Active} = TRUE()',
-      fields: ['Display Name', 'Current Quantity', 'Dead/Unsold Stems'],
+      fields: ['Display Name', 'Current Quantity', 'Substitute For'],
     });
 
-    // Fetch ALL non-terminal orders (no date filter — deferred flag is what matters)
+    // Index: originalStockId → [substituteStockId, ...]
+    // Airtable's `Substitute For` is a linked-record array of stock IDs.
+    const substitutesByOriginal = {};
+    const stockMap = {};
+    for (const item of stockItems) {
+      stockMap[item.id] = item;
+      const originals = Array.isArray(item['Substitute For']) ? item['Substitute For'] : [];
+      for (const origId of originals) {
+        if (!substitutesByOriginal[origId]) substitutesByOriginal[origId] = [];
+        substitutesByOriginal[origId].push(item.id);
+      }
+    }
+    const originalIds = Object.keys(substitutesByOriginal);
+    if (originalIds.length === 0) return res.json({ items: [] });
+
+    // 2. Originals may be deactivated after substitution — fetch by ID so we
+    //    can still show the card regardless of Active status.
+    const originals = await listByIds(TABLES.STOCK, originalIds, {
+      fields: ['Display Name', 'Current Quantity'],
+    });
+    const originalMap = {};
+    for (const o of originals) originalMap[o.id] = o;
+
+    // 3. Non-terminal orders + lines — find which lines still reference an
+    //    original so the owner knows which orders need swapping.
     const orders = await db.list(TABLES.ORDERS, {
       filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
       fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
       maxRecords: 1000,
     });
-
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const allLines = allLineIds.length > 0
       ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name', 'Stock Deferred'],
+          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
         })
       : [];
 
-    // Customer names for display
     const custIds = [...new Set(orders.flatMap(o => o.Customer || []))];
     const custs = custIds.length > 0
       ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
       : [];
     const custMap = {};
     for (const c of custs) custMap[c.id] = c;
+
     const orderMap = {};
     for (const o of orders) {
       const cid = o.Customer?.[0];
@@ -789,107 +912,71 @@ router.get('/reconciliation', async (req, res, next) => {
       };
     }
 
-    // Only count NON-deferred lines — these had their stock deducted at creation
-    const deductions = {};
+    // Bucket affected lines by original stockId. Skip qty=0 lines (already
+    // swapped or zeroed out — no work left).
+    const linesByOriginal = {};
+    const originalIdSet = new Set(originalIds);
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
+      if (!stockId || !originalIdSet.has(stockId)) continue;
       const qty = Number(line.Quantity || 0);
       if (qty <= 0) continue;
-      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
-      if (isDeferred) continue; // deferred lines did NOT deduct stock — skip
-
-      if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
-      deductions[stockId].expected += qty;
       const oid = line.Order?.[0];
       const oi = oid ? orderMap[oid] : null;
-      if (oi) {
-        deductions[stockId].orders.push({
-          orderId: oid,
-          appOrderId: oi.appOrderId,
-          customerName: oi.customerName,
-          requiredBy: oi.requiredBy,
-          qty,
-          status: oi.status,
-          deferred: false,
-        });
-      }
-    }
-
-    // Also flag deferred lines that SHOULD have been deducted but weren't
-    // (lines in the same order as non-deferred lines = inconsistency)
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-      const isDeferred = line['Stock Deferred'] === true || line['Stock Deferred'] === 'true';
-      if (!isDeferred) continue; // already counted above
-
-      const oid = line.Order?.[0];
-      const oi = oid ? orderMap[oid] : null;
-      // Check if same order has non-deferred lines (mixed deferred = likely bug)
-      const sameOrderNonDeferred = allLines.some(l =>
-        l.Order?.[0] === oid && l.id !== line.id &&
-        !(l['Stock Deferred'] === true || l['Stock Deferred'] === 'true')
-      );
-      if (sameOrderNonDeferred) {
-        // This is suspicious: same order has both deferred and non-deferred lines
-        if (!deductions[stockId]) deductions[stockId] = { expected: 0, orders: [] };
-        deductions[stockId].expected += qty;
-        if (oi) {
-          deductions[stockId].orders.push({
-            orderId: oid,
-            appOrderId: oi.appOrderId,
-            customerName: oi.customerName,
-            requiredBy: oi.requiredBy,
-            qty,
-            status: oi.status,
-            deferred: true,
-            mixedDeferredFlag: true,
-          });
-        }
-      }
-    }
-
-    // Build index of stock items
-    const stockMap = {};
-    for (const item of stockItems) stockMap[item.id] = item;
-
-    // Report items where deductions exist — owner reviews and decides
-    const items = [];
-    for (const [stockId, d] of Object.entries(deductions)) {
-      const item = stockMap[stockId];
-      if (!item) continue;
-      items.push({
-        stockId,
-        name: item['Display Name'] || '',
-        currentQty: Number(item['Current Quantity'] || 0),
-        deductionExpected: d.expected,
-        orders: d.orders,
+      if (!oi) continue;
+      if (!linesByOriginal[stockId]) linesByOriginal[stockId] = [];
+      linesByOriginal[stockId].push({
+        lineId: line.id,
+        orderId: oid,
+        appOrderId: oi.appOrderId,
+        customerName: oi.customerName,
+        requiredBy: oi.requiredBy,
+        orderStatus: oi.status,
+        quantity: qty,
+        suggestedSwapQty: qty,
       });
     }
 
-    res.json(items);
-  } catch (err) {
-    next(err);
-  }
-});
+    // 4. Build response: only include originals that still have affected lines.
+    //    Fully-reconciled pairs disappear so the UI stays focused on work left.
+    const items = [];
+    for (const origId of originalIds) {
+      const affectedLines = linesByOriginal[origId];
+      if (!affectedLines || affectedLines.length === 0) continue;
+      const original = originalMap[origId];
+      if (!original) continue;
 
-// POST /api/stock/reconciliation/apply — apply stock corrections in bulk
-router.post('/reconciliation/apply', async (req, res, next) => {
-  try {
-    const adjustments = req.body;
-    if (!Array.isArray(adjustments)) {
-      return res.status(400).json({ error: 'Expected array of { stockId, adjustDelta }' });
+      const subIds = substitutesByOriginal[origId] || [];
+      const substitutes = subIds
+        .map(sid => {
+          const s = stockMap[sid];
+          if (!s) return null;
+          return {
+            stockId: sid,
+            name: s['Display Name'] || '',
+            availableQty: Number(s['Current Quantity'] || 0),
+          };
+        })
+        .filter(Boolean);
+
+      // FIFO by delivery date — earliest first, owner reconciles in delivery order.
+      affectedLines.sort((a, b) =>
+        (a.requiredBy || '').localeCompare(b.requiredBy || '')
+      );
+
+      items.push({
+        originalStockId: origId,
+        originalName: original['Display Name'] || '',
+        originalQty: Number(original['Current Quantity'] || 0),
+        substitutes,
+        affectedLines,
+      });
     }
-    const results = [];
-    for (const { stockId, adjustDelta } of adjustments) {
-      if (!stockId || typeof adjustDelta !== 'number' || adjustDelta === 0) continue;
-      const result = await db.atomicStockAdjust(stockId, adjustDelta);
-      results.push(result);
-    }
-    res.json({ applied: results.length, results });
+
+    // Most-affected originals first — owner tackles the biggest impact pairs first.
+    items.sort((a, b) => b.affectedLines.length - a.affectedLines.length);
+
+    res.json({ items });
   } catch (err) {
     next(err);
   }

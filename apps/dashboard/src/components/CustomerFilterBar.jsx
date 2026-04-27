@@ -4,7 +4,7 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import t from '../translations.js';
-import { activeFilterCount } from '../utils/customerFilters.js';
+import { activeFilterCount } from '@flower-studio/shared';
 
 // Definitions of each available filter dimension.
 // - key: property path in the filter state

@@ -209,10 +209,29 @@ export default function OrderDetailPage() {
   // Patch the linked delivery record (address, recipient, fee, driver assignment).
   // Mirrors OrderCard.patchDelivery so the full-page detail and the list card stay in sync.
   async function patchDelivery(fields) {
-    const deliveryId = order?.delivery?.id;
-    if (!deliveryId) return;
     setSaving(true);
     try {
+      // See OrderCard.patchDelivery for the full rationale: Airtable's
+      // reciprocal back-link Deliveries → Orders is eventually-consistent,
+      // so a freshly-created Delivery order may arrive here without
+      // order.delivery populated. Heal via convert-to-delivery when needed;
+      // if that 400s ("already exists"), refetch to pull the delivery that
+      // has since been linked.
+      let deliveryId = order?.delivery?.id;
+      if (!deliveryId) {
+        try {
+          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
+          deliveryId = res.data.id;
+          setOrder(prev => prev ? { ...prev, 'Delivery Type': 'Delivery', delivery: res.data } : prev);
+        } catch (convertErr) {
+          if (convertErr.response?.status === 400) {
+            const fresh = await client.get(`/orders/${order.id}`);
+            deliveryId = fresh.data.delivery?.id;
+            if (deliveryId) setOrder(fresh.data);
+          }
+          if (!deliveryId) throw convertErr;
+        }
+      }
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setOrder(prev => prev ? { ...prev, delivery: { ...prev.delivery, ...fields } } : prev);
       showToast(t.updated || 'Updated!', 'success');
@@ -322,7 +341,7 @@ export default function OrderDetailPage() {
                         if (stockItems.length === 0) {
                           // includeEmpty=true so negative-stock flowers are
                           // selectable in the picker (matches new-order wizard).
-                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
+                          client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
                         }
                       }}
                       className="text-xs text-brand-600 font-medium px-1"
@@ -531,8 +550,12 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Driver assignment — same picker as the expanded OrderCard. */}
-            {isDelivery && order.delivery && drivers.length > 0 && (
+            {/* Driver assignment — same picker as the expanded OrderCard.
+                Gate on `isDelivery && drivers.length` only. Do NOT require
+                `order.delivery` — patchDelivery auto-heals a missing
+                delivery record via /convert-to-delivery. See OrderCard.jsx
+                for the full rationale. */}
+            {isDelivery && drivers.length > 0 && (
               <div>
                 <p className="ios-label">{t.assignedDriver}</p>
                 <div className="ios-card p-4">
@@ -541,11 +564,11 @@ export default function OrderDetailPage() {
                       <button
                         key={driver}
                         onClick={() => patchDelivery({
-                          'Assigned Driver': order.delivery['Assigned Driver'] === driver ? '' : driver,
+                          'Assigned Driver': order.delivery?.['Assigned Driver'] === driver ? '' : driver,
                         })}
                         disabled={saving}
                         className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                          order.delivery['Assigned Driver'] === driver
+                          order.delivery?.['Assigned Driver'] === driver
                             ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                             : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
@@ -554,7 +577,7 @@ export default function OrderDetailPage() {
                       </button>
                     ))}
                   </div>
-                  {!order.delivery['Assigned Driver'] && (
+                  {!order.delivery?.['Assigned Driver'] && (
                     <p className="text-xs text-ios-tertiary mt-2">{t.noDriver}</p>
                   )}
                 </div>
@@ -585,6 +608,40 @@ export default function OrderDetailPage() {
             <div>
               <p className="ios-label">Payment</p>
               <div className="ios-card p-4 flex flex-col gap-3">
+                {/* Mismatch banner — Paid with P1 below current total. See
+                    OrderCard.jsx for the rationale. */}
+                {(() => {
+                  const p1 = Number(order['Payment 1 Amount'] || 0);
+                  const p2 = Number(order['Payment 2 Amount'] || 0);
+                  const paid = p1 + p2;
+                  const total = Number(order['Final Price'] || 0);
+                  if (order['Payment Status'] !== 'Paid' || paid === 0 || total === 0 || paid >= total) return null;
+                  const delta = total - paid;
+                  return (
+                    <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-2">
+                      <p className="text-xs font-semibold text-amber-800">⚠ {t.priceExceedsPaid}</p>
+                      <p className="text-xs text-amber-700">
+                        {t.paidAmount}: {paid} zł · {t.grandTotal || 'Total'}: {total} zł · {t.remaining}: <span className="font-semibold">{delta} zł</span>
+                      </p>
+                      <div className="flex gap-2 flex-wrap">
+                        <button
+                          onClick={() => patch({ 'Payment Status': 'Partial' })}
+                          disabled={saving}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white active:bg-amber-700"
+                        >{t.collectRemainder}</button>
+                        <button
+                          onClick={() => patch({
+                            'Payment 1 Amount': total,
+                            'Payment 1 Method': order['Payment 1 Method'] || order['Payment Method'] || null,
+                          })}
+                          disabled={saving}
+                          className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 active:bg-amber-100"
+                        >{t.markAsFullyPaid}</button>
+                      </div>
+                    </div>
+                  );
+                })()}
+
                 <Pills
                   value={order['Payment Status'] || 'Unpaid'}
                   onChange={val => patch({

@@ -6,7 +6,7 @@ import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'rea
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import { stockBaseName, renderDateTag, parseBatchName } from '@flower-studio/shared';
+import { stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import ReconciliationSection from './ReconciliationSection.jsx';
@@ -97,7 +97,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
   useEffect(() => {
     stockLoaded.current = false;
     fetchStock();
-    const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 60000);
+    const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 120000);
     function onVisible() { if (!document.hidden) fetchStock(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
@@ -494,7 +494,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
                   <select value={wasteEditForm.reason}
                     onChange={ev => setWasteEditForm(f => ({ ...f, reason: ev.target.value }))}
                     className="text-xs px-1 py-0.5 border rounded">
-                    {['Wilted','Damaged','Arrived Broken','Overstock','Other'].map(r => <option key={r} value={r}>{r}</option>)}
+                    {LOSS_REASONS.map(r => <option key={r} value={r}>{reasonLabel(t, r)}</option>)}
                   </select>
                 </td>
                 <td className="px-3 py-1.5 text-xs text-right whitespace-nowrap">
@@ -1030,7 +1030,9 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
                   <tbody>
                     {usageTrail.map((entry, i) => (
                       <tr key={i} className="border-b border-blue-50">
-                        <td className="py-1 pr-2 text-ios-secondary">{entry.date || '—'}</td>
+                        <td className="py-1 pr-2 text-ios-secondary">
+                          {entry.date || (entry.type === 'premade' ? (t.ongoing || 'ongoing') : '—')}
+                        </td>
                         <td className="py-1 pr-2 text-ios-secondary">
                           {entry.type === 'order' && entry.requiredBy ? entry.requiredBy : '—'}
                         </td>
@@ -1038,6 +1040,7 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
                           {entry.type === 'order' && <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-medium">{t.usageOrder || 'Order'}</span>}
                           {entry.type === 'writeoff' && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-medium">{t.writeOff}</span>}
                           {entry.type === 'purchase' && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-medium">{t.usagePurchase || 'Purchase'}</span>}
+                          {entry.type === 'premade' && <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-medium">{t.usagePremade || 'Premade'}</span>}
                         </td>
                         <td className="py-1 pr-2 text-ios-label">
                           {entry.type === 'order' && (
@@ -1049,6 +1052,7 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
                             </span>
                           )}
                           {entry.type === 'writeoff' && `${entry.reason}${entry.notes ? ': ' + entry.notes : ''}`}
+                          {entry.type === 'premade' && entry.bouquetName}
                           {entry.type === 'purchase' && (
                             <span>
                               {entry.poDisplayId ? (

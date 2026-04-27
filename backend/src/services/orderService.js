@@ -6,7 +6,7 @@ import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
 import { listByIds } from '../utils/batchQuery.js';
-import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 
 // ── Status transition state machine ──
 // Exported so routes + tests can reference it.
@@ -73,6 +73,22 @@ export async function createOrder(params, config, opts = {}) {
   try {
     const appOrderId = await generateOrderId();
 
+    // Backfill Payment 1 for orders created as Paid so the mismatch banner has
+    // a baseline to compare against when the bouquet is later edited. Without
+    // this, a price-raising edit on a Paid order has no "what was originally
+    // paid" reference and the banner can't distinguish real mismatches from
+    // legacy orders. Respect an explicitly-provided payment1Amount.
+    const resolvedDeliveryFee = deliveryType === 'Delivery'
+      ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0;
+    const flowerTotal = orderLines.reduce(
+      (sum, l) => sum + (Number(l.sellPricePerUnit) || 0) * (Number(l.quantity) || 0), 0
+    );
+    const finalPriceAtCreate = (Number(priceOverride) || flowerTotal) + resolvedDeliveryFee;
+    const p1AmountBackfill = paymentStatus === PAYMENT_STATUS.PAID
+      && payment1Amount == null && finalPriceAtCreate > 0
+      ? finalPriceAtCreate : null;
+    const p1MethodBackfill = p1AmountBackfill != null && !payment1Method ? (paymentMethod || null) : null;
+
     // 1. Create parent order
     order = await db.create(TABLES.ORDERS, {
       Customer:             [customer],
@@ -89,7 +105,9 @@ export async function createOrder(params, config, opts = {}) {
       'Payment Method':     paymentMethod || null,
       ...(payment1Amount != null ? { 'Payment 1 Amount': Number(payment1Amount) } : {}),
       ...(payment1Method ? { 'Payment 1 Method': payment1Method } : {}),
-      'Delivery Fee':       deliveryType === 'Delivery' ? (delivery?.fee ?? getConfig('defaultDeliveryFee')) : 0,
+      ...(p1AmountBackfill != null ? { 'Payment 1 Amount': p1AmountBackfill } : {}),
+      ...(p1MethodBackfill ? { 'Payment 1 Method': p1MethodBackfill } : {}),
+      'Delivery Fee':       resolvedDeliveryFee,
       'Price Override':     priceOverride || null,
       'App Order ID':       appOrderId,
       Status:               ORDER_STATUS.NEW,
@@ -124,6 +142,11 @@ export async function createOrder(params, config, opts = {}) {
         Quantity:              line.quantity,
         'Cost Price Per Unit': line.costPricePerUnit || 0,
         'Sell Price Per Unit': line.sellPricePerUnit || 0,
+        // Persist the deferred flag so the dashboard's "Flowers Needed" panel
+        // (which filters {Stock Deferred} = TRUE) actually surfaces this demand.
+        // Without this write, deferred lines deducted no stock AND vanished
+        // from the purchase-planning view — the worst of both worlds.
+        ...(line.stockDeferred === true ? { 'Stock Deferred': true } : {}),
       });
       createdLines.push(created);
       createdLineIds.push(created.id);
@@ -210,6 +233,15 @@ export async function createOrder(params, config, opts = {}) {
         'Driver Payout':    getConfig('driverCostPerDelivery') || 0,
         Status:             DELIVERY_STATUS.PENDING,
       });
+      // Explicitly write the back-link on the Order row. Airtable is meant
+      // to auto-populate the reciprocal `Deliveries` field when you set
+      // `Linked Order` on the delivery side, but this has been observed to
+      // be eventually-consistent — GET /orders/:id right after creation can
+      // come back with `Deliveries: []`, which makes the florist's
+      // `detail?.delivery` gate false, which hides the driver picker. Writing
+      // the back-link explicitly guarantees it's persisted before we return.
+      await db.update(TABLES.ORDERS, order.id, { 'Deliveries': [createdDelivery.id] })
+        .catch(err => console.error('[ORDER] Back-link write failed (non-fatal, Airtable auto-sync should recover):', err.message));
     }
 
     // 5. Update customer record (non-blocking)
@@ -570,6 +602,10 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
         Quantity: line.quantity,
         'Cost Price Per Unit': line.costPricePerUnit || 0,
         'Sell Price Per Unit': line.sellPricePerUnit || 0,
+        // Mirror createOrder: persist the deferred flag so "Flowers Needed"
+        // aggregation sees it. Without this, lines added mid-edit with the
+        // deferred toggle on were invisible to purchase planning.
+        ...(line.stockDeferred === true ? { 'Stock Deferred': true } : {}),
       });
       createdLines.push(created);
       if (line.stockItemId && !line.stockDeferred) {

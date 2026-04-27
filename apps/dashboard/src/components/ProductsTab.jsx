@@ -57,6 +57,12 @@ export default function ProductsTab() {
   function isAvailableToday(variant) {
     if (!variant['Active']) return false;
     if (Number(variant['Lead Time Days'] ?? 1) !== 0) return false;
+    // Must carry the "Available Today" Category tag — this is what the Wix
+    // storefront filters on (see backend/src/routes/public.js productCount
+    // and the push criteria in wixProductSync.js). Without this gate the
+    // dashboard reports any LT=0 product as Available Today, while Wix only
+    // shows the ones tagged in the collection.
+    if (!parseCats(variant['Category']).includes('Available Today')) return false;
     const keyFlower = variant['Key Flower'];
     const stockId = Array.isArray(keyFlower) ? keyFlower[0] : keyFlower;
     if (!stockId) return true;
@@ -94,6 +100,15 @@ export default function ProductsTab() {
     try {
       const res = await client.post('/products/pull');
       const s = res.data;
+      // Defensive: runPull() in wixProductSync.js wraps its entire body in a
+      // try/catch that pushes fatal errors into stats.errors and STILL returns
+      // 200. Without this check a failed Wix API call (bad token, network
+      // error) looks like a no-op success with zero counts. Surface the actual
+      // errors so they can be diagnosed.
+      if (s.errors?.length > 0) {
+        showToast(s.errors.join(' · '), 'error');
+        return;
+      }
       showToast(`${t.prodPullDone}: ${s.new} ${t.prodNew}, ${s.updated} ${t.prodUpdated}`, 'success');
       fetchProducts();
     } catch {
@@ -108,16 +123,22 @@ export default function ProductsTab() {
     try {
       const res = await client.post('/products/push');
       const s = res.data;
+      // Same silent-catch pattern as handlePull — surface actual errors
+      // instead of just a count, which didn't help the owner diagnose
+      // what's broken (was showing "3 errors" with no explanation).
+      if (s.errors?.length > 0) {
+        showToast(s.errors.join(' · '), 'error');
+        fetchProducts();
+        return;
+      }
       const parts = [];
       if (s.pricesSynced) parts.push(`${s.pricesSynced} ${t.prodPriceSyncs}`);
       if (s.visibilitySynced) parts.push(`${s.visibilitySynced} ${t.prodVisibility}`);
       if (s.stockSynced) parts.push(`${s.stockSynced} ${t.prodStockSyncs}`);
       if (s.categoriesSynced) parts.push(`${s.categoriesSynced} ${t.prodCategorySyncs}`);
-      const errCount = s.errors?.length || 0;
-      if (errCount) parts.push(`${errCount} ${t.prodErrors || 'errors'}`);
       showToast(
         `${t.prodPushDone}${parts.length ? ': ' + parts.join(', ') : ''}`,
-        errCount ? 'warning' : 'success'
+        'success'
       );
       fetchProducts();
     } catch {

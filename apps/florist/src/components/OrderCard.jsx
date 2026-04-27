@@ -3,7 +3,7 @@
 // No overlays, no fixed positioning — just normal DOM flow. Like flipping
 // a kanban card over to see the full work order on the back.
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -75,7 +75,19 @@ function Row({ label, value }) {
   );
 }
 
-export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwner }) {
+// Stock data (`editorStockItems`, `editorPremadeMap`) is hoisted to
+// OrderListPage so a single shared fetch covers every card on screen.
+// `onStockRefresh` lets the card ask the parent for fresh data after a
+// mutation (e.g. after dissolving a premade bouquet mid-save).
+function OrderCard({
+  order,
+  onOrderUpdated,
+  onOrderDeleted,
+  isOwner,
+  editorStockItems: stockItems = [],
+  editorPremadeMap: premadeMap = {},
+  onStockRefresh,
+}) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
@@ -90,8 +102,6 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
   const [stockAction, setStockAction] = useState(null); // null | 'pending' — shown before save when qty reduced
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
-  const [stockItems, setStockItems] = useState([]);
-  const [premadeMap, setPremadeMap] = useState({});
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
 
   const status     = order['Status'] || 'New';
@@ -160,10 +170,29 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
   }
 
   async function patchDelivery(fields) {
-    const deliveryId = detail?.delivery?.id;
-    if (!deliveryId) return;
     setSaving(true);
     try {
+      // If no delivery record is attached yet (Airtable's back-link from
+      // Deliveries → Orders can be eventually-consistent, and some older
+      // Delivery orders were created before the explicit back-link write
+      // in orderService), create one on-the-fly. /convert-to-delivery 400s
+      // if a record exists on the server; in that case, refetch to pull
+      // the now-attached delivery before patching.
+      let deliveryId = detail?.delivery?.id;
+      if (!deliveryId) {
+        try {
+          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
+          deliveryId = res.data.id;
+          setDetail(prev => prev ? { ...prev, 'Delivery Type': 'Delivery', delivery: res.data } : prev);
+        } catch (convertErr) {
+          if (convertErr.response?.status === 400) {
+            const fresh = await client.get(`/orders/${order.id}`);
+            deliveryId = fresh.data.delivery?.id;
+            if (deliveryId) setDetail(fresh.data);
+          }
+          if (!deliveryId) throw convertErr;
+        }
+      }
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setDetail(prev => ({
         ...prev,
@@ -248,14 +277,11 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
         showToast(err.response?.data?.error || t.updateError, 'error');
       }
     }
-    try {
-      const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true'),
-        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-      ]);
-      setStockItems(stockRes.data);
-      setPremadeMap(premadeRes.data || {});
-    } catch {}
+    // Ask the parent to re-fetch so stock + premade counts reflect the
+    // dissolve before the retry runs its shortfall check.
+    if (onStockRefresh) {
+      try { await onStockRefresh(); } catch {}
+    }
     await doSave(action, { skipShortfallCheck: true });
   }
 
@@ -278,7 +304,14 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
   const detailLineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
   const detailDeliveryFee = Number(detail?.delivery?.['Delivery Fee'] || d['Delivery Fee'] || 0);
   const flowerTotal = detailLineTotal > 0 ? detailLineTotal : (Number(d['Sell Total']) || 0);
-  const currentPrice = (d['Price Override'] || flowerTotal) + detailDeliveryFee;
+  // Prefer backend-enriched Final Price when NOT editing. Matches the summary
+  // view at line 115 and survives cases where d.orderLines + d['Sell Total']
+  // both go stale (partial-paid cancel + reopen). While editing, fall through
+  // to the live computed flower total so the running total tracks edits.
+  const savedFinalPrice = Number(d['Final Price'] || 0);
+  const currentPrice = editingLineTotal != null
+    ? (d['Price Override'] || editingLineTotal) + detailDeliveryFee
+    : (savedFinalPrice > 0 ? savedFinalPrice : (d['Price Override'] || flowerTotal) + detailDeliveryFee);
 
   function statusLabel(s) {
     return STATUS_LABELS[s]?.() || s;
@@ -348,6 +381,22 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
           {order['Delivery Time'] ? ` · ${order['Delivery Time']}` : ''}
         </p>
       )}
+      {/* Florist note — owner-authored operational guidance for the florist.
+          Shown on the collapsed card (not just on expand / detail page) so
+          important "read this first" instructions aren't buried. Styled
+          distinctly from the customer's greeting card text below: green
+          accent + bold label so it reads as staff-facing, not customer-
+          facing. Line-clamp-2 keeps a long note from ballooning the card. */}
+      {!expanded && order['Florist Note'] && (
+        <div className="mt-2 bg-green-50 dark:bg-green-900/30 border-l-4 border-green-500 rounded-lg px-3 py-2">
+          <p className="text-[10px] font-bold uppercase tracking-wide text-green-700 dark:text-green-300 mb-0.5">
+            🌸 {t.floristNote}
+          </p>
+          <p className="text-sm text-ios-label dark:text-gray-200 leading-snug whitespace-pre-wrap line-clamp-2">
+            {order['Florist Note']}
+          </p>
+        </div>
+      )}
       {/* Card text hint — truncated in collapsed view, full text in expanded */}
       {!expanded && order['Greeting Card Text'] && (
         <div className="relative mt-2 bg-amber-50 rounded-lg px-3 py-1.5 overflow-hidden" style={{ maxHeight: '2.2em' }}>
@@ -412,16 +461,13 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                         setAddingFlower(false);
                         setFlowerSearch('');
                         setEditingBouquet(true);
-                        // Lazy-load stock for the flower picker.
-                        // includeEmpty=true so negative-stock flowers (implicit
-                        // demand for next PO) are selectable — otherwise the user
-                        // retypes the name and creates a duplicate Stock row.
-                        if (stockItems.length === 0) {
-                          client.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {
-                            showToast(t.loadError || 'Failed to load stock', 'error');
-                          });
+                        // Stock + premade map come in as props (hoisted to
+                        // OrderListPage). If the parent's list looks empty —
+                        // e.g. its initial fetch is still in flight — ask it
+                        // to refresh so the picker has data to show.
+                        if (stockItems.length === 0 && onStockRefresh) {
+                          onStockRefresh();
                         }
-                        client.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
                       }} className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
                     )}
                   </div>
@@ -796,6 +842,44 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                 )}
               </div>
 
+              {/* Mismatch banner — Paid orders where the price has since moved above
+                  the recorded payment. Owner either collects the remainder (flip
+                  to Partial + existing Payment 2 flow handles the rest) or accepts
+                  the current state (backfill P1 to match the total, silencing the
+                  banner without fabricating data beyond the new total). */}
+              {(() => {
+                const p1 = Number(d['Payment 1 Amount'] || 0);
+                const p2 = Number(d['Payment 2 Amount'] || 0);
+                const paid = p1 + p2;
+                const showMismatch = d['Payment Status'] === 'Paid'
+                  && paid > 0 && currentPrice > 0 && paid < currentPrice;
+                if (!showMismatch) return null;
+                const delta = currentPrice - paid;
+                return (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl px-3 py-3 space-y-2">
+                    <p className="text-xs font-semibold text-amber-800">⚠ {t.priceExceedsPaid}</p>
+                    <p className="text-xs text-amber-700">
+                      {t.paidAmount}: {paid} zł · {t.grandTotal || 'Total'}: {currentPrice} zł · {t.remaining}: <span className="font-semibold">{delta} zł</span>
+                    </p>
+                    <div className="flex gap-2 flex-wrap">
+                      <button
+                        onClick={() => patch({ 'Payment Status': 'Partial' })}
+                        disabled={saving}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-amber-600 text-white active:bg-amber-700"
+                      >{t.collectRemainder}</button>
+                      <button
+                        onClick={() => patch({
+                          'Payment 1 Amount': currentPrice,
+                          'Payment 1 Method': d['Payment 1 Method'] || d['Payment Method'] || null,
+                        })}
+                        disabled={saving}
+                        className="text-xs font-medium px-3 py-1.5 rounded-lg bg-white border border-amber-300 text-amber-800 active:bg-amber-100"
+                      >{t.markAsFullyPaid}</button>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* ── Payment controls ── */}
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelPayment}</p>
@@ -1024,18 +1108,26 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                 </div>
               )}
 
-              {/* ── Driver assignment ── */}
-              {isDelivery && detail?.delivery && drivers.length > 0 && (
+              {/* ── Driver assignment ──
+                  Gate on `isDelivery && drivers.length` only: do NOT require
+                  `detail?.delivery` here. For fresh Delivery orders the
+                  Airtable back-link from Deliveries → Orders can take a
+                  moment to populate, and legacy orders may have been created
+                  before the explicit back-link write. The click handler
+                  below (patchDelivery) auto-creates a delivery record via
+                  /convert-to-delivery when one is missing, so the picker
+                  can work even when `detail.delivery` is undefined. */}
+              {isDelivery && drivers.length > 0 && (
                 <div>
                   <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
                   <div className="flex flex-wrap gap-1.5">
                     {drivers.map(driver => (
                       <button
                         key={driver}
-                        onClick={() => patchDelivery({ 'Assigned Driver': detail.delivery['Assigned Driver'] === driver ? '' : driver })}
+                        onClick={() => patchDelivery({ 'Assigned Driver': detail?.delivery?.['Assigned Driver'] === driver ? '' : driver })}
                         disabled={saving}
                         className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                          detail.delivery['Assigned Driver'] === driver
+                          detail?.delivery?.['Assigned Driver'] === driver
                             ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
                             : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
                         }`}
@@ -1044,7 +1136,7 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
                       </button>
                     ))}
                   </div>
-                  {!detail.delivery['Assigned Driver'] && (
+                  {!detail?.delivery?.['Assigned Driver'] && (
                     <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
                   )}
                 </div>
@@ -1160,3 +1252,46 @@ export default function OrderCard({ order, onOrderUpdated, onOrderDeleted, isOwn
     </div>
   );
 }
+
+// Fields on the `order` prop that drive visible card state. Restricted to
+// what's actually shown in the collapsed + summary view — anything needed
+// only inside the expanded detail lives in the fetched `detail` object,
+// which isn't a prop.
+const ORDER_COMPARE_FIELDS = [
+  'Status',
+  'Payment Status',
+  'Delivery Date',
+  'Required By',
+  'Delivery Time',
+  'Customer Name',
+  'Customer Request',
+  'Sell Total',
+  'Delivery Fee',
+  'Final Price',
+  'Price Override',
+  'Delivery Type',
+  'Bouquet Summary',
+  'App Order ID',
+  'Source',
+];
+
+function arePropsEqual(prev, next) {
+  if (prev.order.id !== next.order.id) return false;
+  if (prev.isOwner !== next.isOwner) return false;
+  if (prev.editorStockItems !== next.editorStockItems) return false;
+  if (prev.editorPremadeMap !== next.editorPremadeMap) return false;
+  if (prev.onStockRefresh !== next.onStockRefresh) return false;
+  if (prev.onOrderUpdated !== next.onOrderUpdated) return false;
+  if (prev.onOrderDeleted !== next.onOrderDeleted) return false;
+  // stockShortfalls is keyed by stockId; the parent rebuilds it on every
+  // shortfall poll. Compare by reference — if the parent is smart enough to
+  // keep the same reference when content is unchanged, we skip re-render;
+  // otherwise we re-render, which is the no-memo baseline anyway.
+  if (prev.stockShortfalls !== next.stockShortfalls) return false;
+  for (const k of ORDER_COMPARE_FIELDS) {
+    if (prev.order[k] !== next.order[k]) return false;
+  }
+  return true;
+}
+
+export default memo(OrderCard, arePropsEqual);

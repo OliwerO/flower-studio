@@ -5,7 +5,7 @@ import { useMemo, useState, useEffect } from 'react';
 import { List } from 'react-window';
 import t from '../translations.js';
 import CustomerFilterBar from './CustomerFilterBar.jsx';
-import { matchesSearch, matchesFilters } from '../utils/customerFilters.js';
+import { matchesSearch, matchesFilters } from '@flower-studio/shared';
 
 const SEGMENT_COLORS = {
   Constant:         'bg-ios-green/15 text-ios-green',

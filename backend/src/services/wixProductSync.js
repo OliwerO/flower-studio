@@ -8,7 +8,7 @@
 
 import * as db from './airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { sendAlert } from './telegram.js';
+import { sendAlert, notifyWixSyncError } from './telegram.js';
 import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
@@ -98,6 +98,45 @@ async function updateWixVariantPrice(productId, variantId, price) {
     const text = await res.text();
     if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
     throw new Error(`Wix price update failed for ${productId}/${variantId}: ${text}`);
+  }
+}
+
+/**
+ * Update a simple (no-variants) Wix product's price at the product level.
+ *
+ * Wix represents products in two shapes:
+ *   1. Products WITH managed variants (e.g. Small / Medium / Large) — each
+ *      variant has a real UUID and its own `priceData`. Use the batch
+ *      variants endpoint via `updateWixVariantPrice` above.
+ *   2. Products WITHOUT managed variants (simple single-SKU products) —
+ *      Wix exposes a synthetic "default variant" with ID
+ *      00000000-0000-0000-0000-000000000000 on READ, but the price lives
+ *      on the product itself. Attempting `PATCH /products/{id}/variants`
+ *      with that zero-UUID returns "requirement failed: Product variants
+ *      must be managed".
+ *
+ * This helper is the product-level endpoint for shape #2 — same URL
+ * pattern as `updateWixProductContent`, just with a `priceData` payload
+ * instead of name/description.
+ */
+async function updateWixProductPrice(productId, price) {
+  const res = await fetch(
+    `${WIX_API_URL}/stores/v1/products/${productId}`,
+    {
+      method: 'PATCH',
+      headers: wixHeaders(),
+      body: JSON.stringify({
+        product: {
+          priceData: { price },
+        },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
+    throw new Error(`Wix product price update failed for ${productId}: ${text}`);
   }
 }
 
@@ -492,23 +531,40 @@ async function fetchWixData() {
   const wixProducts = await fetchAllWixProducts();
 
   const wixCategoryIdToName = {};
+  // Set of Airtable category names that successfully mapped to a Wix
+  // collection this pull. Used by runPull to decide which categories on an
+  // existing row are Wix-tracked (safe to remove if Wix says so) vs
+  // Airtable-only (preserved — could be user-private labels or collections
+  // we don't currently track in config).
+  const mappedNames = new Set();
   let wixCategories = [];
   try {
     wixCategories = await fetchWixCategories();
     const sc = getConfig('storefrontCategories') || {};
-    const ourNames = [...(sc.permanent || []).map(p => typeof p === 'string' ? p : p.name), ...(sc.seasonal || []).map(s => s.name)];
+    // Include auto categories (e.g. "Available Today") so Pull can
+    // reconcile their membership back from Wix. Previously only permanent
+    // and seasonal were mapped, which meant a product removed from Wix's
+    // Available Today collection kept its stale Airtable flag forever.
+    const ourNames = [
+      ...(sc.permanent || []).map(p => typeof p === 'string' ? p : p.name),
+      ...(sc.seasonal || []).map(s => s.name),
+      ...(sc.auto || []).map(a => a.name),
+    ];
     for (const wc of wixCategories) {
       const match = ourNames.find(n =>
         n.toLowerCase().replace(/[^a-z0-9]+/g, '-') === wc.slug
         || n.toLowerCase() === wc.name.toLowerCase()
       );
-      if (match) wixCategoryIdToName[wc.id] = match;
+      if (match) {
+        wixCategoryIdToName[wc.id] = match;
+        mappedNames.add(match);
+      }
     }
   } catch (err) {
     console.warn('[SYNC] Could not fetch Wix categories:', err.message);
   }
 
-  return { wixProducts, wixCategories, wixCategoryIdToName };
+  return { wixProducts, wixCategories, wixCategoryIdToName, mappedNames };
 }
 
 /** Write a sync log entry to Airtable + alert on failure. */
@@ -550,7 +606,7 @@ export async function runPull() {
 
   try {
     console.log('[PULL] Fetching products from Wix...');
-    const { wixProducts, wixCategories, wixCategoryIdToName } = await fetchWixData();
+    const { wixProducts, wixCategories, wixCategoryIdToName, mappedNames } = await fetchWixData();
     console.log(`[PULL] Found ${wixProducts.length} products in Wix`);
 
     // Load existing Product Config rows
@@ -626,12 +682,40 @@ export async function runPull() {
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
-          // Active is Airtable-owned — never overwrite from Wix pull.
-          // Only sync Visible in Wix (what Wix reports) for informational purposes.
+          // Price: Wix is the source of truth — reconcile any drift on every pull.
+          // Without this, a price edit made on Wix never flows back to Airtable
+          // (it only imported on initial row creation). Epsilon guards against
+          // float noise in round-trip comparisons.
+          const wixPrice = Number(variantPrice) || 0;
+          const existingPrice = Number(existing['Price'] || 0);
+          if (Math.abs(existingPrice - wixPrice) > 0.01) {
+            updates['Price'] = wixPrice;
+          }
+          // Active follows Wix "Show in online store". The earlier policy
+          // treated Active as Airtable-owned, but in practice that caused
+          // drift: a product re-listed on Wix stayed inactive in Airtable
+          // forever (seen with "Mix of the day 1 - L/S": live on the
+          // storefront, shown as 0/1 active in the florist app). Wix is
+          // authoritative for whether a product is being sold; local
+          // deactivation should happen via Push (Airtable→Wix), not by
+          // editing Airtable directly and hoping Pull won't overwrite.
+          if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
+          // Category reconciliation: Wix is authoritative for any category
+          // that maps to a tracked Wix collection (mappedNames). Airtable-
+          // only categories are preserved — they could be user-private
+          // labels, or mapped entries we failed to match this pull because
+          // the Wix category fetch partially failed. Previous policy was
+          // "fill only when empty", which let stale Wix-driven flags like
+          // "Available Today" linger in Airtable forever after a product
+          // was removed from the collection on Wix.
           const existingCats = parseCategoryField(existing['Category']);
-          if (existingCats.length === 0 && importedCategories.length > 0) {
-            updates['Category'] = importedCategories;
+          const preservedCats = existingCats.filter(c => !mappedNames.has(c));
+          const reconciledCats = [...new Set([...preservedCats, ...importedCategories])];
+          const existingSorted = [...existingCats].sort().join('|');
+          const reconciledSorted = [...reconciledCats].sort().join('|');
+          if (existingSorted !== reconciledSorted) {
+            updates['Category'] = reconciledCats;
           }
           if (!existing['Description'] && productDescription) {
             updates['Description'] = productDescription;
@@ -730,6 +814,12 @@ export async function runPull() {
   }
 
   await logSync('pull', stats);
+  // Ping the owner on Telegram if the sync collected any errors — the
+  // frontend toast is only seen when she's looking at the app; a sync
+  // run can also be triggered by automation without anyone watching.
+  if (stats.errors.length > 0) {
+    await notifyWixSyncError({ direction: 'pull', errors: stats.errors });
+  }
   return stats;
 }
 
@@ -758,13 +848,24 @@ export async function runPush() {
       }
     }
 
+    // Zero-UUID = Wix's default-variant placeholder for products without
+    // managed variants. Those need the product-level price endpoint, not
+    // the variant batch endpoint (see `updateWixProductPrice` above).
+    const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+
     for (const row of configRows) {
-      const key = `${row['Wix Product ID']}::${row['Wix Variant ID']}`;
+      const pid = row['Wix Product ID'];
+      const vid = row['Wix Variant ID'];
+      const key = `${pid}::${vid}`;
       const airtablePrice = Number(row['Price'] || 0);
       const wixPrice = wixPriceMap.get(key);
       if (wixPrice !== undefined && Math.abs(airtablePrice - wixPrice) > 0.01) {
         try {
-          await updateWixVariantPrice(row['Wix Product ID'], row['Wix Variant ID'], airtablePrice);
+          if (vid === ZERO_UUID) {
+            await updateWixProductPrice(pid, airtablePrice);
+          } else {
+            await updateWixVariantPrice(pid, vid, airtablePrice);
+          }
           stats.pricesSynced++;
         } catch (err) {
           stats.errors.push(`Price ${key}: ${err.message}`);
@@ -1042,6 +1143,9 @@ export async function runPush() {
   }
 
   await logSync('push', stats);
+  if (stats.errors.length > 0) {
+    await notifyWixSyncError({ direction: 'push', errors: stats.errors });
+  }
   return stats;
 }
 

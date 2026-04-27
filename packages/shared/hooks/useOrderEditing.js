@@ -48,7 +48,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setNewFlowerForm(null);
     setEditingBouquet(true);
     if (stockItems.length === 0) {
-      apiClient.get('/stock?includeEmpty=true').then(r => setStockItems(r.data)).catch(() => {});
+      apiClient.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
     }
     apiClient.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
     apiClient.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
@@ -267,7 +267,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     // sees the post-dissolve reality.
     try {
       const [stockRes, premadeRes] = await Promise.all([
-        apiClient.get('/stock?includeEmpty=true'),
+        apiClient.get('/stock?includeEmpty=true&includeInactive=true'),
         apiClient.get('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setStockItems(stockRes.data);

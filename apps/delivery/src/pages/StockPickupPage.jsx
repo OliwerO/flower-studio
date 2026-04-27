@@ -145,7 +145,7 @@ export default function StockPickupPage() {
 
       <main className="max-w-lg mx-auto px-4 py-4 pb-32 space-y-6">
         {orders.length === 0 ? (
-          <p className="text-center text-ios-tertiary py-12">{t.noDeliveries}</p>
+          <p className="text-center text-ios-tertiary py-12">{t.noStockPickups}</p>
         ) : (
           orders.map(order => {
             // Group lines by supplier

@@ -1,8 +1,9 @@
 // BottomNav — fixed tab bar at the bottom of every authenticated screen.
-// Owner sees 5 tabs (Orders · Stock · Catalog · Shopping · More); florists see
-// 4 (Orders · Stock · Hours · More). On very narrow viewports (< 360 px) the
-// owner's Shopping tab collapses into More so we always keep 4 primary tabs
-// within comfortable touch reach.
+// Owner sees 5 tabs (Orders · Stock · Customers · Wix · More); florists see
+// 4 (Orders · Stock · Hours · More). On narrow viewports (<360px) the owner's
+// Wix tab drops to the More burger menu so the remaining 4 primary tabs stay
+// within comfortable touch reach. Customers ranks ahead of Wix because CRM
+// lookups are daily-use; Wix sync is occasional.
 
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -10,25 +11,23 @@ import {
   ClipboardList,
   Package,
   Flower2,
-  ShoppingCart,
   Clock,
   Menu as MenuIcon,
   Sun,
   Moon,
   RefreshCw,
   LogOut,
-  BarChart3,
   ClipboardCheck,
-  Trash2,
   HelpCircle,
-  Truck,
+  Users,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import t from '../translations.js';
 
-// Track current viewport width so the owner's Shopping tab can gracefully
-// fall into the More menu on iPhone SE 1st-gen (320 px) style devices.
+// Re-introduced after Phase B adds the 5th owner tab. On iPhone SE 1st-gen
+// (320px) five 64px tabs don't fit comfortably — the owner's Wix tab moves
+// to the More burger so the bar stays at 4 primary tabs.
 function useNarrowViewport(threshold = 360) {
   const [narrow, setNarrow] = useState(() =>
     typeof window !== 'undefined' ? window.innerWidth < threshold : false
@@ -50,19 +49,22 @@ export default function BottomNav() {
   const isOwner = role === 'owner';
   const narrow = useNarrowViewport(360);
 
-  // Primary tabs depend on role (and, for the owner on very narrow devices,
-  // on viewport width — Shopping moves into More when the bar would be cramped).
+  // Owner tabs ordering: Orders · Stock · Customers · Wix. Customers is
+  // 3rd (kept on narrow) because the owner uses it daily; Wix is 4th
+  // (drops to burger on narrow) because its sync buttons are used
+  // occasionally.
   let tabs;
   if (isOwner) {
     const ownerTabs = [
-      { key: 'orders',   Icon: ClipboardList, label: t.tabOrders,   path: '/orders' },
-      { key: 'stock',    Icon: Package,       label: t.tabStock,    path: '/stock' },
-      { key: 'catalog',  Icon: Flower2,       label: t.tabCatalog,  path: '/catalog/bouquets' },
-      { key: 'shopping', Icon: ShoppingCart,  label: t.tabShopping, path: '/shopping-support' },
+      { key: 'orders',    Icon: ClipboardList, label: t.tabOrders,    path: '/orders' },
+      { key: 'stock',     Icon: Package,       label: t.tabStock,     path: '/stock' },
+      { key: 'customers', Icon: Users,         label: t.tabCustomers, path: '/customers' },
+      { key: 'catalog',   Icon: Flower2,       label: t.tabCatalog,   path: '/catalog/bouquets' },
     ];
+    const moreTab = { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null };
     tabs = narrow
-      ? [...ownerTabs.slice(0, 3), { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null }]
-      : [...ownerTabs, { key: 'more', Icon: MenuIcon, label: t.tabMore, path: null }];
+      ? [...ownerTabs.slice(0, 3), moreTab]    // 3 primary + More = 4; Wix in burger
+      : [...ownerTabs, moreTab];               // 4 primary + More = 5
   } else {
     tabs = [
       { key: 'orders', Icon: ClipboardList, label: t.tabOrders, path: '/orders' },
@@ -100,26 +102,31 @@ export default function BottomNav() {
     window.location.href = window.location.pathname + '?_cb=' + Date.now();
   }
 
-  // More menu — owner gets all florist actions plus owner-only ones.
-  // Waste Log is accessible to both roles (backend allows florist CRUD too).
+  // More menu composition:
+  //  - floristOnlyItems: Customers (florist reaches it here, not bottom nav)
+  //  - wixWhenNarrow: Wix tab falls here on owner <360px viewports
+  //  - ownerOnlyItems: Florist Hours
+  //  - baseItems: Stock Evaluation (both roles)
+  //  - helpItem: Help (owner only)
+  const floristOnlyItems = !isOwner
+    ? [{ Icon: Users, label: t.tabCustomers || t.customers || 'Customers', action: () => navigate('/customers') }]
+    : [];
+  const wixWhenNarrow = (isOwner && narrow)
+    ? [{ Icon: Flower2, label: t.tabCatalog, action: () => navigate('/catalog/bouquets') }]
+    : [];
   const baseItems = [
-    { Icon: Trash2,         label: t.wasteLog,        action: () => navigate('/stock/waste') },
     { Icon: ClipboardCheck, label: t.stockEvaluation, action: () => navigate('/stock-evaluation') },
   ];
   const ownerOnlyItems = [
-    { Icon: BarChart3, label: t.daySummary,   action: () => navigate('/day-summary') },
-    { Icon: Clock,     label: t.floristHours, action: () => navigate('/hours') },
-    { Icon: Truck,     label: t.purchaseOrders || 'Закупки', action: () => navigate('/purchase-orders') },
+    { Icon: Clock, label: t.floristHours, action: () => navigate('/hours') },
   ];
-  const shoppingWhenNarrow = (isOwner && narrow)
-    ? [{ Icon: ShoppingCart, label: t.tabShopping, action: () => navigate('/shopping-support') }]
-    : [];
   const helpItem = isOwner
     ? [{ Icon: HelpCircle, label: t.help || 'Help', action: () => navigate('/orders') }]
     : [];
 
   const moreItems = [
-    ...shoppingWhenNarrow,
+    ...floristOnlyItems,
+    ...wixWhenNarrow,
     ...(isOwner ? ownerOnlyItems : []),
     ...baseItems,
     ...helpItem,

@@ -167,13 +167,19 @@ Phase A shipped: when driver brings a substitute, it lands as its own stock card
 (find-by-name or create-new) with the REAL per-stem cost and sell price = cost × targetMarkup.
 Primary Not-Found stays at 0 stems. Florist manually swaps in bouquet builder for affected orders.
 
-Phase B (built 2026-04-13): reconciliation screen for negative-stock-driven POs.
+Phase B v1 (built 2026-04-13): reconciliation screen for negative-stock-driven POs.
 - [x] Trigger: `POST /:id/evaluate` detects substitutions and broadcasts `substitute_reconciliation_needed` SSE
 - [x] UI: notification banner (SSE handler in `useNotifications.js`) + evaluation page shows impacted orders
 - [x] Backend: `POST /orders/:id/swap-bouquet-line` — reassigns a bouquet line from original → substitute
 - [x] Reconciliation screen: `SubstituteReconciliationPage.jsx` (florist) + `ReconciliationSection.jsx` (dashboard)
 - [ ] Demand suppression: skip original from PO demand when substitute exists (deferred — needs STOCK_PURCHASES notes scanning)
 - Kickoff prompt saved at: `scripts/prompts/phase-b-po-substitution-reconciliation.md`
+
+Phase B v2 rewrite — server-side substitute pairing via `Substitute For` link (2026-04-20 → in progress):
+- [x] **Commit 1** (PR #105, 2026-04-20) — `findOrCreateSubstituteStock` writes `Substitute For` link on both create and find branches so multiple substitutes can stack on one card. Schema validator updated at `airtableSchema.js:49`.
+- [x] **Commit 2** (2026-04-21, owner-side) — `Substitute For` link-to-another-record field (multi-record → Stock) added to prod Airtable Stock table.
+- [x] **Commit 3** (2026-04-22, branch `feat/phase-b-reconciliation-commit-3`) — rewrote `GET /stock/reconciliation` to substitute-aware shape (`{ items: [{ originalStockId, substitutes[], affectedLines[] }] }`) joining `Substitute For` links against non-terminal order lines; rewrote the only consumer `ReconciliationSection.jsx` with per-line Swap button (calls `POST /orders/:id/swap-bouquet-line`); deleted `POST /stock/reconciliation/apply`. Drift detection sacrificed — revisit as `/stock/drift` if owner asks.
+- [ ] **Commit 4** — migrate florist `SubstituteReconciliationPage.jsx` to the same new endpoint for consistency (currently uses `/stock/committed` + in-memory pairing). Optional rename to `ReconciliationPage.jsx`.
 
 ### Wix Stock Sync — accurate inventory projection to storefront (2026-04-08) [WIX-STOCK-PROJECTION]
 Currently Wix storefront does NOT track exact stock per product — it just knows "available" or "out of stock"
@@ -208,9 +214,9 @@ reports). Each item below was re-validated against the current code on
 #### Open / migration-blocking
 - [x] **Owner edit-everything (MIGRATION-CRITICAL)** — fixed 2026-04-19. Owner can now edit the bouquet on an order in any status, including Delivered / Picked Up / Cancelled. Backend: `orderService.js:311-316` now bypasses the status gate when `isOwner === true`; Ready→New auto-revert still fires but never touches terminal statuses. UI: dropped `!isTerminal` guard on the edit-bouquet button in `OrderCard.jsx:382` (florist, gated by `isOwner` prop), `OrderDetailPage.jsx:289` (florist, role from `useAuth`), and `OrderDetailPanel.jsx:468` (dashboard, PIN-gated to owner at login). Covered by `backend/src/__tests__/editBouquetLines.test.js`.
 
-- [ ] **Flowers for future order not in negative stock (PARTIAL)** — `apps/dashboard/src/components/DayToDayTab.jsx:560-602` surfaces deferred demand, but when a florist adds an unlisted flower mid-order with `stockDeferred=true`, it's unclear whether the newly-created Stock row feeds into "Flowers Needed" aggregation. Trace end-to-end and add a test.
+- [x] **Flowers for future order not in negative stock** — fixed 2026-04-22. Root cause was that `orderService.js` never wrote the `Stock Deferred` field on order-line create (both `createOrder` line 120-127 and `editBouquetLines` new-line path line 508-515). The flag was only used locally to skip stock deduction. Dashboard's `/dashboard` endpoint filters `{Stock Deferred} = TRUE` on Order Lines, so deferred demand was invisible to "Flowers Needed". Also had a latent second bug: on reload + edit, the flag was gone, so a qty change on an originally-deferred line would double-deduct stock. Fix persists the flag conditionally on both create paths. Regression tests pinned in `editBouquetLines.test.js` (deferred = no stock adjust + field written; non-deferred = stock deducted + field omitted).
 
-- [ ] **Partial payment reopen shows flowers-only total (PARTIAL)** — amount inputs now exist in both apps (OrderCard + OrderDetailPanel), but dashboard `OrderDetailPanel.jsx:242` recomputes `effectivePrice` from `o.orderLines`; when lines are stale/missing on reopen the flower cost collapses to 0 and the remaining-balance math is wrong. Prefer `o['Final Price']` when available.
+- [x] **Partial payment reopen shows flowers-only total** — fixed 2026-04-22. Dashboard `OrderDetailPanel.jsx:265` was computing `effectivePrice = (Price Override || lineTotal) + deliveryFee` with `lineTotal` derived from `o.orderLines` — which is stale/empty on a cancel+reopen, collapsing the total to just the delivery fee. Fix prefers the backend-enriched `Final Price` when not editing (matches the florist `OrderCard.jsx:115` summary pattern that already got this right). Parallel fix in florist `OrderCard.jsx:288` for the expanded-view `currentPrice` — it had a weaker variant of the bug (mitigated by `Sell Total` fallback, still vulnerable). While editing the bouquet, both paths still compute live from `editLines` so the grand-total badge tracks quantity changes.
 
 #### Fixed & verified (2026-04-19 validation)
 - [x] Orders not shown in "All Orders" (date filter) — `apps/dashboard/src/components/OrdersTab.jsx:61-74` defaults to `monthStart()`
@@ -234,18 +240,18 @@ reports). Each item below was re-validated against the current code on
 - [ ] **Hardcoded `'Nikita'` driver fallback** — `backend/src/routes/stockOrders.js:471` uses the literal name instead of `getDriverOfDay()`. Separate from the "PO can't be saved" bug. Per the "hardcoded fallbacks" rule in CLAUDE.md, swap to `getDriverOfDay()`. Tier 2 cleanup.
 
 ### Tier 2 UX Fixes — Daily Friction (2026-04-03)
-- [ ] **Can't submit order without address** — address should be optional (sometimes unknown until delivery day)
-- [ ] **Delivery date should be required** — date required, time and address optional
-- [ ] **Time slots not in order** — sorting broken in time slot picker
-- [ ] **Delivery/pickup date not shown** — date missing from order display
-- [ ] **Sorting by delivery date not working** — sort function broken
-- [ ] **Cancelled status irreversible** — clicking Cancelled can't be changed back
-- [ ] **Florist should see important NOTE prominently** — notes not visible on order front page
-- [ ] **Total paid amount not shown** — only flower price visible, not full order total
-- [ ] **Show negative stock on top** in stock tab
+- [x] **Can't submit order without address** — fixed 2026-04-23 in PR #143. `orders.js:273` + `premadeBouquets.js:146` both dropped the required-address check on Delivery orders. Date still mandatory.
+- [x] **Delivery date should be required** — fixed earlier (2026-04-19, commit `e91083b`). Backend at `orders.js:277-279` + florist/dashboard `validateStep`; red `*` on both apps' Step3Details.
+- [x] **Time slots not in order** — fixed in PR #125 / commit `191a0df` (2026-04-22). `useConfigLists` now sorts delivery time slots chronologically.
+- [x] **Delivery/pickup date not shown** — verified working 2026-04-23. Florist `OrderCardSummary.jsx:142` + `OrderCard.jsx:380` render `fmtDate(order['Delivery Date'] || order['Required By'])` on every card; dashboard shows the same in `OrdersTab.jsx` row.
+- [x] **Sorting by delivery date not working** — verified working 2026-04-23. Dashboard `OrdersTab.jsx:170-180` sorts by `Delivery Date || Required By` with bidirectional toggle; florist `OrderListPage.jsx:62` default-sorts active orders by earliest needed.
+- [x] **Cancelled status irreversible** — verified working 2026-04-23. `ALLOWED_TRANSITIONS['Cancelled'] = ['New']` in florist `OrderCard.jsx:44` + `OrderCardSummary.jsx:32` + `OrderDetailPage.jsx:29`, and the status-button loop renders transitions from that map. Clicking Cancelled reveals a `New` button that reopens the order. Backend comment at `statuses.js:19` confirms the exception.
+- [x] **Florist should see important NOTE prominently** — fixed earlier (Tier 1 list). `OrderCardSummary.jsx:124-133` renders a distinct blue-bordered note banner.
+- [x] **Total paid amount not shown** — fixed 2026-04-23 in PR #146. Collapsed card in florist (`OrderCardSummary.jsx`) + dashboard (`OrdersTab.jsx` price column) now shows `Оплачено X · Остаток Y` for Partial orders. Bouquet-edit raising the price on a Paid order surfaces an amber mismatch banner with two actions: `Collect remainder` (→ Partial + existing Payment 2 flow) and `Mark as fully paid` (→ bumps `Payment 1 Amount` to match new total). Backend now backfills `Payment 1 Amount` + `Method` when status flips to Paid via create or PATCH so the banner has a baseline. Legacy Paid orders with P1=0 stay silent.
+- [x] **Show negative stock on top in stock tab** — confirmed working 2026-04-23 by owner.
 - [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
-- [ ] **PO add planned date** — visible in collapsed PO view
-- [ ] **PO total cost by lot size** — if 7 needed but lot size 10, calculate cost for 10
+- [x] **PO add planned date** — verified working 2026-04-23. Florist `PurchaseOrderPage.jsx:481` + dashboard `StockOrderPanel.jsx:585-587` render `Planned Date` in the collapsed PO view.
+- [x] **PO total cost by lot size + aggregate total** — fixed 2026-04-23. Florist save path now lot-rounds stored `Quantity Needed` to match the create-form cost badge (dashboard already stored lot-rounded). Aggregate PO total now renders on every saved PO: compact `X zł` badge in the collapsed row + "Cost total" line in the expanded editable view. Both apps fetch `/stock-orders?include=lines` for the client-side sum so the owner knows how much cash the driver needs before sending the run.
 - [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
 - [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
 - [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
@@ -274,6 +280,15 @@ reports). Each item below was re-validated against the current code on
   - Phase D: Config + Logs → decommission Airtable
   - Prerequisites: all Tier 1+2 bugs fixed, key features stable, migration planning session
   - Design principle: keep business logic in services/ (already done), centralize field names in config
+
+### Post-Migration Follow-ups (blocked on having a real dev environment)
+Items that could be shipped today as Airtable one-liners but are held back
+because the fix touches a high-risk production-only integration (webhooks
+with no replay safety net, or flows that depend on live Wix state). Pick
+them up after the Postgres migration stands up a true dev/staging env.
+
+- [ ] **Wix webhook — explicit delivery back-link write** — mirror the PR #144 fix (2026-04-23) into `backend/src/services/wix.js` line ~448. After `db.create(TABLES.DELIVERIES, { 'Linked Order': [order.id], ... })`, add `await db.update(TABLES.ORDERS, order.id, { 'Deliveries': [delivery.id] })`. Same Airtable eventual-consistency risk (back-link missing immediately after create) is theoretically present for Wix-webhook-created orders; the florist-created path was confirmed-and-fixed but Wix path wasn't validated because we have no way to replay a Wix webhook safely against production. Needs dev env to stage a webhook hit and verify the back-link lands before we push.
+  - Findable tag: `WIX-BACKLINK`
 
 ### Promo & Event Features (2026-04-03)
 - [ ] **Promo bouquets** — new order type: customer pays nothing, but flower cost (supplier) and courier cost are tracked as business expense. Add "Promo" option when creating a new order. Promo orders must still deduct stock, track supplier costs, and track courier payment — all flow into business cost reporting, not customer billing. Reporting should show promo orders separately from paid orders.

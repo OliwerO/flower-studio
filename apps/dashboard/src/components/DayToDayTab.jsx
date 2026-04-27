@@ -136,7 +136,14 @@ export default function DayToDayTab({ onNavigate }) {
       setAnalytics(analyticsRes.data);
       setDriverOfDay(settingsRes.data.driverOfDay || null);
       setDrivers(settingsRes.data.drivers || []);
-      const available = (productsRes.data.products || []).filter(p => p.availableToday);
+      // Match the Wix storefront definition: LT=0 + stock (p.availableToday)
+      // AND tagged with the "Available Today" category. Without the tag check
+      // every LT=0 product would show here, while the actual Wix nav only
+      // surfaces the manually-tagged ones (see backend/src/routes/public.js
+      // productCount).
+      const available = (productsRes.data.products || []).filter(
+        p => p.availableToday && (p.category || []).includes('Available Today')
+      );
       setWixProducts(available);
       setFetchError(false);
     } catch {
@@ -152,10 +159,12 @@ export default function DayToDayTab({ onNavigate }) {
   useEffect(() => {
     fetchData();
 
-    // Silent poll every 60s — updates data without disrupting UI
+    // Silent poll every 120s — updates data without disrupting UI.
+    // Low cadence because visibility-change refresh + SSE cover active use;
+    // this interval is just a safety net to catch anything missed.
     const interval = setInterval(() => {
       if (!document.hidden) fetchData(true);
-    }, 60000);
+    }, 120000);
 
     function handleVisibility() {
       if (!document.hidden) fetchData(true);
@@ -279,7 +288,7 @@ export default function DayToDayTab({ onNavigate }) {
             onClick={() => setKanbanOpen(!kanbanOpen)}
             className="text-[11px] text-ios-secondary hover:text-ios-label transition-colors"
           >
-            {kanbanOpen ? '✕ Close' : '▦ Board'}
+            {kanbanOpen ? `✕ ${t.close}` : `▦ ${t.board}`}
           </button>
         </div>
         <div className="grid grid-cols-6 gap-1">
@@ -458,7 +467,7 @@ export default function DayToDayTab({ onNavigate }) {
                 </div>
                 <div className="text-right">
                   <span className="text-xs font-medium text-brand-600">
-                    {r.daysUntil === 0 ? 'Today!' : `${r.daysUntil} ${t.daysUntil}`}
+                    {r.daysUntil === 0 ? t.todayBang : `${r.daysUntil} ${t.daysUntil}`}
                   </span>
                   <span className="text-[10px] text-ios-tertiary ml-2">{r.date}</span>
                 </div>

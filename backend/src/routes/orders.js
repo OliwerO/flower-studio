@@ -270,12 +270,10 @@ router.post('/', async (req, res, next) => {
         return res.status(400).json({ error: `orderLines[${i}].sellPricePerUnit must be >= 0 if provided.` });
       }
     }
-    if (deliveryType === 'Delivery' && (!delivery || !delivery.address || typeof delivery.address !== 'string' || !delivery.address.trim())) {
-      return res.status(400).json({ error: 'delivery.address is required and must be non-empty when deliveryType is "Delivery".' });
-    }
-    // Required By is mandatory — orders without a date silently disappear
-    // from every default list view (sorted last in Orders, excluded from
-    // Today/upcoming filters). Fail loudly here instead.
+    // Address is intentionally optional on Delivery orders — the owner often
+    // opens an order before the recipient address is known (corporate senders
+    // confirm the drop-off point later the same day). Date stays mandatory:
+    // without it, orders disappear from default list views.
     const effectiveRequiredBy = requiredBy || delivery?.date;
     if (!effectiveRequiredBy || typeof effectiveRequiredBy !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(effectiveRequiredBy)) {
       return res.status(400).json({ error: 'requiredBy (delivery/pickup date, YYYY-MM-DD) is required.' });
@@ -347,6 +345,34 @@ router.patch('/:id', async (req, res, next) => {
           return res.status(400).json({ error: transErr.message });
         }
         throw transErr;
+      }
+    }
+
+    // Backfill Payment 1 Amount when the caller flips Payment Status to Paid
+    // without recording the split. Keeps the "price-exceeds-paid" banner honest
+    // on future bouquet edits — without this, Paid orders have no baseline and
+    // a later edit can't distinguish a real mismatch from a pre-feature order.
+    if (otherFields['Payment Status'] === PAYMENT_STATUS.PAID
+        && otherFields['Payment 1 Amount'] == null) {
+      const current = await db.getById(TABLES.ORDERS, req.params.id).catch(() => null);
+      const existingP1 = Number(current?.['Payment 1 Amount']) || 0;
+      if (existingP1 === 0) {
+        const lineIds = current?.['Order Lines'] || [];
+        const lines = lineIds.length > 0 ? await listByIds(TABLES.ORDER_LINES, lineIds) : [];
+        const flowerTotal = lines.reduce(
+          (s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0
+        );
+        const deliveryIdsForPrice = current?.['Deliveries'] || [];
+        const deliv = deliveryIdsForPrice[0] ? await db.getById(TABLES.DELIVERIES, deliveryIdsForPrice[0]).catch(() => null) : null;
+        const delivFee = current?.['Delivery Type'] === 'Delivery'
+          ? Number(current?.['Delivery Fee'] ?? deliv?.['Delivery Fee'] ?? 0) : 0;
+        const finalPrice = (Number(current?.['Price Override']) || flowerTotal) + delivFee;
+        if (finalPrice > 0) {
+          otherFields['Payment 1 Amount'] = finalPrice;
+          if (!otherFields['Payment 1 Method'] && (otherFields['Payment Method'] || current?.['Payment Method'])) {
+            otherFields['Payment 1 Method'] = otherFields['Payment Method'] || current['Payment Method'];
+          }
+        }
       }
     }
 

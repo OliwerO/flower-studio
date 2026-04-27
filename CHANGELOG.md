@@ -41,6 +41,359 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-26 — Wix mobile menu: Contact label localized across PL/UK/RU
+
+The "Contact" menu item rendered as `CONTACT` (Latin) in PL/UK/RU mobile
+menus because the owner only translated EN in the Wix Editor — same
+drift pattern as the seasonal slot, but for a static label instead of
+a dynamic one.
+
+`Blossom-Wix/src/pages/masterPage.js` — `transformMenuItems` now also
+rewrites any item whose label contains the stem `CONTACT` / `KONTAKT` /
+`КОНТАКТ` to the user's language: `CONTACT` (en), `KONTAKT` (pl),
+`КОНТАКТИ` (uk), `КОНТАКТЫ` (ru). Link is left untouched — only the
+label was wrong.
+
+---
+
+## 2026-04-25 — Wix mobile menu: seasonal slot self-heals across PL/UK/RU
+
+Mobile menu in Polish / Ukrainian / Russian still showed the previous
+seasonal (Valentine's labelled "Walentynki" / "Валентинки" / "День
+Валентина") and clicked through to `/category/valentines-day` even after
+the owner flipped the active seasonal in the dashboard to peonies.
+UK additionally had a generic "СЕЗОННІ БУКЕТИ" item plus a manually-added
+"ПІОНИ" item — three candidates for the same slot. Desktop was fine —
+`#button7` is renamed directly by `masterPage.js` and its link was
+updated per language manually. Mobile relied on `transformMenuItems`,
+which only matched 4 hardcoded English/Polish-spring labels (`SEASONAL`,
+`WIOSNA`, `SPRING`, `ВЕСНА`), only rewrote the **label** (never the
+link), and didn't dedupe duplicates.
+
+The canonical seasonal URL across all four languages is `/category/seasonal`
+— a single Wix Stores category whose product membership flips automatically
+as the active seasonal changes. Same pattern as `/category/available-today`.
+
+Fix:
+- `backend/src/routes/public.js` — `/api/public/categories` now returns
+  `seasonalSlugs: [...]` (every configured seasonal slug, current + past).
+- `Blossom-Wix/src/pages/masterPage.js`:
+  1. Detect seasonal items three ways — link is `/category/seasonal`
+     (canonical, EN today), OR link contains any historic seasonal slug
+     (Valentine's, Easter, Christmas, …), OR label contains a seasonal
+     stem (`SEASONAL`, `SEZON`, `СЕЗОН`, `SPRING`, `WIOSN`, `ВЕСН`).
+     Stems chosen so UK "ВЕСІЛЛЯ" (Weddings) does NOT false-match `ВЕСН`
+     (4th char differs).
+  2. Rewrite BOTH label AND link of matched items — label = active
+     seasonal title in user's language, link = `/category/seasonal`.
+  3. Dedupe — keep only the first item pointing at `/category/seasonal`,
+     drop later duplicates so UK's three candidates collapse to one.
+
+Net effect: when the owner flips the seasonal in the dashboard, every
+language and every menu element (`HorizontalMenu`, `VerticalMenu`,
+`ExpandableMenu`, `DropDownMenu`) picks up the new label, URL, and
+duplicate-free structure on the next page load — including EN, whose
+"PEONIES" label will now auto-update when the seasonal flips. No
+per-language Editor edits needed.
+
+Out of scope (would require option B / canonical menu generation): the
+PL mobile menu is missing an "Accessories" item the desktop has, and
+Ukrainian "Available Today" / Russian "Доступно сегодня" are truncated
+in the editor item width. Both fixable later by generating the full
+mobile menu from category data instead of trusting per-language Editor
+items.
+
+---
+
+## 2026-04-22 — Florist app cleanup (Phase B): Customers tab on mobile
+
+Second PR of the three-part florist cleanup plan. Phase A shipped the nav
+trim + Wix Pull/Push + stock ops grid. Phase B adds a full Customer tab
+to the florist app so the owner can run CRM workflows from her phone —
+same data, same filter logic, same segmentation as the dashboard
+Customer tab v2.0, with mobile-native layout and a view-only gate for
+florist role.
+
+### Shared package
+- **Moved** `customerFilters.js` from `apps/dashboard/src/utils/` to
+  `packages/shared/utils/` (git-tracked rename). Dashboard's three
+  import sites (`CustomersTab.jsx`, `CustomerListPane.jsx`,
+  `CustomerFilterBar.jsx`) now import from `@flower-studio/shared`.
+  Florist's Customer tab imports from the same location — single
+  source of truth for filter/search semantics.
+- **New tests** at `packages/shared/test/customerFilters.test.js`
+  (33 assertions covering matchesSearch, matchesFilters, serialize
+  round-trip, activeFilterCount, churn-risk via fake timers). The
+  original dashboard file had no test coverage; this move upgrades it.
+- Known gap: `packages/shared` can't `npm test` standalone (vitest only
+  in backend/node_modules). Tests run via the backend vitest binary.
+  Follow-up will add vitest as a shared devDep.
+
+### New florist app surface (`apps/florist/src/`)
+- `pages/CustomerListPage.jsx` — full-page list shell; loads
+  `/customers` + `/customers/insights` in parallel; manages filter
+  state persisted to localStorage (`florist_customer_filters`, version
+  1); renders CustomerListPane.
+- `pages/CustomerDetailPage.jsx` — reads `:id` from route, derives
+  `canEdit = role === 'owner'`, renders CustomerDetailView; back
+  button returns to the list with scroll preserved.
+- `components/CustomerListPane.jsx` — mobile variant of dashboard's
+  same-named component. Search, "Filters (N)" sheet trigger, sort
+  dropdown, virtualized `react-window` list of 1094 rows. Tap row →
+  `onSelect(id)` → parent routes.
+- `components/CustomerFilterSheet.jsx` — bottom-sheet filter UX using
+  the shared `Sheet` primitive. All 15 filter dimensions as
+  always-visible sections (pill rows for multi-selects, toggles for
+  presence, preset chips for recency, number inputs for minimums).
+  Same state shape as dashboard's CustomerFilterBar — owner can save
+  a filter on mobile and see it interpreted identically on the laptop.
+- `components/CustomerDetailView.jsx` — mobile single-column detail.
+  Composes CustomerHeader, ContactQuickLinks, StatStrip, ProfileGrid,
+  KeyPersonChips, NotesSection, FlowersOrderedChips, CustomerTimeline.
+  `canEdit` prop gates every InlineEdit/SelectField via new
+  `EditOrText` / `SelectOrText` wrappers — florist sees values as
+  plain text, owner sees full edit UI. Belt-and-braces guard in
+  `patchField` blocks PATCH calls if the UI gate is ever bypassed.
+- `components/CustomerHeader.jsx`, `CustomerTimeline.jsx`,
+  `KeyPersonChips.jsx`, `InlineEdit.jsx` — ported from dashboard.
+  KeyPersonChips gained a `canEdit` prop for view-only; other three
+  are verbatim ports for visual parity.
+
+### Navigation
+- `components/BottomNav.jsx` — owner now sees 5 tabs (Orders · Stock ·
+  **Customers** · Wix · More). Restored the `useNarrowViewport(360)`
+  hook that Phase A removed — on narrow viewports (<360px) the Wix
+  tab moves to the More burger to keep the primary bar at 4 tabs.
+  Customers is 3rd (always on-screen) because CRM lookups are daily;
+  Wix sync is occasional.
+- Florist burger gained a Customers entry; florist's bottom nav
+  unchanged (still Orders · Stock · Hours · More).
+
+### Routes (`App.jsx`)
+- `/customers`     → `CustomerListPage`    (PrivateRoute — both roles)
+- `/customers/:id` → `CustomerDetailPage`  (PrivateRoute — both roles;
+  edit capability gated by role inside the view)
+
+### Dependencies
+- Added `react-window: ^2.2.7` to `apps/florist/package.json` (same
+  version dashboard already uses). Needed for the virtualized 1094-row
+  list; mobile Safari handles it smoothly.
+
+### Translations (~60 new keys × 2 languages)
+Added to `apps/florist/src/translations.js` under a new "Customer Tab
+v2.0" section. Covers the tab label, header badges, key-people chips,
+timeline filters, list pane search/sort, filter-sheet dimensions,
+detail-view stats, and the RU equivalents. English fallbacks in every
+component mean missing keys degrade gracefully rather than crashing.
+
+### Why it matters
+- **Owner can run CRM from her phone.** Previously she had to switch
+  to Airtable or the desktop dashboard to look up a customer, add a
+  key person, or check last-order freshness. Same capabilities now
+  fit in her pocket.
+- **Florist gets customer context without risk.** Florist can see
+  name, nickname, segment, key people, notes, timeline — useful for
+  personalizing a delivery or reading context on a phone order —
+  without any edit affordance. `canEdit=false` renders text instead
+  of inputs, the `patchField` guard blocks any stray PATCH that
+  somehow slipped past the UI.
+- **Shared filter logic.** A filter state saved in localStorage on the
+  phone interprets identically on the desktop because both apps run
+  the exact same `matchesSearch` / `matchesFilters` predicates from
+  `@flower-studio/shared`. One place to fix a rule, both apps update.
+
+### What to watch for
+- **Parity debt**: `CustomerHeader`, `CustomerTimeline`,
+  `KeyPersonChips`, and `CustomerDetailView` now exist in both
+  `apps/dashboard/src/components/` and
+  `apps/florist/src/components/`. A future refactor should extract
+  shared bodies to `packages/shared/components/` with thin app-specific
+  wrappers; until then, any CRM-side change needs to land in both.
+  Added to the "Parallel implementations" convention.
+- **Backend role-gate**: view-only is enforced at the UI level today.
+  A florist with devtools + a PIN can still PATCH the backend directly.
+  Backend role enforcement is filed as a follow-up and is low-priority
+  because the florist role doesn't currently escalate privilege through
+  any other path either.
+- **`onLocalPatch` no-op**: dashboard uses this callback to merge
+  field changes into its in-memory customer list without a full
+  refetch. On mobile the list page is a separate route, so I didn't
+  wire this — next visit to the list re-fetches fresh data. Fine for
+  1094 rows; revisit if the list gets bigger.
+
+Builds: florist 595 KB / 168 KB gz (+47 KB from Phase A baseline).
+Dashboard unchanged. Backend unchanged. Shared tests 33/33 pass.
+
+---
+
+## 2026-04-22 — Florist app cleanup (Phase A): nav trim + Shopping→Stock + Wix tab polish
+
+Owner feedback made clear the florist app had accumulated UX debt: Catalog
+tab didn't match its Wix content, Pull/Push sync wasn't discoverable
+(single ambiguous refresh icon), Stock-adjacent workflows were scattered
+across bottom nav + burger + inline buttons, and the burger had dead
+entries. First PR of a three-part cleanup.
+
+### Navigation
+- **`components/BottomNav.jsx`** — Owner bottom nav trimmed from 5 to 4
+  tabs (Shopping removed; folded into Stock page). Burger menu dropped
+  Day Summary (unused), Purchase Orders + Waste Log (reachable from Stock
+  now). Florist burger dropped Waste Log (same reason). The narrow-viewport
+  collapse logic was removed since both roles now fit 4 tabs comfortably;
+  Phase B will reintroduce it when the Customers tab becomes the 5th.
+
+### Wix tab (was "Catalog")
+- **`translations.js`** — `tabCatalog` renamed "Catalog"→"Wix" (EN) /
+  "Каталог"→"Wix" (RU). Route `/catalog/bouquets` unchanged.
+- **`pages/BouquetsPage.jsx`** — the single `RefreshCw` icon in the
+  header is replaced by two explicit labeled buttons: blue
+  `⬇ Pull` (bg-blue-50) and emerald `⬆ Push` (bg-emerald-50). Both
+  always visible, backed by the existing `POST /products/pull` and
+  `POST /products/push` endpoints — no backend changes.
+- **`components/bouquets/PushBar.jsx`** — converted from a prominent
+  brand-colored CTA button to a passive `role="status"` banner. Push is
+  now one trigger (the header button); PushBar is a pure "N changes
+  pending" indicator when scrolled. Still shows a "Syncing…" spinner
+  while a push is in flight.
+- **Translations** — new short keys `pullShort` ("Pull"/"Загрузить") and
+  `pushShort` ("Push"/"Отправить") for the header buttons — the full
+  "Pull from Wix" / "Отправить в Wix" strings were too long to fit
+  alongside the title on narrow phones.
+
+### Stock page
+- **`pages/StockPanelPage.jsx`** — the three stacked full-width buttons
+  (Purchase Orders, Waste Log, Receive Stock) are replaced for the owner
+  with a compact 2×2 Operations tile grid: Purchase Orders · Active
+  Shopping · Stock Evaluation · Waste Log. A new inline `OpsTile`
+  sub-component renders each tile (icon-over-label, 80px tall, rounded
+  2xl). Florist still sees only the red Waste Log button (PO + Shopping
+  are owner-only flows).
+
+### Why it matters
+- **Discoverability.** The old refresh icon on the Wix tab gave no signal
+  that sync was bidirectional. With two labeled buttons, the mental model
+  "I can push changes to Wix from here" forms immediately.
+- **Fewer buttons, more breathing room.** Stock page went from 3 stacked
+  CTAs to a tidy 2×2 grid (same footprint, less visual noise).
+- **Silent misconfigs now surface.** A missing `WIX_API_KEY` on Railway
+  used to hide behind the ambiguous refresh icon — next pull/push tap
+  now shows the backend error as a toast.
+
+### What to watch for
+- `/shopping-support` and `/day-summary` routes stay live (nothing
+  deleted) — direct URL access still works even though the nav entries
+  are gone. If owner confirms Day Summary truly isn't used, the page can
+  be deleted in a follow-up.
+- `runPush()` is idempotent — tapping Push on a clean catalog is a
+  no-op on the Wix side. No confirmation dialog needed.
+- Phase B (next PR) wires a new **Customers** tab into the 4th owner
+  nav slot and adds it to the florist burger; Phase C wires
+  order-card customer names to navigate there.
+
+### Bug surfaced — silent Wix sync failures now visible
+
+When the explicit Pull/Push buttons went live, the owner hit a
+pre-existing silent-failure bug: Wix sync would report "completed"
+but nothing would actually sync to Wix. Root cause was in
+`backend/src/services/wixProductSync.js` — both `runPull()` (lines
+727–730) and `runPush()` (lines 1039–1042) wrap their entire bodies
+in try/catch blocks that push fatal errors into `stats.errors` and
+still return HTTP 200. The frontend never inspected `data.errors`,
+so a failed sync (expired token, Wix API error, network issue)
+looked identical to a clean no-op success toast.
+
+**Frontend fix** (both apps, maintains parity per CLAUDE.md):
+- `apps/florist/src/pages/BouquetsPage.jsx` — `pullFromWix` and
+  `pushToWix` now check `data.errors` before showing success. If
+  errors present, show them joined with ` · ` as a red error toast.
+- `apps/dashboard/src/components/ProductsTab.jsx` — `handlePull` and
+  `handlePush` same check. Previously `handlePush` showed a count
+  like "3 errors" with no explanation; now shows the actual error
+  messages so the owner can diagnose (token expired, Wix API 429, etc.).
+
+**Follow-up** (not in this PR): the backend should return HTTP 500
+when `stats.errors.length > 0`. That's the proper contract — would
+catch the issue in the frontend's existing `catch` block without
+needing a defensive check — but changes endpoint behaviour for all
+callers. Deferred to a separate ticket.
+
+**Why this matters**: the old `RefreshCw` icon only ran Pull and
+rarely got tapped on a failing setup, so the silent failure sat
+hidden. Phase A's explicit buttons invited the owner to actually use
+sync, and the cracks showed. Fix is mechanical — surface the error
+array the backend was already collecting, stop pretending it was a
+success.
+
+### Zero-UUID variant price fix (simple Wix products)
+
+Once the owner saw actual error messages, a second bug surfaced:
+
+```
+Price <productId>::00000000-0000-0000-0000-000000000000:
+  requirement failed: Product variants must be managed
+```
+
+Wix represents products in two shapes: products WITH managed variants
+(size/color options, each variant has a real UUID) and simple products
+WITHOUT variants (single SKU — Wix exposes a synthetic "default variant"
+with the all-zero UUID). The `PATCH /products/{id}/variants` endpoint
+only works for the first shape. For simple products, price lives on
+the product itself and has to be PATCHed via `/products/{id}`.
+
+Inventory handling for zero-UUID variants was already fixed in commit
+`8148b45` (the `updateWixInventory` batch endpoint accepts them), but
+price had been missed — every push on a simple product generated one
+of these errors.
+
+**Fix** (`backend/src/services/wixProductSync.js`):
+- New `updateWixProductPrice(productId, price)` helper using
+  `PATCH /stores/v1/products/{id}` with `{ product: { priceData: { price } } }`.
+  Same pattern as the existing `updateWixProductContent` helper.
+- The push loop now branches: zero-UUID variant → product endpoint;
+  real UUID → variant batch endpoint.
+
+### Telegram alerts for Wix sync errors (owner-only)
+
+Added `notifyWixSyncError({ direction, errors })` to
+`backend/src/services/telegram.js`. Owner-only (uses `sendAlert`, not
+`broadcastAlert` — florists don't need these pings). Formatted as:
+
+```
+🔴 Wix sync — Push errors
+3 errors
+
+• Price <id>: Wix price update failed for ...
+• Price <id>: Wix price update failed for ...
+• Price <id>: Wix price update failed for ...
+…and 1 more
+```
+
+First 3 errors shown verbatim (truncated to 200 chars each); remainder
+summarised. HTML-escaped inside `<code>` spans so angle brackets in
+Wix payloads don't confuse Telegram's HTML parser.
+
+Wired into both `runPull()` and `runPush()` after `logSync()`. Fires
+when `stats.errors.length > 0`. No new env vars — reuses the existing
+`TELEGRAM_BOT_TOKEN` + `TELEGRAM_OWNER_CHAT_ID` that already power
+new-order alerts. If creds aren't set, `sendAlert` no-ops gracefully.
+
+**Multi-recipient owner alerts** — `TELEGRAM_OWNER_CHAT_ID` now
+accepts a comma-separated list of chat IDs (e.g.
+`123456789,987654321`). A single value stays backward-compatible;
+the split-parse pattern mirrors the existing `TELEGRAM_CHAT_IDS`
+broadcast var. Lets the owner add a second owner-tier recipient —
+co-owner, technical helper — for Wix sync error alerts through env
+config alone, no code change required. `sendAlert` broadcasts to
+every ID in the list.
+
+**Why this matters**: sync can run without anyone watching the app
+(scheduled runs, webhook-triggered refreshes, rapid manual taps). A
+toast only helps if the owner happens to be looking at the screen.
+Telegram routes the alert to her pocket so a failing token or API
+change doesn't go unnoticed for hours.
+
+---
+
 ## 2026-04-22 — Owner Telegram ping when a delivery lands (with on-time check)
 
 The owner wanted to know the moment a bouquet is delivered, and
