@@ -11,6 +11,8 @@ dist/
 .claude/agents/
 .claude/commands/
 .claude/plans/
+.claude/worktrees/
+.claude/scheduled_tasks.lock
 
 # Temp files
 tmp/
