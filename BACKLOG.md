@@ -179,7 +179,7 @@ Phase B v2 rewrite — server-side substitute pairing via `Substitute For` link 
 - [x] **Commit 1** (PR #105, 2026-04-20) — `findOrCreateSubstituteStock` writes `Substitute For` link on both create and find branches so multiple substitutes can stack on one card. Schema validator updated at `airtableSchema.js:49`.
 - [x] **Commit 2** (2026-04-21, owner-side) — `Substitute For` link-to-another-record field (multi-record → Stock) added to prod Airtable Stock table.
 - [x] **Commit 3** (2026-04-22, branch `feat/phase-b-reconciliation-commit-3`) — rewrote `GET /stock/reconciliation` to substitute-aware shape (`{ items: [{ originalStockId, substitutes[], affectedLines[] }] }`) joining `Substitute For` links against non-terminal order lines; rewrote the only consumer `ReconciliationSection.jsx` with per-line Swap button (calls `POST /orders/:id/swap-bouquet-line`); deleted `POST /stock/reconciliation/apply`. Drift detection sacrificed — revisit as `/stock/drift` if owner asks.
-- [ ] **Commit 4** — migrate florist `SubstituteReconciliationPage.jsx` to the same new endpoint for consistency (currently uses `/stock/committed` + in-memory pairing). Optional rename to `ReconciliationPage.jsx`.
+- [x] **Commit 4** (PR #131, 2026-04-22) — migrated florist `SubstituteReconciliationPage.jsx` to the same new endpoint. Rename to `ReconciliationPage.jsx` parked on `wip/scratch-2026-04-27` (drafted but not wired in).
 
 ### Wix Stock Sync — accurate inventory projection to storefront (2026-04-08) [WIX-STOCK-PROJECTION]
 Currently Wix storefront does NOT track exact stock per product — it just knows "available" or "out of stock"
@@ -299,3 +299,52 @@ them up after the Postgres migration stands up a true dev/staging env.
 
 ### Open Investigation (2026-03-18)
 - [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
+
+### Repo housekeeping — outcomes from 2026-04-27 cleanup pass
+
+Branch counts: **local 45 → 9**, **remote ~60 → 13**. Master fast-forwarded
+6 commits, 14 staged files moved off master onto `feat/stock-ledger`,
+9 untracked files preserved across 4 new branches (`feat/stock-ledger`,
+`wip/scratch-2026-04-27`, `chore/migration-tooling`, `docs/audit-2026-04-07`).
+Worktree count: 11 → 0. Items still requiring an owner decision:
+
+- [ ] **Open PR for `feat/stock-ledger`** — full Stock Ledger feature
+  (append-only event log on every `Current Quantity` change). Branch is
+  pushed and PR-ready. Includes the owner-action checklist: create the
+  Stock Ledger Airtable table per the field list in `CHANGELOG.md`,
+  set `AIRTABLE_STOCK_LEDGER_TABLE` on Railway, restart backend.
+
+- [ ] **Decide on `feat/florist-cleanup-phase-a`** — 2 unmerged real
+  fixes that never got PR'd (verified 2026-04-27): (a) `7ba180f` —
+  silence Available Today reminders by default behind an env-var gate;
+  (b) `2826b19` — persist `cutoffReminderLastDate` to App Config so
+  redeploys after 18:00 don't re-fire the reminder. Master still has
+  the old in-memory `cutoffReminderSentDate = null`. Either PR these
+  or explicitly archive.
+
+- [ ] **Decide on `wip/scratch-2026-04-27`** — two orphan drafts saved
+  here so they're not lost: `apps/florist/src/pages/ReconciliationPage.jsx`
+  (264-line rename/refactor of `SubstituteReconciliationPage.jsx`, not
+  wired anywhere) and `backend/src/utils/batchResolver.js` (105-line
+  utility for matching dated-batch suffixes, not imported anywhere).
+  Decide: integrate, finish, or delete.
+
+- [ ] **Decide on 4 abandoned experimental branches on origin** —
+  Each has unique commits not in master and no open PR:
+  `claude/fix-booknet-flowers-opvSa`, `claude/fix-po-eval-error-nj85C`,
+  `claude/flower-studio-claude-integration-IMS2N`,
+  `claude/implement-testing-plan-1s4PT`. Likely stale Claude-session
+  experiments, but unique line count is too high to auto-delete.
+  Recommend `git diff origin/master origin/<branch>` per branch then
+  delete or PR.
+
+- [ ] **SECURITY: rotate Airtable PAT** — local-only branch
+  `feat/smart-order-intake` (March 9 prototype) hardcodes a working
+  Airtable PAT in `scripts/cleanup-test-orders.js` and
+  `scripts/create-linked-fields.js`. GitHub push protection blocked the
+  push (correctly), so the secret never reached origin, but it's been
+  in local `.git/objects` since March 9. Revoke the token at
+  airtable.com/create/tokens, rotate Railway env vars + `backend/.env`,
+  then `git branch -D feat/smart-order-intake` to drop the local copy.
+  Branch content (Proxy-based bilingual UI) is fully superseded by the
+  current production translation system — nothing of value to keep.
