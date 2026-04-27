@@ -119,8 +119,11 @@ export default function DashboardPage() {
           <OrdersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
         </div>
         <div style={{ display: activeTab === 'newOrder' ? 'block' : 'none' }}>
+          {/* No key={filterKey}: the wizard must NOT remount when an unrelated
+              tab triggers a cross-tab navigation, otherwise an in-progress
+              order is wiped. The matchPremadeId effect inside NewOrderTab
+              handles Match-Premade re-entries without a remount. */}
           <NewOrderTab
-            key={`newOrder-${filterKey}`}
             onNavigate={navigateTo}
             initialFilter={activeTab === 'newOrder' ? tabFilter : null}
           />
