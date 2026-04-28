@@ -123,13 +123,19 @@ export function responseToPg(fields) {
 
 // Resolve an incoming id (recXXX or uuid) to a PG row.
 // Used in postgres-mode read/write paths and in shadow-mode parity checks.
-async function findPgByAirtableOrUuid(id) {
-  if (!id || !db) return null;
+//
+// `handle` lets the caller pass a transaction (`tx`) so the lookup runs on
+// the same connection that holds the surrounding write. Passing the
+// top-level `db` from inside a transaction would deadlock under
+// single-connection drivers (pglite) and contend for connections under
+// pooled drivers — both are real failure modes.
+async function findPgByAirtableOrUuid(id, handle = db) {
+  if (!id || !handle) return null;
   const isAirtableId = typeof id === 'string' && id.startsWith('rec');
   const where = isAirtableId
     ? and(eq(stock.airtableId, id), isNull(stock.deletedAt))
     : and(eq(stock.id, id), isNull(stock.deletedAt));
-  const [row] = await db.select().from(stock).where(where).limit(1);
+  const [row] = await handle.select().from(stock).where(where).limit(1);
   return row ?? null;
 }
 
@@ -371,7 +377,7 @@ export async function update(id, fields, opts = {}) {
   // postgres mode
   if (!db) throw new Error('stockRepo.update: postgres backend but DATABASE_URL not configured');
   const pgRow = await db.transaction(async (tx) => {
-    const before = await findPgByAirtableOrUuid(id);
+    const before = await findPgByAirtableOrUuid(id, tx);
     if (!before) {
       const err = new Error(`Stock record not found: ${id}`);
       err.statusCode = 404;
@@ -449,7 +455,7 @@ export async function adjustQuantity(id, delta, opts = {}) {
   // postgres mode — single-statement atomic
   if (!db) throw new Error('stockRepo.adjustQuantity: postgres backend but DATABASE_URL not configured');
   return await db.transaction(async (tx) => {
-    const before = await findPgByAirtableOrUuid(id);
+    const before = await findPgByAirtableOrUuid(id, tx);
     if (!before) {
       const err = new Error(`Stock record not found: ${id}`);
       err.statusCode = 404;
@@ -523,7 +529,7 @@ export async function softDelete(id, opts = {}) {
 
   if (!db) throw new Error('stockRepo.softDelete: postgres backend but DATABASE_URL not configured');
   return await db.transaction(async (tx) => {
-    const before = await findPgByAirtableOrUuid(id);
+    const before = await findPgByAirtableOrUuid(id, tx);
     if (!before) {
       const err = new Error(`Stock record not found: ${id}`);
       err.statusCode = 404;
@@ -556,13 +562,12 @@ export async function restore(id, opts = {}) {
   if (!db) throw new Error('stockRepo.restore: postgres backend not configured');
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
   return await db.transaction(async (tx) => {
-    const before = MODE === 'postgres'
-      ? await findPgByAirtableOrUuid(id)
-      // Shadow: include soft-deleted rows in the lookup.
-      : (await tx.select().from(stock).where(
-          (typeof id === 'string' && id.startsWith('rec'))
-            ? eq(stock.airtableId, id) : eq(stock.id, id)
-        ).limit(1))[0];
+    // Restore must include soft-deleted rows in the lookup — that's the
+    // whole point. findPgByAirtableOrUuid filters them out, so we use a
+    // direct query here for both modes.
+    const isAirtableId = typeof id === 'string' && id.startsWith('rec');
+    const where = isAirtableId ? eq(stock.airtableId, id) : eq(stock.id, id);
+    const [before] = await tx.select().from(stock).where(where).limit(1);
     if (!before) {
       const err = new Error(`Stock record not found: ${id}`);
       err.statusCode = 404;

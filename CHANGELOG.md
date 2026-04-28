@@ -41,6 +41,62 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-28 — SQL migration Phase 3: real-SQL integration tests + simulator (caught 2 production bugs)
+
+Added `@electric-sql/pglite` (PostgreSQL compiled to WASM) as a dev
+dependency so we can validate the Phase 3 cutover against actual SQL
+without needing a local DB install. **Pglite IS Postgres** — same query
+parser, same transaction semantics — so behaviour validated here is
+faithful to what Railway will do.
+
+**Test harness:**
+- `backend/src/__tests__/helpers/pgHarness.js` — boots in-process PG
+  per-test, applies the same SQL migrations Railway runs, returns a
+  Drizzle handle.
+- `backend/src/__tests__/helpers/pgHarness.smoke.test.js` — 7 tests:
+  PG version, tables apply, jsonb round-trip, unique-index enforcement,
+  array column round-trip.
+
+**Integration tests** (real SQL, not mocked):
+- `backend/src/__tests__/stockRepo.integration.test.js` — 15 tests across
+  postgres + shadow modes: create + audit, partial-field update with
+  minimal diff, atomic adjustQuantity (single + 10x concurrent),
+  negative qty allowed, soft-delete + restore + purge round-trip,
+  listByIds with mixed UUID/airtable_id input, list-with-filter
+  semantics.
+- `backend/src/__tests__/backfillStock.integration.test.js` — 6 tests:
+  initial insert, idempotent re-run, change propagation, missing-name
+  skip, soft-deleted rows preserved across re-runs.
+- `backend/src/__tests__/parityCheck.integration.test.js` — 7 tests:
+  clean state produces zero parity rows, missing_pg / missing_at /
+  field_mismatch detection, null-vs-empty-string treated as equal,
+  combined drift counted independently.
+
+**Two real bugs surfaced + fixed:**
+1. `stockRepo.findPgByAirtableOrUuid()` ran against the top-level `db`
+   handle instead of the surrounding transaction, deadlocking under
+   concurrent writes (would have manifested on prod under any peak-
+   Saturday burst). Fix: thread `tx` parameter through every callsite.
+2. `stockRepo.restore()` filtered out soft-deleted rows in the lookup,
+   so restore could never find what it needed to restore. Fix: bypass
+   the deleted_at filter for restore's pre-read.
+
+**Owner-runnable simulator:**
+- `backend/scripts/simulate-stock.js` — "day in the life" walkthrough.
+  Boots ephemeral PG, seeds 5 stock items, walks through 10 steps
+  (bouquet compose / deliver / edit / cancel / PO receive / write-off /
+  10x concurrent burst / soft-delete + restore), prints state after each
+  step, asserts expected qty at each checkpoint, dumps audit log
+  summary. Run with `node scripts/simulate-stock.js`. No DB install,
+  no Airtable connection, no env vars needed.
+
+**Verification:**
+- 173/174 tests pass (the 1 failure is the same pre-existing
+  `analyticsService` test on baseline). 35 of those 174 are new.
+- Simulator runs end-to-end with all 17 quantity assertions holding.
+
+---
+
 ## 2026-04-27 — SQL migration Phase 3: Stock cutover scaffolding (shadow-write ready)
 
 The proof-of-concept entity migration. **Default behaviour is unchanged**
