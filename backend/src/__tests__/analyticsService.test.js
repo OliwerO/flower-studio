@@ -41,11 +41,14 @@ describe('enrichOrderPrices', () => {
     expect(orders[0]['Effective Price']).toBe(135); // 100 + 35
   });
 
-  it('prefers Price Override over computed total', () => {
+  it('prefers Price Override over computed flower total, but delivery fee is always added on top', () => {
     const orders = [makeOrder({ id: 'o1', 'Price Override': 200 })];
     enrichOrderPrices(orders, { o1: 100 }, { o1: 30 }, { o1: 35 });
 
-    expect(orders[0]['Effective Price']).toBe(200);
+    // analyticsService.enrichOrderPrices: `(Price Override || flowerSell) + delFee`.
+    // Documented in services/analyticsService.js — override replaces flower
+    // total only; delivery is invoiced on top regardless. So 200 + 35 = 235.
+    expect(orders[0]['Effective Price']).toBe(235);
   });
 
   it('prefers Final Price over Price Override', () => {
