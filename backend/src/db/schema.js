@@ -1,8 +1,9 @@
 // Postgres schema — Drizzle table definitions.
 //
 // Phase 1 added `system_meta`. Phase 2.5 added `audit_log`.
-// Phase 3 adds `stock` + `parity_log`. Each entity arrives in this file
-// as its phase begins.
+// Phase 3 added `stock` + `parity_log`.
+// Phase 4 adds `orders` + `order_lines` + `deliveries` (the trio that
+// always migrates together — see docs/migration/phase-4-orders-design.md).
 
 import {
   pgTable, text, timestamp, jsonb, bigserial, index, uuid,
@@ -105,6 +106,114 @@ export const stock = pgTable('stock', {
 //
 // Key: shadow-write is HOW we know it's safe to flip. Without parity_log we'd
 // be flying blind into the Phase 3d cutover.
+// ── Phase 4: Orders ──
+//
+// Why text columns for status / payment_status / delivery_type instead of
+// pgEnum: the Airtable single-select fields were always loose strings on
+// the frontend, and the JS state machine in `backend/src/constants/statuses.js`
+// is the single source of truth. Using text here means adding a new status
+// value is a JS-only change — no migration needed.
+//
+// Why customer_id is text not uuid FK: Customers don't migrate until
+// Phase 5. customer_id holds the Airtable rec id (recXXX) during the
+// Phase 4 cutover window, then gets ALTER'd to uuid + FK in Phase 5.
+//
+// `app_order_id` is the human-facing identifier (e.g. "BLO-20260428-1");
+// already unique in Airtable, kept unique here.
+export const orders = pgTable('orders', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  airtableId:         text('airtable_id'),
+  appOrderId:         text('app_order_id').notNull(),
+  customerId:         text('customer_id').notNull(),
+  status:             text('status').notNull().default('New'),
+  deliveryType:       text('delivery_type').notNull(),  // 'Delivery' | 'Pickup'
+  orderDate:          date('order_date').notNull().defaultNow(),
+  requiredBy:         date('required_by'),
+  deliveryTime:       text('delivery_time'),
+  customerRequest:    text('customer_request'),
+  notesOriginal:      text('notes_original'),
+  floristNote:        text('florist_note'),
+  greetingCardText:   text('greeting_card_text'),
+  source:             text('source'),
+  communicationMethod: text('communication_method'),
+  paymentStatus:      text('payment_status').notNull().default('Unpaid'),
+  paymentMethod:      text('payment_method'),
+  priceOverride:      numeric('price_override', { precision: 10, scale: 2 }),
+  deliveryFee:        numeric('delivery_fee', { precision: 10, scale: 2 }),
+  createdBy:          text('created_by'),
+  payment1Amount:     numeric('payment_1_amount', { precision: 10, scale: 2 }),
+  payment1Method:     text('payment_1_method'),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:          timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  airtableIdx:    uniqueIndex('orders_airtable_id_idx').on(table.airtableId),
+  appOrderIdIdx:  uniqueIndex('orders_app_order_id_idx').on(table.appOrderId),
+  customerDateIdx: index('orders_customer_date_idx').on(table.customerId, table.orderDate),
+  // Drives "today's work" queries (dashboard tab) — narrow partial index keeps it cheap.
+  activeStatusIdx: index('orders_active_status_idx').on(table.status, table.requiredBy),
+  deletedIdx:     index('orders_deleted_idx').on(table.deletedAt),
+}));
+
+// ── Phase 4: Order Lines ──
+//
+// `stock_item_id` is text (not uuid FK) for the same reason as orders.customer_id:
+// it carries the Airtable rec id (recXXX) during the cutover window. After Phase 7
+// retires Airtable, the rec ids may be replaced by stock.id uuids in a backfill,
+// but that's a downstream cleanup — Phase 4 itself doesn't depend on it.
+//
+// ON DELETE CASCADE: hard-deleting an order removes its lines automatically. This
+// matches `orderService.deleteOrder()`'s manual unwinding logic — once enforced
+// at the schema, the JS code stops being the lone enforcer.
+export const orderLines = pgTable('order_lines', {
+  id:                uuid('id').primaryKey().defaultRandom(),
+  airtableId:        text('airtable_id'),
+  orderId:           uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  stockItemId:       text('stock_item_id'),  // recXXX or null (orphan); validated by JS layer
+  flowerName:        text('flower_name').notNull(),
+  quantity:          integer('quantity').notNull().default(0),
+  costPricePerUnit:  numeric('cost_price_per_unit', { precision: 10, scale: 2 }),
+  sellPricePerUnit:  numeric('sell_price_per_unit', { precision: 10, scale: 2 }),
+  stockDeferred:     boolean('stock_deferred').notNull().default(false),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:         timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:         timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  airtableIdx: uniqueIndex('order_lines_airtable_id_idx').on(table.airtableId),
+  orderIdx:    index('order_lines_order_id_idx').on(table.orderId),
+  stockIdx:    index('order_lines_stock_item_id_idx').on(table.stockItemId),
+}));
+
+// ── Phase 4: Deliveries ──
+//
+// One delivery per order — enforced as `unique(order_id)` at the DB level. Today
+// nothing in code prevents two deliveries from being created for one order; this
+// constraint catches that bug class permanently.
+export const deliveries = pgTable('deliveries', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  airtableId:         text('airtable_id'),
+  orderId:            uuid('order_id').notNull().references(() => orders.id, { onDelete: 'cascade' }),
+  deliveryAddress:    text('delivery_address'),
+  recipientName:      text('recipient_name'),
+  recipientPhone:     text('recipient_phone'),
+  deliveryDate:       date('delivery_date'),
+  deliveryTime:       text('delivery_time'),
+  assignedDriver:     text('assigned_driver'),
+  deliveryFee:        numeric('delivery_fee', { precision: 10, scale: 2 }),
+  driverInstructions: text('driver_instructions'),
+  deliveryMethod:     text('delivery_method'),  // 'Driver' | 'Self'
+  driverPayout:       numeric('driver_payout', { precision: 10, scale: 2 }),
+  status:             text('status').notNull().default('Pending'),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:          timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  airtableIdx:    uniqueIndex('deliveries_airtable_id_idx').on(table.airtableId),
+  orderIdx:       uniqueIndex('deliveries_order_id_idx').on(table.orderId),
+  driverDateIdx:  index('deliveries_driver_date_idx').on(table.assignedDriver, table.deliveryDate),
+  statusDateIdx:  index('deliveries_status_date_idx').on(table.status, table.deliveryDate),
+}));
+
 export const parityLog = pgTable('parity_log', {
   id: bigserial('id', { mode: 'bigint' }).primaryKey(),
   entityType: text('entity_type').notNull(),         // 'stock' | 'order' | ...

@@ -5,7 +5,8 @@
 
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './pgHarness.js';
-import { stock, auditLog, parityLog, systemMeta } from '../../db/schema.js';
+import { stock, auditLog, parityLog, systemMeta, orders, orderLines, deliveries } from '../../db/schema.js';
+import { eq } from 'drizzle-orm';
 
 let harness;
 beforeEach(async () => { harness = await setupPgHarness(); });
@@ -17,12 +18,15 @@ describe('pglite harness', () => {
     expect(result.rows[0].v).toMatch(/PostgreSQL/);
   });
 
-  it('applied all four tables from the migration set', async () => {
+  it('applied all seven tables from the migration set', async () => {
     const { rows } = await harness.pg.query(`
       SELECT tablename FROM pg_tables WHERE schemaname = 'public' ORDER BY tablename
     `);
     const tables = rows.map(r => r.tablename);
-    expect(tables).toEqual(expect.arrayContaining(['system_meta', 'audit_log', 'stock', 'parity_log']));
+    expect(tables).toEqual(expect.arrayContaining([
+      'system_meta', 'audit_log', 'stock', 'parity_log',
+      'orders', 'order_lines', 'deliveries',
+    ]));
   });
 
   it('lets Drizzle round-trip an insert + select on system_meta', async () => {
@@ -85,5 +89,82 @@ describe('pglite harness', () => {
     expect(rows[0].kind).toBe('missing_pg');
     expect(rows[0].airtableValue['Display Name']).toBe('Lily');
     expect(rows[0].postgresValue).toBeNull();
+  });
+
+  // ── Phase 4 schema smoke tests ──
+
+  it('orders + order_lines + deliveries round-trip with FKs', async () => {
+    const [order] = await harness.db.insert(orders).values({
+      appOrderId:   'BLO-TEST-1',
+      customerId:   'recCust1',
+      deliveryType: 'Delivery',
+      requiredBy:   '2026-05-01',
+      paymentStatus: 'Paid',
+    }).returning();
+
+    const [line] = await harness.db.insert(orderLines).values({
+      orderId:     order.id,
+      flowerName:  'Red Rose',
+      quantity:    12,
+      sellPricePerUnit: '15.00',
+    }).returning();
+
+    const [delivery] = await harness.db.insert(deliveries).values({
+      orderId:        order.id,
+      deliveryAddress: 'ul. Floriańska 1, Kraków',
+      deliveryDate:   '2026-05-01',
+      assignedDriver: 'Timur',
+      status:         'Pending',
+    }).returning();
+
+    expect(line.orderId).toBe(order.id);
+    expect(delivery.orderId).toBe(order.id);
+    expect(line.quantity).toBe(12);
+  });
+
+  it('enforces unique app_order_id', async () => {
+    await harness.db.insert(orders).values({
+      appOrderId: 'BLO-DUP-1', customerId: 'recA', deliveryType: 'Pickup',
+    });
+    await expect(
+      harness.db.insert(orders).values({
+        appOrderId: 'BLO-DUP-1', customerId: 'recB', deliveryType: 'Delivery',
+      })
+    ).rejects.toThrow(/duplicate|unique/i);
+  });
+
+  it('enforces one-delivery-per-order via unique index on order_id', async () => {
+    const [o] = await harness.db.insert(orders).values({
+      appOrderId: 'BLO-1DEL-1', customerId: 'recA', deliveryType: 'Delivery',
+    }).returning();
+    await harness.db.insert(deliveries).values({ orderId: o.id, status: 'Pending' });
+    await expect(
+      harness.db.insert(deliveries).values({ orderId: o.id, status: 'Pending' })
+    ).rejects.toThrow(/duplicate|unique/i);
+  });
+
+  it('cascades hard-delete from orders to lines + delivery', async () => {
+    const [o] = await harness.db.insert(orders).values({
+      appOrderId: 'BLO-CASC-1', customerId: 'recA', deliveryType: 'Delivery',
+    }).returning();
+    await harness.db.insert(orderLines).values({ orderId: o.id, flowerName: 'X', quantity: 1 });
+    await harness.db.insert(orderLines).values({ orderId: o.id, flowerName: 'Y', quantity: 2 });
+    await harness.db.insert(deliveries).values({ orderId: o.id, status: 'Pending' });
+
+    await harness.db.delete(orders).where(eq(orders.id, o.id));
+
+    const remainingLines = await harness.db.select().from(orderLines).where(eq(orderLines.orderId, o.id));
+    const remainingDeliveries = await harness.db.select().from(deliveries).where(eq(deliveries.orderId, o.id));
+    expect(remainingLines).toHaveLength(0);
+    expect(remainingDeliveries).toHaveLength(0);
+  });
+
+  it('rejects an order_lines row referencing a missing order_id (FK enforcement)', async () => {
+    await expect(
+      harness.db.insert(orderLines).values({
+        orderId: '00000000-0000-0000-0000-000000000000',
+        flowerName: 'Phantom', quantity: 1,
+      })
+    ).rejects.toThrow(/foreign key|violates/i);
   });
 });

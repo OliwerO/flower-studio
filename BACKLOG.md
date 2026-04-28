@@ -277,7 +277,16 @@ reports). Each item below was re-validated against the current code on
 - [x] **Phase 2.5 — Audit log + Admin tab** (2026-04-27) — `audit_log` table + `recordAudit()` helper. Owner-only Admin tab with audit-log viewer. Per-entity registry empty until Phase 3 populates it.
 - [x] **Phase 3 — Stock cutover scaffolding** (2026-04-27) — `stock` + `parity_log` tables, `stockRepo` with three-mode backend (`airtable | shadow | postgres`), full route wiring (stock.js, dashboard.js, orderService autoMatchStock + atomicStockAdjust, wixProductSync), backfill script, AdminTab parity endpoints. **Default behaviour unchanged** (`STOCK_BACKEND=airtable`); cutover gated on env var flip.
 - [ ] **Phase 3 cutover** — owner action: apply migration on prod (`npm run db:migrate`), run `node scripts/backfill-stock.js`, set `STOCK_BACKEND=shadow`, watch parity_log for ~1 week (especially a full Saturday), then flip to `postgres`.
-- [ ] **Phase 4 — Orders + Lines + Deliveries** — biggest win: collapse the 538-line manual rollback in `orderService.js` into a single PG transaction. Riskiest consumer: Wix webhook (must be tested against a recorded payload before flip).
+- [ ] **Phase 4 — Orders + Lines + Deliveries** — design + scaffolding in progress on `feat/sql-migration-phase-4-prep`.
+  - [x] Design doc: `docs/migration/phase-4-orders-design.md` (schema, transaction boundary, cutover sequencing, Wix webhook risk)
+  - [x] Schema: `orders` + `order_lines` + `deliveries` tables + 0003 migration. ON DELETE CASCADE on the FKs. unique(order_id) on deliveries (one delivery per order, enforced at DB level).
+  - [x] stockRepo refactor: `opts.tx` parameter on every write method so Phase 4's transactional createOrder can adjust stock atomically inside the parent tx. 4 new rollback tests prove the contract.
+  - [x] Schema smoke tests: 5 new tests (FK enforcement, ON DELETE CASCADE, unique constraints).
+  - [x] orderRepo skeleton with locked-in API (signatures + JSDoc). Stubs throw `501` until implementation.
+  - [ ] **Implementation PR** — replace stubs with real impl + rewire `orderService.js` to use orderRepo. Biggest win: collapse 538-line manual rollback into one `db.transaction(...)`.
+  - [ ] **Wix webhook validation** — capture 3-4 recorded webhook payloads from prod Webhook Log, replay against new createOrder before any cutover (BACKLOG `WIX-BACKLINK`).
+  - [ ] Backfill script `scripts/backfill-orders.js`.
+  - [ ] Cutover via single `ORDER_BACKEND=shadow|postgres` env var (independent of `STOCK_BACKEND`).
 - [ ] **Phase 5 — Customer dedup + cutover** — Universe A (legacy) + B (app) merge with auto-merge on exact phone/email + owner-review modal for ambiguous pairs.
 - [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.
 - [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.
