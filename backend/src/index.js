@@ -31,6 +31,11 @@ import premadeBouquetRoutes from './routes/premadeBouquets.js';
 import adminRoutes         from './routes/admin.js';
 
 // Validate required env vars on startup — fail early instead of silently breaking at runtime.
+// In test-harness mode (TEST_BACKEND=mock-airtable) the AIRTABLE_* keys are
+// not actually used, but we still require them to be set to dummy values so
+// that any code path that reads them gets a defined string. start-test-backend.js
+// fills these with placeholders before importing this file.
+const IS_TEST_BACKEND = process.env.TEST_BACKEND === 'mock-airtable';
 const REQUIRED_ENV = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'PIN_OWNER', 'PIN_FLORIST'];
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
 if (missing.length > 0) {
@@ -72,11 +77,21 @@ app.use(express.json({ limit: '1mb' }));
 
 // Public routes — no PIN required
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), testBackend: IS_TEST_BACKEND || false });
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventsRoutes);   // SSE — no auth needed, lightweight event stream
 app.use('/api/public', publicRoutes);   // Storefront data — no auth, consumed by Wix Velo
+
+// Test-only routes (POST /api/test/reset, GET /api/test/state) — mounted
+// ONLY when running under TEST_BACKEND=mock-airtable. Both the shim in
+// services/airtable.js and db/index.js refuse to boot pglite or the mock
+// in NODE_ENV=production, so this conditional is just defence in depth.
+if (IS_TEST_BACKEND) {
+  const { default: testRoutes } = await import('./routes/test.js');
+  app.use('/api/test', testRoutes);
+  console.log('[TEST] Mounted /api/test (reset, state, audit, parity).');
+}
 
 // All routes below require a valid PIN in the X-Auth-PIN header
 app.use(authenticate);
@@ -106,10 +121,20 @@ const PORT = process.env.PORT || 3001;
 // Verify Airtable field names match what the backend writes — catches
 // trailing-space typos and renamed fields at boot instead of runtime.
 // See backend/src/services/airtableSchema.js for the rationale.
-await validateAirtableSchema();
+//
+// Skipped in test-harness mode: the validator hits the Airtable Meta API
+// with the real PAT, which (a) we don't have in tests and (b) would defeat
+// the "no production traffic" guarantee of the harness. The mock has its
+// own fixed schema, so the drift this validator catches doesn't apply.
+if (!IS_TEST_BACKEND) {
+  await validateAirtableSchema();
+} else {
+  console.log('[SCHEMA CHECK] Skipped — TEST_BACKEND=mock-airtable. Mock fixture is authoritative.');
+}
 
 // Postgres — no-op when DATABASE_URL is unset (Phase 1 scaffolding).
 // Becomes mandatory once entity cutovers begin in Phase 3.
+// In pglite mode this also applies migrations; see db/index.js.
 await connectPostgres();
 
 const server = app.listen(PORT, () => {
