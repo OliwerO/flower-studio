@@ -1,124 +1,51 @@
-import PQueue from 'p-queue';
-import base, { TABLES } from '../config/airtable.js';
+// Airtable service shim — picks the real client or the in-memory mock at
+// module load time, then re-exports a stable API surface so callers
+// (`stockRepo`, `orderService`, every route) don't know which is in play.
+//
+// The real implementation lives byte-for-byte at ./airtable-real.js. This
+// file only exists to gate which one gets loaded. Production sets no
+// TEST_BACKEND env var, so the real client loads as before.
+//
+// Why dynamic import: when `TEST_BACKEND=mock-airtable`, the real module
+// (and its `config/airtable.js` which constructs `new Airtable(...)` at
+// load) must never execute — fewer surprises with undefined env vars,
+// no SDK initialised against a fake key. Static imports would load both
+// modules regardless of the toggle. ESM top-level await makes this clean.
+//
+// Footgun guard: TEST_BACKEND is fatal in production. Two layers of
+// defence catch a stray env var in Railway:
+//   1. NODE_ENV === 'production' + TEST_BACKEND set → process.exit(1)
+//   2. Boot banner (logged below) makes the mode visible in any deploy log.
 
-// Rate-limit queue: Airtable allows 5 req/sec.
-// Like a loading dock with 5 bays — 5 trucks can unload at once, then the next batch.
-const queue = new PQueue({ concurrency: 5, intervalCap: 5, interval: 1000 });
+const TEST_BACKEND = process.env.TEST_BACKEND;
+const useMock = TEST_BACKEND === 'mock-airtable';
 
-// Stock-specific queue: concurrency 1 — serializes ALL stock quantity changes.
-// Like a single-lane loading dock: only one adjustment at a time,
-// so two simultaneous orders can't read the same quantity and clobber each other.
-const stockQueue = new PQueue({ concurrency: 1 });
-
-// Wraps every Airtable call so it flows through the queue automatically.
-const enqueue = (fn) => queue.add(fn);
-
-/**
- * Converts an Airtable record object to a plain JS object.
- * { id, fields: { Name: "Anna", ... } } → { id: "recXXX", Name: "Anna", ... }
- */
-function toPlain(record) {
-  return { id: record.id, ...record.fields };
-}
-
-/**
- * List records from a table.
- * @param {string} tableId - Use TABLES.CUSTOMERS etc.
- * @param {object} options
- * @param {string} [options.filterByFormula] - Airtable formula string
- * @param {Array}  [options.sort]            - [{ field, direction }]
- * @param {number} [options.maxRecords]
- * @param {number} [options.pageSize]        - Max 100
- * @param {Array}  [options.fields]          - Column whitelist
- */
-export async function list(tableId, options = {}) {
-  return enqueue(() =>
-    new Promise((resolve, reject) => {
-      const records = [];
-      // Only pass options that have real values — Airtable SDK rejects empty strings/arrays
-      const selectOptions = {};
-      if (options.filterByFormula)   selectOptions.filterByFormula = options.filterByFormula;
-      if (options.sort?.length)      selectOptions.sort            = options.sort;
-      if (options.pageSize)          selectOptions.pageSize        = options.pageSize;
-      if (options.maxRecords)        selectOptions.maxRecords      = options.maxRecords;
-      if (options.fields?.length)    selectOptions.fields          = options.fields;
-
-      base(tableId)
-        .select(selectOptions)
-        .eachPage(
-          (page, fetchNext) => {
-            page.forEach((r) => records.push(toPlain(r)));
-            fetchNext();
-          },
-          (err) => {
-            if (err) reject(err);
-            else resolve(records);
-          }
-        );
-    })
+if (TEST_BACKEND && process.env.NODE_ENV === 'production') {
+  console.error(
+    `[FATAL] TEST_BACKEND=${TEST_BACKEND} is set in NODE_ENV=production. ` +
+    `Refusing to boot — this is a guard against accidentally pointing prod at the in-memory mock. ` +
+    `Unset TEST_BACKEND or change NODE_ENV.`
   );
+  process.exit(1);
 }
 
-/**
- * Fetch a single record by its Airtable record ID.
- */
-export async function getById(tableId, recordId) {
-  return enqueue(async () => {
-    const record = await base(tableId).find(recordId);
-    return toPlain(record);
-  });
+if (TEST_BACKEND && !useMock) {
+  console.error(`[FATAL] Unknown TEST_BACKEND value: ${TEST_BACKEND}. Expected 'mock-airtable' or unset.`);
+  process.exit(1);
 }
 
-/**
- * Create a new record. Returns the created record as a plain object.
- */
-export async function create(tableId, fields) {
-  return enqueue(async () => {
-    const record = await base(tableId).create(fields, { typecast: true });
-    return toPlain(record);
-  });
+if (useMock) {
+  console.log('\x1b[31m[MOCK AIRTABLE] Using in-memory fixture — NOT touching production Airtable.\x1b[0m');
 }
 
-/**
- * Update fields on an existing record (PATCH — only sends changed fields).
- */
-export async function update(tableId, recordId, fields) {
-  return enqueue(async () => {
-    const record = await base(tableId).update(recordId, fields, { typecast: true });
-    return toPlain(record);
-  });
-}
+const impl = useMock
+  ? await import('./airtable-mock.js')
+  : await import('./airtable-real.js');
 
-/**
- * Delete a record permanently.
- */
-export async function deleteRecord(tableId, recordId) {
-  return enqueue(async () => {
-    const record = await base(tableId).destroy(recordId);
-    return { id: record.id, deleted: true };
-  });
-}
-
-/**
- * Atomically adjust a stock item's quantity by a delta (negative = deduct, positive = add).
- * Runs through stockQueue (concurrency 1) so concurrent orders are serialized.
- * Returns { previousQty, newQty } for rollback tracking.
- */
-export async function atomicStockAdjust(stockId, delta) {
-  return stockQueue.add(async () => {
-    // 1. Read current quantity — fresh, not from a stale snapshot
-    const item = await enqueue(async () => {
-      const r = await base(TABLES.STOCK).find(stockId);
-      return { id: r.id, ...r.fields };
-    });
-    const previousQty = Number(item['Current Quantity'] || 0);
-    const newQty = previousQty + delta;
-
-    // 2. Write new quantity
-    await enqueue(() =>
-      base(TABLES.STOCK).update(stockId, { 'Current Quantity': newQty }, { typecast: true })
-    );
-
-    return { stockId, previousQty, newQty };
-  });
-}
+// Re-export the same surface area as airtable-real.js so callers don't change.
+export const list              = impl.list;
+export const getById           = impl.getById;
+export const create            = impl.create;
+export const update            = impl.update;
+export const deleteRecord      = impl.deleteRecord;
+export const atomicStockAdjust = impl.atomicStockAdjust;
