@@ -5,23 +5,30 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "node --env-file=.env.dev --watch src/index.js",
+    "dev": "node --env-file=.env --watch src/index.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "node --env-file=.env src/db/migrate.js",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "airtable": "^0.12.2",
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
+    "drizzle-orm": "^0.38.4",
     "express": "^4.19.2",
     "express-rate-limit": "^8.3.0",
     "helmet": "^8.1.0",
-    "p-queue": "^8.0.1"
+    "p-queue": "^8.0.1",
+    "pg": "^8.13.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "^0.4.5",
+    "drizzle-kit": "^0.30.6",
     "eslint": "^9.39.4",
     "globals": "^17.4.0",
     "vitest": "^4.1.0"

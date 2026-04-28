@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { ORDER_STATUS, PAYMENT_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
@@ -45,20 +46,29 @@ router.get('/', async (req, res, next) => {
         filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != '${DELIVERY_STATUS.DELIVERED}')`,
       }).catch(() => []),
       // Stock items below reorder threshold
-      db.list(TABLES.STOCK, {
+      stockRepo.list({
         filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < {Reorder Threshold})`,
         sort: [{ field: 'Current Quantity', direction: 'asc' }],
-      }).catch(() => []),
+        // PG-mode equivalent — caller filters threshold below since we
+        // don't have a column-vs-column comparison option yet.
+        pg: { active: true, includeEmpty: true },
+      }).then(rows => rows.filter(r => {
+        // Defence-in-depth: PG-mode returns all active stock; filter on threshold here.
+        const t = Number(r['Reorder Threshold'] || 0);
+        return t > 0 && Number(r['Current Quantity'] || 0) < t;
+      })).catch(() => []),
       // All unpaid/partial non-cancelled orders for aging calculation
       // Don't restrict fields — 'Final Price' is a formula field that may not exist in all bases
       db.list(TABLES.ORDERS, {
         filterByFormula: `AND(OR({Payment Status} = '${PAYMENT_STATUS.UNPAID}', {Payment Status} = '${PAYMENT_STATUS.PARTIAL}'), {Status} != '${ORDER_STATUS.CANCELLED}')`,
       }).catch(() => []),
       // Active stock items with negative quantity
-      db.list(TABLES.STOCK, {
+      stockRepo.list({
         filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < 0)`,
         fields: ['Display Name', 'Purchase Name', 'Current Quantity', 'Supplier', 'Order Lines'],
-      }).catch(() => []),
+        pg: { active: true, includeEmpty: true },
+      }).then(rows => rows.filter(r => Number(r['Current Quantity'] || 0) < 0))
+        .catch(() => []),
       // Customers with key person dates set for upcoming reminders
       // Wrapped in catch — these fields may not exist in all Airtable bases
       db.list(TABLES.CUSTOMERS, {

@@ -2,6 +2,7 @@
 // Routes handle HTTP (req/res), this module handles domain logic.
 
 import * as db from './airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
@@ -29,9 +30,10 @@ export async function autoMatchStock(lines) {
   const unmatched = lines.filter(l => !l.stockItemId && l.flowerName);
   if (unmatched.length === 0) return 0;
 
-  const allStock = await db.list(TABLES.STOCK, {
+  const allStock = await stockRepo.list({
     filterByFormula: '{Active} = TRUE()',
     fields: ['Display Name'],
+    pg: { active: true, includeEmpty: true },
   });
   const byName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
 
@@ -162,7 +164,7 @@ export async function createOrder(params, config, opts = {}) {
       const stockUpdates = []; // [{ stockId, patch }]
       for (const line of orderLines) {
         if (!line.stockItemId) continue;
-        const stockRow = await db.getById(TABLES.STOCK, line.stockItemId).catch(() => null);
+        const stockRow = await stockRepo.getById(line.stockItemId).catch(() => null);
         if (!stockRow) continue;
         // Gate: only apply when the flower is currently out of stock. Matches
         // the UI affordance in Step2Bouquet — in-stock items were priced at
@@ -181,7 +183,7 @@ export async function createOrder(params, config, opts = {}) {
       }
       if (stockUpdates.length > 0) {
         for (const { stockId, patch } of stockUpdates) {
-          await db.update(TABLES.STOCK, stockId, patch);
+          await stockRepo.update(stockId, patch);
         }
         // Cascade to Premade Bouquet Lines. Same pattern as PATCH /stock:id —
         // fetch all lines once and filter in memory by Stock Item link
@@ -211,7 +213,7 @@ export async function createOrder(params, config, opts = {}) {
     if (!skipStockDeduction) {
       for (const line of orderLines) {
         if (line.stockItemId && !line.stockDeferred) {
-          await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+          await stockRepo.adjustQuantity(line.stockItemId, -line.quantity);
           stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
         }
       }
@@ -276,7 +278,7 @@ export async function createOrder(params, config, opts = {}) {
     const rollbackErrors = [];
 
     for (const adj of stockAdjustments) {
-      try { await db.atomicStockAdjust(adj.stockId, -adj.delta); }
+      try { await stockRepo.adjustQuantity(adj.stockId, -adj.delta); }
       catch (e) { rollbackErrors.push(`stock ${adj.stockId}: ${e.message}`); }
     }
     for (const lineId of createdLineIds) {
@@ -430,7 +432,7 @@ export async function cancelWithStockReturn(orderId) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
         returnedItems.push({
           stockId,
           flowerName: line['Flower Name'] || '?',
@@ -485,7 +487,7 @@ export async function deleteOrder(orderId) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
         returnedItems.push({
           stockId,
           flowerName: line['Flower Name'] || '?',
@@ -542,7 +544,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
   for (const rem of removedLines) {
     if (rem.stockItemId && rem.quantity > 0) {
       if (rem.action === 'return') {
-        await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
+        await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity);
       } else if (rem.action === 'writeoff') {
         await db.create(TABLES.STOCK_LOSS_LOG, {
           'Stock Item': [rem.stockItemId],
@@ -589,7 +591,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       if (line._originalQty !== null && line._originalQty !== undefined && line.quantity !== line._originalQty) {
         const delta = line._originalQty - line.quantity;
         if (line.stockItemId && !line.stockDeferred && delta !== 0 && !explicitStockIds.has(line.stockItemId)) {
-          await db.atomicStockAdjust(line.stockItemId, delta);
+          await stockRepo.adjustQuantity(line.stockItemId, delta);
         }
         await db.update(TABLES.ORDER_LINES, line.id, { Quantity: line.quantity });
       }
@@ -609,7 +611,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       });
       createdLines.push(created);
       if (line.stockItemId && !line.stockDeferred) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        await stockRepo.adjustQuantity(line.stockItemId, -line.quantity);
       }
     }
   }
