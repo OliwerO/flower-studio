@@ -263,6 +263,11 @@ export async function getById(id) {
 }
 
 // ── Create ──
+//
+// `opts.tx` (Phase 4): when passed, the caller is inside an outer
+// transaction (typically `orderRepo.createOrder`'s `db.transaction(...)`).
+// We do PG-only work on the parent tx — Airtable is the caller's concern.
+// This keeps stock adjustments + order writes atomic together.
 export async function create(fields, opts = {}) {
   const safe = pickAllowed(fields, STOCK_WRITE_ALLOWED);
   if (!safe['Display Name']) {
@@ -271,6 +276,15 @@ export async function create(fields, opts = {}) {
     throw err;
   }
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+
+  if (opts.tx) {
+    const [row] = await opts.tx.insert(stock).values(responseToPg(safe)).returning();
+    await tryAudit(opts.tx, {
+      entityType: 'stock', entityId: row.id, action: 'create',
+      before: null, after: pgToResponse(row), ...actor,
+    });
+    return pgToResponse(row);
+  }
 
   if (MODE === 'airtable') {
     return airtable.create(TABLES.STOCK, safe);
@@ -325,6 +339,7 @@ export async function create(fields, opts = {}) {
 }
 
 // ── Update ──
+// `opts.tx`: see Create.
 export async function update(id, fields, opts = {}) {
   const safe = pickAllowed(fields, STOCK_WRITE_ALLOWED);
   if (Object.keys(safe).length === 0) {
@@ -333,6 +348,24 @@ export async function update(id, fields, opts = {}) {
     throw err;
   }
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+
+  if (opts.tx) {
+    const before = await findPgByAirtableOrUuid(id, opts.tx);
+    if (!before) {
+      const err = new Error(`Stock record not found: ${id}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const [after] = await opts.tx.update(stock)
+      .set({ ...responseToPg(safe), updatedAt: new Date() })
+      .where(eq(stock.id, before.id))
+      .returning();
+    await tryAudit(opts.tx, {
+      entityType: 'stock', entityId: after.id, action: 'update',
+      before: pgToResponse(before), after: pgToResponse(after), ...actor,
+    });
+    return pgToResponse(after);
+  }
 
   if (MODE === 'airtable') {
     return airtable.update(TABLES.STOCK, id, safe);
@@ -413,6 +446,34 @@ export async function update(id, fields, opts = {}) {
 export async function adjustQuantity(id, delta, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
+  // Phase 4: when called from inside an outer transaction (orderRepo
+  // mutating an order + its lines + adjusting stock atomically), do
+  // PG-only work on the parent tx. Airtable-side adjustment is the
+  // caller's responsibility.
+  if (opts.tx) {
+    const before = await findPgByAirtableOrUuid(id, opts.tx);
+    if (!before) {
+      const err = new Error(`Stock record not found: ${id}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const [after] = await opts.tx.update(stock)
+      .set({ currentQuantity: sql`${stock.currentQuantity} + ${delta}`, updatedAt: new Date() })
+      .where(eq(stock.id, before.id))
+      .returning();
+    await tryAudit(opts.tx, {
+      entityType: 'stock', entityId: after.id, action: 'update',
+      before: { 'Current Quantity': before.currentQuantity },
+      after:  { 'Current Quantity': after.currentQuantity },
+      ...actor,
+    });
+    return {
+      stockId: after.airtableId || after.id,
+      previousQty: before.currentQuantity,
+      newQty: after.currentQuantity,
+    };
+  }
+
   if (MODE === 'airtable') {
     return airtable.atomicStockAdjust(id, delta);
   }
@@ -488,8 +549,27 @@ export async function adjustQuantity(id, delta, opts = {}) {
 // ── Soft delete (Phase 2.5 contract) ──
 // On Airtable side: set Active=false (the closest analogue, since Airtable
 // has no soft-delete concept). On PG side: stamp deleted_at. Idempotent.
+// `opts.tx`: see Create.
 export async function softDelete(id, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+
+  if (opts.tx) {
+    const before = await findPgByAirtableOrUuid(id, opts.tx);
+    if (!before) {
+      const err = new Error(`Stock record not found: ${id}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const [after] = await opts.tx.update(stock)
+      .set({ deletedAt: new Date(), active: false, updatedAt: new Date() })
+      .where(eq(stock.id, before.id))
+      .returning();
+    await tryAudit(opts.tx, {
+      entityType: 'stock', entityId: after.id, action: 'delete',
+      before: pgToResponse(before), after: null, ...actor,
+    });
+    return pgToResponse(after);
+  }
 
   if (MODE === 'airtable') {
     return airtable.update(TABLES.STOCK, id, { Active: false });

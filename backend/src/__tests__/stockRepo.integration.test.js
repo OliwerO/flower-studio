@@ -244,6 +244,73 @@ describe('postgres mode — real SQL', () => {
   });
 });
 
+describe('opts.tx — participate in an outer transaction (Phase 4 contract)', () => {
+  // The whole point of this branch: orderRepo.createOrder will wrap
+  // order + line + delivery + stock writes in one PG transaction. stockRepo
+  // must be able to participate in that transaction without starting its
+  // own (which would either nest unsafely or commit independently). These
+  // tests pin the contract: when opts.tx is passed, the work runs on the
+  // parent tx and rolls back with it.
+
+  it('adjustQuantity(opts.tx) participates in the parent transaction', async () => {
+    const created = await stockRepo.create({ 'Display Name': 'Tx Test', 'Current Quantity': 50 });
+
+    await harness.db.transaction(async (tx) => {
+      await stockRepo.adjustQuantity(created.id, -10, { tx });
+    });
+
+    const fresh = await stockRepo.getById(created.id);
+    expect(fresh['Current Quantity']).toBe(40);
+  });
+
+  it('adjustQuantity(opts.tx) rolls back when the parent transaction throws', async () => {
+    const created = await stockRepo.create({ 'Display Name': 'Rollback Test', 'Current Quantity': 100 });
+
+    await expect(
+      harness.db.transaction(async (tx) => {
+        await stockRepo.adjustQuantity(created.id, -25, { tx });
+        // The parent throws AFTER the stock adjust — under the old design,
+        // the inner db.transaction would commit independently and the rollback
+        // would lose. With opts.tx, the adjust rides the parent tx and rolls
+        // back with it.
+        throw new Error('parent op failed');
+      })
+    ).rejects.toThrow('parent op failed');
+
+    // Stock should still be 100 — the rollback must have undone the -25.
+    const fresh = await stockRepo.getById(created.id);
+    expect(fresh['Current Quantity']).toBe(100);
+  });
+
+  it('create(opts.tx) rolls back the new row if parent throws', async () => {
+    await expect(
+      harness.db.transaction(async (tx) => {
+        await stockRepo.create({ 'Display Name': 'Should Disappear', 'Current Quantity': 5 }, { tx });
+        throw new Error('parent op failed');
+      })
+    ).rejects.toThrow();
+
+    // Row must not have committed.
+    const allStock = await stockRepo.list({ pg: { includeEmpty: true, includeInactive: true } });
+    expect(allStock.find(r => r['Display Name'] === 'Should Disappear')).toBeUndefined();
+  });
+
+  it('audit row written via opts.tx also rolls back with the parent', async () => {
+    const created = await stockRepo.create({ 'Display Name': 'Audit Rollback', 'Current Quantity': 10 });
+    const auditCountBefore = (await harness.db.select().from(auditLog)).length;
+
+    await expect(
+      harness.db.transaction(async (tx) => {
+        await stockRepo.adjustQuantity(created.id, -3, { tx });
+        throw new Error('boom');
+      })
+    ).rejects.toThrow();
+
+    const auditCountAfter = (await harness.db.select().from(auditLog)).length;
+    expect(auditCountAfter).toBe(auditCountBefore);  // no new audit row committed
+  });
+});
+
 describe('shadow mode — Airtable trusted, PG mirrored', () => {
   beforeEach(() => stockRepo._setMode('shadow'));
 
