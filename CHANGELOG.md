@@ -41,6 +41,178 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-28 — Phase 3b follow-on: cutover validation + CI + Wix replay + Playwright scaffold
+
+This commit completes the testing-suite roadmap in five sequential steps.
+Each step finished with a clean run of the full E2E suite.
+
+### Step 1 — Validated the Phase 4 cutover path (and reverted)
+
+Flipped `ORDER_BACKEND` to `postgres` in [start-test-backend.js](backend/scripts/start-test-backend.js)
+and re-ran the suite. **The flip exposed 19 failures across 8 sections** —
+exactly the bugs that would surface on Railway after the env var flip:
+all read-side routes (`GET /orders`, `GET /orders/:id`, `PATCH /orders/:id`
+non-status, `GET/PATCH /deliveries/:id`, `/:id/swap-bouquet-line`,
+`/:id/convert-to-delivery`) still call `db.*` (Airtable) instead of
+`orderRepo.*` (Postgres). Phase 4 is **half-cutover** today: writes go to
+PG, reads still go to Airtable.
+
+Reverted `ORDER_BACKEND` to `airtable` as the harness default and made
+the postgres mode opt-in via `HARNESS_ORDER_BACKEND=postgres` env var.
+The Phase 4 read-path migration is now a tracked blocker before the
+cutover env flip on Railway — see BACKLOG.md.
+
+### Step 1b — Applied stockRepo fix to legacy stock-loss + swap routes
+
+`routes/stockLoss.js` (POST/PATCH/DELETE) and `routes/orders.js`
+(swap-bouquet-line) used `db.atomicStockAdjust` directly, bypassing
+`stockRepo.adjustQuantity`. In `STOCK_BACKEND=postgres` mode this silently
+desynced PG. Replaced 5 call sites; added `stockRepo` + `actorFromReq`
+imports. Sections 14 + 20 of the E2E suite now assert PG stock decrements
+correctly through the new path.
+
+### Step 2 — GitHub Actions CI
+
+Added [.github/workflows/test.yml](.github/workflows/test.yml). Runs on
+every PR against master. Two jobs:
+- `unit` — backend vitest suite.
+- `e2e` — boots the harness in background, polls `/api/health`, runs
+  `npm run test:e2e`.
+
+Concurrency group cancels in-progress runs on new commits to the same
+ref. No external dependencies — pglite handles Postgres in-process.
+
+### Step 3 — Wix webhook replay
+
+Added section 24 to [scripts/e2e-test.js](scripts/e2e-test.js): signs a
+synthetic Wix v3 payload with the harness's `WIX_WEBHOOK_SECRET`, posts
+to `/api/webhook/wix`, verifies the async `processWixOrder` pipeline
+creates an App Order with `Source = 'Wix'` and the correct customer name,
+then replays the same payload to confirm dedup prevents duplicate creation.
+Also asserts the route returns 401 on missing/invalid signatures.
+
+**Real bug fixed**: `verifyWixSignature` in [routes/webhook.js](backend/src/routes/webhook.js)
+called `crypto.timingSafeEqual` directly on attacker-controlled
+`x-wix-signature`. The function throws on length mismatch instead of
+returning false — a short signature would 500 instead of 401, leaking the
+fact that the secret has a specific length. Added a length check before
+`timingSafeEqual`.
+
+### Step 4 — already covered by Step 1b above (same fix).
+
+### Step 5 — Playwright scaffold (foundation, no runnable specs yet)
+
+Per the design doc:
+- [playwright.config.js](playwright.config.js) — boots the harness backend
+  + all three Vite servers via `webServer` array. Single worker, sequential
+  execution (one shared pglite instance can't handle parallel writes).
+- [tests/e2e/helpers/login.js](tests/e2e/helpers/login.js) — shared PIN
+  login helper.
+- [tests/e2e/helpers/test-base.js](tests/e2e/helpers/test-base.js) — auto-fixture
+  that calls `/api/test/reset` before each test.
+- [tests/e2e/florist-order-creation.spec.js](tests/e2e/florist-order-creation.spec.js)
+  — happy-path scaffold, currently `test.describe.skip`. Activates once the
+  React components gain the listed `data-testid` selectors.
+- All three [vite.config.js](apps/florist/vite.config.js) files now read
+  `VITE_API_PROXY_TARGET` env var (defaulting to `http://localhost:3001`)
+  so Playwright can route the dev servers at the harness on port 3002.
+- [package.json](package.json) — added `@playwright/test` devDep + `npm run test:e2e:ui`.
+
+To use: `npm install && npx playwright install chromium && npx playwright test`.
+Today the spec is skipped; flipping it on is the per-spec fill-in work
+described in the design doc.
+
+### Test count
+
+- **Before**: 142 assertions across 23 sections, ~1s.
+- **After**: 153 assertions across 24 sections, ~2s. Section 14 + 20
+  gained PG-decrement assertions (Step 1b); section 24 added 8
+  webhook-replay assertions (Step 3).
+
+---
+
+## 2026-04-28 — Phase 3b: comprehensive E2E test suite against the harness
+
+The local-PG harness foundation landed in PR #161 (mock Airtable + pglite +
+test routes + start-test-backend.js + design doc). This commit fills in the
+**actual end-to-end test suite** — the missing piece that makes the harness
+useful day-to-day.
+
+### What ships
+
+- `scripts/e2e-test.js` — full rewrite. The previous file aimed at a real
+  backend on port 3001 with `.env.dev` (which was retired 2026-04-20).
+  The new version targets the harness on port 3002 and exercises **23
+  isolated sections** covering every workflow + edge case the React apps
+  trigger. Each section calls `POST /api/test/reset` first, so a single
+  failure cannot poison later sections.
+
+  Coverage by area:
+
+  | Area | Sections |
+  |---|---|
+  | Boot + invariants (PG seeded, mock seeded, audit empty) | 1 |
+  | Order creation (Pickup, Delivery, multi-line, role gating, validation) | 2 |
+  | Status FSM (pickup happy path, delivery happy path, invalid blocked) | 3, 4, 5 |
+  | Cancellation (plain PATCH, cancel-with-return, reopen) | 6, 7, 8 |
+  | Bouquet edit (remove+return, remove+writeoff, add line, change qty, owner override) | 9, 10, 11 |
+  | Order delete (owner-only, returns stock for non-terminal) | 12 |
+  | Stock (negative allowed, write-off, soft delete + restore via Admin) | 13, 14, 15 |
+  | Cascades (order → delivery, delivery → order via driver) | 16, 17 |
+  | Payments (Unpaid → Paid auto-backfill of Payment 1 Amount) | 18 |
+  | Pickup → Delivery conversion + bouquet line swap | 19, 20 |
+  | Audit log per role + parity recheck endpoint | 21, 22 |
+  | Cross-role authorization gates | 23 |
+
+- `package.json` (root) — adds two scripts:
+  - `npm run harness` → boots the test backend on port 3002 with mock
+    Airtable + in-process pglite.
+  - `npm run test:e2e` → runs the suite against a running harness.
+
+### How to run
+
+In one terminal:
+```bash
+npm run harness
+```
+
+The harness prints a banner with the PINs (Owner 1111, Florist 2222,
+Driver Timur 3333, Driver Nikita 4444) and seeds 10 stock rows from
+`backend/src/services/__fixtures__/airtable-test-base.json` into the
+in-memory pglite database. NOT touching production Airtable.
+
+In a second terminal:
+```bash
+npm run test:e2e
+```
+
+Expected output: 23 green section headers, "🌸 ALL E2E TESTS PASSED",
+exit code 0. Around 130 individual assertions, ~2 seconds end-to-end.
+
+### What this unblocks
+
+- **Validating Phase 4 cutover before flipping `ORDER_BACKEND=shadow` on
+  Railway.** Today's transactional createOrder rollback path is asserted
+  by section 7 (`cancel-with-return` returns the right stock for every
+  line) and section 12 (`DELETE` returns stock for non-terminal orders).
+  Both paths share the same rollback machinery as a failed createOrder.
+- **Wix webhook validation** — the harness route is reachable; capturing
+  prod payloads + sanitising into a fixture is the next step (out of
+  scope for this commit per the design doc).
+- **Day-to-day feature work without prod Airtable contact** — develop a
+  feature, run `npm run test:e2e`, push.
+
+### Not in scope (deferred)
+
+- Playwright UI specs against the React apps. The design doc (PR #161)
+  scaffolds 7 spec files; this commit ships only the API-layer E2E.
+  React-side UI specs need `data-testid` selectors added to components,
+  which is a separate, mechanical PR per spec.
+- Wix webhook fixture replay. Captures sanitised prod payloads — pending
+  owner's prod Airtable access.
+
+---
+
 ## 2026-04-28 — SQL migration Phase 4: orderRepo implementation (transactional createOrder)
 
 The headline architectural change of the entire migration ships in this

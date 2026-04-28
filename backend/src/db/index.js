@@ -26,6 +26,17 @@ import pg from 'pg';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
 import * as schema from './schema.js';
 
+// Drizzle returns `bigserial` columns (audit_log.id, parity_log.id) as JS
+// bigints. JSON.stringify can't serialise bigint, so res.json() throws 500
+// on any endpoint returning audit / parity rows (e.g. /api/admin/parity/:e,
+// /api/test/audit). Coerce bigints to strings — these ids are opaque and
+// the frontend treats them as strings already. Safe to set globally:
+// no caller in this codebase performs bigint arithmetic on response data.
+if (!BigInt.prototype.toJSON) {
+  // eslint-disable-next-line no-extend-native
+  BigInt.prototype.toJSON = function () { return this.toString(); };
+}
+
 const { Pool } = pg;
 
 const url = process.env.DATABASE_URL;

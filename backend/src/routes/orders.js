@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
+import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
@@ -517,13 +519,17 @@ router.post('/:id/swap-bouquet-line', async (req, res, next) => {
     // Fetch substitute stock item for cost/sell/name
     const substituteStock = await db.getById(TABLES.STOCK, toStockItemId);
 
-    // Return stock to original (undo the deduction)
+    // Return stock to original (undo the deduction). Route through stockRepo
+    // so the adjustment lands in Postgres when STOCK_BACKEND=shadow|postgres.
+    // Without this, the swap was a known Phase 3 cutover gap — the Airtable
+    // mock got the right number, the PG row stayed at the pre-swap quantity.
+    const actor = actorFromReq(req);
     if (oldQty > 0) {
-      await db.atomicStockAdjust(fromStockItemId, +oldQty);
+      await stockRepo.adjustQuantity(fromStockItemId, +oldQty, { actor });
     }
     // Deduct from substitute
     if (qty > 0) {
-      await db.atomicStockAdjust(toStockItemId, -qty);
+      await stockRepo.adjustQuantity(toStockItemId, -qty, { actor });
     }
 
     // Update the order line to point to the substitute

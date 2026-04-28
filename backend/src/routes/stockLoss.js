@@ -4,6 +4,8 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
+import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { VALID_LOSS_REASONS } from '../constants/statuses.js';
 
@@ -83,9 +85,11 @@ router.post('/', async (req, res, next) => {
 
     const record = await db.create(TABLES.STOCK_LOSS_LOG, fields);
 
-    // Deduct from stock if linked
+    // Deduct from stock if linked. Route through stockRepo so the adjustment
+    // lands in Postgres when STOCK_BACKEND=shadow|postgres — direct
+    // db.atomicStockAdjust only mutates Airtable and silently desyncs PG.
     if (stockItemId) {
-      await db.atomicStockAdjust(stockItemId, -Number(quantity));
+      await stockRepo.adjustQuantity(stockItemId, -Number(quantity), { actor: actorFromReq(req) });
     }
 
     // Enrich response so the mobile UI can optimistically render without a
@@ -139,7 +143,7 @@ router.patch('/:id', async (req, res, next) => {
     const delta = oldQty - newQty; // positive = reduced loss → restore stock
 
     if (delta !== 0 && stockItemId) {
-      await db.atomicStockAdjust(stockItemId, delta);
+      await stockRepo.adjustQuantity(stockItemId, delta, { actor: actorFromReq(req) });
       // Adjust Dead/Unsold Stems counter
       const stockItem = await db.getById(TABLES.STOCK, stockItemId);
       const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
@@ -167,7 +171,7 @@ router.delete('/:id', async (req, res, next) => {
     const stockItemId = current['Stock Item']?.[0];
 
     if (stockItemId && qty > 0) {
-      await db.atomicStockAdjust(stockItemId, +qty);
+      await stockRepo.adjustQuantity(stockItemId, +qty, { actor: actorFromReq(req) });
       const stockItem = await db.getById(TABLES.STOCK, stockItemId);
       const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
       await db.update(TABLES.STOCK, stockItemId, {
