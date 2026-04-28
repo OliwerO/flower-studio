@@ -41,6 +41,120 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-28 — SQL migration Phase 4: orderRepo implementation (transactional createOrder)
+
+The headline architectural change of the entire migration ships in this
+commit. **Default behaviour is unchanged** — `ORDER_BACKEND` defaults to
+`airtable`, so production runs the existing path until the env var flips.
+
+### What changes when ORDER_BACKEND flips
+
+The 538-line manual try/catch + rollback in `orderService.createOrder`
+collapses into a single `db.transaction(...)` that wraps:
+1. Insert order row
+2. Insert N order_line rows
+3. Adjust stock for each line via `stockRepo.adjustQuantity({ tx })` —
+   participates in the SAME transaction (the Phase 4 prep refactor enables this)
+4. Insert delivery row if `Delivery Type === 'Delivery'`
+
+Any throw from any step → PG rolls back EVERYTHING atomically. No
+manual unwinding, no half-torn-down state, no `console.error` chains
+trying to log all the failures of the cleanup pass.
+
+### orderRepo.js — full implementation
+
+Replaces every Phase 4 prep stub with real SQL. Methods covered:
+- `list(options)` — supports both Airtable-shape `filterByFormula` (airtable+shadow)
+  and PG-shape `pg.statuses / dateFrom / dateTo / customerId` filters
+- `getById(id)` — accepts recXXX or uuid; returns order with lines + delivery populated
+- `createOrder(params, config, opts)` — the transactional rewrite above
+- `transitionStatus(orderId, newStatus, otherFields)` — enforces state
+  machine, cascades order ↔ delivery status atomically
+- `cancelWithStockReturn(orderId)` — single tx for cancel + N stock returns
+  + delivery cascade
+- `deleteOrder(orderId)` — relies on `ON DELETE CASCADE` for lines+delivery;
+  returns stock first if non-terminal
+- `editBouquetLines(orderId, args, isOwner)` — add/update/remove lines with
+  corresponding stock adjustments, all in one transaction
+- `runParityCheck()` — stubbed for now (full impl ships once shadow data exists)
+
+### orderService.js — wired to delegate
+
+Each entry point gains a 3-line preamble: when `orderRepo.getBackendMode()
+!== 'airtable'`, delegate to orderRepo. Side effects (customer record
+update, SSE broadcast, Telegram notification) extracted into helpers
+that run from BOTH paths so behaviour is preserved during the cutover.
+
+### Backfill script
+
+- `backend/scripts/backfill-orders.js` — pulls every Airtable order +
+  its lines + its delivery into PG. Idempotent (UPSERT on airtable_id).
+  Skips orphan lines/deliveries (no parent order). Reports counts +
+  flags any rows that failed to migrate.
+
+### Integration tests (19 new)
+
+- `backend/src/__tests__/orderRepo.integration.test.js` — exercises the
+  repo against real PG (pglite) instead of mocks:
+  - createOrder happy path: order + lines + delivery + stock all atomic
+  - createOrder rollback when orphan line present: NOTHING persists
+  - createOrder rollback when stock adjust fails mid-transaction: the
+    earlier successful adjustment is undone (the test that proves
+    Phase 4's central thesis works)
+  - createOrder with skipStockDeduction: premade-bouquet flow
+  - transitionStatus: state machine enforcement + delivery cascade for
+    Out for Delivery / Delivered / Cancelled
+  - cancelWithStockReturn: returns each line qty + cancels order +
+    cascades delivery atomically
+  - deleteOrder: ON DELETE CASCADE handles lines + delivery; non-terminal
+    orders return stock first; terminal orders don't double-return
+  - editBouquetLines: add new line deducts stock, remove with action=return
+    refunds stock, qty change adjusts by delta, owner edit auto-reverts
+    Ready → New
+  - list: status filters work; getById populates lines+delivery; missing id throws 404
+
+### Cutover playbook
+
+Same shape as Phase 3:
+
+1. Apply migration (no-op if already applied — idempotent).
+2. `node --env-file=.env scripts/backfill-orders.js` — seeds PG from Airtable.
+3. Set `ORDER_BACKEND=shadow` in Railway env vars, redeploy.
+4. Watch parity dashboard for ~1 week. Critical signals to validate:
+   a Wix-webhook order, an in-store order with delivery, a pickup order,
+   a cancellation, a bouquet edit, and a status transition through to
+   Delivered.
+5. When parity is clean: set `ORDER_BACKEND=postgres`, redeploy.
+   Airtable Orders / Order Lines / Deliveries become a frozen legacy
+   snapshot.
+
+### Wix webhook risk (call out before Step 3)
+
+`services/wix.js`'s order-creation flow is webhook-triggered with no
+replay safety net. Capture 2-3 real Wix payloads from prod's Webhook Log
+table and replay them against a local backend BEFORE flipping
+`ORDER_BACKEND=shadow`. The 3b E2E harness (separate session) will land
+this validation step.
+
+### Verification
+
+- 201/202 tests pass (the 1 failure is the same pre-existing
+  `analyticsService` test, unrelated to this work)
+- 19 of those 201 are new orderRepo integration tests
+- 0 lint errors (only pre-existing `eqeqeq` warnings)
+- Backend boots without `DATABASE_URL` (mode stays on airtable)
+
+### Deferred to follow-up
+
+- `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
+  The 19 integration tests cover the same scenarios; the simulator is
+  convenience that ships best after this PR is reviewed.
+- Order entity in admin tab + order parity dashboard UI. `orderRepo.runParityCheck`
+  is stubbed — full implementation depends on `ORDER_BACKEND=shadow` having data,
+  which depends on this PR landing first.
+
+---
+
 ## 2026-04-28 — SQL migration Phase 3: real-SQL integration tests + simulator (caught 2 production bugs)
 
 Added `@electric-sql/pglite` (PostgreSQL compiled to WASM) as a dev

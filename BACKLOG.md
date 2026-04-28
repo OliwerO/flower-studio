@@ -283,10 +283,12 @@ reports). Each item below was re-validated against the current code on
   - [x] stockRepo refactor: `opts.tx` parameter on every write method so Phase 4's transactional createOrder can adjust stock atomically inside the parent tx. 4 new rollback tests prove the contract.
   - [x] Schema smoke tests: 5 new tests (FK enforcement, ON DELETE CASCADE, unique constraints).
   - [x] orderRepo skeleton with locked-in API (signatures + JSDoc). Stubs throw `501` until implementation.
-  - [ ] **Implementation PR** — replace stubs with real impl + rewire `orderService.js` to use orderRepo. Biggest win: collapse 538-line manual rollback into one `db.transaction(...)`.
-  - [ ] **Wix webhook validation** — capture 3-4 recorded webhook payloads from prod Webhook Log, replay against new createOrder before any cutover (BACKLOG `WIX-BACKLINK`).
-  - [ ] Backfill script `scripts/backfill-orders.js`.
+  - [x] **Implementation PR** (2026-04-28) — orderRepo full impl: list, getById, createOrder (transactional), transitionStatus + cascade, cancelWithStockReturn, deleteOrder, editBouquetLines. orderService.js delegates when ORDER_BACKEND != 'airtable'. 19 integration tests pass.
+  - [x] Backfill script `scripts/backfill-orders.js` (idempotent UPSERT on airtable_id, all three tables).
+  - [ ] **Wix webhook validation** — capture 3-4 recorded webhook payloads from prod Webhook Log, replay against new createOrder before any cutover (BACKLOG `WIX-BACKLINK`). Best done inside the 3b E2E harness once it exists.
   - [ ] Cutover via single `ORDER_BACKEND=shadow|postgres` env var (independent of `STOCK_BACKEND`).
+  - [ ] Order parity dashboard UI in AdminTab + full `orderRepo.runParityCheck` impl (currently stubbed).
+  - [ ] `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
 - [ ] **Phase 5 — Customer dedup + cutover** — Universe A (legacy) + B (app) merge with auto-merge on exact phone/email + owner-review modal for ambiguous pairs.
 - [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.
 - [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.

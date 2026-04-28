@@ -3,11 +3,66 @@
 
 import * as db from './airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as orderRepo from '../repos/orderRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
 import { listByIds } from '../utils/batchQuery.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
+
+// ── Side-effect helpers ──
+//
+// Side effects (customer record update, SSE broadcast, Telegram notification)
+// run after a successful order operation, regardless of which backend
+// (airtable or PG) actually performed the persistence. Extracted here so
+// both code paths call them — preserves behaviour during the cutover.
+
+function runPostCreateSideEffects({ order }, params) {
+  const { customer, source, customerRequest, communicationMethod, deliveryType, priceOverride } = params;
+
+  // Update customer record (non-blocking — Airtable still owns customers
+  // until Phase 5).
+  const customerPatch = {};
+  if (communicationMethod) customerPatch['Communication method'] = communicationMethod;
+  if (source) customerPatch['Order Source'] = source;
+  if (Object.keys(customerPatch).length > 0) {
+    db.update(TABLES.CUSTOMERS, customer, customerPatch)
+      .catch(err => console.error('[ORDER] Failed to update customer fields:', err.message));
+  }
+
+  // SSE broadcast
+  broadcast({
+    type: 'new_order',
+    orderId: order.id,
+    customerName: '',
+    source: source || 'In-store',
+    request: customerRequest || '',
+  });
+
+  // Telegram notification (fire-and-forget — don't stretch HTTP response)
+  notifyNewOrder({
+    source: source || 'In-store',
+    customerName: '',
+    request: customerRequest,
+    deliveryType,
+    price: priceOverride || null,
+  }).catch(err => console.error('[TELEGRAM] Notification error:', err.message));
+}
+
+function runPostTransitionSideEffects(order, newStatus, orderId) {
+  if (newStatus === ORDER_STATUS.READY) {
+    broadcast({
+      type: 'order_ready',
+      orderId: order.id,
+      customerRequest: order['Customer Request'] || '',
+    });
+  }
+  if (newStatus === ORDER_STATUS.DELIVERED) {
+    sendDeliveryCompleteAlert(orderId).catch(err =>
+      console.error('[TELEGRAM] delivery-complete alert failed:', err.message),
+    );
+  }
+}
 
 // ── Status transition state machine ──
 // Exported so routes + tests can reference it.
@@ -57,6 +112,15 @@ export async function autoMatchStock(lines) {
  * @returns {{ order, orderLines, delivery }}
  */
 export async function createOrder(params, config, opts = {}) {
+  // Phase 4 cutover: when ORDER_BACKEND != 'airtable', delegate persistence
+  // to orderRepo (which uses a single PG transaction instead of the manual
+  // try/catch + unwinding below). Side effects fire from the helper either way.
+  if (orderRepo.getBackendMode() !== 'airtable') {
+    const result = await orderRepo.createOrder(params, config, opts);
+    runPostCreateSideEffects(result, params);
+    return result;
+  }
+
   const {
     customer, customerRequest, source, communicationMethod, deliveryType,
     orderLines, delivery, notes, floristNote, paymentStatus, paymentMethod, priceOverride,
@@ -303,6 +367,12 @@ export async function createOrder(params, config, opts = {}) {
  * @returns {Object} updated order record
  */
 export async function transitionStatus(orderId, newStatus, otherFields = {}) {
+  if (orderRepo.getBackendMode() !== 'airtable') {
+    const order = await orderRepo.transitionStatus(orderId, newStatus, otherFields);
+    runPostTransitionSideEffects(order, newStatus, orderId);
+    return order;
+  }
+
   const current = await db.getById(TABLES.ORDERS, orderId);
   const currentStatus = current.Status || ORDER_STATUS.NEW;
   const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
@@ -414,6 +484,10 @@ export async function sendDeliveryCompleteAlert(orderId) {
  * @returns {{ order, returnedItems }}
  */
 export async function cancelWithStockReturn(orderId) {
+  if (orderRepo.getBackendMode() !== 'airtable') {
+    return await orderRepo.cancelWithStockReturn(orderId);
+  }
+
   const order = await db.getById(TABLES.ORDERS, orderId);
   const currentStatus = order.Status || ORDER_STATUS.NEW;
 
@@ -468,6 +542,10 @@ export async function cancelWithStockReturn(orderId) {
  * @returns {{ deleted: true, orderId, returnedItems, deletedLineCount, deletedDeliveryCount }}
  */
 export async function deleteOrder(orderId) {
+  if (orderRepo.getBackendMode() !== 'airtable') {
+    return await orderRepo.deleteOrder(orderId);
+  }
+
   const order = await db.getById(TABLES.ORDERS, orderId);
   const currentStatus = order.Status || ORDER_STATUS.NEW;
   const isTerminal = [
@@ -526,6 +604,10 @@ export async function deleteOrder(orderId) {
  * @returns {{ updated: true, createdLines }}
  */
 export async function editBouquetLines(orderId, { lines = [], removedLines = [] }, isOwner) {
+  if (orderRepo.getBackendMode() !== 'airtable') {
+    return await orderRepo.editBouquetLines(orderId, { lines, removedLines }, isOwner);
+  }
+
   const order = await db.getById(TABLES.ORDERS, orderId);
   // Non-owner roles can only edit bouquets while the order is still being
   // prepared. Owner can edit in any status — this is the last thing that
