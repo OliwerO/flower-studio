@@ -1,0 +1,95 @@
+name: Test
+
+# Runs on every pull request + every push to master.
+# Two jobs:
+#   - unit:   backend vitest suite (covers stockRepo, orderRepo, services, utils).
+#   - e2e:    boots the local-PG harness and runs scripts/e2e-test.js end-to-end.
+#
+# Both jobs install deps from the root via `npm ci` (workspace layout) so
+# every workspace package is hoisted once. Backend devDeps include
+# @electric-sql/pglite (the harness's in-process Postgres) — no Docker, no
+# external services, no secrets needed.
+
+on:
+  pull_request:
+    branches: [master]
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same ref when a new commit lands.
+# Saves CI minutes during rapid iteration on a PR.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit:
+    name: Backend unit tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run backend tests
+        run: npx vitest run
+        working-directory: backend
+        env:
+          # Vitest tests don't need real Airtable — services are mocked.
+          # Setting these to dummy values just satisfies the env-var validator
+          # in backend/src/index.js when any test imports it transitively.
+          AIRTABLE_API_KEY: test-mock-key
+          AIRTABLE_BASE_ID: appMockBase
+          PIN_OWNER: '1111'
+          PIN_FLORIST: '2222'
+
+  e2e:
+    name: E2E harness suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Boot test harness in background
+        # The harness writes its own banner + auto-seeds via POST /api/test/reset
+        # once the listener is up. We wait for the health endpoint before kicking
+        # off the test suite.
+        run: npm run harness &
+        env:
+          # Suppress colour escapes in CI logs.
+          NO_COLOR: '1'
+
+      - name: Wait for harness to be ready
+        # Poll /api/health for up to ~30s. Fail the job if the harness never
+        # comes up — better a clear timeout than a confusing test-suite error.
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3002/api/health > /dev/null; then
+              echo "Harness up after ${i}s."
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "Harness did not come up within 30s."
+          exit 1
+
+      - name: Run E2E suite
+        run: npm run test:e2e

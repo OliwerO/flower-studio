@@ -13,6 +13,12 @@
     "backend": "npm run dev --workspace=backend",
     "florist": "npm run dev --workspace=apps/florist",
     "delivery": "npm run dev --workspace=apps/delivery",
-    "dashboard": "npm run dev --workspace=apps/dashboard"
+    "dashboard": "npm run dev --workspace=apps/dashboard",
+    "harness": "node backend/scripts/start-test-backend.js",
+    "test:e2e": "node scripts/e2e-test.js",
+    "test:e2e:ui": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
   }
 }

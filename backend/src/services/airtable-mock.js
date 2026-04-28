@@ -40,6 +40,64 @@ const deepClone = (x) => JSON.parse(JSON.stringify(x));
 let tables = new Map();
 let idCounter = 1;
 
+// ── Reverse-link mirroring ──
+//
+// In real Airtable, when a child record is created with a forward link
+// like `Order: [recOrd1]`, Airtable automatically appends the child's id
+// to the parent's reverse-link array (`Orders.Order Lines`). Without
+// this, code paths that read `order['Order Lines']` after creating
+// lines see an empty array — even though the lines exist. The backend
+// relies on these reverse fields in cancelWithStockReturn,
+// editBouquetLines, deleteOrder, convert-to-delivery, the dashboard
+// list endpoints — basically everywhere.
+//
+// The map below declares { childTable, childField → parentTable, parentField }.
+// On every create + update (and delete, to remove stale links), we
+// reconcile the parent's reverse-link array. Tables not in this map
+// behave as today (forward links only, no reverse mirroring).
+function getReverseLinks() {
+  return [
+    { childTable: TABLES.ORDER_LINES, childField: 'Order',         parentTable: TABLES.ORDERS,        parentField: 'Order Lines' },
+    { childTable: TABLES.DELIVERIES,  childField: 'Linked Order',  parentTable: TABLES.ORDERS,        parentField: 'Deliveries' },
+    { childTable: TABLES.STOCK_ORDER_LINES, childField: 'Stock Orders', parentTable: TABLES.STOCK_ORDERS, parentField: 'Stock Order Lines' },
+    { childTable: TABLES.ORDER_LINES, childField: 'Stock Item',    parentTable: TABLES.STOCK,         parentField: 'Order Lines' },
+  ];
+}
+
+function appendToParent(parentTableId, parentId, parentField, childId) {
+  const parentTbl = tables.get(parentTableId);
+  if (!parentTbl) return;
+  const parent = parentTbl.get(parentId);
+  if (!parent) return;
+  const existing = Array.isArray(parent[parentField]) ? parent[parentField] : [];
+  if (!existing.includes(childId)) parent[parentField] = [...existing, childId];
+}
+
+function removeFromParent(parentTableId, parentId, parentField, childId) {
+  const parentTbl = tables.get(parentTableId);
+  if (!parentTbl) return;
+  const parent = parentTbl.get(parentId);
+  if (!parent) return;
+  const existing = Array.isArray(parent[parentField]) ? parent[parentField] : [];
+  parent[parentField] = existing.filter(id => id !== childId);
+}
+
+function syncReverseLinks(childTableId, childId, prevFields, newFields) {
+  const links = getReverseLinks().filter(l => l.childTable === childTableId);
+  for (const link of links) {
+    const prevParents = Array.isArray(prevFields?.[link.childField]) ? prevFields[link.childField] : [];
+    const newParents  = Array.isArray(newFields?.[link.childField])  ? newFields[link.childField]  : [];
+    // Removed parents — clean up their reverse arrays.
+    for (const p of prevParents) {
+      if (!newParents.includes(p)) removeFromParent(link.parentTable, p, link.parentField, childId);
+    }
+    // Added parents — append child id to their reverse arrays.
+    for (const p of newParents) {
+      if (!prevParents.includes(p)) appendToParent(link.parentTable, p, link.parentField, childId);
+    }
+  }
+}
+
 // ── Fixture loading ──
 
 function loadFixtureFromFile() {
@@ -141,6 +199,9 @@ export async function create(tableId, fields) {
   const id = nextRecId();
   const rec = { id, ...deepClone(fields) };
   tbl.set(id, rec);
+  // Mirror forward links into parents' reverse-link arrays. Without this,
+  // code that reads `order['Order Lines']` after creating lines sees [].
+  syncReverseLinks(tableId, id, {}, rec);
   return deepClone(rec);
 }
 
@@ -152,20 +213,27 @@ export async function update(tableId, recordId, fields) {
     err.statusCode = 404;
     throw err;
   }
+  const prev = deepClone(existing);
   // PATCH semantics — only overwrite the keys present in `fields`.
   for (const [k, v] of Object.entries(fields)) {
     existing[k] = deepClone(v);
   }
+  // If a forward-link field changed, fix up parents' reverse arrays.
+  syncReverseLinks(tableId, recordId, prev, existing);
   return deepClone(existing);
 }
 
 export async function deleteRecord(tableId, recordId) {
   const tbl = ensureTable(tableId);
-  if (!tbl.delete(recordId)) {
+  const existing = tbl.get(recordId);
+  if (!existing) {
     const err = new Error(`Record not found: ${recordId} in ${tableId}`);
     err.statusCode = 404;
     throw err;
   }
+  // Remove this id from every parent's reverse-link array first.
+  syncReverseLinks(tableId, recordId, existing, {});
+  tbl.delete(recordId);
   return { id: recordId, deleted: true };
 }
 

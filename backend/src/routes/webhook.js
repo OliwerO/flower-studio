@@ -42,10 +42,14 @@ function verifyWixSignature(req, res, next) {
     .update(rawBody)
     .digest('base64');
 
-  const isValid = crypto.timingSafeEqual(
-    Buffer.from(signature),
-    Buffer.from(expectedSignature),
-  );
+  // timingSafeEqual throws on length mismatch — that path used to bubble
+  // up to the 500 handler when an attacker (or a buggy test) sent a
+  // short/garbage signature. A length check first turns that into a
+  // clean 401 without leaking timing information about the secret length.
+  const sigBuf = Buffer.from(signature);
+  const expBuf = Buffer.from(expectedSignature);
+  const isValid = sigBuf.length === expBuf.length
+    && crypto.timingSafeEqual(sigBuf, expBuf);
 
   if (!isValid) {
     console.error('[WEBHOOK] Invalid Wix webhook signature');

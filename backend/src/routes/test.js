@@ -99,6 +99,9 @@ router.get('/state', async (_req, res, next) => {
   }
 });
 
+// BigInt serialisation is handled globally by `BigInt.prototype.toJSON` in
+// db/index.js — bigserial ids on audit_log / parity_log come out as strings
+// in any JSON response, harness or production.
 router.get('/audit', async (_req, res, next) => {
   try {
     if (!db) return res.json([]);
