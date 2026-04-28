@@ -46,6 +46,15 @@ if (missing.length > 0) {
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
 
+// Trust the first proxy hop (Railway's reverse proxy). Without this,
+// req.ip resolves to Railway's internal IP for every request, which means
+// express-rate-limit keys EVERY caller under the same IP — one brute-force
+// would lock out all other users. Setting trust proxy = 1 tells Express to
+// honour the X-Forwarded-For header from one upstream hop (Railway), so
+// req.ip returns the real client IP. The rate limiter then keys per-client
+// as intended, and express-rate-limit stops throwing ValidationError on boot.
+app.set('trust proxy', 1);
+
 // Security headers — helmet sets sensible defaults (X-Content-Type-Options,
 // X-Frame-Options, etc.). Like adding standard safety labels to every outgoing package.
 app.use(helmet());

@@ -4,6 +4,42 @@ Features and improvements tracked against original build phases.
 
 ---
 
+## ⚡ Pick-up checklist for the next session
+
+If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-04-28.
+
+**Migration cutover state:**
+- Phase 3 (Stock) is IN SHADOW WEEK on prod since 2026-04-28. `STOCK_BACKEND=shadow` is live.
+- Phase 4 (Orders) implementation merged but cutover NOT started — `ORDER_BACKEND` still defaults to `airtable`.
+
+**Daily owner check during shadow week** (~30 sec):
+```bash
+CLAUDE_RO_URL='<from project_postgres_access.md>' node backend/scripts/shadow-health.js
+```
+Should show "✓ Shadow-write is healthy" with zero parity mismatches. If anything but zero, investigate before flipping to postgres.
+
+**Open work items, ranked by when they unblock:**
+
+1. **Owner verifies Track A landed** (browser, 2 min) — Admin tab shows "Shadow" banner, 86 stock rows, zero parity. Without this, downstream cutover is flying blind.
+2. **Owner cleans up 2 orphan Airtable Stock rows** (`recyLyXct64ksIMFY`, `recD6p1GbmrKV7mrl`) — no Display Name, skipped by backfill. Delete them or fill in name + re-run `backend/scripts/backfill-stock.js` (idempotent).
+3. **3b E2E test harness** — separate Claude session per `docs/migration/3b-e2e-test-harness-kickoff.md`. Builds local-PG-only test mode + Playwright + mock Airtable. Unblocks: Wix webhook validation, future cutovers, dev/staging substitute. Runs in any cloud env with Node 20+ (Codespaces/Gitpod/Replit).
+4. **Stock cutover flip** (after shadow week clean) — `railway variables --service flower-studio-backend --set STOCK_BACKEND=postgres` + redeploy. Airtable Stock becomes legacy snapshot.
+5. **Phase 4 cutover** (after #3 validates Wix webhook) — `node backend/scripts/backfill-orders.js` → `ORDER_BACKEND=shadow` → 1 week shadow → `ORDER_BACKEND=postgres`.
+6. **Order parity dashboard UI in AdminTab** — backend stub already exists; full `orderRepo.runParityCheck` impl + AdminTab order-side rendering. Best after ORDER_BACKEND=shadow generates real data.
+7. **`scripts/simulate-orders.js`** — owner-runnable day-in-the-life. Integration tests already cover the same scenarios; this is convenience.
+8. **Phase 5 prep — Customers** (after Phase 4 cutover proves stable) — design doc, schema (with FK to existing customer_id text columns), customerRepo skeleton, dedup tooling for Universe A (legacy) + B (app).
+9. **Phase 6 — Config + log tables** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only; no shadow needed.
+10. **Phase 7 — Retire Airtable** — delete services/airtable.js, services/airtableSchema.js, config/airtable.js. Cancel subscription. Final snapshot.
+
+**Standing investigations (have shadow data now to debug with):**
+- "Stock not deducted via bouquet edit" bug from memory — once shadow has a few days of data, query `audit_log` for stock updates triggered by bouquet edits and cross-reference with the suspicious orders. Far easier to diagnose now.
+
+**Stale local branches to clean up** (low priority):
+- `feat/sql-migration-phase-1` (PR #156 merged via squash — local branch obsolete)
+- `feat/sql-migration-phase-4-prep` (replaced by `-clean` branch which became PR #158)
+
+---
+
 ## Done
 
 ### Phase 1 — Backend Scaffold + Airtable CRUD
@@ -276,7 +312,15 @@ reports). Each item below was re-validated against the current code on
 - [x] **Phase 1 — Postgres infra** (2026-04-27) — Railway PG provisioned, Drizzle wired, `system_meta` migration applied, `claude_ro` read-only role created.
 - [x] **Phase 2.5 — Audit log + Admin tab** (2026-04-27) — `audit_log` table + `recordAudit()` helper. Owner-only Admin tab with audit-log viewer. Per-entity registry empty until Phase 3 populates it.
 - [x] **Phase 3 — Stock cutover scaffolding** (2026-04-27) — `stock` + `parity_log` tables, `stockRepo` with three-mode backend (`airtable | shadow | postgres`), full route wiring (stock.js, dashboard.js, orderService autoMatchStock + atomicStockAdjust, wixProductSync), backfill script, AdminTab parity endpoints. **Default behaviour unchanged** (`STOCK_BACKEND=airtable`); cutover gated on env var flip.
-- [ ] **Phase 3 cutover** — owner action: apply migration on prod (`npm run db:migrate`), run `node scripts/backfill-stock.js`, set `STOCK_BACKEND=shadow`, watch parity_log for ~1 week (especially a full Saturday), then flip to `postgres`.
+- [~] **Phase 3 cutover** — IN SHADOW WEEK as of 2026-04-28.
+  - [x] Migrations applied to prod PG (0000-0003 — orders/lines/deliveries also live but inert).
+  - [x] `scripts/backfill-stock.js` ran — 86 of 88 Airtable rows seeded (2 skipped: `recyLyXct64ksIMFY`, `recD6p1GbmrKV7mrl` — no Display Name).
+  - [x] `STOCK_BACKEND=shadow` set on Railway, redeploy triggered.
+  - [ ] **Owner verify**: Admin tab shows "Shadow" banner + 86 stock rows + zero parity mismatches.
+  - [ ] **Owner clean up** the 2 orphan Airtable rows (delete them or add Display Name + re-run backfill).
+  - [ ] **Daily watch** during shadow week — `node backend/scripts/shadow-health.js` (read-only, uses `claude_ro` DSN). Especially after Saturday — peak write volume.
+  - [ ] **Cutover criterion**: 0 unexplained mismatches across a full Saturday with >50 stock writes.
+  - [ ] **Flip**: `railway variables --service flower-studio-backend --set STOCK_BACKEND=postgres` + redeploy. Airtable Stock becomes a frozen legacy snapshot.
 - [ ] **Phase 4 — Orders + Lines + Deliveries** — design + scaffolding in progress on `feat/sql-migration-phase-4-prep`.
   - [x] Design doc: `docs/migration/phase-4-orders-design.md` (schema, transaction boundary, cutover sequencing, Wix webhook risk)
   - [x] Schema: `orders` + `order_lines` + `deliveries` tables + 0003 migration. ON DELETE CASCADE on the FKs. unique(order_id) on deliveries (one delivery per order, enforced at DB level).
