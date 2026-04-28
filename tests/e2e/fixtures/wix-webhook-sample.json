@@ -1,0 +1,37 @@
+{
+  "_comment": "Synthetic Wix-shaped payload for the wix-webhook-replay spec. Replace with a sanitised copy of a real prod webhook from the Airtable Webhook Log table — see wix-webhook-replay.spec.js for the procedure.",
+  "orderId": "wix-mock-order-001",
+  "orderNumber": "10001",
+  "createdDate": "2026-04-28T10:00:00.000Z",
+  "buyerInfo": {
+    "firstName": "Test",
+    "lastName": "Customer",
+    "email": "test-customer-1@example.com",
+    "phone": "+48 555 100 999"
+  },
+  "totals": {
+    "total": "75.00",
+    "shipping": "20.00"
+  },
+  "shippingInfo": {
+    "deliveryOption": {
+      "name": "Delivery"
+    },
+    "shipmentDetails": {
+      "address": {
+        "addressLine": "ul. Synthetic 1, 31-000 Kraków",
+        "city": "Kraków",
+        "country": "Poland"
+      }
+    }
+  },
+  "lineItems": [
+    {
+      "id": "li-001",
+      "productName": { "translated": "Pink Tulip Bouquet" },
+      "quantity": 5,
+      "price": { "amount": "55.00" },
+      "options": {}
+    }
+  ]
+}

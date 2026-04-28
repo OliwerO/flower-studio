@@ -41,6 +41,101 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-28 — 3b end-to-end test harness (local-PG-only mode)
+
+Foundation for end-to-end testing of the SQL migration without touching
+production Airtable. **Default behaviour is unchanged** — the harness only
+activates under `TEST_BACKEND=mock-airtable` + `DATABASE_URL=pglite:memory`,
+both of which fail-fast in `NODE_ENV=production`.
+
+### What it gives us
+
+A single command — `node backend/scripts/start-test-backend.js` — boots
+the real Express app, real routes, real `orderService`, real `stockRepo`
+/ `orderRepo` against an in-process pglite database (the same SQL we run
+on Railway) and a JSON-fixture-backed Airtable mock. Three Vite frontend
+servers can be pointed at it via `VITE_API_PROXY_TARGET=http://localhost:3002`.
+Playwright drives them end-to-end.
+
+### Files added
+
+- `docs/migration/3b-e2e-harness-design.md` — design doc covering
+  fixture strategy, multi-server boot, footgun-prevention layers.
+- `backend/src/services/airtable-real.js` — byte-for-byte copy of the
+  prior `airtable.js`. Untouched real code paths.
+- `backend/src/services/airtable.js` — 51-line shim. Dynamically
+  imports real or mock based on `TEST_BACKEND`. NODE_ENV-prod guard
+  + boot banner.
+- `backend/src/services/airtable-mock.js` — in-memory Map<table, Map<id,
+  record>>; same surface area (list/getById/create/update/deleteRecord/
+  atomicStockAdjust) as the real client.
+- `backend/src/services/airtable-mock-formula.js` — recursive-descent
+  evaluator for the subset of Airtable formulas the backend uses today.
+  85 distinct formulas in the codebase; all parse cleanly.
+- `backend/src/services/__fixtures__/airtable-test-base.json` —
+  hand-curated: 5 customers, 10 stock items, 3 orders + 4 lines + 2
+  deliveries, 2 POs + 3 PO lines, 3 config rows. Synthetic +48 555
+  phone numbers — no PII.
+- `backend/src/db/index.js` — recognises `DATABASE_URL=pglite:memory`
+  sentinel; lazily imports pglite + applies migrations at boot.
+- `backend/src/routes/test.js` — mounted only when TEST_BACKEND=mock-airtable.
+  POST /reset (truncate PG + re-seed mock + backfill PG stock from
+  fixture), GET /state, GET /audit, GET /parity. No PIN required —
+  the mount itself is gated.
+- `backend/scripts/start-test-backend.js` — one-command harness boot
+  with cyan banner, env defaults, auto-seed.
+- `playwright.config.js` — orchestrates four webServers (test backend
+  3002 + florist 5173 + delivery 5174 + dashboard 5175). workers=1.
+- `tests/e2e/helpers/test-base.js` — auto-reset fixture + `backendApi`
+  helper + `pinLogin(role)` page helper.
+- `tests/e2e/florist-order-creation.spec.js` — runs green:
+  POST /api/orders decrements PG stock 50→38, audit captures
+  actorRole='florist'.
+- Six skeleton specs (`.skip`'d): bouquet-edit, cancel-with-return,
+  soft-delete-restore, admin-tab-parity, driver-delivery-complete,
+  wix-webhook-replay. Each documents the exact data-testids or
+  route-shape audit needed to flip from skip.
+- `tests/e2e/fixtures/wix-webhook-sample.json` — synthetic placeholder.
+  Replace with sanitised prod Webhook Log copies before un-skipping
+  the wix-webhook-replay spec.
+
+### Files modified
+
+- `apps/florist/vite.config.js`, `apps/delivery/vite.config.js`,
+  `apps/dashboard/vite.config.js` — proxy target reads
+  `VITE_API_PROXY_TARGET`, defaults to `http://localhost:3001`.
+- `backend/src/index.js` — skip `validateAirtableSchema` in test mode;
+  conditionally mount `/api/test` routes; `/api/health` returns
+  `testBackend: true|false`.
+- `package.json` (root) — `@playwright/test` devDep + `test:e2e`,
+  `test:backend`, `test:e2e:install` scripts.
+- `BACKLOG.md` — 3b foundation marked done; harness-pr-2 (UI testids),
+  harness-pr-3 (API spec audit), CI workflow sketch tracked separately.
+
+### Footgun-prevention layers
+
+Three independent guards catch a stray `TEST_BACKEND` or
+`DATABASE_URL=pglite:memory` on Railway:
+
+1. NODE_ENV=production + either flag → process.exit(1) at boot.
+2. Loud red banner whenever the mock or pglite is active — visible in
+   any deploy log.
+3. Test-only routes mounted ONLY when `TEST_BACKEND=mock-airtable`,
+   so even if a flag slipped through, `/api/test/reset` would 404.
+
+### What this doesn't replace
+
+Shadow-write parity dashboard on prod. Wix webhook bursts under real
+load, Saturday peak with five florists writing simultaneously — only
+prod traffic exercises those. Run E2E + shadow-write in parallel.
+
+### Owner action: none
+
+The harness is opt-in. Production stays Airtable-only until
+`STOCK_BACKEND` / `ORDER_BACKEND` are flipped.
+
+---
+
 ## 2026-04-28 — SQL migration Phase 4: orderRepo implementation (transactional createOrder)
 
 The headline architectural change of the entire migration ships in this

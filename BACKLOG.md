@@ -285,10 +285,48 @@ reports). Each item below was re-validated against the current code on
   - [x] orderRepo skeleton with locked-in API (signatures + JSDoc). Stubs throw `501` until implementation.
   - [x] **Implementation PR** (2026-04-28) — orderRepo full impl: list, getById, createOrder (transactional), transitionStatus + cascade, cancelWithStockReturn, deleteOrder, editBouquetLines. orderService.js delegates when ORDER_BACKEND != 'airtable'. 19 integration tests pass.
   - [x] Backfill script `scripts/backfill-orders.js` (idempotent UPSERT on airtable_id, all three tables).
-  - [ ] **Wix webhook validation** — capture 3-4 recorded webhook payloads from prod Webhook Log, replay against new createOrder before any cutover (BACKLOG `WIX-BACKLINK`). Best done inside the 3b E2E harness once it exists.
+  - [ ] **Wix webhook validation** — capture 3-4 recorded webhook payloads from prod Webhook Log, replay against new createOrder before any cutover (BACKLOG `WIX-BACKLINK`). Skeleton spec exists at `tests/e2e/wix-webhook-replay.spec.js`; flip from `.skip` once sanitised payloads are committed to `tests/e2e/fixtures/wix-payloads/`.
   - [ ] Cutover via single `ORDER_BACKEND=shadow|postgres` env var (independent of `STOCK_BACKEND`).
   - [ ] Order parity dashboard UI in AdminTab + full `orderRepo.runParityCheck` impl (currently stubbed).
   - [ ] `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
+- [x] **3b — End-to-end test harness foundation** (2026-04-28, PR #161 + this branch) — local-PG-only mode that exercises the real backend, real React apps, and real Postgres-cutover code paths against an in-process pglite database and a JSON-fixture-backed Airtable mock.
+  - [x] Design doc: `docs/migration/3b-e2e-harness-design.md` (fixture strategy, multi-server boot, footgun-prevention layers).
+  - [x] `airtable.js` shim + byte-for-byte `airtable-real.js` rename. NODE_ENV=production + TEST_BACKEND set → fail-fast. Loud red banner when mock is active.
+  - [x] `airtable-mock.js` + `airtable-mock-formula.js` — in-memory Map keyed by table id, recursive-descent evaluator for the subset of formulas the backend uses today (=, !=, AND, OR, NOT, RECORD_ID, IS_BEFORE/IS_AFTER, DATESTR, FIND/SEARCH, IF, &).
+  - [x] Hand-curated `airtable-test-base.json`: 5 customers, 10 stock items, 3 orders + 4 lines + 2 deliveries, 2 POs + 3 PO lines, 3 config rows. Synthetic +48 555 phone numbers, no PII.
+  - [x] `db/index.js` recognises `DATABASE_URL=pglite:memory` sentinel — boots pglite, applies every migration in `src/db/migrations/`. Same NODE_ENV-prod fail-fast.
+  - [x] `scripts/start-test-backend.js` — sets every env var the harness needs, prints a cyan boot banner, auto-POSTs `/api/test/reset` once the listen() call binds the port. Default port 3002 to avoid collision with a real local backend on 3001.
+  - [x] `routes/test.js` (mounted only when TEST_BACKEND=mock-airtable): POST /reset (truncate PG + re-seed mock + backfill PG stock), GET /state (mock + PG snapshot), GET /audit, GET /parity. No PIN required — mount itself is gated.
+  - [x] Vite proxy override via `VITE_API_PROXY_TARGET` env var on all three apps.
+  - [x] `playwright.config.js` orchestrates four webServers (test backend + 3 Vite apps) in parallel. workers=1 for shared-state isolation. retain-on-failure traces/videos.
+  - [x] `tests/e2e/helpers/test-base.js` — auto-reset before each spec, `backendApi` fixture, `pinLogin(role)` helper.
+  - [x] First happy-path spec runs: `florist-order-creation.spec.js` — POST /api/orders decrements PG stock 50→38, audit log captures actorRole='florist'. Smoke-tested end-to-end (banner, mock-Airtable seed, pglite migrations, /api/test/reset, /api/stock cutover path all verified by hand).
+  - [x] Six remaining specs scaffolded with `test.skip` and TODO(harness-pr-X) markers documenting which data-testids each needs.
+- [ ] **3b follow-up: harness-pr-2 — UI selectors** — flip the `.skip` UI specs by adding `data-testid` to the components listed in each spec's TODO block. Mechanical work; each app gets ~5 testids.
+- [ ] **3b follow-up: harness-pr-3 — API-layer spec audit** — un-skip the API-layer specs in bouquet-edit, cancel, parity, driver, wix-webhook. Each is currently `test.skip(true, …)` with a one-line note about what to audit (route shape, runParityCheck semantics, ORDER_BACKEND state). None require new code — just verifying the shape and removing the skip.
+- [ ] **3b follow-up: capture sanitised Wix webhook payloads** — pull 3 recent Wix webhook bodies from prod Webhook Log table, scrub PII per `wix-webhook-replay.spec.js` instructions, commit to `tests/e2e/fixtures/wix-payloads/`. Owner action — needs prod Airtable access.
+- [ ] **3b follow-up: CI integration** — wire Playwright into GitHub Actions. Sketch:
+  ```yaml
+  # .github/workflows/e2e.yml
+  name: E2E
+  on: [pull_request, push]
+  jobs:
+    e2e:
+      runs-on: ubuntu-latest
+      steps:
+        - uses: actions/checkout@v4
+        - uses: actions/setup-node@v4
+          with: { node-version: '20' }
+        - run: npm ci
+        - run: npx playwright install --with-deps chromium
+        - run: npx playwright test
+        - uses: actions/upload-artifact@v4
+          if: failure()
+          with:
+            name: playwright-report
+            path: playwright-report/
+  ```
+  Owner enables when ready — keeping it manual until the .skip specs are flipped, otherwise CI is just running the API-layer happy path.
 - [ ] **Phase 5 — Customer dedup + cutover** — Universe A (legacy) + B (app) merge with auto-merge on exact phone/email + owner-review modal for ambiguous pairs.
 - [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.
 - [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.
