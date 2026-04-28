@@ -13,6 +13,13 @@
     "backend": "npm run dev --workspace=backend",
     "florist": "npm run dev --workspace=apps/florist",
     "delivery": "npm run dev --workspace=apps/delivery",
-    "dashboard": "npm run dev --workspace=apps/dashboard"
+    "dashboard": "npm run dev --workspace=apps/dashboard",
+    "test:backend": "node backend/scripts/start-test-backend.js",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:install": "playwright install chromium"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.59.1"
   }
 }
