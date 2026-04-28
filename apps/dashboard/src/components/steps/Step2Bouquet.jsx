@@ -1,11 +1,19 @@
 // Step2Bouquet — catalog tap-to-add above, cart stepper below.
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
 import { renderStockName } from '@flower-studio/shared';
+
+const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatPoDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  return `${d.getDate()}.${PO_MONTHS[d.getMonth()]}.`;
+}
 
 // Owner-only inline override for cost/sell when a flower is out of stock.
 // Onblur commits through the parent's line mutator. Empty draft means "no
@@ -92,6 +100,13 @@ export default function Step2Bouquet({
   const [showCost, setShowCost]       = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
   const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+  // Pending purchase orders — drives the "arrives DD.Mmm" badge in the picker
+  // so the owner can grab a flower that's on order instead of typing it again
+  // and creating a duplicate stock card.
+  const [pendingPO, setPendingPO] = useState({});
+  useEffect(() => {
+    client.get('/stock/pending-po').then(r => setPendingPO(r.data || {})).catch(() => {});
+  }, []);
 
   // Stable key for lines: stockItemId or flowerName (for unlisted flowers)
   function lineKey(l) { return l.stockItemId || l.flowerName; }
@@ -128,6 +143,17 @@ export default function Step2Bouquet({
       return true;
     });
   }, [stock, onlyPhysicallyAvailable]);
+
+  // Surface a pending PO match for a flower name typed in the custom-flower
+  // form so we can offer a 1-tap "use the existing card" path. Matches the
+  // catalog's case-insensitive Display Name lookup.
+  const customNameMatch = useMemo(() => {
+    const needle = customFlower.name.trim().toLowerCase();
+    if (!needle) return null;
+    return stock.find(s =>
+      (s['Display Name'] || '').trim().toLowerCase() === needle
+    ) || null;
+  }, [stock, customFlower.name]);
 
   const filteredStock = useMemo(() => {
     const q = flowerQuery.toLowerCase().trim();
@@ -309,6 +335,9 @@ export default function Step2Bouquet({
               const inCart = orderLines.find(l => l.stockItemId === s.id);
               const low    = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
               const out    = qty <= 0;
+              const poInfo = pendingPO[s.id];
+              const poQty  = poInfo?.ordered || 0;
+              const poDateLabel = formatPoDate(poInfo?.plannedDate);
 
               return (
                 <button
@@ -316,16 +345,22 @@ export default function Step2Bouquet({
                   type="button"
                   onClick={() => addOne(s)}
                   className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors
-                              ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-white/40'}`}
+                              ${poQty > 0 ? 'bg-blue-50/60' : out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-white/40'}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
+                    <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : poQty > 0 ? 'text-blue-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
                       {renderStockName(s['Display Name'], s['Last Restocked'])}
                     </div>
                     <div className="text-xs text-ios-tertiary">
                       {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {out && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                      {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                      {poQty > 0 && (
+                        <span className="text-blue-600 font-medium">
+                          {' · +'}{poQty}{' '}
+                          {poDateLabel ? `${t.arrivesOn || 'arrives'} ${poDateLabel}` : (t.onOrder || 'on order')}
+                        </span>
+                      )}
                     </div>
                   </div>
                   {inCart && (
@@ -351,6 +386,31 @@ export default function Step2Bouquet({
             placeholder={t.flowerName || 'Flower name'}
             className="field-input w-full text-sm"
           />
+          {customNameMatch && (() => {
+            const matchPo = pendingPO[customNameMatch.id];
+            const matchPoLabel = formatPoDate(matchPo?.plannedDate);
+            return (
+              <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
+                {t.flowerAlreadyExists || 'Already in stock — pick from the list'}
+                {matchPo?.ordered > 0 && (
+                  <span> · +{matchPo.ordered}{' '}
+                    {matchPoLabel ? `${t.arrivesOn || 'arrives'} ${matchPoLabel}` : (t.onOrder || 'on order')}
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    addOne(customNameMatch);
+                    setShowCustomFlower(false);
+                    setFlowerQuery('');
+                  }}
+                  className="ml-2 underline font-semibold"
+                >
+                  {t.addToCart || 'Add to bouquet'}
+                </button>
+              </div>
+            );
+          })()}
           <div className="grid grid-cols-2 gap-2">
             <input value={customFlower.supplier} onChange={e => setCustomFlower(p => ({ ...p, supplier: e.target.value }))}
               placeholder={t.supplier || 'Supplier'} className="field-input text-sm" />
@@ -370,8 +430,19 @@ export default function Step2Bouquet({
               placeholder={`${t.sellPrice} (zł)`} className="field-input text-sm" />
           </div>
           <div className="flex gap-2">
-            <button type="button" onClick={async () => {
+            <button type="button" disabled={!!customNameMatch} onClick={async () => {
                 if (!customFlower.name.trim()) return;
+                // Block duplicate creation: if a stock item with this name already
+                // exists, add it from the catalog instead of POSTing a duplicate.
+                // This is what gets typed wrong (sell entered into the cost field)
+                // and corrupts the bouquet's snapshotted prices.
+                if (customNameMatch) {
+                  showToast(t.flowerAlreadyExists || 'Flower already in stock — pick from the list', 'error');
+                  addOne(customNameMatch);
+                  setShowCustomFlower(false);
+                  setFlowerQuery('');
+                  return;
+                }
                 try {
                   const res = await client.post('/stock', {
                     displayName: customFlower.name.trim(),

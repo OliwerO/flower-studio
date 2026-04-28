@@ -213,6 +213,49 @@ exit code 0. Around 130 individual assertions, ~2 seconds end-to-end.
 
 ---
 
+## 2026-04-28 — Wix sync: drop Pull-side price overwrite (Airtable is the price owner)
+
+`runPull()` was reverting owner-edited Airtable prices back to the stale
+Wix value, then `runPush()` (which runs second inside `runSync`) saw no
+diff and pushed nothing. Net effect: prices never synced and Airtable
+edits were silently lost — exactly what the owner reported ("WixSync
+doesn't sync prices, Pull overrides correct prices").
+
+### Root cause
+
+Commit `a44450f` (2026-04-22) added price reconciliation in `runPull`'s
+update branch with the comment "Wix is the source of truth — reconcile
+any drift on every pull." That contradicted the file header
+(`backend/src/services/wixProductSync.js:7`) which states **Airtable
+owns: prices**, and contradicted `runPush` which already pushes
+Airtable→Wix on diff.
+
+Two reconcilers pointing opposite directions on the same field, plus
+`runSync` calling Pull before Push, meant every owner edit in Airtable
+got clobbered before Push could see it.
+
+### Fix
+
+`backend/src/services/wixProductSync.js` — removed the price-overwrite
+block in `runPull`'s update branch (lines 686-694 in the previous
+revision). Price still imports on initial row creation for brand-new
+variants pulled from Wix (the create branch is unchanged). For existing
+rows, Pull leaves Price alone; Push remains the only path that touches
+Wix prices.
+
+### What to watch for
+
+- An owner price edit done **directly in the Wix Editor** will no longer
+  flow back into Airtable. That's the correct trade-off — the dashboard
+  is the canonical price-editing surface, and Push handles the other
+  direction. If the owner wants Wix-side edits to win, change the price
+  in Airtable to match.
+- After deploy, run a manual `POST /products/sync` to confirm prices
+  flow: edit one Product Config row's Price in Airtable, hit sync, check
+  Wix variant matches. Sync log row should show `Price Syncs > 0`.
+
+---
+
 ## 2026-04-28 — SQL migration Phase 4: orderRepo implementation (transactional createOrder)
 
 The headline architectural change of the entire migration ships in this

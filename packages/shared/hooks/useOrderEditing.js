@@ -7,6 +7,16 @@
 
 import { useState } from 'react';
 
+// Case-insensitive Display Name lookup against a stock list. Exported so
+// duplicate-name checks can be unit-tested without React.
+export function findDuplicateStockItem(stockItems, name) {
+  const needle = (name || '').trim().toLowerCase();
+  if (!needle) return null;
+  return stockItems.find(s =>
+    (s['Display Name'] || '').trim().toLowerCase() === needle
+  ) || null;
+}
+
 /**
  * @param {Object} deps
  * @param {string} deps.orderId
@@ -117,6 +127,13 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
 
   async function addNewFlower() {
     if (!newFlowerForm) return;
+    const dup = findDuplicateStockItem(stockItems, newFlowerForm.name);
+    if (dup) {
+      showToast(t.flowerAlreadyExists || 'Flower already in stock — pick from the list', 'error');
+      addFlowerFromStock(dup);
+      setNewFlowerForm(null);
+      return;
+    }
     try {
       const res = await apiClient.post('/stock', {
         displayName: newFlowerForm.name,
@@ -142,6 +159,12 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
 
   // ── New flower (quick add — florist, just name) ────────────────
   async function addNewFlowerQuick(name) {
+    const dup = findDuplicateStockItem(stockItems, name);
+    if (dup) {
+      showToast(t.flowerAlreadyExists || 'Flower already in stock — pick from the list', 'error');
+      addFlowerFromStock(dup);
+      return;
+    }
     try {
       const res = await apiClient.post('/stock', { displayName: name.trim(), quantity: 0 });
       setEditLines(prev => [...prev, {
