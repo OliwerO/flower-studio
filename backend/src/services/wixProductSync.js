@@ -683,15 +683,14 @@ export async function runPull() {
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
-          // Price: Wix is the source of truth — reconcile any drift on every pull.
-          // Without this, a price edit made on Wix never flows back to Airtable
-          // (it only imported on initial row creation). Epsilon guards against
-          // float noise in round-trip comparisons.
-          const wixPrice = Number(variantPrice) || 0;
-          const existingPrice = Number(existing['Price'] || 0);
-          if (Math.abs(existingPrice - wixPrice) > 0.01) {
-            updates['Price'] = wixPrice;
-          }
+          // Price is Airtable-owned (see file header). Push reconciles
+          // Airtable → Wix; Pull must NOT overwrite. Earlier policy
+          // (commit a44450f, 2026-04-22) treated Wix as truth here, which
+          // caused runSync (pull-then-push) to revert any owner-edited
+          // Airtable price to the stale Wix value before Push could send
+          // it — net result: prices never synced and Airtable edits were
+          // silently lost. Price still imports on initial row creation
+          // for brand-new variants pulled from Wix (see create branch above).
           // Active follows Wix "Show in online store". The earlier policy
           // treated Active as Airtable-owned, but in practice that caused
           // drift: a product re-listed on Wix stayed inactive in Airtable
