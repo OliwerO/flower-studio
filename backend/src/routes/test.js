@@ -99,11 +99,24 @@ router.get('/state', async (_req, res, next) => {
   }
 });
 
+// audit_log.id and parity_log.id are bigserial → drizzle returns them as
+// JS BigInt. Express's res.json() can't serialize BigInt; coerce to
+// strings on the way out so the test client can parse them.
+function bigintSafe(rows) {
+  return rows.map(r => {
+    const out = {};
+    for (const [k, v] of Object.entries(r)) {
+      out[k] = typeof v === 'bigint' ? v.toString() : v;
+    }
+    return out;
+  });
+}
+
 router.get('/audit', async (_req, res, next) => {
   try {
     if (!db) return res.json([]);
     const rows = await db.select().from(auditLog).orderBy(auditLog.createdAt);
-    res.json(rows);
+    res.json(bigintSafe(rows));
   } catch (err) {
     next(err);
   }
@@ -113,7 +126,7 @@ router.get('/parity', async (_req, res, next) => {
   try {
     if (!db) return res.json([]);
     const rows = await db.select().from(parityLog).orderBy(parityLog.createdAt);
-    res.json(rows);
+    res.json(bigintSafe(rows));
   } catch (err) {
     next(err);
   }
