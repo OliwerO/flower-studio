@@ -1,6 +1,14 @@
 import t from '../../translations.js';
 import { parseBatchName } from '@flower-studio/shared';
 
+const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+function formatPoDate(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  return `${d.getDate()}.${PO_MONTHS[d.getMonth()]}.`;
+}
+
 export default function BouquetSection({ order, editing, isTerminal, saving, targetMarkup, doSave }) {
   const o = order;
   if (!o.orderLines?.length) return null;
@@ -97,18 +105,29 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     const cost = Number(s['Current Cost Price']) || 0;
                     const sell = Number(s['Current Sell Price']) || 0;
                     const { name: fn, batch: b } = parseBatchName(s['Display Name']);
+                    const poInfo = editing.pendingPO?.[s.id];
+                    const poQty = poInfo?.ordered || 0;
+                    const poDateLabel = formatPoDate(poInfo?.plannedDate);
                     return (
                       <button key={s.id} type="button"
                         onClick={() => editing.addFlowerFromStock(s)}
-                        className={`w-full flex items-center px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${qty <= 0 ? 'bg-amber-50/50' : ''}`}
+                        className={`w-full flex flex-col px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${poQty > 0 ? 'bg-blue-50/50' : qty <= 0 ? 'bg-amber-50/50' : ''}`}
                       >
-                        <span className="flex-1 font-medium text-left truncate">
-                          {fn}
-                          {b && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{b}</span>}
-                        </span>
-                        <span className="w-14 text-right text-xs text-ios-tertiary">{cost > 0 ? cost.toFixed(0) : '—'}</span>
-                        <span className="w-14 text-right text-xs text-ios-secondary">{sell > 0 ? `${sell.toFixed(0)}` : '—'}</span>
-                        <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
+                        <div className="flex items-center w-full">
+                          <span className="flex-1 font-medium text-left truncate">
+                            {fn}
+                            {b && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{b}</span>}
+                          </span>
+                          <span className="w-14 text-right text-xs text-ios-tertiary">{cost > 0 ? cost.toFixed(0) : '—'}</span>
+                          <span className="w-14 text-right text-xs text-ios-secondary">{sell > 0 ? `${sell.toFixed(0)}` : '—'}</span>
+                          <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
+                        </div>
+                        {poQty > 0 && (
+                          <div className="text-[10px] text-blue-600 font-medium text-left mt-0.5">
+                            +{poQty}{' '}
+                            {poDateLabel ? `${t.arrivesOn || 'arrives'} ${poDateLabel}` : (t.onOrder || 'on order')}
+                          </div>
+                        )}
                       </button>
                     );
                   })}

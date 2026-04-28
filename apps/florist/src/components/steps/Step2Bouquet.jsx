@@ -638,6 +638,19 @@ export default function Step2Bouquet({
               type="button"
               onClick={async () => {
                 if (!customFlower.name.trim()) return;
+                // Block duplicate creation: if a stock item already exists with
+                // this name, add it from the catalog instead of POSTing a second
+                // record. This prevents the owner from re-typing a flower already
+                // on order and accidentally entering a wrong cost/sell.
+                const needle = customFlower.name.trim().toLowerCase();
+                const dup = stock.find(s => (s['Display Name'] || '').trim().toLowerCase() === needle);
+                if (dup) {
+                  showToast(t.flowerAlreadyExists || 'Flower already in stock — pick from the list', 'error');
+                  addOne(dup);
+                  setShowCustomFlower(false);
+                  setFlowerQuery('');
+                  return;
+                }
                 const supplierValue = customFlower.supplier === '__other__'
                   ? (customFlower.customSupplier || '').trim()
                   : customFlower.supplier || '';
