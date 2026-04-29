@@ -94,6 +94,48 @@ function nextRecId() {
   return `recMockX${idCounter++}`;
 }
 
+// ── Bidirectional linked-record auto-population ──
+//
+// Real Airtable maintains both sides of a linked-record relationship
+// automatically: creating an Order Line with `{ Order: ['recOrd1'] }`
+// auto-pushes the line's id onto recOrd1's `Order Lines` field. The
+// mock would otherwise leave the parent's reverse field empty, breaking
+// any code that does create-then-read (e.g. cancelWithStockReturn reads
+// `order['Order Lines']` to know which lines to refund stock for).
+//
+// We replicate this for the link pairs the backend actually uses. Each
+// entry: when `fromField` on `fromTable` is set to [parentId, ...],
+// push the child's id onto each parent's `toField` array on `toTable`.
+//
+// On update, if `fromField` is REPLACED with a new set, we'd ideally
+// remove the child from parents no longer in the list. The backend
+// never does that today (links are append-only in our flows), so we
+// keep the mock simple and skip the un-link case. If a spec ever
+// depends on it, extend here.
+const LINK_PAIRS_PROVIDER = () => [
+  { fromTable: TABLES.ORDER_LINES, fromField: 'Order',         toTable: TABLES.ORDERS,    toField: 'Order Lines' },
+  { fromTable: TABLES.DELIVERIES,  fromField: 'Linked Order',  toTable: TABLES.ORDERS,    toField: 'Deliveries' },
+  { fromTable: TABLES.ORDERS,      fromField: 'Customer',      toTable: TABLES.CUSTOMERS, toField: 'App Orders' },
+  { fromTable: TABLES.STOCK_ORDER_LINES, fromField: 'Stock Orders', toTable: TABLES.STOCK_ORDERS, toField: 'Stock Order Lines' },
+];
+
+function applyBidirectionalLinks(tableId, child) {
+  const pairs = LINK_PAIRS_PROVIDER().filter(p => p.fromTable === tableId);
+  for (const pair of pairs) {
+    const parentIds = child[pair.fromField];
+    if (!Array.isArray(parentIds)) continue;
+    const parentTable = ensureTable(pair.toTable);
+    for (const parentId of parentIds) {
+      const parent = parentTable.get(parentId);
+      if (!parent) continue;
+      const existing = Array.isArray(parent[pair.toField]) ? parent[pair.toField] : [];
+      if (!existing.includes(child.id)) {
+        parent[pair.toField] = [...existing, child.id];
+      }
+    }
+  }
+}
+
 // ── Public API (mirrors airtable-real.js) ──
 
 export async function list(tableId, options = {}) {
@@ -141,6 +183,7 @@ export async function create(tableId, fields) {
   const id = nextRecId();
   const rec = { id, ...deepClone(fields) };
   tbl.set(id, rec);
+  applyBidirectionalLinks(tableId, rec);
   return deepClone(rec);
 }
 
@@ -156,6 +199,7 @@ export async function update(tableId, recordId, fields) {
   for (const [k, v] of Object.entries(fields)) {
     existing[k] = deepClone(v);
   }
+  applyBidirectionalLinks(tableId, existing);
   return deepClone(existing);
 }
 
