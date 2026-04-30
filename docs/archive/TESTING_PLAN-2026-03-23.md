@@ -1,3 +1,5 @@
+> **ARCHIVED 2026-04-30.** This plan was authored 2026-03-23. Both premises ("Frontend: zero test files, zero CI" and "Backend: 3 test files") are now false — Vitest covers backend (15 files) and shared (9 files), Playwright + a 24-section API E2E suite live under `tests/` and `scripts/e2e-test.js`, and `.github/workflows/test.yml` runs both on every PR. Kept for historical context. Do not treat as the current plan. Referenced branch `claude/analyze-and-improve-app-gLGMR` was abandoned.
+
 # Frontend Testing Plan
 
 > Saved 2026-03-23. Pick this up in a fresh Claude Code session.

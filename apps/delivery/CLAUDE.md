@@ -18,7 +18,9 @@ The driver needs to see exactly what to do next with zero ambiguity — where to
 | DeliveryCard.jsx | Single delivery card — address, recipient, phone (tap-to-call), order contents, status actions |
 | DeliverySheet.jsx | Bottom sheet with delivery details, navigation button, delivery result picker |
 | DeliveryResultPicker.jsx | Result reporting: Success / Not Home / Wrong Address / Refused / Incomplete |
-| MapView.jsx | Map integration for delivery navigation |
+| MapView.jsx | Leaflet map for delivery navigation + driver GPS pin |
+| HelpPanel.jsx | Bilingual Q&A panel (driver-specific) |
+| Skeleton.jsx / Toast.jsx | Loading placeholders + toast renderer (wraps shared) |
 
 ## Driver Workflows
 

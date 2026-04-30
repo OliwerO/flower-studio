@@ -1,3 +1,11 @@
+> **ARCHIVED 2026-04-30.** Status of the 12 review items as of archival:
+> - **Done:** #4 (Vitest + CI shipped).
+> - **Partial:** #1 (status constants exist in `backend/src/constants/statuses.js`; `packages/shared/constants/` not built — frontends still re-import from backend), #2 (orders.js dropped 712→551 L; new monsters now `routes/stockOrders.js` 1000 L, `routes/stock.js` 999 L, `services/wixProductSync.js` 1216 L).
+> - **In progress:** #12 (Postgres/Drizzle migration — Phase 3 stock in shadow, Phase 4 orders blocked on read-path).
+> - **Open:** #3, #5, #6, #7, #8, #9, #10, #11.
+>
+> Open items are tracked from `BACKLOG.md` going forward. This file is kept for historical context — do not treat the priority table as live.
+
 # Codebase Review — Flower Studio
 
 **Date:** 2026-03-21

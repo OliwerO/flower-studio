@@ -11,12 +11,13 @@ Operational platform for **Blossom**, a flower studio in Krakow. Each role — f
 - UI language: **Russian** — all visible strings via `t.xxx` from `translations.js`
 
 ## Stack
-- **DB:** Airtable (extend existing base — never replace)
+- **DB:** Airtable (live) → Postgres (in transition). Phase 3 (Stock) is in shadow week on prod. Phase 4 (Orders) merged but not flipped — read-path migration is the active blocker. See `backend/src/db/README.md` and `BACKLOG.md` pickup checklist. Routes pick the backend via `STOCK_BACKEND` / `ORDER_BACKEND` env flags, default `airtable`. Boot guard rejects mixed modes.
 - **Backend:** Node.js + Express, hosted on Railway
 - **Frontend:** 3 React apps (Vite + Tailwind) on Vercel
 - **Auth:** Stateless PIN via `X-Auth-PIN` header (Owner → all, Florist → orders/stock, Driver → deliveries)
 - **Real-time:** SSE via `GET /api/events` (new orders, status changes, stock alerts)
 - **Integrations:** Wix (e-commerce webhook + bidirectional product sync), Telegram (alerts), Claude AI (order intake parsing), Flowwow (email import)
+- **CI:** `.github/workflows/test.yml` runs Vitest (backend + shared) + the API E2E suite on every PR and on push to master.
 
 ## Monorepo Layout
 ```
@@ -27,6 +28,23 @@ apps/dashboard/     → Full owner control: orders, stock, CRM, finances, produc
 packages/shared/    → Auth/Toast/Language contexts, API client, hooks, utils
 ```
 Each sub-directory has its own CLAUDE.md with domain-specific rules.
+
+## Quick Start
+From repo root (npm workspaces — install once with `npm install`):
+- `npm run backend`        — boot Express on :3001 (reads `backend/.env`)
+- `npm run florist`        — Vite dev server for the florist app
+- `npm run dashboard`      — Vite dev server for the dashboard
+- `npm run delivery`       — Vite dev server for the delivery app
+- `npm run harness`        — boot the test backend (mock Airtable + pglite)
+- `npm run test:e2e`       — run the 24-section / 153-assertion API E2E suite (against `npm run harness`)
+- `npm run test:e2e:ui`    — Playwright UI mode
+
+Backend tests:
+- `cd backend && npx vitest run`                                    — all
+- `cd backend && npx vitest run src/__tests__/orderService.test.js` — single
+- `cd backend && npx vitest run --coverage`                         — with coverage
+
+Shared package tests: `cd packages/shared && npx vitest run`.
 
 ## Coding Standards
 - ES modules, `async/await`, no callbacks
@@ -82,6 +100,9 @@ When a feature is added to the florist app, it should also be added to the dashb
 - PO management: `PurchaseOrderPage.jsx` (florist) ↔ `StockOrderPanel.jsx` (dashboard)
 - Order creation: `NewOrderPage.jsx` + `steps/` (florist) ↔ `NewOrderTab.jsx` + `steps/` (dashboard)
 - Bouquet editing: `BouquetEditor.jsx` (florist) ↔ `BouquetSection.jsx` (dashboard)
+- CRM: `CustomerListPage.jsx` + `CustomerDetailPage.jsx` (florist) ↔ `CustomersTab.jsx` + `CustomerDetailView.jsx` (dashboard)
+- Premade bouquets: `BouquetsPage.jsx` + `PremadeBouquetCreatePage.jsx` (florist) ↔ `PremadeBouquetList.jsx` + `PremadeBouquetCreateModal.jsx` (dashboard)
+- Waste log: `WasteLogPage.jsx` (florist) ↔ `StockLossSection` inside `SettingsTab.jsx` (dashboard) — keep entry surfaces in lock-step
 
 When adding filters, inline editors, status actions, or any user-facing behavior — implement in both apps.
 
@@ -107,8 +128,27 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 ## Workflow Rules
 - Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
 - Check off completed items in `BACKLOG.md`
-- Create a git branch per feature/fix
+- Create a git branch per feature/fix using prefixes `feat/ fix/ chore/ docs/ test/`. **Never** use a `claude/*` prefix — Claude-spawned branches with random suffixes turn into a graveyard. Use intent-driven names so a future session knows what was being attempted.
+- **Land or kill within 7 days.** Open a PR (draft is fine) within a day of branching so GitHub tracks the state. Branches that go >100 commits behind master are deleted, not rebased — the work is either re-done from current main or abandoned with a note in BACKLOG.
+- **Update the relevant CLAUDE.md in the same PR** that adds/removes a route, page, service, repo, or shared util. The structure tables in sub-CLAUDE.md files only stay accurate if every PR touches them; drift is what made the 2026-04 audit necessary.
 - **Production only** — there is no dev/staging environment. All work targets the production Airtable base, Railway backend, and Vercel frontends directly. Be careful with destructive operations.
+- **Default to read-only** when poking at prod from a Claude session — use the `claude_ro` DSN for any Postgres read. Escalate to a write-capable token only when the user explicitly approves the specific change.
+
+## Verification Gate (integrations + cutovers)
+Before claiming a fix on Wix, Telegram, the order/stock cutover, or the Wix webhook, the PR description must name the automated path that proved it: an E2E section number, an integration test, the signed Wix replay, or `npm run harness` + `npm run test:e2e`. If none of those apply, prefix the PR title with `[unverified]` and require explicit owner sign-off before merge. The Wix-sync fix cluster of April 2026 (5+ patches in 2 weeks) was caused by skipping this — the signed-replay harness fixes it going forward.
+
+## Stale-doc rule
+Any markdown doc whose body references current state and is dated >30 days old must be updated in the same session that touches it, or moved to `docs/archive/` with an "ARCHIVED YYYY-MM-DD" banner explaining what changed. Stale planning docs poison future Claude context — they get loaded into prompts and quietly contradict reality.
+
+## Production Scripts
+Every script in `scripts/` and `backend/scripts/` carries one category in a header comment. Adding a new script = pick a category up front.
+
+| Category | Meaning | Example |
+|---|---|---|
+| SAFE | Read-only or pglite-isolated. Cannot mutate prod. | `backend/scripts/shadow-health.js`, `scripts/airtable-backup.mjs` |
+| GUARDED | Refuses to run in `NODE_ENV=production` (or only mutates pglite). | `backend/scripts/start-test-backend.js`, anything seeding the test fixture |
+| DESTRUCTIVE | Mutates prod Airtable / Railway PG. Requires explicit owner approval phrase before run. | `scripts/cleanup-test-orders.js`, `backend/scripts/backfill-stock.js` (idempotent but writes prod) |
+| STALE | Pending deletion — kept only because removal isn't free. Never run. | `scripts/create-dev-base.js`, `scripts/setup-dev-base.js` (dev-base path was abandoned) |
 
 ## Change Summaries (IMPORTANT)
 After completing each logical step of work (not just at the end), write a short **owner-friendly summary** explaining:

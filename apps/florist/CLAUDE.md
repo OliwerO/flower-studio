@@ -13,22 +13,36 @@ The florist should see all relevant information at a glance — what to prepare 
 | OrderDetailPage | /orders/:id | all | Full-page order detail with inline editing, status transitions, bouquet editor |
 | NewOrderPage | /orders/new | all | 4-step wizard: Customer → Bouquet → Details → Review. AI text import shortcut. |
 | StockPanelPage | /stock | all | Inventory view with search, sort, filter, adjust, write-off, receive |
-| StockEvaluationPage | /stock-evaluation | all | Quality inspection of incoming PO deliveries (accept/write-off per line). Owner can do everything the florist can. |
+| StockEvaluationPage | /stock-evaluation | all | Quality inspection of incoming PO deliveries (accept/write-off per line). |
 | PurchaseOrderPage | /purchase-orders | owner | PO management — create from negative stock, assign drivers, track lifecycle |
 | ShoppingSupportPage | /shopping-support | owner | Real-time supervision of active PO shopping runs (SSE + polling) |
 | FloristHoursPage | /hours | all | Florists log time windows; owner sees monthly payroll summary |
 | DaySummaryPage | /day-summary | owner | Quick mobile dashboard — revenue, order counts, low stock, unpaid orders |
+| BouquetsPage | /bouquets | all | Premade bouquet catalog browse |
+| PremadeBouquetCreatePage | /bouquets/new | owner | Create / edit premade bouquet template (recipe of stock items) |
+| CustomerListPage | /customers | all | Customer search + segmentation list |
+| CustomerDetailPage | /customers/:id | all | Customer profile + order history |
+| WasteLogPage | /waste | owner | Stock-loss entry log by reason |
+| SubstituteReconciliationPage | /reconcile | owner | Reconcile substitutions made during PO shopping |
 
 ## Key Components (src/components/)
 | Component | Purpose |
 |-----------|---------|
-| OrderCard.jsx (47KB) | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component. |
+| OrderCard.jsx | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component (1300+ L — split candidate; uses `OrderCardSummary.jsx` + `OrderCardExpanded.jsx`). |
 | BouquetEditor.jsx | Flower catalog search + cart with qty controls, cost/margin visibility, price override |
-| StockItem.jsx | Single stock row with write-off dialog, adjust buttons, committed qty tracking |
+| StockItem.jsx | Single stock row with write-off dialog, adjust buttons, effective-stock display via `getEffectiveStock` |
 | BottomNav.jsx | Tab bar — role-based tabs (florist sees Hours; owner sees Shopping) |
-| DatePicker.jsx | iOS-style calendar dropdown (portal-rendered) |
+| DatePicker.jsx | iOS-style calendar dropdown (portal-rendered). Duplicated in dashboard — TODO move to shared. |
+| TimePicker.jsx | Time slot picker that consumes `getAvailableSlots` from shared. |
 | TextImportModal.jsx | AI text parsing — paste customer message, get structured order draft |
-| Step1-4 components | Order wizard steps (customer search, bouquet builder, details, review) |
+| ReceiveStockForm.jsx | Record incoming supplier deliveries with batch tracking. |
+| PendingArrivalsSection.jsx | Pending PO line summary on stock panel — surfaces in-flight purchases. |
+| PremadeBouquetCard.jsx | Card for premade bouquet templates. |
+| HelpPanel.jsx | 30+ bilingual Q&As — pulled in via global help button. |
+| InlineEdit.jsx | Click-to-edit text primitive. |
+| Skeleton.jsx, Toast.jsx | Loading + toast renderers (Toast wraps shared). |
+| CustomerDetailView / CustomerHeader / CustomerListPane / CustomerTimeline / CustomerFilterSheet / KeyPersonChips | CRM detail composition — mirrors dashboard CRM via shared shape. |
+| `bouquets/`, `steps/`, `waste/` | Sub-folders for premade builder, NewOrder wizard steps (Step1-4), and waste log helpers. |
 
 ## State & Data Flow
 - **Auth/Toast/Language**: shared contexts from `packages/shared/`

@@ -43,6 +43,65 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
+// SQL migration boot guards.
+//
+// ORDER_BACKEND and STOCK_BACKEND each accept airtable | shadow | postgres
+// (default airtable). The two flags are independent at the code level —
+// orderRepo and stockRepo read them separately — but cross-domain workflows
+// (order creation deducts stock, cancel-with-return restores it) only stay
+// consistent when the two stores agree. Mixing modes (e.g. orders=postgres,
+// stock=airtable) silently splits a single business operation across two
+// databases with no shared transaction.
+//
+// Rule:
+//   ORDER_BACKEND=postgres ⇒ STOCK_BACKEND=postgres
+//   ORDER_BACKEND=shadow   ⇒ STOCK_BACKEND ∈ {shadow, postgres}
+//
+// Either of {shadow, postgres} also requires DATABASE_URL.
+{
+  const VALID = new Set(['airtable', 'shadow', 'postgres']);
+  const orderBackend = (process.env.ORDER_BACKEND || 'airtable').toLowerCase();
+  const stockBackend = (process.env.STOCK_BACKEND || 'airtable').toLowerCase();
+
+  if (!VALID.has(orderBackend)) {
+    console.error(`[FATAL] Invalid ORDER_BACKEND="${orderBackend}". Allowed: airtable | shadow | postgres.`);
+    process.exit(1);
+  }
+  if (!VALID.has(stockBackend)) {
+    console.error(`[FATAL] Invalid STOCK_BACKEND="${stockBackend}". Allowed: airtable | shadow | postgres.`);
+    process.exit(1);
+  }
+
+  const needsPg = orderBackend !== 'airtable' || stockBackend !== 'airtable';
+  if (needsPg && !process.env.DATABASE_URL) {
+    console.error(
+      `[FATAL] ORDER_BACKEND=${orderBackend} STOCK_BACKEND=${stockBackend} requires DATABASE_URL. ` +
+      `Set DATABASE_URL or revert both flags to "airtable".`
+    );
+    process.exit(1);
+  }
+
+  if (orderBackend === 'postgres' && stockBackend !== 'postgres') {
+    console.error(
+      `[FATAL] ORDER_BACKEND=postgres requires STOCK_BACKEND=postgres (got "${stockBackend}"). ` +
+      `Order creation deducts stock — running orders on PG while stock stays on Airtable splits ` +
+      `a single business operation across two stores with no shared transaction.`
+    );
+    process.exit(1);
+  }
+  if (orderBackend === 'shadow' && stockBackend === 'airtable') {
+    console.error(
+      `[FATAL] ORDER_BACKEND=shadow requires STOCK_BACKEND in {shadow, postgres} (got "airtable"). ` +
+      `Shadow-write of orders without shadow-write of stock makes parity diffs unactionable.`
+    );
+    process.exit(1);
+  }
+
+  if (needsPg) {
+    console.log(`[BACKEND] ORDER_BACKEND=${orderBackend} STOCK_BACKEND=${stockBackend}`);
+  }
+}
+
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
 
