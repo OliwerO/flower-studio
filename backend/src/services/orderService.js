@@ -405,7 +405,9 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}) {
       if (newStatus === ORDER_STATUS.DELIVERED) {
         deliveryPatch['Delivered At'] = new Date().toISOString();
       }
-      await db.update(TABLES.DELIVERIES, deliveryId, deliveryPatch).catch(() => {});
+      await db.update(TABLES.DELIVERIES, deliveryId, deliveryPatch).catch(err =>
+        console.error(`[CASCADE] Order ${order.id} → delivery ${deliveryId} status=${newStatus} failed:`, err.message)
+      );
     }
   }
 
@@ -637,7 +639,9 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       }
     }
     if (rem.lineId) {
-      await db.deleteRecord(TABLES.ORDER_LINES, rem.lineId).catch(() => {});
+      await db.deleteRecord(TABLES.ORDER_LINES, rem.lineId).catch(err =>
+        console.error(`[ORDER] Failed to delete removed line ${rem.lineId}:`, err.message)
+      );
     }
   }
 

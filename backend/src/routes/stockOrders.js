@@ -443,7 +443,9 @@ router.delete('/:id', authorize('stock-orders', ['owner']), async (req, res, nex
     // Delete all lines first
     const lineIds = po['Order Lines'] || [];
     for (const lineId of lineIds) {
-      await db.deleteRecord(TABLES.STOCK_ORDER_LINES, lineId).catch(() => {});
+      await db.deleteRecord(TABLES.STOCK_ORDER_LINES, lineId).catch(err =>
+        console.error(`[PO] Failed to delete line ${lineId} during PO delete:`, err.message)
+      );
     }
     await db.deleteRecord(TABLES.STOCK_ORDERS, req.params.id);
     broadcast({ type: 'stock_order_deleted', stockOrderId: req.params.id });

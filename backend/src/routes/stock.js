@@ -298,7 +298,9 @@ router.get('/pending-po', async (req, res, next) => {
                   'Current Cost Price': Number(poLine['Cost Price']) || 0,
                   'Current Sell Price': Number(poLine['Sell Price']) || 0,
                   ...(poLine.Supplier ? { Supplier: poLine.Supplier } : {}),
-                }, { actor: actorFromReq(req) }).catch(() => {});
+                }, { actor: actorFromReq(req) }).catch(err =>
+                  console.error(`[STOCK] Price backfill failed for ${existing.id}:`, err.message)
+                );
               }
             }
           } else {
@@ -328,7 +330,9 @@ router.get('/pending-po', async (req, res, next) => {
           allLines[u.idx]._resolvedStockId = nameToId[u.name];
           const lineId = allLines[u.idx].id;
           if (lineId) {
-            db.update(TABLES.STOCK_ORDER_LINES, lineId, { 'Stock Item': [nameToId[u.name]] }).catch(() => {});
+            db.update(TABLES.STOCK_ORDER_LINES, lineId, { 'Stock Item': [nameToId[u.name]] }).catch(err =>
+              console.error(`[STOCK] Failed to link PO line ${lineId} to stock ${nameToId[u.name]}:`, err.message)
+            );
           }
         }
       }
@@ -401,7 +405,9 @@ router.get('/pending-po', async (req, res, next) => {
                 ...(!hasCost && src.cost > 0 ? { 'Current Cost Price': src.cost } : {}),
                 ...(!hasSell && src.sell > 0 ? { 'Current Sell Price': src.sell } : {}),
                 ...(src.supplier ? { Supplier: src.supplier } : {}),
-              }, { actor: actorFromReq(req) }).catch(() => {});
+              }, { actor: actorFromReq(req) }).catch(err =>
+                console.error(`[STOCK] Batch backfill failed for ${item.id}:`, err.message)
+              );
             }
           }
         } catch { /* skip batch */ }

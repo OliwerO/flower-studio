@@ -24,6 +24,34 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Static guards
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+
+      # Backend silent-catch guard. CLAUDE.md (root pitfall #5) bans
+      # `.catch(() => {})` because it swallows cascade and audit failures.
+      # Routes/services/repos/db must surface errors via console.error or
+      # by re-throwing. If a backend silent catch sneaks back in, fail CI.
+      #
+      # Tests + frontends are excluded:
+      #  - tests use it intentionally for negative assertions
+      #  - frontend side-loads fall back to defaults on failure (each is a
+      #    judgment call; reviewed PR-by-PR rather than CI-blocked)
+      - name: Reject silent .catch in backend
+        run: |
+          MATCHES=$(grep -rEn '\.catch\(\s*\(\)\s*=>\s*\{\s*\}\s*\)|\.catch\(\s*\([a-zA-Z_]+\)\s*=>\s*\{\s*\}\s*\)|\.catch\(\s*[a-zA-Z_]+\s*=>\s*\{\s*\}\s*\)' \
+            --include='*.js' backend/src \
+            | grep -v __tests__ \
+            || true)
+          if [ -n "$MATCHES" ]; then
+            echo "::error::Silent .catch(() => {}) found in backend. Replace with .catch(err => console.error('[CONTEXT]', err.message)) — see CLAUDE.md pitfall #5."
+            echo "$MATCHES"
+            exit 1
+          fi
+
   unit:
     name: Backend unit tests (vitest)
     runs-on: ubuntu-latest

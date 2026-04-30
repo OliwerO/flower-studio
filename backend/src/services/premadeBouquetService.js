@@ -228,7 +228,9 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
       await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
     }
     if (rem.lineId) {
-      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, rem.lineId).catch(() => {});
+      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, rem.lineId).catch(err =>
+        console.error(`[PREMADE] Failed to delete removed line ${rem.lineId}:`, err.message)
+      );
     }
   }
 
@@ -307,7 +309,9 @@ export async function returnPremadeBouquetToStock(id) {
         });
       }
       // Delete the line record
-      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(() => {});
+      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(err =>
+        console.error(`[PREMADE] Failed to delete returned line ${line.id}:`, err.message)
+      );
     }
   }
 
@@ -377,7 +381,9 @@ export async function matchPremadeBouquetToOrder(id, orderData, config) {
   //    the user shouldn't see a failure for a bookkeeping cleanup issue.
   try {
     for (const line of premade.lines) {
-      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(() => {});
+      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(err =>
+        console.error(`[PREMADE] Failed to delete consumed line ${line.id}:`, err.message)
+      );
     }
     await db.deleteRecord(TABLES.PREMADE_BOUQUETS, id);
   } catch (cleanupErr) {
