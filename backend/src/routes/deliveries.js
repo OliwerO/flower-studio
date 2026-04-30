@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as orderRepo from '../repos/orderRepo.js';
+import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
@@ -43,17 +45,26 @@ router.get('/', async (req, res, next) => {
     if (status) filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
     if (driver) filters.push(`{Assigned Driver} = '${sanitizeFormulaValue(driver)}'`);
 
-    const deliveries = await db.list(TABLES.DELIVERIES, {
+    const pgFilter = {};
+    if (date)   pgFilter.date = date;
+    else if (from) {
+      pgFilter.from = from;
+      if (to) pgFilter.to = to;
+    }
+    if (status) pgFilter.status = status;
+    if (driver) pgFilter.driver = driver;
+
+    const deliveries = await orderRepo.listDeliveries({
       filterByFormula: filters.length ? `AND(${filters.join(', ')})` : '',
       sort: [{ field: 'Delivery Date', direction: 'asc' }],
+      pg: pgFilter,
     });
 
     // Enrich with customer name + phone from linked orders → customers.
     // Like checking the original purchase order to find who placed it.
     const orderIds = [...new Set(deliveries.flatMap(d => d['Linked Order'] || []))];
     if (orderIds.length > 0) {
-      const orders = await db.list(TABLES.ORDERS, {
-        filterByFormula: `OR(${orderIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+      const orders = await orderRepo.listByIds(orderIds, {
         fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID'],
       });
       const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
@@ -116,43 +127,22 @@ router.patch('/:id', async (req, res, next) => {
       }
     }
 
-    // Cascade delivery status changes to the linked order.
-    // IMPORTANT ordering: write the Delivery record FIRST, then mirror the
-    // status onto the linked Order. Previously the Order was updated first,
-    // so if the Delivery update then failed, the Order was already ahead of
-    // the Delivery — a permanent desync. Doing the delivery first means a
-    // failure leaves both records untouched.
-    let linkedOrderId = null;
-    const cascadeStatuses = [DELIVERY_STATUS.OUT_FOR_DELIVERY, DELIVERY_STATUS.DELIVERED, DELIVERY_STATUS.CANCELLED];
-    if (cascadeStatuses.includes(fields.Status)) {
-      if (fields.Status === DELIVERY_STATUS.DELIVERED) {
-        fields['Delivered At'] = new Date().toISOString();
-      }
-      const delivery = await db.getById(TABLES.DELIVERIES, req.params.id);
-      if (delivery['Linked Order']?.length) {
-        linkedOrderId = delivery['Linked Order'][0];
-      }
+    // Stamp Delivered At before the cascade so order + delivery agree.
+    if (fields.Status === DELIVERY_STATUS.DELIVERED) {
+      fields['Delivered At'] = new Date().toISOString();
     }
 
-    const updated = await db.update(TABLES.DELIVERIES, req.params.id, fields);
+    // updateDelivery handles the delivery → order status cascade
+    // transactionally in postgres mode (and as a follow-up update in
+    // airtable mode). The Telegram alert stays out-of-band.
+    const { delivery: updated, linkedOrderId } = await orderRepo.updateDelivery(
+      req.params.id, fields, { actor: actorFromReq(req) },
+    );
 
-    if (linkedOrderId) {
-      // Map delivery status to order status for the cascade
-      const orderStatus = fields.Status === DELIVERY_STATUS.CANCELLED
-        ? 'Cancelled'  // ORDER_STATUS.CANCELLED — orders use same string
-        : fields.Status;
-      await db.update(TABLES.ORDERS, linkedOrderId, { Status: orderStatus });
-
-      // Owner's Telegram ping when the driver marks Delivered. This
-      // branch catches the driver-app path; the dashboard/florist path
-      // flows through transitionStatus() in orderService.js and alerts
-      // there — each HTTP request hits exactly one of the two paths, so
-      // there's no double-send risk.
-      if (fields.Status === DELIVERY_STATUS.DELIVERED) {
-        sendDeliveryCompleteAlert(linkedOrderId).catch(err =>
-          console.error('[TELEGRAM] delivery-complete alert failed:', err.message),
-        );
-      }
+    if (linkedOrderId && fields.Status === DELIVERY_STATUS.DELIVERED) {
+      sendDeliveryCompleteAlert(linkedOrderId).catch(err =>
+        console.error('[TELEGRAM] delivery-complete alert failed:', err.message),
+      );
     }
     res.json(updated);
   } catch (err) {

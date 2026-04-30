@@ -38,16 +38,14 @@ const TEST_ENV = {
   TEST_BACKEND:                      'mock-airtable',
   DATABASE_URL:                      'pglite:memory',
   STOCK_BACKEND:                     'postgres',
-  // Phase 4 orderRepo implementation merged in PR #159 BUT the read-side
-  // routes (GET /orders, GET /orders/:id, PATCH /orders/:id non-status,
-  // GET/PATCH /deliveries/:id, /:id/swap-bouquet-line, /:id/convert-to-delivery)
-  // still call db.* (Airtable). Flipping ORDER_BACKEND to 'postgres' here
-  // exposes 19 cascade/read failures in the harness — the same failures that
-  // would surface on Railway after the cutover env flip. Keep on 'airtable'
-  // until those routes are wired through orderRepo (tracked in BACKLOG.md as
-  // a Phase 4 read-path migration item). To temporarily exercise the write
-  // path: HARNESS_ORDER_BACKEND=postgres node backend/scripts/start-test-backend.js
-  ORDER_BACKEND:                     process.env.HARNESS_ORDER_BACKEND || 'airtable',
+  // Phase 4 read-path migration completed: GET /orders, GET /orders/:id,
+  // PATCH /orders/:id (non-status), GET/PATCH /deliveries/:id,
+  // /:id/swap-bouquet-line and /:id/convert-to-delivery now route through
+  // orderRepo. Wix webhook mirrors to PG via orderRepo.mirrorAirtableOrder.
+  // Harness defaults to ORDER_BACKEND=postgres so the cutover path is
+  // exercised on every CI run. Override with HARNESS_ORDER_BACKEND=airtable
+  // to validate the legacy path.
+  ORDER_BACKEND:                     process.env.HARNESS_ORDER_BACKEND || 'postgres',
 
   // PINs — known across specs, not secrets.
   PIN_OWNER:                         '1111',

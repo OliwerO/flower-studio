@@ -31,7 +31,7 @@ import { db } from '../db/index.js';
 import { orders, orderLines, deliveries } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
-import { and, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
+import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
 
 // ── Backend mode ──
 const VALID_MODES = new Set(['airtable', 'shadow', 'postgres']);
@@ -81,6 +81,7 @@ export function pgOrderToResponse(row, lineIds = [], deliveryId = null) {
     _pgId: row.id,
     Customer:             row.customerId ? [row.customerId] : [],
     'App Order ID':       row.appOrderId,
+    'Wix Order ID':       row.wixOrderId ?? null,
     Status:               row.status,
     'Delivery Type':      row.deliveryType,
     'Order Date':         row.orderDate,
@@ -136,6 +137,7 @@ export function pgDeliveryToResponse(row) {
     'Delivery Method':     row.deliveryMethod ?? null,
     'Driver Payout':       row.driverPayout != null ? Number(row.driverPayout) : null,
     Status:                row.status,
+    'Delivered At':        row.deliveredAt ? new Date(row.deliveredAt).toISOString() : null,
   };
 }
 
@@ -143,6 +145,7 @@ export function pgDeliveryToResponse(row) {
 function orderResponseToPg(fields) {
   const out = {};
   if ('App Order ID' in fields)   out.appOrderId = fields['App Order ID'];
+  if ('Wix Order ID' in fields)   out.wixOrderId = fields['Wix Order ID'] || null;
   if ('Customer' in fields)       out.customerId = Array.isArray(fields.Customer) ? fields.Customer[0] : fields.Customer;
   if ('Status' in fields)         out.status = fields.Status;
   if ('Delivery Type' in fields)  out.deliveryType = fields['Delivery Type'];
@@ -191,6 +194,7 @@ function deliveryResponseToPg(fields) {
   if ('Delivery Method' in fields) out.deliveryMethod = fields['Delivery Method'] || null;
   if ('Driver Payout' in fields)   out.driverPayout = fields['Driver Payout'] != null ? String(fields['Driver Payout']) : null;
   if ('Status' in fields)          out.status = fields.Status;
+  if ('Delivered At' in fields)    out.deliveredAt = fields['Delivered At'] ? new Date(fields['Delivered At']) : null;
   return out;
 }
 
@@ -233,7 +237,14 @@ function renderOrderRow(orderRow, linesByOrderId, deliveryByOrderId) {
   const lineIds = lines.map(l => l.airtableId || l.id);
   const delivery = deliveryByOrderId.get(orderRow.id);
   const deliveryId = delivery ? (delivery.airtableId || delivery.id) : null;
-  return pgOrderToResponse(orderRow, lineIds, deliveryId);
+  const resp = pgOrderToResponse(orderRow, lineIds, deliveryId);
+  // Embed line + delivery sub-records so callers in postgres mode can skip a
+  // round-trip through airtable.list (which would target PG ids the mock /
+  // Airtable doesn't know about). Frontends never see these — routes strip
+  // them after consuming.
+  resp._lines = lines.map(pgLineToResponse);
+  if (delivery) resp._delivery = pgDeliveryToResponse(delivery);
+  return resp;
 }
 
 async function tryAudit(tx, args) {
@@ -267,6 +278,22 @@ async function listFromPg(options = {}) {
   if (pg.dateTo)            filters.push(lte(orders.orderDate, pg.dateTo));
   if (pg.requiredByFrom)    filters.push(gte(orders.requiredBy, pg.requiredByFrom));
   if (pg.requiredByTo)      filters.push(lte(orders.requiredBy, pg.requiredByTo));
+  if (pg.deliveryType)      filters.push(eq(orders.deliveryType, pg.deliveryType));
+  if (pg.paymentStatus)     filters.push(eq(orders.paymentStatus, pg.paymentStatus));
+  if (pg.paymentMethodNotRecorded) filters.push(or(isNull(orders.paymentMethod), eq(orders.paymentMethod, '')));
+  else if (pg.paymentMethod) filters.push(eq(orders.paymentMethod, pg.paymentMethod));
+  if (pg.sourceOther)       filters.push(or(eq(orders.source, 'Other'), isNull(orders.source)));
+  else if (pg.source)       filters.push(eq(orders.source, pg.source));
+  if (pg.forDate)           filters.push(or(eq(orders.orderDate, pg.forDate), eq(orders.requiredBy, pg.forDate)));
+  if (pg.orderDateFrom)     filters.push(gte(orders.orderDate, pg.orderDateFrom));
+  if (pg.completedSinceFallback) {
+    // "Completed in last N days" — prefer Required By; fall back to Order Date
+    // when Required By is null (legacy imports).
+    filters.push(or(
+      gte(orders.requiredBy, pg.completedSinceFallback),
+      and(isNull(orders.requiredBy), gte(orders.orderDate, pg.completedSinceFallback)),
+    ));
+  }
 
   const orderByCols = [];
   for (const s of (options.sort || [])) {
@@ -301,6 +328,177 @@ export async function getById(id) {
   }
   const { linesByOrderId, deliveryByOrderId } = await loadChildren([row]);
   return renderOrderRow(row, linesByOrderId, deliveryByOrderId);
+}
+
+// findByWixOrderId — used by the Wix webhook for idempotent dedup. In
+// postgres mode the partial-unique index on wix_order_id makes this O(log n);
+// the airtable path falls back to filterByFormula on the existing column.
+export async function findByWixOrderId(wixOrderId) {
+  if (!wixOrderId) return null;
+  if (MODE !== 'postgres') {
+    const matches = await airtable.list(TABLES.ORDERS, {
+      filterByFormula: `{Wix Order ID} = '${wixOrderId.replace(/'/g, "\\'")}'`,
+      maxRecords: 1,
+    });
+    return matches[0] || null;
+  }
+  if (!db) throw new Error('orderRepo.findByWixOrderId: postgres backend not configured');
+  const [row] = await db.select().from(orders)
+    .where(and(eq(orders.wixOrderId, wixOrderId), isNull(orders.deletedAt)))
+    .limit(1);
+  if (!row) return null;
+  const { linesByOrderId, deliveryByOrderId } = await loadChildren([row]);
+  return renderOrderRow(row, linesByOrderId, deliveryByOrderId);
+}
+
+// mirrorAirtableOrder — copies an Airtable-shaped order (plus its lines and
+// delivery) into Postgres preserving the recXXX ids on `airtable_id`. Used
+// during Phase 4 cutover by code paths that still write to Airtable first
+// (Wix webhook, intake parser) so PG stays consistent with the airtable mock
+// AND the eventual Railway PG. No-op in airtable mode.
+export async function mirrorAirtableOrder({ order, lines = [], delivery = null }) {
+  if (MODE !== 'postgres') return null;
+  if (!db) throw new Error('orderRepo.mirrorAirtableOrder: postgres backend not configured');
+  if (!order || !order.id) return null;
+
+  return await db.transaction(async (tx) => {
+    // Skip if already mirrored.
+    const [existing] = await tx.select().from(orders)
+      .where(eq(orders.airtableId, order.id))
+      .limit(1);
+    if (existing) return { skipped: true, orderId: existing.id };
+
+    const orderInsert = orderResponseToPg(order);
+    orderInsert.airtableId = order.id;
+    if (!orderInsert.appOrderId) orderInsert.appOrderId = order['App Order ID'] || order.id;
+    if (!orderInsert.customerId) orderInsert.customerId = order.Customer?.[0] || 'unknown';
+    if (!orderInsert.deliveryType) orderInsert.deliveryType = order['Delivery Type'] || 'Pickup';
+    if (!orderInsert.status) orderInsert.status = order.Status || ORDER_STATUS.NEW;
+    if (!orderInsert.paymentStatus) orderInsert.paymentStatus = order['Payment Status'] || 'Unpaid';
+    if (!orderInsert.orderDate) orderInsert.orderDate = order['Order Date'] || new Date().toISOString().split('T')[0];
+
+    const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
+
+    for (const line of lines) {
+      const lineInsert = lineResponseToPg(line);
+      lineInsert.airtableId = line.id;
+      lineInsert.orderId = insertedOrder.id;
+      if (!lineInsert.flowerName) lineInsert.flowerName = line['Flower Name'] || '';
+      await tx.insert(orderLines).values(lineInsert);
+    }
+
+    if (delivery) {
+      const deliveryInsert = deliveryResponseToPg(delivery);
+      deliveryInsert.airtableId = delivery.id;
+      deliveryInsert.orderId = insertedOrder.id;
+      if (!deliveryInsert.status) deliveryInsert.status = delivery.Status || DELIVERY_STATUS.PENDING;
+      await tx.insert(deliveries).values(deliveryInsert);
+    }
+
+    return { skipped: false, orderId: insertedOrder.id };
+  });
+}
+
+// listByIds — bulk-fetch orders by mixed Airtable / PG ids. Used by
+// routes/deliveries.js to enrich linked-order info without N round-trips.
+export async function listByIds(ids, { fields } = {}) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (MODE !== 'postgres') {
+    return airtable.list(TABLES.ORDERS, {
+      filterByFormula: `OR(${ids.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
+      ...(fields ? { fields } : {}),
+    });
+  }
+  if (!db) throw new Error('orderRepo.listByIds: postgres backend not configured');
+  const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
+  const uuidIds = ids.filter(id => !airtableIds.includes(id));
+  const wheres = [];
+  if (airtableIds.length) wheres.push(inArray(orders.airtableId, airtableIds));
+  if (uuidIds.length)     wheres.push(inArray(orders.id, uuidIds));
+  if (wheres.length === 0) return [];
+  const filter = wheres.length === 1 ? wheres[0] : or(...wheres);
+  const rows = await db.select().from(orders)
+    .where(and(filter, isNull(orders.deletedAt)));
+  const { linesByOrderId, deliveryByOrderId } = await loadChildren(rows);
+  return rows.map(o => renderOrderRow(o, linesByOrderId, deliveryByOrderId));
+}
+
+// ── Deliveries: read paths ──
+
+async function findDeliveryById(id, handle = db) {
+  if (!id || !handle) return null;
+  const isAirtableId = typeof id === 'string' && id.startsWith('rec');
+  const where = isAirtableId
+    ? and(eq(deliveries.airtableId, id), isNull(deliveries.deletedAt))
+    : and(eq(deliveries.id, id), isNull(deliveries.deletedAt));
+  const [row] = await handle.select().from(deliveries).where(where).limit(1);
+  return row ?? null;
+}
+
+async function findOrderLineById(id, handle = db) {
+  if (!id || !handle) return null;
+  const isAirtableId = typeof id === 'string' && id.startsWith('rec');
+  const where = isAirtableId
+    ? and(eq(orderLines.airtableId, id), isNull(orderLines.deletedAt))
+    : and(eq(orderLines.id, id), isNull(orderLines.deletedAt));
+  const [row] = await handle.select().from(orderLines).where(where).limit(1);
+  return row ?? null;
+}
+
+export async function listDeliveries(options = {}) {
+  if (MODE !== 'postgres') return airtable.list(TABLES.DELIVERIES, options);
+  if (!db) throw new Error('orderRepo.listDeliveries: postgres backend not configured');
+  const pg = options.pg || {};
+
+  const filters = [isNull(deliveries.deletedAt)];
+  if (pg.date) {
+    filters.push(or(eq(deliveries.deliveryDate, pg.date), isNull(deliveries.deliveryDate)));
+  } else if (pg.from) {
+    if (pg.to) {
+      filters.push(and(gte(deliveries.deliveryDate, pg.from), lte(deliveries.deliveryDate, pg.to)));
+    } else {
+      filters.push(or(gte(deliveries.deliveryDate, pg.from), isNull(deliveries.deliveryDate)));
+    }
+  }
+  if (pg.status) filters.push(eq(deliveries.status, pg.status));
+  if (pg.driver) filters.push(eq(deliveries.assignedDriver, pg.driver));
+
+  const rows = await db.select().from(deliveries)
+    .where(and(...filters))
+    .orderBy(asc(deliveries.deliveryDate));
+
+  // Resolve linked order's airtable_id (or PG uuid) so callers see "Linked Order"
+  // populated with whatever they would have gotten from Airtable.
+  const orderIds = [...new Set(rows.map(r => r.orderId).filter(Boolean))];
+  const orderMap = new Map();
+  if (orderIds.length > 0) {
+    const orderRows = await db.select().from(orders).where(inArray(orders.id, orderIds));
+    for (const o of orderRows) orderMap.set(o.id, o.airtableId || o.id);
+  }
+  return rows.map(r => {
+    const resp = pgDeliveryToResponse(r);
+    const linkedId = orderMap.get(r.orderId) || null;
+    resp['Linked Order'] = linkedId ? [linkedId] : [];
+    return resp;
+  });
+}
+
+export async function getDeliveryById(id) {
+  if (MODE !== 'postgres') return airtable.getById(TABLES.DELIVERIES, id);
+  if (!db) throw new Error('orderRepo.getDeliveryById: postgres backend not configured');
+
+  const row = await findDeliveryById(id);
+  if (!row) {
+    const err = new Error(`Delivery not found: ${id}`);
+    err.statusCode = 404;
+    throw err;
+  }
+  const resp = pgDeliveryToResponse(row);
+  if (row.orderId) {
+    const [linked] = await db.select().from(orders).where(eq(orders.id, row.orderId)).limit(1);
+    if (linked) resp['Linked Order'] = [linked.airtableId || linked.id];
+  }
+  return resp;
 }
 
 // ── createOrder — the headline transactional rewrite ──
@@ -510,8 +708,12 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
             ? DELIVERY_STATUS.DELIVERED
             : DELIVERY_STATUS.CANCELLED;
         if (delivery.status !== cascadeStatus) {
+          const cascadePatch = { status: cascadeStatus, updatedAt: new Date() };
+          if (cascadeStatus === DELIVERY_STATUS.DELIVERED) {
+            cascadePatch.deliveredAt = new Date();
+          }
           const [updatedDelivery] = await tx.update(deliveries)
-            .set({ status: cascadeStatus, updatedAt: new Date() })
+            .set(cascadePatch)
             .where(eq(deliveries.id, delivery.id))
             .returning();
           await tryAudit(tx, {
@@ -678,11 +880,23 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
     }
 
     // 1. Handle removed lines
+    const writeoffsToLog = [];
     for (const rem of removedLines) {
-      if (rem.stockItemId && rem.quantity > 0 && rem.action === 'return') {
-        await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity, { tx, actor });
+      if (rem.stockItemId && rem.quantity > 0) {
+        if (rem.action === 'return') {
+          await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity, { tx, actor });
+        } else if (rem.action === 'writeoff') {
+          // Stock Loss Log still lives on Airtable (Phase 6). Buffer the writes
+          // and run them OUTSIDE the PG transaction so an Airtable hiccup
+          // doesn't roll back the order edit. Loss is non-critical reporting;
+          // PG order/line/stock updates are the actual business state.
+          writeoffsToLog.push({
+            stockItemId: rem.stockItemId,
+            quantity:    rem.quantity,
+            reason:      rem.reason || 'Bouquet edit',
+          });
+        }
       }
-      // 'writeoff' branch deferred to Phase 6 (Stock Loss Log migration).
       if (rem.lineId) {
         const isAirtableId = typeof rem.lineId === 'string' && rem.lineId.startsWith('rec');
         const where = isAirtableId
@@ -690,6 +904,19 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
           : eq(orderLines.id, rem.lineId);
         await tx.delete(orderLines).where(where);
       }
+    }
+    // Defer Stock Loss Log writes until after the tx — they go through the
+    // (still-Airtable-backed) loss log table.
+    if (writeoffsToLog.length > 0) {
+      const today = new Date().toISOString().split('T')[0];
+      Promise.all(writeoffsToLog.map(w =>
+        airtable.create(TABLES.STOCK_LOSS_LOG, {
+          'Stock Item': [w.stockItemId],
+          Quantity: w.quantity,
+          Reason:   w.reason,
+          Date:     today,
+        }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message)),
+      ));
     }
 
     const explicitStockIds = new Set(
@@ -751,6 +978,261 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
     }
 
     return { updated: true, createdLines: createdLines.map(pgLineToResponse) };
+  });
+}
+
+// ── updateOrder — non-status PATCH (status goes through transitionStatus). ──
+//
+// Cascades Required By → delivery.deliveryDate and Delivery Time →
+// delivery.deliveryTime to the linked delivery row, all in a single PG
+// transaction. Airtable mode delegates to airtable.update + a follow-up
+// delivery update (matching today's route behaviour).
+
+export async function updateOrder(id, fields, opts = {}) {
+  const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+  const cascade = {};
+  if ('Required By' in fields)   cascade['Delivery Date'] = fields['Required By'];
+  if ('Delivery Time' in fields) cascade['Delivery Time'] = fields['Delivery Time'];
+  const hasCascade = Object.keys(cascade).length > 0;
+
+  if (MODE !== 'postgres') {
+    const order = await airtable.update(TABLES.ORDERS, id, fields);
+    if (hasCascade) {
+      const deliveryIds = order['Deliveries'] || [];
+      if (deliveryIds.length > 0) {
+        await airtable.update(TABLES.DELIVERIES, deliveryIds[0], cascade);
+      }
+    }
+    return order;
+  }
+  if (!db) throw new Error('orderRepo.updateOrder: postgres backend not configured');
+
+  return await db.transaction(async (tx) => {
+    const before = await findOrderById(id, tx);
+    if (!before) {
+      const err = new Error(`Order not found: ${id}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const patch = orderResponseToPg(fields);
+    const [after] = await tx.update(orders)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(orders.id, before.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'order', entityId: after.id, action: 'update',
+      before: pgOrderToResponse(before), after: pgOrderToResponse(after), ...actor,
+    });
+
+    if (hasCascade) {
+      const [delivery] = await tx.select().from(deliveries)
+        .where(and(eq(deliveries.orderId, after.id), isNull(deliveries.deletedAt)))
+        .limit(1);
+      if (delivery) {
+        const deliveryPatch = deliveryResponseToPg(cascade);
+        const [updatedDelivery] = await tx.update(deliveries)
+          .set({ ...deliveryPatch, updatedAt: new Date() })
+          .where(eq(deliveries.id, delivery.id))
+          .returning();
+        await tryAudit(tx, {
+          entityType: 'delivery', entityId: updatedDelivery.id, action: 'update',
+          before: pgDeliveryToResponse(delivery), after: pgDeliveryToResponse(updatedDelivery),
+          ...actor,
+        });
+      }
+    }
+
+    const { linesByOrderId, deliveryByOrderId } = await loadChildren([after], tx);
+    return renderOrderRow(after, linesByOrderId, deliveryByOrderId);
+  });
+}
+
+// ── updateDelivery — driver/owner PATCH on the delivery record. ──
+//
+// Cascades delivery.status → orders.status when the new status is one of
+// OUT_FOR_DELIVERY / DELIVERED / CANCELLED — all in the same tx. Mirrors
+// the existing route-level cascade in deliveries.js. The Telegram alert
+// for DELIVERED stays at the route layer (out-of-band side effect).
+
+export async function updateDelivery(id, fields, opts = {}) {
+  const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+  const cascadeStatuses = [
+    DELIVERY_STATUS.OUT_FOR_DELIVERY,
+    DELIVERY_STATUS.DELIVERED,
+    DELIVERY_STATUS.CANCELLED,
+  ];
+
+  if (MODE !== 'postgres') {
+    if (cascadeStatuses.includes(fields.Status)) {
+      const before = await airtable.getById(TABLES.DELIVERIES, id);
+      const updated = await airtable.update(TABLES.DELIVERIES, id, fields);
+      const linkedOrderId = before['Linked Order']?.[0];
+      if (linkedOrderId) {
+        const orderStatus = fields.Status === DELIVERY_STATUS.CANCELLED
+          ? ORDER_STATUS.CANCELLED
+          : fields.Status;
+        await airtable.update(TABLES.ORDERS, linkedOrderId, { Status: orderStatus });
+      }
+      return { delivery: updated, linkedOrderId: linkedOrderId || null };
+    }
+    const updated = await airtable.update(TABLES.DELIVERIES, id, fields);
+    return { delivery: updated, linkedOrderId: null };
+  }
+  if (!db) throw new Error('orderRepo.updateDelivery: postgres backend not configured');
+
+  return await db.transaction(async (tx) => {
+    const before = await findDeliveryById(id, tx);
+    if (!before) {
+      const err = new Error(`Delivery not found: ${id}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const patch = deliveryResponseToPg(fields);
+    const [after] = await tx.update(deliveries)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(deliveries.id, before.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'delivery', entityId: after.id, action: 'update',
+      before: pgDeliveryToResponse(before), after: pgDeliveryToResponse(after), ...actor,
+    });
+
+    let linkedOrderId = null;
+    if (cascadeStatuses.includes(fields.Status)) {
+      const [order] = await tx.select().from(orders)
+        .where(and(eq(orders.id, after.orderId), isNull(orders.deletedAt)))
+        .limit(1);
+      if (order) {
+        const orderStatus = fields.Status === DELIVERY_STATUS.CANCELLED
+          ? ORDER_STATUS.CANCELLED
+          : fields.Status;
+        if (order.status !== orderStatus) {
+          const [updatedOrder] = await tx.update(orders)
+            .set({ status: orderStatus, updatedAt: new Date() })
+            .where(eq(orders.id, order.id))
+            .returning();
+          await tryAudit(tx, {
+            entityType: 'order', entityId: updatedOrder.id, action: 'update',
+            before: { Status: order.status }, after: { Status: updatedOrder.status },
+            ...actor,
+          });
+        }
+        linkedOrderId = order.airtableId || order.id;
+      }
+    }
+
+    const resp = pgDeliveryToResponse(after);
+    if (after.orderId) {
+      const [linked] = await tx.select().from(orders).where(eq(orders.id, after.orderId)).limit(1);
+      if (linked) resp['Linked Order'] = [linked.airtableId || linked.id];
+    }
+    return { delivery: resp, linkedOrderId };
+  });
+}
+
+// ── updateOrderLine — single-line update (used by swap-bouquet-line). ──
+
+export async function updateOrderLine(lineId, fields, opts = {}) {
+  const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+
+  if (MODE !== 'postgres') {
+    return await airtable.update(TABLES.ORDER_LINES, lineId, fields);
+  }
+  if (!db) throw new Error('orderRepo.updateOrderLine: postgres backend not configured');
+
+  return await db.transaction(async (tx) => {
+    const before = await findOrderLineById(lineId, tx);
+    if (!before) {
+      const err = new Error(`Order line not found: ${lineId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const patch = lineResponseToPg(fields);
+    const [after] = await tx.update(orderLines)
+      .set({ ...patch, updatedAt: new Date() })
+      .where(eq(orderLines.id, before.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'orderLine', entityId: after.id, action: 'update',
+      before: pgLineToResponse(before), after: pgLineToResponse(after), ...actor,
+    });
+    return pgLineToResponse(after);
+  });
+}
+
+// ── convertToDelivery — Pickup → Delivery one-shot. ──
+//
+// Single tx: insert delivery row + flip order's Delivery Type and
+// Delivery Fee. Refuses if the order already has a delivery (uniqueIndex
+// on deliveries.order_id enforces this at DB level too, but we surface a
+// clean 400 instead of a constraint violation).
+
+export async function convertToDelivery(orderId, deliveryFields, opts = {}) {
+  const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+
+  if (MODE !== 'postgres') {
+    const order = await airtable.getById(TABLES.ORDERS, orderId);
+    if (order['Deliveries']?.length > 0) {
+      const err = new Error('Delivery record already exists for this order.');
+      err.statusCode = 400;
+      throw err;
+    }
+    const delivery = await airtable.create(TABLES.DELIVERIES, {
+      'Linked Order': [orderId],
+      ...deliveryFields,
+    });
+    await airtable.update(TABLES.ORDERS, orderId, {
+      'Delivery Type': 'Delivery',
+      'Delivery Fee':  deliveryFields['Delivery Fee'] ?? 0,
+    });
+    return delivery;
+  }
+  if (!db) throw new Error('orderRepo.convertToDelivery: postgres backend not configured');
+
+  return await db.transaction(async (tx) => {
+    const order = await findOrderById(orderId, tx);
+    if (!order) {
+      const err = new Error(`Order not found: ${orderId}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const [existing] = await tx.select().from(deliveries)
+      .where(and(eq(deliveries.orderId, order.id), isNull(deliveries.deletedAt)))
+      .limit(1);
+    if (existing) {
+      const err = new Error('Delivery record already exists for this order.');
+      err.statusCode = 400;
+      throw err;
+    }
+
+    const insertVals = deliveryResponseToPg(deliveryFields);
+    insertVals.orderId = order.id;
+    if (!('status' in insertVals)) insertVals.status = DELIVERY_STATUS.PENDING;
+    const [delivery] = await tx.insert(deliveries).values(insertVals).returning();
+    await tryAudit(tx, {
+      entityType: 'delivery', entityId: delivery.id, action: 'create',
+      before: null, after: pgDeliveryToResponse(delivery), ...actor,
+    });
+
+    const orderPatch = {
+      deliveryType: 'Delivery',
+      deliveryFee: deliveryFields['Delivery Fee'] != null
+        ? String(deliveryFields['Delivery Fee']) : '0',
+    };
+    const [updatedOrder] = await tx.update(orders)
+      .set({ ...orderPatch, updatedAt: new Date() })
+      .where(eq(orders.id, order.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'order', entityId: updatedOrder.id, action: 'update',
+      before: { 'Delivery Type': order.deliveryType, 'Delivery Fee': order.deliveryFee },
+      after:  { 'Delivery Type': updatedOrder.deliveryType, 'Delivery Fee': updatedOrder.deliveryFee },
+      ...actor,
+    });
+
+    const resp = pgDeliveryToResponse(delivery);
+    resp['Linked Order'] = [updatedOrder.airtableId || updatedOrder.id];
+    return resp;
   });
 }
 

@@ -7,6 +7,7 @@
 // after receiving the webhook — that's the canonical shape we parse against.
 
 import * as db from './airtable.js';
+import * as orderRepo from '../repos/orderRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
@@ -139,14 +140,13 @@ export async function processWixOrder(payload) {
     }
     log('1-PARSE', `Wix Order ID: ${wixOrderId}`);
 
-    // 2. Dedup — check if we already processed this order
-    const existing = await db.list(TABLES.ORDERS, {
-      filterByFormula: `{Wix Order ID} = '${sanitizeFormulaValue(wixOrderId)}'`,
-      maxRecords: 1,
-    });
-    if (existing.length > 0) {
-      log('2-DEDUP', `Already exists as ${existing[0].id} — skipping`);
-      await logWebhookEvent({ status: 'Duplicate', wixOrderId, appOrderId: existing[0].id });
+    // 2. Dedup — check if we already processed this order. Goes through
+    // orderRepo so PG-mode picks up the partial-unique index on wix_order_id;
+    // airtable mode falls back to the existing filterByFormula path.
+    const existing = await orderRepo.findByWixOrderId(wixOrderId);
+    if (existing) {
+      log('2-DEDUP', `Already exists as ${existing.id} — skipping`);
+      await logWebhookEvent({ status: 'Duplicate', wixOrderId, appOrderId: existing.id });
       return;
     }
     log('2-DEDUP', 'New order — processing');
@@ -445,7 +445,7 @@ export async function processWixOrder(payload) {
     //     If address or contact info is missing, the florist fills it in
     //     later; leaving the delivery sub-record absent would break driver
     //     assignment and the list enrichment pipeline.
-    await db.create(TABLES.DELIVERIES, {
+    const deliveryRecord = await db.create(TABLES.DELIVERIES, {
       'Linked Order': [order.id],
       'Delivery Address': deliveryAddress,
       'Recipient Name': recipientName,
@@ -456,6 +456,23 @@ export async function processWixOrder(payload) {
       Status: DELIVERY_STATUS.PENDING,
     });
     log('12-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
+
+    // Phase 4 cutover: mirror to Postgres so GET /orders (which reads from PG
+    // when ORDER_BACKEND=postgres) sees the new Wix order. No-op in airtable
+    // mode. Uses the airtable-shaped records as source-of-truth — the order's
+    // recXXX id becomes the PG row's airtable_id, preserving traceability.
+    if (orderRepo.getBackendMode() !== 'airtable') {
+      try {
+        await orderRepo.mirrorAirtableOrder({
+          order,
+          lines: createdLines,
+          delivery: deliveryRecord,
+        });
+        log('12-PG', 'Mirrored to Postgres');
+      } catch (mirrorErr) {
+        console.error('[WIX] PG mirror failed:', mirrorErr.message);
+      }
+    }
 
     log('DONE', `Order ${order.id} created from Wix #${humanOrderNumber}`);
     await logWebhookEvent({ status: 'Success', wixOrderId, appOrderId: order.id });

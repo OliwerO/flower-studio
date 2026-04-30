@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as orderRepo from '../repos/orderRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -104,28 +105,69 @@ router.get('/', async (req, res, next) => {
         ? [{ field: 'Required By', direction: 'desc' }]
         : [{ field: 'Order Date', direction: 'desc' }];
 
-    const orders = await db.list(TABLES.ORDERS, {
+    // Postgres-side structured filter, mirrors the Airtable formula above.
+    // orderRepo picks the right path via ORDER_BACKEND.
+    const pgFilter = {};
+    if (status)            pgFilter.statuses = [status];
+    if (source === 'Other') pgFilter.sourceOther = true;
+    else if (source)        pgFilter.source = source;
+    if (deliveryType)      pgFilter.deliveryType = deliveryType;
+    if (paymentStatus)     pgFilter.paymentStatus = paymentStatus;
+    if (paymentMethod === 'Not recorded') pgFilter.paymentMethodNotRecorded = true;
+    else if (paymentMethod) pgFilter.paymentMethod = paymentMethod;
+    if (excludeCancelled)  pgFilter.excludeStatuses = [ORDER_STATUS.CANCELLED];
+    if (activeOnly) {
+      pgFilter.excludeStatuses = [
+        ...(pgFilter.excludeStatuses || []),
+        ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED,
+      ];
+    } else if (completedOnly) {
+      pgFilter.statuses = [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED];
+      if (forDate) {
+        pgFilter.forDate = forDate;
+      } else if (!dateFrom) {
+        pgFilter.completedSinceFallback = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
+      }
+    } else if (upcoming) {
+      pgFilter.orderDateFrom = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+    } else if (forDate) {
+      pgFilter.forDate = forDate;
+    } else {
+      if (dateFrom) pgFilter.dateFrom = dateFrom;
+      if (dateTo)   pgFilter.dateTo = dateTo;
+    }
+
+    const orders = await orderRepo.list({
       filterByFormula,
       sort: sortFields,
       maxRecords: 200,
+      pg: pgFilter,
     });
 
     // Bulk-fetch order lines + customers + deliveries in parallel.
+    // In postgres mode, orderRepo embeds _lines + _delivery on each order so
+    // we can skip the listByIds round-trips for those two tables (which target
+    // PG-native UUIDs that the Airtable / mock layer won't resolve).
+    const pgEmbeds = orders.length > 0 && orders[0]._lines !== undefined;
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
     const allDeliveryIds = orders.flatMap(o => o['Deliveries'] || []);
 
     const [allLines, allCustomers, allDeliveries] = await Promise.all([
-      listByIds(TABLES.ORDER_LINES, allLineIds, {
-        fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity', 'Flower Name'],
-        maxRecords: 1000,
-      }),
+      pgEmbeds
+        ? Promise.resolve(orders.flatMap(o => o._lines || []))
+        : listByIds(TABLES.ORDER_LINES, allLineIds, {
+            fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity', 'Flower Name'],
+            maxRecords: 1000,
+          }),
       listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
         fields: ['Name', 'Nickname', 'Phone'],
       }),
-      listByIds(TABLES.DELIVERIES, allDeliveryIds, {
-        fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver', 'Delivery Method', 'Status'],
-      }),
+      pgEmbeds
+        ? Promise.resolve(orders.map(o => o._delivery).filter(Boolean))
+        : listByIds(TABLES.DELIVERIES, allDeliveryIds, {
+            fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver', 'Delivery Method', 'Status'],
+          }),
     ]);
 
     // Index customers and deliveries by ID
@@ -188,6 +230,12 @@ router.get('/', async (req, res, next) => {
       order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
     }
 
+    // Strip orderRepo's PG-mode embeds before responding — they're an internal
+    // shortcut, not part of the public wire format.
+    if (pgEmbeds) {
+      for (const o of orders) { delete o._lines; delete o._delivery; }
+    }
+
     // Post-enrichment filter for "upcoming"
     if (upcoming) {
       const today = new Date().toISOString().split('T')[0];
@@ -208,21 +256,28 @@ router.get('/', async (req, res, next) => {
 // GET /api/orders/:id — includes linked order lines
 router.get('/:id', async (req, res, next) => {
   try {
-    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    const order = await orderRepo.getById(req.params.id);
 
     const lineIds = order['Order Lines'] || [];
     const custId = order.Customer?.[0];
     const deliveryId = order['Deliveries']?.[0];
+    const hasPgEmbeds = order._lines !== undefined;
 
     const [orderLines, customer, delivery] = await Promise.all([
-      listByIds(TABLES.ORDER_LINES, lineIds),
+      hasPgEmbeds
+        ? Promise.resolve(order._lines)
+        : listByIds(TABLES.ORDER_LINES, lineIds),
       custId
         ? db.getById(TABLES.CUSTOMERS, custId).catch(() => null)
         : Promise.resolve(null),
-      deliveryId
-        ? db.getById(TABLES.DELIVERIES, deliveryId)
-        : Promise.resolve(undefined),
+      hasPgEmbeds
+        ? Promise.resolve(order._delivery)
+        : (deliveryId
+            ? db.getById(TABLES.DELIVERIES, deliveryId)
+            : Promise.resolve(undefined)),
     ]);
+
+    if (hasPgEmbeds) { delete order._lines; delete order._delivery; }
 
     order['Customer Name'] = customer?.Name || customer?.Nickname || '';
     order['Customer Phone'] = customer?.Phone || '';
@@ -356,16 +411,26 @@ router.patch('/:id', async (req, res, next) => {
     // a later edit can't distinguish a real mismatch from a pre-feature order.
     if (otherFields['Payment Status'] === PAYMENT_STATUS.PAID
         && otherFields['Payment 1 Amount'] == null) {
-      const current = await db.getById(TABLES.ORDERS, req.params.id).catch(() => null);
+      const current = await orderRepo.getById(req.params.id).catch(() => null);
       const existingP1 = Number(current?.['Payment 1 Amount']) || 0;
       if (existingP1 === 0) {
+        const hasEmbeds = current?._lines !== undefined;
         const lineIds = current?.['Order Lines'] || [];
-        const lines = lineIds.length > 0 ? await listByIds(TABLES.ORDER_LINES, lineIds) : [];
+        const lines = hasEmbeds
+          ? current._lines
+          : (lineIds.length > 0 ? await listByIds(TABLES.ORDER_LINES, lineIds) : []);
         const flowerTotal = lines.reduce(
           (s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0
         );
-        const deliveryIdsForPrice = current?.['Deliveries'] || [];
-        const deliv = deliveryIdsForPrice[0] ? await db.getById(TABLES.DELIVERIES, deliveryIdsForPrice[0]).catch(() => null) : null;
+        let deliv = null;
+        if (hasEmbeds) {
+          deliv = current._delivery || null;
+        } else {
+          const deliveryIdsForPrice = current?.['Deliveries'] || [];
+          deliv = deliveryIdsForPrice[0]
+            ? await db.getById(TABLES.DELIVERIES, deliveryIdsForPrice[0]).catch(() => null)
+            : null;
+        }
         const delivFee = current?.['Delivery Type'] === 'Delivery'
           ? Number(current?.['Delivery Fee'] ?? deliv?.['Delivery Fee'] ?? 0) : 0;
         const finalPrice = (Number(current?.['Price Override']) || flowerTotal) + delivFee;
@@ -378,38 +443,11 @@ router.patch('/:id', async (req, res, next) => {
       }
     }
 
-    // No status change — just update other fields
-    const order = await db.update(TABLES.ORDERS, req.params.id, otherFields);
-
-    // Cascade date/time changes to linked delivery record so both stay in sync
-    const deliveryIds = order['Deliveries'] || [];
-    if (deliveryIds.length > 0) {
-      const deliveryCascade = {};
-      if ('Required By' in otherFields) deliveryCascade['Delivery Date'] = otherFields['Required By'];
-      if ('Delivery Time' in otherFields) deliveryCascade['Delivery Time'] = otherFields['Delivery Time'];
-      if (Object.keys(deliveryCascade).length > 0) {
-        await db.update(TABLES.DELIVERIES, deliveryIds[0], deliveryCascade);
-      }
-    }
-
-    // Broadcast all other status changes so delivery app stays in sync
-    if (newStatus && newStatus !== ORDER_STATUS.READY) {
-      broadcast({
-        type: 'order_status_changed',
-        orderId: order.id,
-        status: newStatus,
-      });
-    }
-
-    // Cascade Order → Delivery status (mirrors the Delivery → Order cascade in deliveries.js)
-    if (newStatus === ORDER_STATUS.OUT_FOR_DELIVERY || newStatus === ORDER_STATUS.DELIVERED || newStatus === ORDER_STATUS.CANCELLED) {
-      const deliveryIds = order['Deliveries'] || [];
-      if (deliveryIds.length > 0) {
-        const deliveryFields = { Status: newStatus === ORDER_STATUS.CANCELLED ? DELIVERY_STATUS.CANCELLED : newStatus };
-        if (newStatus === ORDER_STATUS.DELIVERED) deliveryFields['Delivered At'] = new Date().toISOString();
-        await db.update(TABLES.DELIVERIES, deliveryIds[0], deliveryFields);
-      }
-    }
+    // No status change — orderRepo.updateOrder handles the linked-delivery
+    // cascade for Required By / Delivery Time inside the same transaction
+    // (postgres mode) or via a follow-up update (airtable mode).
+    const order = await orderRepo.updateOrder(req.params.id, otherFields, { actor: actorFromReq(req) });
+    if (order._lines !== undefined) { delete order._lines; delete order._delivery; }
 
     res.json(order);
   } catch (err) {
@@ -457,36 +495,33 @@ router.delete('/:id', async (req, res, next) => {
 // POST /api/orders/:id/convert-to-delivery — creates a delivery record when switching from Pickup to Delivery.
 router.post('/:id/convert-to-delivery', async (req, res, next) => {
   try {
-    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    const order = await orderRepo.getById(req.params.id);
 
     if (order['Deliveries']?.length > 0) {
       return res.status(400).json({ error: 'Delivery record already exists for this order.' });
     }
 
     const { address, recipientName, recipientPhone, date, time, fee, driver, driverInstructions } = req.body;
+    const resolvedFee = fee ?? getConfig('defaultDeliveryFee');
 
-    const delivery = await db.create(TABLES.DELIVERIES, {
-      'Linked Order':     [req.params.id],
+    const delivery = await orderRepo.convertToDelivery(req.params.id, {
       'Delivery Address': address || '',
       'Recipient Name':   recipientName || '',
       'Recipient Phone':  recipientPhone || '',
       'Delivery Date':    date || order['Required By'] || null,
       'Delivery Time':    time || order['Delivery Time'] || '',
       'Assigned Driver':  driver || getDriverOfDay() || null,
-      'Delivery Fee':     fee ?? getConfig('defaultDeliveryFee'),
+      'Delivery Fee':     resolvedFee,
       'Driver Instructions': driverInstructions || '',
       'Delivery Method': 'Driver',
       'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
       Status:             DELIVERY_STATUS.PENDING,
-    });
-
-    await db.update(TABLES.ORDERS, req.params.id, {
-      'Delivery Type': 'Delivery',
-      'Delivery Fee':  fee ?? getConfig('defaultDeliveryFee'),
-    });
+    }, { actor: actorFromReq(req) });
 
     res.status(201).json(delivery);
   } catch (err) {
+    if (err.statusCode === 400) return res.status(400).json({ error: err.message });
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
     next(err);
   }
 });
@@ -501,28 +536,37 @@ router.post('/:id/swap-bouquet-line', async (req, res, next) => {
       return res.status(400).json({ error: 'fromStockItemId, toStockItemId, and lineId are required' });
     }
 
-    const order = await db.getById(TABLES.ORDERS, req.params.id);
+    const order = await orderRepo.getById(req.params.id);
     if (![ORDER_STATUS.NEW, ORDER_STATUS.READY].includes(order.Status)) {
       return res.status(400).json({ error: `Cannot swap bouquet line in "${order.Status}" status` });
     }
 
-    // Verify the line belongs to this order
-    const line = await db.getById(TABLES.ORDER_LINES, lineId);
-    const lineOrderId = line.Order?.[0];
-    if (lineOrderId !== req.params.id) {
-      return res.status(400).json({ error: 'Line does not belong to this order' });
+    // Verify the line belongs to this order. Use embedded _lines when present
+    // (postgres mode) — saves a round-trip and avoids hitting an Airtable id
+    // path that wouldn't resolve a PG-native uuid.
+    let line;
+    if (order._lines !== undefined) {
+      line = order._lines.find(l => l.id === lineId);
+      if (!line) return res.status(400).json({ error: 'Line does not belong to this order' });
+    } else {
+      line = await db.getById(TABLES.ORDER_LINES, lineId);
+      const lineOrderId = line.Order?.[0];
+      if (lineOrderId !== req.params.id) {
+        return res.status(400).json({ error: 'Line does not belong to this order' });
+      }
     }
 
     const oldQty = Number(line.Quantity || 0);
     const qty = newQty != null ? Number(newQty) : oldQty;
 
-    // Fetch substitute stock item for cost/sell/name
+    // Fetch substitute stock item for cost/sell/name. Stock still routes
+    // through airtable.getById here because the route doesn't yet have a
+    // stockRepo.getById helper; the airtable mock + STOCK_BACKEND=shadow keep
+    // both stores in sync, so this read is fine.
     const substituteStock = await db.getById(TABLES.STOCK, toStockItemId);
 
     // Return stock to original (undo the deduction). Route through stockRepo
     // so the adjustment lands in Postgres when STOCK_BACKEND=shadow|postgres.
-    // Without this, the swap was a known Phase 3 cutover gap — the Airtable
-    // mock got the right number, the PG row stayed at the pre-swap quantity.
     const actor = actorFromReq(req);
     if (oldQty > 0) {
       await stockRepo.adjustQuantity(fromStockItemId, +oldQty, { actor });
@@ -533,17 +577,18 @@ router.post('/:id/swap-bouquet-line', async (req, res, next) => {
     }
 
     // Update the order line to point to the substitute
-    const updated = await db.update(TABLES.ORDER_LINES, lineId, {
+    const updated = await orderRepo.updateOrderLine(lineId, {
       'Stock Item': [toStockItemId],
       'Flower Name': substituteStock['Display Name'] || substituteStock['Purchase Name'] || '',
       'Cost Price Per Unit': substituteStock['Current Cost Price'] || 0,
       'Sell Price Per Unit': substituteStock['Current Sell Price'] || 0,
       Quantity: qty,
-    });
+    }, { actor });
 
     broadcast({ type: 'order_updated', orderId: req.params.id });
     res.json(updated);
   } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
     next(err);
   }
 });

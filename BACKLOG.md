@@ -6,11 +6,11 @@ Features and improvements tracked against original build phases.
 
 ## ⚡ Pick-up checklist for the next session
 
-If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-04-28.
+If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-04-30.
 
 **Migration cutover state:**
 - Phase 3 (Stock) is IN SHADOW WEEK on prod since 2026-04-28. `STOCK_BACKEND=shadow` is live.
-- Phase 4 (Orders) implementation merged but cutover NOT started — `ORDER_BACKEND` still defaults to `airtable`.
+- Phase 4 (Orders) implementation + read-path migration both merged. Harness defaults to `ORDER_BACKEND=postgres` and runs 153/153 green. Prod cutover env flip NOT started — `ORDER_BACKEND` still defaults to `airtable` on Railway.
 
 **Daily owner check during shadow week** (~30 sec):
 ```bash
@@ -24,7 +24,7 @@ Should show "✓ Shadow-write is healthy" with zero parity mismatches. If anythi
 2. **Owner cleans up 2 orphan Airtable Stock rows** (`recyLyXct64ksIMFY`, `recD6p1GbmrKV7mrl`) — no Display Name, skipped by backfill. Delete them or fill in name + re-run `backend/scripts/backfill-stock.js` (idempotent).
 3. **3b E2E test harness** — foundation merged in PR #161. Comprehensive 24-section / 153-assertion API-level suite live in `scripts/e2e-test.js` (covers every order/stock/delivery workflow, audit per role, parity recheck, auth gates, signed Wix webhook replay with dedup). Run with `npm run harness` then `npm run test:e2e`. CI workflow at `.github/workflows/test.yml` runs unit + E2E on every PR. Playwright scaffold landed (`playwright.config.js` + helpers + one happy-path spec, currently `.skip` until React components gain `data-testid` selectors). **Still open**: per-spec UI fill-in work (florist order creation, bouquet edit, owner cancel-with-return, owner soft-delete-restore, admin parity, driver delivery, etc — see design doc).
 
-3a. **Phase 4 read-path migration** (NEW BLOCKER) — flipping `ORDER_BACKEND=postgres` in the harness exposed 19 failures across 8 sections: all read-side routes still hit Airtable mock instead of `orderRepo.*`. Specifically `GET /orders`, `GET /orders/:id`, `PATCH /orders/:id` (non-status), `GET/PATCH /deliveries/:id`, `POST /:id/swap-bouquet-line` and `POST /:id/convert-to-delivery`. **This blocks the Phase 4 cutover env flip on Railway.** Until the read-path is migrated, `ORDER_BACKEND=shadow` would write to PG but every read still hits Airtable — half-cutover. Validate the fix locally with `HARNESS_ORDER_BACKEND=postgres node backend/scripts/start-test-backend.js` then `npm run test:e2e` — should reach 153/153 once routes are migrated.
+3a. ~~**Phase 4 read-path migration** (BLOCKER)~~ — RESOLVED 2026-04-30. All 6 read routes (`GET /orders`, `GET /orders/:id`, `PATCH /orders/:id` non-status, `GET/PATCH /deliveries/:id`, `POST /:id/swap-bouquet-line`, `POST /:id/convert-to-delivery`) now route through `orderRepo`. Wix webhook mirrors creates to PG via `orderRepo.mirrorAirtableOrder`. Migration 0004 added `deliveries.delivered_at` and `orders.wix_order_id` (partial-unique). Writeoff path in `editBouquetLines` now writes to Stock Loss Log (still Airtable until Phase 6). Harness defaults to `ORDER_BACKEND=postgres`; `npm run harness` + `npm run test:e2e` → 153/153 green in BOTH airtable and postgres modes.
 4. **Stock cutover flip** (after shadow week clean) — `railway variables --service flower-studio-backend --set STOCK_BACKEND=postgres` + redeploy. Airtable Stock becomes legacy snapshot.
 5. **Phase 4 cutover** (after #3 validates Wix webhook) — `node backend/scripts/backfill-orders.js` → `ORDER_BACKEND=shadow` → 1 week shadow → `ORDER_BACKEND=postgres`.
 6. **Order parity dashboard UI in AdminTab** — backend stub already exists; full `orderRepo.runParityCheck` impl + AdminTab order-side rendering. Best after ORDER_BACKEND=shadow generates real data.

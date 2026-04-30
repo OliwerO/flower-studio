@@ -123,6 +123,9 @@ export const stock = pgTable('stock', {
 export const orders = pgTable('orders', {
   id:                 uuid('id').primaryKey().defaultRandom(),
   airtableId:         text('airtable_id'),
+  // Wix webhook idempotency key. Partial-unique so non-Wix orders
+  // (NULL value) don't collide. Migrated in 0004.
+  wixOrderId:         text('wix_order_id'),
   appOrderId:         text('app_order_id').notNull(),
   customerId:         text('customer_id').notNull(),
   status:             text('status').notNull().default('New'),
@@ -149,6 +152,7 @@ export const orders = pgTable('orders', {
 }, (table) => ({
   airtableIdx:    uniqueIndex('orders_airtable_id_idx').on(table.airtableId),
   appOrderIdIdx:  uniqueIndex('orders_app_order_id_idx').on(table.appOrderId),
+  wixOrderIdIdx:  uniqueIndex('orders_wix_order_id_idx').on(table.wixOrderId),
   customerDateIdx: index('orders_customer_date_idx').on(table.customerId, table.orderDate),
   // Drives "today's work" queries (dashboard tab) — narrow partial index keeps it cheap.
   activeStatusIdx: index('orders_active_status_idx').on(table.status, table.requiredBy),
@@ -204,6 +208,8 @@ export const deliveries = pgTable('deliveries', {
   deliveryMethod:     text('delivery_method'),  // 'Driver' | 'Self'
   driverPayout:       numeric('driver_payout', { precision: 10, scale: 2 }),
   status:             text('status').notNull().default('Pending'),
+  // Stamped by the route layer when Status flips to Delivered. Migrated in 0004.
+  deliveredAt:        timestamp('delivered_at', { withTimezone: true }),
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt:          timestamp('deleted_at', { withTimezone: true }),

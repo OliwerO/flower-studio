@@ -60,7 +60,86 @@ async function seedPgFromFixture() {
   if (stockInserts.length) {
     await db.insert(stock).values(stockInserts);
   }
-  return { stock: stockInserts.length, orders: 0, lines: 0, deliveries: 0 };
+
+  // Seed orders + lines + deliveries when ORDER_BACKEND uses Postgres.
+  // The fixture's customer_id column holds the recXXX ids — Phase 5 migrates
+  // those to a uuid FK; until then text is fine.
+  const orderBackend = (process.env.ORDER_BACKEND || 'airtable').toLowerCase();
+  let orderCount = 0, lineCount = 0, deliveryCount = 0;
+  if (orderBackend === 'postgres') {
+    const orderRows = [..._getTable(TABLES.ORDERS).values()];
+    const orderIdMap = new Map(); // airtable rec → PG uuid
+    for (const r of orderRows) {
+      const [inserted] = await db.insert(orders).values({
+        airtableId:          r.id,
+        appOrderId:          r['App Order ID'],
+        customerId:          (r.Customer?.[0]) || 'unknown',
+        status:              r.Status || 'New',
+        deliveryType:        r['Delivery Type'],
+        orderDate:           r['Order Date'] || new Date().toISOString().split('T')[0],
+        requiredBy:          r['Required By'] || null,
+        deliveryTime:        r['Delivery Time'] || null,
+        customerRequest:     r['Customer Request'] || null,
+        notesOriginal:       r['Notes Original'] || null,
+        floristNote:         r['Florist Note'] || null,
+        greetingCardText:    r['Greeting Card Text'] || null,
+        source:              r.Source || null,
+        communicationMethod: r['Communication method'] || null,
+        paymentStatus:       r['Payment Status'] || 'Unpaid',
+        paymentMethod:       r['Payment Method'] || null,
+        priceOverride:       r['Price Override'] != null ? String(r['Price Override']) : null,
+        deliveryFee:         r['Delivery Fee'] != null ? String(r['Delivery Fee']) : null,
+        createdBy:           r['Created By'] || null,
+        payment1Amount:      r['Payment 1 Amount'] != null ? String(r['Payment 1 Amount']) : null,
+        payment1Method:      r['Payment 1 Method'] || null,
+      }).returning({ id: orders.id });
+      orderIdMap.set(r.id, inserted.id);
+      orderCount++;
+    }
+
+    const lineRows = [..._getTable(TABLES.ORDER_LINES).values()];
+    for (const r of lineRows) {
+      const orderRecId = r.Order?.[0];
+      const orderUuid = orderIdMap.get(orderRecId);
+      if (!orderUuid) continue;
+      await db.insert(orderLines).values({
+        airtableId:        r.id,
+        orderId:           orderUuid,
+        stockItemId:       r['Stock Item']?.[0] || null,
+        flowerName:        r['Flower Name'] || '',
+        quantity:          Number(r.Quantity ?? 0),
+        costPricePerUnit:  r['Cost Price Per Unit'] != null ? String(r['Cost Price Per Unit']) : null,
+        sellPricePerUnit:  r['Sell Price Per Unit'] != null ? String(r['Sell Price Per Unit']) : null,
+        stockDeferred:     Boolean(r['Stock Deferred']),
+      });
+      lineCount++;
+    }
+
+    const deliveryRows = [..._getTable(TABLES.DELIVERIES).values()];
+    for (const r of deliveryRows) {
+      const orderRecId = r['Linked Order']?.[0];
+      const orderUuid = orderIdMap.get(orderRecId);
+      if (!orderUuid) continue;
+      await db.insert(deliveries).values({
+        airtableId:        r.id,
+        orderId:           orderUuid,
+        deliveryAddress:   r['Delivery Address'] || null,
+        recipientName:     r['Recipient Name'] || null,
+        recipientPhone:    r['Recipient Phone'] || null,
+        deliveryDate:      r['Delivery Date'] || null,
+        deliveryTime:      r['Delivery Time'] || null,
+        assignedDriver:    r['Assigned Driver'] || null,
+        deliveryFee:       r['Delivery Fee'] != null ? String(r['Delivery Fee']) : null,
+        driverInstructions: r['Driver Instructions'] || null,
+        deliveryMethod:    r['Delivery Method'] || null,
+        driverPayout:      r['Driver Payout'] != null ? String(r['Driver Payout']) : null,
+        status:            r.Status || 'Pending',
+      });
+      deliveryCount++;
+    }
+  }
+
+  return { stock: stockInserts.length, orders: orderCount, lines: lineCount, deliveries: deliveryCount };
 }
 
 router.post('/reset', async (_req, res, next) => {

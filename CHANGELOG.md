@@ -41,6 +41,93 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-04-30 — Phase 4 read-path migration: routes through orderRepo, harness 153/153 in postgres mode
+
+The Phase 4 cutover was half-complete — `orderService.createOrder` and the
+state machine delegated to `orderRepo` when `ORDER_BACKEND != 'airtable'`,
+but read-side routes still hit Airtable directly. Flipping
+`ORDER_BACKEND=postgres` in the harness exposed 19 failures across 8
+sections (BACKLOG item 3a). This commit closes them.
+
+### What changed
+
+**`backend/src/repos/orderRepo.js`** — new methods + extended filters:
+- `listFromPg` now accepts `pg.{deliveryType, paymentStatus, paymentMethod,
+  paymentMethodNotRecorded, source, sourceOther, forDate, orderDateFrom,
+  completedSinceFallback}` so the route's full filter surface translates to
+  PG.
+- `listDeliveries` / `getDeliveryById` — mirror the orders read API for
+  deliveries (date / from-to / status / driver filters).
+- `updateOrder` / `updateDelivery` / `updateOrderLine` / `convertToDelivery`
+  — write paths used by `routes/orders.js` PATCH non-status, convert-to-
+  delivery, swap-bouquet-line and `routes/deliveries.js` PATCH. Each
+  branches on backend mode; postgres path is single-tx with cascade
+  (Required By → delivery, delivery Status → order).
+- `listByIds` — bulk-fetch orders by mixed Airtable / PG ids (used by
+  delivery enrichment).
+- `findByWixOrderId` / `mirrorAirtableOrder` — used by the Wix webhook so
+  `processWixOrder` writes airtable mock first (today's behaviour) then
+  mirrors the order/lines/delivery to PG when `ORDER_BACKEND=postgres`,
+  with the recXXX id preserved on `airtable_id` for traceability.
+- `renderOrderRow` now embeds `_lines` + `_delivery` on every PG-mode
+  response so callers can skip a round-trip through `airtable.list`
+  (which targets PG-native UUIDs the mock won't resolve). Routes strip
+  before responding.
+- `transitionStatus` cascade now stamps `deliveredAt` when cascading the
+  delivery to `Delivered` — fixes the missing timestamp surfaced by
+  Section 4.
+
+**`backend/src/db/migrations/0004_phase4_followup.sql`** — additive:
+- `deliveries.delivered_at timestamptz null` (driver-app stamp).
+- `orders.wix_order_id text null` + partial-unique index (Wix idempotency).
+
+**`backend/src/db/schema.js`** — new columns reflected.
+
+**`backend/src/routes/orders.js`** — GET / GET /:id / PATCH /:id (non-status) /
+convert-to-delivery / swap-bouquet-line all go through `orderRepo`. The
+PATCH price-mismatch backfill reads via `orderRepo.getById` and uses the
+embedded `_lines` / `_delivery` when present.
+
+**`backend/src/routes/deliveries.js`** — GET / PATCH /:id go through
+`orderRepo.listDeliveries` + `orderRepo.updateDelivery`. The cascade to
+`orders.status` now lives inside `updateDelivery`'s tx (postgres) or
+follow-up update (airtable), not at route level.
+
+**`backend/src/services/wix.js`** — dedup check uses
+`orderRepo.findByWixOrderId`. After the Airtable creates succeed, calls
+`orderRepo.mirrorAirtableOrder` to copy the order/lines/delivery into PG
+(no-op in airtable mode, error-tolerant).
+
+**`backend/src/repos/orderRepo.js` (`editBouquetLines`)** — writeoff path
+buffers Stock Loss Log writes and flushes them OUTSIDE the PG tx so an
+Airtable hiccup doesn't roll back the order edit. Stock Loss Log stays on
+Airtable until Phase 6.
+
+**`backend/src/routes/test.js`** — `seedPgFromFixture` now seeds orders +
+lines + deliveries from the fixture when `ORDER_BACKEND=postgres`.
+
+**`backend/scripts/start-test-backend.js`** — harness default flipped from
+`ORDER_BACKEND=airtable` to `postgres`. Override with
+`HARNESS_ORDER_BACKEND=airtable` to validate the legacy path.
+
+### Verification
+
+- `npm run harness` (postgres default) + `npm run test:e2e` → 153/153.
+- `HARNESS_ORDER_BACKEND=airtable npm run harness` + `npm run test:e2e` →
+  153/153.
+- `cd backend && npx vitest run` → 202/202.
+
+### What "done" means now
+
+The Phase 4 cutover env flip on Railway is no longer blocked by the
+read-path. Remaining Phase 4 work: capture 3-4 prod Wix payloads for the
+replay test, then `node backend/scripts/backfill-orders.js` →
+`ORDER_BACKEND=shadow` → 1 wk → `postgres`. Phase 3 (Stock) shadow week
+must complete first — Phase 4's createOrder runs `stockRepo` adjustments
+inside its tx, so stock must be on PG before orders can flip.
+
+---
+
 ## 2026-04-28 — Phase 3b follow-on: cutover validation + CI + Wix replay + Playwright scaffold
 
 This commit completes the testing-suite roadmap in five sequential steps.
