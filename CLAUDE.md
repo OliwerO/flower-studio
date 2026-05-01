@@ -150,6 +150,43 @@ Every script in `scripts/` and `backend/scripts/` carries one category in a head
 | DESTRUCTIVE | Mutates prod Airtable / Railway PG. Requires explicit owner approval phrase before run. | `scripts/cleanup-test-orders.js`, `backend/scripts/backfill-stock.js` (idempotent but writes prod) |
 | STALE | Pending deletion — kept only because removal isn't free. Never run. | `scripts/create-dev-base.js`, `scripts/setup-dev-base.js` (dev-base path was abandoned) |
 
+## Working During Shadow Windows
+
+A "shadow window" is the 7-day period between flipping a domain to `<DOMAIN>_BACKEND=shadow` (writes go to BOTH Airtable and Postgres, reads still come from Airtable, parity is logged) and flipping it to `postgres` (PG becomes source of truth). It is a runtime mode, **not a code freeze.** Bug fixes and features ship normally — but the constrained domain has rules.
+
+### Phase status check before working
+1. Read the "Migration cutover state" block at the top of `BACKLOG.md`. It records which `*_BACKEND` flag is at which value, and when the shadow window started.
+2. The constrained domain is whichever flag is currently at `shadow`. As of 2026-04-30: **Stock**.
+3. Validate at any time with `CLAUDE_RO_URL='<from railway>' node backend/scripts/shadow-health.js`. Output should say "✓ Shadow-write is healthy. No parity issues to investigate."
+
+### Domain decision table (Stock shadow example — generalises to whichever domain is in shadow)
+
+| You're touching... | Shadow-domain risk | What to do |
+|---|---|---|
+| UI / read-only feature / analytics / new report | None | Ship normally. |
+| A non-shadowed domain (orders, customers, POs, deliveries, hours, marketing, Wix sync) | None | Ship normally. |
+| A bug fix in routes already going through `stockRepo` | Low | Ship — `stockRepo` dispatches to the right store. Add or update an integration test if write semantics change. |
+| A new feature that **writes** to the shadowed domain | Medium | Must use the repo (`stockRepo.update / .create / .atomicAdjust`). **Never** call `airtable.atomicStockAdjust()` directly — it bypasses the shadow path. New write paths require a `*.integration.test.js` exercising them against pglite. |
+| Adding a column to the shadowed table | High — schema drift | See "Schema changes" sequence below. |
+| A backfill / data-migration script | High | Run against prod only with explicit owner approval. Idempotent or it doesn't ship. |
+
+### Schema changes — strict sequence
+A new column on a shadowed entity must land in lockstep across both stores or `parity_log` will fire on every record.
+
+1. **Airtable first** — owner adds the column in Airtable UI (production base). Confirms correct field name + type.
+2. **PG migration** — Drizzle migration (`backend/src/db/migrations/`) adds the column. Commit + deploy.
+3. **Mappers updated in the SAME PR** — `airtableTo*` / `*ToAirtable` in the affected repo (`stockRepo.js`, `orderRepo.js`, etc.). Otherwise reads/writes silently drop the field.
+4. **Wait 24h** — let the next day's writes flow through the new field.
+5. **Re-run shadow-health** — confirm `parity_log` is still 0. THEN start writing the field in business logic (services, routes).
+
+### Discipline during shadow
+- **Don't edit Airtable directly while shadow is on.** Owner-side manual stock edits in the Airtable UI bypass the backend → PG never sees them → next shadow-write reports a divergence that isn't real. If you need to fix Airtable data, do it through the app (florist or dashboard), which routes through `stockRepo`.
+- **Treat parity_log → freeze trigger.** If `parity_log` row count goes 0 → N during a shadow window, freeze merges that touch the constrained domain until root cause is found and parity is restored to 0. The shadow-health agent (Telegram, daily) is the canary.
+- **Don't try to "speed-run" the shadow week.** The 7 clean days exist to catch race conditions, edge-case writes (cancel-with-return, bouquet edit, premade dissolve), and concurrent multi-actor sequences. Cutting it short trades a week of caution for hours of incident.
+
+### Mixed-mode is rejected at boot
+The boot guard in `backend/src/index.js` refuses combinations that split a single business operation across two stores. Specifically: `ORDER_BACKEND=postgres` requires `STOCK_BACKEND=postgres`; `ORDER_BACKEND=shadow` requires `STOCK_BACKEND ∈ {shadow, postgres}`. Order creation deducts stock — running orders on PG while stock stays on Airtable would commit one half on each store with no shared transaction. Always cut over the dependency-leaf domain (stock) before its dependents (orders).
+
 ## Change Summaries (IMPORTANT)
 After completing each logical step of work (not just at the end), write a short **owner-friendly summary** explaining:
 1. **What changed** — which files, what was added/removed/moved
