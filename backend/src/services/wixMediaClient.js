@@ -45,3 +45,23 @@ export async function generateUploadUrl({ mimeType, fileName, parentFolderId }) 
   }
   return res.json();
 }
+
+/**
+ * PUTs file bytes to a signed upload URL returned by generateUploadUrl.
+ * @param {string} uploadUrl - signed URL from generateUploadUrl
+ * @param {Buffer} buffer
+ * @param {string} mimeType
+ * @returns {Promise<{ file: { id: string, url: string, ... } }>}
+ */
+export async function uploadFile(uploadUrl, buffer, mimeType) {
+  const res = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers: { 'Content-Type': mimeType },
+    body: buffer,
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix Media uploadFile ${res.status}: ${text}`);
+  }
+  return res.json();
+}

@@ -40,3 +40,33 @@ describe('wixMediaClient.generateUploadUrl', () => {
       .rejects.toThrow(/401.*invalid token/);
   });
 });
+
+describe('wixMediaClient.uploadFile', () => {
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); });
+
+  it('PUTs the buffer to the signed URL with Content-Type and returns parsed file descriptor', async () => {
+    fetch.mockResolvedValue({
+      ok: true,
+      json: async () => ({ file: { id: 'file-1', url: 'https://static.wixstatic.com/x.jpg' } }),
+    });
+    const { uploadFile } = await import('../services/wixMediaClient.js');
+    const buf = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
+    const out = await uploadFile('https://upload.wix.com/signed/abc', buf, 'image/jpeg');
+    expect(out).toEqual({ file: { id: 'file-1', url: 'https://static.wixstatic.com/x.jpg' } });
+    expect(fetch).toHaveBeenCalledWith(
+      'https://upload.wix.com/signed/abc',
+      expect.objectContaining({
+        method: 'PUT',
+        headers: { 'Content-Type': 'image/jpeg' },
+        body: buf,
+      })
+    );
+  });
+
+  it('throws on non-2xx', async () => {
+    fetch.mockResolvedValue({ ok: false, status: 413, text: async () => 'too large' });
+    const { uploadFile } = await import('../services/wixMediaClient.js');
+    await expect(uploadFile('https://x', Buffer.alloc(0), 'image/png'))
+      .rejects.toThrow(/413.*too large/);
+  });
+});
