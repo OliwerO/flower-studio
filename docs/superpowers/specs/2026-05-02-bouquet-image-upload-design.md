@@ -151,7 +151,7 @@ Thin REST wrapper over `https://www.wixapis.com/site-media/v1/...`. Methods:
 
 All methods reuse `wixHeaders()` style. Throws on non-2xx with response body in the error message (no silent catches).
 
-### 6.3 New: `repositories/productRepo.js`
+### 6.3 New: `repos/productRepo.js`
 
 Minimal repo, lives next to `stockRepo.js` / `orderRepo.js`:
 
@@ -243,7 +243,7 @@ New section: owner uploads PNG bouquet image → GET `/orders/:id` for an order 
 - `packages/shared/test/BouquetImageEditor.test.jsx`
 - `packages/shared/api/uploadImage.js`
 - `backend/src/services/wixMediaClient.js`
-- `backend/src/repositories/productRepo.js`
+- `backend/src/repos/productRepo.js`
 - `backend/src/__tests__/wixMediaClient.test.js`
 - `backend/src/__tests__/productRepo.test.js`
 - `backend/src/__tests__/products.image.integration.test.js`
@@ -262,7 +262,7 @@ New section: owner uploads PNG bouquet image → GET `/orders/:id` for an order 
 - `backend/src/routes/products.js` (POST + DELETE image endpoints)
 - `backend/src/routes/orders.js` (bouquet summary enrichment)
 - `backend/src/routes/deliveries.js` (bouquet summary enrichment)
-- `backend/CLAUDE.md` (mention productRepo + wixMediaClient if those CLAUDE.md files cover services/repositories)
+- `backend/CLAUDE.md` (mention productRepo + wixMediaClient in services/repos tables)
 - `BACKLOG.md` (mark feature shipped under Phase 2 — Florist App / Phase 3 — Delivery App parity item)
 - `CHANGELOG.md` (env scope note for `WIX_API_KEY`; new endpoints; `audit_log` action types)
 
