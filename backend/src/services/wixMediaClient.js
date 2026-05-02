@@ -65,3 +65,50 @@ export async function uploadFile(uploadUrl, buffer, mimeType) {
   }
   return res.json();
 }
+
+/**
+ * Polls GET /files/:id until file.state === 'OK' or timeout.
+ * Wix takes 1–10s for typical images; raise timeoutMs if you see 504s.
+ * @param {string} fileId
+ * @param {object} [opts]
+ * @param {number} [opts.timeoutMs=10000]
+ * @param {number} [opts.intervalMs=400]
+ */
+export async function pollForReady(fileId, opts = {}) {
+  const timeoutMs = opts.timeoutMs ?? 10000;
+  const intervalMs = opts.intervalMs ?? 400;
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const res = await fetch(`${WIX_API_URL}/site-media/v1/files/${fileId}`, {
+      method: 'GET',
+      headers: wixHeaders(),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`Wix Media pollForReady ${res.status}: ${text}`);
+    }
+    const json = await res.json();
+    if (json.file?.state === 'OK') return json.file;
+    await new Promise(r => setTimeout(r, intervalMs));
+  }
+  throw new Error(`Wix Media pollForReady timeout after ${timeoutMs}ms (fileId=${fileId})`);
+}
+
+/**
+ * Best-effort bulk delete. Caller should not rely on this for cleanup
+ * correctness; orphaned files are tracked in sync_log for owner review.
+ * @param {string[]} fileIds
+ */
+export async function deleteFiles(fileIds) {
+  if (!fileIds || fileIds.length === 0) return;
+  const res = await fetch(`${WIX_API_URL}/site-media/v1/bulk/files/delete`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ fileIds }),
+  });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix Media deleteFiles ${res.status}: ${text}`);
+  }
+  return res.json();
+}

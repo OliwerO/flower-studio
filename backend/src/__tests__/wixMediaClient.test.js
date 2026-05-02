@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 describe('wixMediaClient.generateUploadUrl', () => {
   beforeEach(() => {
@@ -68,5 +68,49 @@ describe('wixMediaClient.uploadFile', () => {
     const { uploadFile } = await import('../services/wixMediaClient.js');
     await expect(uploadFile('https://x', Buffer.alloc(0), 'image/png'))
       .rejects.toThrow(/413.*too large/);
+  });
+});
+
+describe('wixMediaClient.pollForReady', () => {
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+    vi.useFakeTimers();
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('returns the file once state is OK', async () => {
+    fetch
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ file: { id: 'f', state: 'PENDING' } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ file: { id: 'f', state: 'OK', url: 'u' } }) });
+    const { pollForReady } = await import('../services/wixMediaClient.js');
+    const promise = pollForReady('f', { timeoutMs: 5000, intervalMs: 200 });
+    await vi.advanceTimersByTimeAsync(250);
+    const out = await promise;
+    expect(out).toEqual({ id: 'f', state: 'OK', url: 'u' });
+  });
+
+  it('throws on timeout', async () => {
+    fetch.mockResolvedValue({ ok: true, json: async () => ({ file: { id: 'f', state: 'PENDING' } }) });
+    const { pollForReady } = await import('../services/wixMediaClient.js');
+    const promise = pollForReady('f', { timeoutMs: 1000, intervalMs: 100 });
+    await vi.advanceTimersByTimeAsync(1100);
+    await expect(promise).rejects.toThrow(/timeout/i);
+  });
+});
+
+describe('wixMediaClient.deleteFiles', () => {
+  beforeEach(() => { vi.stubGlobal('fetch', vi.fn()); });
+
+  it('POSTs file ids to bulk delete endpoint', async () => {
+    fetch.mockResolvedValue({ ok: true, json: async () => ({ results: [] }) });
+    const { deleteFiles } = await import('../services/wixMediaClient.js');
+    await deleteFiles(['f1', 'f2']);
+    expect(fetch).toHaveBeenCalledWith(
+      'https://www.wixapis.com/site-media/v1/bulk/files/delete',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"fileIds":["f1","f2"]'),
+      })
+    );
   });
 });
