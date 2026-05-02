@@ -1,6 +1,54 @@
 import { useEffect, useRef, useState } from 'react';
-import { CheckCircle2, AlertTriangle, XCircle, Loader2, X, ChevronUp } from 'lucide-react';
 import client from '../api/client.js';
+
+// Inline SVG icons. Avoids pulling lucide-react into the shared package,
+// which would require every consuming app (delivery doesn't ship lucide)
+// to add it as a dep. This component is loaded by florist + dashboard, but
+// shared's index.js re-export means the module graph reaches all apps.
+const SvgBase = ({ children, className }) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    {children}
+  </svg>
+);
+const IconCheck = ({ className }) => (
+  <SvgBase className={className}>
+    <circle cx="12" cy="12" r="10" />
+    <path d="M9 12l2 2 4-4" />
+  </SvgBase>
+);
+const IconWarn = ({ className }) => (
+  <SvgBase className={className}>
+    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0Z" />
+    <line x1="12" y1="9" x2="12" y2="13" />
+    <line x1="12" y1="17" x2="12.01" y2="17" />
+  </SvgBase>
+);
+const IconError = ({ className }) => (
+  <SvgBase className={className}>
+    <circle cx="12" cy="12" r="10" />
+    <line x1="15" y1="9" x2="9" y2="15" />
+    <line x1="9" y1="9" x2="15" y2="15" />
+  </SvgBase>
+);
+const IconSpin = ({ className }) => (
+  <SvgBase className={className}>
+    <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+  </SvgBase>
+);
+const IconX = ({ className }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+const IconChevronUp = ({ className }) => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+       strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+    <polyline points="18 15 12 9 6 15" />
+  </svg>
+);
 
 // Owner-facing progress UI for Wix push.
 //
@@ -42,10 +90,10 @@ function formatTime(ms) {
 }
 
 function StatusIcon({ status }) {
-  if (status === 'done')    return <CheckCircle2 size={18} className="text-emerald-500" />;
-  if (status === 'partial') return <AlertTriangle size={18} className="text-amber-500" />;
-  if (status === 'failed')  return <XCircle size={18} className="text-rose-500" />;
-  return <Loader2 size={18} className="text-ios-blue animate-spin" />;
+  if (status === 'done')    return <IconCheck className="text-emerald-500" />;
+  if (status === 'partial') return <IconWarn className="text-amber-500" />;
+  if (status === 'failed')  return <IconError className="text-rose-500" />;
+  return <IconSpin className="text-ios-blue animate-spin" />;
 }
 
 export default function WixPushModal({ open, onClose, onComplete }) {
@@ -169,7 +217,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
             <span className="flex-1 min-w-0 text-sm text-ios-label dark:text-dark-label truncate">
               {pillLine}
             </span>
-            <ChevronUp size={16} className="text-ios-tertiary shrink-0" />
+            <IconChevronUp className="text-ios-tertiary shrink-0" />
           </button>
           {canDismiss && (
             <button
@@ -179,7 +227,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
               className="w-8 h-8 rounded-full flex items-center justify-center text-ios-tertiary
                          hover:bg-ios-fill dark:hover:bg-dark-fill"
             >
-              <X size={16} />
+              <IconX />
             </button>
           )}
         </div>

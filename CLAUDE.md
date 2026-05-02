@@ -137,6 +137,23 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 ## Verification Gate (integrations + cutovers)
 Before claiming a fix on Wix, Telegram, the order/stock cutover, or the Wix webhook, the PR description must name the automated path that proved it: an E2E section number, an integration test, the signed Wix replay, or `npm run harness` + `npm run test:e2e`. If none of those apply, prefix the PR title with `[unverified]` and require explicit owner sign-off before merge. The Wix-sync fix cluster of April 2026 (5+ patches in 2 weeks) was caused by skipping this — the signed-replay harness fixes it going forward.
 
+## Pre-PR Verification (MANDATORY before opening or pushing any PR)
+Before opening a PR or pushing changes that will trigger CI/Vercel builds, run the same checks CI runs — locally. The Mac has the compute; using it saves a round-trip and avoids the embarrassing "tests passed locally, deploy failed on Vercel" loop.
+
+**The check matrix — run all that apply to the diff:**
+1. **Backend changes** (anything in `backend/`):
+   - `cd backend && npx vitest run` — unit + integration tests
+   - `npm run harness &` then `npm run test:e2e` — 153-assertion E2E suite
+2. **Shared package changes** (anything in `packages/shared/`):
+   - `cd packages/shared && ../../backend/node_modules/.bin/vitest run` — 98 tests
+   - **Build ALL THREE apps**: `cd apps/florist && ./node_modules/.bin/vite build`, then dashboard, then delivery. Shared's `index.js` re-exports reach every app even if only one consumes a given component, so a missing dep in shared (like `lucide-react` not being in shared's peer deps) breaks any app that imports anything from shared. Vercel builds each app in isolation — local npm-workspace hoisting hides the bug. Building all three locally is the only way to catch it before deploy.
+3. **Frontend changes** in any single app: `cd apps/<that-app> && ./node_modules/.bin/vite build`. Plus build any other app that imports a file you touched in `packages/shared/`.
+4. **Static guards** (silent-catch CI guard, etc.): the guards live in `.github/workflows/test.yml` — if you added a new `catch(...)` block to backend, scan the diff for `catch (...) {}`/`catch(() => {})` patterns yourself.
+
+**Workflow:** finish work → run the matrix above → if anything fails, fix and re-run until clean → commit → push → open PR. Do not announce "ready for review" / "tests pass" / "PR opened" until **every** applicable check above has produced green output. If a check is broken (e.g. harness won't boot for unrelated reasons), say so explicitly in the PR body — don't silently skip it.
+
+**Why this matters:** Vercel preview deploys run on every PR push and are gated by the production build pipeline. A broken preview is a failed PR check that the owner sees in their inbox. The first PR for collapsible-push (May 2 2026) shipped with `lucide-react` imported in `packages/shared/components/WixPushModal.jsx` but not declared as a shared peerDep — local builds passed via npm-workspace hoisting, dashboard + delivery preview deploys failed on Vercel. Building all three apps locally before push would have caught it.
+
 ## Stale-doc rule
 Any markdown doc whose body references current state and is dated >30 days old must be updated in the same session that touches it, or moved to `docs/archive/` with an "ARCHIVED YYYY-MM-DD" banner explaining what changed. Stale planning docs poison future Claude context — they get loaded into prompts and quietly contradict reality.
 
