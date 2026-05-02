@@ -18,7 +18,11 @@ export default function ProductsTab() {
   const [pulling, setPulling] = useState(false);
   // Async-job UX: opening the modal kicks off POST /products/push and the
   // modal polls for progress until done. See WixPushModal in shared.
+  // The modal stays as a dismissable floating pill after completion, so
+  // we track `pushing` separately to drive the button state during the
+  // active job only.
   const [pushModalOpen, setPushModalOpen] = useState(false);
+  const [pushing, setPushing] = useState(false);
   const [syncHistory, setSyncHistory] = useState([]);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -122,11 +126,12 @@ export default function ProductsTab() {
   }
 
   function handlePush() {
-    // Modal owns the async-job lifecycle now. See packages/shared/components/WixPushModal.jsx.
     setPushModalOpen(true);
+    setPushing(true);
   }
 
   function onPushComplete(result) {
+    setPushing(false);
     fetchProducts();
     if (result?.errors?.length > 0) {
       showToast(`${t.prodPushDone} (${result.errors.length})`, 'success');
@@ -197,13 +202,13 @@ export default function ProductsTab() {
           {syncHistory.length > 0 && <SyncStatus logs={syncHistory} />}
         </div>
         <div className="flex gap-2">
-          <button onClick={handlePull} disabled={pulling || pushModalOpen}
+          <button onClick={handlePull} disabled={pulling || pushing}
             className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
             {pulling ? t.prodSyncing : t.prodPullFromWix}
           </button>
-          <button onClick={handlePush} disabled={pulling || pushModalOpen}
+          <button onClick={handlePush} disabled={pulling || pushing}
             className="px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {pushModalOpen ? t.prodSyncing : t.prodPushToWix}
+            {pushing ? t.prodSyncing : t.prodPushToWix}
           </button>
         </div>
       </div>

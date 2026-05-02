@@ -8,7 +8,7 @@ import VariantList from './VariantList.jsx';
 // into a single-tap control (toggle-all) for the common case, and expands on
 // demand so the owner can manage individual sizes without leaving the page.
 
-export default function BouquetCard({ group, onToggleAll, onToggleVariant }) {
+export default function BouquetCard({ group, onToggleAll, onToggleVariant, onUpdatePrice }) {
   const [expanded, setExpanded] = useState(false);
   const count = activeCount(group);
   const total = group.variants.length;
@@ -104,7 +104,11 @@ export default function BouquetCard({ group, onToggleAll, onToggleVariant }) {
       </div>
 
       {expanded && (
-        <VariantList variants={group.variants} onToggleVariant={onToggleVariant} />
+        <VariantList
+          variants={group.variants}
+          onToggleVariant={onToggleVariant}
+          onUpdatePrice={onUpdatePrice}
+        />
       )}
     </div>
   );
