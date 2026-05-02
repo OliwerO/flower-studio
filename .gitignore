@@ -18,3 +18,6 @@ tmp_*.json
 *.backup
 C\357\200\272*
 backend/package-lock.json
+
+# Git worktrees for isolated dev sessions (per CLAUDE.md "Default Workflow Skills")
+.worktrees/
