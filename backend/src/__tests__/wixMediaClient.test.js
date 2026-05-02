@@ -93,8 +93,9 @@ describe('wixMediaClient.pollForReady', () => {
     fetch.mockResolvedValue({ ok: true, json: async () => ({ file: { id: 'f', state: 'PENDING' } }) });
     const { pollForReady } = await import('../services/wixMediaClient.js');
     const promise = pollForReady('f', { timeoutMs: 1000, intervalMs: 100 });
+    const assertion = expect(promise).rejects.toThrow(/timeout/i);
     await vi.advanceTimersByTimeAsync(1100);
-    await expect(promise).rejects.toThrow(/timeout/i);
+    await assertion;
   });
 });
 
