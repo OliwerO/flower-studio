@@ -6,6 +6,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import { runSync, runPull, runPush } from '../services/wixProductSync.js';
+import { startPushJob, getJob } from '../services/wixPushJob.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import Anthropic from '@anthropic-ai/sdk';
@@ -35,8 +36,29 @@ router.post('/pull', requireWixCreds, async (req, res, next) => {
   } catch (err) { next(err); }
 });
 
-// POST /api/products/push — export from dashboard → Wix
-router.post('/push', requireWixCreds, async (req, res, next) => {
+// POST /api/products/push — start an async push job.
+// Returns 202 + { jobId } immediately. Wix work happens in the background;
+// poll GET /products/push/status/:jobId for progress + final result.
+// See backend/src/services/wixPushJob.js for the rationale (Vercel edge
+// proxy was timing out long pushes and the UI was reporting failures on
+// successful backend runs).
+router.post('/push', requireWixCreds, (req, res) => {
+  const { jobId, alreadyRunning } = startPushJob();
+  res.status(202).json({ jobId, alreadyRunning });
+});
+
+// GET /api/products/push/status/:jobId — poll a push job's progress.
+// Owner-friendly Russian log entries live in `log[]`; final stats land
+// in `result` once `status` flips to `done` / `partial` / `failed`.
+router.get('/push/status/:jobId', (req, res) => {
+  const job = getJob(req.params.jobId);
+  if (!job) return res.status(404).json({ error: 'Job not found or expired.' });
+  res.json(job);
+});
+
+// POST /api/products/push/sync — synchronous push, kept for legacy
+// callers and ad-hoc curl debugging. UI no longer hits this — see /push.
+router.post('/push/sync', requireWixCreds, async (req, res, next) => {
   try {
     const stats = await runPush();
     res.json(stats);

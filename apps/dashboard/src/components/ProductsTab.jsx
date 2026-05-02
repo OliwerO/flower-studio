@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { WixPushModal } from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -15,7 +16,9 @@ export default function ProductsTab() {
   const [categories, setCategories] = useState([]);
   const [loading, setLoading] = useState(true);
   const [pulling, setPulling] = useState(false);
-  const [pushing, setPushing] = useState(false);
+  // Async-job UX: opening the modal kicks off POST /products/push and the
+  // modal polls for progress until done. See WixPushModal in shared.
+  const [pushModalOpen, setPushModalOpen] = useState(false);
   const [syncHistory, setSyncHistory] = useState([]);
   const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
@@ -118,33 +121,17 @@ export default function ProductsTab() {
     }
   }
 
-  async function handlePush() {
-    setPushing(true);
-    try {
-      const res = await client.post('/products/push');
-      const s = res.data;
-      // Same silent-catch pattern as handlePull — surface actual errors
-      // instead of just a count, which didn't help the owner diagnose
-      // what's broken (was showing "3 errors" with no explanation).
-      if (s.errors?.length > 0) {
-        showToast(s.errors.join(' · '), 'error');
-        fetchProducts();
-        return;
-      }
-      const parts = [];
-      if (s.pricesSynced) parts.push(`${s.pricesSynced} ${t.prodPriceSyncs}`);
-      if (s.visibilitySynced) parts.push(`${s.visibilitySynced} ${t.prodVisibility}`);
-      if (s.stockSynced) parts.push(`${s.stockSynced} ${t.prodStockSyncs}`);
-      if (s.categoriesSynced) parts.push(`${s.categoriesSynced} ${t.prodCategorySyncs}`);
-      showToast(
-        `${t.prodPushDone}${parts.length ? ': ' + parts.join(', ') : ''}`,
-        'success'
-      );
-      fetchProducts();
-    } catch {
-      showToast(t.prodSyncFailed, 'error');
-    } finally {
-      setPushing(false);
+  function handlePush() {
+    // Modal owns the async-job lifecycle now. See packages/shared/components/WixPushModal.jsx.
+    setPushModalOpen(true);
+  }
+
+  function onPushComplete(result) {
+    fetchProducts();
+    if (result?.errors?.length > 0) {
+      showToast(`${t.prodPushDone} (${result.errors.length})`, 'success');
+    } else {
+      showToast(t.prodPushDone, 'success');
     }
   }
 
@@ -210,13 +197,13 @@ export default function ProductsTab() {
           {syncHistory.length > 0 && <SyncStatus logs={syncHistory} />}
         </div>
         <div className="flex gap-2">
-          <button onClick={handlePull} disabled={pulling || pushing}
+          <button onClick={handlePull} disabled={pulling || pushModalOpen}
             className="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors">
             {pulling ? t.prodSyncing : t.prodPullFromWix}
           </button>
-          <button onClick={handlePush} disabled={pulling || pushing}
+          <button onClick={handlePush} disabled={pulling || pushModalOpen}
             className="px-4 py-2 bg-brand-600 text-white rounded-xl text-sm font-medium hover:bg-brand-700 disabled:opacity-50 transition-colors">
-            {pushing ? t.prodSyncing : t.prodPushToWix}
+            {pushModalOpen ? t.prodSyncing : t.prodPushToWix}
           </button>
         </div>
       </div>
@@ -370,6 +357,12 @@ export default function ProductsTab() {
       )}
 
       {!loading && <SyncLogSection logs={syncHistory} />}
+
+      <WixPushModal
+        open={pushModalOpen}
+        onClose={() => setPushModalOpen(false)}
+        onComplete={onPushComplete}
+      />
     </div>
   );
 }

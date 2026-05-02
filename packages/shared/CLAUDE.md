@@ -21,6 +21,7 @@ components/
   EmptyState.jsx              → Empty-list illustration + CTA
   FilterBar.jsx               → Search + filter chips composite
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
+  WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
 hooks/
   useOrderEditing.js          → Shared bouquet editing logic (stock filtering, line management)
   useOrderPatching.js         → Shared order/delivery PATCH helpers (patchOrder, patchDelivery)

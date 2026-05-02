@@ -24,6 +24,7 @@ export { default as ListItem } from './components/ListItem.jsx';
 export { default as EmptyState } from './components/EmptyState.jsx';
 export { default as FilterBar } from './components/FilterBar.jsx';
 export { default as IconButton } from './components/IconButton.jsx';
+export { default as WixPushModal } from './components/WixPushModal.jsx';
 
 // New utils
 export {
