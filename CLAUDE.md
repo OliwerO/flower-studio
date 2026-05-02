@@ -126,6 +126,21 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 - `backend/src/routes/` — all API endpoints
 - `packages/shared/` — shared contexts, hooks, API client, utils
 
+## Default Workflow Skills (mandatory for non-trivial work)
+
+For any feature/bugfix that takes more than a one-line change, this is the default sequence. Future Claude sessions in this repo should follow it without being asked:
+
+1. **`superpowers:brainstorming`** — explore intent + design BEFORE writing code. Invoked before any plan-mode entry. Skip only if the user has already locked in scope.
+2. **`superpowers:writing-plans`** — produce a phased implementation plan saved under `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`. Plans use bite-sized checkbox steps with exact code + commands, no placeholders.
+3. **`superpowers:using-git-worktrees`** — create an isolated worktree under `.worktrees/<feature>/` so the session has its own checkout, branch, and index. **Never share the main repo's working tree across two Claude sessions** — the cross-session git collisions of 2026-05-02 (stray commits, branch flips mid-task, mangled commit messages) were caused by this. Main repo (top-level checkout) stays on `master` for general operations only.
+4. **`superpowers:subagent-driven-development`** — execute plan tasks via fresh subagents with two-stage review between tasks. Keeps the main context clean and parallelises independent work.
+5. **`superpowers:test-driven-development`** — write the failing test first, then the minimal implementation. Required for backend services + shared utils per the Testing Rules section above.
+6. **`superpowers:verification-before-completion`** — run the actual verification commands (tests, builds, smoke tests) and confirm their output BEFORE claiming the work is done. Evidence beats assertion. Especially load-bearing for prod cutovers and integration changes (also see "Verification Gate" below).
+
+Skip the chain only for: typo fixes, one-line bugfixes obvious from a stack trace, dependency bumps, or doc-only PRs.
+
+If two Claude sessions are active in this repo simultaneously, **each session must operate in its own worktree** under `.worktrees/`. Use `git worktree list` before any branch operation to see who's on what.
+
 ## Workflow Rules
 - Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
 - Check off completed items in `BACKLOG.md`
