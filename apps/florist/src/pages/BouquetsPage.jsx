@@ -28,10 +28,12 @@ export default function BouquetsPage() {
   const [loading, setLoading] = useState(true);
   const [pulling, setPulling] = useState(false);
   // Async-job UX: opening the modal kicks off POST /products/push and the
-  // modal polls for progress until done. Replaces a single 80s axios call
-  // that was hitting the Vercel edge proxy timeout and reporting failure
-  // on successful pushes.
+  // component polls for progress until done. The modal stays as a small
+  // floating pill after completion until the user dismisses it, so we
+  // track `pushing` separately to drive button-disable state during the
+  // active job only.
   const [pushModalOpen, setPushModalOpen] = useState(false);
+  const [pushing, setPushing] = useState(false);
   // Tracks bouquet product IDs that have been modified locally since the last
   // successful push. Cleared on a successful POST /products/push.
   const [dirtyIds, setDirtyIds] = useState(() => new Set());
@@ -109,6 +111,22 @@ export default function BouquetsPage() {
     }
   }
 
+  // Inline price edit — mirrors dashboard ProductCard.jsx.
+  // The change is local-only until the next push (matches active-toggle semantics).
+  async function updateVariantPrice(variant, nextPrice) {
+    const productId = variant['Wix Product ID'] || variant.id;
+    const prevPrice = Number(variant.Price || 0);
+    markDirty(productId);
+    setRows(prev => prev.map(r => r.id === variant.id ? { ...r, Price: nextPrice } : r));
+    try {
+      await client.patch(`/products/${variant.id}`, { Price: nextPrice });
+    } catch (err) {
+      setRows(prev => prev.map(r => r.id === variant.id ? { ...r, Price: prevPrice } : r));
+      const msg = err.response?.data?.error || t.syncFailed;
+      showToast(msg, 'error');
+    }
+  }
+
   // Pull — brings fresh data from Wix back into Airtable (new products, price
   // changes, image updates). Use this when the owner added a bouquet on Wix
   // directly and wants it visible here without waiting for a scheduled sync.
@@ -145,12 +163,12 @@ export default function BouquetsPage() {
   }
 
   function pushToWix() {
-    // Opening the modal starts the async job and polls until done.
-    // No setPushing here — the modal owns its own state.
     setPushModalOpen(true);
+    setPushing(true);
   }
 
   function onPushComplete(result) {
+    setPushing(false);
     setDirtyIds(new Set());
     if (result?.errors?.length > 0) {
       showToast(`${t.syncSuccess} (${result.errors.length} предупр.)`, 'success');
@@ -182,7 +200,7 @@ export default function BouquetsPage() {
         <button
           type="button"
           onClick={pullFromWix}
-          disabled={pulling || pushModalOpen}
+          disabled={pulling || pushing}
           aria-label={t.pullFromWix}
           className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/20
                      text-ios-blue text-sm font-semibold active-scale disabled:opacity-50"
@@ -193,12 +211,12 @@ export default function BouquetsPage() {
         <button
           type="button"
           onClick={pushToWix}
-          disabled={pulling || pushModalOpen}
+          disabled={pulling || pushing}
           aria-label={t.pushToWix}
           className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/20
                      text-emerald-700 dark:text-emerald-400 text-sm font-semibold active-scale disabled:opacity-50"
         >
-          {pushModalOpen ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+          {pushing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
           <span>{t.pushShort}</span>
         </button>
       </header>
@@ -257,11 +275,12 @@ export default function BouquetsPage() {
             group={group}
             onToggleAll={toggleAll}
             onToggleVariant={toggleVariant}
+            onUpdatePrice={updateVariantPrice}
           />
         ))}
       </div>
 
-      <PushBar count={dirtyIds.size} pushing={pushModalOpen} />
+      <PushBar count={dirtyIds.size} pushing={pushing} />
 
       <WixPushModal
         open={pushModalOpen}
