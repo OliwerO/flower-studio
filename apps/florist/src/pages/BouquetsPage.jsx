@@ -23,6 +23,7 @@ export default function BouquetsPage() {
   const { showToast } = useToast();
 
   const [rows, setRows]       = useState([]);
+  const [categories, setCategories] = useState([]);
   const [filter, setFilter]   = useState('all');
   const [search, setSearch]   = useState('');
   const [loading, setLoading] = useState(true);
@@ -43,8 +44,12 @@ export default function BouquetsPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const { data } = await client.get('/products');
-      setRows(data || []);
+      const [prodRes, catRes] = await Promise.all([
+        client.get('/products'),
+        client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
+      ]);
+      setRows(prodRes.data || []);
+      setCategories(catRes.data?.allCategories || []);
     } catch {
       showToast(t.stockLoadError || 'Load failed', 'error');
     } finally {
@@ -108,6 +113,29 @@ export default function BouquetsPage() {
       // Roll back on failure
       setRows(prev => prev.map(r => r.id === variant.id ? { ...r, Active: !nextActive } : r));
       showToast(t.syncFailed, 'error');
+    }
+  }
+
+  // Toggle a category on/off across every variant of a bouquet group.
+  // Mirrors the dashboard ProductCard checkbox UX. Categories are stored
+  // per-variant (multi-select Airtable field), but the owner conceptually
+  // edits them at the bouquet level — so all variants of the group get the
+  // same array. PATCHing per variant keeps the UI consistent with how
+  // toggleAll/toggleVariant work.
+  async function updateCategories(group, nextCats) {
+    const productId = group.wixProductId;
+    markDirty(productId);
+    setRows(prev => prev.map(r =>
+      (r['Wix Product ID'] || r.id) === productId ? { ...r, Category: nextCats } : r
+    ));
+    const results = await Promise.allSettled(
+      group.variants.map(v => client.patch(`/products/${v.id}`, { Category: nextCats }))
+    );
+    if (results.some(r => r.status === 'rejected')) {
+      showToast(t.syncFailed, 'error');
+      // Reload from server to recover ground truth — partial failures leave
+      // some variants on the new array and some on the old.
+      loadAll();
     }
   }
 
@@ -273,9 +301,11 @@ export default function BouquetsPage() {
           <BouquetCard
             key={group.wixProductId}
             group={group}
+            categories={categories}
             onToggleAll={toggleAll}
             onToggleVariant={toggleVariant}
             onUpdatePrice={updateVariantPrice}
+            onUpdateCategories={updateCategories}
           />
         ))}
       </div>
