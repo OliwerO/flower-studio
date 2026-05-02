@@ -1,14 +1,22 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
-import { activeCount, allActive, anyActive, priceRange, groupCategories } from '@flower-studio/shared';
+import { activeCount, allActive, anyActive, priceRange, groupCategories, parseCats } from '@flower-studio/shared';
 import t from '../../translations.js';
 import VariantList from './VariantList.jsx';
+import CategoryChips from './CategoryChips.jsx';
 
 // One bouquet = one Wix product = N variants. The card collapses the variants
 // into a single-tap control (toggle-all) for the common case, and expands on
 // demand so the owner can manage individual sizes without leaving the page.
 
-export default function BouquetCard({ group, onToggleAll, onToggleVariant, onUpdatePrice }) {
+export default function BouquetCard({
+  group,
+  categories = [],
+  onToggleAll,
+  onToggleVariant,
+  onUpdatePrice,
+  onUpdateCategories,
+}) {
   const [expanded, setExpanded] = useState(false);
   const count = activeCount(group);
   const total = group.variants.length;
@@ -104,11 +112,18 @@ export default function BouquetCard({ group, onToggleAll, onToggleVariant, onUpd
       </div>
 
       {expanded && (
-        <VariantList
-          variants={group.variants}
-          onToggleVariant={onToggleVariant}
-          onUpdatePrice={onUpdatePrice}
-        />
+        <>
+          <CategoryChips
+            categories={categories}
+            selected={parseCats(group.variants[0]?.Category)}
+            onChange={next => onUpdateCategories(group, next)}
+          />
+          <VariantList
+            variants={group.variants}
+            onToggleVariant={onToggleVariant}
+            onUpdatePrice={onUpdatePrice}
+          />
+        </>
       )}
     </div>
   );
