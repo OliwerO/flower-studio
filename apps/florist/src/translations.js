@@ -36,7 +36,10 @@ const en = {
   statusCancelled:      'Cancelled',
   cancelAndReturn:      'Cancel + return stock',
   cancelAndReturnConfirm: 'Cancel this order and return flowers to stock?',
+  cancelNoReturn:       'Cancel only',
+  cancelConfirm:        'Cancel this order — return flowers to stock?',
   orderCancelled:       'Order cancelled',
+  stockReturned:        'Returned',
 
   // Order card
   pickup:           'Pickup',
@@ -729,7 +732,10 @@ const ru = {
   statusCancelled:      'Отменён',
   cancelAndReturn:      'Отменить + вернуть на склад',
   cancelAndReturnConfirm: 'Отменить заказ и вернуть цветы на склад?',
+  cancelNoReturn:       'Только отменить',
+  cancelConfirm:        'Отменить заказ — вернуть цветы на склад?',
   orderCancelled:       'Заказ отменён',
+  stockReturned:        'Возвращено',
 
   // Order card
   pickup:           'Самовывоз',
