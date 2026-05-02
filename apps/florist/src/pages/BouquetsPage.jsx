@@ -5,6 +5,7 @@ import {
   IconButton,
   EmptyState,
   FilterBar,
+  WixPushModal,
   groupByProduct,
   parseCats,
   activeCount,
@@ -25,8 +26,12 @@ export default function BouquetsPage() {
   const [filter, setFilter]   = useState('all');
   const [search, setSearch]   = useState('');
   const [loading, setLoading] = useState(true);
-  const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
+  // Async-job UX: opening the modal kicks off POST /products/push and the
+  // modal polls for progress until done. Replaces a single 80s axios call
+  // that was hitting the Vercel edge proxy timeout and reporting failure
+  // on successful pushes.
+  const [pushModalOpen, setPushModalOpen] = useState(false);
   // Tracks bouquet product IDs that have been modified locally since the last
   // successful push. Cleared on a successful POST /products/push.
   const [dirtyIds, setDirtyIds] = useState(() => new Set());
@@ -139,27 +144,18 @@ export default function BouquetsPage() {
     }
   }
 
-  async function pushToWix() {
-    setPushing(true);
-    try {
-      // Push shape: { pricesSynced, stockSynced, categoriesSynced, errors }
-      const { data } = await client.post('/products/push', {});
-      // Same silent-catch pattern as pullFromWix — see comment there.
-      if (data?.errors?.length > 0) {
-        showToast(data.errors.join(' · '), 'error');
-        return;
-      }
-      const parts = [];
-      if (data?.pricesSynced) parts.push(`${data.pricesSynced} prices`);
-      if (data?.stockSynced) parts.push(`${data.stockSynced} stock`);
-      if (data?.categoriesSynced) parts.push(`${data.categoriesSynced} categories`);
-      showToast(`${t.syncSuccess}${parts.length ? ' · ' + parts.join(', ') : ''}`, 'success');
-      setDirtyIds(new Set());
-    } catch (err) {
-      const msg = err.response?.data?.error || t.syncFailed;
-      showToast(msg, 'error');
-    } finally {
-      setPushing(false);
+  function pushToWix() {
+    // Opening the modal starts the async job and polls until done.
+    // No setPushing here — the modal owns its own state.
+    setPushModalOpen(true);
+  }
+
+  function onPushComplete(result) {
+    setDirtyIds(new Set());
+    if (result?.errors?.length > 0) {
+      showToast(`${t.syncSuccess} (${result.errors.length} предупр.)`, 'success');
+    } else {
+      showToast(t.syncSuccess, 'success');
     }
   }
 
@@ -186,7 +182,7 @@ export default function BouquetsPage() {
         <button
           type="button"
           onClick={pullFromWix}
-          disabled={pulling || pushing}
+          disabled={pulling || pushModalOpen}
           aria-label={t.pullFromWix}
           className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-blue-50 dark:bg-blue-900/20
                      text-ios-blue text-sm font-semibold active-scale disabled:opacity-50"
@@ -197,12 +193,12 @@ export default function BouquetsPage() {
         <button
           type="button"
           onClick={pushToWix}
-          disabled={pulling || pushing}
+          disabled={pulling || pushModalOpen}
           aria-label={t.pushToWix}
           className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/20
                      text-emerald-700 dark:text-emerald-400 text-sm font-semibold active-scale disabled:opacity-50"
         >
-          {pushing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+          {pushModalOpen ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
           <span>{t.pushShort}</span>
         </button>
       </header>
@@ -265,7 +261,13 @@ export default function BouquetsPage() {
         ))}
       </div>
 
-      <PushBar count={dirtyIds.size} pushing={pushing} />
+      <PushBar count={dirtyIds.size} pushing={pushModalOpen} />
+
+      <WixPushModal
+        open={pushModalOpen}
+        onClose={() => setPushModalOpen(false)}
+        onComplete={onPushComplete}
+      />
     </div>
   );
 }

@@ -32,7 +32,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | dashboard.js | GET /dashboard | Today's operational summary for owner |
 | analytics.js | GET /analytics | Financial KPIs with period comparison |
 | settings.js | GET/POST /settings | App config persistence (Airtable App Config table). Also exports `getConfig`/`getDriverOfDay`/`generateOrderId` — TODO move to `services/appConfig.js`. |
-| products.js | POST /products/pull\|push\|sync\|translate | Bidirectional Wix product sync |
+| products.js | POST /products/pull\|push\|sync\|translate, GET /products/push/status/:jobId | Bidirectional Wix product sync. Push runs as an async job (see `wixPushJob.js`) — POST /push returns 202 + jobId, the modal polls /push/status. /push/sync is the legacy synchronous variant kept for curl debugging. |
 | webhook.js | POST /webhook/wix | Wix order webhook (HMAC-SHA256 verified) |
 | intake.js | POST /intake/parse | AI-powered order parsing (Claude Haiku) |
 | events.js | GET /events | SSE real-time broadcast (max 50 clients) |
@@ -55,7 +55,8 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | premadeBouquetService.js | Dissolve premade bouquets into constituent stock-item lines on order creation. |
 | notifications.js | SSE broadcast to all connected clients (heartbeat every 30s). No catch-up buffer yet — clients miss events while disconnected. |
 | wix.js | Wix webhook processor — parses payload, creates order + lines + delivery. |
-| wixProductSync.js | Bidirectional Wix product pull/push with sync logging. (1200+ L — split candidate.) |
+| wixProductSync.js | Bidirectional Wix product pull/push with sync logging. `runPush` accepts `onProgress(entry)` and parallelizes Wix API calls per phase via `p-queue` (concurrency 8) so the full push lands in 10–20s. Pull mirrors Wix → Airtable for prices and descriptions (the 2026-04-22 lockout was specific to the legacy `runSync` flow, which the UI no longer calls). (1200+ L — split candidate.) |
+| wixPushJob.js | Async-job wrapper around `runPush()`. POST /products/push starts a job and returns 202+jobId; the frontend polls /products/push/status/:jobId until done. Single-flight by design — exists because Vercel's edge proxy was aborting long synchronous pushes and the UI was reporting failure on successful backend runs. |
 | telegram.js | Telegram Bot API wrapper — new-order + delivery-landed alerts. |
 | intake-parser.js | Claude Haiku integration for parsing freeform text / Flowwow emails into structured orders. |
 | analyticsService.js | Pure math functions for financial KPIs (no DB calls). |

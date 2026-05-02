@@ -6,11 +6,26 @@
 // Wix owns: product names, images, variant names
 // Airtable owns: prices, lead times, stock, categories, active status
 
+import PQueue from 'p-queue';
 import * as db from './airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sendAlert, notifyWixSyncError } from './telegram.js';
 import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
+
+// Concurrency for parallel Wix API calls inside runPush. Wix Stores REST
+// API tolerates ~600 req/min for paid sites; 8 in flight keeps us well
+// under that while cutting total push time from ~80s to ~10–20s. The old
+// fully-sequential version was pushing the request past Vercel's edge
+// proxy timeout (~30s) and the UI was reporting failure on a successful
+// backend run — see backend/src/services/wixPushJob.js for the async
+// job wrapper that decoupled UI from request duration.
+const PUSH_CONCURRENCY = 8;
+
+// No-op default so internal callers (e.g. legacy runSync) don't need to
+// pass anything. The job wrapper supplies a real handler that records
+// owner-facing log entries for the progress modal.
+const NO_PROGRESS = () => {};
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -683,14 +698,18 @@ export async function runPull() {
           const updates = {};
           if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
-          // Price is Airtable-owned (see file header). Push reconciles
-          // Airtable → Wix; Pull must NOT overwrite. Earlier policy
-          // (commit a44450f, 2026-04-22) treated Wix as truth here, which
-          // caused runSync (pull-then-push) to revert any owner-edited
-          // Airtable price to the stale Wix value before Push could send
-          // it — net result: prices never synced and Airtable edits were
-          // silently lost. Price still imports on initial row creation
-          // for brand-new variants pulled from Wix (see create branch above).
+          // Price: Pull mirrors Wix → Airtable. Owner edits prices in
+          // Wix admin OR in the dashboard/florist app — never directly
+          // in Airtable. So Pull is allowed to overwrite Airtable price
+          // with the latest Wix price. The 2026-04-22 lockout (commit
+          // a44450f) only mattered for the legacy `runSync` (pull-then-
+          // push) flow, which the UI no longer uses — Pull and Push are
+          // separate buttons and the owner picks the direction.
+          const wixPriceNum = Number(variantPrice) || 0;
+          const airtablePriceNum = Number(existing['Price'] || 0);
+          if (Math.abs(airtablePriceNum - wixPriceNum) > 0.01) {
+            updates['Price'] = wixPriceNum;
+          }
           // Active follows Wix "Show in online store". The earlier policy
           // treated Active as Airtable-owned, but in practice that caused
           // drift: a product re-listed on Wix stayed inactive in Airtable
@@ -717,7 +736,12 @@ export async function runPull() {
           if (existingSorted !== reconciledSorted) {
             updates['Category'] = reconciledCats;
           }
-          if (!existing['Description'] && productDescription) {
+          // Description: Pull mirrors Wix → Airtable. Owner edits in Wix
+          // or in the dashboard, never in Airtable directly, so always
+          // reconcile when the values differ. The previous "fill only when
+          // empty" policy left stale Airtable descriptions in place after
+          // Wix-side edits.
+          if (productDescription && existing['Description'] !== productDescription) {
             updates['Description'] = productDescription;
           }
           if (Object.keys(updates).length > 0) {
@@ -825,19 +849,37 @@ export async function runPull() {
 
 /**
  * Push from Airtable → Wix.
- * Pushes prices, visibility, stock, and category assignments to Wix.
+ *
+ * Phases (each runs sequentially relative to the next, but Wix API calls
+ * inside a phase fan out with PUSH_CONCURRENCY workers):
+ *   1. Prices              — variant or product-level price PATCH per row
+ *   2. Inventory           — one batched PATCH per product
+ *   3. Categories          — permanent / seasonal / Available Today
+ *   4. Descriptions + i18n — EN content + PL/RU/UK translation content
+ *
+ * @param onProgress  Optional callback receiving owner-friendly log entries
+ *                    `{ kind, message, level? }`. The /products/push job
+ *                    wrapper records these for the in-app progress modal;
+ *                    direct callers (e.g. the legacy `runSync`) can omit it.
  */
-export async function runPush() {
-  const stats = { pricesSynced: 0, stockSynced: 0, categoriesSynced: 0, errors: [] };
+export async function runPush(onProgress = NO_PROGRESS) {
+  const stats = { pricesSynced: 0, stockSynced: 0, categoriesSynced: 0, descriptionsSynced: 0, translationsSynced: 0, errors: [] };
+  const log = (kind, message, level = 'info') => {
+    try { onProgress({ kind, message, level }); } catch { /* never fail push because of a progress hook */ }
+  };
 
   try {
-    console.log('[PUSH] Fetching current Wix state for comparison...');
+    log('phase', 'Получаем данные из Wix...');
     const { wixProducts, wixCategories } = await fetchWixData();
+    const wixProductNameById = new Map();
+    for (const p of wixProducts) wixProductNameById.set(p.id, p.name || p.id);
+    log('phase', `Загружено товаров из Wix: ${wixProducts.length}`);
 
     // ── Prices ──────────────────────────────────────────
+    log('phase', 'Сравниваем цены...');
     const configRows = await db.list(TABLES.PRODUCT_CONFIG, {
       filterByFormula: '{Active} = TRUE()',
-      fields: ['Wix Product ID', 'Wix Variant ID', 'Price', 'Visible in Wix'],
+      fields: ['Wix Product ID', 'Wix Variant ID', 'Variant Name', 'Price', 'Visible in Wix'],
     });
 
     const wixPriceMap = new Map();
@@ -853,24 +895,37 @@ export async function runPush() {
     // the variant batch endpoint (see `updateWixProductPrice` above).
     const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
 
+    const priceJobs = [];
     for (const row of configRows) {
       const pid = row['Wix Product ID'];
       const vid = row['Wix Variant ID'];
+      if (!pid || !vid) continue;
       const key = `${pid}::${vid}`;
       const airtablePrice = Number(row['Price'] || 0);
       const wixPrice = wixPriceMap.get(key);
-      if (wixPrice !== undefined && Math.abs(airtablePrice - wixPrice) > 0.01) {
+      if (wixPrice === undefined || Math.abs(airtablePrice - wixPrice) <= 0.01) continue;
+      priceJobs.push({ pid, vid, key, airtablePrice, wixPrice, variantName: row['Variant Name'] });
+    }
+    log('summary', `Цены к обновлению: ${priceJobs.length}`);
+
+    if (priceJobs.length > 0) {
+      const queue = new PQueue({ concurrency: PUSH_CONCURRENCY });
+      await Promise.all(priceJobs.map(job => queue.add(async () => {
+        const productName = wixProductNameById.get(job.pid) || job.pid;
+        const variantSuffix = job.variantName && job.vid !== ZERO_UUID ? ` / ${job.variantName}` : '';
         try {
-          if (vid === ZERO_UUID) {
-            await updateWixProductPrice(pid, airtablePrice);
+          if (job.vid === ZERO_UUID) {
+            await updateWixProductPrice(job.pid, job.airtablePrice);
           } else {
-            await updateWixVariantPrice(pid, vid, airtablePrice);
+            await updateWixVariantPrice(job.pid, job.vid, job.airtablePrice);
           }
           stats.pricesSynced++;
+          log('item', `Цена · ${productName}${variantSuffix}: ${job.wixPrice}zł → ${job.airtablePrice}zł`);
         } catch (err) {
-          stats.errors.push(`Price ${key}: ${err.message}`);
+          stats.errors.push(`Price ${job.key}: ${err.message}`);
+          log('item', `Ошибка цены · ${productName}${variantSuffix}: ${err.message}`, 'error');
         }
-      }
+      })));
     }
 
     // ── Availability (inventory-based) ─────────────────
@@ -881,17 +936,11 @@ export async function runPush() {
     //     inactive → cap 0.
     //   No variant has Quantity → whole product untracked, legacy inStock
     //     toggle per variant driven by Active.
-    // The Airtable Quantity column is optional during rollout — products
-    // whose variants all lack Quantity keep the old behavior.
+    log('phase', 'Обновляем остатки...');
     const allVariantRows = await db.list(TABLES.PRODUCT_CONFIG, {
       fields: ['Wix Product ID', 'Wix Variant ID', 'Active', 'Quantity'],
     });
 
-    // Group rows by product so we can push each product's variants in one call.
-    // A zero-UUID variant ID is the legitimate default variant for products
-    // with no options (Wix uses 00000000-...-000000000000 as the variant ID
-    // in that case). We DO want to push inventory for those — skipping them
-    // meant the Qty cap never reached Wix for any single-variant product.
     const byProduct = new Map();
     for (const row of allVariantRows) {
       const pid = row['Wix Product ID'];
@@ -907,22 +956,25 @@ export async function runPush() {
       });
     }
 
-    // Track stale Wix product IDs — one aggregated warning at the end
-    // beats N identical 404 errors.
     const staleInventoryIds = new Set();
-
-    for (const [pid, variantStates] of byProduct) {
-      try {
-        await updateWixInventory(pid, variantStates);
-        stats.stockSynced += variantStates.length;
-      } catch (err) {
-        if (err instanceof WixProductNotFoundError) {
-          staleInventoryIds.add(pid);
-          continue;
+    {
+      const queue = new PQueue({ concurrency: PUSH_CONCURRENCY });
+      await Promise.all([...byProduct.entries()].map(([pid, variantStates]) => queue.add(async () => {
+        try {
+          await updateWixInventory(pid, variantStates);
+          stats.stockSynced += variantStates.length;
+        } catch (err) {
+          if (err instanceof WixProductNotFoundError) {
+            staleInventoryIds.add(pid);
+            return;
+          }
+          stats.errors.push(`Availability ${pid}: ${err.message}`);
+          const productName = wixProductNameById.get(pid) || pid;
+          log('item', `Ошибка остатков · ${productName}: ${err.message}`, 'error');
         }
-        stats.errors.push(`Availability ${pid}: ${err.message}`);
-      }
+      })));
     }
+    log('summary', `Остатки: обновлено ${stats.stockSynced} вариант(ов) по ${byProduct.size} товарам`);
 
     if (staleInventoryIds.size > 0) {
       const ids = [...staleInventoryIds].join(', ');
@@ -930,9 +982,11 @@ export async function runPush() {
         `${staleInventoryIds.size} Wix product${staleInventoryIds.size === 1 ? '' : 's'} referenced by PRODUCT_CONFIG no longer exist in Wix: ${ids}. ` +
         `Clear the Wix Product ID on those Airtable rows (or delete the rows) to stop this warning.`
       );
+      log('item', `Внимание: ${staleInventoryIds.size} товар(ов) удалены в Wix — очистите их из конфигурации.`, 'warn');
     }
 
     // ── Categories ──────────────────────────────────────
+    log('phase', 'Обновляем категории...');
     try {
       const catMap = {};
       for (const c of wixCategories) catMap[c.slug] = c.id;
@@ -943,6 +997,7 @@ export async function runPush() {
       });
 
       const sc = getConfig('storefrontCategories') || {};
+      const catTasks = [];
 
       // Permanent categories
       for (const catEntry of (sc.permanent || [])) {
@@ -954,76 +1009,55 @@ export async function runPush() {
           allConfigRows.filter(r => parseCategoryField(r['Category']).includes(catName))
             .map(r => r['Wix Product ID']).filter(Boolean)
         )];
-        try {
-          await setWixCategoryProducts(wixCatId, productIds);
-          stats.categoriesSynced++;
-        } catch (err) {
-          stats.errors.push(`Category ${catName}: ${err.message}`);
-        }
+        catTasks.push(async () => {
+          try {
+            await setWixCategoryProducts(wixCatId, productIds);
+            stats.categoriesSynced++;
+            log('item', `Категория «${catName}»: ${productIds.length} товаров`);
+          } catch (err) {
+            stats.errors.push(`Category ${catName}: ${err.message}`);
+            log('item', `Ошибка категории «${catName}»: ${err.message}`, 'error');
+          }
+        });
       }
 
       // Seasonal category
       const seasonal = getActiveSeasonalCategory();
       const seasonalWixId = catMap['seasonal'];
-      console.log(`[PUSH] Seasonal: active=${seasonal?.name}, wixId=${seasonalWixId}`);
       if (seasonal && seasonalWixId) {
         const seasonalProductIds = [...new Set(
           allConfigRows.filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
             .map(r => r['Wix Product ID']).filter(Boolean)
         )];
-        console.log(`[PUSH] Seasonal "${seasonal.name}": ${seasonalProductIds.length} products`);
-        try {
-          await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
-          // Push EN translation as primary (Wix site is English)
-          const enTitle = seasonal.translations?.en?.title;
-          const enDesc = seasonal.translations?.en?.description;
-          console.log(`[PUSH] Seasonal title=${enTitle}, desc=${enDesc?.slice(0, 50)}...`);
-          if (enTitle || enDesc) {
-            await updateWixCategory(seasonalWixId, {
-              name: enTitle || seasonal.name,
-              description: enDesc || '',
-            });
-          }
+        catTasks.push(async () => {
           try {
-            await pushCollectionTranslations(seasonalWixId, seasonal.translations);
+            await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
+            const enTitle = seasonal.translations?.en?.title;
+            const enDesc = seasonal.translations?.en?.description;
+            if (enTitle || enDesc) {
+              await updateWixCategory(seasonalWixId, {
+                name: enTitle || seasonal.name,
+                description: enDesc || '',
+              });
+            }
+            try {
+              await pushCollectionTranslations(seasonalWixId, seasonal.translations);
+            } catch (err) {
+              stats.errors.push(`Seasonal translations: ${err.message}`);
+            }
+            stats.categoriesSynced++;
+            log('item', `Сезонные («${seasonal.name}»): ${seasonalProductIds.length} товаров`);
           } catch (err) {
-            stats.errors.push(`Seasonal translations: ${err.message}`);
+            stats.errors.push(`Seasonal: ${err.message}`);
+            log('item', `Ошибка сезонной категории: ${err.message}`, 'error');
           }
-          stats.categoriesSynced++;
-        } catch (err) {
-          stats.errors.push(`Seasonal: ${err.message}`);
-        }
+        });
       }
 
       // Available Today — populate with qualifying products (lead time 0 + stock).
-      // Owner manually controls when to deactivate — no automatic cutoff.
       const availTodayId = catMap['available-today'];
-      console.log(`[PUSH] Available Today: wixCatId=${availTodayId}`);
       if (availTodayId) {
-        // Keep the Wix collection's own name/description in sync with the
-        // owner-configured EN translation. Mirrors the seasonal path above —
-        // without this, the Wix-native collection label stays whatever the
-        // owner typed when creating the collection, which meant Wix only
-        // rendered the nav item in the primary (English) language.
         const availEntry = (sc.auto || []).find(a => a && a.slug === 'available-today');
-        try {
-          const enTitle = availEntry?.translations?.en?.title;
-          const enDesc = availEntry?.translations?.en?.description;
-          if (enTitle || enDesc) {
-            await updateWixCategory(availTodayId, {
-              name: enTitle || availEntry?.name || 'Available Today',
-              description: enDesc || '',
-            });
-          }
-        } catch (err) {
-          stats.errors.push(`Available Today category name: ${err.message}`);
-        }
-        try {
-          await pushCollectionTranslations(availTodayId, availEntry?.translations);
-        } catch (err) {
-          stats.errors.push(`Available Today translations: ${err.message}`);
-        }
-
         const stockCheck = await stockRepo.list({
           filterByFormula: '{Active} = TRUE()',
           fields: ['Display Name', 'Current Quantity'],
@@ -1035,12 +1069,10 @@ export async function runPush() {
         const stockByRecId = Object.fromEntries(
           stockCheck.map(s => [s.id, Number(s['Current Quantity'] || 0)])
         );
-        // Must have "Available Today" in Category field + lead time 0 + stock
         const availCandidates = allConfigRows.filter(r => {
           const cats = parseCategoryField(r['Category']);
           return cats.includes('Available Today') && Number(r['Lead Time Days'] ?? 1) === 0;
         });
-        console.log(`[PUSH] Available Today candidates (category + lt=0): ${availCandidates.length}`);
         const availProductIds = [...new Set(
           availCandidates.filter(r => {
             const kf = r['Key Flower'];
@@ -1052,32 +1084,52 @@ export async function runPush() {
             return minStems > 0 ? qty >= minStems : qty > 0;
           }).map(r => r['Wix Product ID']).filter(Boolean)
         )];
-        console.log(`[PUSH] Available Today products (after stock check): ${availProductIds.length}`);
-        try {
-          await setWixCategoryProducts(availTodayId, availProductIds);
-          stats.categoriesSynced++;
-        } catch (err) {
-          stats.errors.push(`Available Today: ${err.message}`);
-        }
+        catTasks.push(async () => {
+          try {
+            const enTitle = availEntry?.translations?.en?.title;
+            const enDesc = availEntry?.translations?.en?.description;
+            if (enTitle || enDesc) {
+              await updateWixCategory(availTodayId, {
+                name: enTitle || availEntry?.name || 'Available Today',
+                description: enDesc || '',
+              });
+            }
+          } catch (err) {
+            stats.errors.push(`Available Today category name: ${err.message}`);
+          }
+          try {
+            await pushCollectionTranslations(availTodayId, availEntry?.translations);
+          } catch (err) {
+            stats.errors.push(`Available Today translations: ${err.message}`);
+          }
+          try {
+            await setWixCategoryProducts(availTodayId, availProductIds);
+            stats.categoriesSynced++;
+            log('item', `Доступно сегодня: ${availProductIds.length} товаров`);
+          } catch (err) {
+            stats.errors.push(`Available Today: ${err.message}`);
+            log('item', `Ошибка категории «Доступно сегодня»: ${err.message}`, 'error');
+          }
+        });
       }
+
+      const catQueue = new PQueue({ concurrency: 4 });
+      await Promise.all(catTasks.map(t => catQueue.add(t)));
     } catch (err) {
       stats.errors.push(`Category phase: ${err.message}`);
+      log('item', `Ошибка фазы категорий: ${err.message}`, 'error');
     }
 
     // ── Product Descriptions ────────────────────────────
     // EN lives directly on the Wix product (name + description fields);
     // PL/RU/UK live in the Wix Multilingual Translation Content API.
-    // Without that second push, non-primary-language sites fall back to
-    // the EN text — which is why the PL storefront was showing English
-    // product descriptions even though translations existed in Airtable.
+    log('phase', 'Обновляем описания и переводы...');
     try {
       const descRows = await db.list(TABLES.PRODUCT_CONFIG, {
         filterByFormula: '{Active} = TRUE()',
         fields: ['Wix Product ID', 'Description', 'Translations'],
       });
 
-      // Group by product — one description per Wix product. Keep the
-      // raw translations object so we can push PL/RU/UK alongside EN.
       const descByProduct = new Map();
       for (const row of descRows) {
         const pid = row['Wix Product ID'];
@@ -1100,47 +1152,44 @@ export async function runPush() {
         }
       }
 
-      let descSynced = 0;
-      let transSynced = 0;
       const staleDescIds = new Set();
-      for (const [productId, content] of descByProduct) {
+      const descQueue = new PQueue({ concurrency: PUSH_CONCURRENCY });
+      await Promise.all([...descByProduct.entries()].map(([productId, content]) => descQueue.add(async () => {
         try {
           await updateWixProductContent(productId, { name: content.name, description: content.description });
-          descSynced++;
+          stats.descriptionsSynced++;
         } catch (err) {
           if (err instanceof WixProductNotFoundError) {
             staleDescIds.add(productId);
-            continue;
+            return;
           }
           stats.errors.push(`Description ${productId}: ${err.message}`);
         }
-
-        // Push PL/RU/UK translations to Wix Multilingual. Skipping this
-        // leaves the non-primary-language storefront falling back to the
-        // EN description, which was the root cause of "translations not
-        // showing on the PL site" even though Airtable had them.
         try {
           await pushProductTranslations(productId, content.translations);
           if (content.translations && Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
-            transSynced++;
+            stats.translationsSynced++;
           }
         } catch (err) {
           stats.errors.push(`Product translations ${productId}: ${err.message}`);
         }
-      }
-      if (descSynced > 0) console.log(`[PUSH] Descriptions synced: ${descSynced}`);
-      if (transSynced > 0) console.log(`[PUSH] Product translations synced: ${transSynced}`);
+      })));
+
       if (staleDescIds.size > 0) {
-        console.warn(`[PUSH] Skipped description update for ${staleDescIds.size} deleted Wix product(s) — see inventory warning for IDs`);
+        log('item', `Описания: пропущено ${staleDescIds.size} удалённых товаров`, 'warn');
       }
+      log('summary', `Описания: ${stats.descriptionsSynced} · Переводы: ${stats.translationsSynced}`);
     } catch (err) {
       stats.errors.push(`Description phase: ${err.message}`);
+      log('item', `Ошибка фазы описаний: ${err.message}`, 'error');
     }
 
+    log('done', `Готово · цены: ${stats.pricesSynced} · остатки: ${stats.stockSynced} · категории: ${stats.categoriesSynced} · описания: ${stats.descriptionsSynced}`);
     console.log('[PUSH] Complete:', JSON.stringify(stats));
   } catch (err) {
     stats.errors.push(`Fatal: ${err.message}`);
     console.error('[PUSH] Fatal error:', err);
+    log('item', `Критическая ошибка: ${err.message}`, 'error');
   }
 
   await logSync('push', stats);
