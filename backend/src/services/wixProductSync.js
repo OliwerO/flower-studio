@@ -1265,17 +1265,20 @@ function textToHtml(text) {
 }
 
 /**
- * Removes all media from a Wix product. Used before attachMediaToProduct
+ * Removes ALL media from a Wix product. Used before attachMediaToProduct
  * to enforce single-image-per-product semantic (see plan Q2=A).
  *
- * Wix Stores Catalog v1: DELETE /products/:id/media/all clears the product
- * gallery; if the endpoint shape differs in your Wix version, swap to
- * iterating media ids and calling DELETE /products/:id/media/:mediaId.
+ * Wix Stores Catalog v1: POST /products/:id/media/delete with an empty
+ * mediaIds array removes every media item attached to the product.
  */
 export async function clearProductMedia(productId) {
   const res = await fetch(
-    `${WIX_API_URL}/stores/v1/products/${productId}/media/all`,
-    { method: 'DELETE', headers: wixHeaders() }
+    `${WIX_API_URL}/stores/v1/products/${productId}/media/delete`,
+    {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ mediaIds: [] }),
+    }
   );
   if (!res.ok) {
     const text = await res.text();

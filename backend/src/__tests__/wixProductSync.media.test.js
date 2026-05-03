@@ -7,13 +7,16 @@ describe('wixProductSync media helpers', () => {
     vi.stubEnv('WIX_SITE_ID', 's');
   });
 
-  it('clearProductMedia POSTs delete to product media endpoint', async () => {
-    fetch.mockResolvedValue({ ok: true, json: async () => ({ product: {} }) });
+  it('clearProductMedia POSTs to /media/delete with empty mediaIds to remove all', async () => {
+    fetch.mockResolvedValue({ ok: true, json: async () => ({}) });
     const { clearProductMedia } = await import('../services/wixProductSync.js');
     await clearProductMedia('prod-1');
     expect(fetch).toHaveBeenCalledWith(
-      'https://www.wixapis.com/stores/v1/products/prod-1/media/all',
-      expect.objectContaining({ method: 'DELETE' })
+      'https://www.wixapis.com/stores/v1/products/prod-1/media/delete',
+      expect.objectContaining({
+        method: 'POST',
+        body: expect.stringContaining('"mediaIds":[]'),
+      })
     );
   });
 
