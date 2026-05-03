@@ -89,6 +89,20 @@ export default function BouquetsPage() {
     });
   }
 
+  async function updateImage(wixProductId, newUrl) {
+    // Backend already wrote the URL to all variant rows on successful upload.
+    // Mirror the change in local state so the card re-renders with the new
+    // image without a full reload. Mark dirty so the next Wix push picks it up
+    // (defensive — image was already attached to the Wix product directly,
+    // but staying in lock-step with other field updates avoids surprises).
+    setRows(prev => prev.map(r =>
+      (r['Wix Product ID'] || r.id) === wixProductId
+        ? { ...r, 'Image URL': newUrl }
+        : r
+    ));
+    markDirty(wixProductId);
+  }
+
   async function toggleAll(group, nextActive) {
     const productId = group.wixProductId;
     markDirty(productId);
@@ -306,6 +320,7 @@ export default function BouquetsPage() {
             onToggleVariant={toggleVariant}
             onUpdatePrice={updateVariantPrice}
             onUpdateCategories={updateCategories}
+            onUpdateImage={updateImage}
           />
         ))}
       </div>
