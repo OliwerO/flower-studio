@@ -237,10 +237,13 @@ router.get('/', async (req, res, next) => {
       for (const o of orders) { delete o._lines; delete o._delivery; }
     }
 
-    // Batch-load image URLs for distinct Wix products in this list so the
-    // frontend can render bouquet thumbnails without N+1 lookups.
+    // Bouquet image priority: per-order override (`Image URL` set by owner via
+    // POST /orders/:id/image) wins; fall back to the storefront product image
+    // batch-resolved by `Wix Product ID` for Wix orders that haven't been
+    // overridden yet.
+    const ordersNeedingProductLookup = orders.filter(o => !o['Image URL'] && o['Wix Product ID']);
     const distinctProductIds = [...new Set(
-      orders.map(o => o['Wix Product ID']).filter(Boolean)
+      ordersNeedingProductLookup.map(o => o['Wix Product ID'])
     )];
     let imageMap = new Map();
     if (distinctProductIds.length > 0) {
@@ -251,7 +254,7 @@ router.get('/', async (req, res, next) => {
       }
     }
     for (const o of orders) {
-      o.bouquetImageUrl = imageMap.get(o['Wix Product ID']) || '';
+      o.bouquetImageUrl = o['Image URL'] || imageMap.get(o['Wix Product ID']) || '';
     }
 
     // Post-enrichment filter for "upcoming"
@@ -303,22 +306,26 @@ router.get('/:id', async (req, res, next) => {
     order.orderLines = orderLines;
     if (delivery) order.delivery = delivery;
 
-    // Enrich with bouquet image URL so the driver app can render it.
-    // The image is associated with the Wix product (group), not individual
-    // stock-item order lines. Source the product id from the order's
-    // 'Wix Product ID' (set by the Wix webhook). For app-created orders
-    // without that field, the URL is empty string.
-    const wixProductId = order['Wix Product ID'];
-    if (wixProductId) {
-      try {
-        const map = await productRepo.getImagesBatch([wixProductId]);
-        order.bouquetImageUrl = map.get(wixProductId) || '';
-      } catch (err) {
-        console.error('[orders] productRepo.getImagesBatch failed:', err.message);
+    // Bouquet image priority: per-order override (`Image URL` set by owner via
+    // POST /orders/:id/image) wins; fall back to the storefront product image
+    // resolved by `Wix Product ID` for Wix orders that haven't been
+    // overridden yet.
+    const overrideUrl = order['Image URL'] || '';
+    if (overrideUrl) {
+      order.bouquetImageUrl = overrideUrl;
+    } else {
+      const wixProductId = order['Wix Product ID'];
+      if (wixProductId) {
+        try {
+          const map = await productRepo.getImagesBatch([wixProductId]);
+          order.bouquetImageUrl = map.get(wixProductId) || '';
+        } catch (err) {
+          console.error('[orders] productRepo.getImagesBatch failed:', err.message);
+          order.bouquetImageUrl = '';
+        }
+      } else {
         order.bouquetImageUrl = '';
       }
-    } else {
-      order.bouquetImageUrl = '';
     }
 
     // Compute Final Price (matches list endpoint logic) so frontend has authoritative total.

@@ -66,10 +66,10 @@ router.get('/', async (req, res, next) => {
     const orderIds = [...new Set(deliveries.flatMap(d => d['Linked Order'] || []))];
     let orderMap = {};
     if (orderIds.length > 0) {
-      // Pull 'Wix Product ID' alongside the other order fields so we can
-      // batch-look-up bouquet thumbnails in a single round-trip below.
+      // Pull 'Wix Product ID' + per-order 'Image URL' alongside the other order
+      // fields so we can resolve bouquet thumbnails in a single round-trip.
       const orders = await orderRepo.listByIds(orderIds, {
-        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID', 'Wix Product ID'],
+        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID', 'Wix Product ID', 'Image URL'],
       });
       const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
       const customers = customerIds.length > 0
@@ -104,10 +104,14 @@ router.get('/', async (req, res, next) => {
       }
     }
 
-    // Batch-load bouquet image URLs for distinct Wix products across all
-    // linked orders so the driver app can render thumbnails without N+1.
+    // Bouquet image priority: per-order override (`Image URL` set by owner via
+    // POST /orders/:id/image) wins; fall back to the storefront product image
+    // batch-resolved by `Wix Product ID` for Wix orders that haven't been
+    // overridden. Only the orders WITHOUT an override hit the product lookup.
+    const ordersNeedingProductLookup = Object.values(orderMap)
+      .filter(o => !o['Image URL'] && o['Wix Product ID']);
     const distinctProductIds = [...new Set(
-      Object.values(orderMap).map(o => o['Wix Product ID']).filter(Boolean)
+      ordersNeedingProductLookup.map(o => o['Wix Product ID'])
     )];
     let imageMap = new Map();
     if (distinctProductIds.length > 0) {
@@ -119,12 +123,15 @@ router.get('/', async (req, res, next) => {
     }
     for (const d of deliveries) {
       const orderId = d['Linked Order']?.[0];
-      const productId = orderMap[orderId]?.['Wix Product ID'];
-      d.bouquetImageUrl = (productId && imageMap.get(productId)) || '';
-      // Stash the originating Wix product ID alongside the resolved URL so the
-      // delivery app can patch matching rows in-place when an SSE
-      // `product_image_changed` event fires (no full reload required).
-      d.wixProductId = productId || '';
+      const order = orderMap[orderId];
+      const overrideUrl = order?.['Image URL'] || '';
+      const productId = order?.['Wix Product ID'] || '';
+      d.bouquetImageUrl = overrideUrl || (productId && imageMap.get(productId)) || '';
+      // Stash both ids/URL so the delivery app can patch matching rows in
+      // place when SSE `order_image_changed` (per-order) or
+      // `product_image_changed` (storefront-wide) fires.
+      d.wixProductId = productId;
+      d.orderId = orderId || '';
     }
 
     res.json(deliveries);

@@ -26,6 +26,7 @@ import stockLossRoutes     from './routes/stockLoss.js';
 import publicRoutes        from './routes/public.js';
 import productRoutes       from './routes/products.js';
 import productImagesRouter from './routes/productImages.js';
+import orderImagesRouter from './routes/orderImages.js';
 import stockOrderRoutes    from './routes/stockOrders.js';
 import floristHoursRoutes from './routes/floristHours.js';
 import premadeBouquetRoutes from './routes/premadeBouquets.js';
@@ -166,6 +167,7 @@ if (IS_TEST_BACKEND) {
 app.use(authenticate);
 
 app.use('/api/customers',       customerRoutes);
+app.use('/api/orders',          orderImagesRouter);
 app.use('/api/orders',          orderRoutes);
 app.use('/api/stock',           stockRoutes);
 app.use('/api/deliveries',      deliveryRoutes);

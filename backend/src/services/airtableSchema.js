@@ -71,6 +71,7 @@ const EXPECTED_WRITE_FIELDS = {
   // failures since this guard was added after those fields were in use.
   [TABLES.ORDERS]: [
     'Florist Note',
+    'Image URL',
   ],
   [TABLES.DELIVERIES]: [
     'Driver Instructions',

@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -756,6 +756,20 @@ export default function OrderDetailPage() {
                 </div>
               </div>
             )}
+
+            {/* Bouquet photo for the driver. Florist+owner can upload,
+                owner can remove. Wins over the storefront product image. */}
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-wide text-pink-700 mb-1">
+                📸 {t.bouquetPhotoLabel || 'Фото букета'}
+              </p>
+              <BouquetImageEditor
+                orderId={order.id}
+                currentUrl={order['Image URL'] || order.bouquetImageUrl || ''}
+                canRemove={isOwner}
+                onChange={(url) => setOrder(prev => prev ? { ...prev, 'Image URL': url, bouquetImageUrl: url } : prev)}
+              />
+            </div>
 
             {/* Owner-authored notes (editable at any stage) */}
             <div className="space-y-2">
