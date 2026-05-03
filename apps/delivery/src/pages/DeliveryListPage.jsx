@@ -88,6 +88,18 @@ export default function DeliveryListPage() {
           : d
       ));
     }
+    // Per-order override set/cleared via POST/DELETE /orders/:id/image —
+    // patch the matching delivery row by orderId. Override wins over the
+    // storefront product image, so an empty string here surfaces the
+    // fallback only after a list refetch (acceptable; fetchDeliveries
+    // catches it next time).
+    if (event.type === 'order_image_changed') {
+      setDeliveries(prev => prev.map(d =>
+        d.orderId && d.orderId === event.orderId
+          ? { ...d, bouquetImageUrl: event.imageUrl || '' }
+          : d
+      ));
+    }
   });
 
   // Check for assigned stock pickups
