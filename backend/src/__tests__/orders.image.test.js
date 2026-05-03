@@ -92,3 +92,27 @@ describe('GET /api/orders/:id includes bouquetImageUrl', () => {
     expect(res.body.bouquetImageUrl).toBe('');
   });
 });
+
+describe('GET /api/orders list enrichment', () => {
+  it('attaches bouquetImageUrl to each order using one batched lookup', async () => {
+    // Mock the orders list. The route calls airtable.list multiple times
+    // for related lookups — set the FIRST call to return the orders.
+    airtable.list.mockResolvedValueOnce([
+      { id: 'o1', 'Wix Product ID': 'p1', 'Order Lines': [], Status: 'New', Customer: [], Deliveries: [] },
+      { id: 'o2', 'Wix Product ID': 'p2', 'Order Lines': [], Status: 'New', Customer: [], Deliveries: [] },
+      { id: 'o3', 'Wix Product ID': '',   'Order Lines': [], Status: 'New', Customer: [], Deliveries: [] },
+    ]);
+    // Subsequent airtable.list calls (for lines, deliveries, customers) → empty
+    airtable.list.mockResolvedValue([]);
+    productRepo.getImagesBatch.mockResolvedValue(new Map([['p1', 'u1'], ['p2', 'u2']]));
+
+    const app = await buildApp();
+    const res = await request(app).get('/api/orders');
+    expect(res.status).toBe(200);
+    const byId = Object.fromEntries(res.body.map(o => [o.id, o.bouquetImageUrl]));
+    expect(byId).toEqual({ o1: 'u1', o2: 'u2', o3: '' });
+    expect(productRepo.getImagesBatch).toHaveBeenCalledTimes(1);
+    // distinct, sorted-by-encounter order, only non-empty IDs
+    expect(productRepo.getImagesBatch).toHaveBeenCalledWith(['p1', 'p2']);
+  });
+});

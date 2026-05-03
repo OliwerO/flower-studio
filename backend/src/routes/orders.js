@@ -237,6 +237,23 @@ router.get('/', async (req, res, next) => {
       for (const o of orders) { delete o._lines; delete o._delivery; }
     }
 
+    // Batch-load image URLs for distinct Wix products in this list so the
+    // frontend can render bouquet thumbnails without N+1 lookups.
+    const distinctProductIds = [...new Set(
+      orders.map(o => o['Wix Product ID']).filter(Boolean)
+    )];
+    let imageMap = new Map();
+    if (distinctProductIds.length > 0) {
+      try {
+        imageMap = await productRepo.getImagesBatch(distinctProductIds);
+      } catch (err) {
+        console.error('[orders] getImagesBatch failed for list:', err.message);
+      }
+    }
+    for (const o of orders) {
+      o.bouquetImageUrl = imageMap.get(o['Wix Product ID']) || '';
+    }
+
     // Post-enrichment filter for "upcoming"
     if (upcoming) {
       const today = new Date().toISOString().split('T')[0];
