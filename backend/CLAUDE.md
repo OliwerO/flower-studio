@@ -34,6 +34,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | settings.js | GET/POST /settings | App config persistence (Airtable App Config table). Also exports `getConfig`/`getDriverOfDay`/`generateOrderId` — TODO move to `services/appConfig.js`. |
 | products.js | POST /products/pull\|push\|sync\|translate, GET /products/push/status/:jobId | Bidirectional Wix product sync. Push runs as an async job (see `wixPushJob.js`) — POST /push returns 202 + jobId, the modal polls /push/status. /push/sync is the legacy synchronous variant kept for curl debugging. |
 | productImages.js | POST/DELETE /products/:wixProductId/image | Bouquet image upload (florist+owner) and removal (owner only). Orchestrates Wix Media upload + Wix Stores attach via `wixMediaClient.js`, persists URL via `productRepo`, audits as `image_set` / `image_remove`, broadcasts SSE `product_image_changed`. |
+| orderImages.js | POST/DELETE /orders/:orderId/image | Per-order bouquet image override. Florist+owner upload, owner-only remove. Uploads to Wix Media, writes `Image URL` on the order via `orderRepo.updateOrder`, reaps the previous Wix file via `deleteFiles`, audits as `image_set`/`image_remove` (entityType `order`), broadcasts SSE `order_image_changed`. Mounted before orders.js so it bypasses any future role gating there. |
 | webhook.js | POST /webhook/wix | Wix order webhook (HMAC-SHA256 verified) |
 | intake.js | POST /intake/parse | AI-powered order parsing (Claude Haiku) |
 | events.js | GET /events | SSE real-time broadcast (max 50 clients) |

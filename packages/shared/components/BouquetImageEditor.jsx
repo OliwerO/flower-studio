@@ -1,8 +1,13 @@
 import { useRef, useState, useEffect, useCallback } from 'react';
-import { uploadBouquetImage, removeBouquetImage } from '../api/uploadImage.js';
+import { uploadBouquetImage, removeBouquetImage, uploadOrderImage, removeOrderImage } from '../api/uploadImage.js';
 import { useToast } from '../context/ToastContext.jsx';
 
-// Bouquet image slot used by florist + dashboard product cards.
+// Bouquet image slot used by florist + dashboard product cards AND by
+// order detail screens for per-order overrides.
+//
+// Two entity modes (mutually exclusive):
+//   - wixProductId → POST/DELETE /products/:wixProductId/image
+//   - orderId      → POST/DELETE /orders/:orderId/image
 //
 // Two input methods:
 //   1. Click → opens native file picker (camera+library on phones)
@@ -18,10 +23,12 @@ const REMOVE_CONFIRM_RU = 'Удалить это фото?';
 
 export default function BouquetImageEditor({
   wixProductId,
+  orderId,
   currentUrl,
   canRemove,
   onChange,
 }) {
+  const isOrder = Boolean(orderId);
   const fileInputRef = useRef(null);
   const containerRef = useRef(null);
   const [previewUrl, setPreviewUrl] = useState(currentUrl || '');
@@ -48,11 +55,9 @@ export default function BouquetImageEditor({
     setUploading(true);
     setProgress(0);
     try {
-      const { imageUrl } = await uploadBouquetImage({
-        wixProductId,
-        file,
-        onProgress: setProgress,
-      });
+      const { imageUrl } = isOrder
+        ? await uploadOrderImage({ orderId, file, onProgress: setProgress })
+        : await uploadBouquetImage({ wixProductId, file, onProgress: setProgress });
       setPreviewUrl(imageUrl);
       onChange?.(imageUrl);
       toast('Фото обновлено', 'success');
@@ -64,7 +69,7 @@ export default function BouquetImageEditor({
       setUploading(false);
       URL.revokeObjectURL(localUrl);
     }
-  }, [wixProductId, currentUrl, onChange, toast]);
+  }, [isOrder, orderId, wixProductId, currentUrl, onChange, toast]);
 
   const onPaste = useCallback((e) => {
     if (uploading) return;
@@ -90,7 +95,11 @@ export default function BouquetImageEditor({
     if (!confirmed) return;
     setUploading(true);
     try {
-      await removeBouquetImage(wixProductId);
+      if (isOrder) {
+        await removeOrderImage(orderId);
+      } else {
+        await removeBouquetImage(wixProductId);
+      }
       setPreviewUrl('');
       onChange?.('');
       toast('Фото удалено', 'success');

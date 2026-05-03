@@ -29,6 +29,7 @@ Changes made to the **dev base** that must be replicated in **production** befor
 | 2026-04-11 | Premade Bouquet Lines | **New table** — line items for a premade bouquet. Fields: `Premade Bouquet` (link → Premade Bouquets), `Stock Item` (link → Stock, required), `Flower Name` (Single line text), `Quantity` (Number), `Cost Price Per Unit` (Number, snapshot), `Sell Price Per Unit` (Number, snapshot). | ❌ |
 | 2026-04-21 | App Orders | New field: `Florist Note` (Long text) — owner-authored guidance for the florist, separate from the customer's `Notes Original`. Visible on florist collapsed card + editable at every order stage from both dashboard and florist app. | ❌ |
 | 2026-04-21 | Deliveries | New field: `Driver Instructions` (Long text) — owner-authored instructions for the driver, separate from the driver's own `Driver Notes`. Visible on delivery collapsed card + editable from dashboard and florist app. | ❌ |
+| 2026-05-03 | App Orders | New field: `Image URL` (URL or Long text) — per-order bouquet photo override that wins over the storefront product image. Set by `POST /api/orders/:id/image`; appears on driver delivery card. | ❌ |
 
 ### Env vars
 
@@ -40,6 +41,24 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 ```
 
 ---
+
+## 2026-05-03 — Per-order bouquet image override (Option A)
+
+Driver delivery card was reading `bouquetImageUrl` keyed off `Order['Wix Product ID']`,
+but no code path ever wrote that field. Drivers saw no images. This adds a per-order
+override owned by the owner/florist, and treats the storefront product image as a
+fallback for Wix orders only.
+
+- New endpoints `POST /api/orders/:orderId/image` (florist+owner) and `DELETE` (owner only) — `backend/src/routes/orderImages.js`.
+- New PG migration `0005_orders_image_url.sql` adds `orders.image_url text`.
+- New Airtable field on Orders: `Image URL` (URL or Long text). Owner must add manually before deploy.
+- `orderRepo`: `Image URL` added to `ORDER_WRITE_ALLOWED`, mapper, response.
+- `routes/orders.js` and `routes/deliveries.js`: image priority is per-order `Image URL` first, then storefront product lookup as fallback.
+- Shared `BouquetImageEditor` now accepts an `orderId` prop in addition to `wixProductId`.
+- New shared API helpers `uploadOrderImage` / `removeOrderImage` in `packages/shared/api/uploadImage.js`.
+- New SSE event `order_image_changed` (in addition to existing `product_image_changed`); deliveries response now stamps `orderId` on each row so the driver app can patch in place.
+- `audit_log` action types reused: `image_set`, `image_remove` with `entityType: 'order'`.
+- Each upload reaps the previous Wix Media file via `deleteFiles` to avoid orphan accumulation.
 
 ## 2026-05-03 — Bouquet image upload
 

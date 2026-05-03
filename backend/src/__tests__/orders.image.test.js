@@ -115,4 +115,45 @@ describe('GET /api/orders list enrichment', () => {
     // distinct, sorted-by-encounter order, only non-empty IDs
     expect(productRepo.getImagesBatch).toHaveBeenCalledWith(['p1', 'p2']);
   });
+
+  it('per-order Image URL overrides the storefront product image', async () => {
+    airtable.list.mockResolvedValueOnce([
+      { id: 'o1', 'Wix Product ID': 'p1', 'Image URL': 'https://override/o1.jpg', 'Order Lines': [], Status: 'New', Customer: [], Deliveries: [] },
+      { id: 'o2', 'Wix Product ID': 'p2', 'Order Lines': [], Status: 'New', Customer: [], Deliveries: [] },
+    ]);
+    airtable.list.mockResolvedValue([]);
+    productRepo.getImagesBatch.mockResolvedValue(new Map([['p2', 'storefront-p2']]));
+
+    const app = await buildApp();
+    const res = await request(app).get('/api/orders');
+    expect(res.status).toBe(200);
+    const byId = Object.fromEntries(res.body.map(o => [o.id, o.bouquetImageUrl]));
+    expect(byId).toEqual({ o1: 'https://override/o1.jpg', o2: 'storefront-p2' });
+    // Only o2 needed the storefront lookup — o1 was already overridden.
+    expect(productRepo.getImagesBatch).toHaveBeenCalledWith(['p2']);
+  });
+});
+
+describe('GET /api/orders/:id Image URL precedence', () => {
+  it('uses per-order Image URL when set, skipping storefront lookup', async () => {
+    airtable.getById.mockImplementation(async (_t, id) => {
+      if (id === 'ord1') return {
+        id: 'ord1',
+        'Wix Product ID': 'prod-1',
+        'Image URL': 'https://override/ord1.jpg',
+        'Order Lines': [],
+        Status: 'New',
+        Customer: [],
+        Deliveries: [],
+      };
+      return null;
+    });
+    airtable.list.mockResolvedValue([]);
+
+    const app = await buildApp();
+    const res = await request(app).get('/api/orders/ord1');
+    expect(res.status).toBe(200);
+    expect(res.body.bouquetImageUrl).toBe('https://override/ord1.jpg');
+    expect(productRepo.getImagesBatch).not.toHaveBeenCalled();
+  });
 });

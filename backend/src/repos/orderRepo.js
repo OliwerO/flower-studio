@@ -55,6 +55,7 @@ export const ORDER_WRITE_ALLOWED = [
   'Payment Status', 'Payment Method', 'Payment 1 Amount', 'Payment 1 Method',
   'Delivery Fee', 'Price Override', 'App Order ID',
   'Status', 'Created By', 'Communication method',
+  'Image URL',
 ];
 
 export const LINE_WRITE_ALLOWED = [
@@ -100,6 +101,7 @@ export function pgOrderToResponse(row, lineIds = [], deliveryId = null) {
     'Created By':         row.createdBy ?? null,
     'Payment 1 Amount':   row.payment1Amount != null ? Number(row.payment1Amount) : null,
     'Payment 1 Method':   row.payment1Method ?? null,
+    'Image URL':          row.imageUrl ?? null,
     'Order Lines':        lineIds,
     Deliveries:           deliveryId ? [deliveryId] : [],
   };
@@ -165,6 +167,7 @@ function orderResponseToPg(fields) {
   if ('Created By' in fields)     out.createdBy = fields['Created By'] || null;
   if ('Payment 1 Amount' in fields) out.payment1Amount = fields['Payment 1 Amount'] != null ? String(fields['Payment 1 Amount']) : null;
   if ('Payment 1 Method' in fields) out.payment1Method = fields['Payment 1 Method'] || null;
+  if ('Image URL' in fields)        out.imageUrl = fields['Image URL'] || null;
   return out;
 }
 

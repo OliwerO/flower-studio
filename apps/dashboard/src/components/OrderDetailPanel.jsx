@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -1082,6 +1082,17 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
               placeholder="—"
               onSave={v => patchOrder({ 'Notes Original': v })}
               disabled={saving}
+            />
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold text-pink-700 uppercase tracking-wide mb-1">
+              📸 {t.bouquetPhotoLabel || 'Фото букета'}
+            </p>
+            <BouquetImageEditor
+              orderId={o.id}
+              currentUrl={o['Image URL'] || o.bouquetImageUrl || ''}
+              canRemove
+              onChange={(url) => setOrder(prev => prev ? { ...prev, 'Image URL': url, bouquetImageUrl: url } : prev)}
             />
           </div>
           <div>

@@ -146,6 +146,7 @@ export const orders = pgTable('orders', {
   createdBy:          text('created_by'),
   payment1Amount:     numeric('payment_1_amount', { precision: 10, scale: 2 }),
   payment1Method:     text('payment_1_method'),
+  imageUrl:           text('image_url'),
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt:          timestamp('deleted_at', { withTimezone: true }),
