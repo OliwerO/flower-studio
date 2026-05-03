@@ -118,13 +118,13 @@ for (const [k, v] of Object.entries(TEST_ENV)) {
 // synthetic upload-URL hostname falls through to the real fetch.
 //
 // Endpoints faked:
-//   POST /site-media/v1/files/generate-upload-url → returns harness-fake URL
-//   PUT  http://harness-fake/upload/<uuid>        → returns { file: {...} }
-//   GET  /site-media/v1/files/<id>                → returns { file: { state: 'OK' } }
-//   POST /site-media/v1/bulk/files/delete         → no-op success
-//   DELETE /stores/v1/products/<id>/media/all     → no-op success
-//   POST /stores/v1/products/<id>/media           → no-op success
-//   POST /stores/v1/products/query                → empty result
+//   POST /site-media/v1/files/generate-upload-url            → returns harness-fake URL
+//   PUT  http://harness-fake/upload/<uuid>                   → returns { file: { ..., operationStatus: 'READY' } }
+//   GET  /site-media/v1/files/get-file-by-id?fileId=<id>     → returns { file: { ..., operationStatus: 'READY' } }
+//   POST /site-media/v1/bulk/files/delete                    → no-op success
+//   POST /stores/v1/products/<id>/media/delete               → no-op success (RemoveProductMedia)
+//   POST /stores/v1/products/<id>/media                      → no-op success
+//   POST /stores/v1/products/query                           → empty result
 if (process.env.HARNESS_MOCK_WIX === '1') {
   const realFetch = globalThis.fetch;
   let uuidCounter = 0;
@@ -148,26 +148,34 @@ if (process.env.HARNESS_MOCK_WIX === '1') {
       return jsonResp({ uploadUrl: `${HARNESS_FAKE_HOST}/upload/${id}` });
     }
 
-    // Wix Media — PUT to signed upload URL
+    // Wix Media — PUT to signed upload URL.
+    // Real Wix returns the file descriptor with `operationStatus: 'READY'`
+    // once processing is done. The route short-circuits `pollForReady` when
+    // the PUT response already advertises READY — keep both `operationStatus`
+    // and the legacy `state` so any older code path still sees a healthy file.
     if (url.startsWith(`${HARNESS_FAKE_HOST}/upload/`) && method === 'PUT') {
       const id = url.split('/').pop();
       return jsonResp({
         file: {
           id: `fake-${id}`,
           url: `${HARNESS_FAKE_HOST}/static/${id}.jpg`,
+          operationStatus: 'READY',
           state: 'OK',
         },
       });
     }
 
-    // Wix Media — GET file by id (poll for ready)
-    const fileGetMatch = url.match(/\/site-media\/v1\/files\/([^/?]+)$/);
-    if (fileGetMatch && method === 'GET') {
-      const id = fileGetMatch[1];
+    // Wix Media — GET file descriptor by id (poll for ready).
+    // Real endpoint: GET /site-media/v1/files/get-file-by-id?fileId=<urlencoded>
+    if (url.includes('/site-media/v1/files/get-file-by-id') && method === 'GET') {
+      const qIdx = url.indexOf('?');
+      const params = new URLSearchParams(qIdx >= 0 ? url.slice(qIdx + 1) : '');
+      const fileId = params.get('fileId') || 'unknown';
       return jsonResp({
         file: {
-          id,
-          url: `${HARNESS_FAKE_HOST}/static/${id}.jpg`,
+          id: fileId,
+          url: `${HARNESS_FAKE_HOST}/static/${fileId}.jpg`,
+          operationStatus: 'READY',
           state: 'OK',
         },
       });
@@ -178,9 +186,11 @@ if (process.env.HARNESS_MOCK_WIX === '1') {
       return jsonResp({ results: [] });
     }
 
-    // Wix Stores — clear all media on a product
-    if (/\/stores\/v1\/products\/[^/]+\/media\/all$/.test(url) && method === 'DELETE') {
-      return jsonResp({ product: {} });
+    // Wix Stores — remove media from a product.
+    // Real endpoint: POST /stores/v1/products/<id>/media/delete with
+    // { mediaIds: [] } (empty list = remove all). Response is empty.
+    if (/\/stores\/v1\/products\/[^/]+\/media\/delete$/.test(url) && method === 'POST') {
+      return jsonResp({});
     }
 
     // Wix Stores — attach media to a product
