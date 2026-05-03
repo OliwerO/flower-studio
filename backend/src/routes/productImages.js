@@ -128,4 +128,51 @@ async function handleImageUpload(req, res) {
   res.json({ imageUrl: readyFile.url });
 }
 
+// DELETE /api/products/:wixProductId/image — owner only
+router.delete('/:wixProductId/image', (req, res, next) => {
+  if (req.role !== 'owner') {
+    return res.status(403).json({ error: `Role "${req.role}" cannot remove bouquet images.` });
+  }
+  handleImageDelete(req, res).catch(next);
+});
+
+async function handleImageDelete(req, res) {
+  const { wixProductId } = req.params;
+  try {
+    await clearProductMedia(wixProductId);
+  } catch (err) {
+    const is404 = err.message?.includes(' 404:') || err.message?.includes('PRODUCT_NOT_FOUND');
+    if (!is404) {
+      console.error('[image-delete] clearProductMedia failed:', err.message);
+      return res.status(502).json({ error: `Failed to clear image on Wix product: ${err.message}` });
+    }
+  }
+  try {
+    await productRepo.setImage(wixProductId, '');
+  } catch (err) {
+    console.error('[image-delete] productRepo.setImage failed:', err.message);
+    return res.status(500).json({ error: `Cleared on Wix but failed to update locally: ${err.message}` });
+  }
+  if (drizzleDb) {
+    try {
+      await recordAudit(drizzleDb, {
+        entityType: 'product',
+        entityId: wixProductId,
+        action: 'image_remove',
+        before: { imageUrl: 'present' },
+        after: null,
+        actorRole: req.role,
+      });
+    } catch (err) {
+      console.error('[image-delete] recordAudit failed:', err.message);
+    }
+  }
+  broadcast({
+    type: 'product_image_changed',
+    wixProductId,
+    imageUrl: '',
+  });
+  res.json({ ok: true });
+}
+
 export default router;

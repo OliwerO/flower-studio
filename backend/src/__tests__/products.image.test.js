@@ -168,3 +168,31 @@ describe('POST /api/products/:wixProductId/image', () => {
     expect(notif.broadcast).not.toHaveBeenCalled();
   });
 });
+
+describe('DELETE /api/products/:wixProductId/image', () => {
+  it('owner: clears product media, nulls cached URL, broadcasts SSE, returns 200', async () => {
+    repo.getImage.mockResolvedValue('https://static/old.jpg');
+    wixSync.clearProductMedia.mockResolvedValue({});
+    repo.setImage.mockResolvedValue({ updatedCount: 1 });
+    const app = await buildApp();
+    const res = await request(app)
+      .delete('/api/products/prod-1/image')
+      .set('x-test-role', 'owner');
+    expect(res.status).toBe(200);
+    expect(wixSync.clearProductMedia).toHaveBeenCalledWith('prod-1');
+    expect(repo.setImage).toHaveBeenCalledWith('prod-1', '');
+    expect(notif.broadcast).toHaveBeenCalledWith({
+      type: 'product_image_changed',
+      wixProductId: 'prod-1',
+      imageUrl: '',
+    });
+  });
+
+  it('florist: 403', async () => {
+    const app = await buildApp();
+    const res = await request(app)
+      .delete('/api/products/prod-1/image')
+      .set('x-test-role', 'florist');
+    expect(res.status).toBe(403);
+  });
+});
