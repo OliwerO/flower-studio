@@ -7,8 +7,11 @@
 //
 // Upload flow per Wix docs:
 //   1. POST /files/generate-upload-url → { uploadUrl }
-//   2. PUT bytes to uploadUrl → { file: { url, id, ... } }
-//   3. Poll GET /files/:id until state === 'OK'
+//   2. PUT bytes to uploadUrl → { file: { url, id, operationStatus, ... } }
+//   3. Poll GET /files/get-file-by-id?fileId=<id> until file.operationStatus === 'READY'
+//      (operationStatus is the upload-lifecycle field: PENDING | READY | FAILED.
+//       Note: file.state is a different field — OK | DELETED — and represents
+//       existence, not upload-processing readiness.)
 //
 // All methods throw on non-2xx with response body in the error message
 // so the caller can surface a useful toast (no silent catches).
@@ -67,8 +70,9 @@ export async function uploadFile(uploadUrl, buffer, mimeType) {
 }
 
 /**
- * Polls GET /files/:id until file.state === 'OK' or timeout.
- * Wix takes 1–10s for typical images; raise timeoutMs if you see 504s.
+ * Polls GET /files/get-file-by-id?fileId=<id> until file.operationStatus === 'READY'
+ * (or fast-fails on FAILED, or timeouts). Wix takes 1–10s for typical images;
+ * raise timeoutMs if you see 504s.
  * @param {string} fileId
  * @param {object} [opts]
  * @param {number} [opts.timeoutMs=10000]
@@ -79,7 +83,8 @@ export async function pollForReady(fileId, opts = {}) {
   const intervalMs = opts.intervalMs ?? 400;
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    const res = await fetch(`${WIX_API_URL}/site-media/v1/files/${fileId}`, {
+    const url = `${WIX_API_URL}/site-media/v1/files/get-file-by-id?fileId=${encodeURIComponent(fileId)}`;
+    const res = await fetch(url, {
       method: 'GET',
       headers: wixHeaders(),
     });
@@ -88,7 +93,11 @@ export async function pollForReady(fileId, opts = {}) {
       throw new Error(`Wix Media pollForReady ${res.status}: ${text}`);
     }
     const json = await res.json();
-    if (json.file?.state === 'OK') return json.file;
+    const status = json.file?.operationStatus;
+    if (status === 'READY') return json.file;
+    if (status === 'FAILED') {
+      throw new Error(`Wix Media pollForReady failed (fileId=${fileId}): operationStatus=FAILED`);
+    }
     await new Promise(r => setTimeout(r, intervalMs));
   }
   throw new Error(`Wix Media pollForReady timeout after ${timeoutMs}ms (fileId=${fileId})`);

@@ -64,14 +64,20 @@ async function handleImageUpload(req, res) {
     return res.status(502).json({ error: `Wix Media upload failed: ${err.message}` });
   }
 
+  // Short-circuit: small images often come back READY directly from the PUT,
+  // so we can skip the GET round-trip when the upload response already has a URL.
   let readyFile;
-  try {
-    readyFile = await pollForReady(fileDescriptor.id, { timeoutMs: 10000 });
-  } catch (err) {
-    console.error('[image-upload] pollForReady failed:', err.message);
-    deleteFiles([fileDescriptor.id]).catch(e =>
-      console.error('[image-upload] best-effort delete after timeout failed:', e.message));
-    return res.status(504).json({ error: `Wix Media file processing timeout: ${err.message}` });
+  if (fileDescriptor?.operationStatus === 'READY' && fileDescriptor.url) {
+    readyFile = fileDescriptor;
+  } else {
+    try {
+      readyFile = await pollForReady(fileDescriptor.id, { timeoutMs: 10000 });
+    } catch (err) {
+      console.error('[image-upload] pollForReady failed:', err.message);
+      deleteFiles([fileDescriptor.id]).catch(e =>
+        console.error('[image-upload] best-effort delete after timeout failed:', e.message));
+      return res.status(504).json({ error: `Wix Media file processing timeout: ${err.message}` });
+    }
   }
 
   // Best-effort: clear pre-existing media so the bouquet keeps the

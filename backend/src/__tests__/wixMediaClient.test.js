@@ -74,28 +74,48 @@ describe('wixMediaClient.uploadFile', () => {
 describe('wixMediaClient.pollForReady', () => {
   beforeEach(() => {
     vi.stubGlobal('fetch', vi.fn());
+    vi.stubEnv('WIX_API_KEY', 'test-key');
+    vi.stubEnv('WIX_SITE_ID', 'test-site');
     vi.useFakeTimers();
   });
   afterEach(() => { vi.useRealTimers(); });
 
-  it('returns the file once state is OK', async () => {
+  it('returns the file once operationStatus is READY', async () => {
     fetch
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ file: { id: 'f', state: 'PENDING' } }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ file: { id: 'f', state: 'OK', url: 'u' } }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ file: { id: 'f', operationStatus: 'PENDING' } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ file: { id: 'f', operationStatus: 'READY', url: 'u' } }) });
     const { pollForReady } = await import('../services/wixMediaClient.js');
     const promise = pollForReady('f', { timeoutMs: 5000, intervalMs: 200 });
     await vi.advanceTimersByTimeAsync(250);
     const out = await promise;
-    expect(out).toEqual({ id: 'f', state: 'OK', url: 'u' });
+    expect(out).toEqual({ id: 'f', operationStatus: 'READY', url: 'u' });
+    // Confirm the new query-param URL shape
+    expect(fetch).toHaveBeenCalledWith(
+      'https://www.wixapis.com/site-media/v1/files/get-file-by-id?fileId=f',
+      expect.objectContaining({ method: 'GET' })
+    );
   });
 
   it('throws on timeout', async () => {
-    fetch.mockResolvedValue({ ok: true, json: async () => ({ file: { id: 'f', state: 'PENDING' } }) });
+    fetch.mockResolvedValue({ ok: true, json: async () => ({ file: { id: 'f', operationStatus: 'PENDING' } }) });
     const { pollForReady } = await import('../services/wixMediaClient.js');
     const promise = pollForReady('f', { timeoutMs: 1000, intervalMs: 100 });
     const assertion = expect(promise).rejects.toThrow(/timeout/i);
     await vi.advanceTimersByTimeAsync(1100);
     await assertion;
+  });
+
+  it('throws fast on operationStatus=FAILED (no timeout wait)', async () => {
+    fetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ file: { id: 'f', operationStatus: 'FAILED' } }),
+    });
+    const { pollForReady } = await import('../services/wixMediaClient.js');
+    const promise = pollForReady('f', { timeoutMs: 5000, intervalMs: 200 });
+    const assertion = expect(promise).rejects.toThrow(/FAILED/);
+    await vi.advanceTimersByTimeAsync(50);
+    await assertion;
+    expect(fetch).toHaveBeenCalledTimes(1);  // no extra polling iterations
   });
 });
 
