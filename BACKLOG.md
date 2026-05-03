@@ -382,14 +382,16 @@ Worktree count: 11 → 0. Items still requiring an owner decision:
   utility for matching dated-batch suffixes, not imported anywhere).
   Decide: integrate, finish, or delete.
 
-- [ ] **Decide on 4 abandoned experimental branches on origin** —
-  Each has unique commits not in master and no open PR:
-  `claude/fix-booknet-flowers-opvSa`, `claude/fix-po-eval-error-nj85C`,
-  `claude/flower-studio-claude-integration-IMS2N`,
-  `claude/implement-testing-plan-1s4PT`. Likely stale Claude-session
-  experiments, but unique line count is too high to auto-delete.
-  Recommend `git diff origin/master origin/<branch>` per branch then
-  delete or PR.
+- [ ] **Owner communication workflow / GitHub issue templates** (carryover from `claude/flower-studio-claude-integration-IMS2N`, audited 2026-05-03)
+  Single commit `64ef526` from 2 weeks ago: "feat: add owner communication workflow — GitHub issue templates + Claude Code integration". Never landed. Decide: cherry-pick if still wanted, or delete branch.
+
+- [ ] **Available Today reminders fire multiple times per day** — owner-reported bug (carryover from `feat/florist-cleanup-phase-a`, audited 2026-05-03)
+  Branch has 2 commits: `2826b19` "persist Available Today reminder dedup across restarts" + `7ba180f` "silence Available Today reminders by default". Bug is still present in master — owner gets duplicate reminders. Cherry-pick the dedup commit OR write a fresh fix that survives backend redeploys (root cause: in-memory `cutoffReminderSentDate = null` resets on restart). Then delete the branch.
+
+- [ ] **Append-only stock ledger** — defer until Phase 7 retire (carryover from `feat/stock-ledger`, audited 2026-05-03)
+  Single commit `a76c6cb` adding append-only audit ledger for `Current Quantity` changes. Now likely redundant with the PG `audit_log` table that captures every stock write with before/after diff (in production since 2026-05-02 cutover). Re-evaluate post-Phase-7 — if the audit_log already covers the use case, just delete the branch then.
+
+- [x] **Decide on 4 abandoned experimental branches on origin** — RESOLVED 2026-05-03. Audit + remote prune sweep ran today: `claude/fix-booknet-flowers-opvSa` (content landed via `InlineEdit.jsx`) and `claude/test-harness-mock-airtable-HiFJx` (content landed via PR #161 region) both deleted. The other two branches in the original entry (`claude/fix-po-eval-error-nj85C`, `claude/implement-testing-plan-1s4PT`) had already been pruned earlier. The fourth (`claude/flower-studio-claude-integration-IMS2N`) became its own line-item above. Audit doc from `docs/audit-2026-04-07` salvaged to `docs/archive/AUDIT_2026-04-07.md` before that branch was deleted.
 
 - [ ] **SECURITY: rotate Airtable PAT** — local-only branch
   `feat/smart-order-intake` (March 9 prototype) hardcodes a working
