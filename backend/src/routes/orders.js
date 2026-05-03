@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -284,6 +285,24 @@ router.get('/:id', async (req, res, next) => {
     order['Customer Nickname'] = customer?.Nickname || '';
     order.orderLines = orderLines;
     if (delivery) order.delivery = delivery;
+
+    // Enrich with bouquet image URL so the driver app can render it.
+    // The image is associated with the Wix product (group), not individual
+    // stock-item order lines. Source the product id from the order's
+    // 'Wix Product ID' (set by the Wix webhook). For app-created orders
+    // without that field, the URL is empty string.
+    const wixProductId = order['Wix Product ID'];
+    if (wixProductId) {
+      try {
+        const map = await productRepo.getImagesBatch([wixProductId]);
+        order.bouquetImageUrl = map.get(wixProductId) || '';
+      } catch (err) {
+        console.error('[orders] productRepo.getImagesBatch failed:', err.message);
+        order.bouquetImageUrl = '';
+      }
+    } else {
+      order.bouquetImageUrl = '';
+    }
 
     // Compute Final Price (matches list endpoint logic) so frontend has authoritative total.
     // Price Override replaces flower total only; delivery fee always added on top.
