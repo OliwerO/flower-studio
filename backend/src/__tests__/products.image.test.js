@@ -8,10 +8,13 @@
 //   • non-{owner,florist} roles 403 BEFORE multer parses the body
 //   • unsupported MIME 400 from multer's fileFilter
 //   • Wix Media generateUploadUrl failure surfaces as 502
+//   • attachMediaToProduct failure → 500, no setImage, no broadcast
+//   • pollForReady timeout → 504 + best-effort deleteFiles cleanup
+//   • setImage failure after attach → 500, broadcast not called
 //
-// Note on auth: the global `router.use(authorize('admin'))` lower in
-// products.js would otherwise block florists. The image route is mounted
-// BEFORE that line and does its own role check via imageAuth().
+// Note on auth: the image route lives in routes/productImages.js — a SEPARATE
+// router from products.js. products.js gates everything behind
+// authorize('admin'); productImages.js does its own role check via imageAuth().
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import express from 'express';
@@ -26,11 +29,6 @@ vi.mock('../services/wixMediaClient.js', () => ({
 vi.mock('../services/wixProductSync.js', () => ({
   clearProductMedia:    vi.fn(),
   attachMediaToProduct: vi.fn(),
-  // stubs for unrelated exports the route module imports:
-  runSync: vi.fn(), runPull: vi.fn(), runPush: vi.fn(),
-}));
-vi.mock('../services/wixPushJob.js', () => ({
-  startPushJob: vi.fn(), getJob: vi.fn(),
 }));
 vi.mock('../repos/productRepo.js', () => ({
   setImage:   vi.fn(),
@@ -38,6 +36,7 @@ vi.mock('../repos/productRepo.js', () => ({
 }));
 vi.mock('../services/notifications.js', () => ({ broadcast: vi.fn() }));
 vi.mock('../db/audit.js', () => ({ recordAudit: vi.fn() }));
+vi.mock('../db/index.js', () => ({ db: {} }));
 
 const wixMedia = await import('../services/wixMediaClient.js');
 const wixSync  = await import('../services/wixProductSync.js');
@@ -47,7 +46,7 @@ const notif    = await import('../services/notifications.js');
 async function buildApp() {
   const app = express();
   app.use((req, _res, next) => { req.role = req.headers['x-test-role'] || 'florist'; next(); });
-  const m = await import('../routes/products.js');
+  const m = await import('../routes/productImages.js');
   app.use('/api/products', m.default);
   return app;
 }
@@ -113,5 +112,59 @@ describe('POST /api/products/:wixProductId/image', () => {
       .set('x-test-role', 'owner')
       .attach('image', Buffer.from([0xff]), { filename: 'b.jpg', contentType: 'image/jpeg' });
     expect(res.status).toBe(502);
+  });
+
+  it('attachMediaToProduct fails after upload → 500, no setImage, no broadcast', async () => {
+    wixMedia.generateUploadUrl.mockResolvedValue({ uploadUrl: 'https://upload/x' });
+    wixMedia.uploadFile.mockResolvedValue({ file: { id: 'f1', url: 'https://static/x.jpg' } });
+    wixMedia.pollForReady.mockResolvedValue({ id: 'f1', url: 'https://static/x.jpg', state: 'OK' });
+    wixSync.clearProductMedia.mockResolvedValue({});
+    wixSync.attachMediaToProduct.mockRejectedValue(new Error('attach 500'));
+
+    const app = await buildApp();
+    const res = await request(app)
+      .post('/api/products/prod-1/image')
+      .set('x-test-role', 'owner')
+      .attach('image', Buffer.from([0xff]), { filename: 'b.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/Uploaded to Wix Media but failed to attach/);
+    expect(repo.setImage).not.toHaveBeenCalled();
+    expect(notif.broadcast).not.toHaveBeenCalled();
+  });
+
+  it('pollForReady timeout → 504 + best-effort deleteFiles cleanup', async () => {
+    wixMedia.generateUploadUrl.mockResolvedValue({ uploadUrl: 'https://upload/x' });
+    wixMedia.uploadFile.mockResolvedValue({ file: { id: 'f1', url: 'https://static/x.jpg' } });
+    wixMedia.pollForReady.mockRejectedValue(new Error('timeout'));
+    wixMedia.deleteFiles.mockResolvedValue({});
+
+    const app = await buildApp();
+    const res = await request(app)
+      .post('/api/products/prod-1/image')
+      .set('x-test-role', 'owner')
+      .attach('image', Buffer.from([0xff]), { filename: 'b.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(504);
+    expect(wixMedia.deleteFiles).toHaveBeenCalledWith(['f1']);
+  });
+
+  it('setImage fails after attach → 500, broadcast not called', async () => {
+    wixMedia.generateUploadUrl.mockResolvedValue({ uploadUrl: 'https://upload/x' });
+    wixMedia.uploadFile.mockResolvedValue({ file: { id: 'f1', url: 'https://static/x.jpg' } });
+    wixMedia.pollForReady.mockResolvedValue({ id: 'f1', url: 'https://static/x.jpg', state: 'OK' });
+    wixSync.clearProductMedia.mockResolvedValue({});
+    wixSync.attachMediaToProduct.mockResolvedValue({});
+    repo.setImage.mockRejectedValue(new Error('airtable down'));
+
+    const app = await buildApp();
+    const res = await request(app)
+      .post('/api/products/prod-1/image')
+      .set('x-test-role', 'owner')
+      .attach('image', Buffer.from([0xff]), { filename: 'b.jpg', contentType: 'image/jpeg' });
+
+    expect(res.status).toBe(500);
+    expect(res.body.error).toMatch(/Attached to Wix product but failed to save locally/);
+    expect(notif.broadcast).not.toHaveBeenCalled();
   });
 });

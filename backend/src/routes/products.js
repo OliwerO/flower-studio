@@ -4,145 +4,16 @@
 // review new items, and adjust prices before they go live.
 
 import { Router } from 'express';
-import multer from 'multer';
 import { authorize } from '../middleware/auth.js';
-import { runSync, runPull, runPush, clearProductMedia, attachMediaToProduct }
-  from '../services/wixProductSync.js';
+import { runSync, runPull, runPush } from '../services/wixProductSync.js';
 import { startPushJob, getJob } from '../services/wixPushJob.js';
-import { generateUploadUrl, uploadFile, pollForReady, deleteFiles }
-  from '../services/wixMediaClient.js';
-import * as productRepo from '../repos/productRepo.js';
-import { broadcast } from '../services/notifications.js';
-import { recordAudit } from '../db/audit.js';
-import { db as drizzleDb } from '../db/index.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
 
-// ── Image upload (florist + owner) ──────────────────────────
-//
-// Mounted BEFORE router.use(authorize('admin')) so florists can hit it.
-// The image endpoints do their own role check via imageAuth().
-// Drivers get 403.
-
-const ALLOWED_IMAGE_MIME = new Set(['image/jpeg', 'image/png', 'image/webp']);
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
-  fileFilter: (_req, file, cb) => {
-    if (ALLOWED_IMAGE_MIME.has(file.mimetype)) return cb(null, true);
-    cb(new Error('Unsupported image MIME — JPG, PNG, or WebP only'));
-  },
-});
-
-function imageAuth(req, res, next) {
-  if (req.role !== 'florist' && req.role !== 'owner') {
-    return res.status(403).json({ error: `Role "${req.role}" cannot upload bouquet images.` });
-  }
-  next();
-}
-
-// POST /api/products/:wixProductId/image — multipart upload, see handleImageUpload below
-router.post('/:wixProductId/image', imageAuth, (req, res, next) => {
-  upload.single('image')(req, res, (err) => {
-    if (err) {
-      return res.status(400).json({ error: err.message });
-    }
-    handleImageUpload(req, res).catch(next);
-  });
-});
-
-async function handleImageUpload(req, res) {
-  const { wixProductId } = req.params;
-  if (!req.file) return res.status(400).json({ error: 'No image file uploaded.' });
-  const { buffer, mimetype, originalname } = req.file;
-
-  // 1. Generate signed upload URL
-  let uploadUrlResp;
-  try {
-    uploadUrlResp = await generateUploadUrl({ mimeType: mimetype, fileName: originalname });
-  } catch (err) {
-    console.error('[image-upload] generateUploadUrl failed:', err.message);
-    return res.status(502).json({ error: `Wix Media unavailable: ${err.message}` });
-  }
-
-  // 2. PUT bytes
-  let fileDescriptor;
-  try {
-    const putResp = await uploadFile(uploadUrlResp.uploadUrl, buffer, mimetype);
-    fileDescriptor = putResp.file;
-  } catch (err) {
-    console.error('[image-upload] uploadFile failed:', err.message);
-    return res.status(502).json({ error: `Wix Media upload failed: ${err.message}` });
-  }
-
-  // 3. Poll for ready
-  let readyFile;
-  try {
-    readyFile = await pollForReady(fileDescriptor.id, { timeoutMs: 10000 });
-  } catch (err) {
-    console.error('[image-upload] pollForReady failed:', err.message);
-    deleteFiles([fileDescriptor.id]).catch(e =>
-      console.error('[image-upload] best-effort delete after timeout failed:', e.message));
-    return res.status(504).json({ error: `Wix Media file processing timeout: ${err.message}` });
-  }
-
-  // 4. Replace existing media on the product (single-image semantic)
-  try {
-    await clearProductMedia(wixProductId);
-  } catch (err) {
-    console.error('[image-upload] clearProductMedia failed:', err.message);
-  }
-
-  // 5. Attach the new media to the product
-  try {
-    await attachMediaToProduct(wixProductId, readyFile.url);
-  } catch (err) {
-    console.error('[image-upload] attachMediaToProduct failed:', err.message);
-    return res.status(500).json({ error: `Uploaded to Wix Media but failed to attach to product: ${err.message}` });
-  }
-
-  // 6. Persist URL in local cache
-  try {
-    await productRepo.setImage(wixProductId, readyFile.url);
-  } catch (err) {
-    console.error('[image-upload] productRepo.setImage failed:', err.message);
-    return res.status(500).json({ error: `Attached to Wix product but failed to save locally: ${err.message}` });
-  }
-
-  // 7. Audit log (best-effort — never blocks the response).
-  // Real signature is recordAudit(tx, { entityType, entityId, action,
-  // before, after, actorRole, actorPinLabel }). We pass the top-level db
-  // handle as tx so it lands at the connection level. If PG isn't
-  // configured (db === null), the call is skipped.
-  if (drizzleDb) {
-    try {
-      await recordAudit(drizzleDb, {
-        entityType: 'product',
-        entityId: wixProductId,
-        action: 'image_set',
-        before: null,
-        after: { imageUrl: readyFile.url },
-        actorRole: req.role,
-      });
-    } catch (err) {
-      console.error('[image-upload] recordAudit failed:', err.message);
-    }
-  }
-
-  // 8. Broadcast SSE
-  broadcast({
-    type: 'product_image_changed',
-    wixProductId,
-    imageUrl: readyFile.url,
-  });
-
-  res.json({ imageUrl: readyFile.url });
-}
-
-// All remaining product routes require owner access
+// All product routes require owner access
 router.use(authorize('admin'));
 
 // ── POST /api/products/sync — trigger Wix ↔ Airtable sync ──
