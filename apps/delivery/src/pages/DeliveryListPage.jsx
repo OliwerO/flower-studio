@@ -78,6 +78,16 @@ export default function DeliveryListPage() {
     if (event.type === 'order_status_changed' || event.type === 'order_ready') {
       fetchDeliveries();
     }
+    // Owner uploaded/removed a bouquet thumbnail in the dashboard or florist
+    // app — patch every delivery whose linked order points at this Wix
+    // product so the new image (or its absence) shows up without reload.
+    if (event.type === 'product_image_changed') {
+      setDeliveries(prev => prev.map(d =>
+        d.wixProductId && d.wixProductId === event.wixProductId
+          ? { ...d, bouquetImageUrl: event.imageUrl || '' }
+          : d
+      ));
+    }
   });
 
   // Check for assigned stock pickups

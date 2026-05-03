@@ -17,6 +17,7 @@ import client from '../api/client.js';
 import t from '../translations.js';
 import BouquetCard from '../components/bouquets/BouquetCard.jsx';
 import PushBar from '../components/bouquets/PushBar.jsx';
+import { useNotifications } from '../hooks/useNotifications.js';
 
 export default function BouquetsPage() {
   const navigate = useNavigate();
@@ -40,6 +41,19 @@ export default function BouquetsPage() {
   const [dirtyIds, setDirtyIds] = useState(() => new Set());
 
   useEffect(() => { loadAll(); }, []);
+
+  // SSE: when an image is uploaded/deleted from another tab or the dashboard,
+  // patch matching variant rows in-place so the card re-renders without
+  // refetching the full product list. Image URL is mirrored across every
+  // variant of a bouquet by the backend (productRepo.setImage).
+  useNotifications(undefined, (event) => {
+    if (event.type !== 'product_image_changed') return;
+    setRows(prev => prev.map(r =>
+      (r['Wix Product ID'] || r.id) === event.wixProductId
+        ? { ...r, 'Image URL': event.imageUrl || '' }
+        : r
+    ));
+  });
 
   async function loadAll() {
     setLoading(true);

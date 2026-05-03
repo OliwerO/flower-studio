@@ -121,6 +121,10 @@ router.get('/', async (req, res, next) => {
       const orderId = d['Linked Order']?.[0];
       const productId = orderMap[orderId]?.['Wix Product ID'];
       d.bouquetImageUrl = (productId && imageMap.get(productId)) || '';
+      // Stash the originating Wix product ID alongside the resolved URL so the
+      // delivery app can patch matching rows in-place when an SSE
+      // `product_image_changed` event fires (no full reload required).
+      d.wixProductId = productId || '';
     }
 
     res.json(deliveries);

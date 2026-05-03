@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { WixPushModal } from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
+import { useNotifications } from '../hooks/useNotifications.js';
 import t from '../translations.js';
 import { groupByProduct, parseCats } from './products/helpers.js';
 import SyncStatus from './products/SyncStatus.jsx';
@@ -57,6 +58,19 @@ export default function ProductsTab() {
   }, [showToast]);
 
   useEffect(() => { fetchProducts(); }, [fetchProducts]);
+
+  // SSE: when an image is uploaded/deleted from another tab or the florist
+  // app, patch matching variant rows in-place so the card re-renders without
+  // refetching. Image URL is mirrored across every variant of a bouquet by
+  // the backend (productRepo.setImage).
+  useNotifications(undefined, (event) => {
+    if (event.type !== 'product_image_changed') return;
+    setProducts(prev => prev.map(p =>
+      (p['Wix Product ID'] || p.id) === event.wixProductId
+        ? { ...p, 'Image URL': event.imageUrl || '' }
+        : p
+    ));
+  });
 
   const stockMap = Object.fromEntries(stock.map(s => [s.id, s]));
   const grouped = groupByProduct(products);
