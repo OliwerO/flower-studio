@@ -33,6 +33,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | analytics.js | GET /analytics | Financial KPIs with period comparison |
 | settings.js | GET/POST /settings | App config persistence (Airtable App Config table). Also exports `getConfig`/`getDriverOfDay`/`generateOrderId` — TODO move to `services/appConfig.js`. |
 | products.js | POST /products/pull\|push\|sync\|translate, GET /products/push/status/:jobId | Bidirectional Wix product sync. Push runs as an async job (see `wixPushJob.js`) — POST /push returns 202 + jobId, the modal polls /push/status. /push/sync is the legacy synchronous variant kept for curl debugging. |
+| productImages.js | POST/DELETE /products/:wixProductId/image | Bouquet image upload (florist+owner) and removal (owner only). Orchestrates Wix Media upload + Wix Stores attach via `wixMediaClient.js`, persists URL via `productRepo`, audits as `image_set` / `image_remove`, broadcasts SSE `product_image_changed`. |
 | webhook.js | POST /webhook/wix | Wix order webhook (HMAC-SHA256 verified) |
 | intake.js | POST /intake/parse | AI-powered order parsing (Claude Haiku) |
 | events.js | GET /events | SSE real-time broadcast (max 50 clients) |
@@ -57,6 +58,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | wix.js | Wix webhook processor — parses payload, creates order + lines + delivery. |
 | wixProductSync.js | Bidirectional Wix product pull/push with sync logging. `runPush` accepts `onProgress(entry)` and parallelizes Wix API calls per phase via `p-queue` (concurrency 8) so the full push lands in 10–20s. Pull mirrors Wix → Airtable for prices and descriptions (the 2026-04-22 lockout was specific to the legacy `runSync` flow, which the UI no longer calls). (1200+ L — split candidate.) |
 | wixPushJob.js | Async-job wrapper around `runPush()`. POST /products/push starts a job and returns 202+jobId; the frontend polls /products/push/status/:jobId until done. Single-flight by design — exists because Vercel's edge proxy was aborting long synchronous pushes and the UI was reporting failure on successful backend runs. |
+| wixMediaClient.js | Wix Media Manager client used by `productImages.js`. Exposes `generateUploadUrl` (signed-URL provisioner), `uploadFile` (multipart PUT), `pollForReady` (waits for Wix to finish processing the asset), `attachToProduct` (Wix Stores media link), `clearMedia` (detach + best-effort delete), and `deleteFiles`. Reuses `WIX_API_KEY`; requires the `Manage Media Manager` scope (`MEDIA.SITE_MEDIA_FILES_UPLOAD`) in addition to `Manage Products`. Harness intercepts every call when `HARNESS_MOCK_WIX=1`. |
 | telegram.js | Telegram Bot API wrapper — new-order + delivery-landed alerts. |
 | intake-parser.js | Claude Haiku integration for parsing freeform text / Flowwow emails into structured orders. |
 | analyticsService.js | Pure math functions for financial KPIs (no DB calls). |
@@ -76,7 +78,7 @@ Key paths:
 - `db/migrations/` — `.sql` files applied lexicographically. Used by Drizzle on real PG and by pglite at boot in tests.
 - `db/audit.js` — append-only audit log (`audit_log`); writes are tagged via the actor-context async-hook (`actor.js`) so every change carries who/role/req-id.
 - `db/index.js` — Postgres + pglite boot. Pglite refuses to boot in `NODE_ENV=production`.
-- `repos/orderRepo.js`, `repos/stockRepo.js`, `repos/customerRepo.js` — read/write through the chosen backend. Each repo's three modes share an interface; routes/services call the repo and don't branch on the env flag themselves.
+- `repos/orderRepo.js`, `repos/stockRepo.js`, `repos/customerRepo.js`, `repos/productRepo.js` — read/write through the chosen backend. Each repo's three modes share an interface; routes/services call the repo and don't branch on the env flag themselves. `productRepo` (`getImage`, `setImage`, `removeImage`, `getImagesBatch`) caches Wix bouquet image URLs in Airtable today (Product Config table) and is shaped to switch to Postgres in Phase 6 with no caller changes; `getImagesBatch` chunks `OR()` lookups at 100 IDs to stay within Airtable formula limits.
 - `db/README.md` — design notes for the migration, including the Phase 4 parity-check stub at `orderRepo.js:1100-1111` (full impl pending — required before flipping `ORDER_BACKEND=shadow` to `postgres`).
 
 ## Auth Model
