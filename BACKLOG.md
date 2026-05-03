@@ -6,17 +6,17 @@ Features and improvements tracked against original build phases.
 
 ## ⚡ Pick-up checklist for the next session
 
-If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-04-30.
+If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-05-02.
 
 **Migration cutover state:**
-- Phase 3 (Stock) is IN SHADOW WEEK on prod since 2026-04-28. `STOCK_BACKEND=shadow` is live.
-- Phase 4 (Orders) implementation + read-path migration both merged. Harness defaults to `ORDER_BACKEND=postgres` and runs 153/153 green. Prod cutover env flip NOT started — `ORDER_BACKEND` still defaults to `airtable` on Railway.
+- Phase 3 (Stock) **CUT OVER 2026-05-02**. `STOCK_BACKEND=postgres` live on prod. Airtable Stock = frozen legacy snapshot.
+- Phase 4 (Orders) **CUT OVER 2026-05-02**. `ORDER_BACKEND=postgres` live on prod. Airtable Orders / Order Lines / Deliveries = frozen legacy snapshots. Order shadow window was skipped — backfill + harness Wix replay + spot-check served as the verification gate (see `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`).
 
-**Daily owner check during shadow week** (~30 sec):
+**Health check after cutover** (~30 sec):
 ```bash
 CLAUDE_RO_URL='<from project_postgres_access.md>' node backend/scripts/shadow-health.js
 ```
-Should show "✓ Shadow-write is healthy" with zero parity mismatches. If anything but zero, investigate before flipping to postgres.
+Reports row counts in PG + audit activity. parity_log is no longer fed (shadow mode is off) but the file stays useful as a traffic dashboard.
 
 **Open work items, ranked by when they unblock:**
 
@@ -25,8 +25,8 @@ Should show "✓ Shadow-write is healthy" with zero parity mismatches. If anythi
 3. **3b E2E test harness** — foundation merged in PR #161. Comprehensive 24-section / 153-assertion API-level suite live in `scripts/e2e-test.js` (covers every order/stock/delivery workflow, audit per role, parity recheck, auth gates, signed Wix webhook replay with dedup). Run with `npm run harness` then `npm run test:e2e`. CI workflow at `.github/workflows/test.yml` runs unit + E2E on every PR. Playwright scaffold landed (`playwright.config.js` + helpers + one happy-path spec, currently `.skip` until React components gain `data-testid` selectors). **Still open**: per-spec UI fill-in work (florist order creation, bouquet edit, owner cancel-with-return, owner soft-delete-restore, admin parity, driver delivery, etc — see design doc).
 
 3a. ~~**Phase 4 read-path migration** (BLOCKER)~~ — RESOLVED 2026-04-30. All 6 read routes (`GET /orders`, `GET /orders/:id`, `PATCH /orders/:id` non-status, `GET/PATCH /deliveries/:id`, `POST /:id/swap-bouquet-line`, `POST /:id/convert-to-delivery`) now route through `orderRepo`. Wix webhook mirrors creates to PG via `orderRepo.mirrorAirtableOrder`. Migration 0004 added `deliveries.delivered_at` and `orders.wix_order_id` (partial-unique). Writeoff path in `editBouquetLines` now writes to Stock Loss Log (still Airtable until Phase 6). Harness defaults to `ORDER_BACKEND=postgres`; `npm run harness` + `npm run test:e2e` → 153/153 green in BOTH airtable and postgres modes.
-4. **Stock cutover flip** (after shadow week clean) — `railway variables --service flower-studio-backend --set STOCK_BACKEND=postgres` + redeploy. Airtable Stock becomes legacy snapshot.
-5. **Phase 4 cutover** (after #3 validates Wix webhook) — `node backend/scripts/backfill-orders.js` → `ORDER_BACKEND=shadow` → 1 week shadow → `ORDER_BACKEND=postgres`.
+4. ~~**Stock cutover flip**~~ — DONE 2026-05-02. `STOCK_BACKEND=postgres` live on prod.
+5. ~~**Phase 4 cutover**~~ — DONE 2026-05-02. Backfill + Wix-webhook harness replay + smoke-test passed; flipped `ORDER_BACKEND=shadow` step skipped (the shadow path in `orderRepo.createOrder` is PG-only and would have lost Airtable writes). Plan + verification recorded at `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`.
 6. **Order parity dashboard UI in AdminTab** — backend stub already exists; full `orderRepo.runParityCheck` impl + AdminTab order-side rendering. Best after ORDER_BACKEND=shadow generates real data.
 7. **`scripts/simulate-orders.js`** — owner-runnable day-in-the-life. Integration tests already cover the same scenarios; this is convenience.
 8. **Phase 5 prep — Customers** (after Phase 4 cutover proves stable) — design doc, schema (with FK to existing customer_id text columns), customerRepo skeleton, dedup tooling for Universe A (legacy) + B (app).
@@ -315,26 +315,20 @@ reports). Each item below was re-validated against the current code on
 - [x] **Phase 1 — Postgres infra** (2026-04-27) — Railway PG provisioned, Drizzle wired, `system_meta` migration applied, `claude_ro` read-only role created.
 - [x] **Phase 2.5 — Audit log + Admin tab** (2026-04-27) — `audit_log` table + `recordAudit()` helper. Owner-only Admin tab with audit-log viewer. Per-entity registry empty until Phase 3 populates it.
 - [x] **Phase 3 — Stock cutover scaffolding** (2026-04-27) — `stock` + `parity_log` tables, `stockRepo` with three-mode backend (`airtable | shadow | postgres`), full route wiring (stock.js, dashboard.js, orderService autoMatchStock + atomicStockAdjust, wixProductSync), backfill script, AdminTab parity endpoints. **Default behaviour unchanged** (`STOCK_BACKEND=airtable`); cutover gated on env var flip.
-- [~] **Phase 3 cutover** — IN SHADOW WEEK as of 2026-04-28.
-  - [x] Migrations applied to prod PG (0000-0003 — orders/lines/deliveries also live but inert).
+- [x] **Phase 3 cutover** — COMPLETE 2026-05-02. `STOCK_BACKEND=postgres`. Airtable Stock = frozen legacy snapshot.
+  - [x] Migrations applied to prod PG.
   - [x] `scripts/backfill-stock.js` ran — 86 of 88 Airtable rows seeded (2 skipped: `recyLyXct64ksIMFY`, `recD6p1GbmrKV7mrl` — no Display Name).
-  - [x] `STOCK_BACKEND=shadow` set on Railway, redeploy triggered.
-  - [ ] **Owner verify**: Admin tab shows "Shadow" banner + 86 stock rows + zero parity mismatches.
-  - [ ] **Owner clean up** the 2 orphan Airtable rows (delete them or add Display Name + re-run backfill).
-  - [ ] **Daily watch** during shadow week — `node backend/scripts/shadow-health.js` (read-only, uses `claude_ro` DSN). Especially after Saturday — peak write volume.
-  - [ ] **Cutover criterion**: 0 unexplained mismatches across a full Saturday with >50 stock writes.
-  - [ ] **Flip**: `railway variables --service flower-studio-backend --set STOCK_BACKEND=postgres` + redeploy. Airtable Stock becomes a frozen legacy snapshot.
-- [ ] **Phase 4 — Orders + Lines + Deliveries** — design + scaffolding in progress on `feat/sql-migration-phase-4-prep`.
-  - [x] Design doc: `docs/migration/phase-4-orders-design.md` (schema, transaction boundary, cutover sequencing, Wix webhook risk)
-  - [x] Schema: `orders` + `order_lines` + `deliveries` tables + 0003 migration. ON DELETE CASCADE on the FKs. unique(order_id) on deliveries (one delivery per order, enforced at DB level).
-  - [x] stockRepo refactor: `opts.tx` parameter on every write method so Phase 4's transactional createOrder can adjust stock atomically inside the parent tx. 4 new rollback tests prove the contract.
-  - [x] Schema smoke tests: 5 new tests (FK enforcement, ON DELETE CASCADE, unique constraints).
-  - [x] orderRepo skeleton with locked-in API (signatures + JSDoc). Stubs throw `501` until implementation.
-  - [x] **Implementation PR** (2026-04-28) — orderRepo full impl: list, getById, createOrder (transactional), transitionStatus + cascade, cancelWithStockReturn, deleteOrder, editBouquetLines. orderService.js delegates when ORDER_BACKEND != 'airtable'. 19 integration tests pass.
-  - [x] Backfill script `scripts/backfill-orders.js` (idempotent UPSERT on airtable_id, all three tables).
-  - [ ] **Wix webhook validation** — capture 3-4 recorded webhook payloads from prod Webhook Log, replay against new createOrder before any cutover (BACKLOG `WIX-BACKLINK`). Best done inside the 3b E2E harness once it exists.
-  - [ ] Cutover via single `ORDER_BACKEND=shadow|postgres` env var (independent of `STOCK_BACKEND`).
-  - [ ] Order parity dashboard UI in AdminTab + full `orderRepo.runParityCheck` impl (currently stubbed).
+  - [x] `STOCK_BACKEND=shadow` ran 2026-04-28 → 2026-05-02 (4 clean days; parity_log = 0 throughout).
+  - [x] **Flip**: `STOCK_BACKEND=postgres` set 2026-05-02 21:39 GMT+2.
+  - [ ] **Owner clean up** the 2 orphan Airtable rows (cosmetic — they're not in PG; PG is now source of truth).
+- [x] **Phase 4 — Orders + Lines + Deliveries** — CUT OVER 2026-05-02.
+  - [x] Design doc: `docs/migration/phase-4-orders-design.md`
+  - [x] Schema, stockRepo opts.tx refactor, smoke tests, orderRepo skeleton + full impl (19 integration tests pass).
+  - [x] **Implementation PR** (2026-04-28) — orderRepo full impl. orderService.js delegates when ORDER_BACKEND != 'airtable'.
+  - [x] Backfill `scripts/backfill-orders.js` ran cleanly at cutover — 68/185/56 rows updated, 0 inserted/skipped (the Wix-webhook mirror had already kept PG in sync since 2026-04-30).
+  - [x] **Wix webhook validation** — E2E section 24 (8/8 in postgres mode). Recorded-payload replay against harness deferred to follow-up.
+  - [x] **Cutover**: `ORDER_BACKEND=postgres` set 2026-05-02 21:39 GMT+2 alongside stock flip. Shadow window deliberately skipped — `orderRepo.createOrder` shadow mode is PG-only and would have lost Airtable writes; backfill + harness Wix replay + post-flip smoke test served as the verification gate. Plan + verification at `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`.
+  - [ ] Order parity dashboard UI in AdminTab + full `orderRepo.runParityCheck` impl (now a historical PG vs frozen-Airtable comparison — lower priority).
   - [ ] `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
 - [ ] **Phase 5 — Customer dedup + cutover** — Universe A (legacy) + B (app) merge with auto-merge on exact phone/email + owner-review modal for ambiguous pairs.
 - [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.

@@ -60,6 +60,93 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-05-02 — Phase 3 + Phase 4 Postgres cutover (PG = source of truth)
+
+The two long-running migration phases flipped together in one Railway redeploy
+window at 21:39 GMT+2. After this commit, Postgres is the source of truth for
+**stock, orders, order lines, and deliveries**. Airtable continues to back the
+remaining domains (customers, POs, hours, marketing spend, loss log, webhook
+log, sync log, app config) until later phases cut them over too.
+
+### Cutover sequence (recorded for posterity + future migrations)
+
+1. **Pre-flight** — `shadow-health.js` against prod PG: parity_log = 0, stock
+   88 rows (2 negative, expected demand backlog). Full Airtable backup via
+   `scripts/airtable-backup.mjs` → `backups/2026-05-02/` (1771 records / 10
+   tables). E2E suite 153/153 in `ORDER_BACKEND=postgres STOCK_BACKEND=postgres`.
+2. **Backfill** — `backend/scripts/backfill-orders.js` (idempotent UPSERT on
+   `airtable_id`) ran via the public Postgres proxy DSN: 68 orders, 185 lines,
+   56 deliveries — all "updated", 0 inserted/skipped. The Wix-webhook mirror
+   (`orderRepo.mirrorAirtableOrder`) had already kept PG in sync since the
+   2026-04-30 read-path commit, so the backfill was effectively a confirmation
+   pass.
+3. **Flip** — `railway variables --service flower-studio-backend
+   --set STOCK_BACKEND=postgres --set ORDER_BACKEND=postgres`. Single redeploy.
+   Boot log confirmed `[BACKEND] ORDER_BACKEND=postgres STOCK_BACKEND=postgres`.
+4. **Smoke test** — created an in-store test order from the florist app, then
+   cancelled it. Audit log shows: order create → stock decrement (Hydrangea Pink
+   -2 → -3) → order status update (New → Cancelled). The new order has
+   `airtable_id = NULL`, confirming PG-native creation. **Note**: the stock did
+   *not* return on cancel — that's by design (CLAUDE.md: cancel-with-return is
+   an explicit second flow). See the next CHANGELOG entry for the florist-app
+   UX fix that surfaces the choice.
+
+### Why we skipped the order shadow window
+
+Stock had a 4-day clean shadow week (4 of the planned 7 — short, but parity_log
+stayed at 0 throughout, including across owner-side write-offs). Orders had
+no shadow at all because **`orderRepo.createOrder` in `shadow` mode is
+PG-only**: lines 506-642 of `orderRepo.js` never write to Airtable in shadow
+mode. Running `ORDER_BACKEND=shadow` would have silently lost every new order
+from Airtable. So we went `airtable → postgres` directly, with backfill +
+harness Wix replay + post-flip smoke test as substitute verification. Full
+runbook + risks acknowledged at
+`docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`.
+
+### Open follow-ups (not blockers)
+
+- Order parity dashboard impl (`orderRepo.runParityCheck` is a stub).
+- Stock-loss log writes still go to Airtable (Phase 6).
+- Two orphan Airtable Stock rows with no Display Name still sitting there;
+  cosmetic now that PG is authoritative.
+
+### Verification
+
+`railway logs --service flower-studio-backend | grep '\[BACKEND\] ORDER_BACKEND'`
+→ `[BACKEND] ORDER_BACKEND=postgres STOCK_BACKEND=postgres`
+
+`curl https://flower-studio-backend-production.up.railway.app/api/health` → 200
+ok with `testBackend: false`.
+
+---
+
+## 2026-05-02 — Florist app: cancel-with-return prompt in OrderCard + OrderDetailPage
+
+Closes the UX gap surfaced during the Phase 4 cutover smoke test. Florist app's
+cancel button used to flip `Status → Cancelled` silently, never offering the
+stock-return path that the dashboard already had. Now both views ask:
+
+> **Cancel this order — return flowers to stock?**
+> [Cancel + return stock]   [Cancel only]   [Cancel]
+
+Picking "Cancel + return stock" routes through `POST /orders/:id/cancel-with-return`
+and toasts a per-flower summary (`Возвращено: Hydrangea Pink: +1`). Picking
+"Cancel only" patches the status without touching stock. Mirrors dashboard's
+`OrderDetailPanel.handleCancel` exactly — three views now share the same logic
+and translation keys. Matches CLAUDE.md "Cross-App Feature Parity" rule.
+
+**Files changed:**
+- `apps/florist/src/components/OrderCard.jsx` — `confirmCancel` state, `handleCancel(returnStock)` async helper, Pills onChange interceptor for Cancelled, inline two-button confirm. Existing terminal-state cancel button rerouted to the same confirm flow (drops the native `confirm()` dialog).
+- `apps/florist/src/pages/OrderDetailPage.jsx` — same pattern.
+- `apps/florist/src/translations.js` — `cancelNoReturn`, `cancelConfirm`, `stockReturned` (EN + RU).
+
+**Tests:**
+- `cd backend && npx vitest run` → 209/209.
+- `npm run harness` (postgres mode) + `npm run test:e2e` → 153/153.
+- Florist Vite build → green, 1.16s.
+
+---
+
 ## 2026-04-30 — Phase 4 read-path migration: routes through orderRepo, harness 153/153 in postgres mode
 
 The Phase 4 cutover was half-complete — `orderService.createOrder` and the

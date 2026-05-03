@@ -154,6 +154,7 @@ export default function OrderDetailPage() {
   const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmCancel, setConfirmCancel] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -186,6 +187,31 @@ export default function OrderDetailPage() {
       showToast(msg, 'error');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Cancel an order with explicit choice on stock. Mirrors OrderCard.handleCancel
+  // and dashboard OrderDetailPanel.handleCancel — keep the three in lockstep.
+  async function handleCancel(returnStock) {
+    setSaving(true);
+    try {
+      if (returnStock) {
+        const res = await client.post(`/orders/${id}/cancel-with-return`);
+        const returned = res.data.returnedItems || [];
+        const summary = returned.length > 0
+          ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
+          : '';
+        showToast(`${t.orderCancelled}${summary ? '. ' + t.stockReturned + ': ' + summary : ''}`, 'success');
+        const fresh = await client.get(`/orders/${id}`);
+        setOrder(fresh.data);
+      } else {
+        await patch({ 'Status': 'Cancelled' });
+      }
+    } catch (err) {
+      showToast(err.response?.data?.error || t.updateError || 'Failed to cancel.', 'error');
+    } finally {
+      setSaving(false);
+      setConfirmCancel(false);
     }
   }
 
@@ -619,12 +645,43 @@ export default function OrderDetailPage() {
                   return (
                     <Pills
                       value={current}
-                      onChange={val => patch({ 'Status': val })}
+                      onChange={val => {
+                        // Intercept Cancelled — show inline confirm so user
+                        // picks return-stock vs status-only cancel. Same
+                        // pattern as OrderCard + dashboard OrderDetailPanel.
+                        if (val === 'Cancelled' && current !== 'Cancelled') {
+                          setConfirmCancel(true);
+                        } else {
+                          patch({ 'Status': val });
+                        }
+                      }}
                       disabled={saving}
                       options={visible.map(s => ({ value: s, label: s }))}
                     />
                   );
                 })()}
+                {confirmCancel && (
+                  <div className="mt-2 ios-card p-3 space-y-2">
+                    <p className="text-xs font-semibold text-ios-red">{t.cancelConfirm}</p>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => handleCancel(true)}
+                        disabled={saving}
+                        className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold disabled:opacity-40"
+                      >{t.cancelAndReturn}</button>
+                      <button
+                        onClick={() => handleCancel(false)}
+                        disabled={saving}
+                        className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold disabled:opacity-40"
+                      >{t.cancelNoReturn}</button>
+                      <button
+                        onClick={() => setConfirmCancel(false)}
+                        disabled={saving}
+                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs disabled:opacity-40"
+                      >{t.cancel}</button>
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
 
