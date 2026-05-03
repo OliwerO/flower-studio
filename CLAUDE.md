@@ -141,6 +141,28 @@ Skip the chain only for: typo fixes, one-line bugfixes obvious from a stack trac
 
 If two Claude sessions are active in this repo simultaneously, **each session must operate in its own worktree** under `.worktrees/`. Use `git worktree list` before any branch operation to see who's on what.
 
+### Cost discipline (added 2026-05-03 after 2× 5h Opus burn on bouquet-image-upload)
+
+The default chain above is non-negotiable for quality. These tunings cut token cost without weakening it.
+
+**Model selection per role.** Subagents inherit Opus unless overridden. Pass `model` explicitly when spawning agents via the `Agent` tool:
+- **Opus** — planning (`writing-plans`, `code-architect`), final review (`code-reviewer`, `requesting-code-review`), debugging (`systematic-debugging`), brainstorming. Reasoning-heavy steps.
+- **Sonnet** — execution subagents that follow a written plan task ("implement Task 7 exactly as specified"). Sonnet 4.6 is adequate for "follow these steps + run these commands" and ~5× cheaper. Use for: TDD red/green loops on backend services with a clear spec, UI wiring tasks, doc updates, mechanical refactors.
+- **Haiku** — never for code; OK for one-shot greps / file lookups via Explore agent if Sonnet feels overkill.
+
+**When to skip TDD** (still respect the Testing Rules section). TDD red/green is mandatory for: new backend services, new shared utils, new repos, new shared hooks. Skip the formal red phase for: pure UI wiring (importing an existing shared component into a page), CSS/Tailwind tweaks, copy/translation changes, doc-only edits, simple route handlers that compose existing services. For these, write the test alongside or after the implementation — verification still mandatory before commit.
+
+**Batched reviews, not per-task.** `subagent-driven-development` spec defaults to two reviewers (code-quality + spec-compliance) between every task. For a 17-task plan this spawns ~34 review subagents, each re-reading CLAUDE.md + plan + spec. Instead:
+- Run reviews **at phase boundaries** (groups of 3–5 related tasks), not after every task.
+- Final reviewer pass at the end, before the PR, covering the whole branch diff.
+- Keep per-task review only when a task touches a Known Pitfall area (status workflows, stock math, cancel-with-return, Wix sync, shadow-window writes).
+
+**Pre-trim subagent prompts.** Don't paste the full plan into every executor subagent. Paste only that task's section + relevant file paths + the spec excerpt that affects it. The plan exists on disk — the subagent can read the bits it needs.
+
+**Right-size plans.** A 2300-line plan for one feature is a smell. If a plan exceeds ~1500 lines or 15 tasks, split it: land an MVP first, file follow-ups for the rest. Each task should be one commit's worth (≤ ~300 LOC, ≤ 2 files in most cases).
+
+**Rough budget guide.** A 17-task feature like bouquet-image-upload should fit in **one** 5h Opus window when tuned per above (Sonnet for executors, batched reviews, tight subagent prompts). If two windows look likely, the plan is probably too big — split.
+
 ## Workflow Rules
 - Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
 - Check off completed items in `BACKLOG.md`
