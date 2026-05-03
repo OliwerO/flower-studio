@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -63,9 +64,12 @@ router.get('/', async (req, res, next) => {
     // Enrich with customer name + phone from linked orders → customers.
     // Like checking the original purchase order to find who placed it.
     const orderIds = [...new Set(deliveries.flatMap(d => d['Linked Order'] || []))];
+    let orderMap = {};
     if (orderIds.length > 0) {
+      // Pull 'Wix Product ID' alongside the other order fields so we can
+      // batch-look-up bouquet thumbnails in a single round-trip below.
       const orders = await orderRepo.listByIds(orderIds, {
-        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID'],
+        fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID', 'Wix Product ID'],
       });
       const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
       const customers = customerIds.length > 0
@@ -77,7 +81,6 @@ router.get('/', async (req, res, next) => {
 
       const custMap = {};
       for (const c of customers) custMap[c.id] = c;
-      const orderMap = {};
       for (const o of orders) orderMap[o.id] = o;
 
       for (const d of deliveries) {
@@ -99,6 +102,29 @@ router.get('/', async (req, res, next) => {
           }
         }
       }
+    }
+
+    // Batch-load bouquet image URLs for distinct Wix products across all
+    // linked orders so the driver app can render thumbnails without N+1.
+    const distinctProductIds = [...new Set(
+      Object.values(orderMap).map(o => o['Wix Product ID']).filter(Boolean)
+    )];
+    let imageMap = new Map();
+    if (distinctProductIds.length > 0) {
+      try {
+        imageMap = await productRepo.getImagesBatch(distinctProductIds);
+      } catch (err) {
+        console.error('[deliveries] getImagesBatch failed for list:', err.message);
+      }
+    }
+    for (const d of deliveries) {
+      const orderId = d['Linked Order']?.[0];
+      const productId = orderMap[orderId]?.['Wix Product ID'];
+      d.bouquetImageUrl = (productId && imageMap.get(productId)) || '';
+      // Stash the originating Wix product ID alongside the resolved URL so the
+      // delivery app can patch matching rows in-place when an SSE
+      // `product_image_changed` event fires (no full reload required).
+      d.wixProductId = productId || '';
     }
 
     res.json(deliveries);

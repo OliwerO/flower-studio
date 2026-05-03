@@ -127,6 +127,9 @@ const en = {
   customer:           'Customer',
   details:            'Details',
   navigate:           'Navigate',
+
+  // Bouquet image preview on the delivery card
+  bouquetSectionLabel: 'Bouquet',
 };
 
 const ru = {
@@ -255,6 +258,9 @@ const ru = {
   customer:           'Клиент',
   details:            'Подробнее',
   navigate:           'Навигация',
+
+  // Bouquet image preview on the delivery card
+  bouquetSectionLabel: 'Букет',
 };
 
 // ── Proxy-based dynamic translation ──

@@ -391,6 +391,12 @@ const en = {
   prodTranslate:        'Translate',
   prodTranslating:      'Translating...',
   prodTranslations:     'Translations',
+  bouquetImage:         'Bouquet photo',
+  pasteOrPickImage:     'Paste or pick image',
+  removeImage:          'Remove',
+  imageUploadFailed:    'Upload failed',
+  imageUploadSuccess:   'Photo updated',
+  removeImageConfirm:   'Remove this photo?',
 
   // Financial KPIs tab
   tabFinancial:     'Financial',
@@ -1276,6 +1282,12 @@ const ru = {
   prodTranslate:        'Перевести',
   prodTranslating:      'Переводим...',
   prodTranslations:     'Переводы',
+  bouquetImage:         'Фото букета',
+  pasteOrPickImage:     'Вставьте или выберите фото',
+  removeImage:          'Удалить',
+  imageUploadFailed:    'Не удалось загрузить',
+  imageUploadSuccess:   'Фото обновлено',
+  removeImageConfirm:   'Удалить это фото?',
 
   // Financial KPIs tab
   tabFinancial:     'Финансы',

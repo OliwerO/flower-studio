@@ -46,6 +46,8 @@ import { createHmac } from 'node:crypto';
 //   21. Audit log per role — owner / florist / driver each leave traces
 //   22. Parity check — runParityCheck reports zero mismatches after a flow
 //   23. Auth gates — driver blocked from /orders, florist blocked from /admin
+//   24. Wix webhook replay — HMAC verification + async order processing
+//   25. Bouquet image upload — POST + DELETE auth + happy path (HARNESS_MOCK_WIX=1)
 
 const PORT = process.env.HARNESS_PORT || '3002';
 const BASE = `http://localhost:${PORT}/api`;
@@ -127,6 +129,44 @@ async function api(method, path, opts = {}) {
   catch { body = text; }
   return { status: res.status, body };
 }
+
+// ──────── Multipart upload helper ────────
+// multer accepts the standard multipart/form-data wire format. We hand-roll
+// it (no FormData / undici stream goo) so the test stays portable across
+// Node versions and surfaces the exact bytes on the wire if a future debug
+// session needs to inspect them.
+async function uploadFile(path, { pin, fieldName = 'image', filename, contentType, buffer }) {
+  const boundary = `----E2EBoundary${Date.now()}${Math.random().toString(36).slice(2)}`;
+  const headers = {
+    'Content-Type': `multipart/form-data; boundary=${boundary}`,
+  };
+  if (pin) headers['X-Auth-PIN'] = pin;
+
+  const head = Buffer.from(
+    `--${boundary}\r\n` +
+    `Content-Disposition: form-data; name="${fieldName}"; filename="${filename}"\r\n` +
+    `Content-Type: ${contentType}\r\n\r\n`,
+    'utf8'
+  );
+  const tail = Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8');
+  const body = Buffer.concat([head, buffer, tail]);
+
+  const res = await fetch(`${BASE}${path}`, { method: 'POST', headers, body });
+  const text = await res.text();
+  let parsed = null;
+  try { parsed = text ? JSON.parse(text) : null; }
+  catch { parsed = text; }
+  return { status: res.status, body: parsed };
+}
+
+// Hardcoded 70-byte 1×1 transparent PNG. Avoids any file I/O in tests and
+// keeps the assertion bytes stable across machines.
+const TINY_PNG = Buffer.from(
+  '89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4' +
+  '890000000d49444154789c6300010000000500010d0a2db40000000049454e44' +
+  'ae426082',
+  'hex'
+);
 
 // ──────── Fixture-aware shorthands ────────
 
@@ -1282,6 +1322,109 @@ async function section23AuthGates() {
   eq('Wrong PIN → 401', bad.status, 401);
 }
 
+// ──────────── 25. BOUQUET IMAGE UPLOAD ────────────
+//
+// Exercises POST + DELETE /api/products/:wixProductId/image end-to-end against
+// the harness Wix Media + Stores fetch interceptor (HARNESS_MOCK_WIX=1). The
+// route orchestrates: Wix Media (generate-upload-url → PUT → poll ready) →
+// Wix Stores (clear + attach) → productRepo.setImage → audit log → SSE
+// broadcast. We can't introspect the SSE stream from a one-shot script, but
+// we DO assert that every HTTP boundary the front-end relies on returns the
+// expected shape — and that the role gates fire BEFORE multer parses bytes.
+
+async function section25BouquetImageUpload() {
+  startSection('25. Bouquet image upload — POST + DELETE auth + happy path');
+  await reset();
+
+  const wixProductId = 'wix-prod-e2e-001';
+
+  // 25.1 — Driver POST → 403 (caught by imageAuth before multer)
+  let r = await uploadFile(`/products/${wixProductId}/image`, {
+    pin: PIN_TIMUR,
+    filename: 'b.png',
+    contentType: 'image/png',
+    buffer: TINY_PNG,
+  });
+  eq('Driver upload → 403', r.status, 403);
+
+  // 25.2 — No PIN → 401 (auth middleware fires first)
+  r = await uploadFile(`/products/${wixProductId}/image`, {
+    filename: 'b.png',
+    contentType: 'image/png',
+    buffer: TINY_PNG,
+  });
+  eq('No-PIN upload → 401', r.status, 401);
+
+  // 25.3 — Unsupported MIME → 400 (multer fileFilter)
+  r = await uploadFile(`/products/${wixProductId}/image`, {
+    pin: PIN_OWNER,
+    filename: 'b.gif',
+    contentType: 'image/gif',
+    buffer: TINY_PNG,
+  });
+  eq('GIF MIME → 400', r.status, 400);
+  assert('GIF MIME error mentions format/MIME', /MIME|JPG|PNG|WebP/i.test(r.body?.error || ''));
+
+  // 25.4 — Florist happy path → 200, returns imageUrl from harness fake host
+  r = await uploadFile(`/products/${wixProductId}/image`, {
+    pin: PIN_FLORIST,
+    filename: 'florist-bouquet.png',
+    contentType: 'image/png',
+    buffer: TINY_PNG,
+  });
+  eq('Florist upload → 200', r.status, 200);
+  assert('Florist upload returns imageUrl matching harness fake host',
+    typeof r.body?.imageUrl === 'string' && r.body.imageUrl.startsWith('http://harness-fake/static/'));
+
+  // 25.5 — Owner happy path → 200, second upload overwrites the first
+  r = await uploadFile(`/products/${wixProductId}/image`, {
+    pin: PIN_OWNER,
+    filename: 'owner-bouquet.jpg',
+    contentType: 'image/jpeg',
+    buffer: TINY_PNG,
+  });
+  eq('Owner upload → 200', r.status, 200);
+  assert('Owner upload returns imageUrl matching harness fake host',
+    typeof r.body?.imageUrl === 'string' && r.body.imageUrl.startsWith('http://harness-fake/static/'));
+
+  // 25.6 — Florist DELETE → 403 (DELETE is owner-only)
+  let del = await api('DELETE', `/products/${wixProductId}/image`, { pin: PIN_FLORIST });
+  eq('Florist DELETE → 403', del.status, 403);
+
+  // 25.7 — Driver DELETE → 403
+  del = await api('DELETE', `/products/${wixProductId}/image`, { pin: PIN_TIMUR });
+  eq('Driver DELETE → 403', del.status, 403);
+
+  // 25.8 — No PIN DELETE → 401
+  del = await api('DELETE', `/products/${wixProductId}/image`);
+  eq('No-PIN DELETE → 401', del.status, 401);
+
+  // 25.9 — Owner DELETE → 200
+  del = await api('DELETE', `/products/${wixProductId}/image`, { pin: PIN_OWNER });
+  eq('Owner DELETE → 200', del.status, 200);
+  eq('Owner DELETE returns ok:true', del.body?.ok, true);
+
+  // 25.10 — Empty multipart body (no `image` field) → 400
+  // multer is configured with .single('image'); without the part the route
+  // hits the explicit "No image file uploaded" branch.
+  const boundary = `----E2EEmpty${Date.now()}`;
+  const emptyBody = Buffer.from(`--${boundary}--\r\n`, 'utf8');
+  const emptyRes = await fetch(`${BASE}/products/${wixProductId}/image`, {
+    method: 'POST',
+    headers: {
+      'X-Auth-PIN': PIN_OWNER,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body: emptyBody,
+  });
+  const emptyText = await emptyRes.text();
+  let emptyJson = null;
+  try { emptyJson = emptyText ? JSON.parse(emptyText) : null; }
+  catch { emptyJson = emptyText; }
+  eq('Missing image field → 400', emptyRes.status, 400);
+  assert('Missing-image error mentions "uploaded"', /uploaded/i.test(emptyJson?.error || ''));
+}
+
 // ──────────── Main ────────────
 
 async function main() {
@@ -1325,6 +1468,7 @@ async function main() {
     section22Parity,
     section23AuthGates,
     section24WixWebhook,
+    section25BouquetImageUpload,
   ];
 
   for (const section of sections) {

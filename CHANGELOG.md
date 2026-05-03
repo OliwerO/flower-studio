@@ -41,6 +41,25 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-05-03 — Bouquet image upload
+
+- New endpoints `POST /api/products/:wixProductId/image` (florist+owner) and `DELETE` (owner only).
+- Wix Media client added (`backend/src/services/wixMediaClient.js`); reuses `WIX_API_KEY` — required scope: `Manage Media Manager` (`MEDIA.SITE_MEDIA_FILES_UPLOAD`).
+- New repo `productRepo` (`backend/src/repos/productRepo.js`) for product image URL persistence (Airtable today, PG-ready for Phase 6).
+- `audit_log` action types: `image_set`, `image_remove`.
+- Delivery + orders endpoints now include `bouquetImageUrl` on each row, batched via `productRepo.getImagesBatch` (chunked at 100 IDs).
+- Shared components `BouquetImageEditor` + `BouquetImageView` added to `@flower-studio/shared`.
+- Florist `BouquetsPage` and dashboard `ProductsTab` get image upload slot per bouquet group.
+- Delivery `DeliveryCard` renders bouquet image (tap-to-zoom) above address; address band tightened.
+- Tailwind `content` glob fixed in all 3 apps to scan `packages/shared` — fixes empty nav-pill bug.
+- All 3 apps subscribe to new SSE event `product_image_changed` for instant updates.
+- E2E: Section 25 (15 assertions) added for upload + delete + role gates + MIME validation. Harness intercepts Wix Media calls when `HARNESS_MOCK_WIX=1`.
+- CI: `HARNESS_MOCK_WIX=1` set in `.github/workflows/test.yml`.
+
+**Owner action before deploy:** verify production `WIX_API_KEY` on Railway has the `Manage Media Manager` scope. If missing, regenerate the key with both `Manage Products` + `Manage Media Manager`, rotate `WIX_API_KEY` env var on Railway.
+
+---
+
 ## 2026-05-02 — Phase 3 + Phase 4 Postgres cutover (PG = source of truth)
 
 The two long-running migration phases flipped together in one Railway redeploy

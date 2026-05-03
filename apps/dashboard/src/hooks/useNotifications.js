@@ -25,11 +25,17 @@ function playNotificationSound() {
 
 /**
  * @param {function} onNewOrder — optional callback for new order events
+ * @param {function} onEvent    — optional callback fired for EVERY event
+ *                                (used by tabs that need to react to types
+ *                                beyond `new_order`, e.g. ProductsTab
+ *                                listening for `product_image_changed`).
  */
-export function useNotifications(onNewOrder) {
+export function useNotifications(onNewOrder, onEvent) {
   const { showToast } = useToast();
   const onNewOrderRef = useRef(onNewOrder);
   onNewOrderRef.current = onNewOrder;
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
   useEffect(() => {
     // Connect directly to Railway backend for SSE (Vercel proxy buffers streams)
@@ -49,6 +55,13 @@ export function useNotifications(onNewOrder) {
           if (onNewOrderRef.current) {
             onNewOrderRef.current(data);
           }
+        }
+
+        // Generic per-event escape hatch — tabs that subscribe via the
+        // second arg get every event regardless of type. Used by
+        // ProductsTab to patch local state on `product_image_changed`.
+        if (onEventRef.current) {
+          onEventRef.current(data);
         }
       } catch {
         // Ignore

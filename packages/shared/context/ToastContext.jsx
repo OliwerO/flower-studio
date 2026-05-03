@@ -3,7 +3,13 @@
 
 import { createContext, useContext, useState, useCallback } from 'react';
 
-const ToastContext = createContext(null);
+// React-recommended pattern: provide a no-op default so consumers rendered
+// outside a ToastProvider still get a callable `showToast`. Avoids needing
+// try/catch around the hook in shared components that may end up in trees
+// with or without a provider.
+const NO_OP_TOAST = { toast: null, showToast: () => {}, dismiss: () => {} };
+
+const ToastContext = createContext(NO_OP_TOAST);
 
 export function ToastProvider({ children }) {
   const [toast, setToast] = useState(null); // { message, type }
@@ -23,7 +29,5 @@ export function ToastProvider({ children }) {
 }
 
 export function useToast() {
-  const ctx = useContext(ToastContext);
-  if (!ctx) throw new Error('useToast must be used inside ToastProvider');
-  return ctx;
+  return useContext(ToastContext);
 }

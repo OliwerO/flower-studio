@@ -1,6 +1,15 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp, AlertCircle } from 'lucide-react';
-import { activeCount, allActive, anyActive, priceRange, groupCategories, parseCats } from '@flower-studio/shared';
+import {
+  activeCount,
+  allActive,
+  anyActive,
+  priceRange,
+  groupCategories,
+  parseCats,
+  BouquetImageEditor,
+} from '@flower-studio/shared';
+import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import VariantList from './VariantList.jsx';
 import CategoryChips from './CategoryChips.jsx';
@@ -16,8 +25,10 @@ export default function BouquetCard({
   onToggleVariant,
   onUpdatePrice,
   onUpdateCategories,
+  onUpdateImage,
 }) {
   const [expanded, setExpanded] = useState(false);
+  const { role } = useAuth();
   const count = activeCount(group);
   const total = group.variants.length;
   const allOn = allActive(group);
@@ -27,6 +38,8 @@ export default function BouquetCard({
   const needsReview = !anyOn && cats.length === 0;
   const isMono = group.variants.length === 1 ||
                  group.variants.every(v => (v['Variant Name'] || '').toLowerCase().includes('default'));
+  const wixProductId = group.wixProductId;
+  const currentImageUrl = group.variants[0]?.['Image URL'] || '';
 
   // Active-count pill color mirrors the dashboard: green = all on, amber = partial,
   // red = none. Puts the glance-state right next to the name.
@@ -113,6 +126,14 @@ export default function BouquetCard({
 
       {expanded && (
         <>
+          <div className="px-3 pb-3">
+            <BouquetImageEditor
+              wixProductId={wixProductId}
+              currentUrl={currentImageUrl}
+              canRemove={role === 'owner'}
+              onChange={(newUrl) => onUpdateImage?.(wixProductId, newUrl)}
+            />
+          </div>
           <CategoryChips
             categories={categories}
             selected={parseCats(group.variants[0]?.Category)}

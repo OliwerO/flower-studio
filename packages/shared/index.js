@@ -52,3 +52,9 @@ export {
   deserializeFilters,
   activeFilterCount,
 } from './utils/customerFilters.js';
+
+// Bouquet image upload (Wix-backed)
+export { default as BouquetImageEditor } from './components/BouquetImageEditor.jsx';
+export { default as BouquetImageView }   from './components/BouquetImageView.jsx';
+export { resizeImageBlob }               from './utils/imageResize.js';
+export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';

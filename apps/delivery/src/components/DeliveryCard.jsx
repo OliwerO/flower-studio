@@ -17,7 +17,7 @@
 // surface besides the card body itself.
 
 import t from '../translations.js';
-import { CallButton, NavButtons } from '@flower-studio/shared';
+import { CallButton, NavButtons, BouquetImageView } from '@flower-studio/shared';
 
 export default function DeliveryCard({ delivery, onTap, onStatusChange, onProblem, dimmed }) {
   const d = delivery;
@@ -59,7 +59,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
     onStatusChange(newStatus);
   }
 
-  const divider = 'border-t border-gray-100 pt-3';
+  const divider = 'border-t border-gray-100 pt-2';
 
   return (
     <div
@@ -68,7 +68,7 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
         dimmed ? 'opacity-60' : ''
       }`}
     >
-      <div className="px-4 py-3 space-y-3">
+      <div className="px-4 py-3 space-y-2">
         {/* Unpaid warning — driver must collect payment before handing over */}
         {paymentStatus && paymentStatus !== 'Paid' && status !== 'Delivered' && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-3 py-1.5 flex items-center gap-2">
@@ -121,6 +121,15 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
             <p className="text-sm text-ios-label leading-snug whitespace-pre-wrap">
               {driverInstr}
             </p>
+          </div>
+        )}
+
+        {/* Bouquet thumbnail — driver can tap to zoom into a fullscreen
+            preview before handing the order over, so they verify they're
+            delivering the right arrangement. */}
+        {d.bouquetImageUrl && (
+          <div className={divider}>
+            <BouquetImageView imageUrl={d.bouquetImageUrl} label={t.bouquetSectionLabel} />
           </div>
         )}
 

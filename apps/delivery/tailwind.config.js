@@ -1,6 +1,11 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{js,jsx}'],
+  // Include the shared package so Tailwind's content scan picks up classes
+  // used ONLY inside shared components (e.g. NavButtons' bg-blue-600 /
+  // bg-cyan-500 / bg-gray-900). Without this glob those classes are purged
+  // from the production CSS and the buttons render as invisible text on a
+  // transparent background — bug found in delivery prod, May 2026.
+  content: ['./index.html', './src/**/*.{js,jsx}', '../../packages/shared/**/*.{js,jsx,ts,tsx}'],
   theme: {
     extend: {
       fontFamily: {

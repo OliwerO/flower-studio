@@ -100,10 +100,14 @@ jobs:
         # The harness writes its own banner + auto-seeds via POST /api/test/reset
         # once the listener is up. We wait for the health endpoint before kicking
         # off the test suite.
+        # HARNESS_MOCK_WIX=1 enables the Wix Media + Stores fetch interceptor
+        # so the bouquet-image-upload E2E section (S25) doesn't need real Wix
+        # credentials. See backend/scripts/start-test-backend.js.
         run: npm run harness &
         env:
           # Suppress colour escapes in CI logs.
           NO_COLOR: '1'
+          HARNESS_MOCK_WIX: '1'
 
       - name: Wait for harness to be ready
         # Poll /api/health for up to ~30s. Fail the job if the harness never

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { BouquetImageEditor } from '@flower-studio/shared';
 import t from '../../translations.js';
 import client from '../../api/client.js';
 import { parseCats } from './helpers.js';
@@ -233,11 +234,16 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
   );
 }
 
-export default function ProductCard({ group, stockMap, stockList, categories, expanded, onToggle, onUpdate, onUpdateAll }) {
+export default function ProductCard({ group, stockMap, stockList, categories, expanded, onToggle, onUpdate, onUpdateAll, onUpdateImage }) {
   const allActive = group.variants.every(v => v['Active']);
   const anyActive = group.variants.some(v => v['Active']);
   const productType = group.variants[0]?.['Product Type'] || 'mix';
   const currentCats = parseCats(group.variants[0]?.['Category']);
+  const wixProductId = group.wixProductId;
+  // Prefer the per-variant Image URL — backend mirrors it across variants on
+  // upload (see Task 6). Falls back to group.imageUrl which groupByProduct
+  // derives from the same source.
+  const currentImageUrl = group.variants[0]?.['Image URL'] || group.imageUrl || '';
 
   const hasStock = anyActive && group.variants.some(v => {
     if (!v['Active']) return false;
@@ -314,6 +320,20 @@ export default function ProductCard({ group, stockMap, stockList, categories, ex
 
       {expanded && (
         <div className="border-t border-gray-100 px-4 py-3">
+          {/* Bouquet photo editor — owner can paste from clipboard, click to
+              pick a file, or remove the existing photo. The shared component
+              handles upload progress + optimistic preview. Dashboard is
+              owner-only (see App.jsx — auto-PIN'd, no login screen) so
+              canRemove is always true. */}
+          <div className="mb-3">
+            <div className="text-xs text-gray-500 font-medium mb-1.5">{t.bouquetImage}</div>
+            <BouquetImageEditor
+              wixProductId={wixProductId}
+              currentUrl={currentImageUrl}
+              canRemove={true}
+              onChange={(newUrl) => onUpdateImage?.(wixProductId, newUrl)}
+            />
+          </div>
           <div className="flex gap-4 mb-3 flex-wrap items-start">
             <label className="flex items-center gap-2 text-xs text-gray-600">
               {t.prodType}:

@@ -3,6 +3,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -236,6 +237,23 @@ router.get('/', async (req, res, next) => {
       for (const o of orders) { delete o._lines; delete o._delivery; }
     }
 
+    // Batch-load image URLs for distinct Wix products in this list so the
+    // frontend can render bouquet thumbnails without N+1 lookups.
+    const distinctProductIds = [...new Set(
+      orders.map(o => o['Wix Product ID']).filter(Boolean)
+    )];
+    let imageMap = new Map();
+    if (distinctProductIds.length > 0) {
+      try {
+        imageMap = await productRepo.getImagesBatch(distinctProductIds);
+      } catch (err) {
+        console.error('[orders] getImagesBatch failed for list:', err.message);
+      }
+    }
+    for (const o of orders) {
+      o.bouquetImageUrl = imageMap.get(o['Wix Product ID']) || '';
+    }
+
     // Post-enrichment filter for "upcoming"
     if (upcoming) {
       const today = new Date().toISOString().split('T')[0];
@@ -284,6 +302,24 @@ router.get('/:id', async (req, res, next) => {
     order['Customer Nickname'] = customer?.Nickname || '';
     order.orderLines = orderLines;
     if (delivery) order.delivery = delivery;
+
+    // Enrich with bouquet image URL so the driver app can render it.
+    // The image is associated with the Wix product (group), not individual
+    // stock-item order lines. Source the product id from the order's
+    // 'Wix Product ID' (set by the Wix webhook). For app-created orders
+    // without that field, the URL is empty string.
+    const wixProductId = order['Wix Product ID'];
+    if (wixProductId) {
+      try {
+        const map = await productRepo.getImagesBatch([wixProductId]);
+        order.bouquetImageUrl = map.get(wixProductId) || '';
+      } catch (err) {
+        console.error('[orders] productRepo.getImagesBatch failed:', err.message);
+        order.bouquetImageUrl = '';
+      }
+    } else {
+      order.bouquetImageUrl = '';
+    }
 
     // Compute Final Price (matches list endpoint logic) so frontend has authoritative total.
     // Price Override replaces flower total only; delivery fee always added on top.

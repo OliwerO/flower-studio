@@ -6,6 +6,7 @@ Cross-app utilities shared by all three frontend apps. Anything used by 2+ apps 
 ```
 api/
   client.js                   → Axios instance with auto-attached PIN header (VITE_BACKEND_URL)
+  uploadImage.js              → uploadBouquetImage / removeBouquetImage — multipart wrappers around POST/DELETE /products/:wixProductId/image
 context/
   AuthContext.jsx             → PIN, role, login/logout — wraps all apps
   ToastContext.jsx            → showToast(msg, type) — success/error toasts
@@ -22,6 +23,8 @@ components/
   FilterBar.jsx               → Search + filter chips composite
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
+  BouquetImageEditor.jsx      → Click/paste image slot used by florist + dashboard product cards (owner-only remove via canRemove)
+  BouquetImageView.jsx        → Read-only thumbnail with tap-to-zoom fullscreen modal for the driver delivery card
 hooks/
   useOrderEditing.js          → Shared bouquet editing logic (stock filtering, line management)
   useOrderPatching.js         → Shared order/delivery PATCH helpers (patchOrder, patchDelivery)
@@ -38,6 +41,7 @@ utils/
   dissolvePremades.js         → computePremadeShortfalls — used by DissolvePremadesDialog
   navigation.js               → googleMapsUrl, wazeUrl, appleMapsUrl
   phone.js                    → cleanPhone, telHref
+  imageResize.js              → resizeImageBlob — canvas-based client-side downscale + JPEG re-encode for bouquet uploads
 ```
 
 ## Rules

@@ -31,11 +31,17 @@ function playNotificationSound() {
  * Shows a toast notification + plays a sound when a new order arrives.
  *
  * @param {function} onNewOrder — optional callback when new order event received
+ * @param {function} onEvent    — optional callback fired for EVERY event
+ *                                (used by pages that need to react to types
+ *                                beyond `new_order`, e.g. BouquetsPage
+ *                                listening for `product_image_changed`).
  */
-export function useNotifications(onNewOrder) {
+export function useNotifications(onNewOrder, onEvent) {
   const { showToast } = useToast();
   const onNewOrderRef = useRef(onNewOrder);
   onNewOrderRef.current = onNewOrder;
+  const onEventRef = useRef(onEvent);
+  onEventRef.current = onEvent;
 
   useEffect(() => {
     // EventSource connects directly to Railway backend, bypassing Vercel's proxy.
@@ -81,6 +87,13 @@ export function useNotifications(onNewOrder) {
         }
         if (data.type === 'premade_bouquet_returned') {
           showToast(`💐 ${t.premadeReturned}`, 'success');
+        }
+
+        // Generic per-event escape hatch — pages that subscribe via the
+        // second arg get every event regardless of type. Used by
+        // BouquetsPage to patch local state on `product_image_changed`.
+        if (onEventRef.current) {
+          onEventRef.current(data);
         }
       } catch {
         // Ignore parse errors (heartbeats, malformed events)
