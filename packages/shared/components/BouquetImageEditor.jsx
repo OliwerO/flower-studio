@@ -109,11 +109,18 @@ export default function BouquetImageEditor({
       className="relative rounded-xl border border-gray-200 overflow-hidden focus:outline-none focus:ring-2 focus:ring-brand-400"
       onClick={() => !uploading && fileInputRef.current?.click()}
     >
+      {/*
+        No `capture` attr — owner needs the full picker (camera + photo
+        library + Files / iCloud Drive). With `capture="environment"`
+        mobile browsers jump straight to the camera and never offer the
+        library, which is the wrong default for bouquet photos that are
+        usually taken in advance and stored on the phone.
+        Clipboard paste is wired separately on the container (see onPaste).
+      */}
       <input
         ref={fileInputRef}
         type="file"
         accept="image/jpeg,image/png,image/webp"
-        capture="environment"
         className="hidden"
         data-testid="bouquet-image-file-input"
         onChange={(e) => {
