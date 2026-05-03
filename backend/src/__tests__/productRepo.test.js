@@ -75,4 +75,19 @@ describe('productRepo.getImagesBatch', () => {
     expect(out.size).toBe(0);
     expect(airtable.list).not.toHaveBeenCalled();
   });
+
+  it('chunks OR clauses to stay under Airtable formula length limit', async () => {
+    // 250 IDs → expect 3 list calls (100 + 100 + 50)
+    const ids = Array.from({ length: 250 }, (_, i) => `p${i}`);
+    airtable.list
+      .mockResolvedValueOnce(ids.slice(0, 100).map(p => ({ id: p, 'Wix Product ID': p, 'Image URL': `${p}.jpg` })))
+      .mockResolvedValueOnce(ids.slice(100, 200).map(p => ({ id: p, 'Wix Product ID': p, 'Image URL': `${p}.jpg` })))
+      .mockResolvedValueOnce(ids.slice(200, 250).map(p => ({ id: p, 'Wix Product ID': p, 'Image URL': `${p}.jpg` })));
+    const { getImagesBatch } = await import('../repos/productRepo.js');
+    const out = await getImagesBatch(ids);
+    expect(airtable.list).toHaveBeenCalledTimes(3);
+    expect(out.size).toBe(250);
+    expect(out.get('p0')).toBe('p0.jpg');
+    expect(out.get('p249')).toBe('p249.jpg');
+  });
 });

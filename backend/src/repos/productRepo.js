@@ -16,10 +16,7 @@
 
 import * as airtable from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
-
-function sanitizeFormulaValue(v) {
-  return String(v).replace(/'/g, "\\'");
-}
+import { sanitizeFormulaValue } from '../utils/sanitize.js';
 
 async function listVariants(wixProductId) {
   return airtable.list(TABLES.PRODUCT_CONFIG, {
@@ -35,6 +32,9 @@ async function listVariants(wixProductId) {
 export async function setImage(wixProductId, imageUrl) {
   const rows = await listVariants(wixProductId);
   if (rows.length === 0) return { updatedCount: 0 };
+  // Sequential by design — services/airtable.js already serializes writes
+  // via p-queue (5/sec). Promise.all here wouldn't add parallelism and
+  // would obscure which row failed on a partial outage.
   for (const row of rows) {
     await airtable.update(TABLES.PRODUCT_CONFIG, row.id, { 'Image URL': imageUrl });
   }
@@ -58,17 +58,22 @@ export async function getImage(wixProductId) {
 export async function getImagesBatch(wixProductIds) {
   const map = new Map();
   if (!wixProductIds || wixProductIds.length === 0) return map;
-  const orClauses = wixProductIds
-    .map(id => `{Wix Product ID} = '${sanitizeFormulaValue(id)}'`)
-    .join(',');
-  const rows = await airtable.list(TABLES.PRODUCT_CONFIG, {
-    filterByFormula: `OR(${orClauses})`,
-    fields: ['Wix Product ID', 'Image URL'],
-  });
-  for (const row of rows) {
-    const pid = row['Wix Product ID'];
-    const url = row['Image URL'];
-    if (pid && url && !map.has(pid)) map.set(pid, url);
+  // Airtable's filterByFormula has a ~16KB limit. Chunk OR clauses to stay safely under it.
+  const CHUNK_SIZE = 100;
+  for (let i = 0; i < wixProductIds.length; i += CHUNK_SIZE) {
+    const chunk = wixProductIds.slice(i, i + CHUNK_SIZE);
+    const orClauses = chunk
+      .map(id => `{Wix Product ID} = '${sanitizeFormulaValue(id)}'`)
+      .join(',');
+    const rows = await airtable.list(TABLES.PRODUCT_CONFIG, {
+      filterByFormula: `OR(${orClauses})`,
+      fields: ['Wix Product ID', 'Image URL'],
+    });
+    for (const row of rows) {
+      const pid = row['Wix Product ID'];
+      const url = row['Image URL'];
+      if (pid && url && !map.has(pid)) map.set(pid, url);
+    }
   }
   return map;
 }
