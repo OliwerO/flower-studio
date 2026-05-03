@@ -138,6 +138,18 @@ router.delete('/:wixProductId/image', (req, res, next) => {
 
 async function handleImageDelete(req, res) {
   const { wixProductId } = req.params;
+
+  // Read the previous URL FIRST so we can both record it accurately in the
+  // audit log and skip audit/broadcast entirely when there was nothing to
+  // remove (no-op DELETE). Failure to read is logged but non-fatal — we
+  // still attempt the clear so a stale Wix attachment can be reaped.
+  let prevUrl = '';
+  try {
+    prevUrl = await productRepo.getImage(wixProductId);
+  } catch (err) {
+    console.error('[image-delete] productRepo.getImage failed:', err.message);
+  }
+
   try {
     await clearProductMedia(wixProductId);
   } catch (err) {
@@ -147,31 +159,38 @@ async function handleImageDelete(req, res) {
       return res.status(502).json({ error: `Failed to clear image on Wix product: ${err.message}` });
     }
   }
+
   try {
     await productRepo.setImage(wixProductId, '');
   } catch (err) {
     console.error('[image-delete] productRepo.setImage failed:', err.message);
     return res.status(500).json({ error: `Cleared on Wix but failed to update locally: ${err.message}` });
   }
-  if (drizzleDb) {
-    try {
-      await recordAudit(drizzleDb, {
-        entityType: 'product',
-        entityId: wixProductId,
-        action: 'image_remove',
-        before: { imageUrl: 'present' },
-        after: null,
-        actorRole: req.role,
-      });
-    } catch (err) {
-      console.error('[image-delete] recordAudit failed:', err.message);
+
+  // Only audit + broadcast when there was actually an image to remove —
+  // avoid misleading audit rows and noisy SSE flashes for no-op DELETEs.
+  if (prevUrl) {
+    if (drizzleDb) {
+      try {
+        await recordAudit(drizzleDb, {
+          entityType: 'product',
+          entityId: wixProductId,
+          action: 'image_remove',
+          before: { imageUrl: prevUrl },
+          after: null,
+          actorRole: req.role,
+        });
+      } catch (err) {
+        console.error('[image-delete] recordAudit failed:', err.message);
+      }
     }
+    broadcast({
+      type: 'product_image_changed',
+      wixProductId,
+      imageUrl: '',
+    });
   }
-  broadcast({
-    type: 'product_image_changed',
-    wixProductId,
-    imageUrl: '',
-  });
+
   res.json({ ok: true });
 }
 

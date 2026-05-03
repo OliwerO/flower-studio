@@ -195,4 +195,16 @@ describe('DELETE /api/products/:wixProductId/image', () => {
       .set('x-test-role', 'florist');
     expect(res.status).toBe(403);
   });
+
+  it('owner: no-op DELETE when no image exists → 200, no audit/broadcast', async () => {
+    repo.getImage.mockResolvedValue('');
+    wixSync.clearProductMedia.mockResolvedValue({});
+    repo.setImage.mockResolvedValue({ updatedCount: 1 });
+    const app = await buildApp();
+    const res = await request(app)
+      .delete('/api/products/prod-1/image')
+      .set('x-test-role', 'owner');
+    expect(res.status).toBe(200);
+    expect(notif.broadcast).not.toHaveBeenCalled();
+  });
 });

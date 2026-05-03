@@ -27,19 +27,20 @@ export default function BouquetImageEditor({
   const [previewUrl, setPreviewUrl] = useState(currentUrl || '');
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState(0);
-  let toast;
-  try { ({ showToast: toast } = useToast()); } catch { toast = () => {}; }
+  // useToast returns a no-op showToast when called outside a ToastProvider
+  // (default context value), so this is safe in any tree.
+  const { showToast: toast } = useToast();
 
   useEffect(() => { setPreviewUrl(currentUrl || ''); }, [currentUrl]);
 
   const handleFile = useCallback(async (file) => {
     if (!file || !file.type.startsWith('image/')) return;
     if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) {
-      toast?.('JPG, PNG или WebP', 'error');
+      toast('JPG, PNG или WebP', 'error');
       return;
     }
     if (file.size > 10 * 1024 * 1024) {
-      toast?.('Максимум 10 МБ (будет сжато до ~500 КБ)', 'error');
+      toast('Максимум 10 МБ (будет сжато до ~500 КБ)', 'error');
       return;
     }
     const localUrl = URL.createObjectURL(file);
@@ -54,10 +55,10 @@ export default function BouquetImageEditor({
       });
       setPreviewUrl(imageUrl);
       onChange?.(imageUrl);
-      toast?.('Фото обновлено', 'success');
+      toast('Фото обновлено', 'success');
     } catch (err) {
       const msg = err?.response?.data?.error || err.message || 'Не удалось загрузить';
-      toast?.(msg, 'error');
+      toast(msg, 'error');
       setPreviewUrl(currentUrl || '');
     } finally {
       setUploading(false);
@@ -92,10 +93,10 @@ export default function BouquetImageEditor({
       await removeBouquetImage(wixProductId);
       setPreviewUrl('');
       onChange?.('');
-      toast?.('Фото удалено', 'success');
+      toast('Фото удалено', 'success');
     } catch (err) {
       const msg = err?.response?.data?.error || err.message || 'Не удалось удалить';
-      toast?.(msg, 'error');
+      toast(msg, 'error');
     } finally {
       setUploading(false);
     }
