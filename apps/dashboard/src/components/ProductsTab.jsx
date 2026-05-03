@@ -156,6 +156,18 @@ export default function ProductsTab() {
     }
   }
 
+  // Image upload happens directly through BouquetImageEditor → backend
+  // (POST /products/:wixProductId/image). The backend mirrors Image URL onto
+  // every variant row sharing the Wix Product ID. We only need to reflect
+  // that change in local state so the card re-renders without a full refetch.
+  function updateImage(wixProductId, newUrl) {
+    setProducts(prev => prev.map(p =>
+      (p['Wix Product ID'] || p.id) === wixProductId
+        ? { ...p, 'Image URL': newUrl }
+        : p
+    ));
+  }
+
   // Add currently-filtered category to every selected bouquet's variants.
   // Runs PATCH /products/:id once per variant (reuses the existing single-
   // product endpoint). We append the category to the existing list rather
@@ -272,7 +284,7 @@ export default function ProductsTab() {
             <ProductCard key={group.wixProductId} group={group} stockMap={stockMap} stockList={stock}
               categories={categories} expanded={expandedProduct === group.wixProductId}
               onToggle={() => setExpandedProduct(expandedProduct === group.wixProductId ? null : group.wixProductId)}
-              onUpdate={updateVariant} onUpdateAll={updateAllVariants} />
+              onUpdate={updateVariant} onUpdateAll={updateAllVariants} onUpdateImage={updateImage} />
           ))}
           {filtered.length === 0 && (
             <div className="text-center py-8 space-y-3">
