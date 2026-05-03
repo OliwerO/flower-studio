@@ -1263,3 +1263,44 @@ function textToHtml(text) {
     '<p>' + p.replace(/\n/g, '<br>') + '</p>'
   ).join('');
 }
+
+/**
+ * Removes all media from a Wix product. Used before attachMediaToProduct
+ * to enforce single-image-per-product semantic (see plan Q2=A).
+ *
+ * Wix Stores Catalog v1: DELETE /products/:id/media/all clears the product
+ * gallery; if the endpoint shape differs in your Wix version, swap to
+ * iterating media ids and calling DELETE /products/:id/media/:mediaId.
+ */
+export async function clearProductMedia(productId) {
+  const res = await fetch(
+    `${WIX_API_URL}/stores/v1/products/${productId}/media/all`,
+    { method: 'DELETE', headers: wixHeaders() }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix clearProductMedia ${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+/**
+ * Adds a single media item to a Wix product by URL.
+ * The URL must point to a file already in the site's Media Manager
+ * (use wixMediaClient.uploadFile to put it there first).
+ */
+export async function attachMediaToProduct(productId, mediaUrl) {
+  const res = await fetch(
+    `${WIX_API_URL}/stores/v1/products/${productId}/media`,
+    {
+      method: 'POST',
+      headers: wixHeaders(),
+      body: JSON.stringify({ media: [{ url: mediaUrl }] }),
+    }
+  );
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Wix attachMediaToProduct ${res.status}: ${text}`);
+  }
+  return res.json();
+}
