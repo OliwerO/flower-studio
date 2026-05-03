@@ -90,10 +90,115 @@ const TEST_ENV = {
   ANTHROPIC_API_KEY:                 'test-mock-anthropic',
   TELEGRAM_BOT_TOKEN:                'test-mock-telegram',
   WIX_WEBHOOK_SECRET:                'test-mock-wix-secret',
+  // Wix API key + site id are read by wixMediaClient + wixProductSync via
+  // process.env. The values themselves don't matter — when HARNESS_MOCK_WIX=1
+  // the global `fetch` shim below intercepts every wixapis.com call before
+  // the network is touched. Set non-empty defaults so wixHeaders() doesn't
+  // serialise `undefined` into the Authorization header (which would fail
+  // a defensive check inside Node's fetch).
+  WIX_API_KEY:                       'test-mock-wix-api-key',
+  WIX_SITE_ID:                       'test-mock-wix-site-id',
 };
 
 for (const [k, v] of Object.entries(TEST_ENV)) {
   if (process.env[k] === undefined) process.env[k] = v;
+}
+
+// ── Wix Media + Stores fetch interceptor (HARNESS_MOCK_WIX=1) ──
+//
+// The bouquet image upload flow goes through Wix Media (generate-upload-url
+// → PUT bytes → poll for ready) and Wix Stores (clear + attach product
+// media). The harness has no real Wix credentials — without an interceptor
+// the routes 502 trying to reach https://www.wixapis.com.
+//
+// We wrap globalThis.fetch so the BACKEND's outgoing calls to Wix get
+// faked. The E2E test is a separate process, so its requests to
+// http://localhost:3002 aren't affected (they go through the OS networking
+// stack, not this shim). Anything not addressed to wixapis.com or our
+// synthetic upload-URL hostname falls through to the real fetch.
+//
+// Endpoints faked:
+//   POST /site-media/v1/files/generate-upload-url → returns harness-fake URL
+//   PUT  http://harness-fake/upload/<uuid>        → returns { file: {...} }
+//   GET  /site-media/v1/files/<id>                → returns { file: { state: 'OK' } }
+//   POST /site-media/v1/bulk/files/delete         → no-op success
+//   DELETE /stores/v1/products/<id>/media/all     → no-op success
+//   POST /stores/v1/products/<id>/media           → no-op success
+//   POST /stores/v1/products/query                → empty result
+if (process.env.HARNESS_MOCK_WIX === '1') {
+  const realFetch = globalThis.fetch;
+  let uuidCounter = 0;
+  const nextUuid = () => `harness-${Date.now()}-${++uuidCounter}`;
+  const HARNESS_FAKE_HOST = 'http://harness-fake';
+
+  function jsonResp(body, status = 200) {
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+
+  globalThis.fetch = async (input, init = {}) => {
+    const url = typeof input === 'string' ? input : input.url;
+    const method = (init.method || (input && input.method) || 'GET').toUpperCase();
+
+    // Wix Media — generate upload URL
+    if (url.endsWith('/site-media/v1/files/generate-upload-url') && method === 'POST') {
+      const id = nextUuid();
+      return jsonResp({ uploadUrl: `${HARNESS_FAKE_HOST}/upload/${id}` });
+    }
+
+    // Wix Media — PUT to signed upload URL
+    if (url.startsWith(`${HARNESS_FAKE_HOST}/upload/`) && method === 'PUT') {
+      const id = url.split('/').pop();
+      return jsonResp({
+        file: {
+          id: `fake-${id}`,
+          url: `${HARNESS_FAKE_HOST}/static/${id}.jpg`,
+          state: 'OK',
+        },
+      });
+    }
+
+    // Wix Media — GET file by id (poll for ready)
+    const fileGetMatch = url.match(/\/site-media\/v1\/files\/([^/?]+)$/);
+    if (fileGetMatch && method === 'GET') {
+      const id = fileGetMatch[1];
+      return jsonResp({
+        file: {
+          id,
+          url: `${HARNESS_FAKE_HOST}/static/${id}.jpg`,
+          state: 'OK',
+        },
+      });
+    }
+
+    // Wix Media — bulk delete
+    if (url.endsWith('/site-media/v1/bulk/files/delete') && method === 'POST') {
+      return jsonResp({ results: [] });
+    }
+
+    // Wix Stores — clear all media on a product
+    if (/\/stores\/v1\/products\/[^/]+\/media\/all$/.test(url) && method === 'DELETE') {
+      return jsonResp({ product: {} });
+    }
+
+    // Wix Stores — attach media to a product
+    if (/\/stores\/v1\/products\/[^/]+\/media$/.test(url) && method === 'POST') {
+      return jsonResp({ product: {} });
+    }
+
+    // Wix Stores — product query (used by sync flows; harness ignores)
+    if (url.endsWith('/stores/v1/products/query') && method === 'POST') {
+      return jsonResp({ products: [], totalResults: 0 });
+    }
+
+    // Anything else → real fetch (so /api/test/reset auto-seed below
+    // and any non-Wix outbound call still works).
+    return realFetch(input, init);
+  };
+
+  console.log('\x1b[33m  HARNESS_MOCK_WIX=1 → Wix Media + Stores fetch interceptor active\x1b[0m');
 }
 
 // Loud banner so the operator can never miss what's running.
