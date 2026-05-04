@@ -16,6 +16,7 @@
 //     from every order query across the whole app.
 
 import * as db from './airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { listByIds } from '../utils/batchQuery.js';
@@ -158,10 +159,10 @@ export async function createPremadeBouquet(params) {
       createdLineIds.push(created.id);
     }
 
-    // 3. Deduct stock (serialized through stockQueue)
+    // 3. Deduct stock via stockRepo (routes to current STOCK_BACKEND).
     for (const line of lines) {
       if (line.stockItemId) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        await stockRepo.adjustQuantity(line.stockItemId, -line.quantity);
         stockAdjustments.push({ stockId: line.stockItemId, delta: -line.quantity });
       }
     }
@@ -179,7 +180,7 @@ export async function createPremadeBouquet(params) {
     const rollbackErrors = [];
 
     for (const adj of stockAdjustments) {
-      try { await db.atomicStockAdjust(adj.stockId, -adj.delta); }
+      try { await stockRepo.adjustQuantity(adj.stockId, -adj.delta); }
       catch (e) { rollbackErrors.push(`stock ${adj.stockId}: ${e.message}`); }
     }
     for (const lineId of createdLineIds) {
@@ -225,7 +226,7 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
   // 1. Handle removed lines — always return to stock (no writeoff for premade)
   for (const rem of removedLines) {
     if (rem.stockItemId && rem.quantity > 0) {
-      await db.atomicStockAdjust(rem.stockItemId, rem.quantity);
+      await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity);
     }
     if (rem.lineId) {
       await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, rem.lineId).catch(err =>
@@ -260,7 +261,7 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
       if (line._originalQty != null && line.quantity !== line._originalQty) {
         const delta = line._originalQty - line.quantity;
         if (line.stockItemId && delta !== 0) {
-          await db.atomicStockAdjust(line.stockItemId, delta);
+          await stockRepo.adjustQuantity(line.stockItemId, delta);
         }
         await db.update(TABLES.PREMADE_BOUQUET_LINES, line.id, { Quantity: line.quantity });
       }
@@ -276,7 +277,7 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
       });
       createdLines.push(created);
       if (line.stockItemId) {
-        await db.atomicStockAdjust(line.stockItemId, -line.quantity);
+        await stockRepo.adjustQuantity(line.stockItemId, -line.quantity);
       }
     }
   }
@@ -300,7 +301,7 @@ export async function returnPremadeBouquetToStock(id) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await db.atomicStockAdjust(stockId, qty);
+        const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
         returnedItems.push({
           stockId,
           flowerName: line['Flower Name'] || '?',
