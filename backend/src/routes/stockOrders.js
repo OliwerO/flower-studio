@@ -8,6 +8,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -195,7 +196,7 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
             resolvedStockItemId = matches[0].id;
           } else {
             // Create a new stock item so the flower appears in the stock picker
-            const newItem = await db.create(TABLES.STOCK, {
+            const newItem = await stockRepo.create({
               'Display Name': line.flowerName.trim(),
               'Purchase Name': line.flowerName.trim(),
               'Current Quantity': 0,
@@ -399,7 +400,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
         if (matches.length > 0) {
           resolvedStockItemId = matches[0].id;
         } else {
-          const newItem = await db.create(TABLES.STOCK, {
+          const newItem = await stockRepo.create({
             'Display Name': flowerName.trim(),
             'Purchase Name': flowerName.trim(),
             'Current Quantity': 0,
@@ -601,7 +602,7 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
     if (originalStockId) {
       const currentLinks = Array.isArray(found['Substitute For']) ? found['Substitute For'] : [];
       if (!currentLinks.includes(originalStockId)) {
-        await db.update(TABLES.STOCK, found.id, {
+        await stockRepo.update(found.id, {
           'Substitute For': [...currentLinks, originalStockId],
         });
       }
@@ -615,7 +616,7 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
   const markup = Number(getConfig('targetMarkup')) || 1;
   const sellPerStem = Math.round(costPerStem * markup * 100) / 100;
 
-  const created = await db.create(TABLES.STOCK, {
+  const created = await stockRepo.create({
     'Display Name':       trimmedName,
     'Purchase Name':      trimmedName,
     Category:             originalStockItem?.Category || 'Other',
@@ -662,10 +663,10 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
   if (existingQty < 0) {
     batchQty = qty + existingQty; // e.g. 25 + (-5) = 20
     if (batchQty < 0) batchQty = 0; // edge: received less than deficit
-    await db.atomicStockAdjust(stockItemId, -existingQty); // zero it out
+    await stockRepo.adjustQuantity(stockItemId, -existingQty); // zero it out
   }
 
-  const newBatch = await db.create(TABLES.STOCK, {
+  const newBatch = await stockRepo.create({
     'Display Name':       `${baseName} (${batchLabel})`,
     'Purchase Name':      stockItem['Purchase Name'] || baseName,
     Category:             stockItem.Category || 'Other',
@@ -680,7 +681,7 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
   });
 
   // Update prices on the original record too so the "template" stays current
-  await db.update(TABLES.STOCK, stockItemId, {
+  await stockRepo.update(stockItemId, {
     'Current Cost Price': costPrice || stockItem['Current Cost Price'],
     'Current Sell Price': sellPrice || stockItem['Current Sell Price'],
     'Last Restocked': today,
@@ -762,7 +763,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             // Create a new stock item so the line can be received
             const markup = Number(getConfig('targetMarkup')) || 1;
             const autoSell = sellPrice || Math.round(costPrice * markup * 100) / 100;
-            const created = await db.create(TABLES.STOCK, {
+            const created = await stockRepo.create({
               'Display Name': flowerName,
               'Purchase Name': flowerName,
               Category: 'Other',
