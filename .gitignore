@@ -6,11 +6,18 @@ dist/
 .DS_Store
 *.log
 
-# Claude Code local config (machine-specific, not for git)
+# Claude Code local config
+# Tracked (repo workflow discipline — must sync across clones):
+#   .claude/settings.json     — project hooks (SessionStart branch audit, etc)
+#   .claude/commands/         — slash commands (/feature, /branches, ...)
+#   .claude/hooks/            — hook scripts invoked by settings.json
+# Ignored (machine-local):
 .claude/settings.local.json
 .claude/agents/
-.claude/commands/
 .claude/plans/
+.claude/scheduled_tasks.lock
+.claude/cache/
+.claude/commands/.local/
 
 # Temp files
 tmp/
@@ -21,3 +28,6 @@ backend/package-lock.json
 
 # Git worktrees for isolated dev sessions (per CLAUDE.md "Default Workflow Skills")
 .worktrees/
+
+# Airtable / database backups — too large + sensitive for git
+backups/

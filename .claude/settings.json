@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "shell": "bash",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/hooks/branch-audit.sh\"",
+            "timeout": 15
+          }
+        ]
+      }
+    ]
+  }
+}

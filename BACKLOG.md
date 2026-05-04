@@ -361,19 +361,27 @@ Branch counts: **local 45 → 9**, **remote ~60 → 13**. Master fast-forwarded
 `wip/scratch-2026-04-27`, `chore/migration-tooling`, `docs/audit-2026-04-07`).
 Worktree count: 11 → 0. Items still requiring an owner decision:
 
-- [ ] **Open PR for `feat/stock-ledger`** — full Stock Ledger feature
-  (append-only event log on every `Current Quantity` change). Branch is
-  pushed and PR-ready. Includes the owner-action checklist: create the
-  Stock Ledger Airtable table per the field list in `CHANGELOG.md`,
-  set `AIRTABLE_STOCK_LEDGER_TABLE` on Railway, restart backend.
+- [ ] **Stock Ledger / traceability** (salvaged from `feat/stock-ledger`,
+  branch killed 2026-05-04 — recoverable from reflog at sha `a76c6cb`) —
+  goal is traceability of every `Current Quantity` change. The Airtable
+  append-only-table approach (Stock Ledger table + `AIRTABLE_STOCK_LEDGER_TABLE`
+  env var) was the pre-Postgres design. **Likely obsoleted by the
+  Postgres cutover** — once orders + stock are on PG, query-based history
+  via `stock_movements` / per-row audit columns is the natural shape and
+  removes the dual-write rate-limit overhead. **Decision to re-take after
+  Phase 4 cutover completes:** if PG schema gives us the traceability
+  natively, archive this. If still missing, re-cut from current master
+  rather than rebasing the old branch (was 33 commits behind).
 
-- [ ] **Decide on `feat/florist-cleanup-phase-a`** — 2 unmerged real
-  fixes that never got PR'd (verified 2026-04-27): (a) `7ba180f` —
-  silence Available Today reminders by default behind an env-var gate;
-  (b) `2826b19` — persist `cutoffReminderLastDate` to App Config so
-  redeploys after 18:00 don't re-fire the reminder. Master still has
-  the old in-memory `cutoffReminderSentDate = null`. Either PR these
-  or explicitly archive.
+- [ ] **Available Today reminder fixes** (salvaged from
+  `feat/florist-cleanup-phase-a`, branch killed 2026-05-04 — recoverable
+  from reflog at sha `7ba180f`) — 2 fixes still unmerged: (a) silence
+  Available Today reminders by default behind an env-var gate; (b)
+  persist `cutoffReminderLastDate` to App Config so redeploys after 18:00
+  don't re-fire the reminder. Master still has the old in-memory
+  `cutoffReminderSentDate = null`. Re-cut from current master when picked
+  up; the original branch was 76 commits behind so a rebase is more work
+  than a re-do.
 
 - [ ] **Decide on `wip/scratch-2026-04-27`** — two orphan drafts saved
   here so they're not lost: `apps/florist/src/pages/ReconciliationPage.jsx`
