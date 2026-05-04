@@ -128,6 +128,10 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 
 ## Default Workflow Skills (mandatory for non-trivial work)
 
+**Canonical entry point: `/feature`.** The `.claude/commands/feature.md` command bundles the chain below with the cost-discipline overrides from this file (Sonnet executors, batched reviews, tight subagent prompts, MVP-sized plans, TDD red-phase exemptions). Use `/feature <one-line description>` instead of invoking the skills one-by-one — the command exists specifically so future sessions don't re-derive the discipline. The manual chain below is documented for cases where `/feature` is overkill or where you need to deviate.
+
+**Branch hygiene gate.** The SessionStart hook at `.claude/hooks/branch-audit.sh` runs at every session start and surfaces local branches with `[gone]` upstream, finished worktrees, open PRs by the current user, and local branches >7d old without an upstream. If the hook flags issues, run `/branches` to clean up before starting new work — the May 2026 branch graveyard happened because new features were piled onto whatever branch was checked out instead of landing the prior work first. `/feature` enforces this gate at step 0; if you skip `/feature` for a quick fix, you can still hit it manually with `/branches`. The hook is read-only (never mutates); only `/branches` and `/feature` take destructive action, and only with the safety rails described in those commands.
+
 For any feature/bugfix that takes more than a one-line change, this is the default sequence. Future Claude sessions in this repo should follow it without being asked:
 
 1. **`superpowers:brainstorming`** — explore intent + design BEFORE writing code. Invoked before any plan-mode entry. Skip only if the user has already locked in scope.
