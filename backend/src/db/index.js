@@ -24,6 +24,9 @@
 
 import pg from 'pg';
 import { drizzle as drizzlePg } from 'drizzle-orm/node-postgres';
+import { migrate as migratePg } from 'drizzle-orm/node-postgres/migrator';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import * as schema from './schema.js';
 
 // Drizzle returns `bigserial` columns (audit_log.id, parity_log.id) as JS
@@ -143,6 +146,25 @@ export async function connectPostgres() {
     console.log(`[PG] Connected: ${rows[0].v}`);
   } finally {
     client.release();
+  }
+
+  // Apply pending migrations on boot. Primary path is railway.toml's
+  // preDeployCommand; this is the fallback for manual restarts and for any
+  // environment that boots without going through Railway's release pipeline.
+  // Drizzle's migrator takes a Postgres advisory lock so concurrent replicas
+  // serialize safely — only one applies, the rest see no-op.
+  if (process.env.PG_AUTO_MIGRATE === 'false') {
+    console.log('[PG] PG_AUTO_MIGRATE=false — skipping boot-time migrate.');
+    return;
+  }
+  try {
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const migrationsFolder = join(__dirname, 'migrations');
+    await migratePg(db, { migrationsFolder });
+    console.log('[PG] Migrations up to date.');
+  } catch (err) {
+    console.error('[PG] Migration failed on boot:', err);
+    throw err;
   }
 }
 
