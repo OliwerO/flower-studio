@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import t from '../translations.js';
-import client from '../api/client.js';
+import client, { cachedGet } from '../api/client.js';
 import { ConfigRow, ListEditor, Section } from './settings/SettingsPrimitives.jsx';
 import { RateTypesEditor, FloristRatesEditor } from './settings/RateEditors.jsx';
 import DriverSettingsSection from './settings/DriverSettingsSection.jsx';
@@ -18,7 +18,7 @@ export default function SettingsTab() {
   const [toast, setToast] = useState('');
 
   useEffect(() => {
-    client.get('/settings')
+    cachedGet('/settings')
       .then(r => {
         setConfig(r.data.config);
         setDrivers(r.data.drivers || []);

@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import { getEffectiveStock } from '@flower-studio/shared';
-import client from '../api/client.js';
+import client, { cachedGet } from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import PremadeBouquetCard from '../components/PremadeBouquetCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
@@ -88,6 +88,7 @@ export default function OrderListPage() {
   const [orders, setOrders]         = useState([]);
   const [premadeBouquets, setPremadeBouquets] = useState([]);
   const [loading, setLoading]       = useState(true);
+  const [ordersReady, setOrdersReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [viewMode, setViewMode]     = useState(VIEW_MODES.ACTIVE);
   const [date, setDate]             = useState(''); // only used in completed view
@@ -125,6 +126,7 @@ export default function OrderListPage() {
         const res = await client.get('/premade-bouquets');
         setPremadeBouquets(res.data);
         initialLoaded.current = true;
+        setOrdersReady(true);
         return;
       }
 
@@ -153,6 +155,7 @@ export default function OrderListPage() {
         return merged;
       });
       initialLoaded.current = true;
+      setOrdersReady(true);
     } catch (err) {
       console.error(err);
       // Re-throw so the manual refresh handler can surface a toast.
@@ -192,24 +195,26 @@ export default function OrderListPage() {
   // Premade count — shown as a badge on the filter chip even when not in premade view.
   const [premadeCount, setPremadeCount] = useState(0);
   useEffect(() => {
+    if (!ordersReady) return undefined;
     let cancelled = false;
     async function fetchCount() {
       try {
-        const res = await client.get('/premade-bouquets');
+        const res = await cachedGet('/premade-bouquets');
         if (!cancelled) setPremadeCount(res.data.length);
       } catch {
         // Non-critical — badge just won't appear
       }
     }
-    fetchCount();
+    const timeout = setTimeout(fetchCount, 250);
     // Premade inventory changes rarely — 60s is plenty. The main order poll
     // stays at 30s below so florists still see new incoming orders quickly.
     const interval = setInterval(fetchCount, 60000);
-    return () => { cancelled = true; clearInterval(interval); };
-  }, [orders.length, premadeBouquets.length]);
+    return () => { cancelled = true; clearTimeout(timeout); clearInterval(interval); };
+  }, [ordersReady, orders.length, premadeBouquets.length]);
 
   useEffect(() => {
     initialLoaded.current = false;
+    setOrdersReady(false);
     // Background fetches swallow errors — fetchOrders now throws so the
     // manual Refresh handler can toast, but polls stay quiet.
     fetchOrders().catch(() => {});
@@ -223,11 +228,14 @@ export default function OrderListPage() {
 
   // Owner: fetch dashboard data for today's summary + stock alerts
   useEffect(() => {
-    if (!isOwner) return;
-    client.get('/dashboard', { params: { date: todayISO() } })
-      .then(r => setDashData(r.data))
-      .catch(() => {}); // non-critical — silently ignore
-  }, [isOwner]);
+    if (!isOwner || !ordersReady) return undefined;
+    const timeout = setTimeout(() => {
+      client.get('/dashboard', { params: { date: todayISO() } })
+        .then(r => setDashData(r.data))
+        .catch(() => {}); // non-critical — silently ignore
+    }, 300);
+    return () => clearTimeout(timeout);
+  }, [isOwner, ordersReady]);
 
   // Shared editor stock fetch — fires once on mount instead of once per
   // OrderCard the first time each is expanded-and-edited. `refreshEditorStock`
@@ -236,8 +244,8 @@ export default function OrderListPage() {
   const refreshEditorStock = useCallback(async () => {
     try {
       const [stockRes, premadeRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true&includeInactive=true'),
-        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        cachedGet('/stock?includeEmpty=true&includeInactive=true'),
+        cachedGet('/stock/premade-committed').catch(() => ({ data: {} })),
       ]);
       setEditorStockItems(stockRes.data);
       setEditorPremadeMap(premadeRes.data || {});
@@ -246,16 +254,23 @@ export default function OrderListPage() {
       // will surface a backend error if something is genuinely wrong.
     }
   }, []);
-  useEffect(() => { refreshEditorStock(); }, [refreshEditorStock]);
+  useEffect(() => {
+    if (!ordersReady) return undefined;
+    const timeout = setTimeout(refreshEditorStock, 350);
+    return () => clearTimeout(timeout);
+  }, [ordersReady, refreshEditorStock]);
 
   // Fetch committed stock data for shortfall warnings
   useEffect(() => {
+    if (!ordersReady) return undefined;
+    let cancelled = false;
     async function fetchShortfalls() {
       try {
         const [stockRes, committedRes] = await Promise.all([
-          client.get('/stock'),
+          cachedGet('/stock'),
           client.get('/stock/committed'),
         ]);
+        if (cancelled) return;
         const stockMap = {};
         for (const s of stockRes.data) stockMap[s.id] = s;
 
@@ -281,25 +296,30 @@ export default function OrderListPage() {
         // non-critical
       }
     }
-    fetchShortfalls();
-  }, [orders]); // re-fetch when orders change
+    const timeout = setTimeout(fetchShortfalls, 450);
+    return () => { cancelled = true; clearTimeout(timeout); };
+  }, [ordersReady, orders]); // re-fetch when orders change
 
   // Check for pending stock evaluations (florist) or active shopping POs (owner)
   useEffect(() => {
-    if (isOwner) {
-      // Owner sees shopping support banner
-      Promise.all([
-        client.get('/stock-orders?status=Sent'),
-        client.get('/stock-orders?status=Shopping'),
-      ]).then(([s, sh]) => setShoppingCount(s.data.length + sh.data.length))
-        .catch(() => {});
-    } else {
-      // Florist sees evaluation banner
-      client.get('/stock-orders?status=Evaluating')
-        .then(r => setEvalCount(r.data.length))
-        .catch(() => {});
-    }
-  }, [isOwner]);
+    if (!ordersReady) return undefined;
+    const timeout = setTimeout(() => {
+      if (isOwner) {
+        // Owner sees shopping support banner
+        Promise.all([
+          client.get('/stock-orders?status=Sent'),
+          client.get('/stock-orders?status=Shopping'),
+        ]).then(([s, sh]) => setShoppingCount(s.data.length + sh.data.length))
+          .catch(() => {});
+      } else {
+        // Florist sees evaluation banner
+        client.get('/stock-orders?status=Evaluating')
+          .then(r => setEvalCount(r.data.length))
+          .catch(() => {});
+      }
+    }, 550);
+    return () => clearTimeout(timeout);
+  }, [ordersReady, isOwner]);
 
   return (
     <div className="min-h-screen dark:bg-dark-bg dark:text-dark-label">

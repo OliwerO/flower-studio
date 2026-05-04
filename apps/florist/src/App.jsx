@@ -3,31 +3,40 @@
 // is the corridor that sends staff to the right room based on the URL.
 
 import { Routes, Route, Navigate } from 'react-router-dom';
-import { useEffect } from 'react';
+import { useEffect, lazy, Suspense } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import { LanguageProvider } from './context/LanguageContext.jsx';
 import { ThemeProvider } from './context/ThemeContext.jsx';
 import { setClientPin } from './api/client.js';
 import { useNotifications } from './hooks/useNotifications.js';
 
-import LoginPage        from './pages/LoginPage.jsx';
-import OrderListPage    from './pages/OrderListPage.jsx';
-import OrderDetailPage  from './pages/OrderDetailPage.jsx';
-import NewOrderPage     from './pages/NewOrderPage.jsx';
-import PremadeBouquetCreatePage from './pages/PremadeBouquetCreatePage.jsx';
-import StockPanelPage       from './pages/StockPanelPage.jsx';
-import StockEvaluationPage  from './pages/StockEvaluationPage.jsx';
-import SubstituteReconciliationPage from './pages/SubstituteReconciliationPage.jsx';
-import DaySummaryPage          from './pages/DaySummaryPage.jsx';
-import ShoppingSupportPage     from './pages/ShoppingSupportPage.jsx';
-import PurchaseOrderPage       from './pages/PurchaseOrderPage.jsx';
-import FloristHoursPage        from './pages/FloristHoursPage.jsx';
-import BouquetsPage            from './pages/BouquetsPage.jsx';
-import WasteLogPage            from './pages/WasteLogPage.jsx';
-import CustomerListPage        from './pages/CustomerListPage.jsx';
-import CustomerDetailPage      from './pages/CustomerDetailPage.jsx';
 import Toast                   from './components/Toast.jsx';
 import BottomNav               from './components/BottomNav.jsx';
+
+const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
+const OrderListPage = lazy(() => import('./pages/OrderListPage.jsx'));
+const OrderDetailPage = lazy(() => import('./pages/OrderDetailPage.jsx'));
+const NewOrderPage = lazy(() => import('./pages/NewOrderPage.jsx'));
+const PremadeBouquetCreatePage = lazy(() => import('./pages/PremadeBouquetCreatePage.jsx'));
+const StockPanelPage = lazy(() => import('./pages/StockPanelPage.jsx'));
+const StockEvaluationPage = lazy(() => import('./pages/StockEvaluationPage.jsx'));
+const SubstituteReconciliationPage = lazy(() => import('./pages/SubstituteReconciliationPage.jsx'));
+const DaySummaryPage = lazy(() => import('./pages/DaySummaryPage.jsx'));
+const ShoppingSupportPage = lazy(() => import('./pages/ShoppingSupportPage.jsx'));
+const PurchaseOrderPage = lazy(() => import('./pages/PurchaseOrderPage.jsx'));
+const FloristHoursPage = lazy(() => import('./pages/FloristHoursPage.jsx'));
+const BouquetsPage = lazy(() => import('./pages/BouquetsPage.jsx'));
+const WasteLogPage = lazy(() => import('./pages/WasteLogPage.jsx'));
+const CustomerListPage = lazy(() => import('./pages/CustomerListPage.jsx'));
+const CustomerDetailPage = lazy(() => import('./pages/CustomerDetailPage.jsx'));
+
+function PageFallback() {
+  return (
+    <div className="min-h-screen flex items-center justify-center dark:bg-dark-bg">
+      <div className="w-8 h-8 border-2 border-brand-200 border-t-brand-600 rounded-full animate-spin" />
+    </div>
+  );
+}
 
 // PrivateRoute — like a badge-reader gate. Redirects to /login if no PIN in context.
 function PrivateRoute({ children }) {
@@ -75,8 +84,9 @@ export default function App() {
     <ThemeProvider>
     <LanguageProvider>
       <Toast />
-      <Routes>
-        <Route path="/login" element={<LoginPage />} />
+      <Suspense fallback={<PageFallback />}>
+        <Routes>
+          <Route path="/login" element={<LoginPage />} />
 
         <Route path="/orders" element={
           <PrivateRoute><Layout><OrderListPage /></Layout></PrivateRoute>
@@ -145,10 +155,11 @@ export default function App() {
         } />
 
         {/* Default: send logged-in users to orders, others to login */}
-        <Route path="*" element={
-          pin ? <Navigate to="/orders" replace /> : <Navigate to="/login" replace />
-        } />
-      </Routes>
+          <Route path="*" element={
+            pin ? <Navigate to="/orders" replace /> : <Navigate to="/login" replace />
+          } />
+        </Routes>
+      </Suspense>
     </LanguageProvider>
     </ThemeProvider>
   );

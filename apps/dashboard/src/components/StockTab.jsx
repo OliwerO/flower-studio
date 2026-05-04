@@ -3,7 +3,7 @@
 // receive deliveries, track waste. All fields inline-editable.
 
 import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react';
-import client from '../api/client.js';
+import client, { cachedGet } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import { stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
@@ -31,7 +31,7 @@ function formatDateTag(dateStr, color = 'gray') {
   );
 }
 
-export default function StockTab({ initialFilter, onNavigate }) {
+export default function StockTab({ initialFilter, onNavigate, isActive = true }) {
   const [stock, setStock]           = useState([]);
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
@@ -70,7 +70,7 @@ export default function StockTab({ initialFilter, onNavigate }) {
         client.get('/stock/pending-po'),
         client.get('/stock/committed'),
         client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-        client.get('/settings').catch(() => ({ data: { config: {} } })),
+        cachedGet('/settings').catch(() => ({ data: { config: {} } })),
       ]);
       setStock(prev => {
         if (!stockLoaded.current) return stockRes.data;
@@ -95,13 +95,13 @@ export default function StockTab({ initialFilter, onNavigate }) {
   }, [showToast]);
 
   useEffect(() => {
-    stockLoaded.current = false;
-    fetchStock();
+    if (!isActive) return undefined;
+    fetchStock(stockLoaded.current);
     const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 120000);
     function onVisible() { if (!document.hidden) fetchStock(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
-  }, [fetchStock]);
+  }, [fetchStock, isActive]);
 
   const [lossLog, setLossLog] = useState([]);
 

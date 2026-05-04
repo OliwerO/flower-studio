@@ -10,7 +10,7 @@ export { default as Toast } from './components/Toast.jsx';
 export { default as ErrorBoundary } from './components/ErrorBoundary.jsx';
 export { default as DissolvePremadesDialog } from './components/DissolvePremadesDialog.jsx';
 export { computePremadeShortfalls } from './utils/dissolvePremades.js';
-export { default as apiClient, setClientPin, getClientPin } from './api/client.js';
+export { default as apiClient, setClientPin, getClientPin, cachedGet, clearCachedGetCache } from './api/client.js';
 export { LanguageProvider, useLanguage, LangToggle } from './context/LanguageContext.jsx';
 export { AuthProvider, useAuth } from './context/AuthContext.jsx';
 export { default as CallButton } from './components/CallButton.jsx';

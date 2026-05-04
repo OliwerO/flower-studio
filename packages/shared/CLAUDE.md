@@ -5,7 +5,7 @@ Cross-app utilities shared by all three frontend apps. Anything used by 2+ apps 
 ## Structure
 ```
 api/
-  client.js                   → Axios instance with auto-attached PIN header (VITE_BACKEND_URL)
+  client.js                   → Axios instance with auto-attached PIN header + opt-in cachedGet/in-flight GET dedupe helper
   uploadImage.js              → uploadBouquetImage / removeBouquetImage (products) + uploadOrderImage / removeOrderImage (per-order override) — multipart wrappers
 context/
   AuthContext.jsx             → PIN, role, login/logout — wraps all apps
