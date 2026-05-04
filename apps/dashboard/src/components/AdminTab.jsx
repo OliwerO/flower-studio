@@ -148,30 +148,34 @@ export default function AdminTab() {
         </div>
       </section>
 
-      {/* ── Stock parity dashboard (Phase 3) ── */}
-      <section className="bg-white border border-ios-border rounded-xl p-4">
-        <header className="flex items-center justify-between mb-3">
-          <h3 className="font-semibold">{t.adminParityTitle}</h3>
-          <button
-            type="button"
-            onClick={runParityRecheck}
-            disabled={parityRunning}
-            className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
-          >
-            {parityRunning ? t.adminParityRunning : t.adminParityRecheckBtn}
-          </button>
-        </header>
-        {totalParityIssues === 0 ? (
-          <p className="text-sm text-green-700">{t.adminParityNoMismatches}</p>
-        ) : (
-          <ul className="text-sm space-y-1">
-            {parity.countsByKind.missing_pg     ? <li>{t.adminParityKindMissingPg}: <b>{parity.countsByKind.missing_pg}</b></li> : null}
-            {parity.countsByKind.missing_at     ? <li>{t.adminParityKindMissingAt}: <b>{parity.countsByKind.missing_at}</b></li> : null}
-            {parity.countsByKind.field_mismatch ? <li>{t.adminParityKindFieldMismatch}: <b>{parity.countsByKind.field_mismatch}</b></li> : null}
-            {parity.countsByKind.write_failed   ? <li>{t.adminParityKindWriteFailed}: <b>{parity.countsByKind.write_failed}</b></li> : null}
-          </ul>
-        )}
-      </section>
+      {/* ── Stock parity dashboard (Phase 3) ──
+          Only meaningful while stock is in shadow mode. After cutover Airtable
+          is a frozen snapshot and PG drifts by design — the diff is noise. */}
+      {stockMode === 'shadow' && (
+        <section className="bg-white border border-ios-border rounded-xl p-4">
+          <header className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">{t.adminParityTitle}</h3>
+            <button
+              type="button"
+              onClick={runParityRecheck}
+              disabled={parityRunning}
+              className="px-3 py-1.5 text-sm rounded-lg bg-blue-600 text-white hover:bg-blue-700 disabled:bg-blue-300"
+            >
+              {parityRunning ? t.adminParityRunning : t.adminParityRecheckBtn}
+            </button>
+          </header>
+          {totalParityIssues === 0 ? (
+            <p className="text-sm text-green-700">{t.adminParityNoMismatches}</p>
+          ) : (
+            <ul className="text-sm space-y-1">
+              {parity.countsByKind.missing_pg     ? <li>{t.adminParityKindMissingPg}: <b>{parity.countsByKind.missing_pg}</b></li> : null}
+              {parity.countsByKind.missing_at     ? <li>{t.adminParityKindMissingAt}: <b>{parity.countsByKind.missing_at}</b></li> : null}
+              {parity.countsByKind.field_mismatch ? <li>{t.adminParityKindFieldMismatch}: <b>{parity.countsByKind.field_mismatch}</b></li> : null}
+              {parity.countsByKind.write_failed   ? <li>{t.adminParityKindWriteFailed}: <b>{parity.countsByKind.write_failed}</b></li> : null}
+            </ul>
+          )}
+        </section>
+      )}
 
       {/* ── Stock raw-data table (Phase 3) ── */}
       <section className="bg-white border border-ios-border rounded-xl overflow-hidden">
@@ -196,15 +200,15 @@ export default function AdminTab() {
             <tbody>
               {stockRows.map(row => (
                 <tr key={row.id} className="border-t border-ios-border hover:bg-gray-50">
-                  <td className="px-3 py-2 font-medium">{row.display_name}</td>
+                  <td className="px-3 py-2 font-medium">{row.displayName}</td>
                   <td className="px-3 py-2 text-ios-secondary">{row.category || ''}</td>
-                  <td className={`px-3 py-2 text-right ${row.current_quantity < 0 ? 'text-red-600 font-semibold' : ''}`}>
-                    {row.current_quantity}
+                  <td className={`px-3 py-2 text-right ${row.currentQuantity < 0 ? 'text-red-600 font-semibold' : ''}`}>
+                    {row.currentQuantity}
                   </td>
-                  <td className="px-3 py-2 text-right">{row.current_cost_price ?? ''}</td>
-                  <td className="px-3 py-2 text-right">{row.current_sell_price ?? ''}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-ios-secondary">{formatDate(row.updated_at)}</td>
-                  <td className="px-3 py-2 font-mono text-xs text-ios-tertiary">{row.airtable_id || '—'}</td>
+                  <td className="px-3 py-2 text-right">{row.currentCostPrice ?? ''}</td>
+                  <td className="px-3 py-2 text-right">{row.currentSellPrice ?? ''}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ios-secondary">{formatDate(row.updatedAt)}</td>
+                  <td className="px-3 py-2 font-mono text-xs text-ios-tertiary">{row.airtableId || '—'}</td>
                 </tr>
               ))}
             </tbody>
