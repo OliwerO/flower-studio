@@ -12,6 +12,7 @@ import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 import { DissolvePremadesDialog, computePremadeShortfalls } from '@flower-studio/shared';
+import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
@@ -834,12 +835,12 @@ function OrderCard({
                 <p className="text-[10px] font-bold uppercase tracking-wide text-amber-700 dark:text-amber-300 mb-1">
                   ✉ {t.labelCardMsg}
                 </p>
-                <textarea
+                <ExpandableTextarea
                   defaultValue={detail['Greeting Card Text'] || ''}
                   onBlur={e => { if (e.target.value !== (detail['Greeting Card Text'] || '')) patch({ 'Greeting Card Text': e.target.value }); }}
                   placeholder={t.cardTextPlaceholder || t.cardText}
                   disabled={saving}
-                  rows={2}
+                  minRows={2}
                   className="w-full text-base text-ios-label bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-xl px-3 py-2 outline-none disabled:opacity-40 whitespace-pre-wrap leading-relaxed"
                 />
               </div>
