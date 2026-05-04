@@ -31,6 +31,11 @@ vi.mock('../services/airtable.js', () => ({
   atomicStockAdjust: vi.fn(),
 }));
 
+// ── Mock stockRepo (post-cutover stock adjustments route through here) ──
+vi.mock('../repos/stockRepo.js', () => ({
+  adjustQuantity: vi.fn(),
+}));
+
 // ── Mock batchQuery (listByIds) ──
 vi.mock('../utils/batchQuery.js', () => ({
   listByIds: vi.fn(),
@@ -48,6 +53,7 @@ vi.mock('../services/orderService.js', () => ({
 }));
 
 import * as db from '../services/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { listByIds } from '../utils/batchQuery.js';
 import { broadcast } from '../services/notifications.js';
 import { createOrder } from '../services/orderService.js';
@@ -69,7 +75,7 @@ describe('createPremadeBouquet', () => {
       .mockResolvedValueOnce({ id: 'recBouquet1', Name: 'Spring Pink' })   // parent
       .mockResolvedValueOnce({ id: 'recLine1' })                            // line 1
       .mockResolvedValueOnce({ id: 'recLine2' });                           // line 2
-    db.atomicStockAdjust.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 7 });
+    stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 7 });
     db.getById.mockResolvedValue({
       id: 'recBouquet1', Name: 'Spring Pink', Lines: ['recLine1', 'recLine2'],
     });
@@ -89,9 +95,11 @@ describe('createPremadeBouquet', () => {
 
     // Parent + 2 lines created
     expect(db.create).toHaveBeenCalledTimes(3);
-    // Stock deducted twice, with negative deltas
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock1', -3);
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', -2);
+    // Stock deducted twice via stockRepo, with negative deltas
+    expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock1', -3);
+    expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock2', -2);
+    // Legacy direct-Airtable path must NOT fire post-cutover
+    expect(db.atomicStockAdjust).not.toHaveBeenCalled();
     // Broadcast fired
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'premade_bouquet_created',
@@ -131,7 +139,7 @@ describe('createPremadeBouquet', () => {
       .mockResolvedValueOnce({ id: 'recBouquet1' })  // parent created
       .mockResolvedValueOnce({ id: 'recLine1' })     // line 1 created
       .mockRejectedValueOnce(new Error('airtable exploded')); // line 2 fails
-    db.atomicStockAdjust.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 9 });
+    stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 9 });
 
     await expect(createPremadeBouquet({
       name: 'Boom',
@@ -158,13 +166,15 @@ describe('returnPremadeBouquetToStock', () => {
       { id: 'recLine1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3 },
       { id: 'recLine2', 'Stock Item': ['recStock2'], 'Flower Name': 'Eucalyptus', Quantity: 2 },
     ]);
-    db.atomicStockAdjust.mockResolvedValue({ stockId: 'x', previousQty: 0, newQty: 3 });
+    stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 0, newQty: 3 });
 
     const result = await returnPremadeBouquetToStock('recBouquet1');
 
-    // Stock adjusted with POSITIVE deltas (returning to inventory)
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock1', 3);
-    expect(db.atomicStockAdjust).toHaveBeenCalledWith('recStock2', 2);
+    // Stock adjusted with POSITIVE deltas (returning to inventory) via stockRepo
+    expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock1', 3);
+    expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock2', 2);
+    // Must not bypass the repo — that was the 2026-05-04 bug.
+    expect(db.atomicStockAdjust).not.toHaveBeenCalled();
     // Lines deleted
     expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine1');
     expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine2');
@@ -229,6 +239,7 @@ describe('matchPremadeBouquetToOrder', () => {
 
     // No stock adjustments made directly from match flow
     expect(db.atomicStockAdjust).not.toHaveBeenCalled();
+    expect(stockRepo.adjustQuantity).not.toHaveBeenCalled();
 
     // Broadcast fired
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
