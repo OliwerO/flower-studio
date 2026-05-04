@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { WixPushModal } from '@flower-studio/shared';
-import client from '../api/client.js';
+import client, { cachedGet } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useNotifications } from '../hooks/useNotifications.js';
 import t from '../translations.js';
@@ -42,9 +42,9 @@ export default function ProductsTab() {
     try {
       const [prodRes, stockRes, logRes, catRes] = await Promise.all([
         client.get('/products'),
-        client.get('/stock?includeEmpty=true'),
+        cachedGet('/stock?includeEmpty=true'),
         client.get('/products/sync-log'),
-        client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
+        cachedGet('/public/categories').catch(() => ({ data: { allCategories: [] } })),
       ]);
       setProducts(prodRes.data);
       setStock(stockRes.data);

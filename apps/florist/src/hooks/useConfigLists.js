@@ -5,7 +5,7 @@
 // components use the hook — like a shared parts catalog for the whole factory floor.
 
 import { useState, useEffect } from 'react';
-import client from '../api/client.js';
+import { cachedGet } from '../api/client.js';
 
 const DEFAULTS = {
   suppliers:      ['4f', 'Mateusz', 'Other', 'Stefan', 'Stojek'],
@@ -29,8 +29,8 @@ export default function useConfigLists() {
     if (cached) return;
     // Fetch both endpoints in parallel — lists + config (for time slots)
     Promise.all([
-      client.get('/settings/lists').catch(() => ({ data: {} })),
-      client.get('/settings').catch(() => ({ data: {} })),
+      cachedGet('/settings/lists').catch(() => ({ data: {} })),
+      cachedGet('/settings').catch(() => ({ data: {} })),
     ]).then(([listsRes, settingsRes]) => {
       const merged = {
         ...DEFAULTS,

@@ -3,8 +3,8 @@
 // what needs attention, and key metrics at a glance.
 // Every widget is clickable — navigates to the relevant tab with filters.
 
-import { useState, useEffect, useCallback } from 'react';
-import client from '../api/client.js';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import client, { cachedGet } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import SummaryCard from './SummaryCard.jsx';
@@ -109,7 +109,7 @@ function TomorrowSection({ orders, onNavigate }) {
   );
 }
 
-export default function DayToDayTab({ onNavigate }) {
+export default function DayToDayTab({ onNavigate, isActive = true }) {
   const [data, setData]           = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [loading, setLoading]     = useState(true);
@@ -120,6 +120,7 @@ export default function DayToDayTab({ onNavigate }) {
   const [driverSectionOpen, setDriverSectionOpen] = useState(false);
   const [wixProducts, setWixProducts] = useState([]);
   const { showToast } = useToast();
+  const loadedRef = useRef(false);
 
   const fetchData = useCallback(async (silent = false) => {
     try {
@@ -129,8 +130,8 @@ export default function DayToDayTab({ onNavigate }) {
       const [dashRes, analyticsRes, settingsRes, productsRes] = await Promise.all([
         client.get('/dashboard', { params: { date: today } }),
         client.get('/analytics', { params: { from: firstOfMonth, to: today } }).catch(() => ({ data: null })),
-        client.get('/settings').catch(() => ({ data: {} })),
-        client.get('/public/products').catch(() => ({ data: { products: [] } })),
+        cachedGet('/settings').catch(() => ({ data: {} })),
+        cachedGet('/public/products').catch(() => ({ data: { products: [] } })),
       ]);
       setData(dashRes.data);
       setAnalytics(analyticsRes.data);
@@ -146,6 +147,7 @@ export default function DayToDayTab({ onNavigate }) {
       );
       setWixProducts(available);
       setFetchError(false);
+      loadedRef.current = true;
     } catch {
       if (!silent) {
         setFetchError(true);
@@ -157,7 +159,8 @@ export default function DayToDayTab({ onNavigate }) {
   }, [showToast]);
 
   useEffect(() => {
-    fetchData();
+    if (!isActive) return undefined;
+    fetchData(loadedRef.current);
 
     // Silent poll every 120s — updates data without disrupting UI.
     // Low cadence because visibility-change refresh + SSE cover active use;
@@ -175,7 +178,7 @@ export default function DayToDayTab({ onNavigate }) {
       clearInterval(interval);
       document.removeEventListener('visibilitychange', handleVisibility);
     };
-  }, [fetchData]);
+  }, [fetchData, isActive]);
 
   if (loading) return <DashboardSkeleton />;
 

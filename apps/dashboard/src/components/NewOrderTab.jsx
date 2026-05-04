@@ -2,7 +2,7 @@
 // Renders as tab content (not a separate page). After submit, navigates to Orders tab.
 
 import { useState, useEffect } from 'react';
-import client from '../api/client.js';
+import client, { cachedGet } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 
@@ -33,8 +33,8 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
   const [premadeBouquets, setPremadeBouquets] = useState([]);
 
   useEffect(() => {
-    client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data)).catch(console.error);
-    client.get('/premade-bouquets').then(r => setPremadeBouquets(r.data || [])).catch(() => {});
+    cachedGet('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data)).catch(console.error);
+    cachedGet('/premade-bouquets').then(r => setPremadeBouquets(r.data || [])).catch(() => {});
   }, []);
 
   // Path A: owner clicked "Sold" on a premade from the Orders tab — arrives with

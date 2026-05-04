@@ -4,7 +4,7 @@
 // Module-level cache ensures only 1 API call per session.
 
 import { useState, useEffect } from 'react';
-import client from '../api/client.js';
+import { cachedGet } from '../api/client.js';
 
 const DEFAULTS = {
   suppliers:      ['4f', 'Mateusz', 'Other', 'Stefan', 'Stojek'],
@@ -24,8 +24,8 @@ export default function useConfigLists() {
   useEffect(() => {
     if (cached) return;
     Promise.all([
-      client.get('/settings/lists').catch(() => ({ data: {} })),
-      client.get('/settings').catch(() => ({ data: {} })),
+      cachedGet('/settings/lists').catch(() => ({ data: {} })),
+      cachedGet('/settings').catch(() => ({ data: {} })),
     ]).then(([listsRes, settingsRes]) => {
       const merged = {
         ...DEFAULTS,

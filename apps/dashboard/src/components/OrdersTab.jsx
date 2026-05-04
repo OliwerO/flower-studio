@@ -63,7 +63,7 @@ function monthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
-export default function OrdersTab({ initialFilter, onNavigate }) {
+export default function OrdersTab({ initialFilter, onNavigate, isActive = true }) {
   const STATUS_OPTIONS = getStatusOptions();
   // Initialize state from initialFilter to avoid double-fetch race condition.
   // If a filter is passed from another tab (e.g., Financial), use it from the start.
@@ -99,6 +99,7 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
   const { showToast }             = useToast();
 
   const initialLoaded = useRef(false);
+  const fetchKeyRef = useRef('');
 
   const fetchOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -137,14 +138,32 @@ export default function OrdersTab({ initialFilter, onNavigate }) {
     }
   }, [statusFilter, dateFrom, dateTo, upcomingMode, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
 
+  const fetchKey = JSON.stringify({
+    statusFilter,
+    dateFrom,
+    dateTo,
+    upcomingMode,
+    unpaidOnly,
+    paidOnly,
+    deliveryTypeFilter,
+    sourceFilter,
+    paymentMethodFilter,
+    excludeCancelled,
+  });
+
   useEffect(() => {
-    initialLoaded.current = false;
-    fetchOrders();
+    if (!isActive) return undefined;
+    const queryChanged = fetchKeyRef.current !== fetchKey;
+    if (queryChanged) {
+      fetchKeyRef.current = fetchKey;
+      initialLoaded.current = false;
+    }
+    fetchOrders(!queryChanged && initialLoaded.current);
     const interval = setInterval(() => { if (!document.hidden) fetchOrders(true); }, 60000);
     function onVisible() { if (!document.hidden) fetchOrders(true); }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
-  }, [fetchOrders]);
+  }, [fetchOrders, fetchKey, isActive]);
 
   // Orders with no delivery/pickup date — these get sorted to the bottom of
   // every default view and become "lost". Counted from the unfiltered list so

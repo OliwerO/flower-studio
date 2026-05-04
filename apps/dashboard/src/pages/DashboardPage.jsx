@@ -3,22 +3,28 @@
 // monitoring screen (orders, inventory, customers, operations).
 // Cross-tab navigation: clicking a widget on Today navigates to the relevant tab with filters.
 
-import { useState, useCallback, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 
-import OrdersTab from '../components/OrdersTab.jsx';
-import StockTab from '../components/StockTab.jsx';
-import CustomersTab from '../components/CustomersTab.jsx';
-import DayToDayTab from '../components/DayToDayTab.jsx';
-import NewOrderTab from '../components/NewOrderTab.jsx';
-import SettingsTab from '../components/SettingsTab.jsx';
-import ProductsTab from '../components/ProductsTab.jsx';
-import AdminTab from '../components/AdminTab.jsx';
-
-// Lazy-load FinancialTab so Recharts (~160KB) isn't bundled until the tab is first opened
+const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
+const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
+const NewOrderTab = lazy(() => import('../components/NewOrderTab.jsx'));
+const StockTab = lazy(() => import('../components/StockTab.jsx'));
+const CustomersTab = lazy(() => import('../components/CustomersTab.jsx'));
+const ProductsTab = lazy(() => import('../components/ProductsTab.jsx'));
+const AdminTab = lazy(() => import('../components/AdminTab.jsx'));
+const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
+
+function TabFallback() {
+  return (
+    <div className="flex justify-center py-16">
+      <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
+    </div>
+  );
+}
 
 export default function DashboardPage() {
   // TABS defined inside component so the Proxy reads the current language on each render
@@ -36,6 +42,10 @@ export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState(() => {
     try { return localStorage.getItem('dashboard_tab') || 'today'; } catch { return 'today'; }
   });
+  const [mountedTabs, setMountedTabs] = useState(() => {
+    try { return new Set([localStorage.getItem('dashboard_tab') || 'today']); }
+    catch { return new Set(['today']); }
+  });
   const [tabFilter, setTabFilter] = useState(null);
   // Track whether the financial tab has ever been opened, so we only mount
   // the lazy-loaded Recharts bundle on first visit (not on initial page load).
@@ -46,6 +56,15 @@ export default function DashboardPage() {
   // Think of it like resetting a workstation between different job orders.
   const [filterKey, setFilterKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
+
+  useEffect(() => {
+    setMountedTabs(prev => {
+      if (prev.has(activeTab)) return prev;
+      const next = new Set(prev);
+      next.add(activeTab);
+      return next;
+    });
+  }, [activeTab]);
 
   // Called by DayToDayTab / FinancialTab when user clicks a widget
   const navigateTo = useCallback(({ tab, filter }) => {
@@ -64,6 +83,17 @@ export default function DashboardPage() {
     setTabFilter(null);
     if (key === 'financial') setFinancialMounted(true);
     try { localStorage.setItem('dashboard_tab', key); } catch {}
+  }
+
+  function renderMountedTab(key, children) {
+    if (!mountedTabs.has(key)) return null;
+    return (
+      <div style={{ display: activeTab === key ? 'block' : 'none' }}>
+        <Suspense fallback={activeTab === key ? <TabFallback /> : null}>
+          {children}
+        </Suspense>
+      </div>
+    );
   }
 
   return (
@@ -110,48 +140,45 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {/* Tab content — all tabs stay mounted (CSS hiding) to preserve state across switches.
-           OrdersTab and CustomersTab use key={filterKey} so they remount when
-           cross-tab navigation passes a new filter (e.g., clicking a widget on Today). */}
+      {/* Tab content mounts on first visit, then stays alive to preserve local state.
+           Hidden polling tabs receive isActive=false so they pause background intervals. */}
       <main className="max-w-7xl mx-auto px-6 py-6">
-        <div style={{ display: activeTab === 'today' ? 'block' : 'none' }}>
-          <DayToDayTab onNavigate={navigateTo} />
-        </div>
-        <div style={{ display: activeTab === 'orders' ? 'block' : 'none' }}>
-          <OrdersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
-        </div>
-        <div style={{ display: activeTab === 'newOrder' ? 'block' : 'none' }}>
-          {/* No key={filterKey}: the wizard must NOT remount when an unrelated
-              tab triggers a cross-tab navigation, otherwise an in-progress
-              order is wiped. The matchPremadeId effect inside NewOrderTab
-              handles Match-Premade re-entries without a remount. */}
-          <NewOrderTab
-            onNavigate={navigateTo}
-            initialFilter={activeTab === 'newOrder' ? tabFilter : null}
-          />
-        </div>
-        <div style={{ display: activeTab === 'stock' ? 'block' : 'none' }}>
-          <StockTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
-        </div>
-        <div style={{ display: activeTab === 'customers' ? 'block' : 'none' }}>
+        {renderMountedTab('today',
+          <DayToDayTab isActive={activeTab === 'today'} onNavigate={navigateTo} />
+        )}
+        {renderMountedTab('orders',
+          <OrdersTab key={filterKey} isActive={activeTab === 'orders'} initialFilter={tabFilter} onNavigate={navigateTo} />
+        )}
+        {renderMountedTab('newOrder',
+          <>
+            {/* No key={filterKey}: the wizard must NOT remount when an unrelated
+                tab triggers a cross-tab navigation, otherwise an in-progress
+                order is wiped. The matchPremadeId effect inside NewOrderTab
+                handles Match-Premade re-entries without a remount. */}
+            <NewOrderTab
+              onNavigate={navigateTo}
+              initialFilter={activeTab === 'newOrder' ? tabFilter : null}
+            />
+          </>
+        )}
+        {renderMountedTab('stock',
+          <StockTab key={filterKey} isActive={activeTab === 'stock'} initialFilter={tabFilter} onNavigate={navigateTo} />
+        )}
+        {renderMountedTab('customers',
           <CustomersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
-        </div>
-        <div style={{ display: activeTab === 'products' ? 'block' : 'none' }}>
+        )}
+        {renderMountedTab('products',
           <ProductsTab />
-        </div>
-        <div style={{ display: activeTab === 'admin' ? 'block' : 'none' }}>
+        )}
+        {renderMountedTab('admin',
           <AdminTab />
-        </div>
-        <div style={{ display: activeTab === 'settings' ? 'block' : 'none' }}>
+        )}
+        {renderMountedTab('settings',
           <SettingsTab />
-        </div>
+        )}
         {financialMounted && (
           <div style={{ display: activeTab === 'financial' ? 'block' : 'none' }}>
-            <Suspense fallback={
-              <div className="flex justify-center py-16">
-                <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
-              </div>
-            }>
+            <Suspense fallback={<TabFallback />}>
               <FinancialTab onNavigate={navigateTo} />
             </Suspense>
           </div>

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import client from '../api/client.js';
+import client, { cachedGet } from '../api/client.js';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
@@ -41,7 +41,7 @@ export default function NewOrderPage() {
   const [premadeBouquets, setPremadeBouquets] = useState([]);
 
   useEffect(() => {
-    client.get('/stock?includeEmpty=true&includeInactive=true')
+    cachedGet('/stock?includeEmpty=true&includeInactive=true')
       .then(r => { setStock(r.data); setStockError(false); })
       .catch(err => {
         console.error('Failed to load stock:', err);
@@ -51,7 +51,7 @@ export default function NewOrderPage() {
     // Fetch available premade bouquets so Step 2 can offer them as selectable
     // compositions. Non-critical — if this fails, the wizard still works as a
     // normal new-order flow.
-    client.get('/premade-bouquets')
+    cachedGet('/premade-bouquets')
       .then(r => setPremadeBouquets(r.data || []))
       .catch(() => {});
   }, []);
