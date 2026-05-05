@@ -179,6 +179,10 @@ Reports row counts in PG + audit activity. parity_log is no longer fed (shadow m
 - [ ] **E2E test** — 5 orders through full lifecycle (delivery + pickup paths) against dev base
 - [ ] **Phone format validation** — normalize phone numbers on input
 
+### Delivery Failure Flows (2026-05-05)
+- [ ] **Re-delivery fee adjustment** — when a Driver logs a non-Success delivery result and the Owner arranges re-delivery, there is currently no flow to add an additional delivery fee to the Order. Needs a UI action (dashboard / florist app) to adjust the delivery fee on the existing Order or create a supplementary charge.
+- [ ] **Failed delivery → Premade Bouquet conversion** — if re-delivery is not possible or wanted, the flowers could be returned to stock as a Premade Bouquet. No such flow exists today. Evaluate: add a "Convert to premade" action on the Delivery record after a failed result.
+
 ### Premade Bouquets — v2 follow-ups
 - [ ] **Edit premade lines** — surface `PUT /api/premade-bouquets/:id/lines` in the card UI so the florist can add/remove flowers without returning + re-creating the bouquet
 - [ ] **Photo attachment** — add `Photo` attachment field + upload UI for display/advertising

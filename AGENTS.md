@@ -1,4 +1,4 @@
-# Flower Studio — CLAUDE.md
+# Flower Studio — AGENTS.md
 
 Operational platform for **Blossom**, a flower studio in Krakow. Each role — florist, driver, owner — gets a smooth, task-focused interface where the next action is obvious and the data is always trustworthy. No guessing, no stale numbers, no hunting for information.
 
@@ -16,7 +16,7 @@ Operational platform for **Blossom**, a flower studio in Krakow. Each role — f
 - **Frontend:** 3 React apps (Vite + Tailwind) on Vercel
 - **Auth:** Stateless PIN via `X-Auth-PIN` header (Owner → all, Florist → orders/stock, Driver → deliveries)
 - **Real-time:** SSE via `GET /api/events` (new orders, status changes, stock alerts)
-- **Integrations:** Wix (e-commerce webhook + bidirectional product sync), Telegram (alerts), Claude AI (order intake parsing), Flowwow (email import)
+- **Integrations:** Wix (e-commerce webhook + bidirectional product sync), Telegram (alerts), Codex AI (order intake parsing), Flowwow (email import)
 - **CI:** `.github/workflows/test.yml` runs Vitest (backend + shared) + the API E2E suite on every PR and on push to master.
 
 ## Monorepo Layout
@@ -27,7 +27,7 @@ apps/delivery/      → Driver deliveries, PO shopping runs, map navigation (375
 apps/dashboard/     → Full owner control: orders, stock, CRM, finances, products, settings (1024px+)
 packages/shared/    → Auth/Toast/Language contexts, API client, hooks, utils
 ```
-Each sub-directory has its own CLAUDE.md with domain-specific rules.
+Each sub-directory has its own AGENTS.md with domain-specific rules.
 
 ## Quick Start
 From repo root (npm workspaces — install once with `npm install`):
@@ -128,22 +128,22 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 
 ## Default Workflow Skills (mandatory for non-trivial work)
 
-**Canonical entry point: `/feature`.** The `.claude/commands/feature.md` command bundles the chain below with the cost-discipline overrides from this file (Sonnet executors, batched reviews, tight subagent prompts, MVP-sized plans, TDD red-phase exemptions). Use `/feature <one-line description>` instead of invoking the skills one-by-one — the command exists specifically so future sessions don't re-derive the discipline. The manual chain below is documented for cases where `/feature` is overkill or where you need to deviate.
+**Canonical entry point: `/feature`.** The `.Codex/commands/feature.md` command bundles the chain below with the cost-discipline overrides from this file (Sonnet executors, batched reviews, tight subagent prompts, MVP-sized plans, TDD red-phase exemptions). Use `/feature <one-line description>` instead of invoking the skills one-by-one — the command exists specifically so future sessions don't re-derive the discipline. The manual chain below is documented for cases where `/feature` is overkill or where you need to deviate.
 
-**Branch hygiene gate.** The SessionStart hook at `.claude/hooks/branch-audit.sh` runs at every session start and surfaces local branches with `[gone]` upstream, finished worktrees, open PRs by the current user, and local branches >7d old without an upstream. If the hook flags issues, run `/branches` to clean up before starting new work — the May 2026 branch graveyard happened because new features were piled onto whatever branch was checked out instead of landing the prior work first. `/feature` enforces this gate at step 0; if you skip `/feature` for a quick fix, you can still hit it manually with `/branches`. The hook is read-only (never mutates); only `/branches` and `/feature` take destructive action, and only with the safety rails described in those commands.
+**Branch hygiene gate.** The SessionStart hook at `.Codex/hooks/branch-audit.sh` runs at every session start and surfaces local branches with `[gone]` upstream, finished worktrees, open PRs by the current user, and local branches >7d old without an upstream. If the hook flags issues, run `/branches` to clean up before starting new work — the May 2026 branch graveyard happened because new features were piled onto whatever branch was checked out instead of landing the prior work first. `/feature` enforces this gate at step 0; if you skip `/feature` for a quick fix, you can still hit it manually with `/branches`. The hook is read-only (never mutates); only `/branches` and `/feature` take destructive action, and only with the safety rails described in those commands.
 
-For any feature/bugfix that takes more than a one-line change, this is the default sequence. Future Claude sessions in this repo should follow it without being asked:
+For any feature/bugfix that takes more than a one-line change, this is the default sequence. Future Codex sessions in this repo should follow it without being asked:
 
 1. **`superpowers:brainstorming`** — explore intent + design BEFORE writing code. Invoked before any plan-mode entry. Skip only if the user has already locked in scope.
 2. **`superpowers:writing-plans`** — produce a phased implementation plan saved under `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`. Plans use bite-sized checkbox steps with exact code + commands, no placeholders.
-3. **`superpowers:using-git-worktrees`** — create an isolated worktree under `.worktrees/<feature>/` so the session has its own checkout, branch, and index. **Never share the main repo's working tree across two Claude sessions** — the cross-session git collisions of 2026-05-02 (stray commits, branch flips mid-task, mangled commit messages) were caused by this. Main repo (top-level checkout) stays on `master` for general operations only.
+3. **`superpowers:using-git-worktrees`** — create an isolated worktree under `.worktrees/<feature>/` so the session has its own checkout, branch, and index. **Never share the main repo's working tree across two Codex sessions** — the cross-session git collisions of 2026-05-02 (stray commits, branch flips mid-task, mangled commit messages) were caused by this. Main repo (top-level checkout) stays on `master` for general operations only.
 4. **`superpowers:subagent-driven-development`** — execute plan tasks via fresh subagents with two-stage review between tasks. Keeps the main context clean and parallelises independent work.
 5. **`superpowers:test-driven-development`** — write the failing test first, then the minimal implementation. Required for backend services + shared utils per the Testing Rules section above.
 6. **`superpowers:verification-before-completion`** — run the actual verification commands (tests, builds, smoke tests) and confirm their output BEFORE claiming the work is done. Evidence beats assertion. Especially load-bearing for prod cutovers and integration changes (also see "Verification Gate" below).
 
 Skip the chain only for: typo fixes, one-line bugfixes obvious from a stack trace, dependency bumps, or doc-only PRs.
 
-If two Claude sessions are active in this repo simultaneously, **each session must operate in its own worktree** under `.worktrees/`. Use `git worktree list` before any branch operation to see who's on what.
+If two Codex sessions are active in this repo simultaneously, **each session must operate in its own worktree** under `.worktrees/`. Use `git worktree list` before any branch operation to see who's on what.
 
 ### Cost discipline (added 2026-05-03 after 2× 5h Opus burn on bouquet-image-upload)
 
@@ -156,7 +156,7 @@ The default chain above is non-negotiable for quality. These tunings cut token c
 
 **When to skip TDD** (still respect the Testing Rules section). TDD red/green is mandatory for: new backend services, new shared utils, new repos, new shared hooks. Skip the formal red phase for: pure UI wiring (importing an existing shared component into a page), CSS/Tailwind tweaks, copy/translation changes, doc-only edits, simple route handlers that compose existing services. For these, write the test alongside or after the implementation — verification still mandatory before commit.
 
-**Batched reviews, not per-task.** `subagent-driven-development` spec defaults to two reviewers (code-quality + spec-compliance) between every task. For a 17-task plan this spawns ~34 review subagents, each re-reading CLAUDE.md + plan + spec. Instead:
+**Batched reviews, not per-task.** `subagent-driven-development` spec defaults to two reviewers (code-quality + spec-compliance) between every task. For a 17-task plan this spawns ~34 review subagents, each re-reading AGENTS.md + plan + spec. Instead:
 - Run reviews **at phase boundaries** (groups of 3–5 related tasks), not after every task.
 - Final reviewer pass at the end, before the PR, covering the whole branch diff.
 - Keep per-task review only when a task touches a Known Pitfall area (status workflows, stock math, cancel-with-return, Wix sync, shadow-window writes).
@@ -170,11 +170,11 @@ The default chain above is non-negotiable for quality. These tunings cut token c
 ## Workflow Rules
 - Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
 - Check off completed items in `BACKLOG.md`
-- Create a git branch per feature/fix using prefixes `feat/ fix/ chore/ docs/ test/`. **Never** use a `claude/*` prefix — Claude-spawned branches with random suffixes turn into a graveyard. Use intent-driven names so a future session knows what was being attempted.
+- Create a git branch per feature/fix using prefixes `feat/ fix/ chore/ docs/ test/`. **Never** use a `Codex/*` prefix — Codex-spawned branches with random suffixes turn into a graveyard. Use intent-driven names so a future session knows what was being attempted.
 - **Land or kill within 7 days.** Open a PR (draft is fine) within a day of branching so GitHub tracks the state. Branches that go >100 commits behind master are deleted, not rebased — the work is either re-done from current main or abandoned with a note in BACKLOG.
-- **Update the relevant CLAUDE.md in the same PR** that adds/removes a route, page, service, repo, or shared util. The structure tables in sub-CLAUDE.md files only stay accurate if every PR touches them; drift is what made the 2026-04 audit necessary.
+- **Update the relevant AGENTS.md in the same PR** that adds/removes a route, page, service, repo, or shared util. The structure tables in sub-AGENTS.md files only stay accurate if every PR touches them; drift is what made the 2026-04 audit necessary.
 - **Production only** — there is no dev/staging environment. All work targets the production Airtable base, Railway backend, and Vercel frontends directly. Be careful with destructive operations.
-- **Default to read-only** when poking at prod from a Claude session — use the `claude_ro` DSN for any Postgres read. Escalate to a write-capable token only when the user explicitly approves the specific change.
+- **Default to read-only** when poking at prod from a Codex session — use the `claude_ro` DSN for any Postgres read. Escalate to a write-capable token only when the user explicitly approves the specific change.
 
 ## Verification Gate (integrations + cutovers)
 Before claiming a fix on Wix, Telegram, the order/stock cutover, or the Wix webhook, the PR description must name the automated path that proved it: an E2E section number, an integration test, the signed Wix replay, or `npm run harness` + `npm run test:e2e`. If none of those apply, prefix the PR title with `[unverified]` and require explicit owner sign-off before merge. The Wix-sync fix cluster of April 2026 (5+ patches in 2 weeks) was caused by skipping this — the signed-replay harness fixes it going forward.
@@ -197,7 +197,7 @@ Before opening a PR or pushing changes that will trigger CI/Vercel builds, run t
 **Why this matters:** Vercel preview deploys run on every PR push and are gated by the production build pipeline. A broken preview is a failed PR check that the owner sees in their inbox. The first PR for collapsible-push (May 2 2026) shipped with `lucide-react` imported in `packages/shared/components/WixPushModal.jsx` but not declared as a shared peerDep — local builds passed via npm-workspace hoisting, dashboard + delivery preview deploys failed on Vercel. Building all three apps locally before push would have caught it.
 
 ## Stale-doc rule
-Any markdown doc whose body references current state and is dated >30 days old must be updated in the same session that touches it, or moved to `docs/archive/` with an "ARCHIVED YYYY-MM-DD" banner explaining what changed. Stale planning docs poison future Claude context — they get loaded into prompts and quietly contradict reality.
+Any markdown doc whose body references current state and is dated >30 days old must be updated in the same session that touches it, or moved to `docs/archive/` with an "ARCHIVED YYYY-MM-DD" banner explaining what changed. Stale planning docs poison future Codex context — they get loaded into prompts and quietly contradict reality.
 
 ## Production Scripts
 Every script in `scripts/` and `backend/scripts/` carries one category in a header comment. Adding a new script = pick a category up front.
@@ -254,17 +254,3 @@ After completing each logical step of work (not just at the end), write a short 
 4. **What to watch for** — any trade-offs, things that could break, or areas the owner should understand for future decisions
 
 Keep it concise but educational. The goal is for the owner to build a mental model of the codebase over time, not just approve changes blindly. Use concrete file paths and line references, not abstract descriptions.
-
-## Agent skills
-
-### Issue tracker
-
-Issues live in GitHub Issues (`OliwerO/flower-studio`). See `docs/agents/issue-tracker.md`.
-
-### Triage labels
-
-Default label vocabulary (needs-triage, needs-info, ready-for-agent, ready-for-human, wontfix). See `docs/agents/triage-labels.md`.
-
-### Domain docs
-
-Single-context — one `CONTEXT.md` + `docs/adr/` at repo root. See `docs/agents/domain.md`.
