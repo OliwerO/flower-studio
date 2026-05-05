@@ -68,6 +68,7 @@ const DEFAULTS = {
   deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
   availableTodayCutoff: '18:00',
   availableTodayTimezone: 'Europe/Warsaw',
+  cutoffReminderLastDate: null,
   slotLeadTimeMinutes: 30,
   // Shows the per-row "Reconcile premade" action on stock rows in the dashboard.
   // Off by default — it's admin tooling for fixing historical data mismatches,
@@ -326,8 +327,7 @@ loadConfig();
 // ── Available Today cutoff reminder ─────────────────────────
 // Checks every minute. Once per day, after cutoff, if there are still
 // active Available Today products, sends a Telegram reminder to the owner.
-let cutoffReminderSentDate = null;
-
+// Dedup date persisted in App Config so restarts don't re-fire the reminder.
 setInterval(async () => {
   try {
     if (!configLoaded) return;
@@ -340,7 +340,7 @@ setInterval(async () => {
     const todayStr = new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(now);
 
     if (timeStr < cutoff) return; // not past cutoff yet
-    if (cutoffReminderSentDate === todayStr) return; // already sent today
+    if (config.cutoffReminderLastDate === todayStr) return; // already sent today
 
     // Check if any active products with lead time 0 exist
     if (!TABLES.PRODUCT_CONFIG) return;
@@ -356,7 +356,8 @@ setInterval(async () => {
         + `It's past ${cutoff} — you still have products marked as Available Today.\n`
         + `Deactivate them in the dashboard if they're no longer available.`
       );
-      cutoffReminderSentDate = todayStr;
+      config.cutoffReminderLastDate = todayStr;
+      saveConfig().catch(err => console.error('[SETTINGS] Failed to persist reminder date:', err.message));
       console.log('[SETTINGS] Cutoff reminder sent');
     }
   } catch (err) {
