@@ -7,6 +7,19 @@
 
 import { useState } from 'react';
 
+const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
+
+// Returns false for depleted dated-Batch Stock Items that have no pending PO demand.
+// Exported so both the hook internals and BouquetEditor can share the same rule.
+export function isStockItemVisible(stockItem, pendingPO = {}) {
+  const qty = Number(stockItem['Current Quantity']) || 0;
+  const name = stockItem['Display Name'] || '';
+  if (qty <= 0 && _DATE_BATCH_RE.test(name) && !(pendingPO[stockItem.id]?.ordered > 0)) {
+    return false;
+  }
+  return true;
+}
+
 // Case-insensitive Display Name lookup against a stock list. Exported so
 // duplicate-name checks can be unit-tested without React.
 export function findDuplicateStockItem(stockItems, name) {
