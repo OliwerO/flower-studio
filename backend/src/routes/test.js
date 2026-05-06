@@ -22,7 +22,7 @@
 import { Router } from 'express';
 import { resetToFixture, _snapshotAllTables, _getTable } from '../services/airtable-mock.js';
 import { db, isPgliteMode } from '../db/index.js';
-import { auditLog, parityLog, stock, orders, orderLines, deliveries } from '../db/schema.js';
+import { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders } from '../db/schema.js';
 import { TABLES } from '../config/airtable.js';
 import { sql } from 'drizzle-orm';
 
@@ -37,7 +37,7 @@ const router = Router();
 // (Phase 4), we'll seed orders + lines + deliveries here too. Customers
 // stay in the mock until Phase 5.
 async function seedPgFromFixture() {
-  if (!db) return { stock: 0, orders: 0, lines: 0, deliveries: 0 };
+  if (!db) return { stock: 0, orders: 0, lines: 0, deliveries: 0, customers: 0 };
 
   const stockRows = [..._getTable(TABLES.STOCK).values()];
   const stockInserts = stockRows.map(r => ({
@@ -139,19 +139,44 @@ async function seedPgFromFixture() {
     }
   }
 
-  return { stock: stockInserts.length, orders: orderCount, lines: lineCount, deliveries: deliveryCount };
+  // Seed customers (Phase 5 — customerRepo reads PG only).
+  const customerRows = [..._getTable(TABLES.CUSTOMERS).values()];
+  const customerIdMap = new Map(); // airtable recXXX → PG uuid
+  for (const r of customerRows) {
+    const [inserted] = await db.insert(customers).values({
+      airtableId:          r.id,
+      name:                r.Name || r.Nickname || '(unnamed)',
+      nickname:            r.Nickname || null,
+      phone:               r.Phone || null,
+      email:               r.Email || null,
+      language:            r.Language || null,
+      homeAddress:         r['Home address'] || null,
+      sexBusiness:         r['Sex / Business'] || null,
+      segment:             r['Segment (client)'] || null,
+      communicationMethod: r['Communication method'] || null,
+      orderSource:         r['Order Source'] || null,
+    }).returning();
+    customerIdMap.set(r.id, inserted.id);
+  }
+
+  // Update orders.customer_id from recXXX → UUID, mirroring backfill-customer-fk.js.
+  for (const [atId, pgId] of customerIdMap.entries()) {
+    await db.execute(sql`UPDATE orders SET customer_id = ${pgId} WHERE customer_id = ${atId}`);
+  }
+
+  return { stock: stockInserts.length, orders: orderCount, lines: lineCount, deliveries: deliveryCount, customers: customerRows.length };
 }
 
 router.post('/reset', async (_req, res, next) => {
   try {
     resetToFixture();
 
-    let seeded = { stock: 0, orders: 0, lines: 0, deliveries: 0 };
+    let seeded = { stock: 0, orders: 0, lines: 0, deliveries: 0, customers: 0 };
     if (db) {
       // Truncate PG tables so each spec starts with empty audit/parity logs
       // and zero rows in the migrated tables. The mock Airtable side is
       // already wiped + reseeded by resetToFixture above.
-      await db.execute(sql`TRUNCATE TABLE audit_log, parity_log, stock, orders, order_lines, deliveries RESTART IDENTITY CASCADE`);
+      await db.execute(sql`TRUNCATE TABLE legacy_orders, key_people, customers, audit_log, parity_log, stock, orders, order_lines, deliveries RESTART IDENTITY CASCADE`);
       seeded = await seedPgFromFixture();
     }
 
@@ -166,7 +191,7 @@ router.get('/state', async (_req, res, next) => {
     const airtableState = _snapshotAllTables();
     const counts = {};
     if (db) {
-      const tables = { auditLog, parityLog, stock, orders, orderLines, deliveries };
+      const tables = { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders };
       for (const [name, tbl] of Object.entries(tables)) {
         const rows = await db.select().from(tbl);
         counts[name] = rows.length;

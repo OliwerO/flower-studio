@@ -1427,6 +1427,61 @@ async function section25BouquetImageUpload() {
 
 // ──────────── Main ────────────
 
+async function section26CustomerCrudPg() {
+  startSection('26. Customer CRUD via PG (Phase 5)');
+  await reset();
+
+  // 26.1 List returns seeded customers with _agg
+  let r = await api('GET', '/customers', { pin: PIN_OWNER });
+  eq('26.1 GET /customers → 200', r.status, 200);
+  assert('26.1 List has 5 seeded customers', Array.isArray(r.body) && r.body.length === 5);
+  assert('26.1 First customer has _agg', r.body.length > 0 && typeof r.body[0]._agg === 'object');
+  assert('26.1 Maria in list', r.body.some(c => c.Name === 'Maria Kowalska'));
+
+  // 26.2 Get by UUID
+  const maria = r.body.find(c => c.Name === 'Maria Kowalska');
+  r = await api('GET', `/customers/${maria.id}`, { pin: PIN_OWNER });
+  eq('26.2 GET /customers/:uuid → 200', r.status, 200);
+  eq('26.2 Detail id matches', r.body.id, maria.id);
+  assert('26.2 computedSegment present', 'computedSegment' in r.body);
+
+  // 26.3 Create new customer → PG row with UUID
+  r = await api('POST', '/customers', {
+    pin: PIN_OWNER,
+    body: { Name: 'Nowa Klientka', Phone: '+48 999 000 111' },
+  });
+  eq('26.3 POST /customers → 201', r.status, 201);
+  assert('26.3 New customer has UUID id', typeof r.body.id === 'string' && r.body.id.length > 20);
+  eq('26.3 Name preserved', r.body.Name, 'Nowa Klientka');
+  const newId = r.body.id;
+
+  // 26.4 Patch customer
+  r = await api('PATCH', `/customers/${newId}`, {
+    pin: PIN_OWNER,
+    body: { Segment: 'New', 'Key person 1': 'Jan Kowalski' },
+  });
+  eq('26.4 PATCH /customers/:id → 200', r.status, 200);
+  eq('26.4 Segment updated', r.body.Segment, 'New');
+  eq('26.4 Key person 1 persisted', r.body['Key person 1'], 'Jan Kowalski');
+
+  // 26.5 Order history returns empty for new customer
+  r = await api('GET', `/customers/${newId}/orders`, { pin: PIN_OWNER });
+  eq('26.5 GET /customers/:id/orders → 200', r.status, 200);
+  assert('26.5 Empty order history for new customer', Array.isArray(r.body) && r.body.length === 0);
+
+  // 26.6 POST /customers → 400 when name missing
+  r = await api('POST', '/customers', { pin: PIN_OWNER, body: { Phone: '+48 000' } });
+  eq('26.6 Missing name → 400', r.status, 400);
+
+  // 26.7 Florist CAN access /customers (owner + florist both have this resource)
+  r = await api('GET', '/customers', { pin: PIN_FLORIST });
+  eq('26.7 Florist can access /customers', r.status, 200);
+
+  // 26.8 Driver cannot access /customers → 403
+  r = await api('GET', '/customers', { pin: PIN_TIMUR });
+  eq('26.8 Driver blocked from /customers', r.status, 403);
+}
+
 async function main() {
   const startedAt = Date.now();
   console.log(`\n\x1b[36m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
@@ -1469,6 +1524,7 @@ async function main() {
     section23AuthGates,
     section24WixWebhook,
     section25BouquetImageUpload,
+    section26CustomerCrudPg,
   ];
 
   for (const section of sections) {

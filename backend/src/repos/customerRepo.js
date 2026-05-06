@@ -89,7 +89,7 @@ async function computeAggregateMap() {
       FROM ${orders}
       WHERE deleted_at IS NULL
       UNION ALL
-      SELECT customer_id, order_date, COALESCE(amount, 0) AS amount
+      SELECT customer_id::text, order_date, COALESCE(amount, 0) AS amount
       FROM ${legacyOrders}
     ) combined`,
   ).groupBy(sql`customer_id`);
