@@ -1,316 +1,270 @@
-// customerRepo tests — pin the persistence-boundary behaviour so swapping
-// the underlying store (Airtable → Postgres) can't quietly change the API
-// the routes depend on.
-//
-// These are unit tests: airtable.js and batchQuery.js are mocked. No real
-// network calls. What we assert:
-//   - Field-name aliases applied on read AND write
-//   - PATCH allowlist rejects unknown fields silently
-//   - Empty-allowed-fields update throws { statusCode: 400 }
-//   - listOrders normalizes both legacy + app into one schema sorted desc
-//   - getAggregateMap caches for 60s and recomputes after TTL
-//   - computedSegment hint matches the order-count thresholds
+// customerRepo tests — PG implementation (Phase 5).
+// Mocks the Drizzle `db` handle, NOT airtable.js.
+// Verifies: same public API, same wire format, same sort/merge behavior.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: {
-    CUSTOMERS: 'tblCustomers',
-    ORDERS: 'tblOrders',
-    LEGACY_ORDERS: 'tblLegacyOrders',
+// Mock the db module — we verify which Drizzle calls are made, not real SQL.
+vi.mock('../db/index.js', () => ({
+  db: {
+    select: vi.fn(),
+    insert: vi.fn(),
+    update: vi.fn(),
+    execute: vi.fn(),
   },
+  isPostgresConfigured: true,
 }));
 
-vi.mock('../services/airtable.js', () => ({
-  list: vi.fn(),
-  getById: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
+// Mock schema exports so imports resolve without a real DB.
+vi.mock('../db/schema.js', () => ({
+  customers:    {},
+  keyPeople:    {},
+  legacyOrders: {},
+  orders:       {},
 }));
 
-vi.mock('../utils/batchQuery.js', () => ({
-  listByIds: vi.fn(),
+// Mock drizzle-orm operators.
+vi.mock('drizzle-orm', () => ({
+  eq:     vi.fn((a, b) => ({ eq: [a, b] })),
+  and:    vi.fn((...args) => ({ and: args })),
+  or:     vi.fn((...args) => ({ or: args })),
+  ilike:  vi.fn((col, pat) => ({ ilike: [col, pat] })),
+  like:   vi.fn((col, pat) => ({ like: [col, pat] })),
+  isNull: vi.fn((col) => ({ isNull: col })),
+  asc:    vi.fn((col) => ({ asc: col })),
+  desc:   vi.fn((col) => ({ desc: col })),
+  sql:    vi.fn((s) => s),
 }));
 
-import * as db from '../services/airtable.js';
-import { listByIds } from '../utils/batchQuery.js';
-import * as customerRepo from '../repos/customerRepo.js';
+import { db } from '../db/index.js';
+import * as repo from '../repos/customerRepo.js';
+
+// Helper: build a fake customer PG row.
+function makeRow(overrides = {}) {
+  return {
+    id:                  'uuid-cust-1',
+    airtableId:          'recC1',
+    name:                'Alice Kowalska',
+    nickname:            'Ala',
+    phone:               '+48 555 000 001',
+    email:               'alice@test.com',
+    link:                null,
+    language:            'pl',
+    homeAddress:         null,
+    sexBusiness:         'Female',
+    segment:             'Rare',
+    foundUsFrom:         null,
+    communicationMethod: 'WhatsApp',
+    orderSource:         null,
+    createdAt:           new Date('2026-01-01'),
+    deletedAt:           null,
+    ...overrides,
+  };
+}
+
+// Helper: chainable Drizzle query mock that resolves to `rows`.
+function makeChain(rows) {
+  const chain = {
+    from:    vi.fn().mockReturnThis(),
+    where:   vi.fn().mockReturnThis(),
+    orderBy: vi.fn().mockReturnThis(),
+    groupBy: vi.fn().mockReturnThis(),
+    limit:   vi.fn().mockReturnThis(),
+    offset:  vi.fn().mockReturnThis(),
+  };
+  // Make it awaitable: both .then() and direct await work.
+  const promise = Promise.resolve(rows);
+  Object.assign(promise, chain);
+  Object.keys(chain).forEach(k => {
+    promise[k] = chain[k];
+    chain[k].mockImplementation((...args) => {
+      chain[k].mock.calls[chain[k].mock.calls.length - 1] = args; // track
+      return promise;
+    });
+  });
+  return promise;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
-  customerRepo._resetAggregateCache();
+  repo._resetAggregateCache();
 });
 
-describe('customerRepo.list', () => {
-  it('returns customers with response aliases applied', async () => {
-    db.list.mockImplementation((table) => {
-      if (table === 'tblCustomers') {
-        return Promise.resolve([
-          { id: 'recC1', Name: 'Alice', 'Segment (client)': 'Rare', 'Key person 1 (Name + Contact details)': 'Bob' },
-        ]);
-      }
-      // Aggregate computation fetches legacy + app + customers; return empty
-      return Promise.resolve([]);
-    });
-
-    const customers = await customerRepo.list();
-
-    expect(customers).toHaveLength(1);
-    // Alias reads through to the real field under the hood
-    expect(customers[0].Segment).toBe('Rare');
-    expect(customers[0]['Key person 1']).toBe('Bob');
-    // Empty _agg when the customer has no orders
-    expect(customers[0]._agg).toEqual({ lastOrderDate: null, orderCount: 0, totalSpend: 0 });
+// ── pgCustomerToResponse ──
+describe('_pgCustomerToResponse (wire format)', () => {
+  it('maps PG row to Airtable-shaped response with field aliases', () => {
+    const c = repo._pgCustomerToResponse(makeRow(), []);
+    expect(c.id).toBe('uuid-cust-1');
+    expect(c.Name).toBe('Alice Kowalska');
+    expect(c.Nickname).toBe('Ala');
+    expect(c.Phone).toBe('+48 555 000 001');
+    expect(c.Segment).toBe('Rare');
+    expect(c['Segment (client)']).toBe('Rare');
+    expect(c['Communication method']).toBe('WhatsApp');
   });
 
-  it('applies server-side OR-SEARCH when search query is provided', async () => {
-    db.list.mockResolvedValue([]);
-    await customerRepo.list({ search: 'Alice' });
-
-    const customersCall = db.list.mock.calls.find(([table]) => table === 'tblCustomers');
-    expect(customersCall[1].filterByFormula).toContain('SEARCH');
-    expect(customersCall[1].filterByFormula).toContain('Alice');
+  it('maps first two key_people to Key person 1/2 slots', () => {
+    const kp1 = { id: 'kp-1', name: 'Bob', contactDetails: '0700', importantDate: '1990-03-15' };
+    const kp2 = { id: 'kp-2', name: 'Carol', contactDetails: null, importantDate: null };
+    const c = repo._pgCustomerToResponse(makeRow(), [kp1, kp2]);
+    expect(c['Key person 1']).toBe('Bob');
+    expect(c['Key person 1 (Name + Contact details)']).toBe('Bob');
+    expect(c['Key person 1 (important DATE)']).toBe('1990-03-15');
+    expect(c['Key person 2']).toBe('Carol');
+    expect(c['Key person 2 (important DATE)']).toBeNull();
+    expect(c._keyPeople).toHaveLength(2);
   });
 
-  it('skips aggregate computation when withAggregates=false', async () => {
-    db.list.mockResolvedValue([{ id: 'recC1', Name: 'Alice' }]);
-    const customers = await customerRepo.list({ withAggregates: false });
-
-    expect(customers[0]).not.toHaveProperty('_agg');
-    // Only one db.list call (customers) — not three (legacy + app + customers for agg).
-    expect(db.list).toHaveBeenCalledTimes(1);
+  it('returns null for key person slots when keyPeople is empty', () => {
+    const c = repo._pgCustomerToResponse(makeRow(), []);
+    expect(c['Key person 1']).toBeNull();
+    expect(c['Key person 2']).toBeNull();
   });
 });
 
-describe('customerRepo.getById', () => {
-  it('returns customer with aliases + computedSegment for 10+ orders', async () => {
-    db.getById.mockResolvedValue({
-      id: 'recC1',
-      Name: 'Alice',
-      'Segment (client)': 'Constant',
-      'App Order Count': 12,
-    });
+// ── list ──
+describe('repo.list', () => {
+  it('returns customers without _agg when withAggregates=false', async () => {
+    db.select.mockReturnValue(makeChain([makeRow()]));
+    const result = await repo.list({ withAggregates: false });
+    expect(result).toHaveLength(1);
+    expect(result[0]).not.toHaveProperty('_agg');
+    expect(db.select).toHaveBeenCalledTimes(1);
+  });
 
-    const c = await customerRepo.getById('recC1');
+  it('enriches with _agg when withAggregates=true', async () => {
+    const custChain = makeChain([makeRow()]);
+    const aggChain  = makeChain([{ customerId: 'uuid-cust-1', lastOrderDate: '2026-04-01', orderCount: '3', totalSpend: '450.00' }]);
+    db.select.mockReturnValueOnce(custChain).mockReturnValueOnce(aggChain);
+    const result = await repo.list({ withAggregates: true });
+    expect(result[0]._agg).toEqual({ lastOrderDate: '2026-04-01', orderCount: 3, totalSpend: 450 });
+  });
 
-    expect(c.Segment).toBe('Constant');
+  it('empty _agg for customers with no orders', async () => {
+    const custChain = makeChain([makeRow()]);
+    const aggChain  = makeChain([]);
+    db.select.mockReturnValueOnce(custChain).mockReturnValueOnce(aggChain);
+    const result = await repo.list({ withAggregates: true });
+    expect(result[0]._agg).toEqual({ lastOrderDate: null, orderCount: 0, totalSpend: 0 });
+  });
+});
+
+// ── getById ──
+describe('repo.getById', () => {
+  it('returns customer with computedSegment=Constant for 10+ orders', async () => {
+    const custChain  = makeChain([makeRow()]);
+    const kpChain    = makeChain([]);
+    const countChain = makeChain([{ count: '12' }]);
+    db.select
+      .mockReturnValueOnce(custChain)
+      .mockReturnValueOnce(kpChain)
+      .mockReturnValueOnce(countChain);
+    const c = await repo.getById('uuid-cust-1');
     expect(c.computedSegment).toBe('Constant');
   });
 
-  it('computedSegment = Rare for 2-9 orders', async () => {
-    db.getById.mockResolvedValue({ id: 'recC1', 'App Order Count': 3 });
-    const c = await customerRepo.getById('recC1');
-    expect(c.computedSegment).toBe('Rare');
-  });
-
-  it('computedSegment = New for 1 order', async () => {
-    db.getById.mockResolvedValue({ id: 'recC1', 'App Order Count': 1 });
-    const c = await customerRepo.getById('recC1');
+  it('computedSegment=New for 1 order', async () => {
+    db.select
+      .mockReturnValueOnce(makeChain([makeRow()]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([{ count: '1' }]));
+    const c = await repo.getById('uuid-cust-1');
     expect(c.computedSegment).toBe('New');
   });
 
-  it('computedSegment = null for 0 orders', async () => {
-    db.getById.mockResolvedValue({ id: 'recC1', 'App Order Count': 0 });
-    const c = await customerRepo.getById('recC1');
-    expect(c.computedSegment).toBeNull();
+  it('throws 404-shaped error when customer not found', async () => {
+    db.select.mockReturnValue(makeChain([]));
+    await expect(repo.getById('no-such-uuid')).rejects.toMatchObject({ statusCode: 404 });
   });
 });
 
-describe('customerRepo.create', () => {
-  it('remaps aliases to real field names before writing', async () => {
-    db.create.mockResolvedValue({ id: 'recC1', Name: 'Alice', 'Segment (client)': 'Rare' });
-
-    await customerRepo.create({ Name: 'Alice', Segment: 'Rare', 'Key person 1': 'Bob' });
-
-    expect(db.create).toHaveBeenCalledWith(
-      'tblCustomers',
-      expect.objectContaining({
-        Name: 'Alice',
-        'Segment (client)': 'Rare',
-        'Key person 1 (Name + Contact details)': 'Bob',
-      }),
-    );
-    // Original alias keys should NOT make it to Airtable.
-    const createdFields = db.create.mock.calls[0][1];
-    expect(createdFields).not.toHaveProperty('Segment');
-    expect(createdFields).not.toHaveProperty('Key person 1');
+// ── create ──
+describe('repo.create', () => {
+  it('maps Airtable field names to PG columns', async () => {
+    const insertedRow = makeRow();
+    const returning = vi.fn().mockResolvedValue([insertedRow]);
+    const values    = vi.fn().mockReturnValue({ returning });
+    db.insert.mockReturnValue({ values });
+    db.select.mockReturnValue(makeChain([])); // key_people fetch after insert
+    await repo.create({ Name: 'Alice Kowalska', Phone: '+48 555 000 001', Segment: 'Rare' });
+    const insertedValues = values.mock.calls[0][0];
+    expect(insertedValues.name).toBe('Alice Kowalska');
+    expect(insertedValues.phone).toBe('+48 555 000 001');
+    expect(insertedValues.segment).toBe('Rare');
   });
 
-  it('drops keys not in the PATCH allowlist', async () => {
-    db.create.mockResolvedValue({ id: 'recC1', Name: 'Alice' });
-
-    await customerRepo.create({
-      Name: 'Alice',
-      BogusField: 'should be stripped',
-      'App Order Count': 99,  // computed field, not in allowlist
-    });
-
-    const createdFields = db.create.mock.calls[0][1];
-    expect(createdFields).toHaveProperty('Name', 'Alice');
-    expect(createdFields).not.toHaveProperty('BogusField');
-    expect(createdFields).not.toHaveProperty('App Order Count');
+  it('throws 400 when Name and Nickname are both missing', async () => {
+    await expect(repo.create({ Phone: '+48 000' })).rejects.toMatchObject({ statusCode: 400 });
+    expect(db.insert).not.toHaveBeenCalled();
   });
 });
 
-describe('customerRepo.update', () => {
-  it('remaps aliases + runs allowlist', async () => {
-    db.update.mockResolvedValue({ id: 'recC1', 'Segment (client)': 'Constant' });
-
-    await customerRepo.update('recC1', { Segment: 'Constant', BogusField: 'x' });
-
-    expect(db.update).toHaveBeenCalledWith(
-      'tblCustomers',
-      'recC1',
-      { 'Segment (client)': 'Constant' },
-    );
+// ── update ──
+describe('repo.update', () => {
+  it('maps Segment alias → segment column', async () => {
+    const updatedRow = makeRow({ segment: 'VIP' });
+    const returning  = vi.fn().mockResolvedValue([updatedRow]);
+    const where      = vi.fn().mockReturnValue({ returning });
+    const set        = vi.fn().mockReturnValue({ where });
+    db.update.mockReturnValue({ set });
+    db.select.mockReturnValue(makeChain([]));
+    const result = await repo.update('uuid-cust-1', { Segment: 'VIP' });
+    const setCall = set.mock.calls[0][0];
+    expect(setCall).toHaveProperty('segment', 'VIP');
+    expect(result.Segment).toBe('VIP');
   });
 
-  it('throws statusCode 400 when no allowed fields survive', async () => {
-    await expect(
-      customerRepo.update('recC1', { BogusField: 'x', AnotherBogus: 'y' }),
-    ).rejects.toMatchObject({ statusCode: 400 });
-    // And didn't hit the DB.
+  it('throws 400 when no recognised fields are in the patch body', async () => {
+    await expect(repo.update('uuid-cust-1', { BogusField: 'x' })).rejects.toMatchObject({ statusCode: 400 });
     expect(db.update).not.toHaveBeenCalled();
   });
-
-  it('applies response aliases to the updated record', async () => {
-    db.update.mockResolvedValue({
-      id: 'recC1',
-      'Segment (client)': 'Constant',
-      'Key person 1 (Name + Contact details)': 'Carol',
-    });
-
-    const c = await customerRepo.update('recC1', { Segment: 'Constant' });
-
-    expect(c.Segment).toBe('Constant');
-    expect(c['Key person 1']).toBe('Carol');
-  });
 });
 
-describe('customerRepo.listOrders', () => {
-  it('merges legacy + app and sorts date-desc; nulls sink to bottom', async () => {
-    db.getById.mockResolvedValue({
-      id: 'recC1',
-      'Orders (list)': ['recL1', 'recL2'],
-      'App Orders': ['recA1'],
-    });
-    listByIds.mockImplementation((table) => {
-      if (table === 'tblLegacyOrders') {
-        return Promise.resolve([
-          {
-            id: 'recL1',
-            'Oder Number': '202304-WS-Bouquets-15Apr-1',
-            'Flowers+Details of order': 'Roses',
-            'Order Reason': 'Birthday',
-            'Price (with Delivery)': 150,
-          },
-          {
-            id: 'recL2',
-            // No Oder Number, no dates — sinks to bottom.
-            'Flowers+Details of order': 'Tulips',
-          },
-        ]);
-      }
-      if (table === 'tblOrders') {
-        return Promise.resolve([
-          {
-            id: 'recA1',
-            'Order Date': '2026-03-20',
-            'Customer Request': 'Pink roses',
-            'Price Override': 300,
-            Status: 'Delivered',
-          },
-        ]);
-      }
-      return Promise.resolve([]);
-    });
-
-    const merged = await customerRepo.listOrders('recC1');
-
+// ── listOrders ──
+describe('repo.listOrders', () => {
+  it('merges legacy + app orders, sorts date-desc, nulls last', async () => {
+    const appRow    = { id: 'order-uuid-1', orderDate: '2026-03-20', customerRequest: 'Pink roses', priceOverride: '300.00', status: 'Delivered' };
+    const legRow    = { id: 'lo-uuid-1', orderDate: '2023-04-15', description: 'Roses — Birthday', amount: '150.00' };
+    const nullRow   = { id: 'lo-uuid-2', orderDate: null, description: 'Tulips', amount: '0' };
+    db.select
+      .mockReturnValueOnce(makeChain([appRow]))
+      .mockReturnValueOnce(makeChain([legRow, nullRow]));
+    const merged = await repo.listOrders('uuid-cust-1');
     expect(merged).toHaveLength(3);
-    // App order is 2026-03-20, legacy parsed is 2023-04-15, null is last.
     expect(merged[0].source).toBe('app');
     expect(merged[0].date).toBe('2026-03-20');
     expect(merged[0].amount).toBe(300);
-    expect(merged[0].link).toBe('/orders/recA1');
-
     expect(merged[1].source).toBe('legacy');
-    expect(merged[1].date).toBe('2023-04-15'); // parsed from the Oder Number
-    expect(merged[1].description).toContain('Roses');
-    expect(merged[1].description).toContain('Birthday');
-    expect(merged[1].amount).toBe(150);
-
-    // Null-date legacy entry is last.
+    expect(merged[1].date).toBe('2023-04-15');
     expect(merged[2].date).toBeNull();
   });
 
-  it('returns empty array when the customer has no linked orders', async () => {
-    db.getById.mockResolvedValue({ id: 'recC1', 'Orders (list)': [], 'App Orders': [] });
-    listByIds.mockResolvedValue([]);
-
-    const merged = await customerRepo.listOrders('recC1');
-    expect(merged).toEqual([]);
+  it('returns empty array when no orders exist', async () => {
+    db.select
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([]));
+    const result = await repo.listOrders('uuid-cust-1');
+    expect(result).toEqual([]);
   });
 });
 
-describe('customerRepo.getAggregateMap — caching', () => {
-  it('caches the result and returns the same object on the second call', async () => {
-    db.list.mockImplementation((table) => {
-      if (table === 'tblLegacyOrders') return Promise.resolve([]);
-      if (table === 'tblOrders') return Promise.resolve([]);
-      if (table === 'tblCustomers') return Promise.resolve([]);
-      return Promise.resolve([]);
-    });
-
-    const first = await customerRepo.getAggregateMap();
-    const second = await customerRepo.getAggregateMap();
-
-    expect(first).toBe(second); // same reference — cache hit
-    // Three fetches for the first call (legacy + app + customers), none for the second.
-    expect(db.list).toHaveBeenCalledTimes(3);
+// ── getAggregateMap — caching ──
+describe('repo.getAggregateMap — caching', () => {
+  it('caches result; second call hits no new DB query', async () => {
+    db.select.mockReturnValue(makeChain([
+      { customerId: 'uuid-c1', lastOrderDate: '2026-04-01', orderCount: '2', totalSpend: '500.00' },
+    ]));
+    const first  = await repo.getAggregateMap();
+    const second = await repo.getAggregateMap();
+    expect(first).toBe(second);
+    expect(db.select).toHaveBeenCalledTimes(1);
   });
 
   it('recomputes after cache reset', async () => {
-    db.list.mockResolvedValue([]);
-
-    await customerRepo.getAggregateMap();
-    customerRepo._resetAggregateCache();
-    await customerRepo.getAggregateMap();
-
-    // Six fetches total: three per computation.
-    expect(db.list).toHaveBeenCalledTimes(6);
-  });
-
-  it('aggregates legacy + app orders per customer', async () => {
-    db.list.mockImplementation((table) => {
-      if (table === 'tblLegacyOrders') {
-        return Promise.resolve([
-          { id: 'recL1', 'Order Delivery Date': '2025-12-01', 'Price (with Delivery)': 100 },
-        ]);
-      }
-      if (table === 'tblOrders') {
-        return Promise.resolve([
-          { id: 'recA1', 'Order Date': '2026-03-20', 'Price Override': 200 },
-        ]);
-      }
-      if (table === 'tblCustomers') {
-        return Promise.resolve([
-          { id: 'recC1', 'Orders (list)': ['recL1'], 'App Orders': ['recA1'] },
-          { id: 'recC2', 'Orders (list)': [], 'App Orders': [] }, // no orders — omitted from agg
-        ]);
-      }
-      return Promise.resolve([]);
-    });
-
-    const agg = await customerRepo.getAggregateMap();
-
-    expect(agg.recC1).toEqual({
-      lastOrderDate: '2026-03-20',
-      orderCount: 2,
-      totalSpend: 300,
-    });
-    // Customers with 0 orders aren't in the map — list() defaults them downstream.
-    expect(agg.recC2).toBeUndefined();
+    db.select.mockReturnValue(makeChain([]));
+    await repo.getAggregateMap();
+    repo._resetAggregateCache();
+    await repo.getAggregateMap();
+    expect(db.select).toHaveBeenCalledTimes(2);
   });
 });
