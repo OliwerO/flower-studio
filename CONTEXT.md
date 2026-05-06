@@ -98,11 +98,24 @@ _Avoid_: Internal note, staff note
 An internal note from the Owner to the Driver, visible in the Delivery app. Used to pass delivery instructions or context.
 _Avoid_: Delivery note, internal note
 
+### People around the customer
+
+**Key Person**:
+A named person in a Customer's social network for whom the Customer has previously ordered (or might order again) a bouquet — a recipient of past delivery orders, plus an optional important date (birthday, anniversary). Used for outreach: "It's been a year since you ordered for Maria — order again?". A Customer has zero or more Key People; there is no fixed limit (the current 2-slot UI is an Airtable-era constraint and is being lifted with the Postgres cutover).
+_Avoid_: Contact, recipient (a Recipient is the per-order delivery target — a Recipient becomes a Key Person when the Owner explicitly links them on the Order)
+
+**Recipient**:
+The person a Delivery is being brought to, captured per-order as `Recipient Name` + `Recipient Phone` on the Delivery record. Often different from the Customer (e.g. Customer buys flowers for their mother — the mother is the Recipient). The Recipient may be linked to a Key Person at order creation, but isn't required to be.
+_Avoid_: Receiver, delivery target
+
 ## Relationships
 
 - An **Order** of delivery type "delivery" has exactly one **Delivery**
 - An **Order** belongs to exactly one **Customer**
+- An **Order** may reference at most one **Key Person** (the person it was placed for; nullable, set at order creation)
 - A **Delivery** is always linked to an **Order** — it cannot exist independently
+- A **Delivery** has one **Recipient** (Recipient Name/Phone fields), which may or may not correspond to a **Key Person** on the Customer
+- A **Customer** has zero or more **Key People**
 - A **Stock Order** has one or more lines, each referencing a **Stock Item** by name
 - A **Premade Bouquet** consumes **Stock Items** (stems) immediately on creation
 - A **Product** (Wix) is a bouquet for sale online — it is not directly tied to a specific **Stock Item**; the mapping is implicit through the bouquet's composition

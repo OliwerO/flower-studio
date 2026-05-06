@@ -246,27 +246,158 @@ don't break the legacy path during shadow.
 
 ---
 
-## Phases 4–7 — sketch
+## Phase 5 — Customer cutover
 
-Each follows the Phase 3 recipe (build repo, shadow, backfill, cutover).
-Specifics that distinguish each phase:
+_Prerequisite: Phase 4 stable on prod for at least one week._
 
-- **Phase 4 — Orders + Order Lines + Deliveries**. Biggest win: replace
-  the manual rollback in `services/orderService.js:73-296` with a single
-  Postgres transaction wrapping order + lines + delivery + stock
-  adjustments. `cancelWithStockReturn`, `deleteOrder`, `editBouquetLines`
-  collapse considerably. Cascades (order ↔ delivery status) become
-  single-transaction updates. Wix webhook (`services/wix.js`) is the
-  riskiest consumer — must be tested against a recorded webhook payload
-  before flip (BACKLOG `WIX-BACKLINK`).
-- **Phase 5 — Customer dedup + cutover**. Universe A
-  (`Clients (B2C)` / `LEGACY_ORDERS`) imported as read-only reference rows
-  first; Universe B already lives in `App Orders` linked to the same
-  `Clients (B2C)` table via the `App Orders` linked field. Build assisted
-  dedup tool — auto-merge high-confidence pairs (exact phone OR exact
-  email), owner-review for ambiguous (similar nickname, no phone).
-  `customerRepo` swaps backing store; the merged-timeline join in
-  `customerRepo.listOrders` becomes a single SQL query.
+### 5a. New tables
+
+Three tables land in the same Drizzle migration:
+
+**`customers`**
+```
+id                  uuid pk default gen_random_uuid()
+airtable_id         text unique            -- recXXX; null for rows created post-cutover
+name                text not null
+nickname            text
+phone               text
+email               text
+link                text                   -- social / website
+language            text
+home_address        text
+sex_business        text                   -- 'Sex' | 'Business'
+segment             text                   -- mapped from 'Segment (client)'
+found_us_from       text
+communication_method text
+order_source        text
+created_at          timestamptz default now()
+deleted_at          timestamptz            -- soft delete
+```
+
+`connected_people` is intentionally omitted — it was an Airtable staging
+scratch field. Any useful data in it should be moved to `key_people` rows
+during the dedup step.
+
+**`key_people`**
+```
+id                  uuid pk default gen_random_uuid()
+customer_id         uuid not null FK → customers
+name                text not null
+contact_details     text                   -- free-text phone/email/note
+important_date      date
+important_date_label text                  -- 'birthday' | 'anniversary' | 'name day' | …
+created_at          timestamptz default now()
+deleted_at          timestamptz
+```
+
+No slot limit. The current 2-slot UI was an Airtable constraint — PG
+supports unlimited key people per customer. The `KeyPersonChips` frontend
+was already designed for this (see comment in `KeyPersonChips.jsx`).
+
+**`legacy_orders`**
+```
+id                  uuid pk default gen_random_uuid()
+airtable_id         text unique            -- recXXX
+customer_id         uuid not null FK → customers
+order_date          date                   -- resolved from 'Order Delivery Date' / 'Order date' / Oder Number pattern
+description         text                   -- concatenated from 'Oder Number' + 'Flowers+Details' + 'Order Reason'
+amount              numeric(10,2)          -- 'Price (with Delivery)'
+raw                 jsonb not null         -- full Airtable record; used for future outreach queries
+created_at          timestamptz default now()
+```
+
+Legacy orders are read-only after backfill — no write path exists. Stored
+separately from `orders` because their schema is incompatible (no status,
+no order lines, no delivery FK, sparse dates).
+
+**`orders` schema change**
+```
+key_person_id   uuid FK → key_people (nullable)
+```
+
+Added in this migration. New orders set it at creation via the Key Person
+input at order step 1 (see issue #216). Backfill is forward-only — existing
+orders have `key_person_id = NULL`.
+
+### 5b. Pre-backfill dedup (owner action)
+
+Before running the backfill, a SAFE script surfaces duplicate customers:
+
+`backend/scripts/find-customer-duplicates.js` — reads `Clients (B2C)`,
+groups by exact-match phone then exact-match email, prints suspected
+duplicate pairs. Expected output: ~tens of rows. Owner reviews and merges
+duplicates in the Airtable UI. Re-run the script until it reports zero
+pairs.
+
+### 5c. Backfill sequence
+
+Order matters — customers must exist before legacy_orders references them.
+
+1. `backend/scripts/backfill-customers.js` (DESTRUCTIVE):
+   - Reads all active rows from `Clients (B2C)`.
+   - Writes each to `customers`, preserving `airtable_id = recXXX`.
+   - For each customer with `Key person 1` / `Key person 2` filled: inserts
+     up to two `key_people` rows (with `important_date` + `important_date_label`).
+   - Idempotent (upsert on `airtable_id`).
+
+2. `backend/scripts/backfill-legacy-orders.js` (DESTRUCTIVE):
+   - Reads `LEGACY_ORDERS`. Each record has a linked customer field — join
+     `customers` by `airtable_id` to get the PG `customer_id`.
+   - Writes to `legacy_orders` with normalised `order_date`, `description`,
+     `amount`, and full `raw` JSON.
+   - Idempotent (upsert on `airtable_id`).
+
+3. `backend/scripts/backfill-customer-fk.js` (DESTRUCTIVE):
+   - Runs: `UPDATE orders SET customer_id = customers.id
+     FROM customers WHERE customers.airtable_id = orders.customer_id`.
+   - Then adds FK constraint:
+     `ALTER TABLE orders ADD CONSTRAINT orders_customer_id_fk
+      FOREIGN KEY (customer_id) REFERENCES customers(id)`.
+   - Only run after step 1 completes (all customers must exist).
+   - Log any orders where no matching customer was found (these need
+     manual resolution before the constraint can be added).
+
+### 5d. Cutover
+
+No shadow window. Direct flip:
+
+- `customerRepo.js` is updated to read/write the PG `customers` table
+  (same method signatures — `list`, `getById`, `create`, `update`,
+  `listOrders`, `getAggregateMap`).
+- `listOrders` becomes a `UNION ALL` across `orders` (app-era) and
+  `legacy_orders` (pre-app), both now PG tables. No more Airtable reads
+  in the customer timeline.
+- `GET /api/customers` returns PG UUIDs as `id`. The frontend treats IDs
+  as opaque strings (`packages/shared/api/client.js`) — no frontend change.
+- New customers created after cutover write directly to PG with no Airtable
+  write. `airtable_id` is `NULL` on these rows.
+- No `CUSTOMER_BACKEND` env flag — a rollback requires redeploying the
+  prior commit.
+
+### 5e. What "done" looks like
+
+- Dashboard Customer tab shows full timeline (legacy + app orders) for
+  existing customers, sourced entirely from PG.
+- Creating a new customer via a new order writes a `customers` row to PG.
+- `orders.customer_id` constraint is live — the DB rejects orders with
+  unknown customer references.
+- `key_people` rows exist for all customers who had Airtable Key person 1/2
+  data.
+- `find-customer-duplicates.js` reports zero pairs on the live PG data.
+
+### Out of scope for Phase 5
+
+- **Key Person autocomplete at order creation** — issue #216, blocked by
+  this phase. Build after cutover is stable.
+- **Multiple important dates per Key Person** — issue #217.
+- **Outreach / birthday reminder engine** — reads `key_people` + `orders`
+  to generate "order again for Maria?" prompts. Separate feature, no
+  blocker other than Phase 5 being live.
+
+---
+
+## Phases 6–7 — sketch
+
 - **Phase 6 — Config + misc**. `App Config`, `Florist Hours`,
   `Marketing Spend`, `Stock Loss Log`, `Webhook Log`, `Sync Log`,
   `Product Config`. Each gets a thin repo + Admin entry. No shadow needed
@@ -285,6 +416,7 @@ Specifics that distinguish each phase:
 | 1 | `backend/src/db/{index.js,schema.js,migrate.js,migrations/}`, `backend/drizzle.config.js` | `backend/package.json`, `backend/src/index.js`, `railway.toml` |
 | 2.5 | `backend/src/db/audit.js`, `backend/src/routes/admin.js`, `apps/dashboard/src/components/AdminTab.jsx`, `apps/dashboard/src/components/admin/entityRegistry.js` | `backend/src/index.js` (mount admin), `apps/dashboard/src/App.jsx` (route + nav) |
 | 3 | `backend/src/repos/stockRepo.js`, `backend/src/__tests__/stockRepo.test.js`, `backend/scripts/backfill-stock.js` | every route in §3b above |
+| 5 | `backend/src/db/migrations/000N_phase5_customers.sql`, `backend/scripts/find-customer-duplicates.js`, `backend/scripts/backfill-customers.js`, `backend/scripts/backfill-legacy-orders.js`, `backend/scripts/backfill-customer-fk.js`, `backend/src/__tests__/customerRepo.pg.test.js` | `backend/src/repos/customerRepo.js` (PG backing), `backend/src/db/schema.js` (new tables + `orders.key_person_id`), `backend/src/routes/customers.js` |
 
 Existing files to reuse:
 
@@ -314,6 +446,12 @@ Each phase has an objective test, not just a code review.
   via cancel — all three reflected immediately in dashboard Stock tab and
   in `audit_log`; Wix `/api/products/push` still produces a clean diff
   against the Wix storefront.
+- **Phase 5 done**: `find-customer-duplicates.js` reports zero pairs on PG
+  data; dashboard Customer tab shows combined legacy + app timeline for a
+  customer who has both; creating a new order creates a `customers` PG row
+  (verify with `psql` as `claude_ro`); `orders.customer_id` FK constraint
+  is live (attempt to insert a row with a bogus customer ID → DB rejects);
+  `key_people` rows exist for all customers who had Key person 1/2 in Airtable.
 - **Phase 7 done**: backend builds with `airtable` removed from
   `package.json`; no env var prefixed `AIRTABLE_*` remains in
   `railway.toml`; final Airtable snapshot stored alongside the last
@@ -321,7 +459,6 @@ Each phase has an objective test, not just a code review.
 
 ## Out of scope for this plan
 
-- **Universe A profiling** — schedule when Phase 4 is mid-flight.
 - **Owner Airtable walkthrough** (Move 1 in consolidation doc) — separate
   observation exercise; not on the critical path now that Customer Tab
   v2.0 is shipped.
