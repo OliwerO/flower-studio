@@ -12,10 +12,10 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
   const visibleStock = useMemo(() =>
     editing.stockItems.filter(s => {
       const qty = Number(s['Current Quantity']) || 0;
-      if (qty <= 0 && dateBatchPattern.test(s['Display Name'] || '')) return false;
+      if (qty <= 0 && dateBatchPattern.test(s['Display Name'] || '') && !(editing.pendingPO?.[s.id]?.ordered > 0)) return false;
       return true;
     }),
-    [editing.stockItems]
+    [editing.stockItems, editing.pendingPO]
   );
 
   // Filtered catalog: search + in-stock toggle

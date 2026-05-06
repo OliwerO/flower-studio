@@ -70,10 +70,22 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setFlowerSearch('');
     setNewFlowerForm(null);
     setEditingBouquet(true);
-    if (stockItems.length === 0) {
-      apiClient.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
-    }
-    apiClient.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+    // Fetch stock and pending-po in parallel. Re-fetch stock after pending-po in case
+    // it auto-created new Stock Items for unlinked PO lines.
+    Promise.all([
+      apiClient.get('/stock?includeEmpty=true&includeInactive=true'),
+      apiClient.get('/stock/pending-po'),
+    ]).then(([stockRes, poRes]) => {
+      setStockItems(stockRes.data);
+      setPendingPO(poRes.data);
+      const knownIds = new Set(stockRes.data.map(s => s.id));
+      const hasNewItems = Object.keys(poRes.data).some(id => !knownIds.has(id));
+      if (hasNewItems) {
+        return apiClient.get('/stock?includeEmpty=true&includeInactive=true');
+      }
+      return null;
+    }).then(r => { if (r) setStockItems(r.data); })
+    .catch(() => {});
     apiClient.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
   }
 
@@ -339,11 +351,9 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   // ── Filtered stock for picker ──────────────────────────────────
   function getFilteredStock(query) {
     return stockItems.filter(s => {
-      const name = (s['Display Name'] || '').toLowerCase();
-      const qty = Number(s['Current Quantity']) || 0;
-      if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+      if (!isStockItemVisible(s, pendingPO)) return false;
       if (editLines.some(l => l.stockItemId === s.id)) return false;
-      if (query) return name.includes(query.toLowerCase());
+      if (query) return (s['Display Name'] || '').toLowerCase().includes(query.toLowerCase());
       return true;
     });
   }
