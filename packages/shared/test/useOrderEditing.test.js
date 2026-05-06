@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { findDuplicateStockItem, isStockItemVisible } from '../hooks/useOrderEditing.js';
+import { findDuplicateStockItem, isStockItemVisible, findAllMatchingVariety } from '../hooks/useOrderEditing.js';
 
 describe('findDuplicateStockItem', () => {
   const stock = [
@@ -66,5 +66,39 @@ describe('isStockItemVisible', () => {
   it('defaults pendingPO to empty object when omitted', () => {
     const item = { id: 'rec5', 'Display Name': 'Tulip (10.Apr.)', 'Current Quantity': 0 };
     expect(isStockItemVisible(item)).toBe(false);
+  });
+});
+
+describe('findAllMatchingVariety', () => {
+  const stock = [
+    { id: 'rec1', 'Display Name': 'Pink Peonies (06.May.)' },
+    { id: 'rec2', 'Display Name': 'Pink Peonies (15.Apr.)' },
+    { id: 'rec3', 'Display Name': 'Pink Peonies' },
+    { id: 'rec4', 'Display Name': 'Rose' },
+    { id: 'rec5', 'Display Name': 'Rose (01.May.)' },
+  ];
+
+  it('returns Batches and Demand Entry for matching variety', () => {
+    const result = findAllMatchingVariety(stock, 'Pink Peonies');
+    expect(result.map(s => s.id)).toEqual(['rec1', 'rec2', 'rec3']);
+  });
+
+  it('is case-insensitive', () => {
+    expect(findAllMatchingVariety(stock, 'pink peonies')).toHaveLength(3);
+    expect(findAllMatchingVariety(stock, 'ROSE')).toHaveLength(2);
+  });
+
+  it('returns empty array for unknown variety', () => {
+    expect(findAllMatchingVariety(stock, 'Tulip')).toEqual([]);
+  });
+
+  it('returns empty array for empty or null input', () => {
+    expect(findAllMatchingVariety(stock, '')).toEqual([]);
+    expect(findAllMatchingVariety(stock, null)).toEqual([]);
+  });
+
+  it('handles items with no Display Name', () => {
+    const messy = [{ id: 'x1' }, { id: 'x2', 'Display Name': 'Rose' }];
+    expect(findAllMatchingVariety(messy, 'Rose').map(s => s.id)).toEqual(['x2']);
   });
 });
