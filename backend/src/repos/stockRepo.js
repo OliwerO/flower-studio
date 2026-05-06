@@ -198,6 +198,7 @@ async function listFromPg(options = {}) {
   if (pg.includeInactive !== true) filters.push(eq(stock.active, true));
   if (pg.includeEmpty !== true)    filters.push(gt(stock.currentQuantity, 0));
   if (pg.category)                 filters.push(eq(stock.category, String(pg.category)));
+  if (pg.displayName)              filters.push(eq(stock.displayName, String(pg.displayName)));
   if (Array.isArray(pg.ids) && pg.ids.length) {
     // Accept either airtable ids or uuids in the same array.
     const recs = pg.ids.filter(x => typeof x === 'string' && x.startsWith('rec'));
