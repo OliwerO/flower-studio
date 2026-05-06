@@ -31,7 +31,7 @@ describe('pglite harness', () => {
 
   it('lets Drizzle round-trip an insert + select on system_meta', async () => {
     await harness.db.insert(systemMeta).values({ key: 'test_key', value: 'hello' });
-    const rows = await harness.db.select().from(systemMeta);
+    const rows = await harness.db.select().from(systemMeta).where(eq(systemMeta.key, 'test_key'));
     expect(rows).toHaveLength(1);
     expect(rows[0].key).toBe('test_key');
   });

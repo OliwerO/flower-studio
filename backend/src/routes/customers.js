@@ -3,13 +3,12 @@
 // lives in customerRepo. Insights stays here because it's a cross-entity
 // computation that reads customers + orders and produces derived analytics —
 // not a single-entity persistence concern.
-//
-// When Airtable is swapped for Postgres, this file shouldn't need to change.
 
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
-import { TABLES } from '../config/airtable.js';
+import { db as pgDb } from '../db/index.js';
+import { orders } from '../db/schema.js';
+import { isNull, desc } from 'drizzle-orm';
 import * as customerRepo from '../repos/customerRepo.js';
 
 const router = Router();
@@ -46,17 +45,19 @@ router.get('/insights', async (req, res, next) => {
 
     // Churn risk: customers with 2+ orders whose last order was >60 days ago.
     // Fetch recent orders to build a lastOrderDate map per customer.
-    const recentOrders = await db.list(TABLES.ORDERS, {
-      sort: [{ field: 'Order Date', direction: 'desc' }],
-      fields: ['Customer', 'Order Date'],
-      maxRecords: 500,
-    });
+    const recentOrders = await pgDb.select({
+      customerId: orders.customerId,
+      orderDate:  orders.orderDate,
+    }).from(orders)
+      .where(isNull(orders.deletedAt))
+      .orderBy(desc(orders.orderDate))
+      .limit(500);
 
     const lastOrderByCustomer = {};
     for (const o of recentOrders) {
-      const cid = o.Customer?.[0];
+      const cid = o.customerId;
       if (cid && !lastOrderByCustomer[cid]) {
-        lastOrderByCustomer[cid] = o['Order Date'];
+        lastOrderByCustomer[cid] = o.orderDate;
       }
     }
 
@@ -65,7 +66,7 @@ router.get('/insights', async (req, res, next) => {
 
     const churnRisk = customers
       .filter(c => {
-        if ((c['App Order Count'] || 0) < 2) return false;
+        if ((c._agg?.orderCount || 0) < 2) return false;
         if (c.Segment === 'DO NOT CONTACT') return false;
         const lastDate = lastOrderByCustomer[c.id];
         if (!lastDate) return true; // has order count but no recent order found in query window
@@ -81,8 +82,8 @@ router.get('/insights', async (req, res, next) => {
           Name: c.Name,
           Nickname: c.Nickname,
           Segment: c.Segment,
-          'App Total Spend': c['App Total Spend'] || 0,
-          'App Order Count': c['App Order Count'] || 0,
+          'App Total Spend': c._agg?.totalSpend || 0,
+          'App Order Count': c._agg?.orderCount || 0,
           lastOrderDate: lastDate || null,
           daysSinceLastOrder: daysSince,
         };
@@ -93,14 +94,14 @@ router.get('/insights', async (req, res, next) => {
     const totalRevenueAtRisk = churnRisk.reduce((sum, c) => sum + (c['App Total Spend'] || 0), 0);
 
     const topCustomers = customers
-      .filter(c => (c['App Total Spend'] || 0) > 0)
-      .sort((a, b) => (b['App Total Spend'] || 0) - (a['App Total Spend'] || 0))
+      .filter(c => (c._agg?.totalSpend || 0) > 0)
+      .sort((a, b) => (b._agg?.totalSpend || 0) - (a._agg?.totalSpend || 0))
       .slice(0, 10);
 
     const segmentRevenue = {};
     for (const c of customers) {
       const seg = c.Segment || 'Unassigned';
-      segmentRevenue[seg] = (segmentRevenue[seg] || 0) + (c['App Total Spend'] || 0);
+      segmentRevenue[seg] = (segmentRevenue[seg] || 0) + (c._agg?.totalSpend || 0);
     }
 
     const acquisitionBySource = {};
@@ -130,8 +131,8 @@ router.get('/insights', async (req, res, next) => {
         const lastDate = lastOrderByCustomer[c.id];
         return lastDate ? (now - new Date(lastDate).getTime()) / 86400000 : 999;
       });
-      const frequencyValues = scoredCustomers.map(c => c['App Order Count'] || 0);
-      const monetaryValues = scoredCustomers.map(c => c['App Total Spend'] || 0);
+      const frequencyValues = scoredCustomers.map(c => c._agg?.orderCount || 0);
+      const monetaryValues = scoredCustomers.map(c => c._agg?.totalSpend || 0);
 
       const rScores = quintileScore(recencyValues, true);
       const fScores = quintileScore(frequencyValues, false);
@@ -152,7 +153,7 @@ router.get('/insights', async (req, res, next) => {
 
       scoredCustomers.forEach((c, i) => {
         const label = rfmLabel(rScores[i], fScores[i], mScores[i]);
-        const spend = c['App Total Spend'] || 0;
+        const spend = c._agg?.totalSpend || 0;
         rfmSummary[label]++;
         rfmRevenue[label] += spend;
         rfmByCustomer[c.id] = {
@@ -168,7 +169,7 @@ router.get('/insights', async (req, res, next) => {
     // Auto-compute segment based on order count — read-only hint for the UI,
     // doesn't overwrite manual segments like "DO NOT CONTACT".
     for (const c of customers) {
-      const count = c['App Order Count'] || 0;
+      const count = c._agg?.orderCount || 0;
       c.computedSegment = count >= 10 ? 'Constant' : count >= 2 ? 'Rare' : count >= 1 ? 'New' : null;
     }
 

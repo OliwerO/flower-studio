@@ -147,6 +147,7 @@ export const orders = pgTable('orders', {
   payment1Amount:     numeric('payment_1_amount', { precision: 10, scale: 2 }),
   payment1Method:     text('payment_1_method'),
   imageUrl:           text('image_url'),
+  keyPersonId:        uuid('key_person_id'),  // nullable FK → key_people; set at order creation (issue #216)
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt:          timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt:          timestamp('deleted_at', { withTimezone: true }),
@@ -158,6 +159,7 @@ export const orders = pgTable('orders', {
   // Drives "today's work" queries (dashboard tab) — narrow partial index keeps it cheap.
   activeStatusIdx: index('orders_active_status_idx').on(table.status, table.requiredBy),
   deletedIdx:     index('orders_deleted_idx').on(table.deletedAt),
+  keyPersonIdx:   index('orders_key_person_id_idx').on(table.keyPersonId),
 }));
 
 // ── Phase 4: Order Lines ──
@@ -235,4 +237,68 @@ export const parityLog = pgTable('parity_log', {
   entityIdx:  index('parity_log_entity_idx').on(table.entityType, table.entityId, table.createdAt),
   kindIdx:    index('parity_log_kind_idx').on(table.entityType, table.kind, table.createdAt),
   createdIdx: index('parity_log_created_idx').on(table.createdAt),
+}));
+
+// ── Phase 5: Customers ──
+//
+// customers.airtable_id stays populated for all rows backfilled from Airtable.
+// Rows created post-cutover have airtable_id = NULL.
+//
+// orders.customer_id is text during Phase 4-5 transition (holds recXXX).
+// backfill-customer-fk.js converts the values to UUID strings; a future
+// cleanup migration can ALTER COLUMN + add the formal FK constraint.
+export const customers = pgTable('customers', {
+  id:                  uuid('id').primaryKey().defaultRandom(),
+  airtableId:          text('airtable_id'),
+  name:                text('name').notNull(),
+  nickname:            text('nickname'),
+  phone:               text('phone'),
+  email:               text('email'),
+  link:                text('link'),
+  language:            text('language'),
+  homeAddress:         text('home_address'),
+  sexBusiness:         text('sex_business'),
+  segment:             text('segment'),
+  foundUsFrom:         text('found_us_from'),
+  communicationMethod: text('communication_method'),
+  orderSource:         text('order_source'),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:           timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  airtableIdx: uniqueIndex('customers_airtable_id_idx').on(table.airtableId),
+  nameIdx:     index('customers_name_idx').on(table.name),
+  phoneIdx:    index('customers_phone_idx').on(table.phone),
+  deletedIdx:  index('customers_deleted_idx').on(table.deletedAt),
+}));
+
+// Unlimited key people per customer. The 2-slot UI limit was an Airtable
+// constraint — PG has no limit. First two rows (by created_at) map to
+// 'Key person 1' / 'Key person 2' in the wire format for backward compat.
+export const keyPeople = pgTable('key_people', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  customerId:         uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  name:               text('name').notNull(),
+  contactDetails:     text('contact_details'),
+  importantDate:      date('important_date'),
+  importantDateLabel: text('important_date_label'),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:          timestamp('deleted_at', { withTimezone: true }),
+}, (table) => ({
+  customerIdx: index('key_people_customer_id_idx').on(table.customerId),
+}));
+
+// Read-only post-backfill. Schema is intentionally incompatible with orders
+// (no status, no lines, no delivery FK) — kept separate, not attempted as a join.
+export const legacyOrders = pgTable('legacy_orders', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  airtableId:  text('airtable_id').notNull(),
+  customerId:  uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
+  orderDate:   date('order_date'),
+  description: text('description'),
+  amount:      numeric('amount', { precision: 10, scale: 2 }),
+  raw:         jsonb('raw').notNull(),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => ({
+  airtableIdx: uniqueIndex('legacy_orders_airtable_id_idx').on(table.airtableId),
+  customerIdx: index('legacy_orders_customer_id_idx').on(table.customerId),
 }));

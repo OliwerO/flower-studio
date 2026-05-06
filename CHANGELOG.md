@@ -42,6 +42,27 @@ AIRTABLE_PREMADE_BOUQUET_LINES_TABLE=tbl...  # Premade Bouquet Lines table ID
 
 ---
 
+## 2026-05-06 — Phase 5: Customer domain migrated to Postgres
+
+Direct cutover — no shadow window. `customerRepo.js` now reads and writes PG only.
+
+**New PG migration `0006_phase5_customers.sql`:**
+- New table `customers` — mirrors Airtable Clients (B2C). `airtable_id` kept for backfill traceability.
+- New table `key_people` — unlimited per customer; first two rows (by `created_at`) map to 'Key person 1'/'Key person 2' in wire format.
+- New table `legacy_orders` — pre-app order history backfilled from Airtable Legacy Orders.
+- New column `orders.key_person_id uuid` FK → `key_people(id)` SET NULL on delete.
+
+**Backfill scripts (run after deploy, in order):**
+1. `node backend/scripts/find-customer-duplicates.js` (SAFE — read-only dedup report)
+2. `APPROVE=yes node backend/scripts/backfill-customers.js` (DESTRUCTIVE)
+3. `APPROVE=yes node backend/scripts/backfill-legacy-orders.js` (DESTRUCTIVE)
+4. `APPROVE=yes node backend/scripts/backfill-customer-fk.js` (DESTRUCTIVE — converts orders.customer_id recXXX → UUID)
+
+**No env flag** — no shadow window. customerRepo reads PG immediately after deploy.
+Wire format unchanged — frontends already consume `c._agg.*`.
+
+---
+
 ## 2026-05-03 — Per-order bouquet image override (Option A)
 
 Driver delivery card was reading `bouquetImageUrl` keyed off `Order['Wix Product ID']`,
