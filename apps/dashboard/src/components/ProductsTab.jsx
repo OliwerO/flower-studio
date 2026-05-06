@@ -147,8 +147,10 @@ export default function ProductsTab() {
   function onPushComplete(result) {
     setPushing(false);
     fetchProducts();
-    if (result?.errors?.length > 0) {
-      showToast(`${t.prodPushDone} (${result.errors.length})`, 'success');
+    if (!result) {
+      showToast(t.prodSyncFailed, 'error');
+    } else if (result.errors?.length > 0) {
+      showToast(`${t.prodSyncFailed}: ${result.errors.length}`, 'error');
     } else {
       showToast(t.prodPushDone, 'success');
     }

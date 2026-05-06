@@ -13,6 +13,7 @@ import {
   anyActive,
   useToast,
 } from '@flower-studio/shared';
+import { useAuth } from '../context/AuthContext.jsx';
 import client from '../api/client.js';
 import t from '../translations.js';
 import BouquetCard from '../components/bouquets/BouquetCard.jsx';
@@ -22,6 +23,7 @@ import { useNotifications } from '../hooks/useNotifications.js';
 export default function BouquetsPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  const { role } = useAuth();
 
   const [rows, setRows]       = useState([]);
   const [categories, setCategories] = useState([]);
@@ -226,8 +228,10 @@ export default function BouquetsPage() {
   function onPushComplete(result) {
     setPushing(false);
     setDirtyIds(new Set());
-    if (result?.errors?.length > 0) {
-      showToast(`${t.syncSuccess} (${result.errors.length} предупр.)`, 'success');
+    if (!result) {
+      showToast(t.syncFailed, 'error');
+    } else if (result.errors?.length > 0) {
+      showToast(`${t.syncFailed}: ${result.errors.length}`, 'error');
     } else {
       showToast(t.syncSuccess, 'success');
     }
@@ -264,17 +268,19 @@ export default function BouquetsPage() {
           {pulling ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
           <span>{t.pullShort}</span>
         </button>
-        <button
-          type="button"
-          onClick={pushToWix}
-          disabled={pulling || pushing}
-          aria-label={t.pushToWix}
-          className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/20
-                     text-emerald-700 dark:text-emerald-400 text-sm font-semibold active-scale disabled:opacity-50"
-        >
-          {pushing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-          <span>{t.pushShort}</span>
-        </button>
+        {role === 'owner' && (
+          <button
+            type="button"
+            onClick={pushToWix}
+            disabled={pulling || pushing}
+            aria-label={t.pushToWix}
+            className="flex items-center gap-1 px-2.5 h-9 rounded-xl bg-emerald-50 dark:bg-emerald-900/20
+                       text-emerald-700 dark:text-emerald-400 text-sm font-semibold active-scale disabled:opacity-50"
+          >
+            {pushing ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
+            <span>{t.pushShort}</span>
+          </button>
+        )}
       </header>
 
       <div className="container-mobile py-3">
@@ -341,11 +347,13 @@ export default function BouquetsPage() {
 
       <PushBar count={dirtyIds.size} pushing={pushing} />
 
-      <WixPushModal
-        open={pushModalOpen}
-        onClose={() => setPushModalOpen(false)}
-        onComplete={onPushComplete}
-      />
+      {role === 'owner' && (
+        <WixPushModal
+          open={pushModalOpen}
+          onClose={() => setPushModalOpen(false)}
+          onComplete={onPushComplete}
+        />
+      )}
     </div>
   );
 }
