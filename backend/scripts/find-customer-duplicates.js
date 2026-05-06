@@ -45,7 +45,13 @@ function findDuplicates(rows, keyFn) {
 const rows = await fetchAll();
 console.log(`Fetched ${rows.length} customer records.\n`);
 
-const byPhone = findDuplicates(rows, r => r.phone.replace(/\s+/g, '').toLowerCase());
+const byPhone = findDuplicates(rows, r => {
+  const digits = r.phone.replace(/\D/g, '');
+  // normalize common Polish prefixes: +48, 0048, 48 prefix on 9-digit numbers
+  if (digits.startsWith('0048')) return digits.slice(4);
+  if (digits.startsWith('48') && digits.length === 11) return digits.slice(2);
+  return digits;
+});
 const byEmail = findDuplicates(rows, r => r.email.trim().toLowerCase());
 
 let total = 0;

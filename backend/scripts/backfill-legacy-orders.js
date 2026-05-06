@@ -51,43 +51,50 @@ console.log(`Fetched ${rows.length} legacy order records.`);
 let inserted = 0, skipped = 0;
 
 for (const r of rows) {
-  const atCustomerId = r.get('Clients (B2C)')?.[0];
-  if (!atCustomerId) { skipped++; continue; }
+  try {
+    const atCustomerId = r.get('Clients (B2C)')?.[0];
+    if (!atCustomerId) { skipped++; continue; }
 
-  const custResult = await pool.query(
-    'SELECT id FROM customers WHERE airtable_id = $1',
-    [atCustomerId],
-  );
-  if (custResult.rows.length === 0) {
-    console.warn(`  No PG customer for Airtable id ${atCustomerId} — skipping legacy order ${r.id}`);
-    skipped++;
-    continue;
+    const custResult = await pool.query(
+      'SELECT id FROM customers WHERE airtable_id = $1',
+      [atCustomerId],
+    );
+    if (custResult.rows.length === 0) {
+      console.warn(`  No PG customer for Airtable id ${atCustomerId} — skipping legacy order ${r.id}`);
+      skipped++;
+      continue;
+    }
+
+    const customerId = custResult.rows[0].id;
+    const description = [
+      r.get('Oder Number'), r.get('Flowers+Details of order'), r.get('Order Reason'),
+    ].filter(Boolean).join(' — ');
+
+    const rawAmount = r.get('Price (with Delivery)');
+    const amount = (typeof rawAmount === 'number' && Number.isFinite(rawAmount)) ? rawAmount : null;
+
+    await pool.query(
+      `INSERT INTO legacy_orders (airtable_id, customer_id, order_date, description, amount, raw)
+       VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (airtable_id) DO UPDATE SET
+         customer_id = EXCLUDED.customer_id,
+         order_date  = EXCLUDED.order_date,
+         description = EXCLUDED.description,
+         amount      = EXCLUDED.amount,
+         raw         = EXCLUDED.raw`,
+      [
+        r.id,
+        customerId,
+        legacyDate(r) || null,
+        description || null,
+        amount,
+        JSON.stringify(r.fields),
+      ],
+    );
+    inserted++;
+  } catch (err) {
+    console.error(`Failed on legacy order ${r.id}:`, err.message);
   }
-
-  const customerId = custResult.rows[0].id;
-  const description = [
-    r.get('Oder Number'), r.get('Flowers+Details of order'), r.get('Order Reason'),
-  ].filter(Boolean).join(' — ');
-
-  await pool.query(
-    `INSERT INTO legacy_orders (airtable_id, customer_id, order_date, description, amount, raw)
-     VALUES ($1,$2,$3,$4,$5,$6)
-     ON CONFLICT (airtable_id) DO UPDATE SET
-       customer_id = EXCLUDED.customer_id,
-       order_date  = EXCLUDED.order_date,
-       description = EXCLUDED.description,
-       amount      = EXCLUDED.amount,
-       raw         = EXCLUDED.raw`,
-    [
-      r.id,
-      customerId,
-      legacyDate(r) || null,
-      description || null,
-      r.get('Price (with Delivery)') != null ? String(r.get('Price (with Delivery)')) : null,
-      JSON.stringify(r.fields),
-    ],
-  );
-  inserted++;
 }
 
 console.log(`legacy_orders: ${inserted} upserted, ${skipped} skipped (no linked customer).`);

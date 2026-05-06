@@ -27,12 +27,13 @@ const updateResult = await pool.query(`
 console.log(`Updated ${updateResult.rowCount} orders to UUID customer_id.`);
 
 // Report any orders that still have recXXX ids (no matching customer found).
-const unmatched = await pool.query(`
-  SELECT id, customer_id FROM orders WHERE customer_id LIKE 'rec%' LIMIT 20
-`);
-if (unmatched.rows.length > 0) {
-  console.error(`⚠️  ${unmatched.rows.length} orders still have Airtable customer_id:`);
-  for (const row of unmatched.rows) {
+const countResult = await pool.query(`SELECT COUNT(*)::int AS n FROM orders WHERE customer_id LIKE 'rec%'`);
+const totalUnmatched = countResult.rows[0].n;
+
+if (totalUnmatched > 0) {
+  const sample = await pool.query(`SELECT id, customer_id FROM orders WHERE customer_id LIKE 'rec%' LIMIT 20`);
+  console.error(`⚠️  ${totalUnmatched} orders still have Airtable customer_id (showing up to 20):`);
+  for (const row of sample.rows) {
     console.error(`  order ${row.id} → customer_id ${row.customer_id}`);
   }
   console.error('Resolve these manually before cutover.');
