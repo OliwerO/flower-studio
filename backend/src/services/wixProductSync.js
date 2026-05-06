@@ -198,14 +198,23 @@ async function updateWixInventory(productId, variantStates) {
     },
   };
 
-  const res = await fetch(
-    `${WIX_API_URL}/stores/v2/inventoryItems/product/${productId}`,
-    { method: 'PATCH', headers: wixHeaders(), body: JSON.stringify(body) }
-  );
-
-  if (!res.ok) {
+  // Retry up to 2 times on 5xx responses (Wix infrastructure proxy errors
+  // like "upstream connect error or disconnect/reset before headers" are
+  // transient — one failure per product is enough to miss an inventory
+  // update, but they tend to resolve on the next attempt within seconds).
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(
+      `${WIX_API_URL}/stores/v2/inventoryItems/product/${productId}`,
+      { method: 'PATCH', headers: wixHeaders(), body: JSON.stringify(body) }
+    );
+    if (res.ok) return;
     const text = await res.text();
     if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
+    if (res.status >= 500 && attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+      continue;
+    }
     throw new Error(`Wix inventory update failed for ${productId}: ${text}`);
   }
 }
