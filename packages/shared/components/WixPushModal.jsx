@@ -102,6 +102,13 @@ export default function WixPushModal({ open, onClose, onComplete }) {
   const [expanded, setExpanded] = useState(false);
   const completedRef = useRef(false);
   const jobIdRef = useRef(null);
+  // Keep a stable ref to onComplete so the polling effect never needs it in
+  // its dependency array. Without this, any parent re-render that recreates
+  // the onComplete function (e.g. after setPushing(false)) causes the effect
+  // to restart — starting a new push job immediately after the previous one
+  // finishes, creating an infinite loop.
+  const onCompleteRef = useRef(onComplete);
+  useEffect(() => { onCompleteRef.current = onComplete; });
 
   // Auto-scroll log to bottom on each new entry.
   const logEndRef = useRef(null);
@@ -147,8 +154,8 @@ export default function WixPushModal({ open, onClose, onComplete }) {
           timer = setTimeout(poll, POLL_INTERVAL_MS);
         } else if (!completedRef.current) {
           completedRef.current = true;
-          if (onComplete) {
-            try { onComplete(data.result); } catch { /* host can't break our cleanup */ }
+          if (onCompleteRef.current) {
+            try { onCompleteRef.current(data.result); } catch { /* host can't break our cleanup */ }
           }
         }
       } catch (err) {
@@ -164,7 +171,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
       cancelled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [open, onComplete]);
+  }, [open]); // onComplete intentionally omitted — accessed via onCompleteRef
 
   // Lock body scroll only while the detail sheet is expanded — the pill is
   // non-blocking and shouldn't trap the page.
