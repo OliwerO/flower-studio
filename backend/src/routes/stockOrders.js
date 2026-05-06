@@ -589,8 +589,9 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
   // Try to find an existing Stock record with the exact same display name.
   // Sanitize quotes to avoid breaking the Airtable filter formula.
   const safe = sanitizeFormulaValue(trimmedName);
-  const existing = await db.list(TABLES.STOCK, {
+  const existing = await stockRepo.list({
     filterByFormula: `{Display Name} = '${safe}'`,
+    pg: { displayName: trimmedName, includeInactive: true, includeEmpty: true },
     maxRecords: 1,
   });
   if (existing.length > 0) {
@@ -646,7 +647,7 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
 // Returns the new batch's stock item ID.
 const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
 async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today) {
-  const stockItem = await db.getById(TABLES.STOCK, stockItemId);
+  const stockItem = await stockRepo.getById(stockItemId);
   const existingQty = Number(stockItem['Current Quantity']) || 0;
 
   const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -798,10 +799,12 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate);
 
             // Audit trail — marker must match purchaseAlreadyRecorded() exactly.
+            // Flower link is skipped when finalItemId is a PG UUID (STOCK_PURCHASES
+            // is still Airtable-only until Phase 6, which rejects non-recXXX linked values).
             await db.create(TABLES.STOCK_PURCHASES, {
               'Purchase Date': evalDate,
               Supplier: supplier,
-              Flower: [finalItemId],
+              ...(finalItemId.startsWith('rec') ? { Flower: [finalItemId] } : {}),
               'Quantity Purchased': accepted,
               'Price Per Unit': costPrice,
               Notes: `PO #${req.params.id} L#${evalLine.lineId} primary`,
@@ -835,7 +838,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             // If the PO line has no Stock Item link (e.g. new flower not yet
             // in stock), pass null — the helper uses sensible defaults.
             const originalStockItem = stockItemId
-              ? await db.getById(TABLES.STOCK, stockItemId)
+              ? await stockRepo.getById(stockItemId).catch(() => null)
               : null;
             substituteStockId = await findOrCreateSubstituteStock(
               altFlowerName, altSupplier, altCostPerStem, originalStockItem, stockItemId, evalDate
@@ -850,10 +853,10 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             await db.create(TABLES.STOCK_PURCHASES, {
               'Purchase Date': evalDate,
               Supplier: altSupplier,
-              Flower: [altFinalId],
+              ...(altFinalId.startsWith('rec') ? { Flower: [altFinalId] } : {}),
               'Quantity Purchased': altAccepted,
               'Price Per Unit': altCostPerStem,
-              Notes: `PO #${req.params.id} L#${evalLine.lineId} substitute for "${normaliseFlowerName(line['Flower Name'])}"`,
+              Notes: `PO #${req.params.id} L#${evalLine.lineId} alt - substitute for "${normaliseFlowerName(line['Flower Name'])}"`,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping alt receive for line ${evalLine.lineId} — already recorded`);
