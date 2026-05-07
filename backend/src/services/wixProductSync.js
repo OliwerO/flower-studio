@@ -1023,7 +1023,10 @@ export async function runPush(onProgress = NO_PROGRESS) {
 
       // Seasonal category
       const seasonal = getActiveSeasonalCategory();
-      const seasonalWixId = catMap['seasonal'];
+      // Prefer a dedicated Wix collection matching the seasonal slug (e.g. 'mothers-day').
+      // Fall back to the generic 'seasonal' slot for categories without their own collection.
+      const seasonalWixId = catMap[seasonal?.slug] || catMap['seasonal'];
+      const seasonalUsesGenericSlot = seasonal && !catMap[seasonal.slug];
       if (seasonal && seasonalWixId) {
         const seasonalProductIds = [...new Set(
           allConfigRows.filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
@@ -1032,9 +1035,11 @@ export async function runPush(onProgress = NO_PROGRESS) {
         catTasks.push(async () => {
           try {
             await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
+            // Only rename the generic 'seasonal' slot — dedicated collections already have
+            // the correct name and Wix would reject a rename to a name that already exists.
             const enTitle = seasonal.translations?.en?.title;
             const enDesc = seasonal.translations?.en?.description;
-            if (enTitle || enDesc) {
+            if (seasonalUsesGenericSlot && (enTitle || enDesc)) {
               await updateWixCategory(seasonalWixId, {
                 name: enTitle || seasonal.name,
                 description: enDesc || '',
