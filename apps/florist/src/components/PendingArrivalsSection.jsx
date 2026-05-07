@@ -24,19 +24,29 @@ export default function PendingArrivalsSection({ stock, committedMap, onOrderCli
     return m;
   }, [stock]);
 
+  const stockQtyMap = useMemo(() => {
+    const m = {};
+    for (const s of (stock || [])) m[s.id] = Number(s['Current Quantity']) || 0;
+    return m;
+  }, [stock]);
+
   const rows = useMemo(() => {
     const ids = new Set(Object.keys(pendingPO));
     return [...ids].map(stockId => {
       const po = pendingPO[stockId] || { ordered: 0, pos: [] };
       const com = (committedMap || {})[stockId] || { committed: 0, orders: [] };
-      const net = po.ordered - com.committed;
+      // Negative qty = demand already baked in (CLAUDE.md pitfall #7).
+      // /stock/committed returns the same number but reads Airtable (broken until #229).
+      // Use whichever is larger — they should match once #229 is fixed.
+      const committed = Math.max(com.committed, Math.max(0, -(stockQtyMap[stockId] || 0)));
+      const net = po.ordered - committed;
       return {
         stockId,
         // Prefer PO line flower name (user-entered) over stock Display Name
         name: ((po.flowerName || '').length >= (nameMap[stockId] || '').length
           ? po.flowerName : nameMap[stockId]) || po.flowerName || '—',
         ordered: po.ordered,
-        committed: com.committed,
+        committed,
         net,
         pos: po.pos || [],
         orders: com.orders || [],
@@ -44,7 +54,7 @@ export default function PendingArrivalsSection({ stock, committedMap, onOrderCli
       };
     }).filter(r => r.ordered > 0)
       .sort((a, b) => a.net - b.net);
-  }, [pendingPO, committedMap, nameMap]);
+  }, [pendingPO, committedMap, nameMap, stockQtyMap]);
 
   if (loading || rows.length === 0) return null;
 
