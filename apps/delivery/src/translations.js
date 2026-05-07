@@ -143,6 +143,7 @@ const en = {
   reportPreviewTitle:  'Check your report',
   reportAddScreenshot: 'Add screenshot',
   reportThinking:      'Thinking...',
+  reportRetry:         'Try again',
 };
 
 const ru = {
@@ -287,6 +288,7 @@ const ru = {
   reportPreviewTitle:  'Проверьте ваш отчёт',
   reportAddScreenshot: 'Добавить скриншот',
   reportThinking:      'Думаю...',
+  reportRetry:         'Попробовать снова',
 };
 
 // ── Proxy-based dynamic translation ──

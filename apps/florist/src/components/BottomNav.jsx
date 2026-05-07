@@ -26,7 +26,6 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
 import t from '../translations.js';
 import { FeedbackModal } from '@flower-studio/shared';
-import client from '../api/client.js';
 
 // Re-introduced after Phase B adds the 5th owner tab. On iPhone SE 1st-gen
 // (320px) five 64px tabs don't fit comfortably — the owner's Wix tab moves
@@ -46,7 +45,7 @@ function useNarrowViewport(threshold = 360) {
 export default function BottomNav() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { role, logout } = useAuth();
+  const { role, logout, driverName } = useAuth();
   const { dark, toggle: toggleDark } = useTheme();
   const [moreOpen, setMoreOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
@@ -209,9 +208,8 @@ export default function BottomNav() {
       {reportOpen && (
         <FeedbackModal
           t={t}
-          apiClient={client}
           reporterRole={role}
-          reporterName={role === 'owner' ? 'Owner' : 'Florist'}
+          reporterName={driverName || (role === 'owner' ? 'Owner' : 'Florist')}
           appArea="florist"
           onClose={() => setReportOpen(false)}
         />

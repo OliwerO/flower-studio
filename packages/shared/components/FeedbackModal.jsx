@@ -1,11 +1,11 @@
 import { useState, useRef } from 'react';
+import client from '../api/client.js';
 
 /*
  * FeedbackModal — drives the full AI-assisted Report conversation.
  *
  * Props:
  *   t            — translations object from the calling app
- *   apiClient    — the app's axios client (with auth PIN pre-attached)
  *   reporterRole — 'owner' | 'florist' | 'driver'
  *   reporterName — display name of the logged-in user
  *   appArea      — string identifying which app ('florist' | 'dashboard' | 'delivery')
@@ -63,13 +63,14 @@ const IconImagePlus = ({ size, className }) => (
 );
 // ──────────────────────────────────────────────────────────────────────────────
 
-export default function FeedbackModal({ t, apiClient, reporterRole, reporterName, appArea, onClose }) {
+export default function FeedbackModal({ t, reporterRole, reporterName, appArea, onClose }) {
   const [phase, setPhase] = useState('input'); // input | asking | preview | done | error
   const [text, setText]   = useState('');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer]     = useState('');
   const [sessionId, setSessionId] = useState(null);
   const [summary, setSummary]   = useState('');
+  const [issueUrl, setIssueUrl] = useState('');
   const [loading, setLoading]   = useState(false);
   const [imageFile, setImageFile] = useState(null);
   const fileRef = useRef();
@@ -78,7 +79,7 @@ export default function FeedbackModal({ t, apiClient, reporterRole, reporterName
     if (!text.trim()) return;
     setLoading(true);
     try {
-      const { data } = await apiClient.post('/feedback/start', {
+      const { data } = await client.post('/feedback/start', {
         text: text.trim(),
         appArea,
         reporterRole,
@@ -103,7 +104,7 @@ export default function FeedbackModal({ t, apiClient, reporterRole, reporterName
     if (!answer.trim()) return;
     setLoading(true);
     try {
-      const { data } = await apiClient.post('/feedback/continue', {
+      const { data } = await client.post('/feedback/continue', {
         sessionId,
         message: answer.trim(),
       });
@@ -123,7 +124,7 @@ export default function FeedbackModal({ t, apiClient, reporterRole, reporterName
 
   async function loadPreview(sid) {
     try {
-      const { data } = await apiClient.post('/feedback/preview', { sessionId: sid });
+      const { data } = await client.post('/feedback/preview', { sessionId: sid });
       setSummary(data.summary);
       setPhase('preview');
     } catch (err) {
@@ -139,7 +140,7 @@ export default function FeedbackModal({ t, apiClient, reporterRole, reporterName
       form.append('sessionId', sessionId);
       if (imageFile) form.append('image', imageFile, imageFile.name);
 
-      await apiClient.post('/feedback/publish', form, {
+      await client.post('/feedback/publish', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setPhase('done');
@@ -240,7 +241,7 @@ export default function FeedbackModal({ t, apiClient, reporterRole, reporterName
                           rounded-xl p-3">{summary}</p>
             <div className="flex gap-2">
               <button
-                onClick={() => { setPhase('asking'); setQuestion(''); setAnswer(''); }}
+                onClick={() => { setPhase('input'); setAnswer(''); }}
                 className="flex-1 border border-gray-200 dark:border-gray-600 text-ios-label
                            dark:text-dark-label font-medium rounded-xl py-3 text-sm"
               >
@@ -275,10 +276,10 @@ export default function FeedbackModal({ t, apiClient, reporterRole, reporterName
         {phase === 'error' && (
           <div className="space-y-3">
             <p className="text-sm text-red-500">{t.reportError}</p>
-            <button onClick={() => setPhase('input')}
+            <button onClick={() => { setPhase('input'); setSessionId(null); setQuestion(''); setAnswer(''); setSummary(''); setIssueUrl(''); }}
               className="w-full border border-gray-200 dark:border-gray-600 text-ios-label
                          dark:text-dark-label font-medium rounded-xl py-3 text-sm">
-              {t.reportCorrect}
+              {t.reportRetry}
             </button>
           </div>
         )}
