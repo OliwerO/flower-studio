@@ -8,6 +8,9 @@ import * as webhookLogRepo from '../repos/webhookLogRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { listByIds } from '../utils/batchQuery.js';
+import { db as pgDb } from '../db/index.js';
+import { feedbackReports } from '../db/schema.js';
+import { eq, and, ne } from 'drizzle-orm';
 
 const router = Router();
 
@@ -228,6 +231,46 @@ router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async 
   } catch (err) {
     console.error('[REPROCESS] failed:', err);
     return res.status(500).json({ error: err.message || 'Reprocess failed.' });
+  }
+});
+
+// GitHub issues webhook — fires when a Report issue is closed.
+// Notifies the reporter via Telegram feedback bot.
+router.post('/github', async (req, res) => {
+  const event = req.headers['x-github-event'];
+  if (event !== 'issues') return res.json({ ok: true });
+
+  const { action, issue } = req.body;
+  if (action !== 'closed' || !issue?.number) return res.json({ ok: true });
+
+  res.json({ ok: true }); // respond immediately — notification is async
+
+  try {
+    // Find a feedback_reports row for this issue number with a telegram_chat_id
+    const [row] = await pgDb
+      .select({ telegramChatId: feedbackReports.telegramChatId })
+      .from(feedbackReports)
+      .where(
+        and(
+          eq(feedbackReports.githubIssueNumber, issue.number),
+          ne(feedbackReports.githubIssueNumber, 0), // exclude sentinel registration rows
+        )
+      )
+      .limit(1);
+
+    if (!row?.telegramChatId) return;
+
+    const token = process.env.FEEDBACK_BOT_TOKEN;
+    if (!token) return;
+
+    const text = `✅ Ваш отчёт исправлен!\n\n«${issue.title}» (#${issue.number}) закрыт.\n${issue.html_url}`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ chat_id: row.telegramChatId, text }),
+    });
+  } catch (err) {
+    console.error('[WEBHOOK] GitHub close notification error:', err.message);
   }
 });
 

@@ -130,6 +130,20 @@ const en = {
 
   // Bouquet image preview on the delivery card
   bouquetSectionLabel: 'Bouquet',
+
+  // Feedback / report
+  reportButton:        'Report',
+  reportTitle:         'Report a Problem',
+  reportPlaceholder:   'Describe the problem or request...',
+  reportSend:          'Send',
+  reportConfirm:       'Looks right — submit',
+  reportCorrect:       'Correct it',
+  reportSuccess:       'Report submitted! Thank you.',
+  reportError:         'Failed to submit report. Please try again.',
+  reportPreviewTitle:  'Check your report',
+  reportAddScreenshot: 'Add screenshot',
+  reportThinking:      'Thinking...',
+  reportRetry:         'Try again',
 };
 
 const ru = {
@@ -261,6 +275,20 @@ const ru = {
 
   // Bouquet image preview on the delivery card
   bouquetSectionLabel: 'Букет',
+
+  // Feedback / report
+  reportButton:        'Сообщить о проблеме',
+  reportTitle:         'Отправить отчёт',
+  reportPlaceholder:   'Опишите проблему или пожелание...',
+  reportSend:          'Отправить',
+  reportConfirm:       'Всё верно — отправить',
+  reportCorrect:       'Исправить',
+  reportSuccess:       'Отчёт отправлен! Спасибо.',
+  reportError:         'Не удалось отправить отчёт. Попробуйте ещё раз.',
+  reportPreviewTitle:  'Проверьте ваш отчёт',
+  reportAddScreenshot: 'Добавить скриншот',
+  reportThinking:      'Думаю...',
+  reportRetry:         'Попробовать снова',
 };
 
 // ── Proxy-based dynamic translation ──

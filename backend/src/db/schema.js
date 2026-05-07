@@ -390,6 +390,15 @@ export const syncLog = pgTable('sync_log', {
   tsIdx: index('sync_log_timestamp_idx').on(t.timestamp),
 }));
 
+export const feedbackReports = pgTable('feedback_reports', {
+  id:                uuid('id').primaryKey().defaultRandom(),
+  githubIssueNumber: integer('github_issue_number').notNull(),
+  reporterRole:      text('reporter_role').notNull(),
+  reporterName:      text('reporter_name').notNull(),
+  telegramChatId:    text('telegram_chat_id'),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const productConfig = pgTable('product_config', {
   id:           uuid('id').primaryKey().defaultRandom(),
   airtableId:   text('airtable_id'),

@@ -7,6 +7,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
+import { FeedbackModal } from '@flower-studio/shared';
 
 const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
 const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
@@ -27,6 +28,7 @@ function TabFallback() {
 }
 
 export default function DashboardPage() {
+
   // TABS defined inside component so the Proxy reads the current language on each render
   const TABS = [
     { key: 'today',     label: t.tabToday },
@@ -56,6 +58,7 @@ export default function DashboardPage() {
   // Think of it like resetting a workstation between different job orders.
   const [filterKey, setFilterKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
+  const [reportOpen, setReportOpen] = useState(false);
 
   useEffect(() => {
     setMountedTabs(prev => {
@@ -136,6 +139,15 @@ export default function DashboardPage() {
             className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-gray-500
                        hover:bg-gray-200 transition-colors flex items-center justify-center"
           >?</button>
+          <button
+            onClick={() => setReportOpen(true)}
+            className="text-xs font-medium h-7 px-2.5 rounded-lg bg-gray-100 text-gray-500
+                       hover:bg-gray-200 transition-colors flex items-center gap-1.5"
+            title={t.reportButton}
+          >
+            <span className="text-xs">!</span>
+            <span className="hidden sm:inline text-xs">{t.reportButton}</span>
+          </button>
           <LangToggle />
         </div>
       </header>
@@ -186,6 +198,15 @@ export default function DashboardPage() {
       </main>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+      {reportOpen && (
+        <FeedbackModal
+          t={t}
+          reporterRole="owner"
+          reporterName="Owner"
+          appArea="dashboard"
+          onClose={() => setReportOpen(false)}
+        />
+      )}
     </div>
   );
 }

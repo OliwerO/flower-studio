@@ -31,6 +31,8 @@ import stockOrderRoutes    from './routes/stockOrders.js';
 import floristHoursRoutes from './routes/floristHours.js';
 import premadeBouquetRoutes from './routes/premadeBouquets.js';
 import adminRoutes         from './routes/admin.js';
+import feedbackRoutes      from './routes/feedback.js';
+import { startFeedbackBot } from './services/feedbackTelegramBot.js';
 
 // Validate required env vars on startup — fail early instead of silently breaking at runtime.
 // In test-harness mode (TEST_BACKEND=mock-airtable) the AIRTABLE_* keys are
@@ -184,6 +186,7 @@ app.use('/api/stock-orders',    stockOrderRoutes);
 app.use('/api/florist-hours',  floristHoursRoutes);
 app.use('/api/premade-bouquets', premadeBouquetRoutes);
 app.use('/api/admin',           adminRoutes);
+app.use('/api/feedback',        feedbackRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);
@@ -208,6 +211,8 @@ if (!IS_TEST_BACKEND) {
 // Becomes mandatory once entity cutovers begin in Phase 3.
 // In pglite mode this also applies migrations; see db/index.js.
 await connectPostgres();
+
+startFeedbackBot();
 
 const server = app.listen(PORT, () => {
   console.log(`Flower Studio backend running on http://localhost:${PORT}`);

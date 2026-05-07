@@ -41,6 +41,20 @@ const en = {
   orderCancelled:       'Order cancelled',
   stockReturned:        'Returned',
 
+  // Feedback / report
+  reportButton:        'Report',
+  reportTitle:         'Report a Problem',
+  reportPlaceholder:   'Describe the problem or request...',
+  reportSend:          'Send',
+  reportConfirm:       'Looks right — submit',
+  reportCorrect:       'Correct it',
+  reportSuccess:       'Report submitted! Thank you.',
+  reportError:         'Failed to submit report. Please try again.',
+  reportPreviewTitle:  'Check your report',
+  reportAddScreenshot: 'Add screenshot',
+  reportThinking:      'Thinking...',
+  reportRetry:         'Try again',
+
   // Order card
   pickup:           'Pickup',
   delivery:         'Delivery',
@@ -751,6 +765,20 @@ const ru = {
   cancelConfirm:        'Отменить заказ — вернуть цветы на склад?',
   orderCancelled:       'Заказ отменён',
   stockReturned:        'Возвращено',
+
+  // Feedback / report
+  reportButton:        'Сообщить о проблеме',
+  reportTitle:         'Отправить отчёт',
+  reportPlaceholder:   'Опишите проблему или пожелание...',
+  reportSend:          'Отправить',
+  reportConfirm:       'Всё верно — отправить',
+  reportCorrect:       'Исправить',
+  reportSuccess:       'Отчёт отправлен! Спасибо.',
+  reportError:         'Не удалось отправить отчёт. Попробуйте ещё раз.',
+  reportPreviewTitle:  'Проверьте ваш отчёт',
+  reportAddScreenshot: 'Добавить скриншот',
+  reportThinking:      'Думаю...',
+  reportRetry:         'Попробовать снова',
 
   // Order card
   pickup:           'Самовывоз',

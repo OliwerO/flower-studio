@@ -5,6 +5,47 @@ Review this entire file before flipping to production.
 
 ---
 
+## Report System — In-app bug/feature reporting with AI (2026-05-07)
+
+### Schema
+- Migration 0008: `feedback_reports` table — `id`, `github_issue_number`, `reporter_role`, `reporter_name`, `telegram_chat_id`, `created_at`
+- Partial unique index: `feedback_reports_issue_number_idx` (WHERE `github_issue_number > 0`)
+
+### New backend files
+- `backend/src/services/feedbackService.js` — core service: Claude Haiku multi-turn conversation, GitHub issue creation via REST API, screenshot upload via Contents API, session management (in-memory TTL)
+- `backend/src/routes/feedback.js` — `POST /feedback/start|continue|preview|publish`
+- `backend/src/services/feedbackTelegramBot.js` — dedicated feedback bot (separate from the notification bot), long-poll, `/start <PIN>` registration, conversation routing
+- `backend/src/__tests__/feedbackService.test.js` — 18 unit tests
+
+### Modified backend files
+- `backend/src/middleware/auth.js` — added `feedback` resource to all three roles in ROLE_ACCESS
+- `backend/src/routes/webhook.js` — added `POST /webhook/github` for GitHub issues close event → Telegram notification
+- `backend/src/index.js` — registered feedback routes, starts `feedbackTelegramBot` at boot
+
+### Frontend (packages/shared + all 3 apps)
+- `packages/shared/components/FeedbackModal.jsx` — shared 5-phase modal (input → asking → preview → done | error)
+- Report button added to: Florist app BottomNav More menu, Dashboard header, Delivery app header
+
+### New env vars (add to Railway + .env.example)
+- `GITHUB_TOKEN` — fine-grained PAT with Issues write + Contents write on `OliwerO/flower-studio`
+- `FEEDBACK_BOT_TOKEN` — Telegram bot token from @BotFather (separate from `TELEGRAM_BOT_TOKEN`)
+
+### GitHub repo setup (HITL — owner action required)
+1. Create GitHub webhook at `github.com/OliwerO/flower-studio/settings/hooks/new`:
+   - Payload URL: `https://<railway-url>/api/webhook/github`
+   - Content type: `application/json`
+   - Events: Issues only
+2. Set `GITHUB_TOKEN` and `FEEDBACK_BOT_TOKEN` in Railway dashboard
+3. Register Owner's Telegram chat: send `/start <PIN_OWNER>` to the new feedback bot
+
+### Deployment sequence
+1. Deploy backend (migration 0008 runs automatically on Railway)
+2. Set `GITHUB_TOKEN` + `FEEDBACK_BOT_TOKEN` env vars in Railway
+3. Configure GitHub webhook (see above)
+4. Test: tap "Сообщить о проблеме" in florist app → complete flow → verify GitHub issue created
+
+---
+
 ## Phase 6 — Config + Log tables to Postgres (2026-05-07)
 
 ### Schema
