@@ -58,3 +58,5 @@ export { default as BouquetImageEditor } from './components/BouquetImageEditor.j
 export { default as BouquetImageView }   from './components/BouquetImageView.jsx';
 export { resizeImageBlob }               from './utils/imageResize.js';
 export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
+export { default as BatchPickerModal } from './components/BatchPickerModal.jsx';
+export { findAllMatchingVariety } from './hooks/useOrderEditing.js';
