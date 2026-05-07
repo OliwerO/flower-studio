@@ -47,8 +47,16 @@ _Avoid_: Vendor, distributor
 ### Inventory and procurement
 
 **Stock Item**:
-A named flower variety tracked in inventory (e.g. "Pink Peonies"). The unit of quantity is the **stem**.
+A named flower variety tracked in inventory. Exists in two forms: a **Demand Entry** (no date suffix, e.g. "Pink Peonies") representing planned future stock with no physical stems yet, and a **Batch** (date suffix, e.g. "Pink Peonies (06.May.)") representing a physically arrived lot. The unit of quantity is the **stem**.
 _Avoid_: Product (a Product is a Wix catalog item, not a stem), item
+
+**Batch**:
+A Stock Item that has physically arrived. Identified by a date suffix (e.g. "Pink Peonies (06.May.)") where the date is the arrival date — used to track freshness when multiple lots of the same variety coexist. A flower variety may have zero, one, or several Batches at any time, plus at most one Demand Entry.
+_Avoid_: lot, shipment, delivery (Delivery is a different concept)
+
+**Demand Entry**:
+A Stock Item with no date suffix (e.g. "Pink Peonies"). Represents a commitment to procure stems for a specific order — stock quantity is negative until a Batch arrives and fills the demand. Created when stems are added to an order but no Batch exists or the Owner explicitly chooses not to draw from an existing Batch.
+_Avoid_: placeholder, open order, pre-order
 
 **Stem**:
 The unit of quantity for a Stock Item. "We have 15 stems of pink peonies."

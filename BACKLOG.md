@@ -334,7 +334,7 @@ reports). Each item below was re-validated against the current code on
   - [x] **Cutover**: `ORDER_BACKEND=postgres` set 2026-05-02 21:39 GMT+2 alongside stock flip. Shadow window deliberately skipped — `orderRepo.createOrder` shadow mode is PG-only and would have lost Airtable writes; backfill + harness Wix replay + post-flip smoke test served as the verification gate. Plan + verification at `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`.
   - [ ] Order parity dashboard UI in AdminTab + full `orderRepo.runParityCheck` impl (now a historical PG vs frozen-Airtable comparison — lower priority).
   - [ ] `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
-- [ ] **Phase 5 — Customer dedup + cutover** — Universe A (legacy) + B (app) merge with auto-merge on exact phone/email + owner-review modal for ambiguous pairs.
+- [x] **Phase 5 — Customer domain migrated to Postgres** (2026-05-06) — `customers`, `key_people`, `legacy_orders` tables, `customerRepo.js` rewrite, 1110 customers + 1524 legacy orders backfilled, `orders.customer_id` converted from recXXX to UUID. Direct cutover, no shadow window.
 - [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.
 - [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.
 

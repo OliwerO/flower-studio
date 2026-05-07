@@ -225,6 +225,28 @@ router.post('/', async (req, res, next) => {
   }
 });
 
+// GET /api/customers/:id/key-people — autocomplete source for order creation
+router.get('/:id/key-people', async (req, res, next) => {
+  try {
+    const people = await customerRepo.listKeyPeople(req.params.id);
+    res.json(people);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/customers/:id/key-people — create a new key person for a customer
+router.post('/:id/key-people', async (req, res, next) => {
+  try {
+    const { name, contactDetails, importantDate, importantDateLabel } = req.body;
+    const person = await customerRepo.createKeyPerson(req.params.id, { name, contactDetails, importantDate, importantDateLabel });
+    res.status(201).json(person);
+  } catch (err) {
+    if (err.statusCode === 400) return res.status(400).json({ error: err.message });
+    next(err);
+  }
+});
+
 // PATCH /api/customers/:id
 router.patch('/:id', async (req, res, next) => {
   try {

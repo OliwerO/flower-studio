@@ -3,6 +3,8 @@ import { Router } from 'express';
 import { processWixOrder } from '../services/wix.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as orderRepo from '../repos/orderRepo.js';
+import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { listByIds } from '../utils/batchQuery.js';
 
@@ -153,15 +155,14 @@ router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async 
   const wixOrderId = req.params.id;
   const force = req.query.force === 'true' || req.query.force === '1';
   try {
-    // 1. Find the App Order row by Wix Order ID.
-    const matches = await db.list(TABLES.ORDERS, {
-      filterByFormula: `{Wix Order ID} = '${wixOrderId}'`,
-      maxRecords: 1,
-    });
-    if (matches.length === 0) {
+    // 1. Find the App Order by Wix Order ID.
+    // orderRepo.findByWixOrderId handles both airtable + postgres modes and
+    // returns embedded _lines so we can skip a second Airtable roundtrip for
+    // the safety check.
+    const existing = await orderRepo.findByWixOrderId(wixOrderId);
+    if (!existing) {
       return res.status(404).json({ error: `No App Order found with Wix Order ID ${wixOrderId}.` });
     }
-    const existing = matches[0];
     const lineIds = existing['Order Lines'] || [];
     const deliveryIds = existing['Deliveries'] || [];
 
@@ -169,20 +170,23 @@ router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async 
     //     touched. Two independent signals: status beyond 'New', or any line
     //     with a Stock Item link (Wix lines never get stock-linked by the
     //     parser, so presence of a link means the florist added real flowers).
+    // In postgres mode _lines carries the full line objects; airtable mode
+    // falls back to a separate fetch.
     if (!force) {
+      const lineRecords = existing._lines
+        || (lineIds.length > 0
+          ? await listByIds(TABLES.ORDER_LINES, lineIds, { fields: ['Stock Item', 'Flower Name', 'Quantity'] })
+          : []);
       const reasons = [];
       if (existing.Status && existing.Status !== 'New') {
         reasons.push(`Status is "${existing.Status}" (not 'New').`);
       }
-      if (lineIds.length > 0) {
-        const lineRecords = await listByIds(TABLES.ORDER_LINES, lineIds, {
-          fields: ['Stock Item', 'Flower Name', 'Quantity'],
-        });
-        const composed = lineRecords.filter(l => Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0);
-        if (composed.length > 0) {
-          const names = composed.map(l => `${l.Quantity || '?'}× ${l['Flower Name'] || '?'}`).join(', ');
-          reasons.push(`${composed.length} line(s) have Stock Item links (composed bouquet): ${names}.`);
-        }
+      const composed = lineRecords.filter(l =>
+        (Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0) || l.stockItemId
+      );
+      if (composed.length > 0) {
+        const names = composed.map(l => `${l.Quantity ?? l.quantity ?? '?'}× ${l['Flower Name'] ?? l.flowerName ?? '?'}`).join(', ');
+        reasons.push(`${composed.length} line(s) have Stock Item links (composed bouquet): ${names}.`);
       }
       if (reasons.length > 0) {
         return res.status(409).json({
@@ -194,36 +198,36 @@ router.post('/wix-order/:id/reprocess', authenticate, authorize('admin'), async 
       }
     }
 
-    // 2. Delete linked order lines and delivery records first so nothing
-    //    orphans. Swallow per-record failures — the main goal is the
-    //    App Order itself.
-    for (const lineId of lineIds) {
-      await db.deleteRecord(TABLES.ORDER_LINES, lineId).catch(err => {
-        console.warn(`[REPROCESS] delete line ${lineId}:`, err.message);
-      });
-    }
-    for (const delId of deliveryIds) {
-      await db.deleteRecord(TABLES.DELIVERIES, delId).catch(err => {
-        console.warn(`[REPROCESS] delete delivery ${delId}:`, err.message);
-      });
+    // 2. Delete the order.
+    // In postgres mode orderRepo.deleteOrder cascades to lines + delivery via
+    // ON DELETE CASCADE — no individual record deletes needed. In airtable
+    // mode we fall back to the original per-record path.
+    if (orderRepo.getBackendMode() === 'postgres') {
+      await orderRepo.deleteOrder(existing._pgId || existing.id, { actor: actorFromReq(req) });
+    } else {
+      for (const lineId of lineIds) {
+        await db.deleteRecord(TABLES.ORDER_LINES, lineId).catch(err => {
+          console.warn(`[REPROCESS] delete line ${lineId}:`, err.message);
+        });
+      }
+      for (const delId of deliveryIds) {
+        await db.deleteRecord(TABLES.DELIVERIES, delId).catch(err => {
+          console.warn(`[REPROCESS] delete delivery ${delId}:`, err.message);
+        });
+      }
+      await db.deleteRecord(TABLES.ORDERS, existing.id);
     }
 
-    // 3. Delete the App Order.
-    await db.deleteRecord(TABLES.ORDERS, existing.id);
-
-    // 4. Re-run the canonical pipeline with a synthetic webhook payload —
+    // 3. Re-run the canonical pipeline with a synthetic webhook payload —
     //    processWixOrder's dedup will miss (record just deleted) and fall
     //    through to the Wix API fetch + fresh create.
     await processWixOrder({ id: wixOrderId });
 
-    // 5. Return the newly created App Order so the UI can refresh.
-    const created = await db.list(TABLES.ORDERS, {
-      filterByFormula: `{Wix Order ID} = '${wixOrderId}'`,
-      maxRecords: 1,
-    });
+    // 4. Return the newly created App Order so the UI can refresh.
+    const fresh = await orderRepo.findByWixOrderId(wixOrderId);
     return res.json({
       deleted: { orderId: existing.id, lineCount: lineIds.length, deliveryCount: deliveryIds.length },
-      created: created[0] || null,
+      created: fresh || null,
       forced: force,
     });
   } catch (err) {

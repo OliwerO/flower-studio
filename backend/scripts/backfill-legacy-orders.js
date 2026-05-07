@@ -39,7 +39,7 @@ await base(LEGACY_ORDERS_TABLE).select({
   fields: [
     'Oder Number', 'Flowers+Details of order', 'Order Reason',
     'Order Delivery Date', 'Order date', 'Price (with Delivery)',
-    'Clients (B2C)',
+    'Nickname',
   ],
 }).eachPage((records, next) => {
   for (const r of records) rows.push(r);
@@ -52,7 +52,7 @@ let inserted = 0, skipped = 0;
 
 for (const r of rows) {
   try {
-    const atCustomerId = r.get('Clients (B2C)')?.[0];
+    const atCustomerId = r.get('Nickname')?.[0];
     if (!atCustomerId) { skipped++; continue; }
 
     const custResult = await pool.query(

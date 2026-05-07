@@ -87,6 +87,7 @@ const en = {
   submit:           'Submit Order',
   submitting:       'Submitting...',
   cancel:           'Cancel',
+  change:           'Change',
 
   // Step 1 — Customer
   searchCustomer:   'Search customer',
@@ -654,6 +655,8 @@ const en = {
   addKeyPerson:              'Add',
   keyPersonLimit:            'Both slots filled',
   keyPersonNamePlaceholder:  'Name + contact',
+  keyPersonForOrder:         'Order for',
+  keyPersonOrderPlaceholder: 'Who is this order for?',
   importantDate:             'Important date',
 
   // Timeline
@@ -795,6 +798,7 @@ const ru = {
   submit:           'Оформить заказ',
   submitting:       'Отправка...',
   cancel:           'Отмена',
+  change:           'Изменить',
 
   // Step 1 — Customer
   searchCustomer:   'Поиск клиента',
@@ -1362,6 +1366,8 @@ const ru = {
   addKeyPerson:              'Добавить',
   keyPersonLimit:            'Оба слота заполнены',
   keyPersonNamePlaceholder:  'Имя и контакты',
+  keyPersonForOrder:         'Заказ для',
+  keyPersonOrderPlaceholder: 'Для кого этот заказ?',
   importantDate:             'Важная дата',
 
   // Timeline
