@@ -871,27 +871,20 @@ router.get('/reconciliation', async (req, res, next) => {
 
     // 3. Non-terminal orders + lines — find which lines still reference an
     //    original so the owner knows which orders need swapping.
-    const orders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-      fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
-      maxRecords: 1000,
-    });
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const allLines = allLineIds.length > 0
-      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
-        })
-      : [];
+    const activeOrders = await orderRepo.list({
+      pg: { excludeStatuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED] },
+    }).catch(() => []);
 
-    const custIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const custs = custIds.length > 0
-      ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
-      : [];
+    const custIds = [...new Set(activeOrders.flatMap(o => o.Customer || []))];
+    const custs = custIds.length > 0 ? await customerRepo.findMany(custIds) : [];
     const custMap = {};
-    for (const c of custs) custMap[c.id] = c;
+    for (const c of custs) {
+      custMap[c.id] = c;
+      if (c.airtableId) custMap[c.airtableId] = c;
+    }
 
     const orderMap = {};
-    for (const o of orders) {
+    for (const o of activeOrders) {
       const cid = o.Customer?.[0];
       orderMap[o.id] = {
         appOrderId: o['App Order ID'] || '',
@@ -905,25 +898,26 @@ router.get('/reconciliation', async (req, res, next) => {
     // swapped or zeroed out — no work left).
     const linesByOriginal = {};
     const originalIdSet = new Set(originalIds);
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId || !originalIdSet.has(stockId)) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-      const oid = line.Order?.[0];
-      const oi = oid ? orderMap[oid] : null;
-      if (!oi) continue;
-      if (!linesByOriginal[stockId]) linesByOriginal[stockId] = [];
-      linesByOriginal[stockId].push({
-        lineId: line.id,
-        orderId: oid,
-        appOrderId: oi.appOrderId,
-        customerName: oi.customerName,
-        requiredBy: oi.requiredBy,
-        orderStatus: oi.status,
-        quantity: qty,
-        suggestedSwapQty: qty,
-      });
+    for (const order of activeOrders) {
+      for (const line of (order._lines || [])) {
+        const stockId = line['Stock Item']?.[0];
+        if (!stockId || !originalIdSet.has(stockId)) continue;
+        const qty = Number(line.Quantity || 0);
+        if (qty <= 0) continue;
+        const oi = orderMap[order.id];
+        if (!oi) continue;
+        if (!linesByOriginal[stockId]) linesByOriginal[stockId] = [];
+        linesByOriginal[stockId].push({
+          lineId: line.id,
+          orderId: order.id,
+          appOrderId: oi.appOrderId,
+          customerName: oi.customerName,
+          requiredBy: oi.requiredBy,
+          orderStatus: oi.status,
+          quantity: qty,
+          suggestedSwapQty: qty,
+        });
+      }
     }
 
     // 4. Build response: only include originals that still have affected lines.
