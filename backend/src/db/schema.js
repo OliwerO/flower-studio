@@ -399,6 +399,29 @@ export const feedbackReports = pgTable('feedback_reports', {
   createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Supplier delivery records — one row per batch receive event.
+// Written by POST /stock-purchases (manual florist entry) and by the PO
+// evaluate flow in stockOrders.js. `stock_id` links to the *batch* stock
+// row that was created or credited (not the template record). Notes embeds
+// a stable marker (`PO #<id> L#<id> primary|alt`) for PO-evaluation
+// idempotency; the marker format must stay in sync with stockOrders.js.
+export const stockPurchases = pgTable('stock_purchases', {
+  id:                 uuid('id').primaryKey().defaultRandom(),
+  airtableId:         text('airtable_id'),
+  purchaseDate:       text('purchase_date').notNull(),  // YYYY-MM-DD
+  supplier:           text('supplier').notNull().default(''),
+  stockId:            uuid('stock_id').references(() => stock.id),
+  stockAirtableId:    text('stock_airtable_id'),  // Airtable recXXX of batch during cutover
+  quantityPurchased:  integer('quantity_purchased').notNull().default(0),
+  pricePerUnit:       numeric('price_per_unit', { precision: 10, scale: 4 }),
+  notes:              text('notes').notNull().default(''),
+  createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  airtableIdx:  uniqueIndex('stock_purchases_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  dateIdx:      index('stock_purchases_date_idx').on(t.purchaseDate),
+  stockIdx:     index('stock_purchases_stock_id_idx').on(t.stockId),
+}));
+
 export const productConfig = pgTable('product_config', {
   id:           uuid('id').primaryKey().defaultRandom(),
   airtableId:   text('airtable_id'),

@@ -209,7 +209,7 @@ async function saveConfig(before) {
         after:      { storefrontCategories: config.storefrontCategories },
         actorRole:  'system',
         actorPinLabel: null,
-      }).catch(() => {});
+      }).catch(err => console.error('[SETTINGS] Failed to log audit event:', err.message));
     }
   } catch (err) {
     console.error('[SETTINGS] Failed to save config to Postgres:', err.message);

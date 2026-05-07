@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
-import { TABLES } from '../config/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
+import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
 
 const router = Router();
 router.use(authorize('stock-purchases'));
@@ -15,33 +15,27 @@ router.post('/', async (req, res, next) => {
     const { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes } = req.body;
     const today = new Date().toISOString().split('T')[0];
 
-    let finalItemId = stockItemId;
+    let finalItem = null; // the batch stock record (wire-format response from stockRepo)
 
-    // Batch logic: always create a new dated batch so every delivery is traceable.
-    // If the original record has negative qty (pre-sold demand), absorb the deficit
-    // into the new batch and zero out the original.
     if (stockItemId) {
-      const stockItem = await db.getById(TABLES.STOCK, stockItemId);
+      const stockItem = await stockRepo.getById(stockItemId);
       const existingQty = Number(stockItem['Current Quantity']) || 0;
 
       const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
       const d = new Date(today);
       const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
 
-      // Strip any existing date suffix to avoid double-dating
       const rawName = stockItem['Display Name'] || '';
       const baseName = (rawName.match(DATE_BATCH_RE)?.[1] || rawName).trim();
 
-      // Absorb negative deficit from original
       let batchQty = quantityPurchased;
       if (existingQty < 0) {
-        batchQty = quantityPurchased + existingQty; // e.g. 25 + (-7) = 18
+        batchQty = quantityPurchased + existingQty; // absorb pre-sold deficit
         if (batchQty < 0) batchQty = 0;
-        // Zero out the original so the negative display disappears
-        await db.update(TABLES.STOCK, stockItemId, { 'Current Quantity': 0 });
+        await stockRepo.update(stockItemId, { 'Current Quantity': 0 });
       }
 
-      const newBatch = await db.create(TABLES.STOCK, {
+      finalItem = await stockRepo.create({
         'Display Name':       `${baseName} (${batchLabel})`,
         'Purchase Name':      stockItem['Purchase Name'] || baseName,
         Category:             stockItem.Category || 'Other',
@@ -54,26 +48,24 @@ router.post('/', async (req, res, next) => {
         Active:               true,
         'Last Restocked':     today,
       });
-      finalItemId = newBatch.id;
-      console.log(`[STOCK] New batch created: ${newBatch['Display Name']} (prev qty on original: ${existingQty})`);
+      console.log(`[STOCK] New batch created: ${finalItem['Display Name']}`);
 
-      // Keep template record's prices current
       const templateUpdate = { 'Current Cost Price': pricePerUnit, 'Last Restocked': today };
       if (sellPricePerUnit) templateUpdate['Current Sell Price'] = sellPricePerUnit;
-      await db.update(TABLES.STOCK, stockItemId, templateUpdate);
+      await stockRepo.update(stockItemId, templateUpdate);
     }
 
-    // Create the purchase record linked to the actual batch
-    const purchase = await db.create(TABLES.STOCK_PURCHASES, {
-      'Purchase Date':      today,
-      Supplier:             supplierName || '',
-      ...(finalItemId ? { Flower: [finalItemId] } : {}),
-      'Quantity Purchased': quantityPurchased,
-      'Price Per Unit':     pricePerUnit,
-      Notes:                notes || '',
+    const purchase = await stockPurchasesRepo.create({
+      purchaseDate:      today,
+      supplier:          supplierName || '',
+      stockId:           finalItem?._pgId || null,
+      stockAirtableId:   finalItem?.id?.startsWith('rec') ? finalItem.id : null,
+      quantityPurchased,
+      pricePerUnit,
+      notes:             notes || '',
     });
 
-    res.status(201).json({ ...purchase, batchItemId: finalItemId });
+    res.status(201).json({ ...purchase, batchItemId: finalItem?.id || null });
   } catch (err) {
     next(err);
   }
