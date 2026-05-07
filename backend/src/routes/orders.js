@@ -8,7 +8,7 @@ import * as customerRepo from '../repos/customerRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
+import { getDriverOfDay, getConfig, generateOrderId } from '../services/configService.js';
 import { pickAllowed } from '../utils/fields.js';
 import { listByIds } from '../utils/batchQuery.js';
 import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS } from '../constants/statuses.js';

@@ -2,7 +2,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import { pickAllowed } from '../utils/fields.js';
-import { getConfig } from './settings.js';
+import { getConfig } from '../services/configService.js';
 import * as hoursRepo from '../repos/hoursRepo.js';
 
 const router = Router();

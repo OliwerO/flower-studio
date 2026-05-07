@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { getConfig, getActiveSeasonalCategory } from './settings.js';
+import { getConfig, getActiveSeasonalCategory } from '../services/configService.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 
 const router = Router();

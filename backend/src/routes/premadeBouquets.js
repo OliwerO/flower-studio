@@ -4,7 +4,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import { VALID_PAYMENT_STATUSES, PAYMENT_STATUS } from '../constants/statuses.js';
-import { getDriverOfDay, getConfig, generateOrderId } from './settings.js';
+import { getDriverOfDay, getConfig, generateOrderId } from '../services/configService.js';
 import {
   listPremadeBouquets,
   getPremadeBouquet,

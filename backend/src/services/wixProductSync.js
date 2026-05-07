@@ -11,7 +11,7 @@ import * as stockRepo from '../repos/stockRepo.js';
 import * as syncLogRepo from '../repos/syncLogRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { sendAlert, notifyWixSyncError } from './telegram.js';
-import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
+import { getActiveSeasonalCategory, getConfig, updateConfig } from './configService.js';
 
 // Concurrency for parallel Wix API calls inside runPush. Wix Stores REST
 // API tolerates ~600 req/min for paid sites; 8 in flight keeps us well

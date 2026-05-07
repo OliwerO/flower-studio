@@ -6,12 +6,13 @@ Features and improvements tracked against original build phases.
 
 ## ⚡ Pick-up checklist for the next session
 
-If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-05-02.
+If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-05-07.
 
 **Migration cutover state:**
 - Phase 3 (Stock) **CUT OVER 2026-05-02**. `STOCK_BACKEND=postgres` live on prod. Airtable Stock = frozen legacy snapshot.
 - Phase 4 (Orders) **CUT OVER 2026-05-02**. `ORDER_BACKEND=postgres` live on prod. Airtable Orders / Order Lines / Deliveries = frozen legacy snapshots. Order shadow window was skipped — backfill + harness Wix replay + spot-check served as the verification gate (see `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`).
-- Phase 6 (Config + log tables) **CUT OVER 2026-05-07**. app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config now on Postgres. Remaining Airtable tables: DELIVERIES, STOCK_PURCHASES, STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES, LEGACY_ORDERS (legacy snapshots).
+- Phase 5 (Customers) **CUT OVER 2026-05-06**. `customers`, `key_people`, `legacy_orders` tables live. 1110 customers + 1524 legacy orders backfilled. Direct cutover, no shadow window.
+- Phase 6 (Config + log tables) **CUT OVER 2026-05-07**. app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config now on Postgres. Remaining Airtable tables: STOCK_PURCHASES, STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES (not yet migrated).
 
 **Health check after cutover** (~30 sec):
 ```bash
@@ -176,32 +177,14 @@ Reports row counts in PG + audit activity. parity_log is no longer fed (shadow m
 ## To Do
 
 ### Phase 9 — Polish + Testing (remaining items)
-- [ ] **Empty states with messages** — some views still show blank when data is empty (partial coverage)
 - [ ] **Mobile responsiveness on actual devices** — verify florist on iPad, delivery on iPhone, dashboard on desktop
 - [ ] **E2E test** — 5 orders through full lifecycle (delivery + pickup paths) against dev base
-- [ ] **Phone format validation** — normalize phone numbers on input
-
-### Delivery Failure Flows (2026-05-05)
-- [ ] **Re-delivery fee adjustment** — when a Driver logs a non-Success delivery result and the Owner arranges re-delivery, there is currently no flow to add an additional delivery fee to the Order. Needs a UI action (dashboard / florist app) to adjust the delivery fee on the existing Order or create a supplementary charge.
-- [ ] **Failed delivery → Premade Bouquet conversion** — if re-delivery is not possible or wanted, the flowers could be returned to stock as a Premade Bouquet. No such flow exists today. Evaluate: add a "Convert to premade" action on the Delivery record after a failed result.
 
 ### Premade Bouquets — v2 follow-ups
-- [ ] **Edit premade lines** — surface `PUT /api/premade-bouquets/:id/lines` in the card UI so the florist can add/remove flowers without returning + re-creating the bouquet
 - [ ] **Photo attachment** — add `Photo` attachment field + upload UI for display/advertising
-- [ ] **Freshness warning** — highlight premade bouquets older than N days using `Created At`
-- [ ] **Wix storefront sync** — project premade bouquets as purchasable products on the storefront (needs decision on Wix product identity, checkout flow, order source mapping)
-- [ ] **Metrics** — track premade sell-through vs. return-to-stock rate per week, include in owner dashboard
-
-### Phase 10 — Excel Migration Script
-- [ ] **Import historical orders** — parse owner's Excel spreadsheets into App Orders + Order Lines
-- [ ] **Map legacy customers** — match Excel customer names to existing Clients (B2C) records
-- [ ] **Handle data quality** — missing fields, inconsistent naming, currency conversion
 
 ### Infrastructure
 - [ ] **Go-live** — see `CHANGELOG.md` Go-Live Checklist (Airtable tables, env vars, deployment)
-- [ ] **Custom domain** — e.g., app.blossomflowers.pl
-- [ ] **Backup strategy** — scheduled Airtable data export
-- [ ] **Error monitoring** — Sentry or similar for production error tracking
 - [ ] **Wix Velo integration** — frontend consuming public API (blocked on pre-build checklist)
   - [ ] Restrict same-day delivery slots to "Available Today" bouquets only (Velo checkout logic)
   - [x] Hide "Available Today" nav item via Velo when `/api/public/categories` omits it (post-cutoff) — Velo helpers `getAvailableTodayMenuLabel()` + `isAvailableTodayActive()` added in `docs/wix-velo-categories.js` (2026-04-17)
@@ -248,7 +231,6 @@ substitutes no longer silently fill in for the original, so the original can end
 - [x] Customer phone rendered as a one-tap `CallButton` on florist collapsed card, delivery collapsed card, and both detail views. Dashboard recipient phone is also a call link.
 - [x] Delivery card: explicit "Details ▾" button for discoverable expand (card body still tappable).
 - [x] Three-way navigation strip on delivery card + sheet: Google Maps / Waze / Apple Maps (text-address based — no geocoding).
-- [ ] Consider adding a tiny `Florist Note` field to the new-order wizard Step 3 so the owner can capture it at creation time (today she has to open the order after creation).
 
 ### Tier 1 Bugs — Blocking Daily Operations (consolidated 2026-04-19)
 
@@ -294,24 +276,11 @@ reports). Each item below was re-validated against the current code on
 - [x] **Florist should see important NOTE prominently** — fixed earlier (Tier 1 list). `OrderCardSummary.jsx:124-133` renders a distinct blue-bordered note banner.
 - [x] **Total paid amount not shown** — fixed 2026-04-23 in PR #146. Collapsed card in florist (`OrderCardSummary.jsx`) + dashboard (`OrdersTab.jsx` price column) now shows `Оплачено X · Остаток Y` for Partial orders. Bouquet-edit raising the price on a Paid order surfaces an amber mismatch banner with two actions: `Collect remainder` (→ Partial + existing Payment 2 flow) and `Mark as fully paid` (→ bumps `Payment 1 Amount` to match new total). Backend now backfills `Payment 1 Amount` + `Method` when status flips to Paid via create or PATCH so the banner has a baseline. Legacy Paid orders with P1=0 stay silent.
 - [x] **Show negative stock on top in stock tab** — confirmed working 2026-04-23 by owner.
-- [ ] **Order edit: new flower should show full form** — cost, sell, lot size, supplier fields + create negative stock
 - [x] **PO add planned date** — verified working 2026-04-23. Florist `PurchaseOrderPage.jsx:481` + dashboard `StockOrderPanel.jsx:585-587` render `Planned Date` in the collapsed PO view.
 - [x] **PO total cost by lot size + aggregate total** — fixed 2026-04-23. Florist save path now lot-rounds stored `Quantity Needed` to match the create-form cost badge (dashboard already stored lot-rounded). Aggregate PO total now renders on every saved PO: compact `X zł` badge in the collapsed row + "Cost total" line in the expanded editable view. Both apps fetch `/stock-orders?include=lines` for the client-side sum so the owner knows how much cash the driver needs before sending the run.
 - [ ] **Non-floral components in compositions** — foam, baskets, boxes, ribbons as addable materials separate from flower stock
-- [ ] **Stock write-offs sortable** — filter by daily/weekly/monthly
-- [ ] **Stock filter: in-stock only + by arrival date** — two filter modes
 - [ ] **Technical stock bilingual names** — Dasha has the list of items
 - [ ] **Different hourly rates for florists** — Standard, Wedding, Holidays (owner-activated)
-
-### CRM & Relationship Intelligence (2026-04-03, after bug fixes)
-- [ ] **Key People system** — new Airtable table (later PostgreSQL): linked to customer, tracks name, phone, relationship type (optional), notes. One key person can have multiple important dates.
-  - **Important Dates sub-table**: linked to key person, stores date + date type (Birthday, Anniversary, Wedding, Name Day, Valentine's, Women's Day, Other) + notes
-  - Architecture: 3-tier (Customer → Key People → Important Dates). Replaces flat Key person 1/2 fields. Migration script needed.
-  - Dashboard: expandable key people cards in Customer Detail Panel
-  - Florist: auto-match recipient to existing key people, offer to save new ones
-  - Fixes bug: "Important Days" widget doesn't show which client/order reminder is based on
-- [ ] **Order purpose/occasion tracking** — record reason for order (birthday, anniversary, corporate, etc.) for analysis and targeted campaigns
-- [ ] **Standalone recipe/pricing tool** — florist can build bouquet recipe + calculate price without creating order
 
 ### Financial / Payment Tracking (2026-04-03)
 - [ ] **Stripe refund handling** — track payment status, cancellation, refund reflected in system
@@ -338,7 +307,6 @@ reports). Each item below was re-validated against the current code on
   - [ ] `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
 - [x] **Phase 5 — Customer domain migrated to Postgres** (2026-05-06) — `customers`, `key_people`, `legacy_orders` tables, `customerRepo.js` rewrite, 1110 customers + 1524 legacy orders backfilled, `orders.customer_id` converted from recXXX to UUID. Direct cutover, no shadow window.
 - [x] **Phase 6 — Config + log tables migrated to Postgres** (2026-05-07) — app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config. Direct cutover, no shadow window. Backfill script: `backend/scripts/backfill-phase6.js`. Key fix: null Quantity from PG treated as "untracked" (not 0) in Wix push path.
-- [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.
 
 ### Post-Migration Follow-ups (blocked on having a real dev environment)
 Items that could be shipped today as Airtable one-liners but are held back
@@ -348,16 +316,6 @@ them up after the Postgres migration stands up a true dev/staging env.
 
 - [ ] **Wix webhook — explicit delivery back-link write** — mirror the PR #144 fix (2026-04-23) into `backend/src/services/wix.js` line ~448. After `db.create(TABLES.DELIVERIES, { 'Linked Order': [order.id], ... })`, add `await db.update(TABLES.ORDERS, order.id, { 'Deliveries': [delivery.id] })`. Same Airtable eventual-consistency risk (back-link missing immediately after create) is theoretically present for Wix-webhook-created orders; the florist-created path was confirmed-and-fixed but Wix path wasn't validated because we have no way to replay a Wix webhook safely against production. Needs dev env to stage a webhook hit and verify the back-link lands before we push.
   - Findable tag: `WIX-BACKLINK`
-
-### Promo & Event Features (2026-04-03)
-- [ ] **Promo bouquets** — new order type: customer pays nothing, but flower cost (supplier) and courier cost are tracked as business expense. Add "Promo" option when creating a new order. Promo orders must still deduct stock, track supplier costs, and track courier payment — all flow into business cost reporting, not customer billing. Reporting should show promo orders separately from paid orders.
-- [ ] **Seasonal event mode** — major feature requiring dedicated planning session. Two parts:
-  - **Event operations UI** — separate quick-entry interface for high-volume peak days (Valentine's, Women's Day, etc.). Optimized for speed, event-specific metrics, composition planning starting ~3 weeks before event. Very different from standard order wizard.
-  - **Event retrospective analysis** — per-event tracking: flowers used (species + qty), courier workload + pay per driver, full economics (revenue, flower cost, courier cost, profit), waste/overstock. Goal: plan next year using this year's data.
-  - **Prerequisites:** Owner shares Excel files from 14.02 + 08.03 2026 for analysis. Additional cost categories TBD. Do NOT build without planning session.
-
-### Open Investigation (2026-03-18)
-- [ ] **Bouquet edit stock deduction** — user reports adding flowers via bouquet edit does not deduct from stock. Backend code looks correct (PUT /orders/:id/lines creates Order Line + calls atomicStockAdjust). Logging added to backend to capture next occurrence. May be a data type issue or frontend not sending stockItemId correctly. Check Railway logs after next test.
 
 ### Repo housekeeping — outcomes from 2026-04-27 cleanup pass
 
