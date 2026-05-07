@@ -253,4 +253,49 @@ describe('publishSession', () => {
     await expect(publishSession(sessionId)).rejects.toThrow('GITHUB_TOKEN');
     process.env.GITHUB_TOKEN = token;
   });
+
+  it('uploads screenshot and embeds URL in issue body when imageBuffer provided', async () => {
+    global.fetch
+      .mockReset()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({}), // image upload response
+        text: async () => '',
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ number: 99, html_url: 'https://github.com/OliwerO/flower-studio/issues/99' }),
+        text: async () => '',
+      });
+
+    const { sessionId } = await startSession({ text: 'screenshot test', reporterRole: 'florist', reporterName: 'Анна' });
+    const fakeBuffer = Buffer.from('fake image data');
+    const result = await publishSession(sessionId, fakeBuffer, 'test.jpg');
+
+    expect(global.fetch).toHaveBeenCalledTimes(2);
+    // First call is image upload (PUT to contents API)
+    const [uploadUrl, uploadOpts] = global.fetch.mock.calls[0];
+    expect(uploadUrl).toContain('/contents/feedback-screenshots/');
+    expect(uploadOpts.method).toBe('PUT');
+    const uploadBody = JSON.parse(uploadOpts.body);
+    expect(uploadBody.content).toBe(fakeBuffer.toString('base64'));
+
+    expect(result.issueNumber).toBe(99);
+  });
+
+  it('creates issue without screenshot when image upload fails', async () => {
+    global.fetch
+      .mockReset()
+      .mockResolvedValueOnce({ ok: false, text: async () => 'upload error' })  // image upload fails
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ number: 100, html_url: 'https://github.com/OliwerO/flower-studio/issues/100' }),
+        text: async () => '',
+      });
+
+    const { sessionId } = await startSession({ text: 'screenshot fail test', reporterRole: 'florist', reporterName: 'Анна' });
+    const result = await publishSession(sessionId, Buffer.from('img'), 'test.png');
+
+    expect(result.issueNumber).toBe(100); // issue still created
+  });
 });

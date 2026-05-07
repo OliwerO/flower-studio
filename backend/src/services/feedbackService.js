@@ -168,7 +168,12 @@ export async function publishSession(sessionId, imageBuffer = null, imageFilenam
   if (!session) throw new Error('Session not found or expired');
   if (!session.done) throw new Error('Session not complete — preview first');
 
-  const issueBody = buildIssueBody(session, null);
+  let imageUrl = null;
+  if (imageBuffer) {
+    imageUrl = await githubUploadImage(imageBuffer, imageFilename);
+  }
+
+  const issueBody = buildIssueBody(session, imageUrl);
 
   const issueNumber = await githubCreateIssue(session.title, issueBody);
   const issueUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${issueNumber}`;
@@ -209,6 +214,48 @@ None
 _Reported by ${session.reporterName} (${session.reporterRole})${session.appArea ? ` via ${session.appArea}` : ''}_
 
 > ${session.originalQuote.replace(/\n/g, '\n> ')}`;
+}
+
+/**
+ * Upload an image buffer to the repo under feedback-screenshots/.
+ * Returns a raw.githubusercontent.com URL for embedding in the issue body.
+ * Returns null on failure — issue is still created without the image.
+ */
+async function githubUploadImage(buffer, filename) {
+  const token = process.env.GITHUB_TOKEN;
+  const ext = (filename?.split('.').pop()?.toLowerCase()) || 'jpg';
+  const path = `feedback-screenshots/${Date.now()}-${crypto.randomUUID().slice(0, 8)}.${ext}`;
+  const content = buffer.toString('base64');
+
+  try {
+    const res = await fetch(
+      `https://api.github.com/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`,
+      {
+        method: 'PUT',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/vnd.github+json',
+          'X-GitHub-Api-Version': '2022-11-28',
+        },
+        body: JSON.stringify({
+          message: `chore: add feedback screenshot ${path}`,
+          content,
+        }),
+      }
+    );
+
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('[FEEDBACK] image upload failed:', err);
+      return null;
+    }
+
+    return `https://raw.githubusercontent.com/${GITHUB_OWNER}/${GITHUB_REPO}/master/${path}`;
+  } catch (err) {
+    console.error('[FEEDBACK] image upload error:', err.message);
+    return null;
+  }
 }
 
 async function githubCreateIssue(title, body) {
