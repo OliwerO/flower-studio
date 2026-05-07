@@ -64,10 +64,18 @@ async function callAI(messages) {
     messages,
   });
 
-  const text = res.content[0]?.text || '{}';
+  const raw = res.content[0]?.text || '{}';
+  // Haiku occasionally wraps JSON in ```json ... ``` despite instructions — strip fences.
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const text = fenceMatch ? fenceMatch[1] : raw;
   try {
     return JSON.parse(text);
   } catch {
+    // Last resort: find the outermost JSON object in the response
+    const objMatch = raw.match(/\{[\s\S]*\}/);
+    if (objMatch) {
+      try { return JSON.parse(objMatch[0]); } catch {}
+    }
     return { done: false, question: 'Извините, что-то пошло не так. Пожалуйста, опишите проблему ещё раз.' };
   }
 }
