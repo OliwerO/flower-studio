@@ -421,3 +421,25 @@ export async function listOrders(customerId) {
     return b.date.localeCompare(a.date);
   });
 }
+
+// Returns customers who have at least one key person with importantDate set.
+// Used by the dashboard reminder widget.
+export async function listWithKeyPeopleHavingDates() {
+  const kpRows = await db.select().from(keyPeople)
+    .where(isNotNull(keyPeople.importantDate));
+
+  if (kpRows.length === 0) return [];
+
+  const custIds = [...new Set(kpRows.map(kp => kp.customerId))];
+
+  const custRows = await db.select().from(customers)
+    .where(and(inArray(customers.id, custIds), isNull(customers.deletedAt)));
+
+  const kpsByCustomer = {};
+  for (const kp of kpRows) {
+    kpsByCustomer[kp.customerId] = kpsByCustomer[kp.customerId] || [];
+    kpsByCustomer[kp.customerId].push(kp);
+  }
+
+  return custRows.map(row => _pgCustomerToResponse(row, kpsByCustomer[row.id] || []));
+}
