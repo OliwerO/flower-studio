@@ -35,7 +35,7 @@ global.fetch = vi.fn();
 // Set required env
 process.env.GITHUB_TOKEN = 'test-token';
 
-import { startSession, publishSession, continueSession, sessions } from '../services/feedbackService.js';
+import { startSession, publishSession, continueSession, previewSession, sessions } from '../services/feedbackService.js';
 import { db } from '../db/index.js';
 
 beforeEach(() => {
@@ -182,5 +182,37 @@ describe('continueSession', () => {
     // startSession with the default mock already returns done:true
     const result = await continueSession(sessionId, 'extra message');
     expect(result.done).toBe(true);
+  });
+});
+
+describe('previewSession', () => {
+  it('returns russianSummary from a completed session', async () => {
+    const { sessionId } = await startSession({
+      text: 'кнопка не работает',
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+    });
+    const { summary } = await previewSession(sessionId);
+    expect(typeof summary).toBe('string');
+    expect(summary.length).toBeGreaterThan(0);
+  });
+
+  it('throws on unknown sessionId', async () => {
+    await expect(previewSession('bad-id')).rejects.toThrow('not found');
+  });
+
+  it('throws when session is not done', async () => {
+    // Manually create a not-done session
+    const sessionId = 'test-session-not-done';
+    sessions.set(sessionId, {
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+      appArea: null,
+      messages: [{ role: 'user', content: 'test' }],
+      createdAt: Date.now(),
+      done: false,
+      lastQuestion: 'На каком экране?',
+    });
+    await expect(previewSession(sessionId)).rejects.toThrow('not complete');
   });
 });
