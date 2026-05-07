@@ -102,13 +102,28 @@ describe('startSession', () => {
     expect(sessions.get(sessionId).appArea).toBe('dashboard');
   });
 
-  it('falls back to done:false + Russian error on malformed AI JSON', async () => {
+  it('strips markdown fences and parses JSON correctly', async () => {
     mockCreate.mockResolvedValueOnce({
-      content: [{ text: '```json\n{"done": true}\n```' }],  // markdown fences break parse
+      content: [{ text: '```json\n' + JSON.stringify({
+        done: true, type: 'feature',
+        englishTitle: 'Filter orders by delivery date',
+        englishDescription: 'Add date range filter for delivery/pickup dates.',
+        acceptanceCriteria: ['Orders tab has delivery date filter'],
+        originalQuote: 'filter by delivery date',
+        russianSummary: 'Добавить фильтр по дате доставки.',
+      }) + '\n```' }],
+    });
+    const result = await startSession({ text: 'filter by delivery date', reporterRole: 'owner', reporterName: 'Owner' });
+    expect(result.done).toBe(true);
+    expect(sessions.get(result.sessionId).type).toBe('feature');
+  });
+
+  it('falls back to Russian error only on truly unparseable response', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: 'Sorry, I cannot help with that.' }], // plain prose — not JSON at all
     });
     const result = await startSession({ text: 'x', reporterRole: 'driver', reporterName: 'Timur' });
     expect(result.done).toBe(false);
-    expect(typeof result.question).toBe('string');
     expect(result.question).toMatch(/Извините/);
   });
 });
