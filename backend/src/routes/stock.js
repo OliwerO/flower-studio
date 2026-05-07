@@ -506,7 +506,7 @@ router.get('/:id/usage', async (req, res, next) => {
     const orderCutoff = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
     const recentOrders = await orderRepo.list({
       pg: { dateFrom: orderCutoff },
-    }).catch(() => []);
+    }).catch(err => { console.error('[STOCK] usage orderRepo.list failed:', err.message); return []; });
 
     // Filter _lines to those whose Stock Item resolves to one of our siblings
     const matchedLines = [];
@@ -873,7 +873,7 @@ router.get('/reconciliation', async (req, res, next) => {
     //    original so the owner knows which orders need swapping.
     const activeOrders = await orderRepo.list({
       pg: { excludeStatuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED] },
-    }).catch(() => []);
+    }).catch(err => { console.error('[STOCK] substitute-swap orderRepo.list failed:', err.message); return []; });
 
     const custIds = [...new Set(activeOrders.flatMap(o => o.Customer || []))];
     const custs = custIds.length > 0 ? await customerRepo.findMany(custIds) : [];
