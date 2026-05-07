@@ -1,7 +1,6 @@
 import * as feedbackService from './feedbackService.js';
 import { db } from '../db/index.js';
-import { feedbackReports, feedbackSessions } from '../db/schema.js';
-import { systemMeta } from '../db/schema.js';
+import { feedbackReports, feedbackSessions, systemMeta } from '../db/schema.js';
 import { eq, and, gt } from 'drizzle-orm';
 
 const BASE = 'https://api.telegram.org/bot';
@@ -21,6 +20,31 @@ async function send(token, chatId, text) {
 
 // In-memory map: chatId → sessionId (or 'preview:<sessionId>' awaiting confirmation)
 const chatSessions = new Map();
+
+// In-memory map: chatId → { reporterRole, reporterName } — populated on /start and on startup.
+const chatReporters = new Map();
+
+const REPORTERS = {
+  [process.env.PIN_OWNER]: { reporterRole: 'owner', reporterName: 'Owner' },
+  [process.env.PIN_ADMIN]: { reporterRole: 'admin', reporterName: 'Oliwer' },
+};
+
+async function loadChatReporters() {
+  try {
+    const rows = await db.select({
+      telegramChatId: feedbackReports.telegramChatId,
+      reporterRole:   feedbackReports.reporterRole,
+      reporterName:   feedbackReports.reporterName,
+    }).from(feedbackReports).where(eq(feedbackReports.githubIssueNumber, 0));
+    for (const row of rows) {
+      if (row.telegramChatId) {
+        chatReporters.set(row.telegramChatId, { reporterRole: row.reporterRole, reporterName: row.reporterName });
+      }
+    }
+  } catch (err) {
+    console.error('[FEEDBACK_BOT] failed to load chat reporters:', err.message);
+  }
+}
 
 const CONFIRM_PHRASES = ['отправить', 'да', 'yes', 'подтвердить', 'confirm', 'ок', 'ok'];
 
@@ -81,6 +105,12 @@ async function findActiveSessionForChat(chatId) {
 }
 
 async function routeMessage(token, chatId, text) {
+  const reporter = chatReporters.get(chatId);
+  if (!reporter) {
+    await send(token, chatId, 'Пожалуйста, зарегистрируйтесь: /start <PIN>');
+    return;
+  }
+
   const existing = chatSessions.get(chatId);
 
   if (existing?.startsWith('preview:')) {
@@ -97,7 +127,6 @@ async function routeMessage(token, chatId, text) {
           await showPreview(token, chatId, activeRow.id);
         } else {
           chatSessions.set(chatId, activeRow.id);
-          // Re-ask the last question so the owner knows where they left off
           const q = activeRow.lastQuestion || 'Пожалуйста, продолжите описание.';
           await send(token, chatId, `(продолжаем ваш сеанс)\n\n${q}`);
         }
@@ -107,8 +136,8 @@ async function routeMessage(token, chatId, text) {
       const result = await feedbackService.startSession({
         text,
         appArea: 'telegram',
-        reporterRole: 'owner',
-        reporterName: 'Owner',
+        reporterRole: reporter.reporterRole,
+        reporterName: reporter.reporterName,
         telegramChatId: chatId,
       });
       chatSessions.set(chatId, result.sessionId);
@@ -142,19 +171,20 @@ async function handleUpdate(token, update) {
 
   if (text.startsWith('/start')) {
     const pin = text.split(' ')[1];
-    if (pin === process.env.PIN_OWNER) {
-      // Store chat ID association — insert a sentinel row (issue_number=0) to register owner chat
+    const reporter = REPORTERS[pin];
+    if (reporter) {
+      chatReporters.set(chatId, reporter);
       try {
         await db.insert(feedbackReports).values({
           githubIssueNumber: 0,
-          reporterRole: 'owner',
-          reporterName: 'Owner',
-          telegramChatId: chatId,
+          reporterRole:      reporter.reporterRole,
+          reporterName:      reporter.reporterName,
+          telegramChatId:    chatId,
         });
       } catch (err) {
         console.error('[FEEDBACK_BOT] register error:', err.message);
       }
-      await send(token, chatId, 'Привет! 👋 Бот для отчётов зарегистрирован. Напишите любое сообщение, чтобы сообщить о проблеме или пожелании.');
+      await send(token, chatId, `Привет, ${reporter.reporterName}! 👋 Бот для отчётов зарегистрирован. Напишите любое сообщение, чтобы сообщить о проблеме или пожелании.`);
     } else {
       await send(token, chatId, 'Неверный PIN. Попробуйте: /start <PIN>');
     }
@@ -218,6 +248,7 @@ export async function startFeedbackBot() {
     return;
   }
   await loadPollOffset();
+  await loadChatReporters();
   running = true;
   poll(token);
   console.log('[FEEDBACK_BOT] Feedback Telegram bot started');
