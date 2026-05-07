@@ -48,8 +48,10 @@ const DEFAULTS = {
         },
       },
     ],
-    autoSchedule: true,
-    manualOverride: null,
+    slots: [
+      { id: 'slot1', wixSlug: 'seasonal',   autoSchedule: true,  manualOverride: null },
+      { id: 'slot2', wixSlug: 'seasonal-2', autoSchedule: false, manualOverride: null },
+    ],
     wixCategoryMap: {},
   },
   deliveryZones: [
@@ -197,6 +199,25 @@ function migrateFloristRates() {
   }
 }
 
+function migrateSeasonalSlots() {
+  const sc = config.storefrontCategories;
+  if (!sc || sc.slots) return; // already migrated
+
+  console.log('[SETTINGS] Migrating seasonal config: flat autoSchedule/manualOverride → slots array');
+  sc.slots = [
+    {
+      id: 'slot1',
+      wixSlug: 'seasonal',
+      autoSchedule: sc.autoSchedule !== false,
+      manualOverride: sc.manualOverride || null,
+    },
+    { id: 'slot2', wixSlug: 'seasonal-2', autoSchedule: false, manualOverride: null },
+  ];
+  delete sc.autoSchedule;
+  delete sc.manualOverride;
+  saveConfig().catch(err => console.error('[SETTINGS] Slot migration save failed:', err.message));
+}
+
 async function saveConfig(before) {
   try {
     await appConfigRepo.set('config', config);
@@ -225,6 +246,7 @@ async function loadConfig() {
       migrateCategoryObjects();
       migrateAutoCategoryTranslations();
       migrateFloristRates();
+      migrateSeasonalSlots();
       console.log('[SETTINGS] Config loaded from Postgres');
     } else {
       await appConfigRepo.set('config', DEFAULTS);
@@ -355,31 +377,28 @@ export function isPastCutoff() {
   return timeStr >= cutoff;
 }
 
-export function getActiveSeasonalCategory() {
-  const sc = config.storefrontCategories;
-
-  if (sc.manualOverride) {
-    const forced = sc.seasonal.find(s => s.slug === sc.manualOverride);
-    if (forced) return {
-      name: forced.name, slug: forced.slug,
-      description: forced.description || '',
-      translations: forced.translations || {},
-    };
+function resolveSlot(slot, seasonal) {
+  if (!slot) return null;
+  if (slot.manualOverride) {
+    const found = seasonal.find(s => s.slug === slot.manualOverride);
+    if (found) return { name: found.name, slug: found.slug, description: found.description || '', translations: found.translations || {} };
   }
-
-  if (sc.autoSchedule) {
+  if (slot.autoSchedule) {
     const now = new Date();
     const mmdd = `${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-    for (const s of sc.seasonal) {
-      if (mmdd >= s.from && mmdd <= s.to) {
-        return {
-          name: s.name, slug: s.slug,
-          description: s.description || '',
-          translations: s.translations || {},
-        };
-      }
-    }
+    const found = seasonal.find(s => mmdd >= s.from && mmdd <= s.to);
+    if (found) return { name: found.name, slug: found.slug, description: found.description || '', translations: found.translations || {} };
   }
-
   return null;
+}
+
+export function getActiveSeasonalSlots() {
+  const sc = config.storefrontCategories;
+  const seasonal = sc.seasonal || [];
+  const slots = sc.slots || [];
+  return slots.map(slot => ({ slot, category: resolveSlot(slot, seasonal) }));
+}
+
+export function getActiveSeasonalCategory() {
+  return getActiveSeasonalSlots()[0]?.category ?? null;
 }
