@@ -198,6 +198,13 @@ The default chain above is non-negotiable for quality. These tunings cut token c
 - **Update the relevant CLAUDE.md in the same PR** that adds/removes a route, page, service, repo, or shared util. The structure tables in sub-CLAUDE.md files only stay accurate if every PR touches them; drift is what made the 2026-04 audit necessary.
 - **Production only** — there is no dev/staging environment. All work targets the production Airtable base, Railway backend, and Vercel frontends directly. Be careful with destructive operations.
 - **Default to read-only** when poking at prod from a Claude session — use the `claude_ro` DSN for any Postgres read. Escalate to a write-capable token only when the user explicitly approves the specific change.
+- **Railway CLI is installed and authenticated.** Use it directly to diagnose production issues — do not ask the user to run Railway commands. Key commands:
+  - `railway logs` — tail recent backend logs (grep for `[FEEDBACK]`, `[PG]`, `[ERROR]`, etc.)
+  - `railway logs --tail 200` — more history
+  - `railway variables` — list env vars (values redacted)
+  - `railway run node backend/scripts/shadow-health.js` — run a script against prod env
+  - For Postgres issues: `railway connect` opens a psql session, or use `railway run` with the `DATABASE_URL` env already injected.
+  **When to use:** any production bug where the root cause could be a runtime error, missing env var, PG query failure, or service crash. Check `railway logs` BEFORE hypothesising about code — the log often names the exact error. This is faster than adding debug logging and redeploying.
 
 ## Verification Gate (integrations + cutovers)
 Before claiming a fix on Wix, Telegram, the order/stock cutover, or the Wix webhook, the PR description must name the automated path that proved it: an E2E section number, an integration test, the signed Wix replay, or `npm run harness` + `npm run test:e2e`. If none of those apply, prefix the PR title with `[unverified]` and require explicit owner sign-off before merge. The Wix-sync fix cluster of April 2026 (5+ patches in 2 weeks) was caused by skipping this — the signed-replay harness fixes it going forward.
