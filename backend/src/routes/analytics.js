@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
+import * as db from '../services/airtable.js'; // TODO Task 4: remove after customer section migrated
+import * as orderRepo from '../repos/orderRepo.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
-import { TABLES } from '../config/airtable.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
+import { TABLES } from '../config/airtable.js'; // TODO Task 4: remove after customer section migrated
 import { getConfig } from '../services/configService.js';
 import { ORDER_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import {
@@ -28,98 +31,42 @@ router.get('/', async (req, res, next) => {
       return res.status(400).json({ error: 'from and to date params are required.' });
     }
 
-    // ── Build date filters ──
-    const safeFrom = sanitizeFormulaValue(from);
-    const safeTo = sanitizeFormulaValue(to);
-    const dateFilter = `AND(
-      NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
-      NOT(IS_AFTER({Order Date}, '${safeTo}')),
-      {Status} != '${ORDER_STATUS.CANCELLED}'
-    )`;
-
     const fromDate = new Date(from);
     const toDate = new Date(to);
     const periodLengthMs = toDate.getTime() - fromDate.getTime();
     const prevToDate = new Date(fromDate.getTime() - 1);
     const prevFromDate = new Date(prevToDate.getTime() - periodLengthMs);
-    const safePrevFrom = sanitizeFormulaValue(prevFromDate.toISOString().split('T')[0]);
-    const safePrevTo = sanitizeFormulaValue(prevToDate.toISOString().split('T')[0]);
-    const prevDateFilter = `AND(
-      NOT(IS_BEFORE({Order Date}, '${safePrevFrom}')),
-      NOT(IS_AFTER({Order Date}, '${safePrevTo}')),
-      {Status} != '${ORDER_STATUS.CANCELLED}'
-    )`;
+    const prevFromStr = prevFromDate.toISOString().split('T')[0];
+    const prevToStr   = prevToDate.toISOString().split('T')[0];
 
     // ── Fetch all data in parallel ──
     const [orders, stock, prevOrders, cancelledOrders, stockPurchases, stockLosses] = await Promise.all([
-      db.list(TABLES.ORDERS, { filterByFormula: dateFilter }),
-      db.list(TABLES.STOCK, {
-        filterByFormula: '{Active} = TRUE()',
-        fields: ['Display Name', 'Dead/Unsold Stems', 'Current Cost Price', 'Current Sell Price', 'Current Quantity'],
-      }),
-      db.list(TABLES.ORDERS, {
-        filterByFormula: prevDateFilter,
-        fields: ['Order Lines', 'Payment Status'],
-      }),
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(
-          NOT(IS_BEFORE({Order Date}, '${safeFrom}')),
-          NOT(IS_AFTER({Order Date}, '${safeTo}')),
-          {Status} = '${ORDER_STATUS.CANCELLED}'
-        )`,
-        fields: ['Order Date'],
-      }).catch(() => []),
-      TABLES.STOCK_PURCHASES ? db.list(TABLES.STOCK_PURCHASES, {
-        filterByFormula: `AND(
-          NOT(IS_BEFORE({Purchase Date}, '${safeFrom}')),
-          NOT(IS_AFTER({Purchase Date}, '${safeTo}'))
-        )`,
-      }).catch(() => []) : Promise.resolve([]),
+      orderRepo.list({ pg: { dateFrom: from, dateTo: to, excludeStatuses: [ORDER_STATUS.CANCELLED] } }),
+      stockRepo.list({ pg: { active: true } }),
+      orderRepo.list({ pg: { dateFrom: prevFromStr, dateTo: prevToStr, excludeStatuses: [ORDER_STATUS.CANCELLED] } }),
+      orderRepo.list({ pg: { dateFrom: from, dateTo: to, statuses: [ORDER_STATUS.CANCELLED] } }),
+      stockPurchasesRepo.list({ from, to }).catch(() => []),
       stockLossRepo.list({ from, to }).catch(() => []),
     ]);
 
-    // ── Batch-fetch order lines + deliveries ──
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const deliveryIds = orders.flatMap(o => o['Deliveries'] || []);
-    const allPrevLineIds = prevOrders.flatMap(o => o['Order Lines'] || []);
-    const batchSize = 100;
-
-    function batchFetch(ids, table, fields) {
-      if (ids.length === 0) return Promise.resolve([]);
-      const promises = [];
-      for (let i = 0; i < ids.length; i += batchSize) {
-        const batch = ids.slice(i, i + batchSize);
-        promises.push(
-          db.list(table, {
-            filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields,
-            maxRecords: batchSize,
-          })
-        );
-      }
-      return Promise.all(promises).then(results => results.flat());
-    }
-
-    const [allLines, deliveryRecords, prevLines] = await Promise.all([
-      batchFetch(allLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit']),
-      batchFetch(deliveryIds, TABLES.DELIVERIES, ['Linked Order', 'Delivery Fee']),
-      batchFetch(allPrevLineIds, TABLES.ORDER_LINES, ['Order', 'Flower Name', 'Quantity']),
-    ]);
+    // orderRepo.list() embeds _lines and _delivery — no separate batch fetch needed.
+    const allLines  = orders.flatMap(o => o._lines || []);
+    const prevLines = prevOrders.flatMap(o => o._lines || []);
 
     // ── Build lookup maps ──
-    const orderSellTotals = {};
-    const orderCostTotals = {};
-    for (const line of allLines) {
-      const orderId = line.Order?.[0];
-      if (!orderId) continue;
-      const qty = line.Quantity || 0;
-      orderSellTotals[orderId] = (orderSellTotals[orderId] || 0) + (line['Sell Price Per Unit'] || 0) * qty;
-      orderCostTotals[orderId] = (orderCostTotals[orderId] || 0) + (line['Cost Price Per Unit'] || 0) * qty;
-    }
+    const orderSellTotals    = {};
+    const orderCostTotals    = {};
     const deliveryFeeByOrder = {};
-    for (const d of deliveryRecords) {
-      const orderId = d['Linked Order']?.[0];
-      if (orderId) deliveryFeeByOrder[orderId] = d['Delivery Fee'] || 0;
+
+    for (const order of orders) {
+      for (const line of (order._lines || [])) {
+        const qty = line.Quantity || 0;
+        orderSellTotals[order.id] = (orderSellTotals[order.id] || 0) + (line['Sell Price Per Unit'] || 0) * qty;
+        orderCostTotals[order.id] = (orderCostTotals[order.id] || 0) + (line['Cost Price Per Unit'] || 0) * qty;
+      }
+      if (order._delivery?.['Delivery Fee']) {
+        deliveryFeeByOrder[order.id] = order._delivery['Delivery Fee'];
+      }
     }
 
     // ── Compute all metrics via service functions ──
@@ -175,6 +122,7 @@ router.get('/', async (req, res, next) => {
       : 0;
 
     // ── Customer metrics ──
+    const batchSize = 100; // TODO Task 4: remove after customer section migrated
     const customerIds = [...new Set(orders.map(o => o.Customer?.[0]).filter(Boolean))];
     const customers = { newCount: 0, returningCount: 0, segments: {}, topSpenders: [] };
 
