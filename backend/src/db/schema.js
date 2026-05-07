@@ -9,6 +9,7 @@ import {
   pgTable, text, timestamp, jsonb, bigserial, index, uuid,
   integer, numeric, boolean, date, uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { isNotNull, and } from 'drizzle-orm';
 
 // Single-row-per-key tracking. Phase 3+ writes rows like
 //   ('stock_cutover_at', '2026-05-...') when entity cutovers happen, so
@@ -301,4 +302,121 @@ export const legacyOrders = pgTable('legacy_orders', {
 }, (table) => ({
   airtableIdx: uniqueIndex('legacy_orders_airtable_id_idx').on(table.airtableId),
   customerIdx: index('legacy_orders_customer_id_idx').on(table.customerId),
+}));
+
+// ── Phase 6: Config + log tables ──
+
+export const appConfig = pgTable('app_config', {
+  key:       text('key').primaryKey(),
+  value:     jsonb('value').notNull().default({}),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
+export const floristHours = pgTable('florist_hours', {
+  id:            uuid('id').primaryKey().defaultRandom(),
+  airtableId:    text('airtable_id'),
+  name:          text('name').notNull(),
+  date:          date('date').notNull(),
+  hours:         numeric('hours', { precision: 8, scale: 2 }).notNull().default('0'),
+  hourlyRate:    numeric('hourly_rate', { precision: 8, scale: 2 }).notNull().default('0'),
+  rateType:      text('rate_type'),
+  bonus:         numeric('bonus', { precision: 8, scale: 2 }).notNull().default('0'),
+  deduction:     numeric('deduction', { precision: 8, scale: 2 }).notNull().default('0'),
+  notes:         text('notes').notNull().default(''),
+  deliveryCount: integer('delivery_count').notNull().default(0),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:     timestamp('deleted_at', { withTimezone: true }),
+}, (t) => ({
+  airtableIdx: uniqueIndex('florist_hours_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  dateIdx:     index('florist_hours_date_idx').on(t.date),
+  nameIdx:     index('florist_hours_name_idx').on(t.name),
+}));
+
+export const marketingSpend = pgTable('marketing_spend', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  airtableId: text('airtable_id'),
+  month:      date('month').notNull(),
+  channel:    text('channel').notNull(),
+  amount:     numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  notes:      text('notes').notNull().default(''),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:  timestamp('deleted_at', { withTimezone: true }),
+}, (t) => ({
+  airtableIdx: uniqueIndex('marketing_spend_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  monthIdx:    index('marketing_spend_month_idx').on(t.month),
+}));
+
+export const stockLossLog = pgTable('stock_loss_log', {
+  id:         uuid('id').primaryKey().defaultRandom(),
+  airtableId: text('airtable_id'),
+  date:       date('date').notNull(),
+  stockId:    uuid('stock_id').references(() => stock.id, { onDelete: 'set null' }),
+  quantity:   numeric('quantity', { precision: 8, scale: 2 }).notNull(),
+  reason:     text('reason').notNull(),
+  notes:      text('notes').notNull().default(''),
+  createdAt:  timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:  timestamp('deleted_at', { withTimezone: true }),
+}, (t) => ({
+  airtableIdx: uniqueIndex('stock_loss_log_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  dateIdx:     index('stock_loss_log_date_idx').on(t.date),
+  stockIdx:    index('stock_loss_log_stock_id_idx').on(t.stockId),
+}));
+
+export const webhookLog = pgTable('webhook_log', {
+  id:          uuid('id').primaryKey().defaultRandom(),
+  wixOrderId:  text('wix_order_id').notNull(),
+  status:      text('status').notNull(),
+  timestamp:   timestamp('timestamp', { withTimezone: true }).notNull(),
+  appOrderId:  text('app_order_id'),
+  error:       text('error'),
+  createdAt:   timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  wixOrderIdx: index('webhook_log_wix_order_id_idx').on(t.wixOrderId),
+  tsIdx:       index('webhook_log_timestamp_idx').on(t.timestamp),
+}));
+
+export const syncLog = pgTable('sync_log', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  timestamp:    timestamp('timestamp', { withTimezone: true }).notNull().defaultNow(),
+  status:       text('status').notNull(),
+  newProducts:  integer('new_products').notNull().default(0),
+  updated:      integer('updated').notNull().default(0),
+  deactivated:  integer('deactivated').notNull().default(0),
+  priceSyncs:   integer('price_syncs').notNull().default(0),
+  stockSyncs:   integer('stock_syncs').notNull().default(0),
+  errorMessage: text('error_message').notNull().default(''),
+  createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  tsIdx: index('sync_log_timestamp_idx').on(t.timestamp),
+}));
+
+export const productConfig = pgTable('product_config', {
+  id:           uuid('id').primaryKey().defaultRandom(),
+  airtableId:   text('airtable_id'),
+  wixProductId: text('wix_product_id'),
+  wixVariantId: text('wix_variant_id'),
+  productName:  text('product_name').notNull().default(''),
+  variantName:  text('variant_name').notNull().default(''),
+  sortOrder:    integer('sort_order').notNull().default(0),
+  imageUrl:     text('image_url').notNull().default(''),
+  price:        numeric('price', { precision: 10, scale: 2 }).notNull().default('0'),
+  leadTimeDays: integer('lead_time_days').notNull().default(1),
+  active:       boolean('active').notNull().default(true),
+  visibleInWix: boolean('visible_in_wix').notNull().default(true),
+  productType:  text('product_type'),
+  minStems:     integer('min_stems').notNull().default(0),
+  description:  text('description').notNull().default(''),
+  category:     text('category'),
+  keyFlower:    text('key_flower'),
+  quantity:     integer('quantity'),
+  availableFrom: date('available_from'),
+  availableTo:   date('available_to'),
+  translations:  jsonb('translations').notNull().default({}),
+  createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt:     timestamp('deleted_at', { withTimezone: true }),
+}, (t) => ({
+  airtableIdx: uniqueIndex('product_config_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  wixPairIdx:  uniqueIndex('product_config_wix_pair_idx').on(t.wixProductId, t.wixVariantId).where(and(isNotNull(t.wixProductId), isNotNull(t.wixVariantId))),
+  productIdx:  index('product_config_wix_product_id_idx').on(t.wixProductId),
+  activeIdx:   index('product_config_active_idx').on(t.active),
 }));

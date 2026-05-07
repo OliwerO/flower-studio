@@ -5,6 +5,7 @@ import * as db from './airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
+import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
@@ -631,12 +632,16 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       if (rem.action === 'return') {
         await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity);
       } else if (rem.action === 'writeoff') {
-        await db.create(TABLES.STOCK_LOSS_LOG, {
-          'Stock Item': [rem.stockItemId],
-          Quantity: rem.quantity,
-          Reason: rem.reason || 'Bouquet edit',
-          Date: new Date().toISOString().split('T')[0],
-        }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message));
+        // Resolve PG UUID for the stock item before writing to Postgres repo.
+        stockRepo.getById(rem.stockItemId)
+          .then(item => stockLossRepo.create({
+            date:     new Date().toISOString().split('T')[0],
+            stockId:  item._pgId || null,
+            quantity: rem.quantity,
+            reason:   rem.reason || 'Bouquet edit',
+            notes:    '',
+          }))
+          .catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message));
       }
     }
     if (rem.lineId) {

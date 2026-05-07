@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { listByIds } from '../utils/batchQuery.js';
@@ -821,27 +822,20 @@ router.post('/:id/write-off', async (req, res, next) => {
 
     const updated = await stockRepo.update(req.params.id, fields, { actor: actorFromReq(req) });
 
-    // Also log to Stock Loss Log table for analytics breakdown
-    if (TABLES.STOCK_LOSS_LOG && actualWriteOff > 0) {
+    // Also log to Stock Loss Log table (Postgres) for analytics breakdown
+    if (actualWriteOff > 0) {
       const lossReason = (reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN) ? reason : LOSS_REASON.OTHER;
 
-      // Auto-calculate Days Survived for wilted flowers:
-      // how many days the flower lasted from last restock to write-off date
-      let daysSurvived = null;
-      if (reason === LOSS_REASON.WILTED && item['Last Restocked']) {
-        const restocked = new Date(item['Last Restocked']);
-        const now = new Date();
-        daysSurvived = Math.round((now.getTime() - restocked.getTime()) / 86400000);
-        if (daysSurvived < 0) daysSurvived = null; // sanity check
-      }
+      // Resolve the PG UUID for this stock item — stockRepo.getById returns
+      // an Airtable-shaped object with _pgId carrying the Postgres UUID.
+      const pgStockId = item._pgId || null;
 
-      db.create(TABLES.STOCK_LOSS_LOG, {
-        Date: new Date().toISOString().split('T')[0],
-        'Stock Item': [req.params.id],
-        Quantity: actualWriteOff,
-        Reason: lossReason,
-        Notes: reason && reason !== lossReason ? reason : '',
-        'Days Survived': daysSurvived,
+      stockLossRepo.create({
+        date:     new Date().toISOString().split('T')[0],
+        stockId:  pgStockId,
+        quantity: actualWriteOff,
+        reason:   lossReason,
+        notes:    reason && reason !== lossReason ? reason : '',
       }).catch(err => console.error('[STOCK] Failed to log to Stock Loss Log:', err.message));
     }
 

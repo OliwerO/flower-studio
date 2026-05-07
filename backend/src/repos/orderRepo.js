@@ -26,6 +26,7 @@
 
 import * as airtable from '../services/airtable.js';
 import * as stockRepo from './stockRepo.js';
+import * as stockLossRepo from './stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries } from '../db/schema.js';
@@ -911,18 +912,25 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
         await tx.delete(orderLines).where(where);
       }
     }
-    // Defer Stock Loss Log writes until after the tx — they go through the
-    // (still-Airtable-backed) loss log table.
+    // Defer Stock Loss Log writes until after the tx — they go to Postgres
+    // via stockLossRepo. Resolve recXXX IDs to PG UUIDs first (orders
+    // backfilled from Airtable carry Airtable stock IDs in their lines).
     if (writeoffsToLog.length > 0) {
       const today = new Date().toISOString().split('T')[0];
-      Promise.all(writeoffsToLog.map(w =>
-        airtable.create(TABLES.STOCK_LOSS_LOG, {
-          'Stock Item': [w.stockItemId],
-          Quantity: w.quantity,
-          Reason:   w.reason,
-          Date:     today,
-        }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message)),
-      ));
+      Promise.all(writeoffsToLog.map(async w => {
+        let pgStockId = w.stockItemId;
+        if (pgStockId && typeof pgStockId === 'string' && pgStockId.startsWith('rec')) {
+          const item = await stockRepo.getById(pgStockId).catch(() => null);
+          pgStockId = item?._pgId || null;
+        }
+        return stockLossRepo.create({
+          date:     today,
+          stockId:  pgStockId,
+          quantity: w.quantity,
+          reason:   w.reason,
+          notes:    '',
+        }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message));
+      }));
     }
 
     const explicitStockIds = new Set(

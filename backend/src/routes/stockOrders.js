@@ -9,6 +9,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -861,34 +862,40 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           }
         }
 
-        // Log write-offs per source (primary vs substitute).
+        // Log write-offs per source (primary vs substitute) via Postgres repo.
         // Primary write-offs land on the original stock item. Substitute
         // write-offs land on the substitute card (or on the original if
         // we never created a substitute because accepted = 0).
-        if (stockItemId && writeOff > 0 && TABLES.STOCK_LOSS_LOG) {
+        // stockItemId and substituteStockId are Airtable recXXX IDs here;
+        // resolve each to a PG UUID via stockRepo.getById before writing.
+        if (stockItemId && writeOff > 0) {
           const reason = evalLine.writeOffReason || LOSS_REASON.DAMAGED;
-          db.create(TABLES.STOCK_LOSS_LOG, {
-            Date: evalDate,
-            'Stock Item': [stockItemId],
-            Quantity: writeOff,
-            Reason: reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN ? reason : LOSS_REASON.OTHER,
-            Notes: `PO evaluation write-off (primary)`,
-          }).catch(err => console.error('[STOCK-ORDER] Failed to log primary write-off:', err.message));
+          stockRepo.getById(stockItemId)
+            .then(item => stockLossRepo.create({
+              date:     evalDate,
+              stockId:  item._pgId || null,
+              quantity: writeOff,
+              reason:   reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN ? reason : LOSS_REASON.OTHER,
+              notes:    'PO evaluation write-off (primary)',
+            }))
+            .catch(err => console.error('[STOCK-ORDER] Failed to log primary write-off:', err.message));
         }
-        if (altWriteOff > 0 && TABLES.STOCK_LOSS_LOG) {
+        if (altWriteOff > 0) {
           const altReason = evalLine.altWriteOffReason || LOSS_REASON.DAMAGED;
           // Prefer substitute card if one was created this session; otherwise
           // fall back to the original (rare — means altAccepted was 0 but
           // altWriteOff > 0, which only happens if the florist rejected everything).
           const writeOffTarget = substituteStockId || stockItemId;
           if (writeOffTarget) {
-            db.create(TABLES.STOCK_LOSS_LOG, {
-              Date: evalDate,
-              'Stock Item': [writeOffTarget],
-              Quantity: altWriteOff,
-              Reason: altReason === LOSS_REASON.WILTED || altReason === LOSS_REASON.DAMAGED || altReason === LOSS_REASON.ARRIVED_BROKEN ? altReason : LOSS_REASON.OTHER,
-              Notes: `PO evaluation write-off (substitute)`,
-            }).catch(err => console.error('[STOCK-ORDER] Failed to log alt write-off:', err.message));
+            stockRepo.getById(writeOffTarget)
+              .then(item => stockLossRepo.create({
+                date:     evalDate,
+                stockId:  item._pgId || null,
+                quantity: altWriteOff,
+                reason:   altReason === LOSS_REASON.WILTED || altReason === LOSS_REASON.DAMAGED || altReason === LOSS_REASON.ARRIVED_BROKEN ? altReason : LOSS_REASON.OTHER,
+                notes:    'PO evaluation write-off (substitute)',
+              }))
+              .catch(err => console.error('[STOCK-ORDER] Failed to log alt write-off:', err.message));
           }
         }
 

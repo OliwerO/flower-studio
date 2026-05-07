@@ -11,6 +11,8 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { sendAlert } from '../services/telegram.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
+import * as appConfigRepo from '../repos/appConfigRepo.js';
+import * as productConfigRepo from '../repos/productConfigRepo.js';
 
 const router = Router();
 
@@ -76,74 +78,43 @@ const DEFAULTS = {
   showStockRepairTools: false,
 };
 
-// ── In-memory config (loaded from Airtable on startup) ──────
+// ── In-memory config (loaded from Postgres on startup) ──────
 let config = structuredClone(DEFAULTS);
-let configRecordId = null; // Airtable record ID for the config row
 let configLoaded = false;
 
 /**
- * Load config from Airtable App Config table.
+ * Load config from Postgres App Config table.
  * Merges stored values over defaults so new keys auto-appear.
  */
 async function loadConfig() {
-  if (!TABLES.APP_CONFIG) {
-    console.warn('[SETTINGS] AIRTABLE_APP_CONFIG_TABLE not set — using defaults');
-    configLoaded = true;
-    return;
-  }
-
   try {
-    const rows = await db.list(TABLES.APP_CONFIG, {
-      filterByFormula: "{Key} = 'config'",
-      maxRecords: 1,
-    });
-
-    if (rows.length > 0) {
-      configRecordId = rows[0].id;
-      const stored = rows[0].Value;
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Deep merge: defaults + stored values (stored wins)
-        config = deepMerge(DEFAULTS, parsed);
-        // Migrate: normalize seasonal dates to MM-DD format
-        migrateSeasonalDates();
-        // Migrate: convert permanent/auto from string arrays to object arrays
-        migrateCategoryObjects();
-        // Migrate: backfill default translations for auto categories if empty
-        migrateAutoCategoryTranslations();
-        // Migrate: floristRates from flat { name: number } to { name: { type: number } }
-        migrateFloristRates();
-      }
-      console.log('[SETTINGS] Config loaded from Airtable');
+    const stored = await appConfigRepo.get('config');
+    if (stored) {
+      config = deepMerge(DEFAULTS, stored);
+      migrateSeasonalDates();
+      migrateCategoryObjects();
+      migrateAutoCategoryTranslations();
+      migrateFloristRates();
+      console.log('[SETTINGS] Config loaded from Postgres');
     } else {
-      // No config row yet — create one with defaults
-      const created = await db.create(TABLES.APP_CONFIG, {
-        Key: 'config',
-        Value: JSON.stringify(DEFAULTS),
-      });
-      configRecordId = created.id;
-      console.log('[SETTINGS] Config row created in Airtable with defaults');
+      await appConfigRepo.set('config', DEFAULTS);
+      console.log('[SETTINGS] Config row created in Postgres with defaults');
     }
   } catch (err) {
-    console.error('[SETTINGS] Failed to load config from Airtable:', err.message);
+    console.error('[SETTINGS] Failed to load config from Postgres:', err.message);
     console.warn('[SETTINGS] Using in-memory defaults');
   }
-
   configLoaded = true;
 }
 
 /**
- * Save current config to Airtable.
+ * Save current config to Postgres.
  */
 async function saveConfig() {
-  if (!TABLES.APP_CONFIG || !configRecordId) return;
-
   try {
-    await db.update(TABLES.APP_CONFIG, configRecordId, {
-      Value: JSON.stringify(config),
-    });
+    await appConfigRepo.set('config', config);
   } catch (err) {
-    console.error('[SETTINGS] Failed to save config to Airtable:', err.message);
+    console.error('[SETTINGS] Failed to save config to Postgres:', err.message);
   }
 }
 
@@ -343,14 +314,10 @@ setInterval(async () => {
     if (config.cutoffReminderLastDate === todayStr) return; // already sent today
 
     // Check if any active products with lead time 0 exist
-    if (!TABLES.PRODUCT_CONFIG) return;
-    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
-      filterByFormula: "AND({Active} = TRUE(), {Lead Time Days} = 0)",
-      maxRecords: 1,
-      fields: ['Product Name'],
-    });
+    const allActiveRows = await productConfigRepo.list({ activeOnly: true });
+    const zeroLeadRows = allActiveRows.filter(r => r['Lead Time Days'] === 0);
 
-    if (rows.length > 0) {
+    if (zeroLeadRows.length > 0) {
       await sendAlert(
         `⏰ Available Today reminder\n\n`
         + `It's past ${cutoff} — you still have products marked as Available Today.\n`
@@ -489,51 +456,18 @@ export function updateConfig(key, value) {
 
 /**
  * Generate next App Order ID in YYYYMM-NNN format.
- * Counter stored in APP_CONFIG under key 'orderCounters'.
+ * Counter stored in app_config Postgres table under key 'orderCounters'.
  * Like a sequential work order numbering system — each month resets the sequence.
  */
 export async function generateOrderId() {
-  const now = new Date();
+  const now      = new Date();
   const monthKey = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}`;
-
-  // Load counter from Airtable
-  let counters = {};
   try {
-    if (TABLES.APP_CONFIG) {
-      const rows = await db.list(TABLES.APP_CONFIG, {
-        filterByFormula: "{Key} = 'orderCounters'",
-        maxRecords: 1,
-      });
-      if (rows.length > 0) {
-        counters = JSON.parse(rows[0].Value || '{}');
-        const current = (counters[monthKey] || 0) + 1;
-        counters[monthKey] = current;
-        await db.update(TABLES.APP_CONFIG, rows[0].id, {
-          Value: JSON.stringify(counters),
-        });
-        return `${monthKey}-${String(current).padStart(3, '0')}`;
-      }
-    }
+    return await appConfigRepo.nextOrderId(monthKey);
   } catch (err) {
     console.error('[ORDER-ID] Counter error:', err.message);
+    return `${monthKey}-T${Date.now().toString().slice(-5)}`;
   }
-
-  // Fallback: create counter row or use timestamp-based ID
-  try {
-    if (TABLES.APP_CONFIG) {
-      counters[monthKey] = 1;
-      await db.create(TABLES.APP_CONFIG, {
-        Key: 'orderCounters',
-        Value: JSON.stringify(counters),
-      });
-      return `${monthKey}-001`;
-    }
-  } catch (err) {
-    console.error('[ORDER-ID] Counter create error:', err.message);
-  }
-
-  // Last resort fallback
-  return `${monthKey}-${String(Date.now() % 1000).padStart(3, '0')}`;
 }
 
 /**

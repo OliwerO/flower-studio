@@ -5,6 +5,43 @@ Review this entire file before flipping to production.
 
 ---
 
+## Phase 6 — Config + Log tables to Postgres (2026-05-07)
+
+### Schema
+- Migration 0007: app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config
+
+### New repos (backend/src/repos/)
+- appConfigRepo.js — app settings + order counter
+- hoursRepo.js — florist timesheet
+- marketingSpendRepo.js — ad spend by channel
+- stockLossRepo.js — waste/write-off events (enriched via JOIN on stock)
+- webhookLogRepo.js — Wix webhook audit log (append-only)
+- syncLogRepo.js — Wix product sync history (append-only)
+- productConfigRepo.js — Wix product/variant metadata + image URL cache
+
+### Routes/services rewritten
+- routes/floristHours.js → hoursRepo
+- routes/marketingSpend.js → marketingSpendRepo
+- routes/stockLoss.js → stockLossRepo
+- services/webhookLog.js → webhookLogRepo
+- services/wixProductSync.js logSync → syncLogRepo
+- routes/products.js (GET + PATCH + sync-log) → productConfigRepo + syncLogRepo
+- routes/settings.js loadConfig/saveConfig/generateOrderId → appConfigRepo
+- repos/productRepo.js → thin shim over productConfigRepo
+- routes/public.js → productConfigRepo
+- services/wix.js inventory decrement → productConfigRepo
+- services/wixProductSync.js all PRODUCT_CONFIG calls → productConfigRepo
+
+### Env changes
+- None — direct cutover, no new env vars
+
+### Deployment sequence
+1. Deploy migration (npm run db:migrate)
+2. Run backfill: node backend/scripts/backfill-phase6.js --approve
+3. Deploy app
+
+---
+
 ## Schema Changes (Airtable)
 
 Changes made to the **dev base** that must be replicated in **production** before go-live.

@@ -4,6 +4,7 @@ import { processWixOrder } from '../services/wix.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as webhookLogRepo from '../repos/webhookLogRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { listByIds } from '../utils/batchQuery.js';
@@ -86,13 +87,7 @@ router.post('/wix', verifyWixSignature, (req, res) => {
 // Like a receiving dock log book — shows all packages received, processed, or rejected.
 router.get('/log', authenticate, authorize('admin'), async (req, res, next) => {
   try {
-    if (!TABLES.WEBHOOK_LOG) {
-      return res.json([]);
-    }
-    const logs = await db.list(TABLES.WEBHOOK_LOG, {
-      sort: [{ field: 'Timestamp', direction: 'desc' }],
-      maxRecords: 100,
-    });
+    const logs = await webhookLogRepo.listRecent(50);
     res.json(logs);
   } catch (err) {
     next(err);

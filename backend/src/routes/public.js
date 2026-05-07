@@ -7,6 +7,7 @@ import { Router } from 'express';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { getConfig, getActiveSeasonalCategory } from './settings.js';
+import * as productConfigRepo from '../repos/productConfigRepo.js';
 
 const router = Router();
 
@@ -36,16 +37,7 @@ function cached(key, fetcher) {
 // Returns all active products grouped for storefront display.
 // Wix Velo calls this to populate category repeaters.
 router.get('/products', cached('products', async () => {
-  const rows = await db.list(TABLES.PRODUCT_CONFIG, {
-    filterByFormula: '{Active} = TRUE()',
-    fields: [
-      'Product Name', 'Variant Name', 'Sort Order',
-      'Wix Product ID', 'Wix Variant ID',
-      'Category', 'Lead Time Days', 'Price', 'Image URL',
-      'Key Flower', 'Min Stems', 'Product Type',
-      'Available From', 'Available To', 'Visible in Wix',
-    ],
-  });
+  const rows = await productConfigRepo.list({ activeOnly: true });
 
   // Also fetch stock quantities for inStock check
   const stockRows = await db.list(TABLES.STOCK, {

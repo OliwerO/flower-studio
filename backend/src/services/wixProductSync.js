@@ -7,9 +7,9 @@
 // Airtable owns: prices, lead times, stock, categories, active status
 
 import PQueue from 'p-queue';
-import * as db from './airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
-import { TABLES } from '../config/airtable.js';
+import * as syncLogRepo from '../repos/syncLogRepo.js';
+import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { sendAlert, notifyWixSyncError } from './telegram.js';
 import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
 
@@ -592,21 +592,24 @@ async function fetchWixData() {
   return { wixProducts, wixCategories, wixCategoryIdToName, mappedNames };
 }
 
-/** Write a sync log entry to Airtable + alert on failure. */
+/** Write a sync log entry to Postgres + alert on failure. */
 async function logSync(direction, stats) {
+  const errorMessage = stats.errors.join('\n') || '';
+  const hasErrors = stats.errors.length > 0;
+  const hasSuccess = stats.pricesSynced || stats.stockSynced || stats.new || stats.updated;
+  const status = hasErrors
+    ? (hasSuccess ? `partial (${direction})` : `failed (${direction})`)
+    : `success (${direction})`;
+
   try {
-    await db.create(TABLES.SYNC_LOG, {
-      'Timestamp': new Date().toISOString(),
-      'Status': stats.errors.length > 0
-        ? (stats.pricesSynced || stats.stockSynced || stats.new || stats.updated
-          ? `partial (${direction})` : `failed (${direction})`)
-        : `success (${direction})`,
-      'New Products': stats.new || 0,
-      'Updated': stats.updated || 0,
-      'Deactivated': stats.deactivated || 0,
-      'Price Syncs': stats.pricesSynced || 0,
-      'Stock Syncs': stats.stockSynced || 0,
-      'Error Message': stats.errors.join('\n') || '',
+    await syncLogRepo.logSync({
+      status,
+      newProducts:  stats.new || 0,
+      updated:      stats.updated || 0,
+      deactivated:  stats.deactivated || 0,
+      priceSyncs:   stats.pricesSynced || 0,
+      stockSyncs:   stats.stockSynced || 0,
+      errorMessage,
     });
   } catch (err) {
     console.error('[SYNC] Failed to write sync log:', err.message);
@@ -635,12 +638,7 @@ export async function runPull() {
     console.log(`[PULL] Found ${wixProducts.length} products in Wix`);
 
     // Load existing Product Config rows
-    const existingRows = await db.list(TABLES.PRODUCT_CONFIG, {
-      fields: [
-        'Product Name', 'Variant Name', 'Wix Product ID', 'Wix Variant ID',
-        'Image URL', 'Price', 'Active', 'Visible in Wix', 'Category', 'Description',
-      ],
-    });
+    const existingRows = await productConfigRepo.list();
 
     const existingMap = new Map();
     for (const row of existingRows) {
@@ -698,7 +696,7 @@ export async function runPull() {
             };
             if (productDescription) newRow['Description'] = productDescription;
             if (importedCategories.length > 0) newRow['Category'] = importedCategories;
-            await db.create(TABLES.PRODUCT_CONFIG, newRow);
+            await productConfigRepo.upsert(newRow);
             stats.new++;
           } catch (err) {
             stats.errors.push(`Create ${productName}/${variantName}: ${err.message}`);
@@ -755,7 +753,7 @@ export async function runPull() {
           }
           if (Object.keys(updates).length > 0) {
             try {
-              await db.update(TABLES.PRODUCT_CONFIG, existing.id, updates);
+              await productConfigRepo.upsert({ ...updates, wixProductId: productId, wixVariantId: variantId });
               stats.updated++;
             } catch (err) {
               stats.errors.push(`Update ${productName}/${variantName}: ${err.message}`);
@@ -792,14 +790,14 @@ export async function runPull() {
 
       if (productStillAlive) {
         try {
-          await db.deleteRecord(TABLES.PRODUCT_CONFIG, row.id);
+          await productConfigRepo.softDelete(row.id);
           stats.deleted = (stats.deleted || 0) + 1;
         } catch (err) {
           stats.errors.push(`Delete orphaned variant ${row['Product Name']}/${row['Variant Name']}: ${err.message}`);
         }
       } else if (row['Active']) {
         try {
-          await db.update(TABLES.PRODUCT_CONFIG, row.id, { 'Active': false });
+          await productConfigRepo.deactivate(row.id);
           stats.deactivated++;
         } catch (err) {
           stats.errors.push(`Deactivate ${row['Product Name']}: ${err.message}`);
@@ -886,10 +884,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
 
     // ── Prices ──────────────────────────────────────────
     log('phase', 'Сравниваем цены...');
-    const configRows = await db.list(TABLES.PRODUCT_CONFIG, {
-      filterByFormula: '{Active} = TRUE()',
-      fields: ['Wix Product ID', 'Wix Variant ID', 'Variant Name', 'Price', 'Visible in Wix'],
-    });
+    const configRows = await productConfigRepo.list({ activeOnly: true });
 
     const wixPriceMap = new Map();
     for (const product of wixProducts) {
@@ -946,9 +941,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
     //   No variant has Quantity → whole product untracked, legacy inStock
     //     toggle per variant driven by Active.
     log('phase', 'Обновляем остатки...');
-    const allVariantRows = await db.list(TABLES.PRODUCT_CONFIG, {
-      fields: ['Wix Product ID', 'Wix Variant ID', 'Active', 'Quantity'],
-    });
+    const allVariantRows = await productConfigRepo.list();
 
     const byProduct = new Map();
     for (const row of allVariantRows) {
@@ -957,7 +950,8 @@ export async function runPush(onProgress = NO_PROGRESS) {
       if (!pid || !vid) continue;
       if (!byProduct.has(pid)) byProduct.set(pid, []);
       const rawQty = row['Quantity'];
-      const qty = typeof rawQty === 'number' ? rawQty : Number(rawQty);
+      // null means "untracked" from PG — treat same as undefined/NaN, not 0.
+      const qty = rawQty == null ? NaN : (typeof rawQty === 'number' ? rawQty : Number(rawQty));
       byProduct.get(pid).push({
         variantId: vid,
         active: row['Active'] === true,
@@ -1000,10 +994,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
       const catMap = {};
       for (const c of wixCategories) catMap[c.slug] = c.id;
 
-      const allConfigRows = await db.list(TABLES.PRODUCT_CONFIG, {
-        filterByFormula: '{Active} = TRUE()',
-        fields: ['Wix Product ID', 'Category', 'Lead Time Days', 'Key Flower', 'Min Stems'],
-      });
+      const allConfigRows = await productConfigRepo.list({ activeOnly: true });
 
       const sc = getConfig('storefrontCategories') || {};
       const catTasks = [];
@@ -1134,10 +1125,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
     // PL/RU/UK live in the Wix Multilingual Translation Content API.
     log('phase', 'Обновляем описания и переводы...');
     try {
-      const descRows = await db.list(TABLES.PRODUCT_CONFIG, {
-        filterByFormula: '{Active} = TRUE()',
-        fields: ['Wix Product ID', 'Description', 'Translations'],
-      });
+      const descRows = await productConfigRepo.list({ activeOnly: true });
 
       const descByProduct = new Map();
       for (const row of descRows) {
