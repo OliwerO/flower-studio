@@ -26,6 +26,7 @@
 
 import * as airtable from '../services/airtable.js';
 import * as stockRepo from './stockRepo.js';
+import * as stockLossRepo from './stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries } from '../db/schema.js';
@@ -911,16 +912,18 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
         await tx.delete(orderLines).where(where);
       }
     }
-    // Defer Stock Loss Log writes until after the tx — they go through the
-    // (still-Airtable-backed) loss log table.
+    // Defer Stock Loss Log writes until after the tx — they go to Postgres
+    // via stockLossRepo. stockItemId here is a PG UUID (this is the PG-mode
+    // branch of the repo), so no Airtable ID resolution is needed.
     if (writeoffsToLog.length > 0) {
       const today = new Date().toISOString().split('T')[0];
       Promise.all(writeoffsToLog.map(w =>
-        airtable.create(TABLES.STOCK_LOSS_LOG, {
-          'Stock Item': [w.stockItemId],
-          Quantity: w.quantity,
-          Reason:   w.reason,
-          Date:     today,
+        stockLossRepo.create({
+          date:     today,
+          stockId:  w.stockItemId,
+          quantity: w.quantity,
+          reason:   w.reason,
+          notes:    '',
         }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message)),
       ));
     }

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getConfig } from './settings.js';
@@ -74,12 +75,7 @@ router.get('/', async (req, res, next) => {
           NOT(IS_AFTER({Purchase Date}, '${safeTo}'))
         )`,
       }).catch(() => []) : Promise.resolve([]),
-      TABLES.STOCK_LOSS_LOG ? db.list(TABLES.STOCK_LOSS_LOG, {
-        filterByFormula: `AND(
-          NOT(IS_BEFORE({Date}, '${safeFrom}')),
-          NOT(IS_AFTER({Date}, '${safeTo}'))
-        )`,
-      }).catch(() => []) : Promise.resolve([]),
+      stockLossRepo.list({ from, to }).catch(() => []),
     ]);
 
     // ── Batch-fetch order lines + deliveries ──
@@ -149,9 +145,13 @@ router.get('/', async (req, res, next) => {
     const inventoryTurnover = calculateInventoryTurnover(stock, revenue.allFlowerCost, periodDays);
     const stockLossBreakdown = breakdownStockLosses(stockLosses);
 
-    // Supplier scorecard needs one extra fetch for waste cross-reference
-    const lossStockIds = [...new Set(stockLosses.flatMap(l => l['Stock Item'] || []))];
-    const lossStockItems = await batchFetch(lossStockIds, TABLES.STOCK, ['Display Name', 'Supplier']);
+    // Supplier scorecard — stockLossRepo.list() already enriches each row with
+    // supplier and flowerName via LEFT JOIN, so no extra Airtable fetch needed.
+    // Build a synthetic lossStockItems list from the enriched loss records so
+    // buildSupplierScorecard can still do its id → supplier lookup.
+    const lossStockItems = stockLosses
+      .filter(l => l['Stock Item']?.[0])
+      .map(l => ({ id: l['Stock Item'][0], Supplier: l.supplier || '', 'Display Name': l.flowerName || '' }));
     const supplierScorecard = buildSupplierScorecard(stockPurchases, stockLosses, lossStockItems);
 
     // ── Source breakdown (simple aggregation, kept inline) ──
