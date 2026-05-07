@@ -1,46 +1,63 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 
-// Mock DB — must be before importing the service
+// ── Mocks (must be before imports) ────────────────────────────────────────────
+
+// Use vi.hoisted so these variables are available inside vi.mock factories (which are hoisted)
+const { mockCreate, valuesMock } = vi.hoisted(() => ({
+  mockCreate: vi.fn(),
+  valuesMock: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@anthropic-ai/sdk', () => ({
+  default: class {
+    messages = { create: mockCreate };
+  },
+}));
+
 vi.mock('../db/index.js', () => ({
   db: {
-    insert: vi.fn().mockReturnValue({
-      values: vi.fn().mockResolvedValue(undefined),
-    }),
+    insert: vi.fn().mockReturnValue({ values: valuesMock }),
   },
 }));
 vi.mock('../db/schema.js', () => ({ feedbackReports: {} }));
 
-// Mock Anthropic — returns a complete "done" response by default
-vi.mock('@anthropic-ai/sdk', () => ({
-  default: class {
-    messages = {
-      create: vi.fn().mockResolvedValue({
-        content: [{ text: JSON.stringify({
-          done: true,
-          type: 'bug',
-          englishTitle: 'Button does not work on order screen',
-          englishDescription: 'The save button on the Order edit screen does nothing when tapped.',
-          acceptanceCriteria: ['Tapping Save on the Order edit screen saves changes'],
-          originalQuote: 'кнопка не работает',
-          russianSummary: 'Кнопка сохранения на экране редактирования заказа не работает.',
-        }) }],
-      }),
-    };
-  },
-}));
-
-// Mock fetch for GitHub API
 global.fetch = vi.fn();
-
-// Set required env
 process.env.GITHUB_TOKEN = 'test-token';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function doneResponse(overrides = {}) {
+  return {
+    content: [{ text: JSON.stringify({
+      done: true,
+      type: 'bug',
+      englishTitle: 'Button does not work on order screen',
+      englishDescription: 'The save button on the Order edit screen does nothing when tapped.',
+      acceptanceCriteria: ['Tapping Save on the Order edit screen saves changes'],
+      originalQuote: 'кнопка не работает',
+      russianSummary: 'Кнопка сохранения на экране редактирования заказа не работает.',
+      ...overrides,
+    }) }],
+  };
+}
+
+function questionResponse(question) {
+  return {
+    content: [{ text: JSON.stringify({ done: false, question }) }],
+  };
+}
+
+// ── Imports ───────────────────────────────────────────────────────────────────
 
 import { startSession, publishSession, continueSession, previewSession, sessions } from '../services/feedbackService.js';
 import { db } from '../db/index.js';
 
+// ── Setup ─────────────────────────────────────────────────────────────────────
+
 beforeEach(() => {
   sessions.clear();
   vi.clearAllMocks();
+  mockCreate.mockResolvedValue(doneResponse());
   global.fetch = vi.fn().mockResolvedValue({
     ok: true,
     json: async () => ({ number: 42, html_url: 'https://github.com/OliwerO/flower-studio/issues/42' }),
@@ -48,18 +65,31 @@ beforeEach(() => {
   });
 });
 
+// ── startSession ──────────────────────────────────────────────────────────────
+
 describe('startSession', () => {
-  it('creates a session and returns sessionId + done:true', async () => {
+  it('creates session and returns done:true when AI has enough info', async () => {
     const result = await startSession({
-      text: 'Кнопка не работает',
+      text: 'кнопка не работает',
       reporterRole: 'florist',
       reporterName: 'Анна',
     });
-
     expect(result.sessionId).toBeDefined();
     expect(result.done).toBe(true);
-    expect(sessions.has(result.sessionId)).toBe(true);
     expect(sessions.get(result.sessionId).type).toBe('bug');
+  });
+
+  it('returns done:false + question when AI needs more info', async () => {
+    mockCreate.mockResolvedValueOnce(questionResponse('На каком экране это произошло?'));
+
+    const result = await startSession({
+      text: 'что-то сломалось',
+      reporterRole: 'owner',
+      reporterName: 'Owner',
+    });
+    expect(result.done).toBe(false);
+    expect(result.question).toBe('На каком экране это произошло?');
+    expect(sessions.get(result.sessionId).done).toBe(false);
   });
 
   it('stores appArea when provided', async () => {
@@ -71,122 +101,90 @@ describe('startSession', () => {
     });
     expect(sessions.get(sessionId).appArea).toBe('dashboard');
   });
-});
 
-describe('publishSession', () => {
-  it('creates a GitHub issue and inserts a DB row', async () => {
-    const { sessionId } = await startSession({
-      text: 'Не отображается кнопка',
-      reporterRole: 'florist',
-      reporterName: 'Анна',
+  it('falls back to done:false + Russian error on malformed AI JSON', async () => {
+    mockCreate.mockResolvedValueOnce({
+      content: [{ text: '```json\n{"done": true}\n```' }],  // markdown fences break parse
     });
-
-    const result = await publishSession(sessionId);
-
-    expect(global.fetch).toHaveBeenCalledOnce();
-    const [url, opts] = global.fetch.mock.calls[0];
-    expect(url).toContain('/repos/OliwerO/flower-studio/issues');
-    expect(JSON.parse(opts.body)).toMatchObject({
-      labels: ['needs-triage'],
-      title: expect.any(String),
-    });
-
-    expect(result.issueUrl).toContain('github.com');
-    expect(result.issueNumber).toBe(42);
-
-    // Assert DB insert was called with correct payload
-    const insertMock = db.insert.mock.results[0].value.values;
-    expect(insertMock).toHaveBeenCalledWith({
-      githubIssueNumber: 42,
-      reporterRole: 'florist',
-      reporterName: 'Анна',
-      telegramChatId: null,
-    });
-  });
-
-  it('throws if sessionId is not found', async () => {
-    await expect(publishSession('nonexistent')).rejects.toThrow('Session not found');
-  });
-
-  it('deletes session after successful publish', async () => {
-    const { sessionId } = await startSession({
-      text: 'Test',
-      reporterRole: 'driver',
-      reporterName: 'Timur',
-    });
-    await publishSession(sessionId);
-    expect(sessions.has(sessionId)).toBe(false);
-  });
-
-  it('throws if GITHUB_TOKEN is missing', async () => {
-    const token = process.env.GITHUB_TOKEN;
-    delete process.env.GITHUB_TOKEN;
-    const { sessionId } = await startSession({ text: 'x', reporterRole: 'owner', reporterName: 'Owner' });
-    await expect(publishSession(sessionId)).rejects.toThrow('GITHUB_TOKEN');
-    process.env.GITHUB_TOKEN = token;
+    const result = await startSession({ text: 'x', reporterRole: 'driver', reporterName: 'Timur' });
+    expect(result.done).toBe(false);
+    expect(typeof result.question).toBe('string');
+    expect(result.question).toMatch(/Извините/);
   });
 });
+
+// ── continueSession ───────────────────────────────────────────────────────────
 
 describe('continueSession', () => {
-  it('returns done:true when AI returns done, and updates session state', async () => {
-    // Set up a not-done session manually (the module-level Anthropic mock returns done:true by default)
-    const sessionId = 'test-session-continue';
-    sessions.set(sessionId, {
+  it('sends full conversation history to AI', async () => {
+    // Start with AI asking a question
+    mockCreate.mockResolvedValueOnce(questionResponse('На каком экране это произошло?'));
+    const { sessionId } = await startSession({
+      text: 'кнопка не работает',
       reporterRole: 'florist',
       reporterName: 'Анна',
-      appArea: 'florist',
-      messages: [{ role: 'user', content: 'кнопка не работает' }],
-      createdAt: Date.now(),
-      done: false,
-      lastQuestion: 'На каком экране это произошло?',
     });
 
-    const result = await continueSession(sessionId, 'На экране заказов');
-    expect(result.done).toBe(true);
-    expect(sessions.get(sessionId).done).toBe(true);
-    expect(sessions.get(sessionId).type).toBe('bug');
-    expect(sessions.get(sessionId).title).toBeDefined();
-  });
-
-  it('appends conversation history before calling AI', async () => {
-    const sessionId = 'test-session-history';
-    sessions.set(sessionId, {
-      reporterRole: 'florist',
-      reporterName: 'Анна',
-      appArea: 'florist',
-      messages: [{ role: 'user', content: 'кнопка не работает' }],
-      createdAt: Date.now(),
-      done: false,
-      lastQuestion: 'На каком экране это произошло?',
-    });
-
+    // Continue — AI now has enough info
+    mockCreate.mockResolvedValueOnce(doneResponse());
     await continueSession(sessionId, 'На экране заказов');
 
-    const session = sessions.get(sessionId);
-    // messages should have: original user msg + AI question (assistant) + new user answer
-    expect(session.messages).toHaveLength(3);
-    expect(session.messages[1]).toEqual({ role: 'assistant', content: 'На каком экране это произошло?' });
-    expect(session.messages[2]).toEqual({ role: 'user', content: 'На экране заказов' });
+    // Verify the messages sent to the AI on the second call
+    const secondCall = mockCreate.mock.calls[1][0];
+    expect(secondCall.messages).toEqual([
+      { role: 'user', content: 'кнопка не работает' },
+      { role: 'assistant', content: 'На каком экране это произошло?' },
+      { role: 'user', content: 'На экране заказов' },
+    ]);
+  });
+
+  it('does not corrupt session state if AI call throws', async () => {
+    mockCreate.mockResolvedValueOnce(questionResponse('Какой экран?'));
+    const { sessionId } = await startSession({
+      text: 'проблема',
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+    });
+
+    const originalMessages = [...sessions.get(sessionId).messages];
+    const originalLastQuestion = sessions.get(sessionId).lastQuestion;
+
+    // AI throws on next call
+    mockCreate.mockRejectedValueOnce(new Error('Anthropic 503'));
+
+    await expect(continueSession(sessionId, 'ответ')).rejects.toThrow('503');
+
+    // Session state must be unchanged
+    expect(sessions.get(sessionId).messages).toEqual(originalMessages);
+    expect(sessions.get(sessionId).lastQuestion).toBe(originalLastQuestion);
+    expect(sessions.get(sessionId).done).toBe(false);
+  });
+
+  it('marks session done and stores AI fields on completion', async () => {
+    mockCreate.mockResolvedValueOnce(questionResponse('На каком экране?'));
+    const { sessionId } = await startSession({ text: 'x', reporterRole: 'florist', reporterName: 'Анна' });
+
+    await continueSession(sessionId, 'на экране заказов');
+
+    expect(sessions.get(sessionId).done).toBe(true);
+    expect(sessions.get(sessionId).type).toBe('bug');
+  });
+
+  it('returns done:true immediately if session already done', async () => {
+    const { sessionId } = await startSession({ text: 'test', reporterRole: 'owner', reporterName: 'Owner' });
+    const result = await continueSession(sessionId, 'extra');
+    expect(result.done).toBe(true);
   });
 
   it('throws on unknown sessionId', async () => {
     await expect(continueSession('bad-id', 'text')).rejects.toThrow('not found');
   });
-
-  it('returns done:true immediately if session already done', async () => {
-    const { sessionId } = await startSession({
-      text: 'test',
-      reporterRole: 'owner',
-      reporterName: 'Owner',
-    });
-    // startSession with the default mock already returns done:true
-    const result = await continueSession(sessionId, 'extra message');
-    expect(result.done).toBe(true);
-  });
 });
 
+// ── previewSession ────────────────────────────────────────────────────────────
+
 describe('previewSession', () => {
-  it('returns russianSummary from a completed session', async () => {
+  it('returns russianSummary from completed session', async () => {
     const { sessionId } = await startSession({
       text: 'кнопка не работает',
       reporterRole: 'florist',
@@ -202,17 +200,57 @@ describe('previewSession', () => {
   });
 
   it('throws when session is not done', async () => {
-    // Manually create a not-done session
-    const sessionId = 'test-session-not-done';
-    sessions.set(sessionId, {
+    mockCreate.mockResolvedValueOnce(questionResponse('Какой экран?'));
+    const { sessionId } = await startSession({ text: 'x', reporterRole: 'florist', reporterName: 'Анна' });
+    await expect(previewSession(sessionId)).rejects.toThrow('not complete');
+  });
+});
+
+// ── publishSession ────────────────────────────────────────────────────────────
+
+describe('publishSession', () => {
+  it('creates GitHub issue with correct fields and inserts DB row', async () => {
+    const { sessionId } = await startSession({
+      text: 'Не отображается кнопка',
       reporterRole: 'florist',
       reporterName: 'Анна',
-      appArea: null,
-      messages: [{ role: 'user', content: 'test' }],
-      createdAt: Date.now(),
-      done: false,
-      lastQuestion: 'На каком экране?',
     });
-    await expect(previewSession(sessionId)).rejects.toThrow('not complete');
+
+    const result = await publishSession(sessionId);
+
+    // GitHub API called correctly
+    expect(global.fetch).toHaveBeenCalledOnce();
+    const [url, opts] = global.fetch.mock.calls[0];
+    expect(url).toContain('/repos/OliwerO/flower-studio/issues');
+    expect(JSON.parse(opts.body)).toMatchObject({ labels: ['needs-triage'], title: expect.any(String) });
+
+    // DB row written with correct payload
+    expect(valuesMock).toHaveBeenCalledWith({
+      githubIssueNumber: 42,
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+      telegramChatId: null,
+    });
+
+    expect(result.issueUrl).toContain('github.com');
+    expect(result.issueNumber).toBe(42);
+  });
+
+  it('throws on unknown sessionId', async () => {
+    await expect(publishSession('nonexistent')).rejects.toThrow('Session not found');
+  });
+
+  it('deletes session after successful publish', async () => {
+    const { sessionId } = await startSession({ text: 'Test', reporterRole: 'driver', reporterName: 'Timur' });
+    await publishSession(sessionId);
+    expect(sessions.has(sessionId)).toBe(false);
+  });
+
+  it('throws when GITHUB_TOKEN is missing', async () => {
+    const token = process.env.GITHUB_TOKEN;
+    delete process.env.GITHUB_TOKEN;
+    const { sessionId } = await startSession({ text: 'x', reporterRole: 'owner', reporterName: 'Owner' });
+    await expect(publishSession(sessionId)).rejects.toThrow('GITHUB_TOKEN');
+    process.env.GITHUB_TOKEN = token;
   });
 });

@@ -52,12 +52,13 @@ If more info needed:
 {"done": false, "question": "Russian question string"}
 
 When complete:
-{"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "russianSummary": "Plain Russian summary of what will be submitted — 2-3 sentences"}`;
+{"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "russianSummary": "Plain Russian summary of what will be submitted — 2-3 sentences"}
+Note: "type" must be exactly "bug" or "feature" — no other values.`;
 
 async function callAI(messages) {
   const res = await anthropic.messages.create({
     model: MODEL,
-    max_tokens: 1024,
+    max_tokens: 2048,
     system: SYSTEM_PROMPT,
     messages,
   });
@@ -118,13 +119,18 @@ export async function continueSession(sessionId, message) {
   if (!session) throw new Error('Session not found or expired');
   if (session.done) return { done: true };
 
-  // Append the previous AI question as assistant turn, then the reporter's answer
+  // Build candidate messages locally — only commit to session on success
+  const nextMessages = [...session.messages];
   if (session.lastQuestion) {
-    session.messages.push({ role: 'assistant', content: session.lastQuestion });
+    nextMessages.push({ role: 'assistant', content: session.lastQuestion });
   }
-  session.messages.push({ role: 'user', content: message });
+  nextMessages.push({ role: 'user', content: message });
 
-  const aiResult = await callAI(session.messages);
+  const aiResult = await callAI(nextMessages);
+
+  // Commit only after successful AI response
+  session.messages = nextMessages;
+  session.lastQuestion = null;
 
   if (aiResult.done) {
     Object.assign(session, {
@@ -132,7 +138,7 @@ export async function continueSession(sessionId, message) {
       title: (aiResult.englishTitle || message).replace(/\s+/g, ' ').trim().slice(0, 80),
       englishDescription: aiResult.englishDescription || message,
       acceptanceCriteria: aiResult.acceptanceCriteria || [],
-      originalQuote: aiResult.originalQuote || session.messages[0]?.content || message,
+      originalQuote: aiResult.originalQuote || nextMessages[0]?.content || message,
       russianSummary: aiResult.russianSummary || message,
       type: aiResult.type || 'bug',
     });
