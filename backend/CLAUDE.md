@@ -63,7 +63,6 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | telegram.js | Telegram Bot API wrapper — new-order + delivery-landed alerts. |
 | intake-parser.js | Claude Haiku integration for parsing freeform text / Flowwow emails into structured orders. |
 | analyticsService.js | Pure math functions for financial KPIs (no DB calls). |
-| webhookLog.js | Persists webhook events to Webhook Log table. |
 | driverState.js | In-memory backup driver state (resets daily at midnight). |
 
 ## Database (in transition — Phase 3+ SQL migration)

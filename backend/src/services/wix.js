@@ -14,7 +14,7 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
-import { logWebhookEvent } from './webhookLog.js';
+import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
 import { generateOrderId } from '../routes/settings.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
 
