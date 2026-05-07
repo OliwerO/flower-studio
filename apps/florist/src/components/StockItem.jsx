@@ -110,7 +110,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                 setDateDraft(item['Last Restocked'] ? item['Last Restocked'].split('T')[0] : '');
                 setEditingDate(true);
               }}>
-                {renderDateTag(item['Display Name'], item['Last Restocked'])}
+                {!isNeg && renderDateTag(item['Display Name'], item['Last Restocked'])}
               </span>
             )}
           </div>

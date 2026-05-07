@@ -261,13 +261,20 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   // Planned rows — flowers arriving from pending POs, cross-referenced with committed orders
   const plannedRows = useMemo(() => {
     const nameMap = {};
-    for (const s of stock) nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
+    const stockQtyMap = {};
+    for (const s of stock) {
+      nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
+      stockQtyMap[s.id] = Number(s['Current Quantity']) || 0;
+    }
     let rows = Object.keys(pendingPO).map(stockId => {
       const po = pendingPO[stockId] || { ordered: 0, pos: [], flowerName: '' };
       const com = committedMap[stockId] || { committed: 0, orders: [] };
       // Only count "New" orders as committed — Ready orders already have flowers composed
       const newOrders = (com.orders || []).filter(o => o.status === 'New');
-      const committedQty = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
+      const fromEndpoint = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
+      // Negative qty = demand baked into Current Quantity (CLAUDE.md pitfall #7).
+      // /stock/committed reads Airtable (frozen — issue #229). Use negative qty as fallback.
+      const committedQty = Math.max(fromEndpoint, Math.max(0, -(stockQtyMap[stockId] || 0)));
       const stockName = nameMap[stockId] || '';
       const poName = stockBaseName(po.flowerName) || '';
       return {
@@ -814,7 +821,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
 }
 
 // Inline date editor — click the tag to reveal a date input, blur to save.
-function InlineDate({ value, displayName, onSave }) {
+function InlineDate({ value, displayName, onSave, hideTag = false }) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState('');
 
@@ -844,7 +851,7 @@ function InlineDate({ value, displayName, onSave }) {
     );
   }
 
-  const dateTag = renderDateTag(displayName || null, value);
+  const dateTag = hideTag ? null : renderDateTag(displayName || null, value);
   return (
     <span onClick={startEdit} className="cursor-pointer" title={t.edit || 'Edit'}>
       {dateTag || <span className="text-xs text-ios-tertiary/40">—</span>}
@@ -890,7 +897,7 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
       <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
         <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{stockBaseName(item['Display Name'])}</td>
         <td className="px-2 py-1.5">
-          <InlineDate value={lastRestocked} displayName={item['Display Name']} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} />
+          <InlineDate value={lastRestocked} displayName={item['Display Name']} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} hideTag={isNegative} />
         </td>
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
           isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
