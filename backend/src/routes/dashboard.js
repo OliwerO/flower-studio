@@ -1,9 +1,13 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
+import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import { TABLES } from '../config/airtable.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { db as pgDb } from '../db/index.js';
+import { orderLines as orderLinesTable, orders as ordersTable } from '../db/schema.js';
+import { and, or, eq, isNull, inArray, gte, lte, asc } from 'drizzle-orm';
 import { ORDER_STATUS, PAYMENT_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
 const router = Router();
@@ -13,68 +17,35 @@ router.use(authorize('dashboard'));
 router.get('/', async (req, res, next) => {
   try {
     // Accept optional ?date= param, default to today
-    const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
+    const today = (req.query.date || new Date().toISOString().split('T')[0]).slice(0, 10);
 
     const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().split('T')[0];
 
     const [orders, ordersDueToday, fulfillToday, tomorrowOrders, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
-      // Today's orders (by Order Date — for revenue, status breakdown)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `DATESTR({Order Date}) = '${today}'`,
-        sort: [{ field: 'Order Date', direction: 'desc' }],
-      }).catch(() => []),
-      // Orders due today (by Required By — for "planned today" count)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-        fields: ['Required By', 'Status'],
-        maxRecords: 200,
-      }).catch(() => []),
-      // Orders to fulfill today: Required By = today, not cancelled (full data for display)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-        sort: [{ field: 'Required By', direction: 'asc' }],
-        maxRecords: 200,
-      }).catch(() => []),
-      // Tomorrow's orders: Required By = tomorrow, not cancelled (show all for planning)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-        fields: ['Customer', 'Required By', 'Status', 'Delivery Type', 'Order Lines', 'Customer Request', 'App Order ID', 'Delivery Time'],
-        maxRecords: 100,
-      }).catch(() => []),
-      // Today's pending deliveries (all statuses — we filter below)
-      db.list(TABLES.DELIVERIES, {
-        filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != '${DELIVERY_STATUS.DELIVERED}')`,
-      }).catch(() => []),
+      // Today's orders by Order Date (for revenue + status breakdown)
+      orderRepo.list({ pg: { forDate: today }, sort: [{ field: 'Order Date', direction: 'desc' }] }).catch(() => []),
+      // Orders due today by Required By (count only — we only need .length)
+      orderRepo.list({ pg: { requiredByFrom: today, requiredByTo: today, excludeStatuses: [ORDER_STATUS.CANCELLED] } }).catch(() => []),
+      // Full data for fulfill-today orders
+      orderRepo.list({ pg: { requiredByFrom: today, requiredByTo: today, excludeStatuses: [ORDER_STATUS.CANCELLED] }, sort: [{ field: 'Required By', direction: 'asc' }] }).catch(() => []),
+      // Tomorrow's orders for planning view
+      orderRepo.list({ pg: { requiredByFrom: tomorrow, requiredByTo: tomorrow, excludeStatuses: [ORDER_STATUS.CANCELLED] } }).catch(() => []),
+      // Today's pending deliveries (filter to non-Delivered below)
+      orderRepo.listDeliveries({ pg: { date: today } }).then(rows => rows.filter(d => d.Status !== DELIVERY_STATUS.DELIVERED)).catch(() => []),
       // Stock items below reorder threshold
-      stockRepo.list({
-        filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < {Reorder Threshold})`,
-        sort: [{ field: 'Current Quantity', direction: 'asc' }],
-        // PG-mode equivalent — caller filters threshold below since we
-        // don't have a column-vs-column comparison option yet.
-        pg: { active: true, includeEmpty: true },
-      }).then(rows => rows.filter(r => {
-        // Defence-in-depth: PG-mode returns all active stock; filter on threshold here.
+      stockRepo.list({ pg: { active: true, includeEmpty: true } }).then(rows => rows.filter(r => {
         const t = Number(r['Reorder Threshold'] || 0);
         return t > 0 && Number(r['Current Quantity'] || 0) < t;
       })).catch(() => []),
-      // All unpaid/partial non-cancelled orders for aging calculation
-      // Don't restrict fields — 'Final Price' is a formula field that may not exist in all bases
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(OR({Payment Status} = '${PAYMENT_STATUS.UNPAID}', {Payment Status} = '${PAYMENT_STATUS.PARTIAL}'), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-      }).catch(() => []),
+      // Unpaid/partial non-cancelled orders
+      orderRepo.list({ pg: { excludeStatuses: [ORDER_STATUS.CANCELLED] } })
+        .then(rows => rows.filter(o =>
+          o['Payment Status'] === PAYMENT_STATUS.UNPAID || o['Payment Status'] === PAYMENT_STATUS.PARTIAL
+        )).catch(() => []),
       // Active stock items with negative quantity
-      stockRepo.list({
-        filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < 0)`,
-        fields: ['Display Name', 'Purchase Name', 'Current Quantity', 'Supplier', 'Order Lines'],
-        pg: { active: true, includeEmpty: true },
-      }).then(rows => rows.filter(r => Number(r['Current Quantity'] || 0) < 0))
-        .catch(() => []),
-      // Customers with key person dates set for upcoming reminders
-      // Wrapped in catch — these fields may not exist in all Airtable bases
-      db.list(TABLES.CUSTOMERS, {
-        filterByFormula: `OR({Key person 1 (important DATE)} != '', {Key person 2 (important DATE)} != '')`,
-        fields: ['Name', 'Nickname', 'Key person 1 (Name + Contact details)', 'Key person 1 (important DATE)', 'Key person 2 (Name + Contact details)', 'Key person 2 (important DATE)'],
-      }).catch(() => []),
+      stockRepo.list({ pg: { active: true, includeEmpty: true } }).then(rows => rows.filter(r => Number(r['Current Quantity'] || 0) < 0)).catch(() => []),
+      // Customers with key person reminder dates
+      customerRepo.listWithKeyPeopleHavingDates().catch(() => []),
     ]);
 
     // Enrich orders with customer names + computed prices
