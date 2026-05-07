@@ -110,13 +110,37 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
 }
 
 /**
- * Continue an existing session. Stub for Phase 1 — AI multi-turn added in Task 5.
- * Returns { done: true } immediately since Phase 1 sessions are always complete.
+ * Process the reporter's reply. Appends their message, calls AI, updates session state.
+ * Returns { done: false, question } or { done: true } when AI has enough info.
  */
 export async function continueSession(sessionId, message) {
   const session = sessions.get(sessionId);
   if (!session) throw new Error('Session not found or expired');
-  return { done: true };
+  if (session.done) return { done: true };
+
+  // Append the previous AI question as assistant turn, then the reporter's answer
+  if (session.lastQuestion) {
+    session.messages.push({ role: 'assistant', content: session.lastQuestion });
+  }
+  session.messages.push({ role: 'user', content: message });
+
+  const aiResult = await callAI(session.messages);
+
+  if (aiResult.done) {
+    Object.assign(session, {
+      done: true,
+      title: (aiResult.englishTitle || message).replace(/\s+/g, ' ').trim().slice(0, 80),
+      englishDescription: aiResult.englishDescription || message,
+      acceptanceCriteria: aiResult.acceptanceCriteria || [],
+      originalQuote: aiResult.originalQuote || session.messages[0]?.content || message,
+      russianSummary: aiResult.russianSummary || message,
+      type: aiResult.type || 'bug',
+    });
+    return { done: true };
+  }
+
+  session.lastQuestion = aiResult.question;
+  return { done: false, question: aiResult.question };
 }
 
 /**

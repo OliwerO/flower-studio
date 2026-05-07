@@ -35,7 +35,7 @@ global.fetch = vi.fn();
 // Set required env
 process.env.GITHUB_TOKEN = 'test-token';
 
-import { startSession, publishSession, sessions } from '../services/feedbackService.js';
+import { startSession, publishSession, continueSession, sessions } from '../services/feedbackService.js';
 import { db } from '../db/index.js';
 
 beforeEach(() => {
@@ -124,5 +124,63 @@ describe('publishSession', () => {
     const { sessionId } = await startSession({ text: 'x', reporterRole: 'owner', reporterName: 'Owner' });
     await expect(publishSession(sessionId)).rejects.toThrow('GITHUB_TOKEN');
     process.env.GITHUB_TOKEN = token;
+  });
+});
+
+describe('continueSession', () => {
+  it('returns done:true when AI returns done, and updates session state', async () => {
+    // Set up a not-done session manually (the module-level Anthropic mock returns done:true by default)
+    const sessionId = 'test-session-continue';
+    sessions.set(sessionId, {
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+      appArea: 'florist',
+      messages: [{ role: 'user', content: 'кнопка не работает' }],
+      createdAt: Date.now(),
+      done: false,
+      lastQuestion: 'На каком экране это произошло?',
+    });
+
+    const result = await continueSession(sessionId, 'На экране заказов');
+    expect(result.done).toBe(true);
+    expect(sessions.get(sessionId).done).toBe(true);
+    expect(sessions.get(sessionId).type).toBe('bug');
+    expect(sessions.get(sessionId).title).toBeDefined();
+  });
+
+  it('appends conversation history before calling AI', async () => {
+    const sessionId = 'test-session-history';
+    sessions.set(sessionId, {
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+      appArea: 'florist',
+      messages: [{ role: 'user', content: 'кнопка не работает' }],
+      createdAt: Date.now(),
+      done: false,
+      lastQuestion: 'На каком экране это произошло?',
+    });
+
+    await continueSession(sessionId, 'На экране заказов');
+
+    const session = sessions.get(sessionId);
+    // messages should have: original user msg + AI question (assistant) + new user answer
+    expect(session.messages).toHaveLength(3);
+    expect(session.messages[1]).toEqual({ role: 'assistant', content: 'На каком экране это произошло?' });
+    expect(session.messages[2]).toEqual({ role: 'user', content: 'На экране заказов' });
+  });
+
+  it('throws on unknown sessionId', async () => {
+    await expect(continueSession('bad-id', 'text')).rejects.toThrow('not found');
+  });
+
+  it('returns done:true immediately if session already done', async () => {
+    const { sessionId } = await startSession({
+      text: 'test',
+      reporterRole: 'owner',
+      reporterName: 'Owner',
+    });
+    // startSession with the default mock already returns done:true
+    const result = await continueSession(sessionId, 'extra message');
+    expect(result.done).toBe(true);
   });
 });
