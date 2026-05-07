@@ -78,6 +78,24 @@ describe('stockPurchasesRepo', () => {
     });
   });
 
+  describe('list', () => {
+    it('returns all rows when no date range given', async () => {
+      await stockPurchasesRepo.create({ purchaseDate: '2026-04-01', supplier: 'A', quantityPurchased: 10 });
+      await stockPurchasesRepo.create({ purchaseDate: '2026-05-01', supplier: 'B', quantityPurchased: 5 });
+      const rows = await stockPurchasesRepo.list();
+      expect(rows).toHaveLength(2);
+    });
+
+    it('filters by from/to date range inclusive', async () => {
+      await stockPurchasesRepo.create({ purchaseDate: '2026-03-15', supplier: 'A', quantityPurchased: 10 });
+      await stockPurchasesRepo.create({ purchaseDate: '2026-04-10', supplier: 'B', quantityPurchased: 5 });
+      await stockPurchasesRepo.create({ purchaseDate: '2026-05-20', supplier: 'C', quantityPurchased: 3 });
+      const rows = await stockPurchasesRepo.list({ from: '2026-04-01', to: '2026-04-30' });
+      expect(rows).toHaveLength(1);
+      expect(rows[0].Supplier).toBe('B');
+    });
+  });
+
   describe('findDateByPoMarker', () => {
     it('returns null when no rows for this PO', async () => {
       const result = await stockPurchasesRepo.findDateByPoMarker('recNONE');
