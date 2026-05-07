@@ -71,10 +71,10 @@ const IconChevronUp = ({ className }) => (
 const POLL_INTERVAL_MS = 1500;
 
 const STATUS_LABEL = {
-  running: 'Синхронизация…',
-  done:    'Готово',
-  partial: 'Готово с предупреждениями',
-  failed:  'Ошибка',
+  running: 'Syncing…',
+  done:    'Done',
+  partial: 'Done with warnings',
+  failed:  'Failed',
 };
 
 const LEVEL_DOT = {
@@ -139,7 +139,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
         poll();
       } catch (err) {
         if (cancelled) return;
-        setError(err.response?.data?.error || err.message || 'Не удалось запустить синхронизацию.');
+        setError(err.response?.data?.error || err.message || 'Failed to start sync.');
       }
     }
 
@@ -160,7 +160,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
         }
       } catch (err) {
         if (cancelled) return;
-        setError(err.response?.data?.error || err.message || 'Ошибка опроса состояния.');
+        setError(err.response?.data?.error || err.message || 'Error polling status.');
         timer = setTimeout(poll, POLL_INTERVAL_MS * 2);
       }
     }
@@ -188,17 +188,14 @@ export default function WixPushModal({ open, onClose, onComplete }) {
   const isRunning = status === 'running';
   const canDismiss = !isRunning;
 
-  // Compact pill summary line: counts when finished, log tail while running.
+  // Compact pill summary line: counts when finished, generic status while running.
   let pillLine = STATUS_LABEL[status] || status;
-  if (isRunning && job?.log?.length) {
-    const last = job.log[job.log.length - 1];
-    if (last?.message) pillLine = last.message;
-  } else if (!isRunning && job?.result) {
+  if (!isRunning && job?.result) {
     const r = job.result;
     const total = (r.pricesSynced || 0) + (r.stockSynced || 0)
                 + (r.categoriesSynced || 0) + (r.descriptionsSynced || 0)
                 + (r.translationsSynced || 0);
-    pillLine = `${STATUS_LABEL[status]} · ${total} измен.`;
+    pillLine = `${STATUS_LABEL[status]} · ${total} changes`;
   } else if (error) {
     pillLine = error;
   }
@@ -218,7 +215,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
             type="button"
             onClick={() => setExpanded(true)}
             className="flex items-center gap-2 flex-1 min-w-0 text-left active-scale"
-            aria-label="Открыть журнал синхронизации"
+            aria-label="Open sync log"
           >
             <StatusIcon status={status} />
             <span className="flex-1 min-w-0 text-sm text-ios-label dark:text-dark-label truncate">
@@ -230,7 +227,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
             <button
               type="button"
               onClick={onClose}
-              aria-label="Закрыть"
+              aria-label="Close"
               className="w-8 h-8 rounded-full flex items-center justify-center text-ios-tertiary
                          hover:bg-ios-fill dark:hover:bg-dark-fill"
             >
@@ -266,7 +263,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
                       id="wix-push-modal-title"
                       className="text-lg font-semibold text-ios-label dark:text-dark-label"
                     >
-                      Синхронизация с Wix
+                      Wix sync
                     </h2>
                     <p className="text-sm text-ios-tertiary dark:text-dark-tertiary">
                       {STATUS_LABEL[status] || status}
@@ -280,7 +277,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
                              text-ios-tertiary dark:text-dark-tertiary
                              hover:bg-ios-fill dark:hover:bg-dark-fill"
                 >
-                  Свернуть
+                  Collapse
                 </button>
               </div>
 
@@ -290,7 +287,7 @@ export default function WixPushModal({ open, onClose, onComplete }) {
                 )}
                 {job?.log?.length === 0 && isRunning && (
                   <div className="text-ios-tertiary dark:text-dark-tertiary text-sm">
-                    Запускаем…
+                    Starting…
                   </div>
                 )}
                 <ul className="space-y-1.5">
@@ -326,15 +323,15 @@ export default function WixPushModal({ open, onClose, onComplete }) {
               {!isRunning && job?.result && (
                 <div className="px-5 py-3 border-t border-ios-separator dark:border-dark-separator bg-ios-fill/30 dark:bg-dark-fill/30">
                   <div className="flex flex-wrap gap-x-4 gap-y-1 text-sm text-ios-secondary dark:text-dark-secondary">
-                    <span>Цены: <strong className="text-ios-label dark:text-dark-label">{job.result.pricesSynced ?? 0}</strong></span>
-                    <span>Остатки: <strong className="text-ios-label dark:text-dark-label">{job.result.stockSynced ?? 0}</strong></span>
-                    <span>Категории: <strong className="text-ios-label dark:text-dark-label">{job.result.categoriesSynced ?? 0}</strong></span>
-                    <span>Описания: <strong className="text-ios-label dark:text-dark-label">{job.result.descriptionsSynced ?? 0}</strong></span>
-                    <span>Переводы: <strong className="text-ios-label dark:text-dark-label">{job.result.translationsSynced ?? 0}</strong></span>
+                    <span>Prices: <strong className="text-ios-label dark:text-dark-label">{job.result.pricesSynced ?? 0}</strong></span>
+                    <span>Stock: <strong className="text-ios-label dark:text-dark-label">{job.result.stockSynced ?? 0}</strong></span>
+                    <span>Categories: <strong className="text-ios-label dark:text-dark-label">{job.result.categoriesSynced ?? 0}</strong></span>
+                    <span>Descriptions: <strong className="text-ios-label dark:text-dark-label">{job.result.descriptionsSynced ?? 0}</strong></span>
+                    <span>Translations: <strong className="text-ios-label dark:text-dark-label">{job.result.translationsSynced ?? 0}</strong></span>
                   </div>
                   {job.result.errors?.length > 0 && (
                     <div className="mt-2 text-xs text-amber-700 dark:text-amber-400">
-                      {job.result.errors.length} предупреждени{job.result.errors.length === 1 ? 'е' : 'й'} — см. детали в журнале выше.
+                      {job.result.errors.length} warning{job.result.errors.length === 1 ? '' : 's'} — see log above for details.
                     </div>
                   )}
                 </div>
