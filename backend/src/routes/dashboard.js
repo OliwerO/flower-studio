@@ -298,7 +298,7 @@ router.get('/', async (req, res, next) => {
         }
         const group = groupMap.get(groupKey);
         group.qty += Number(s['Current Quantity'] || 0);
-        group.batchIds.push(s.id);
+        group.batchIds.push(s._pgId || s.id);
         const nb = neededByMap[s._pgId];
         if (nb && (!group.neededBy || nb < group.neededBy)) group.neededBy = nb;
         if (!group.supplier && s.Supplier) group.supplier = s.Supplier;
@@ -314,7 +314,7 @@ router.get('/', async (req, res, next) => {
     // Merge deferred demand into negativeStock list.
     // Match by batch ID (deferred items reference specific stock records within a group).
     for (const [stockId, demand] of Object.entries(deferredDemand)) {
-      const existing = negativeStock.find(s => s.id === stockId || s.batchIds?.includes(stockId));
+      const existing = negativeStock.find(s => s._pgId === stockId || s.id === stockId || s.batchIds?.includes(stockId));
       if (existing) {
         existing.deferredQty = (existing.deferredQty || 0) + demand.qty;
         if (demand.neededBy && (!existing.neededBy || demand.neededBy < existing.neededBy)) {
