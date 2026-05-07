@@ -36,7 +36,7 @@ import { pickAllowed } from '../utils/fields.js';
 import { db } from '../db/index.js';
 import { stock, parityLog } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
-import { and, eq, isNull, inArray, gt, sql } from 'drizzle-orm';
+import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
 
 // ── Backend mode ──
 const VALID_MODES = new Set(['airtable', 'shadow', 'postgres']);
@@ -198,7 +198,7 @@ async function listFromPg(options = {}) {
   if (pg.includeInactive !== true) filters.push(eq(stock.active, true));
   if (pg.includeEmpty !== true)    filters.push(gt(stock.currentQuantity, 0));
   if (pg.category)                 filters.push(eq(stock.category, String(pg.category)));
-  if (pg.displayName)              filters.push(eq(stock.displayName, String(pg.displayName)));
+  if (pg.displayName)              filters.push(ilike(stock.displayName, String(pg.displayName)));
   if (Array.isArray(pg.ids) && pg.ids.length) {
     // Accept either airtable ids or uuids in the same array.
     const recs = pg.ids.filter(x => typeof x === 'string' && x.startsWith('rec'));
