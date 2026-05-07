@@ -1,22 +1,29 @@
 import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
+import { eq, lt } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { feedbackReports } from '../db/schema.js';
+import { feedbackReports, feedbackSessions } from '../db/schema.js';
 
 const GITHUB_OWNER = 'OliwerO';
 const GITHUB_REPO  = 'flower-studio';
 const MODEL = 'claude-haiku-4-5-20251001';
+const SESSION_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-// In-memory session store. Sessions expire after 30 minutes.
+// In-memory cache — write-through, rebuilt from DB on cache miss.
 const sessions = new Map();
-const SESSION_TTL_MS = 30 * 60 * 1000;
 
-setInterval(() => {
+// Prune expired rows from DB every 10 minutes.
+setInterval(async () => {
+  try {
+    await db.delete(feedbackSessions).where(lt(feedbackSessions.expiresAt, new Date()));
+  } catch (err) {
+    console.error('[FEEDBACK] session prune error:', err.message);
+  }
   const now = Date.now();
   for (const [id, s] of sessions) {
     if (now - s.createdAt > SESSION_TTL_MS) sessions.delete(id);
   }
-}, 5 * 60 * 1000).unref();
+}, 10 * 60 * 1000).unref();
 
 function newSessionId() {
   return crypto.randomUUID();
@@ -72,7 +79,6 @@ async function callAI(messages) {
   try {
     return JSON.parse(text);
   } catch {
-    // Last resort: find the outermost JSON object in the response
     const objMatch = raw.match(/\{[\s\S]*\}/);
     if (objMatch) {
       try { return JSON.parse(objMatch[0]); } catch {}
@@ -81,11 +87,60 @@ async function callAI(messages) {
   }
 }
 
+// Load session from DB into memory cache. Returns null if not found/expired/published.
+async function loadFromDb(sessionId) {
+  const rows = await db.select().from(feedbackSessions)
+    .where(eq(feedbackSessions.id, sessionId))
+    .limit(1);
+
+  if (!rows.length) return null;
+  const row = rows[0];
+  if (row.published || row.expiresAt < new Date()) return null;
+
+  const session = {
+    reporterRole:       row.reporterRole,
+    reporterName:       row.reporterName,
+    appArea:            row.appArea,
+    messages:           row.messages,
+    lastQuestion:       row.lastQuestion,
+    done:               row.done,
+    title:              row.title,
+    englishDescription: row.englishDescription,
+    acceptanceCriteria: row.acceptanceCriteria,
+    originalQuote:      row.originalQuote,
+    summary:            row.summary,
+    type:               row.type,
+    telegramChatId:     row.telegramChatId,
+    createdAt:          row.createdAt.getTime(),
+  };
+  sessions.set(sessionId, session);
+  return session;
+}
+
+async function getSession(sessionId) {
+  return sessions.get(sessionId) ?? await loadFromDb(sessionId);
+}
+
+async function persistSession(sessionId, session) {
+  await db.update(feedbackSessions).set({
+    messages:           session.messages,
+    lastQuestion:       session.lastQuestion ?? null,
+    done:               session.done,
+    title:              session.title ?? null,
+    englishDescription: session.englishDescription ?? null,
+    acceptanceCriteria: session.acceptanceCriteria ?? null,
+    originalQuote:      session.originalQuote ?? null,
+    summary:            session.summary ?? null,
+    type:               session.type ?? null,
+    telegramChatId:     session.telegramChatId ?? null,
+  }).where(eq(feedbackSessions.id, sessionId));
+}
+
 /**
  * Start a new Report session. Calls Claude Haiku to classify and format the report.
  * Returns { sessionId, done: true } if AI has enough info, or { sessionId, done: false, question } if more info needed.
  */
-export async function startSession({ text, appArea, reporterRole, reporterName }) {
+export async function startSession({ text, appArea, reporterRole, reporterName, telegramChatId = null }) {
   const sessionId = newSessionId();
   const messages = [{ role: 'user', content: text }];
 
@@ -98,6 +153,7 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
     messages,
     createdAt: Date.now(),
     lastQuestion: null,
+    telegramChatId,
   };
 
   if (aiResult.done) {
@@ -110,14 +166,36 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
       summary: (aiResult.summary ?? aiResult.russianSummary) || text,
       type: aiResult.type || 'bug',
     });
-    sessions.set(sessionId, session);
-    return { sessionId, done: true };
+  } else {
+    Object.assign(session, { done: false });
+    session.lastQuestion = aiResult.question;
   }
 
-  Object.assign(session, { done: false });
-  session.lastQuestion = aiResult.question;
   sessions.set(sessionId, session);
-  return { sessionId, done: false, question: aiResult.question };
+
+  await db.insert(feedbackSessions).values({
+    id:                 sessionId,
+    reporterRole,
+    reporterName,
+    appArea:            session.appArea,
+    messages:           session.messages,
+    lastQuestion:       session.lastQuestion ?? null,
+    done:               session.done,
+    title:              session.title ?? null,
+    englishDescription: session.englishDescription ?? null,
+    acceptanceCriteria: session.acceptanceCriteria ?? null,
+    originalQuote:      session.originalQuote ?? null,
+    summary:            session.summary ?? null,
+    type:               session.type ?? null,
+    telegramChatId:     telegramChatId ?? null,
+    expiresAt:          new Date(Date.now() + SESSION_TTL_MS),
+  });
+
+  return {
+    sessionId,
+    done: session.done,
+    ...(session.done ? {} : { question: session.lastQuestion }),
+  };
 }
 
 /**
@@ -125,11 +203,10 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
  * Returns { done: false, question } or { done: true } when AI has enough info.
  */
 export async function continueSession(sessionId, message) {
-  const session = sessions.get(sessionId);
+  const session = await getSession(sessionId);
   if (!session) throw new Error('Session not found or expired');
   if (session.done) return { done: true };
 
-  // Build candidate messages locally — only commit to session on success
   const nextMessages = [...session.messages];
   if (session.lastQuestion) {
     nextMessages.push({ role: 'assistant', content: session.lastQuestion });
@@ -138,7 +215,6 @@ export async function continueSession(sessionId, message) {
 
   const aiResult = await callAI(nextMessages);
 
-  // Commit only after successful AI response
   session.messages = nextMessages;
   session.lastQuestion = null;
 
@@ -152,18 +228,19 @@ export async function continueSession(sessionId, message) {
       summary: (aiResult.summary ?? aiResult.russianSummary) || message,
       type: aiResult.type || 'bug',
     });
-    return { done: true };
+  } else {
+    session.lastQuestion = aiResult.question;
   }
 
-  session.lastQuestion = aiResult.question;
-  return { done: false, question: aiResult.question };
+  await persistSession(sessionId, session);
+  return session.done ? { done: true } : { done: false, question: session.lastQuestion };
 }
 
 /**
- * Return Russian summary for preview. Stub for Phase 1 — real preview added in Task 6.
+ * Return summary for preview before publishing.
  */
 export async function previewSession(sessionId) {
-  const session = sessions.get(sessionId);
+  const session = await getSession(sessionId);
   if (!session) throw new Error('Session not found or expired');
   if (!session.done) throw new Error('Session not complete yet');
   return { summary: session.summary };
@@ -174,7 +251,7 @@ export async function previewSession(sessionId) {
  * Returns { issueUrl, issueNumber }.
  */
 export async function publishSession(sessionId, imageBuffer = null, imageFilename = null) {
-  const session = sessions.get(sessionId);
+  const session = await getSession(sessionId);
   if (!session) throw new Error('Session not found or expired');
   if (!session.done) throw new Error('Session not complete — preview first');
 
@@ -184,7 +261,6 @@ export async function publishSession(sessionId, imageBuffer = null, imageFilenam
   }
 
   const issueBody = buildIssueBody(session, imageUrl);
-
   const issueNumber = await githubCreateIssue(session.title, issueBody);
   const issueUrl = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/issues/${issueNumber}`;
 
@@ -194,6 +270,10 @@ export async function publishSession(sessionId, imageBuffer = null, imageFilenam
     reporterName:      session.reporterName,
     telegramChatId:    session.telegramChatId ?? null,
   });
+
+  await db.update(feedbackSessions)
+    .set({ published: true })
+    .where(eq(feedbackSessions.id, sessionId));
 
   sessions.delete(sessionId);
   return { issueUrl, issueNumber };
@@ -226,11 +306,6 @@ _Reported by ${session.reporterName} (${session.reporterRole})${session.appArea 
 > ${session.originalQuote.replace(/\n/g, '\n> ')}`;
 }
 
-/**
- * Upload an image buffer to the repo under feedback-screenshots/.
- * Returns a raw.githubusercontent.com URL for embedding in the issue body.
- * Returns null on failure — issue is still created without the image.
- */
 async function githubUploadImage(buffer, filename) {
   const token = process.env.GITHUB_TOKEN;
   const ext = (filename?.split('.').pop()?.toLowerCase()) || 'jpg';

@@ -73,10 +73,8 @@ async function routeMessage(token, chatId, text) {
         appArea: 'telegram',
         reporterRole: 'owner',
         reporterName: 'Owner',
+        telegramChatId: chatId,
       });
-      // Attach telegramChatId to session for close notifications (Task 12)
-      const session = feedbackService.sessions.get(result.sessionId);
-      if (session) session.telegramChatId = chatId;
       chatSessions.set(chatId, result.sessionId);
 
       if (result.done) {
