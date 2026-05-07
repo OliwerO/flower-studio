@@ -913,19 +913,24 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       }
     }
     // Defer Stock Loss Log writes until after the tx — they go to Postgres
-    // via stockLossRepo. stockItemId here is a PG UUID (this is the PG-mode
-    // branch of the repo), so no Airtable ID resolution is needed.
+    // via stockLossRepo. Resolve recXXX IDs to PG UUIDs first (orders
+    // backfilled from Airtable carry Airtable stock IDs in their lines).
     if (writeoffsToLog.length > 0) {
       const today = new Date().toISOString().split('T')[0];
-      Promise.all(writeoffsToLog.map(w =>
-        stockLossRepo.create({
+      Promise.all(writeoffsToLog.map(async w => {
+        let pgStockId = w.stockItemId;
+        if (pgStockId && typeof pgStockId === 'string' && pgStockId.startsWith('rec')) {
+          const item = await stockRepo.getById(pgStockId).catch(() => null);
+          pgStockId = item?._pgId || null;
+        }
+        return stockLossRepo.create({
           date:     today,
-          stockId:  w.stockItemId,
+          stockId:  pgStockId,
           quantity: w.quantity,
           reason:   w.reason,
           notes:    '',
-        }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message)),
-      ));
+        }).catch(e => console.error('[STOCK-LOSS] Write-off log error:', e.message));
+      }));
     }
 
     const explicitStockIds = new Set(

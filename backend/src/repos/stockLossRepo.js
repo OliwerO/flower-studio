@@ -11,7 +11,9 @@ function toWire(row) {
     Quantity:     Number(row.quantity || 0),
     Reason:       row.reason,
     Notes:        row.notes || '',
-    'Stock Item': row.stockId ? [row.stockId] : [],
+    // Return the Airtable ID when available (backward compat with frontends +
+    // E2E tests that compare 'Stock Item' against the original recXXX ID).
+    'Stock Item': row.stockAirtableId ? [row.stockAirtableId] : (row.stockId ? [row.stockId] : []),
     flowerName:   row.displayName || row.purchaseName || '—',
     supplier:     row.supplier    || '—',
     costPrice:    Number(row.costPrice || 0),
@@ -26,17 +28,18 @@ export async function list({ from, to } = {}) {
 
   const rows = await db
     .select({
-      id:           stockLossLog.id,
-      date:         stockLossLog.date,
-      stockId:      stockLossLog.stockId,
-      quantity:     stockLossLog.quantity,
-      reason:       stockLossLog.reason,
-      notes:        stockLossLog.notes,
-      displayName:  stock.displayName,
-      purchaseName: stock.purchaseName,
-      supplier:     stock.supplier,
-      costPrice:    stock.currentCostPrice,
-      lastRestocked: stock.lastRestocked,
+      id:               stockLossLog.id,
+      date:             stockLossLog.date,
+      stockId:          stockLossLog.stockId,
+      quantity:         stockLossLog.quantity,
+      reason:           stockLossLog.reason,
+      notes:            stockLossLog.notes,
+      displayName:      stock.displayName,
+      purchaseName:     stock.purchaseName,
+      supplier:         stock.supplier,
+      costPrice:        stock.currentCostPrice,
+      lastRestocked:    stock.lastRestocked,
+      stockAirtableId:  stock.airtableId,
     })
     .from(stockLossLog)
     .leftJoin(stock, eq(stockLossLog.stockId, stock.id))
@@ -71,11 +74,12 @@ export async function create({ date, stockId, quantity, reason, notes }) {
       quantity:     stockLossLog.quantity,
       reason:       stockLossLog.reason,
       notes:        stockLossLog.notes,
-      displayName:  stock.displayName,
-      purchaseName: stock.purchaseName,
-      supplier:     stock.supplier,
-      costPrice:    stock.currentCostPrice,
-      lastRestocked: stock.lastRestocked,
+      displayName:      stock.displayName,
+      purchaseName:     stock.purchaseName,
+      supplier:         stock.supplier,
+      costPrice:        stock.currentCostPrice,
+      lastRestocked:    stock.lastRestocked,
+      stockAirtableId:  stock.airtableId,
     })
     .from(stockLossLog)
     .leftJoin(stock, eq(stockLossLog.stockId, stock.id))
@@ -95,17 +99,18 @@ export async function update(id, { quantity, reason, notes, date }) {
   // Re-fetch with JOIN so enrichment fields (flowerName, supplier, etc.) are populated.
   const [enriched] = await db
     .select({
-      id:           stockLossLog.id,
-      date:         stockLossLog.date,
-      stockId:      stockLossLog.stockId,
-      quantity:     stockLossLog.quantity,
-      reason:       stockLossLog.reason,
-      notes:        stockLossLog.notes,
-      displayName:  stock.displayName,
-      purchaseName: stock.purchaseName,
-      supplier:     stock.supplier,
-      costPrice:    stock.currentCostPrice,
-      lastRestocked: stock.lastRestocked,
+      id:               stockLossLog.id,
+      date:             stockLossLog.date,
+      stockId:          stockLossLog.stockId,
+      quantity:         stockLossLog.quantity,
+      reason:           stockLossLog.reason,
+      notes:            stockLossLog.notes,
+      displayName:      stock.displayName,
+      purchaseName:     stock.purchaseName,
+      supplier:         stock.supplier,
+      costPrice:        stock.currentCostPrice,
+      lastRestocked:    stock.lastRestocked,
+      stockAirtableId:  stock.airtableId,
     })
     .from(stockLossLog)
     .leftJoin(stock, eq(stockLossLog.stockId, stock.id))
