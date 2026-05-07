@@ -1,7 +1,7 @@
 // Marketing Spend repository — Phase 6 direct Postgres cutover.
 import { db } from '../db/index.js';
 import { marketingSpend } from '../db/schema.js';
-import { and, isNull, gte, lte, desc } from 'drizzle-orm';
+import { and, isNull, gte, lt, desc } from 'drizzle-orm';
 
 function toWire(row) {
   return {
@@ -16,7 +16,12 @@ function toWire(row) {
 export async function list({ from, to } = {}) {
   const conditions = [isNull(marketingSpend.deletedAt)];
   if (from) conditions.push(gte(marketingSpend.month, `${from}-01`));
-  if (to)   conditions.push(lte(marketingSpend.month, `${to}-31`));
+  if (to) {
+    const [y, m] = to.split('-').map(Number);
+    const d = new Date(y, m, 1); // first day of next month (Date month is 0-based, so m = next month)
+    const nextMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
+    conditions.push(lt(marketingSpend.month, nextMonth));
+  }
   const rows = await db.select().from(marketingSpend).where(and(...conditions)).orderBy(desc(marketingSpend.month));
   return rows.map(toWire);
 }
