@@ -79,9 +79,9 @@ async function backfillFloristHours() {
   if (!tableConfigured(TABLE, 'florist_hours')) return;
 
   console.log('[florist_hours] Fetching from Airtable…');
-  const rows = await fetchAll(TABLE, {
-    fields: ['Name', 'Date', 'Hours', 'Hourly Rate', 'Rate Type', 'Bonus', 'Deduction', 'Notes', 'Delivery Count'],
-  });
+  // Fetch all fields — don't restrict to a list since optional fields (e.g. Rate Type)
+  // may not exist in every base and would cause a 422 from Airtable.
+  const rows = await fetchAll(TABLE, {});
   console.log(`[florist_hours] Fetched ${rows.length} records.`);
 
   if (DRY_RUN) {
@@ -127,9 +127,7 @@ async function backfillMarketingSpend() {
   if (!tableConfigured(TABLE, 'marketing_spend')) return;
 
   console.log('[marketing_spend] Fetching from Airtable…');
-  const rows = await fetchAll(TABLE, {
-    fields: ['Month', 'Channel', 'Amount', 'Notes'],
-  });
+  const rows = await fetchAll(TABLE, {});
   console.log(`[marketing_spend] Fetched ${rows.length} records.`);
 
   if (DRY_RUN) {
@@ -182,9 +180,7 @@ async function backfillStockLossLog() {
   console.log(`[stock_loss_log] Stock map: ${stockMap.size} entries.`);
 
   console.log('[stock_loss_log] Fetching from Airtable…');
-  const rows = await fetchAll(TABLE, {
-    fields: ['Date', 'Stock Item', 'Quantity', 'Reason', 'Notes'],
-  });
+  const rows = await fetchAll(TABLE, {});
   console.log(`[stock_loss_log] Fetched ${rows.length} records.`);
 
   if (DRY_RUN) {
@@ -231,15 +227,7 @@ async function backfillProductConfig() {
   if (!tableConfigured(TABLE, 'product_config')) return;
 
   console.log('[product_config] Fetching from Airtable…');
-  const rows = await fetchAll(TABLE, {
-    fields: [
-      'Wix Product ID', 'Wix Variant ID', 'Product Name', 'Variant Name',
-      'Sort Order', 'Image URL', 'Price', 'Lead Time Days',
-      'Active', 'Visible in Wix', 'Product Type', 'Min Stems',
-      'Description', 'Category', 'Key Flower', 'Quantity',
-      'Available From', 'Available To',
-    ],
-  });
+  const rows = await fetchAll(TABLE, {});
   console.log(`[product_config] Fetched ${rows.length} records.`);
 
   if (DRY_RUN) {
