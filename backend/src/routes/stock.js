@@ -285,7 +285,7 @@ router.get('/pending-po', async (req, res, next) => {
             filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
             fields: ['Display Name', 'Current Cost Price', 'Current Sell Price'],
             maxRecords: 1,
-            pg: { active: true, includeEmpty: true },  // PG-mode falls back to JS-side name match
+            pg: { active: true, includeEmpty: true, displayName: name },
           });
           if (matches.length > 0) {
             nameToId[name] = matches[0].id;

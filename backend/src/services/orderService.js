@@ -4,6 +4,7 @@
 import * as db from './airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
@@ -440,14 +441,14 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}) {
  */
 export async function sendDeliveryCompleteAlert(orderId) {
   try {
-    const order = await db.getById(TABLES.ORDERS, orderId);
+    const order = await orderRepo.getById(orderId);
     const customerId = order.Customer?.[0];
     const deliveryId = order.Deliveries?.[0];
     const lineIds = order['Order Lines'] || [];
 
     const [customer, delivery, lineRecords] = await Promise.all([
       customerId
-        ? db.getById(TABLES.CUSTOMERS, customerId).catch(() => null)
+        ? customerRepo.findMany([customerId]).then(r => r[0] ?? null).catch(() => null)
         : Promise.resolve(null),
       deliveryId
         ? db.getById(TABLES.DELIVERIES, deliveryId).catch(() => null)

@@ -25,15 +25,16 @@ vi.mock('../db/schema.js', () => ({
 
 // Mock drizzle-orm operators.
 vi.mock('drizzle-orm', () => ({
-  eq:     vi.fn((a, b) => ({ eq: [a, b] })),
-  and:    vi.fn((...args) => ({ and: args })),
-  or:     vi.fn((...args) => ({ or: args })),
-  ilike:  vi.fn((col, pat) => ({ ilike: [col, pat] })),
-  like:   vi.fn((col, pat) => ({ like: [col, pat] })),
-  isNull: vi.fn((col) => ({ isNull: col })),
-  asc:    vi.fn((col) => ({ asc: col })),
-  desc:   vi.fn((col) => ({ desc: col })),
-  sql:    vi.fn((s) => s),
+  eq:      vi.fn((a, b) => ({ eq: [a, b] })),
+  and:     vi.fn((...args) => ({ and: args })),
+  or:      vi.fn((...args) => ({ or: args })),
+  ilike:   vi.fn((col, pat) => ({ ilike: [col, pat] })),
+  like:    vi.fn((col, pat) => ({ like: [col, pat] })),
+  isNull:  vi.fn((col) => ({ isNull: col })),
+  inArray: vi.fn((col, vals) => ({ inArray: [col, vals] })),
+  asc:     vi.fn((col) => ({ asc: col })),
+  desc:    vi.fn((col) => ({ desc: col })),
+  sql:     vi.fn((s) => s),
 }));
 
 import { db } from '../db/index.js';
@@ -175,6 +176,35 @@ describe('repo.getById', () => {
   it('throws 404-shaped error when customer not found', async () => {
     db.select.mockReturnValue(makeChain([]));
     await expect(repo.getById('no-such-uuid')).rejects.toMatchObject({ statusCode: 404 });
+  });
+});
+
+// ── findMany ──
+describe('repo.findMany', () => {
+  it('returns empty array for empty input', async () => {
+    const result = await repo.findMany([]);
+    expect(result).toEqual([]);
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it('returns slim wire objects (id, airtableId, Name, Nickname, Phone)', async () => {
+    const row = makeRow();
+    db.select.mockReturnValue(makeChain([row]));
+    const result = await repo.findMany(['uuid-cust-1']);
+    expect(result).toEqual([{
+      id:         'uuid-cust-1',
+      airtableId: 'recC1',
+      Name:       'Alice Kowalska',
+      Nickname:   'Ala',
+      Phone:      '+48 555 000 001',
+    }]);
+  });
+
+  it('returns null Nickname/Phone when absent', async () => {
+    db.select.mockReturnValue(makeChain([makeRow({ nickname: null, phone: null })]));
+    const [c] = await repo.findMany(['uuid-cust-1']);
+    expect(c.Nickname).toBeNull();
+    expect(c.Phone).toBeNull();
   });
 });
 

@@ -8,6 +8,7 @@
 
 import * as db from './airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
@@ -202,21 +203,10 @@ export async function processWixOrder(payload) {
     // damaging than the silent duplication we saw when phone/email miss.
     let customerId = null;
     if (customerPhone || customerEmail) {
-      const searchFilters = [];
-      if (customerPhone) {
-        const cleanPhone = sanitizeFormulaValue(customerPhone.replace(/\s/g, ''));
-        searchFilters.push(`SEARCH('${cleanPhone}', SUBSTITUTE({Phone}, ' ', ''))`);
-      }
-      if (customerEmail) {
-        searchFilters.push(`SEARCH(LOWER('${sanitizeFormulaValue(customerEmail)}'), LOWER({Email}))`);
-      }
-      const matches = await db.list(TABLES.CUSTOMERS, {
-        filterByFormula: `OR(${searchFilters.join(',')})`,
-        maxRecords: 1,
-      });
-      if (matches.length > 0) {
-        customerId = matches[0].id;
-        log('5-MATCH', `Found existing customer by phone/email: ${matches[0].Name || matches[0].id}`);
+      const match = await customerRepo.findByPhoneOrEmail(customerPhone, customerEmail);
+      if (match) {
+        customerId = match.id;
+        log('5-MATCH', `Found existing customer by phone/email: ${match.Name || match.id}`);
       }
     }
     // Pass 2: name fallback. Only run if we actually have a composed
@@ -224,28 +214,25 @@ export async function processWixOrder(payload) {
     // name, which could merge unrelated records.
     if (!customerId && firstName && lastName) {
       const fullName = `${firstName} ${lastName}`.trim();
-      const nameMatches = await db.list(TABLES.CUSTOMERS, {
-        filterByFormula: `LOWER({Name}) = LOWER('${sanitizeFormulaValue(fullName)}')`,
-        maxRecords: 1,
-      });
-      if (nameMatches.length > 0) {
-        customerId = nameMatches[0].id;
-        log('5-MATCH', `Found existing customer by name: ${nameMatches[0].Name || nameMatches[0].id}`);
+      const nameMatch = await customerRepo.findByExactName(fullName);
+      if (nameMatch) {
+        customerId = nameMatch.id;
+        log('5-MATCH', `Found existing customer by name: ${nameMatch.Name || nameMatch.id}`);
         // Patch email/phone onto the matched record if we have new data Wix
         // provided and the existing fields are empty — so the next order
         // matches on the stronger signal.
         const patch = {};
-        if (customerEmail && !nameMatches[0].Email) patch.Email = customerEmail;
-        if (customerPhone && !nameMatches[0].Phone) patch.Phone = customerPhone;
+        if (customerEmail && !nameMatch.Email) patch.Email = customerEmail;
+        if (customerPhone && !nameMatch.Phone) patch.Phone = customerPhone;
         if (Object.keys(patch).length > 0) {
-          db.update(TABLES.CUSTOMERS, customerId, patch).catch(err => {
+          customerRepo.update(customerId, patch).catch(err => {
             console.error('[WIX] Customer enrich failed:', err.message);
           });
         }
       }
     }
     if (!customerId) {
-      const newCustomer = await db.create(TABLES.CUSTOMERS, {
+      const newCustomer = await customerRepo.create({
         Name: customerName,
         Phone: customerPhone || '',
         Email: customerEmail || '',

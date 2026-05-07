@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
@@ -72,15 +73,13 @@ router.get('/', async (req, res, next) => {
         fields: ['Customer', 'Customer Request', 'Payment Status', 'Notes Translated', 'Greeting Card Text', 'App Order ID', 'Wix Product ID', 'Image URL'],
       });
       const customerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-      const customers = customerIds.length > 0
-        ? await db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${customerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname', 'Phone'],
-          })
-        : [];
+      const customers = await customerRepo.findMany(customerIds);
 
       const custMap = {};
-      for (const c of customers) custMap[c.id] = c;
+      for (const c of customers) {
+        custMap[c.id] = c;
+        if (c.airtableId) custMap[c.airtableId] = c;
+      }
       for (const o of orders) orderMap[o.id] = o;
 
       for (const d of deliveries) {

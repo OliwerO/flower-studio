@@ -7,6 +7,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import { parseRawText, parseFlowwowEmail, matchStockItems } from '../services/intake-parser.js';
 import { PAYMENT_STATUS } from '../constants/statuses.js';
 
@@ -56,18 +57,7 @@ router.post('/parse', async (req, res, next) => {
     for (const query of searchFields) {
       if (!query || query.length < 2) continue;
       try {
-        const q = sanitizeFormulaValue(query);
-        const matches = await db.list(TABLES.CUSTOMERS, {
-          filterByFormula: `OR(
-            SEARCH(LOWER('${q}'), LOWER({Name})),
-            SEARCH(LOWER('${q}'), LOWER({Nickname})),
-            SEARCH('${q}', {Phone}),
-            SEARCH(LOWER('${q}'), LOWER({Link})),
-            SEARCH(LOWER('${q}'), LOWER({Email}))
-          )`,
-          maxRecords: 3,
-          fields: ['Name', 'Nickname', 'Phone', 'Link', 'Email', 'Segment', 'Language'],
-        });
+        const matches = await customerRepo.list({ search: query, withAggregates: false });
         if (matches.length > 0) {
           suggestedMatch = {
             id: matches[0].id,
