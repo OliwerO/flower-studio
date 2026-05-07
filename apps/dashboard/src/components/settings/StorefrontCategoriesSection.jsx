@@ -13,6 +13,10 @@ export default function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
 
   const permanentList = (sc.permanent || []).map(p => typeof p === 'string' ? { name: p, slug: p.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, ''), description: '', translations: {} } : p);
   const autoList = (sc.auto || []).map(a => typeof a === 'string' ? { name: a, slug: a.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, ''), description: '', translations: {} } : a);
+  const slots = sc.slots || [
+    { id: 'slot1', wixSlug: 'seasonal',   autoSchedule: true,  manualOverride: null },
+    { id: 'slot2', wixSlug: 'seasonal-2', autoSchedule: false, manualOverride: null },
+  ];
 
   function startEdit(type, i) {
     const entry = type === 'seasonal' ? sc.seasonal[i]
@@ -173,13 +177,15 @@ export default function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
   }
 
   function renderCategoryRow(cat, type, i, extra) {
+    const isActive = extra?.activeSlot != null;
     return (
-      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm ${extra?.highlight ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'}`}>
+      <div key={i} className={`flex items-center gap-3 px-3 py-2 rounded-xl text-sm ${isActive ? 'bg-green-50 border border-green-200' : 'bg-gray-50 border border-gray-100'}`}>
         <span className="flex-1 font-medium text-gray-700">{cat.name}</span>
         {cat.description && <span className="text-xs text-gray-400 truncate max-w-[120px]" title={cat.description}>{cat.description}</span>}
         {extra?.dates && <span className="text-xs text-gray-400">{toDisplay(cat.from)} → {toDisplay(cat.to)}</span>}
         {cat.translations?.pl?.title && <span className="text-xs text-blue-500 font-medium">{t.sfTranslated}</span>}
-        {extra?.highlight && <span className="text-xs text-green-600 font-medium">{t.sfLive}</span>}
+        {extra?.activeSlot === 'slot1' && <span className="text-xs text-green-600 font-medium">{t.sfSlot1Active}</span>}
+        {extra?.activeSlot === 'slot2' && <span className="text-xs text-blue-600 font-medium">{t.sfSlot2Active}</span>}
         <button onClick={() => startEdit(type, i)} className="text-xs text-brand-600">{t.edit}</button>
         {type !== 'auto' && <button onClick={() => removeCategory(type, i)} className="text-xs text-red-400 hover:text-red-600">✕</button>}
       </div>
@@ -213,9 +219,11 @@ export default function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
         </div>
         <div className="space-y-1.5">
           {(sc.seasonal || []).map((s, i) => {
-            const isActive = sc.manualOverride === s.slug
-              || (sc.autoSchedule && !sc.manualOverride && mmdd >= s.from && mmdd <= s.to);
-            return renderCategoryRow(s, 'seasonal', i, { dates: true, highlight: isActive });
+            const isSlot1Active = slots[0]?.manualOverride === s.slug
+              || (slots[0]?.autoSchedule && !slots[0]?.manualOverride && mmdd >= s.from && mmdd <= s.to);
+            const isSlot2Active = slots[1]?.manualOverride === s.slug;
+            const activeSlot = isSlot1Active ? 'slot1' : isSlot2Active ? 'slot2' : null;
+            return renderCategoryRow(s, 'seasonal', i, { dates: true, activeSlot });
           })}
         </div>
         {editingType === 'seasonal' && renderEditForm()}
@@ -232,23 +240,49 @@ export default function StorefrontCategoriesSection({ config: cfg, onUpdate }) {
         {editingType === 'auto' && renderEditForm()}
       </div>
 
+      {/* Slot 1 — Primary */}
       <div className="flex items-center justify-between py-3 border-b border-gray-100">
         <div>
-          <span className="text-sm font-medium text-gray-700">{t.sfAutoSchedule}</span>
+          <span className="text-sm font-medium text-gray-700">{t.sfSlot1}</span>
           <p className="text-xs text-gray-400 mt-0.5">{t.sfAutoScheduleHint}</p>
         </div>
         <label className="relative inline-flex items-center cursor-pointer">
-          <input type="checkbox" checked={sc.autoSchedule !== false} onChange={e => onUpdate({ storefrontCategories: { ...sc, autoSchedule: e.target.checked } })} className="sr-only peer" />
+          <input
+            type="checkbox"
+            checked={slots[0]?.autoSchedule !== false}
+            onChange={e => onUpdate({ storefrontCategories: { ...sc, slots: slots.map((s, i) => i === 0 ? { ...s, autoSchedule: e.target.checked } : s) } })}
+            className="sr-only peer"
+          />
           <div className="w-9 h-5 bg-gray-200 peer-checked:bg-brand-600 rounded-full transition-colors after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full" />
         </label>
       </div>
 
-      <div className="flex items-center justify-between py-3">
+      <div className="flex items-center justify-between py-3 border-b border-gray-100">
         <div>
           <span className="text-sm font-medium text-gray-700">{t.sfManualOverride}</span>
           <p className="text-xs text-gray-400 mt-0.5">{t.sfManualOverrideHint}</p>
         </div>
-        <select value={sc.manualOverride || ''} onChange={e => onUpdate({ storefrontCategories: { ...sc, manualOverride: e.target.value || null } })} className="text-sm border border-gray-200 rounded-lg px-2 py-1">
+        <select
+          value={slots[0]?.manualOverride || ''}
+          onChange={e => onUpdate({ storefrontCategories: { ...sc, slots: slots.map((s, i) => i === 0 ? { ...s, manualOverride: e.target.value || null } : s) } })}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-1"
+        >
+          <option value="">{t.sfNone}</option>
+          {(sc.seasonal || []).map(s => <option key={s.slug} value={s.slug}>{s.name}</option>)}
+        </select>
+      </div>
+
+      {/* Slot 2 — Secondary */}
+      <div className="flex items-center justify-between py-3">
+        <div>
+          <span className="text-sm font-medium text-gray-700">{t.sfSlot2}</span>
+          <p className="text-xs text-gray-400 mt-0.5">{t.sfSlot2Hint}</p>
+        </div>
+        <select
+          value={slots[1]?.manualOverride || ''}
+          onChange={e => onUpdate({ storefrontCategories: { ...sc, slots: slots.map((s, i) => i === 1 ? { ...s, manualOverride: e.target.value || null } : s) } })}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-1"
+        >
           <option value="">{t.sfNone}</option>
           {(sc.seasonal || []).map(s => <option key={s.slug} value={s.slug}>{s.name}</option>)}
         </select>
