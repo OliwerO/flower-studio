@@ -9,7 +9,7 @@
 
 import { db } from '../db/index.js';
 import { customers, keyPeople, legacyOrders, orders } from '../db/schema.js';
-import { eq, and, or, ilike, like, isNull, inArray, asc, desc, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, like, isNull, isNotNull, inArray, asc, desc, sql } from 'drizzle-orm';
 
 // ── Field mapping: request body → PG column ──
 const PATCH_MAP = {
