@@ -92,7 +92,25 @@ export async function update(id, { quantity, reason, notes, date }) {
   if (date     != null) updates.date     = date;
   const [row] = await db.update(stockLossLog).set(updates).where(eq(stockLossLog.id, id)).returning();
   if (!row) throw Object.assign(new Error('Not found'), { status: 404 });
-  return toWire(row);
+  // Re-fetch with JOIN so enrichment fields (flowerName, supplier, etc.) are populated.
+  const [enriched] = await db
+    .select({
+      id:           stockLossLog.id,
+      date:         stockLossLog.date,
+      stockId:      stockLossLog.stockId,
+      quantity:     stockLossLog.quantity,
+      reason:       stockLossLog.reason,
+      notes:        stockLossLog.notes,
+      displayName:  stock.displayName,
+      purchaseName: stock.purchaseName,
+      supplier:     stock.supplier,
+      costPrice:    stock.currentCostPrice,
+      lastRestocked: stock.lastRestocked,
+    })
+    .from(stockLossLog)
+    .leftJoin(stock, eq(stockLossLog.stockId, stock.id))
+    .where(eq(stockLossLog.id, row.id));
+  return enriched ? toWire(enriched) : toWire(row);
 }
 
 export async function remove(id) {
