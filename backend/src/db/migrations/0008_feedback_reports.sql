@@ -6,3 +6,5 @@ CREATE TABLE IF NOT EXISTS feedback_reports (
   telegram_chat_id    TEXT,
   created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS feedback_reports_issue_number_idx ON feedback_reports (github_issue_number);

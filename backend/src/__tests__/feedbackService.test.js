@@ -24,6 +24,7 @@ global.fetch = vi.fn();
 process.env.GITHUB_TOKEN = 'test-token';
 
 import { startSession, publishSession, sessions } from '../services/feedbackService.js';
+import { db } from '../db/index.js';
 
 beforeEach(() => {
   sessions.clear();
@@ -79,6 +80,15 @@ describe('publishSession', () => {
 
     expect(result.issueUrl).toContain('github.com');
     expect(result.issueNumber).toBe(42);
+
+    // Assert DB insert was called with correct payload
+    const insertMock = db.insert.mock.results[0].value.values;
+    expect(insertMock).toHaveBeenCalledWith({
+      githubIssueNumber: 42,
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+      telegramChatId: null,
+    });
   });
 
   it('throws if sessionId is not found', async () => {

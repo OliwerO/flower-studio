@@ -68,6 +68,8 @@ router.post('/publish', upload.single('image'), async (req, res) => {
     const { sessionId } = req.body;
     if (!sessionId) return res.status(400).json({ error: 'sessionId is required' });
 
+    // Screenshot upload is wired up here for when Task 9 (Phase 5) adds githubUploadImage.
+    // In Phase 1–4, imageBuffer is passed to publishSession but image upload is a no-op.
     const imageBuffer = req.file ? req.file.buffer : null;
     const imageName   = req.file ? req.file.originalname : null;
     const result = await feedbackService.publishSession(sessionId, imageBuffer, imageName);

@@ -15,7 +15,7 @@ setInterval(() => {
   for (const [id, s] of sessions) {
     if (now - s.createdAt > SESSION_TTL_MS) sessions.delete(id);
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 function newSessionId() {
   return crypto.randomUUID();
@@ -34,7 +34,7 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
     messages: [{ role: 'user', content: text }],
     createdAt: Date.now(),
     done: true,
-    title: text.slice(0, 80),
+    title: text.replace(/\s+/g, ' ').trim().slice(0, 80),
     englishDescription: text,
     acceptanceCriteria: [],
     russianSummary: text,
@@ -42,6 +42,26 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
     type: 'bug',
   });
   return { sessionId, done: true };
+}
+
+/**
+ * Continue an existing session. Stub for Phase 1 — AI multi-turn added in Task 5.
+ * Returns { done: true } immediately since Phase 1 sessions are always complete.
+ */
+export async function continueSession(sessionId, message) {
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error('Session not found or expired');
+  return { done: true };
+}
+
+/**
+ * Return Russian summary for preview. Stub for Phase 1 — real preview added in Task 6.
+ */
+export async function previewSession(sessionId) {
+  const session = sessions.get(sessionId);
+  if (!session) throw new Error('Session not found or expired');
+  if (!session.done) throw new Error('Session not complete yet');
+  return { summary: session.russianSummary };
 }
 
 /**
@@ -62,7 +82,7 @@ export async function publishSession(sessionId, imageBuffer = null, imageFilenam
     githubIssueNumber: issueNumber,
     reporterRole:      session.reporterRole,
     reporterName:      session.reporterName,
-    telegramChatId:    session.telegramChatId || null,
+    telegramChatId:    null, // set by feedbackTelegramBot when session originates from Telegram (Task 11)
   });
 
   sessions.delete(sessionId);
@@ -92,7 +112,8 @@ None
 
 ---
 _Reported by ${session.reporterName} (${session.reporterRole})${session.appArea ? ` via ${session.appArea}` : ''}_
-_Original text: "${session.originalQuote}"_`;
+
+> ${session.originalQuote.replace(/\n/g, '\n> ')}`;
 }
 
 async function githubCreateIssue(title, body) {
