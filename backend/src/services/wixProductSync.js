@@ -11,7 +11,7 @@ import * as stockRepo from '../repos/stockRepo.js';
 import * as syncLogRepo from '../repos/syncLogRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { sendAlert, notifyWixSyncError } from './telegram.js';
-import { getActiveSeasonalCategory, getConfig, updateConfig } from './configService.js';
+import { getActiveSeasonalSlots, getActiveSeasonalCategory, getConfig, updateConfig } from './configService.js';
 
 // Concurrency for parallel Wix API calls inside runPush. Wix Stores REST
 // API tolerates ~600 req/min for paid sites; 8 in flight keeps us well
@@ -1013,40 +1013,48 @@ export async function runPush(onProgress = NO_PROGRESS) {
         });
       }
 
-      // Seasonal category
-      const seasonal = getActiveSeasonalCategory();
-      // Prefer a dedicated Wix collection matching the seasonal slug (e.g. 'mothers-day').
-      // Fall back to the generic 'seasonal' slot for categories without their own collection.
-      const seasonalWixId = catMap[seasonal?.slug] || catMap['seasonal'];
-      const seasonalUsesGenericSlot = seasonal && !catMap[seasonal.slug];
-      if (seasonal && seasonalWixId) {
-        const seasonalProductIds = [...new Set(
-          allConfigRows.filter(r => parseCategoryField(r['Category']).includes(seasonal.name))
-            .map(r => r['Wix Product ID']).filter(Boolean)
-        )];
+      // Seasonal slots — iterate over both configured slots independently.
+      // Each slot fills its Wix collection when active, or empties it when inactive.
+      const activeSlots = getActiveSeasonalSlots();
+      for (const { slot, category } of activeSlots) {
+        const wixId = catMap[category?.slug] || catMap[slot.wixSlug];
+        if (!wixId) {
+          log('item', `Слот ${slot.id} (${slot.wixSlug}): Wix-коллекция не настроена — пропуск`);
+          continue;
+        }
+        const slotProductIds = category
+          ? [...new Set(
+              allConfigRows.filter(r => parseCategoryField(r['Category']).includes(category.name))
+                .map(r => r['Wix Product ID']).filter(Boolean)
+            )]
+          : [];
         catTasks.push(async () => {
           try {
-            await setWixCategoryProducts(seasonalWixId, seasonalProductIds);
-            // Only rename the generic 'seasonal' slot — dedicated collections already have
-            // the correct name and Wix would reject a rename to a name that already exists.
-            const enTitle = seasonal.translations?.en?.title;
-            const enDesc = seasonal.translations?.en?.description;
-            if (seasonalUsesGenericSlot && (enTitle || enDesc)) {
-              await updateWixCategory(seasonalWixId, {
-                name: enTitle || seasonal.name,
-                description: enDesc || '',
-              });
+            await setWixCategoryProducts(wixId, slotProductIds);
+            if (category) {
+              // Only rename/retranslate when using the generic slot — dedicated
+              // slug collections (e.g. 'mothers-day') already have their correct name.
+              const usesGenericSlot = !catMap[category.slug];
+              if (usesGenericSlot) {
+                const enTitle = category.translations?.en?.title;
+                const enDesc  = category.translations?.en?.description;
+                if (enTitle || enDesc) {
+                  await updateWixCategory(wixId, { name: enTitle || category.name, description: enDesc || '' });
+                }
+                try {
+                  await pushCollectionTranslations(wixId, category.translations);
+                } catch (err) {
+                  stats.errors.push(`Slot ${slot.id} translations: ${err.message}`);
+                }
+              }
+              stats.categoriesSynced++;
+              log('item', `Слот ${slot.id} («${category.name}»): ${slotProductIds.length} товаров`);
+            } else {
+              log('item', `Слот ${slot.id}: нет активной категории → коллекция очищена`);
             }
-            try {
-              await pushCollectionTranslations(seasonalWixId, seasonal.translations);
-            } catch (err) {
-              stats.errors.push(`Seasonal translations: ${err.message}`);
-            }
-            stats.categoriesSynced++;
-            log('item', `Сезонные («${seasonal.name}»): ${seasonalProductIds.length} товаров`);
           } catch (err) {
-            stats.errors.push(`Seasonal: ${err.message}`);
-            log('item', `Ошибка сезонной категории: ${err.message}`, 'error');
+            stats.errors.push(`Slot ${slot.id}: ${err.message}`);
+            log('item', `Ошибка слота ${slot.id}: ${err.message}`, 'error');
           }
         });
       }
