@@ -9,6 +9,7 @@ import { runSync, runPull, runPush } from '../services/wixProductSync.js';
 import { startPushJob, getJob } from '../services/wixPushJob.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
+import * as syncLogRepo from '../repos/syncLogRepo.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
@@ -136,10 +137,7 @@ router.get('/', async (req, res, next) => {
 // ── GET /api/products/sync-log — recent sync history ──
 router.get('/sync-log', async (req, res, next) => {
   try {
-    const logs = await db.list(TABLES.SYNC_LOG, {
-      sort: [{ field: 'Timestamp', direction: 'desc' }],
-      maxRecords: 20,
-    });
+    const logs = await syncLogRepo.listRecent(20);
     res.json(logs);
   } catch (err) {
     next(err);

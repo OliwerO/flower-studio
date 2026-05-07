@@ -9,6 +9,7 @@
 import PQueue from 'p-queue';
 import * as db from './airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as syncLogRepo from '../repos/syncLogRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sendAlert, notifyWixSyncError } from './telegram.js';
 import { getActiveSeasonalCategory, getConfig, updateConfig } from '../routes/settings.js';
@@ -592,21 +593,24 @@ async function fetchWixData() {
   return { wixProducts, wixCategories, wixCategoryIdToName, mappedNames };
 }
 
-/** Write a sync log entry to Airtable + alert on failure. */
+/** Write a sync log entry to Postgres + alert on failure. */
 async function logSync(direction, stats) {
+  const errorMessage = stats.errors.join('\n') || '';
+  const hasErrors = stats.errors.length > 0;
+  const hasSuccess = stats.pricesSynced || stats.stockSynced || stats.new || stats.updated;
+  const status = hasErrors
+    ? (hasSuccess ? `partial (${direction})` : `failed (${direction})`)
+    : `success (${direction})`;
+
   try {
-    await db.create(TABLES.SYNC_LOG, {
-      'Timestamp': new Date().toISOString(),
-      'Status': stats.errors.length > 0
-        ? (stats.pricesSynced || stats.stockSynced || stats.new || stats.updated
-          ? `partial (${direction})` : `failed (${direction})`)
-        : `success (${direction})`,
-      'New Products': stats.new || 0,
-      'Updated': stats.updated || 0,
-      'Deactivated': stats.deactivated || 0,
-      'Price Syncs': stats.pricesSynced || 0,
-      'Stock Syncs': stats.stockSynced || 0,
-      'Error Message': stats.errors.join('\n') || '',
+    await syncLogRepo.logSync({
+      status,
+      newProducts:  stats.new || 0,
+      updated:      stats.updated || 0,
+      deactivated:  stats.deactivated || 0,
+      priceSyncs:   stats.pricesSynced || 0,
+      stockSyncs:   stats.stockSynced || 0,
+      errorMessage,
     });
   } catch (err) {
     console.error('[SYNC] Failed to write sync log:', err.message);
