@@ -1,10 +1,12 @@
 import { useState, useMemo } from 'react';
-import { renderStockName } from '@flower-studio/shared';
+import { renderStockName, parseBatchName, findAllMatchingVariety, BatchPickerModal } from '@flower-studio/shared';
 import t from '../translations.js';
 
 export default function BouquetEditor({ editing, saving, detail, isTerminal, isOwner, originalPrice, onSaveClick, doSave }) {
   const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
+  const [pickerModalVariety, setPickerModalVariety] = useState(null);
+  const [pickerModalMatches, setPickerModalMatches] = useState([]);
 
   const dateBatchPattern = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 
@@ -34,6 +36,23 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
       (s['Category'] || '').toLowerCase().includes(q)
     );
   }, [visibleStock, flowerSearch, showOutOfStock, editing.pendingPO]);
+
+  // Group by base variety name — one row per variety in the picker
+  const catalogVarieties = useMemo(() => {
+    const map = new Map();
+    for (const s of catalogItems) {
+      const { name: base } = parseBatchName(s['Display Name'] || '');
+      const key = base.toLowerCase();
+      if (!map.has(key)) {
+        map.set(key, { baseName: base, totalQty: 0, sell: Number(s['Current Sell Price']) || 0, poQty: 0, inCart: false });
+      }
+      const entry = map.get(key);
+      entry.totalQty += Number(s['Current Quantity']) || 0;
+      entry.poQty += editing.pendingPO?.[s.id]?.ordered || 0;
+      if (editing.editLines.find(l => l.stockItemId === s.id)) entry.inCart = true;
+    }
+    return [...map.values()];
+  }, [catalogItems, editing.pendingPO, editing.editLines]);
 
   function addFromCatalog(s) {
     const existing = editing.editLines.findIndex(l => l.stockItemId === s.id);
@@ -123,60 +142,55 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50 max-h-64 overflow-y-auto">
-              {/* Add unlisted flower option */}
-              {flowerSearch.length >= 2 && !catalogItems.some(s => (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()) && (
+              {/* Add unlisted flower option — only for truly new varieties */}
+              {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
+                const { name } = parseBatchName(s['Display Name'] || '');
+                return name.toLowerCase() === flowerSearch.trim().toLowerCase();
+              }) && (
                 <button
                   type="button"
                   onClick={() => {
-                    const existing = editing.stockItems.find(s => (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase());
-                    if (existing) {
-                      addFromCatalog(existing);
-                      setFlowerSearch('');
-                    } else {
-                      editing.addNewFlowerQuick(flowerSearch);
-                    }
+                    editing.addNewFlowerQuick(flowerSearch);
+                    setFlowerSearch('');
                   }}
                   className="w-full flex items-center px-3 py-2.5 gap-2 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
                 >
                   <span className="text-sm font-medium text-indigo-700">+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</span>
                 </button>
               )}
-              {catalogItems.length === 0 ? (
+              {catalogVarieties.length === 0 ? (
                 <p className="text-ios-tertiary text-sm text-center py-6">{t.noStockFound || 'No items found'}</p>
               ) : (
-                catalogItems.map(s => {
-                  const qty = Number(s['Current Quantity']) || 0;
-                  const sell = Number(s['Current Sell Price']) || 0;
-                  const inCart = editing.editLines.find(l => l.stockItemId === s.id);
-                  const low = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
-                  const out = qty <= 0;
-                  const poQty = editing.pendingPO?.[s.id]?.ordered || 0;
-                  const poDate = editing.pendingPO?.[s.id]?.plannedDate || null;
-                  const poDateLabel = poDate ? (() => { const d = new Date(poDate); return isNaN(d) ? null : `${d.getDate()}.${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][d.getMonth()]}.`; })() : null;
+                catalogVarieties.map(({ baseName, totalQty, sell, poQty, inCart }) => {
+                  const low = totalQty > 0 && totalQty <= 5;
+                  const out = totalQty <= 0;
                   return (
                     <button
-                      key={s.id}
+                      key={baseName}
                       type="button"
-                      onClick={() => addFromCatalog(s)}
+                      onClick={() => {
+                        const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
+                        setPickerModalVariety(baseName);
+                        setPickerModalMatches(allMatches);
+                      }}
                       className={`w-full flex items-center px-3 py-2.5 gap-2 text-left transition-colors active-scale
                                   ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
                     >
                       <div className="flex-1 min-w-0">
                         <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                          {renderStockName(s['Display Name'], qty > 0 ? s['Last Restocked'] : null)}
+                          {baseName}
                         </div>
                         <div className="text-xs text-ios-tertiary">
                           <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
-                          {isOwner && <span> · {Number(s['Current Cost Price'] || 0).toFixed(0)} zł {t.costPrice}</span>}
-                          <span> · {qty} pcs</span>
+                          <span> · {totalQty} pcs</span>
                           {low && !out && <span className="text-ios-orange"> · low</span>}
                           {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
-                          {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
+                          {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {t.onOrder || 'on order'}</span>}
                         </div>
                       </div>
                       {inCart && (
                         <span className="min-w-[22px] h-[22px] px-1 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">
-                          {inCart.quantity}
+                          ✓
                         </span>
                       )}
                     </button>
@@ -281,6 +295,39 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               </div>
             ) : null;
           })()}
+
+          {pickerModalVariety && (
+            <BatchPickerModal
+              baseName={pickerModalVariety}
+              matches={pickerModalMatches}
+              pendingPO={editing.pendingPO}
+              onSelectStock={s => {
+                const existing = editing.editLines.findIndex(l => l.stockItemId === s.id);
+                if (existing >= 0) {
+                  editing.incrementQty(existing);
+                } else {
+                  editing.addFlowerFromStock(s);
+                }
+                setPickerModalVariety(null);
+                setFlowerSearch('');
+              }}
+              onCreateDemand={() => {
+                editing.createDemandEntry(pickerModalVariety);
+                setPickerModalVariety(null);
+                setFlowerSearch('');
+              }}
+              onClose={() => setPickerModalVariety(null)}
+              t={{
+                batchPickerTitle:  t.batchPickerTitle,
+                demandEntry:       t.demandEntry,
+                demandEntryHint:   t.demandEntryHint,
+                demandEntryCreate: t.demandEntryCreate,
+                onOrder:           t.onOrder,
+                cancel:            t.cancel,
+                stems:             t.stems,
+              }}
+            />
+          )}
 
           <div className="flex gap-2 pt-1">
             <button onClick={() => {
