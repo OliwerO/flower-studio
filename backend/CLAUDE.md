@@ -111,3 +111,11 @@ Two flavours under `src/__tests__/`:
 Mock external deps (Airtable client, Telegram, Claude API). Never make real network calls in tests. Use `vi.useFakeTimers()` for time-dependent logic.
 
 The 24-section / 153-assertion API-level E2E suite lives at the repo root: `npm run harness` (boots `start-test-backend.js`) + `npm run test:e2e`. Playwright scaffold at `playwright.config.js` for future browser tests.
+
+## Skill Triggers
+
+See root CLAUDE.md "Skill Quick-Reference" for the full table. Backend-specific defaults:
+- **Bug or regression** → `diagnose` before proposing a fix (reproduce loop first)
+- **New service or route logic** → `tdd` / `superpowers:test-driven-development` (tests are mandatory here)
+- **Refactor or consolidation opportunity** → `improve-codebase-architecture`
+- **Shadow-window risk or schema change** → `grill-with-docs` to stress-test against migration ADRs before touching code

@@ -65,3 +65,9 @@ The owner uses this app on mobile for the same daily tasks she does on the dashb
 - **OrderCard vs OrderDetailPage**: OrderCard is the collapsed/expanded card in the list. OrderDetailPage is the full-page view. Both can edit orders — keep them in sync when adding features.
 - **Stock filtering**: dated batch items (e.g. "Rose (14.Mar.)") at qty=0 are hidden from bouquet pickers but visible in stock management. Check `Step2Bouquet.jsx` and `useOrderEditing.js`.
 - **Pickup→Delivery conversion**: creates a delivery record on-the-fly. After conversion, delivery fields (address, recipient, phone, fee) must be editable — they're blank and need filling.
+
+## Skill Triggers
+
+See root CLAUDE.md "Skill Quick-Reference" for the full table. Florist-specific defaults:
+- **Bug or unexpected UI behavior** → `diagnose` before proposing a fix
+- **New feature that touches OrderCard + OrderDetailPage** → note in brainstorming that dashboard `OrderDetailPanel.jsx` must receive the same change (cross-app parity rule)

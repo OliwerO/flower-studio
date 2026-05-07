@@ -46,3 +46,9 @@ The owner uses both apps — dashboard on desktop, florist app on mobile. **Ever
 
 ## Settings Sections (src/components/settings/)
 DeliveryZonesSection, DriverSettingsSection, MarketingSpendSection, RateEditors, StorefrontCategoriesSection, StockLossSection — each manages a specific config domain via `POST /settings`.
+
+## Skill Triggers
+
+See root CLAUDE.md "Skill Quick-Reference" for the full table. Dashboard-specific defaults:
+- **Bug or unexpected UI behavior** → `diagnose` before proposing a fix
+- **New feature that touches OrderDetailPanel, StockTab, or StockOrderPanel** → note in brainstorming that the parallel florist-app component must receive the same change (cross-app parity rule)

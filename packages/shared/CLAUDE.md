@@ -53,3 +53,9 @@ utils/
 
 ## Notable invariants
 - `getEffectiveStock(qty)` is the **only** correct way to compute available stock anywhere in the codebase (florist `StockItem.jsx`, dashboard `StockTab.jsx`). Never inline `qty - committed` — see root CLAUDE.md pitfall #7 for the painful history.
+
+## Skill Triggers
+
+See root CLAUDE.md "Skill Quick-Reference" for the full table. Shared-package defaults:
+- **New util or hook** → `tdd` / `superpowers:test-driven-development` (tests are mandatory, CI enforces 80% coverage)
+- **Refactor or dependency change** → `improve-codebase-architecture` first, then build all three apps locally before committing (`vite build` in florist, dashboard, delivery)

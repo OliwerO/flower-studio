@@ -128,18 +128,41 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 
 ## Default Workflow Skills (mandatory for non-trivial work)
 
+### Skill Quick-Reference
+
+When unsure which skill to invoke, consult this table. The right skill at the right moment eliminates rework — the reminder exists so you don't have to remember.
+
+| Situation | Skill | Notes |
+|-----------|-------|-------|
+| Stress-test design against domain model | `grill-with-docs` | Preferred entry — uses CONTEXT.md + docs/adr/ |
+| Stress-test design interactively (no domain docs) | `grill-me` | Socratic interview, one decision at a time |
+| Formalize design into a PRD | `to-prd` | Converts conversation context → GitHub Issue |
+| Break PRD/spec into tickets | `to-issues` | Tracer-bullet vertical slices |
+| Detailed implementation plan | `superpowers:writing-plans` | Produces `docs/superpowers/plans/` doc |
+| Full feature from idea to PR | `/feature` | Bundles the full chain below |
+| Implement a feature or bugfix (with tests) | `tdd` or `superpowers:test-driven-development` | Red-green-refactor |
+| Bug, test failure, unexpected behavior | `diagnose` | Reproduce → minimise → hypothesise → fix loop |
+| Refactor or improve architecture | `improve-codebase-architecture` | Finds shallow services + deep module opportunities |
+| Verify work before PR | `superpowers:verification-before-completion` | Evidence before assertions, always |
+| Branch cleanup | `/branches` | Prune gone branches |
+| Create or triage a GitHub issue | `triage` | Issue state machine |
+| New skill needed | `write-a-skill` | Proper structure + progressive disclosure |
+
 **Canonical entry point: `/feature`.** The `.claude/commands/feature.md` command bundles the chain below with the cost-discipline overrides from this file (Sonnet executors, batched reviews, tight subagent prompts, MVP-sized plans, TDD red-phase exemptions). Use `/feature <one-line description>` instead of invoking the skills one-by-one — the command exists specifically so future sessions don't re-derive the discipline. The manual chain below is documented for cases where `/feature` is overkill or where you need to deviate.
 
 **Branch hygiene gate.** The SessionStart hook at `.claude/hooks/branch-audit.sh` runs at every session start and surfaces local branches with `[gone]` upstream, finished worktrees, open PRs by the current user, and local branches >7d old without an upstream. If the hook flags issues, run `/branches` to clean up before starting new work — the May 2026 branch graveyard happened because new features were piled onto whatever branch was checked out instead of landing the prior work first. `/feature` enforces this gate at step 0; if you skip `/feature` for a quick fix, you can still hit it manually with `/branches`. The hook is read-only (never mutates); only `/branches` and `/feature` take destructive action, and only with the safety rails described in those commands.
 
 For any feature/bugfix that takes more than a one-line change, this is the default sequence. Future Claude sessions in this repo should follow it without being asked:
 
-1. **`superpowers:brainstorming`** — explore intent + design BEFORE writing code. Invoked before any plan-mode entry. Skip only if the user has already locked in scope.
+0. **`grill-with-docs`** (preferred when CONTEXT.md/ADRs in scope) or **`grill-me`** — stress-test the design against this project's domain language and prior architectural decisions BEFORE writing a spec. Skippable only if scope is already locked by the user.
+1. **`superpowers:brainstorming`** — explore intent + design BEFORE writing code. Invoked before any plan-mode entry. Skip only if the user has already locked in scope. For larger features, follow with **`to-prd`** to formalize requirements into a PRD, then **`to-issues`** to break them into tracer-bullet GitHub issues.
 2. **`superpowers:writing-plans`** — produce a phased implementation plan saved under `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`. Plans use bite-sized checkbox steps with exact code + commands, no placeholders.
 3. **`superpowers:using-git-worktrees`** — create an isolated worktree under `.worktrees/<feature>/` so the session has its own checkout, branch, and index. **Never share the main repo's working tree across two Claude sessions** — the cross-session git collisions of 2026-05-02 (stray commits, branch flips mid-task, mangled commit messages) were caused by this. Main repo (top-level checkout) stays on `master` for general operations only.
 4. **`superpowers:subagent-driven-development`** — execute plan tasks via fresh subagents with two-stage review between tasks. Keeps the main context clean and parallelises independent work.
-5. **`superpowers:test-driven-development`** — write the failing test first, then the minimal implementation. Required for backend services + shared utils per the Testing Rules section above.
+5. **`tdd`** or **`superpowers:test-driven-development`** — write the failing test first, then the minimal implementation. Required for backend services + shared utils per the Testing Rules section above.
 6. **`superpowers:verification-before-completion`** — run the actual verification commands (tests, builds, smoke tests) and confirm their output BEFORE claiming the work is done. Evidence beats assertion. Especially load-bearing for prod cutovers and integration changes (also see "Verification Gate" below).
+
+**Bug workflow:** When a bug, test failure, or unexpected behavior appears — invoke **`diagnose`** FIRST. Do not propose hypotheses or fixes before completing the reproduce → minimise → instrument loop. This applies even when the cause looks obvious.
 
 Skip the chain only for: typo fixes, one-line bugfixes obvious from a stack trace, dependency bumps, or doc-only PRs.
 
