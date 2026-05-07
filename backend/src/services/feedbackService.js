@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import Anthropic from '@anthropic-ai/sdk';
 import { db } from '../db/index.js';
 import { feedbackReports } from '../db/schema.js';
@@ -182,7 +183,7 @@ export async function publishSession(sessionId, imageBuffer = null, imageFilenam
     githubIssueNumber: issueNumber,
     reporterRole:      session.reporterRole,
     reporterName:      session.reporterName,
-    telegramChatId:    null, // set by feedbackTelegramBot when session originates from Telegram (Task 11)
+    telegramChatId:    session.telegramChatId ?? null,
   });
 
   sessions.delete(sessionId);
