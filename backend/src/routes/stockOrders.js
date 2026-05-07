@@ -10,6 +10,7 @@ import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
+import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -551,18 +552,10 @@ router.post('/:id/approve-review', authorize('stock-orders', ['owner']), async (
 // Idempotency helper — returns true if a STOCK_PURCHASES row already exists
 // for this PO + line + variant (primary/alt). Used on retry after a partial
 // failure, so a second receiveIntoStock does NOT double-credit the batch.
-//
-// We identify each receive step by a stable marker embedded in the Notes field.
-// That avoids adding a new Airtable schema column and works with the existing
-// purchase history.
 async function purchaseAlreadyRecorded(poId, lineId, variant) {
-  if (!TABLES.STOCK_PURCHASES) return false;
   const marker = `PO #${poId} L#${lineId} ${variant}`;
-  // Airtable FIND() returns 0 when not found, which is falsy.
-  const formula = `FIND("${marker}", {Notes} & "") > 0`;
   try {
-    const rows = await db.list(TABLES.STOCK_PURCHASES, { filterByFormula: formula, maxRecords: 1 });
-    return rows.length > 0;
+    return await stockPurchasesRepo.noteMarkerExists(marker);
   } catch (e) {
     console.error('[STOCK-ORDER] Idempotency check failed:', e.message);
     return false; // fail-open — better to risk a warning than block a retry
@@ -706,16 +699,10 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
     // from lines already processed in the first attempt so all stock entries
     // for this PO share the same receive date (the day flowers actually arrived).
     let evalDate = new Date().toISOString().split('T')[0];
-    if (po.Status === PO_STATUS.EVAL_ERROR && TABLES.STOCK_PURCHASES) {
-      const marker = `PO #${req.params.id}`;
+    if (po.Status === PO_STATUS.EVAL_ERROR) {
       try {
-        const prev = await db.list(TABLES.STOCK_PURCHASES, {
-          filterByFormula: `FIND("${marker}", {Notes} & "") > 0`,
-          maxRecords: 1,
-        });
-        if (prev.length > 0 && prev[0]['Purchase Date']) {
-          evalDate = prev[0]['Purchase Date'];
-        }
+        const prevDate = await stockPurchasesRepo.findDateByPoMarker(req.params.id);
+        if (prevDate) evalDate = prevDate;
       } catch { /* fall back to today */ }
     }
     const lineResults = []; // track per-line outcome for partial failure recovery
@@ -797,16 +784,16 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           if (!already) {
             const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate);
 
-            // Audit trail — marker must match purchaseAlreadyRecorded() exactly.
-            // Flower link is skipped when finalItemId is a PG UUID (STOCK_PURCHASES
-            // is still Airtable-only until Phase 6, which rejects non-recXXX linked values).
-            await db.create(TABLES.STOCK_PURCHASES, {
-              'Purchase Date': evalDate,
-              Supplier: supplier,
-              ...(finalItemId.startsWith('rec') ? { Flower: [finalItemId] } : {}),
-              'Quantity Purchased': accepted,
-              'Price Per Unit': costPrice,
-              Notes: `PO #${req.params.id} L#${evalLine.lineId} primary`,
+            // Marker must match purchaseAlreadyRecorded() exactly.
+            const batchItem = await stockRepo.getById(finalItemId).catch(() => null);
+            await stockPurchasesRepo.create({
+              purchaseDate:      evalDate,
+              supplier,
+              stockId:           batchItem?._pgId || null,
+              stockAirtableId:   finalItemId.startsWith('rec') ? finalItemId : null,
+              quantityPurchased: accepted,
+              pricePerUnit:      costPrice,
+              notes:             `PO #${req.params.id} L#${evalLine.lineId} primary`,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping primary receive for line ${evalLine.lineId} — already recorded`);
@@ -849,13 +836,15 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
             );
             substituteStockId = altFinalId; // may be a new batch id
 
-            await db.create(TABLES.STOCK_PURCHASES, {
-              'Purchase Date': evalDate,
-              Supplier: altSupplier,
-              ...(altFinalId.startsWith('rec') ? { Flower: [altFinalId] } : {}),
-              'Quantity Purchased': altAccepted,
-              'Price Per Unit': altCostPerStem,
-              Notes: `PO #${req.params.id} L#${evalLine.lineId} alt - substitute for "${normaliseFlowerName(line['Flower Name'])}"`,
+            const altBatchItem = await stockRepo.getById(altFinalId).catch(() => null);
+            await stockPurchasesRepo.create({
+              purchaseDate:      evalDate,
+              supplier:          altSupplier,
+              stockId:           altBatchItem?._pgId || null,
+              stockAirtableId:   altFinalId.startsWith('rec') ? altFinalId : null,
+              quantityPurchased: altAccepted,
+              pricePerUnit:      altCostPerStem,
+              notes:             `PO #${req.params.id} L#${evalLine.lineId} alt - substitute for "${normaliseFlowerName(line['Flower Name'])}"`,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping alt receive for line ${evalLine.lineId} — already recorded`);

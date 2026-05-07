@@ -26,7 +26,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | stock.js | GET/POST/PATCH /stock, GET /stock/velocity | Inventory + velocity forecasting. Delegates to stockRepo when STOCK_BACKEND ≠ airtable. |
 | deliveries.js | GET/PATCH /deliveries | Driver assignments + status cascade to orders |
 | stockOrders.js | Full CRUD /stock-orders | PO lifecycle: create, send, shop, review, evaluate |
-| stockPurchases.js | POST /stock-purchases | Record supplier deliveries with batch tracking |
+| stockPurchases.js | POST /stock-purchases | Record supplier deliveries with batch tracking. Routes STOCK reads/writes through stockRepo; purchase records through stockPurchasesRepo. |
 | stockLoss.js | GET/POST /stock-loss | Waste logging by reason |
 | premadeBouquets.js | CRUD /premade-bouquets | Premade bouquet templates (composed of stock items) |
 | dashboard.js | GET /dashboard | Today's operational summary for owner |
@@ -79,7 +79,7 @@ Key paths:
 - `db/migrations/` — `.sql` files applied lexicographically. Used by Drizzle on real PG and by pglite at boot in tests.
 - `db/audit.js` — append-only audit log (`audit_log`); writes are tagged via the actor-context async-hook (`actor.js`) so every change carries who/role/req-id.
 - `db/index.js` — Postgres + pglite boot. Pglite refuses to boot in `NODE_ENV=production`.
-- `repos/orderRepo.js`, `repos/stockRepo.js`, `repos/customerRepo.js`, `repos/productRepo.js` — read/write through the chosen backend. Each repo's three modes share an interface; routes/services call the repo and don't branch on the env flag themselves. `productRepo` (`getImage`, `setImage`, `removeImage`, `getImagesBatch`) caches Wix bouquet image URLs in Airtable today (Product Config table) and is shaped to switch to Postgres in Phase 6 with no caller changes; `getImagesBatch` chunks `OR()` lookups at 100 IDs to stay within Airtable formula limits.
+- `repos/orderRepo.js`, `repos/stockRepo.js`, `repos/customerRepo.js`, `repos/productRepo.js` — read/write through the chosen backend. `repos/stockPurchasesRepo.js` — purchase record CRUD (always Postgres; `noteMarkerExists` + `findDateByPoMarker` used by PO evaluation idempotency). Each repo's three modes share an interface; routes/services call the repo and don't branch on the env flag themselves. `productRepo` (`getImage`, `setImage`, `removeImage`, `getImagesBatch`) caches Wix bouquet image URLs in Airtable today (Product Config table) and is shaped to switch to Postgres in Phase 6 with no caller changes; `getImagesBatch` chunks `OR()` lookups at 100 IDs to stay within Airtable formula limits.
 - `db/README.md` — design notes for the migration, including the Phase 4 parity-check stub at `orderRepo.js:1100-1111` (full impl pending — required before flipping `ORDER_BACKEND=shadow` to `postgres`).
 
 ## Auth Model
@@ -98,6 +98,8 @@ Key paths:
 
 ## Airtable Tables (16 tables, env-var-driven)
 CUSTOMERS, ORDERS, ORDER_LINES, STOCK, DELIVERIES, STOCK_PURCHASES, STOCK_ORDERS, STOCK_ORDER_LINES, PRODUCT_CONFIG, SYNC_LOG, APP_CONFIG, FLORIST_HOURS, WEBHOOK_LOG, MARKETING_SPEND, STOCK_LOSS_LOG, LEGACY_ORDERS
+
+Note: STOCK_PURCHASES writes now go to Postgres via `stockPurchasesRepo`. The Airtable env var is kept for reads in `stock.js` (usage trace), `analytics.js`, and `stockOrders.js` (PO marker lookup fallback) until those are migrated (GH #227–229).
 
 ## Tests
 Run all: `cd backend && npx vitest run`
