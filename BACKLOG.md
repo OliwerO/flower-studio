@@ -11,6 +11,7 @@ If a future Claude session is opening this repo cold, here's the live state and 
 **Migration cutover state:**
 - Phase 3 (Stock) **CUT OVER 2026-05-02**. `STOCK_BACKEND=postgres` live on prod. Airtable Stock = frozen legacy snapshot.
 - Phase 4 (Orders) **CUT OVER 2026-05-02**. `ORDER_BACKEND=postgres` live on prod. Airtable Orders / Order Lines / Deliveries = frozen legacy snapshots. Order shadow window was skipped — backfill + harness Wix replay + spot-check served as the verification gate (see `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`).
+- Phase 6 (Config + log tables) **CUT OVER 2026-05-07**. app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config now on Postgres. Remaining Airtable tables: DELIVERIES, STOCK_PURCHASES, STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES, LEGACY_ORDERS (legacy snapshots).
 
 **Health check after cutover** (~30 sec):
 ```bash
@@ -30,7 +31,7 @@ Reports row counts in PG + audit activity. parity_log is no longer fed (shadow m
 6. **Order parity dashboard UI in AdminTab** — backend stub already exists; full `orderRepo.runParityCheck` impl + AdminTab order-side rendering. Best after ORDER_BACKEND=shadow generates real data.
 7. **`scripts/simulate-orders.js`** — owner-runnable day-in-the-life. Integration tests already cover the same scenarios; this is convenience.
 8. **Phase 5 prep — Customers** (after Phase 4 cutover proves stable) — design doc, schema (with FK to existing customer_id text columns), customerRepo skeleton, dedup tooling for Universe A (legacy) + B (app).
-9. **Phase 6 — Config + log tables** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only; no shadow needed.
+9. ~~**Phase 6 — Config + log tables**~~ — DONE 2026-05-07. App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config migrated to Postgres. Direct cutover, no shadow window. Backfill: `backend/scripts/backfill-phase6.js`.
 10. **Phase 7 — Retire Airtable** — delete services/airtable.js, services/airtableSchema.js, config/airtable.js. Cancel subscription. Final snapshot.
 
 **Standing investigations (have shadow data now to debug with):**
@@ -335,6 +336,7 @@ reports). Each item below was re-validated against the current code on
   - [ ] Order parity dashboard UI in AdminTab + full `orderRepo.runParityCheck` impl (now a historical PG vs frozen-Airtable comparison — lower priority).
   - [ ] `scripts/simulate-orders.js` — owner-runnable day-in-the-life walkthrough.
 - [x] **Phase 5 — Customer domain migrated to Postgres** (2026-05-06) — `customers`, `key_people`, `legacy_orders` tables, `customerRepo.js` rewrite, 1110 customers + 1524 legacy orders backfilled, `orders.customer_id` converted from recXXX to UUID. Direct cutover, no shadow window.
+- [x] **Phase 6 — Config + log tables migrated to Postgres** (2026-05-07) — app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config. Direct cutover, no shadow window. Backfill script: `backend/scripts/backfill-phase6.js`. Key fix: null Quantity from PG treated as "untracked" (not 0) in Wix push path.
 - [ ] **Phase 6 — Config + misc** — App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config. Mostly write-only log tables — no shadow needed, just stop writing to Airtable on a date.
 - [ ] **Phase 7 — Retire** — delete `services/airtable.js`, `services/airtableSchema.js`, `config/airtable.js`. Cancel Airtable subscription. Final snapshot.
 
