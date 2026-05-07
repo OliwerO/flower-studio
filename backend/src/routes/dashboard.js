@@ -1,10 +1,8 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
-import { TABLES } from '../config/airtable.js';
 import { db as pgDb } from '../db/index.js';
 import { orderLines as orderLinesTable, orders as ordersTable } from '../db/schema.js';
 import { and, or, eq, isNull, inArray, gte, lte, asc } from 'drizzle-orm';
@@ -217,102 +215,91 @@ router.get('/', async (req, res, next) => {
 
     // Include deferred order lines as additional demand in "Flowers Needed".
     // Deferred lines have Stock Deferred = true — they signal "need to buy" without deducting stock.
-    const deferredLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: `AND({Stock Deferred} = TRUE())`,
-      fields: ['Stock Item', 'Flower Name', 'Quantity', 'Order'],
-      maxRecords: 500,
-    }).catch(() => []);
+    const rawDeferredLines = await pgDb.select().from(orderLinesTable)
+      .where(and(eq(orderLinesTable.stockDeferred, true), isNull(orderLinesTable.deletedAt)));
 
     // Aggregate deferred demand by stock item: stockId → { name, qty, neededBy }
     const deferredDemand = {};
-    if (deferredLines.length > 0) {
-      // Fetch parent orders to get Required By dates and exclude cancelled orders
-      const deferredOrderIds = [...new Set(deferredLines.flatMap(l => l.Order || []))];
+    if (rawDeferredLines.length > 0) {
+      const deferredOrderIds = [...new Set(rawDeferredLines.map(l => l.orderId).filter(Boolean))];
       const deferredOrders = deferredOrderIds.length > 0
-        ? await db.list(TABLES.ORDERS, {
-            filterByFormula: `AND(OR(${deferredOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-            fields: ['Required By'],
-          }).catch(() => [])
+        ? await orderRepo.list({ pg: { excludeStatuses: [ORDER_STATUS.CANCELLED] } })
+            .then(rows => rows.filter(o => deferredOrderIds.includes(o._pgId || o.id)))
         : [];
-      const deferredOrderMap = {};
-      for (const o of deferredOrders) deferredOrderMap[o.id] = o;
 
-      for (const line of deferredLines) {
-        const stockId = line['Stock Item']?.[0];
+      const deferredOrderMap = {};
+      for (const o of deferredOrders) {
+        if (o._pgId) deferredOrderMap[o._pgId] = o;
+        deferredOrderMap[o.id] = o;
+      }
+
+      for (const line of rawDeferredLines) {
+        const stockId = line.stockItemId;
         if (!stockId) continue;
-        const orderId = line.Order?.[0];
-        const parentOrder = deferredOrderMap[orderId];
-        if (!parentOrder) continue; // order cancelled or not found
+        const parentOrder = deferredOrderMap[line.orderId];
+        if (!parentOrder) continue;
         const reqBy = parentOrder['Required By'] || null;
 
         if (!deferredDemand[stockId]) {
-          deferredDemand[stockId] = { name: line['Flower Name'] || '?', qty: 0, neededBy: null };
+          deferredDemand[stockId] = { name: line.flowerName || '?', qty: 0, neededBy: null };
         }
-        deferredDemand[stockId].qty += Number(line.Quantity || 0);
+        deferredDemand[stockId].qty += Number(line.quantity || 0);
         if (reqBy && (!deferredDemand[stockId].neededBy || reqBy < deferredDemand[stockId].neededBy)) {
           deferredDemand[stockId].neededBy = reqBy;
         }
       }
     }
 
-    // Compute needed-by dates for negative stock items
-    // For each negative item, find linked order lines → parent order → earliest Required By date
+    // Compute needed-by dates for negative stock items via PG order_lines
     let negativeStock = [];
     if (negativeStockItems.length > 0) {
-      // Collect all order line IDs from negative stock items
-      const negLineIds = negativeStockItems.flatMap(s => s['Order Lines'] || []);
-      const negLines = negLineIds.length > 0
-        ? await db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${negLineIds.slice(0, 100).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order'],
-            maxRecords: 200,
-          }).catch(() => [])
+      const negPgIds = negativeStockItems.map(s => s._pgId).filter(Boolean);
+
+      const negLines = negPgIds.length > 0
+        ? await pgDb.select({
+            orderId:     orderLinesTable.orderId,
+            stockItemId: orderLinesTable.stockItemId,
+          }).from(orderLinesTable)
+            .where(and(inArray(orderLinesTable.stockItemId, negPgIds), isNull(orderLinesTable.deletedAt)))
         : [];
 
-      // Get unique parent order IDs
-      const parentOrderIds = [...new Set(negLines.flatMap(l => l.Order || []))];
-      const parentOrders = parentOrderIds.length > 0
-        ? await db.list(TABLES.ORDERS, {
-            filterByFormula: `AND(OR(${parentOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-            fields: ['Required By', 'Order Lines'],
-          }).catch(() => [])
+      const negOrderIds = [...new Set(negLines.map(l => l.orderId).filter(Boolean))];
+      const negOrders = negOrderIds.length > 0
+        ? await orderRepo.list({ pg: { excludeStatuses: [ORDER_STATUS.CANCELLED] } })
+            .then(rows => rows.filter(o => negOrderIds.includes(o._pgId || o.id)))
         : [];
+      const negOrderMap = {};
+      for (const o of negOrders) {
+        if (o._pgId) negOrderMap[o._pgId] = o;
+        negOrderMap[o.id] = o;
+      }
 
-      // Build map: stockId → earliest neededBy
       const neededByMap = {};
-      for (const order of parentOrders) {
-        const reqBy = order['Required By'];
-        if (!reqBy) continue;
-        const orderLineIds = new Set(order['Order Lines'] || []);
-        for (const si of negativeStockItems) {
-          const siLineIds = si['Order Lines'] || [];
-          if (siLineIds.some(lid => orderLineIds.has(lid))) {
-            if (!neededByMap[si.id] || reqBy < neededByMap[si.id]) {
-              neededByMap[si.id] = reqBy;
-            }
-          }
+      for (const nl of negLines) {
+        const order = negOrderMap[nl.orderId];
+        if (!order?.['Required By']) continue;
+        if (!neededByMap[nl.stockItemId] || order['Required By'] < neededByMap[nl.stockItemId]) {
+          neededByMap[nl.stockItemId] = order['Required By'];
         }
       }
 
-      // Group negative stock by Purchase Name (flower type) so batches merge into one demand line.
-      // Like aggregating material demand across warehouse bins in MRP.
       const groupMap = new Map();
       for (const s of negativeStockItems) {
         const groupKey = s['Purchase Name'] || s['Display Name'];
         if (!groupMap.has(groupKey)) {
           groupMap.set(groupKey, {
-            id: s.id,          // primary batch ID (for PO linking)
-            batchIds: [],      // all batch IDs in this group
-            name: groupKey,    // clean flower type name (no date suffix)
+            id: s.id,
+            batchIds: [],
+            name: groupKey,
             qty: 0,
             neededBy: null,
             supplier: s.Supplier || null,
           });
         }
         const group = groupMap.get(groupKey);
-        group.qty += s['Current Quantity'];
+        group.qty += Number(s['Current Quantity'] || 0);
         group.batchIds.push(s.id);
-        const nb = neededByMap[s.id];
+        const nb = neededByMap[s._pgId];
         if (nb && (!group.neededBy || nb < group.neededBy)) group.neededBy = nb;
         if (!group.supplier && s.Supplier) group.supplier = s.Supplier;
       }
