@@ -5,6 +5,8 @@
 import * as appConfigRepo from '../repos/appConfigRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { sendAlert } from './telegram.js';
+import { db } from '../db/index.js';
+import { recordAudit } from '../db/audit.js';
 
 // ── Default configuration values ────────────────────────────
 // Used as fallback if config row doesn't exist yet or is empty.
@@ -195,9 +197,20 @@ function migrateFloristRates() {
   }
 }
 
-async function saveConfig() {
+async function saveConfig(before) {
   try {
     await appConfigRepo.set('config', config);
+    if (before) {
+      await recordAudit(db, {
+        entityType: 'app_config',
+        entityId:   'config',
+        action:     'update',
+        before:     { storefrontCategories: before.storefrontCategories },
+        after:      { storefrontCategories: config.storefrontCategories },
+        actorRole:  'system',
+        actorPinLabel: null,
+      }).catch(() => {});
+    }
   } catch (err) {
     console.error('[SETTINGS] Failed to save config to Postgres:', err.message);
   }
@@ -312,11 +325,12 @@ export function updateConfig(key, value) {
 }
 
 export function updateConfigBulk(updates) {
+  const before = JSON.parse(JSON.stringify(config));
   const allowed = Object.keys(config);
   for (const key of Object.keys(updates)) {
     if (allowed.includes(key)) config[key] = updates[key];
   }
-  saveConfig().catch(err => console.error('[SETTINGS] Background save failed:', err.message));
+  saveConfig(before).catch(err => console.error('[SETTINGS] Background save failed:', err.message));
 }
 
 export async function generateOrderId() {
