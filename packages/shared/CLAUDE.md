@@ -26,6 +26,7 @@ components/
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
   BouquetImageView.jsx        → Read-only thumbnail with tap-to-zoom fullscreen modal for the driver delivery card
+  FeedbackModal.jsx           → AI-assisted bug/feature report modal. Drives /feedback/start → /feedback/continue → /feedback/preview → /feedback/publish conversation. Props: t, apiClient, reporterRole, reporterName, appArea, onClose. Uses inline SVG icons (no lucide-react dep).
 hooks/
   useOrderEditing.js          → Shared bouquet editing logic (stock filtering, line management)
   useOrderPatching.js         → Shared order/delivery PATCH helpers (patchOrder, patchDelivery)
