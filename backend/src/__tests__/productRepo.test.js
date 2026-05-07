@@ -1,53 +1,49 @@
+// productRepo.test.js — Phase 6: productRepo is now a thin delegation layer
+// on top of productConfigRepo. These tests verify that the delegation is wired
+// correctly (the right method is called with the right args) without needing
+// a live Postgres instance.
+
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-vi.mock('../services/airtable.js', () => ({
-  list:   vi.fn(),
-  update: vi.fn(),
-}));
-vi.mock('../config/airtable.js', () => ({
-  TABLES: { PRODUCT_CONFIG: 'tblProductConfig' },
+vi.mock('../repos/productConfigRepo.js', () => ({
+  setImage:       vi.fn(),
+  getImage:       vi.fn(),
+  getImagesBatch: vi.fn(),
 }));
 
-const airtable = await import('../services/airtable.js');
+const productConfigRepo = await import('../repos/productConfigRepo.js');
 
 describe('productRepo.setImage', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('updates Image URL on every Product Config row matching the Wix Product ID', async () => {
-    airtable.list.mockResolvedValue([
-      { id: 'rec1', 'Wix Product ID': 'prod-1', 'Wix Variant ID': 'v1' },
-      { id: 'rec2', 'Wix Product ID': 'prod-1', 'Wix Variant ID': 'v2' },
-    ]);
-    airtable.update.mockResolvedValue({});
+  it('delegates to productConfigRepo.setImage and returns result', async () => {
+    productConfigRepo.setImage.mockResolvedValue({ updatedCount: 2 });
     const { setImage } = await import('../repos/productRepo.js');
     const out = await setImage('prod-1', 'https://x/img.jpg');
+    expect(productConfigRepo.setImage).toHaveBeenCalledWith('prod-1', 'https://x/img.jpg');
     expect(out).toEqual({ updatedCount: 2 });
-    expect(airtable.update).toHaveBeenCalledWith('tblProductConfig', 'rec1', { 'Image URL': 'https://x/img.jpg' });
-    expect(airtable.update).toHaveBeenCalledWith('tblProductConfig', 'rec2', { 'Image URL': 'https://x/img.jpg' });
   });
 
   it('returns updatedCount=0 when no rows match', async () => {
-    airtable.list.mockResolvedValue([]);
+    productConfigRepo.setImage.mockResolvedValue({ updatedCount: 0 });
     const { setImage } = await import('../repos/productRepo.js');
     const out = await setImage('missing', 'u');
     expect(out).toEqual({ updatedCount: 0 });
-    expect(airtable.update).not.toHaveBeenCalled();
   });
 });
 
 describe('productRepo.getImage', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('returns Image URL from the first matching variant row', async () => {
-    airtable.list.mockResolvedValue([
-      { id: 'rec1', 'Wix Product ID': 'prod-1', 'Image URL': 'https://x/a.jpg' },
-    ]);
+  it('delegates to productConfigRepo.getImage and returns URL', async () => {
+    productConfigRepo.getImage.mockResolvedValue('https://x/a.jpg');
     const { getImage } = await import('../repos/productRepo.js');
     expect(await getImage('prod-1')).toBe('https://x/a.jpg');
+    expect(productConfigRepo.getImage).toHaveBeenCalledWith('prod-1');
   });
 
-  it('returns empty string when no rows or no Image URL', async () => {
-    airtable.list.mockResolvedValue([]);
+  it('returns empty string when productConfigRepo returns empty string', async () => {
+    productConfigRepo.getImage.mockResolvedValue('');
     const { getImage } = await import('../repos/productRepo.js');
     expect(await getImage('p')).toBe('');
   });
@@ -56,38 +52,21 @@ describe('productRepo.getImage', () => {
 describe('productRepo.getImagesBatch', () => {
   beforeEach(() => { vi.clearAllMocks(); });
 
-  it('returns Map<wixProductId, imageUrl> for all matching variants', async () => {
-    airtable.list.mockResolvedValue([
-      { id: 'r1', 'Wix Product ID': 'p1', 'Image URL': 'u1' },
-      { id: 'r2', 'Wix Product ID': 'p1', 'Image URL': 'u1' },
-      { id: 'r3', 'Wix Product ID': 'p2', 'Image URL': 'u2' },
-    ]);
+  it('delegates to productConfigRepo.getImagesBatch and returns Map', async () => {
+    const m = new Map([['p1', 'u1'], ['p2', 'u2']]);
+    productConfigRepo.getImagesBatch.mockResolvedValue(m);
     const { getImagesBatch } = await import('../repos/productRepo.js');
     const out = await getImagesBatch(['p1', 'p2', 'p3']);
+    expect(productConfigRepo.getImagesBatch).toHaveBeenCalledWith(['p1', 'p2', 'p3']);
     expect(out.get('p1')).toBe('u1');
     expect(out.get('p2')).toBe('u2');
     expect(out.has('p3')).toBe(false);
   });
 
-  it('returns empty Map when productIds empty', async () => {
+  it('returns empty Map when ids are empty', async () => {
+    productConfigRepo.getImagesBatch.mockResolvedValue(new Map());
     const { getImagesBatch } = await import('../repos/productRepo.js');
     const out = await getImagesBatch([]);
     expect(out.size).toBe(0);
-    expect(airtable.list).not.toHaveBeenCalled();
-  });
-
-  it('chunks OR clauses to stay under Airtable formula length limit', async () => {
-    // 250 IDs → expect 3 list calls (100 + 100 + 50)
-    const ids = Array.from({ length: 250 }, (_, i) => `p${i}`);
-    airtable.list
-      .mockResolvedValueOnce(ids.slice(0, 100).map(p => ({ id: p, 'Wix Product ID': p, 'Image URL': `${p}.jpg` })))
-      .mockResolvedValueOnce(ids.slice(100, 200).map(p => ({ id: p, 'Wix Product ID': p, 'Image URL': `${p}.jpg` })))
-      .mockResolvedValueOnce(ids.slice(200, 250).map(p => ({ id: p, 'Wix Product ID': p, 'Image URL': `${p}.jpg` })));
-    const { getImagesBatch } = await import('../repos/productRepo.js');
-    const out = await getImagesBatch(ids);
-    expect(airtable.list).toHaveBeenCalledTimes(3);
-    expect(out.size).toBe(250);
-    expect(out.get('p0')).toBe('p0.jpg');
-    expect(out.get('p249')).toBe('p249.jpg');
   });
 });

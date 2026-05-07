@@ -12,6 +12,7 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { sendAlert } from '../services/telegram.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
 import * as appConfigRepo from '../repos/appConfigRepo.js';
+import * as productConfigRepo from '../repos/productConfigRepo.js';
 
 const router = Router();
 
@@ -313,14 +314,10 @@ setInterval(async () => {
     if (config.cutoffReminderLastDate === todayStr) return; // already sent today
 
     // Check if any active products with lead time 0 exist
-    if (!TABLES.PRODUCT_CONFIG) return;
-    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
-      filterByFormula: "AND({Active} = TRUE(), {Lead Time Days} = 0)",
-      maxRecords: 1,
-      fields: ['Product Name'],
-    });
+    const allActiveRows = await productConfigRepo.list({ activeOnly: true });
+    const zeroLeadRows = allActiveRows.filter(r => r['Lead Time Days'] === 0);
 
-    if (rows.length > 0) {
+    if (zeroLeadRows.length > 0) {
       await sendAlert(
         `⏰ Available Today reminder\n\n`
         + `It's past ${cutoff} — you still have products marked as Available Today.\n`

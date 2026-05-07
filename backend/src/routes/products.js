@@ -7,9 +7,8 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import { runSync, runPull, runPush } from '../services/wixProductSync.js';
 import { startPushJob, getJob } from '../services/wixPushJob.js';
-import * as db from '../services/airtable.js';
-import { TABLES } from '../config/airtable.js';
 import * as syncLogRepo from '../repos/syncLogRepo.js';
+import * as productConfigRepo from '../repos/productConfigRepo.js';
 import Anthropic from '@anthropic-ai/sdk';
 
 const router = Router();
@@ -122,16 +121,9 @@ Return ONLY valid JSON with this exact structure (no markdown fences):
 // ── GET /api/products — list all Product Config rows ──
 router.get('/', async (req, res, next) => {
   try {
-    const rows = await db.list(TABLES.PRODUCT_CONFIG, {
-      sort: [
-        { field: 'Product Name', direction: 'asc' },
-        { field: 'Sort Order', direction: 'asc' },
-      ],
-    });
+    const rows = await productConfigRepo.list();
     res.json(rows);
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 // ── GET /api/products/sync-log — recent sync history ──
@@ -158,20 +150,13 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const updates = {};
     for (const key of Object.keys(req.body)) {
-      if (EDITABLE_FIELDS.includes(key)) {
-        updates[key] = req.body[key];
-      }
+      if (EDITABLE_FIELDS.includes(key)) updates[key] = req.body[key];
     }
-
-    if (Object.keys(updates).length === 0) {
+    if (Object.keys(updates).length === 0)
       return res.status(400).json({ error: 'No valid fields to update.' });
-    }
-
-    const updated = await db.update(TABLES.PRODUCT_CONFIG, req.params.id, updates);
+    const updated = await productConfigRepo.update(req.params.id, updates);
     res.json(updated);
-  } catch (err) {
-    next(err);
-  }
+  } catch (err) { next(err); }
 });
 
 export default router;
