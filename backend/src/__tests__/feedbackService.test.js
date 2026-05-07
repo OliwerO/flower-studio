@@ -10,10 +10,22 @@ vi.mock('../db/index.js', () => ({
 }));
 vi.mock('../db/schema.js', () => ({ feedbackReports: {} }));
 
-// Mock Anthropic (not used yet in Phase 1, but the import exists)
+// Mock Anthropic — returns a complete "done" response by default
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
-    messages = { create: vi.fn() };
+    messages = {
+      create: vi.fn().mockResolvedValue({
+        content: [{ text: JSON.stringify({
+          done: true,
+          type: 'bug',
+          englishTitle: 'Button does not work on order screen',
+          englishDescription: 'The save button on the Order edit screen does nothing when tapped.',
+          acceptanceCriteria: ['Tapping Save on the Order edit screen saves changes'],
+          originalQuote: 'кнопка не работает',
+          russianSummary: 'Кнопка сохранения на экране редактирования заказа не работает.',
+        }) }],
+      }),
+    };
   },
 }));
 
@@ -47,6 +59,7 @@ describe('startSession', () => {
     expect(result.sessionId).toBeDefined();
     expect(result.done).toBe(true);
     expect(sessions.has(result.sessionId)).toBe(true);
+    expect(sessions.get(result.sessionId).type).toBe('bug');
   });
 
   it('stores appArea when provided', async () => {
