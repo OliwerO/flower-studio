@@ -504,43 +504,35 @@ router.get('/:id/usage', async (req, res, next) => {
     // a larger result set. For a small shop (<2000 orders/year) both queries
     // return in well under a second via the rate-limited queue.
     const orderCutoff = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
-    const recentOrders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `OR({Order Date} = '', NOT(IS_BEFORE({Order Date}, '${orderCutoff}')))`,
-      fields: ['Order Lines', 'App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
-      maxRecords: 2000,
-    });
-    const allLineIds = recentOrders.flatMap(o => o['Order Lines'] || []);
-    const allLines = allLineIds.length > 0
-      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
-        })
-      : [];
-    // Keep only lines whose Stock Item link resolves to one of our siblings.
-    // Orphan lines (no link) don't affect qty (atomicStockAdjust needs a
-    // stock ID), so dropping them is harmless.
-    const matchedLines = allLines.filter(l => siblingIds.has(l['Stock Item']?.[0]));
+    const recentOrders = await orderRepo.list({
+      pg: { dateFrom: orderCutoff },
+    }).catch(() => []);
 
-    // Build the order map from the orders we already fetched — no second
-    // round-trip needed.
+    // Filter _lines to those whose Stock Item resolves to one of our siblings
+    const matchedLines = [];
     const orderMap = {};
-    for (const o of recentOrders) orderMap[o.id] = o;
+    for (const o of recentOrders) {
+      orderMap[o.id] = o;
+      for (const line of (o._lines || [])) {
+        if (siblingIds.has(line['Stock Item']?.[0])) {
+          matchedLines.push({ ...line, _orderId: o.id });
+        }
+      }
+    }
 
-    // Fetch only the customers whose orders actually matched this stock —
-    // otherwise we'd pull every customer from the past year.
-    const matchedOrderIds = new Set(matchedLines.flatMap(l => l.Order || []));
+    const matchedOrderIds = new Set(matchedLines.map(l => l._orderId));
     const customerIds = [...new Set(
-      recentOrders
-        .filter(o => matchedOrderIds.has(o.id))
-        .flatMap(o => o.Customer || [])
+      recentOrders.filter(o => matchedOrderIds.has(o.id)).flatMap(o => o.Customer || [])
     )];
-    const customers = customerIds.length > 0
-      ? await listByIds(TABLES.CUSTOMERS, customerIds, { fields: ['Name', 'Nickname'] })
-      : [];
+    const custList = customerIds.length > 0 ? await customerRepo.findMany(customerIds) : [];
     const customerMap = {};
-    for (const c of customers) customerMap[c.id] = c;
+    for (const c of custList) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
+    }
 
     const usageOrders = matchedLines.map(l => {
-      const orderId = l.Order?.[0];
+      const orderId = l._orderId;
       const o = orderId ? orderMap[orderId] : null;
       const custId = o?.Customer?.[0];
       const cust = custId ? customerMap[custId] : null;
