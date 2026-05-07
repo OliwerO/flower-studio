@@ -31,7 +31,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | premadeBouquets.js | CRUD /premade-bouquets | Premade bouquet templates (composed of stock items) |
 | dashboard.js | GET /dashboard | Today's operational summary for owner |
 | analytics.js | GET /analytics | Financial KPIs with period comparison |
-| settings.js | GET/POST /settings | App config persistence (Airtable App Config table). Also exports `getConfig`/`getDriverOfDay`/`generateOrderId` — TODO move to `services/appConfig.js`. |
+| settings.js | GET/POST /settings | Thin HTTP layer for app config. State lives in `services/configService.js`. Re-exports its getters for backward compat — callers should migrate to importing from configService directly. |
 | products.js | POST /products/pull\|push\|sync\|translate, GET /products/push/status/:jobId | Bidirectional Wix product sync. Push runs as an async job (see `wixPushJob.js`) — POST /push returns 202 + jobId, the modal polls /push/status. /push/sync is the legacy synchronous variant kept for curl debugging. |
 | productImages.js | POST/DELETE /products/:wixProductId/image | Bouquet image upload (florist+owner) and removal (owner only). Orchestrates Wix Media upload + Wix Stores attach via `wixMediaClient.js`, persists URL via `productRepo`, audits as `image_set` / `image_remove`, broadcasts SSE `product_image_changed`. |
 | orderImages.js | POST/DELETE /orders/:orderId/image | Per-order bouquet image override. Florist+owner upload, owner-only remove. Uploads to Wix Media, writes `Image URL` on the order via `orderRepo.updateOrder`, reaps the previous Wix file via `deleteFiles`, audits as `image_set`/`image_remove` (entityType `order`), broadcasts SSE `order_image_changed`. Mounted before orders.js so it bypasses any future role gating there. |
@@ -63,7 +63,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | telegram.js | Telegram Bot API wrapper — new-order + delivery-landed alerts. |
 | intake-parser.js | Claude Haiku integration for parsing freeform text / Flowwow emails into structured orders. |
 | analyticsService.js | Pure math functions for financial KPIs (no DB calls). |
-| webhookLog.js | Persists webhook events to Webhook Log table. |
+| configService.js | App config singleton — DEFAULTS, in-memory config state, loadConfig/saveConfig, migrations, driver-of-day daily state, cutoff reminder interval. Exports: `getConfig`, `updateConfig`, `generateOrderId`, `getDriverOfDay`, `isPastCutoff`, `getActiveSeasonalCategory`. Import from here, not from routes/settings.js. |
 | driverState.js | In-memory backup driver state (resets daily at midnight). |
 
 ## Database (in transition — Phase 3+ SQL migration)

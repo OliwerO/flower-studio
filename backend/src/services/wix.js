@@ -14,8 +14,9 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
-import { logWebhookEvent } from './webhookLog.js';
-import { generateOrderId } from '../routes/settings.js';
+import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
+import { generateOrderId } from './configService.js';
+import { listByIds } from '../utils/batchQuery.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
@@ -474,4 +475,85 @@ export async function processWixOrder(payload) {
       rawPayload: payload,
     });
   }
+}
+
+/**
+ * Reprocess a Wix order: delete the existing App Order and re-run the
+ * canonical intake pipeline so the order is recreated from the Wix API.
+ *
+ * By default refuses if the order is composed (status != New or any line has
+ * a Stock Item link). Pass force=true to skip the check — accepts data loss.
+ */
+export async function reprocessWixOrder(wixOrderId, { force = false, actor = null } = {}) {
+  const existing = await orderRepo.findByWixOrderId(wixOrderId);
+  if (!existing) {
+    const err = new Error(`No App Order found with Wix Order ID ${wixOrderId}.`);
+    err.status = 404;
+    throw err;
+  }
+
+  const lineIds     = existing['Order Lines'] || [];
+  const deliveryIds = existing['Deliveries']  || [];
+
+  if (!force) {
+    const lineRecords = existing._lines
+      || (lineIds.length > 0
+        ? await listByIds(TABLES.ORDER_LINES, lineIds, { fields: ['Stock Item', 'Flower Name', 'Quantity'] })
+        : []);
+
+    const reasons = [];
+    if (existing.Status && existing.Status !== 'New') {
+      reasons.push(`Status is "${existing.Status}" (not 'New').`);
+    }
+    const composed = lineRecords.filter(l =>
+      (Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0) || l.stockItemId
+    );
+    if (composed.length > 0) {
+      const names = composed
+        .map(l => `${l.Quantity ?? l.quantity ?? '?'}× ${l['Flower Name'] ?? l.flowerName ?? '?'}`)
+        .join(', ');
+      reasons.push(`${composed.length} line(s) have Stock Item links (composed bouquet): ${names}.`);
+    }
+
+    if (reasons.length > 0) {
+      const err = new Error('Reprocess refused — order appears composed or edited.');
+      err.status = 409;
+      err.data = {
+        error: err.message,
+        reasons,
+        hint: 'Pass ?force=true if you truly want to delete and recreate (accepts data loss).',
+        appOrderId: existing['App Order ID'] || existing.id,
+      };
+      throw err;
+    }
+  }
+
+  // Delete the existing order. Postgres mode cascades to lines + delivery via
+  // ON DELETE CASCADE. Airtable mode deletes records individually.
+  if (orderRepo.getBackendMode() === 'postgres') {
+    await orderRepo.deleteOrder(existing._pgId || existing.id, { actor });
+  } else {
+    for (const lineId of lineIds) {
+      await db.deleteRecord(TABLES.ORDER_LINES, lineId).catch(err => {
+        console.warn(`[REPROCESS] delete line ${lineId}:`, err.message);
+      });
+    }
+    for (const delId of deliveryIds) {
+      await db.deleteRecord(TABLES.DELIVERIES, delId).catch(err => {
+        console.warn(`[REPROCESS] delete delivery ${delId}:`, err.message);
+      });
+    }
+    await db.deleteRecord(TABLES.ORDERS, existing.id);
+  }
+
+  // Re-run the canonical Wix intake pipeline. Dedup won't fire (record was
+  // just deleted) so the pipeline fetches fresh data from the Wix API.
+  await processWixOrder({ id: wixOrderId });
+
+  const fresh = await orderRepo.findByWixOrderId(wixOrderId);
+  return {
+    deleted: { orderId: existing.id, lineCount: lineIds.length, deliveryCount: deliveryIds.length },
+    created: fresh || null,
+    forced:  force,
+  };
 }

@@ -15,6 +15,8 @@ export async function listRecent(limit = 20) {
   }));
 }
 
+// rawPayload is intentionally not persisted — too large for a DB column;
+// Railway logs capture it via console.log in wix.js.
 export async function logEvent({ status, wixOrderId, appOrderId, errorMessage }) {
   try {
     await db.insert(webhookLog).values({
