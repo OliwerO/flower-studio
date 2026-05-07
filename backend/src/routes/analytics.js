@@ -1,12 +1,13 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js'; // TODO Task 4: remove after customer section migrated
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
 import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
-import { TABLES } from '../config/airtable.js'; // TODO Task 4: remove after customer section migrated
+import { db as pgDb } from '../db/index.js';
+import { orders as ordersTable } from '../db/schema.js';
+import { inArray, isNull, and as pgAnd, lt } from 'drizzle-orm';
 import { getConfig } from '../services/configService.js';
 import { ORDER_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import {
@@ -93,15 +94,13 @@ router.get('/', async (req, res, next) => {
     const stockLossBreakdown = breakdownStockLosses(stockLosses);
 
     // Supplier scorecard — stockLossRepo.list() already enriches each row with
-    // supplier and flowerName via LEFT JOIN, so no extra Airtable fetch needed.
-    // Build a synthetic lossStockItems list from the enriched loss records so
-    // buildSupplierScorecard can still do its id → supplier lookup.
+    // supplier and flowerName via LEFT JOIN, so no extra fetch needed.
     const lossStockItems = stockLosses
       .filter(l => l['Stock Item']?.[0])
       .map(l => ({ id: l['Stock Item'][0], Supplier: l.supplier || '', 'Display Name': l.flowerName || '' }));
     const supplierScorecard = buildSupplierScorecard(stockPurchases, stockLosses, lossStockItems);
 
-    // ── Source breakdown (simple aggregation, kept inline) ──
+    // ── Source breakdown ──
     const bySource = {};
     const revenueBySource = {};
     for (const o of orders) {
@@ -122,31 +121,30 @@ router.get('/', async (req, res, next) => {
       : 0;
 
     // ── Customer metrics ──
-    const batchSize = 100; // TODO Task 4: remove after customer section migrated
     const customerIds = [...new Set(orders.map(o => o.Customer?.[0]).filter(Boolean))];
     const customers = { newCount: 0, returningCount: 0, segments: {}, topSpenders: [] };
 
     if (customerIds.length > 0) {
-      const custRecords = [];
-      for (let i = 0; i < customerIds.length; i += batchSize) {
-        const batch = customerIds.slice(i, i + batchSize);
-        const recs = await db.list(TABLES.CUSTOMERS, {
-          filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          maxRecords: batchSize,
-        });
-        custRecords.push(...recs);
+      // Fetch all customers, index by both PG uuid and Airtable recXXX
+      const allCusts = await customerRepo.list({ withAggregates: false });
+      const custById = new Map(allCusts.map(c => [c.id, c]));
+      for (const c of allCusts) {
+        if (c.airtableId) custById.set(c.airtableId, c);
       }
+      const custRecords = customerIds.map(id => custById.get(id)).filter(Boolean);
 
-      const spendByCustomer = {};
-      for (const o of paidOrders) {
-        const cid = o.Customer?.[0];
-        if (cid) spendByCustomer[cid] = (spendByCustomer[cid] || 0) + (o['Effective Price'] || 0);
-      }
+      // Customers with any order before this period are "returning"
+      const priorRows = await pgDb.select({ customerId: ordersTable.customerId })
+        .from(ordersTable)
+        .where(pgAnd(
+          inArray(ordersTable.customerId, customerIds),
+          lt(ordersTable.orderDate, from),
+          isNull(ordersTable.deletedAt),
+        ));
+      const returningCustIds = new Set(priorRows.map(r => r.customerId));
 
-      const periodOrderIds = new Set(orders.map(o => o.id));
       for (const c of custRecords) {
-        const allCustOrders = c['App Orders'] || [];
-        if (allCustOrders.some(oid => !periodOrderIds.has(oid))) {
+        if (returningCustIds.has(c.id) || returningCustIds.has(c.airtableId)) {
           customers.returningCount++;
         } else {
           customers.newCount++;
@@ -160,11 +158,17 @@ router.get('/', async (req, res, next) => {
       }
       customers.segments = segments;
 
+      const spendByCustomer = {};
+      for (const o of paidOrders) {
+        const cid = o.Customer?.[0];
+        if (cid) spendByCustomer[cid] = (spendByCustomer[cid] || 0) + (o['Effective Price'] || 0);
+      }
+
       customers.topSpenders = custRecords
         .map(c => ({
           id: c.id,
           name: c.Name || c.Nickname || '—',
-          spend: spendByCustomer[c.id] || 0,
+          spend: spendByCustomer[c.id] || spendByCustomer[c.airtableId] || 0,
           segment: c.Segment || null,
         }))
         .sort((a, b) => b.spend - a.spend)
