@@ -232,12 +232,12 @@ router.get('/committed', async (req, res, next) => {
 
 // GET /api/stock/pending-po — aggregate quantities from pending purchase orders per stock item.
 // Returns { stockItemId: { ordered: N, pos: [{ id, number, quantity }] } }
-// for POs in Draft, Sent, or Shopping status (flowers not yet received into stock).
+// for all non-Complete, non-Cancelled POs — flowers are still incoming or being evaluated.
 // Used by bouquet builders so florists can see what's coming and plan accordingly.
 router.get('/pending-po', async (req, res, next) => {
   try {
     const pendingPOs = await db.list(TABLES.STOCK_ORDERS, {
-      filterByFormula: `OR({Status} = '${PO_STATUS.DRAFT}', {Status} = '${PO_STATUS.SENT}', {Status} = '${PO_STATUS.SHOPPING}')`,
+      filterByFormula: `OR({Status} = '${PO_STATUS.DRAFT}', {Status} = '${PO_STATUS.SENT}', {Status} = '${PO_STATUS.SHOPPING}', {Status} = '${PO_STATUS.REVIEWING}', {Status} = '${PO_STATUS.EVALUATING}', {Status} = '${PO_STATUS.EVAL_ERROR}')`,
       fields: ['Status', 'Stock Order ID', 'Order Lines', 'Planned Date'],
     });
 

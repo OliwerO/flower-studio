@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import t from '../../translations.js';
-import { parseBatchName } from '@flower-studio/shared';
+import { parseBatchName, findAllMatchingVariety, BatchPickerModal } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -11,6 +12,8 @@ function formatPoDate(dateStr) {
 
 export default function BouquetSection({ order, editing, isTerminal, saving, targetMarkup, doSave }) {
   const o = order;
+  const [pickerModalVariety, setPickerModalVariety] = useState(null);
+  const [pickerModalMatches, setPickerModalMatches] = useState([]);
   if (!o.orderLines?.length) return null;
 
   return (
@@ -110,7 +113,16 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     const poDateLabel = formatPoDate(poInfo?.plannedDate);
                     return (
                       <button key={s.id} type="button"
-                        onClick={() => editing.addFlowerFromStock(s)}
+                        onClick={() => {
+                          const baseName = parseBatchName(s['Display Name'] || '').name;
+                          const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
+                          if (allMatches.length <= 1) {
+                            editing.addFlowerFromStock(s);
+                          } else {
+                            setPickerModalVariety(baseName);
+                            setPickerModalMatches(allMatches);
+                          }
+                        }}
                         className={`w-full flex flex-col px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${poQty > 0 ? 'bg-blue-50/50' : qty <= 0 ? 'bg-amber-50/50' : ''}`}
                       >
                         <div className="flex items-center w-full">
@@ -131,9 +143,10 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                       </button>
                     );
                   })}
-                {flowerSearch.length >= 2 && !stockItems.some(s =>
-                  (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
-                ) && (
+                {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
+                  const { name } = parseBatchName(s['Display Name'] || '');
+                  return name.toLowerCase() === flowerSearch.trim().toLowerCase();
+                }) && (
                   <button type="button"
                     onClick={() => editing.openNewFlowerForm(flowerSearch.trim())}
                     className="w-full text-left px-2 py-1.5 text-sm text-brand-600 font-medium border-t border-gray-100"
@@ -143,6 +156,36 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
               <button onClick={() => { editing.setAddingFlower(false); editing.setFlowerSearch(''); }}
                 className="text-xs text-ios-tertiary">{t.cancel}</button>
             </div>
+          )}
+
+          {pickerModalVariety && (
+            <BatchPickerModal
+              baseName={pickerModalVariety}
+              matches={pickerModalMatches}
+              pendingPO={editing.pendingPO}
+              onSelectStock={s => {
+                editing.addFlowerFromStock(s);
+                setPickerModalVariety(null);
+                editing.setFlowerSearch('');
+                editing.setAddingFlower(false);
+              }}
+              onCreateDemand={() => {
+                editing.createDemandEntry(pickerModalVariety);
+                setPickerModalVariety(null);
+                editing.setFlowerSearch('');
+                editing.setAddingFlower(false);
+              }}
+              onClose={() => setPickerModalVariety(null)}
+              t={{
+                batchPickerTitle:  t.batchPickerTitle,
+                demandEntry:       t.demandEntry,
+                demandEntryHint:   t.demandEntryHint,
+                demandEntryCreate: t.demandEntryCreate,
+                onOrder:           t.onOrder,
+                cancel:            t.cancel,
+                stems:             t.stems,
+              }}
+            />
           )}
 
           {newFlowerForm && (

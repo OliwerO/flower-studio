@@ -6,6 +6,32 @@
 // modules (API client, toast, translations).
 
 import { useState } from 'react';
+import parseBatchName from '../utils/parseBatchName.js';
+
+const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
+
+// Returns all Stock Items whose base variety name matches baseName (case-insensitive).
+// Includes both dated Batches ("Rose (06.May.)") and undated Demand Entries ("Rose").
+// Exported for unit testing and use in picker components.
+export function findAllMatchingVariety(stockItems, baseName) {
+  const needle = (baseName || '').trim().toLowerCase();
+  if (!needle) return [];
+  return stockItems.filter(s => {
+    const { name } = parseBatchName(s['Display Name'] || '');
+    return name.trim().toLowerCase() === needle;
+  });
+}
+
+// Returns false for depleted dated-Batch Stock Items that have no pending PO demand.
+// Exported so both the hook internals and BouquetEditor can share the same rule.
+export function isStockItemVisible(stockItem, pendingPO = {}) {
+  const qty = Number(stockItem['Current Quantity']) || 0;
+  const name = stockItem['Display Name'] || '';
+  if (qty <= 0 && _DATE_BATCH_RE.test(name) && !(pendingPO[stockItem.id]?.ordered > 0)) {
+    return false;
+  }
+  return true;
+}
 
 // Case-insensitive Display Name lookup against a stock list. Exported so
 // duplicate-name checks can be unit-tested without React.
@@ -57,10 +83,22 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setFlowerSearch('');
     setNewFlowerForm(null);
     setEditingBouquet(true);
-    if (stockItems.length === 0) {
-      apiClient.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
-    }
-    apiClient.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+    // Fetch stock and pending-po in parallel. Re-fetch stock after pending-po in case
+    // it auto-created new Stock Items for unlinked PO lines.
+    Promise.all([
+      apiClient.get('/stock?includeEmpty=true&includeInactive=true'),
+      apiClient.get('/stock/pending-po'),
+    ]).then(([stockRes, poRes]) => {
+      setStockItems(stockRes.data);
+      setPendingPO(poRes.data);
+      const knownIds = new Set(stockRes.data.map(s => s.id));
+      const hasNewItems = Object.keys(poRes.data).some(id => !knownIds.has(id));
+      if (hasNewItems) {
+        return apiClient.get('/stock?includeEmpty=true&includeInactive=true');
+      }
+      return null;
+    }).then(r => { if (r) setStockItems(r.data); })
+    .catch(() => {});
     apiClient.get('/stock/premade-committed').then(r => setPremadeMap(r.data || {})).catch(() => setPremadeMap({}));
   }
 
@@ -178,6 +216,53 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     }
     setFlowerSearch('');
     setAddingFlower(false);
+  }
+
+  // ── Demand Entry path ──────────────────────────────────────────────
+  // Creates or deepens the single undated Demand Entry for a variety.
+  // If one already exists, uses it (deepens aggregate negative qty).
+  // If not, creates one inheriting price from the most recent Batch.
+  async function createDemandEntry(baseName) {
+    const variety = findAllMatchingVariety(stockItems, baseName);
+    const demandEntry = variety.find(s => parseBatchName(s['Display Name'] || '').batch === null);
+
+    if (demandEntry) {
+      addFlowerFromStock(demandEntry);
+      return;
+    }
+
+    const batches = variety.filter(s => parseBatchName(s['Display Name'] || '').batch !== null);
+    const mostRecentBatch = batches.reduce((best, s) => {
+      if (!best) return s;
+      const d = new Date(s['Last Restocked'] || 0);
+      return d > new Date(best['Last Restocked'] || 0) ? s : best;
+    }, null);
+
+    const costPrice = Number(mostRecentBatch?.['Current Cost Price']) || 0;
+    const sellPrice = Number(mostRecentBatch?.['Current Sell Price']) || 0;
+
+    try {
+      const res = await apiClient.post('/stock', {
+        displayName: baseName.trim(),
+        quantity: 0,
+        costPrice,
+        sellPrice,
+      });
+      setStockItems(prev => [...prev, res.data]);
+      setEditLines(prev => [...prev, {
+        id: null,
+        stockItemId: res.data.id,
+        flowerName: res.data['Display Name'],
+        quantity: 1,
+        _originalQty: 0,
+        costPricePerUnit: costPrice,
+        sellPricePerUnit: sellPrice,
+      }]);
+    } catch {
+      showToast(t.updateError || 'Error creating demand entry', 'error');
+      return;
+    }
+    setFlowerSearch('');
   }
 
   // Dissolve-premade workflow state. When the save would push stock below
@@ -326,11 +411,9 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   // ── Filtered stock for picker ──────────────────────────────────
   function getFilteredStock(query) {
     return stockItems.filter(s => {
-      const name = (s['Display Name'] || '').toLowerCase();
-      const qty = Number(s['Current Quantity']) || 0;
-      if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+      if (!isStockItemVisible(s, pendingPO)) return false;
       if (editLines.some(l => l.stockItemId === s.id)) return false;
-      if (query) return name.includes(query.toLowerCase());
+      if (query) return (s['Display Name'] || '').toLowerCase().includes(query.toLowerCase());
       return true;
     });
   }
@@ -397,5 +480,6 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setStockAction,
     confirmDissolveAndSave,
     cancelDissolve,
+    createDemandEntry,
   };
 }
