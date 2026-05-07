@@ -16,6 +16,7 @@ import { DeliveryListSkeleton } from '../components/Skeleton.jsx';
 import MapView from '../components/MapView.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 import { useNotifications } from '../hooks/useNotifications.js';
+import { FeedbackModal } from '@flower-studio/shared';
 
 function todayStr() {
   const d = new Date();
@@ -44,6 +45,7 @@ export default function DeliveryListPage() {
   const [pickupCount, setPickupCount] = useState(0);
   // Track which delivery is awaiting a result selection (replaces window.confirm)
   const [resultPickerId, setResultPickerId] = useState(null);
+  const [reportOpen, setReportOpen] = useState(false);
 
   const fetchDeliveries = useCallback(async () => {
     setLoading(true);
@@ -248,6 +250,12 @@ export default function DeliveryListPage() {
           </div>
           <div className="flex items-center gap-3">
             <button
+              onClick={() => setReportOpen(true)}
+              className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-gray-500
+                         hover:bg-gray-200 transition-colors flex items-center justify-center"
+              title={t.reportButton}
+            >!</button>
+            <button
               onClick={() => setShowHelp(true)}
               className="text-xs font-bold w-7 h-7 rounded-lg bg-gray-100 text-ios-secondary
                          hover:bg-gray-200 active-scale flex items-center justify-center"
@@ -414,6 +422,16 @@ export default function DeliveryListPage() {
         <DeliveryResultPicker
           onSelect={handleDeliveryProblem}
           onCancel={() => setResultPickerId(null)}
+        />
+      )}
+
+      {reportOpen && (
+        <FeedbackModal
+          t={t}
+          reporterRole="driver"
+          reporterName={driverName || 'Driver'}
+          appArea="delivery"
+          onClose={() => setReportOpen(false)}
         />
       )}
     </div>
