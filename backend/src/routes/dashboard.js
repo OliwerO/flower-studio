@@ -48,128 +48,53 @@ router.get('/', async (req, res, next) => {
       customerRepo.listWithKeyPeopleHavingDates().catch(() => []),
     ]);
 
-    // Enrich orders with customer names + computed prices
-    // (same bulk-fetch pattern as orders route)
-    const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-
-    const [allCustomers, allLines] = await Promise.all([
-      uniqueCustomerIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${uniqueCustomerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          }).catch(() => [])
-        : [],
-      allLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
-            maxRecords: 1000,
-          }).catch(() => [])
-        : [],
-    ]);
-
+    // Build customerMap from all order customer IDs across all order arrays
+    const allCustIds = [...new Set([
+      ...orders.flatMap(o => o.Customer || []),
+      ...fulfillToday.flatMap(o => o.Customer || []),
+      ...tomorrowOrders.flatMap(o => o.Customer || []),
+    ].filter(Boolean))];
+    const custList = allCustIds.length > 0 ? await customerRepo.findMany(allCustIds) : [];
     const customerMap = {};
-    for (const c of allCustomers) customerMap[c.id] = c;
-
-    // Sum order line sell totals by order ID
-    const totalByOrder = {};
-    for (const line of allLines) {
-      const oid = line.Order?.[0];
-      if (oid) {
-        totalByOrder[oid] = (totalByOrder[oid] || 0)
-          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-      }
+    for (const c of custList) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
     }
 
-    for (const order of orders) {
+    function computeSellTotal(order) {
+      return (order._lines || []).reduce(
+        (sum, l) => sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0
+      );
+    }
+    function enrichOrder(order) {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
-
-      // Compute effective price (Final Price is an Airtable formula that may not return)
-      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
-        order['Sell Total'] = totalByOrder[order.id];
+      if (!order['Price Override']) {
+        order['Sell Total'] = computeSellTotal(order);
       }
-      const deliveryFee = Number(order['Delivery Fee'] || 0);
-      // Price Override replaces flower total only; delivery fee always added on top
+      const deliveryFee = Number(
+        order['Delivery Fee'] || order._delivery?.['Delivery Fee'] || 0
+      );
       order['Effective Price'] = order['Final Price']
         ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
     }
 
-    // Enrich fulfillToday orders with customer names + effective prices
-    // (reuse the same customerMap + totalByOrder if they overlap, fetch missing)
-    const fulfillCustIds = [...new Set(fulfillToday.flatMap(o => o.Customer || []).filter(id => !customerMap[id]))];
-    const fulfillLineIds = fulfillToday.flatMap(o => o['Order Lines'] || []).filter(id => !allLineIds.includes(id));
+    for (const order of orders) enrichOrder(order);
 
-    const [extraFulfillCusts, extraFulfillLines] = await Promise.all([
-      fulfillCustIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${fulfillCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          }).catch(() => [])
-        : [],
-      fulfillLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${fulfillLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Quantity', 'Flower Name'],
-            maxRecords: 1000,
-          }).catch(() => [])
-        : [],
-    ]);
-    for (const c of extraFulfillCusts) customerMap[c.id] = c;
-    for (const line of extraFulfillLines) {
-      const oid = line.Order?.[0];
-      if (oid) {
-        totalByOrder[oid] = (totalByOrder[oid] || 0)
-          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-      }
-    }
+    for (const order of fulfillToday) enrichOrder(order);
 
-    for (const order of fulfillToday) {
-      const custId = order.Customer?.[0];
-      order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
-      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
-        order['Sell Total'] = totalByOrder[order.id];
-      }
-      const deliveryFee = Number(order['Delivery Fee'] || 0);
-      order['Effective Price'] = order['Final Price']
-        ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
-    }
-
-    // Enrich tomorrowOrders with customer names + order line summaries
-    const tmrwCustIds = [...new Set(tomorrowOrders.flatMap(o => o.Customer || []).filter(id => !customerMap[id]))];
-    const tmrwLineIds = tomorrowOrders.flatMap(o => o['Order Lines'] || []);
-
-    const [extraTmrwCusts, tmrwLines] = await Promise.all([
-      tmrwCustIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${tmrwCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          }).catch(() => [])
-        : [],
-      tmrwLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${tmrwLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Flower Name', 'Quantity'],
-            maxRecords: 500,
-          }).catch(() => [])
-        : [],
-    ]);
-    for (const c of extraTmrwCusts) customerMap[c.id] = c;
-
-    // Build line summaries per order for tomorrow
+    // Enrich tomorrowOrders with customer names + line summaries from embedded _lines
     const tmrwLineSummary = {};
-    for (const line of tmrwLines) {
-      const oid = line.Order?.[0];
-      if (!oid) continue;
-      if (!tmrwLineSummary[oid]) tmrwLineSummary[oid] = { items: [], count: 0 };
-      tmrwLineSummary[oid].items.push(`${line['Flower Name'] || '?'} ×${line.Quantity || 1}`);
-      tmrwLineSummary[oid].count++;
-    }
-
     for (const order of tomorrowOrders) {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      const lines = order._lines || [];
+      if (lines.length > 0) {
+        tmrwLineSummary[order.id] = {
+          items: lines.map(l => `${l['Flower Name'] || '?'} ×${l.Quantity || 1}`),
+          count: lines.length,
+        };
+      }
       const summary = tmrwLineSummary[order.id];
       order['Line Summary'] = summary ? summary.items.join(', ') : '';
       order['Line Count'] = summary ? summary.count : 0;
@@ -193,23 +118,10 @@ router.get('/', async (req, res, next) => {
       d.Status !== DELIVERY_STATUS.DELIVERED
     );
 
-    // Bulk-fetch order lines for unpaid orders to calculate accurate sell totals.
-    // Can't rely on 'Sell Price Total' rollup — it may be stale after price edits.
-    const unpaidLineIds = unpaidOrders.flatMap(o => o['Order Lines'] || []);
-    const unpaidLines = unpaidLineIds.length > 0
-      ? await db.list(TABLES.ORDER_LINES, {
-          filterByFormula: `OR(${unpaidLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
-          maxRecords: 1000,
-        }).catch(() => [])
-      : [];
+    // Compute unpaid order sell totals from embedded _lines
     const unpaidTotalByOrder = {};
-    for (const line of unpaidLines) {
-      const oid = line.Order?.[0];
-      if (oid) {
-        unpaidTotalByOrder[oid] = (unpaidTotalByOrder[oid] || 0)
-          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-      }
+    for (const o of unpaidOrders) {
+      unpaidTotalByOrder[o.id] = computeSellTotal(o);
     }
 
     // Unpaid orders aging: group by how old they are relative to today
@@ -273,8 +185,6 @@ router.get('/', async (req, res, next) => {
     keyDateReminders.sort((a, b) => a.daysUntil - b.daysUntil);
 
     // Enrich pending deliveries with customer name (who ordered)
-    // by following the chain: Delivery → Order → Customer.
-    // We already have orders loaded, so we only need the link hop.
     const orderIdSet = new Set(orders.map(o => o.id));
     const orderMapForDeliveries = {};
     for (const o of orders) orderMapForDeliveries[o.id] = o;
@@ -285,19 +195,16 @@ router.get('/', async (req, res, next) => {
       .filter(id => !orderIdSet.has(id));
 
     if (missingOrderIds.length > 0) {
-      const extraOrders = await db.list(TABLES.ORDERS, {
-        filterByFormula: `OR(${missingOrderIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Customer'],
-      });
-      const extraCustIds = [...new Set(extraOrders.flatMap(o => o.Customer || []))];
-      const extraCusts = extraCustIds.length > 0
-        ? await db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${extraCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          })
-        : [];
-      for (const c of extraCusts) customerMap[c.id] = c;
-      for (const o of extraOrders) orderMapForDeliveries[o.id] = o;
+      const extraOrders = await Promise.all(
+        missingOrderIds.map(id => orderRepo.getById(id).catch(() => null))
+      );
+      const extraCustIds = extraOrders.filter(Boolean).flatMap(o => o.Customer || []);
+      const extraCusts = extraCustIds.length > 0 ? await customerRepo.findMany(extraCustIds) : [];
+      for (const c of extraCusts) {
+        customerMap[c.id] = c;
+        if (c.airtableId) customerMap[c.airtableId] = c;
+      }
+      for (const o of extraOrders.filter(Boolean)) orderMapForDeliveries[o.id] = o;
     }
 
     for (const d of deliveries) {
@@ -305,9 +212,7 @@ router.get('/', async (req, res, next) => {
       const order = orderMapForDeliveries[orderId];
       const custId = order?.Customer?.[0];
       const cust = customerMap[custId];
-      if (cust) {
-        d['Customer Name'] = cust.Name || cust.Nickname || '';
-      }
+      if (cust) d['Customer Name'] = cust.Name || cust.Nickname || '';
     }
 
     // Include deferred order lines as additional demand in "Flowers Needed".
