@@ -18,6 +18,40 @@ import { listByIds } from '../utils/batchQuery.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
+// Resolve a flower name to an Airtable-safe stock item ID.
+// Uses stockRepo (Postgres) not Airtable — the stock table is frozen in AT.
+// Returns the Airtable recXXX if the item was backfilled, or null for
+// PG-only items (no recXXX means passing the UUID to AT's linked field
+// would auto-create a ghost record with the UUID as Display Name).
+// Auto-creates a Postgres stock card if none found, so the item appears
+// in the bouquet picker immediately after the PO is saved.
+async function resolveOrCreateStockItem(flowerName, { costPrice = 0, sellPrice = 0, supplier = '' } = {}) {
+  const name = flowerName.trim();
+  const matches = await stockRepo.list({
+    filterByFormula: '', // ignored in PG mode
+    maxRecords: 1,
+    pg: { displayName: name, active: true, includeEmpty: true },
+  });
+  if (matches.length > 0) {
+    // id is airtableId || uuid — only safe to link in AT if it starts with 'rec'
+    return matches[0].id.startsWith('rec') ? matches[0].id : null;
+  }
+  // Not found — create a zero-qty stock card so it shows in the picker
+  const newItem = await stockRepo.create({
+    'Display Name': name,
+    'Purchase Name': name,
+    'Current Quantity': 0,
+    'Current Cost Price': Number(costPrice) || 0,
+    'Current Sell Price': Number(sellPrice) || 0,
+    Supplier: supplier || '',
+    Category: 'Other',
+    Active: true,
+  });
+  console.log(`[STOCK-ORDER] Auto-created stock item "${name}" (${newItem.id}) from PO line`);
+  // New PG-only item — no Airtable ID, don't link in AT
+  return null;
+}
+
 // Airtable may return Flower Name as an array (lookup field) or a string
 // (text field). Normalise to a plain string so downstream code (.trim(),
 // template literals, formula values) never receives an array.
@@ -187,28 +221,9 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       let resolvedStockItemId = line.stockItemId || null;
       if (!resolvedStockItemId && line.flowerName) {
         try {
-          const safe = sanitizeFormulaValue(line.flowerName.trim());
-          const matches = await db.list(TABLES.STOCK, {
-            filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
-            maxRecords: 1,
+          resolvedStockItemId = await resolveOrCreateStockItem(line.flowerName, {
+            costPrice: line.costPrice, sellPrice: line.sellPrice, supplier: line.supplier,
           });
-          if (matches.length > 0) {
-            resolvedStockItemId = matches[0].id;
-          } else {
-            // Create a new stock item so the flower appears in the stock picker
-            const newItem = await stockRepo.create({
-              'Display Name': line.flowerName.trim(),
-              'Purchase Name': line.flowerName.trim(),
-              'Current Quantity': 0,
-              'Current Cost Price': Number(line.costPrice) || 0,
-              'Current Sell Price': Number(line.sellPrice) || 0,
-              Supplier: line.supplier || '',
-              Category: 'Other',
-              Active: true,
-            });
-            resolvedStockItemId = newItem.id;
-            console.log(`[STOCK-ORDER] Auto-created stock item "${line.flowerName}" (${newItem.id}) from PO line`);
-          }
         } catch (err) {
           console.error(`[STOCK-ORDER] Auto-link/create failed for "${line.flowerName}":`, err.message);
         }
@@ -392,27 +407,10 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     let resolvedStockItemId = rawStockItemId || null;
     if (!resolvedStockItemId && flowerName) {
       try {
-        const safe = sanitizeFormulaValue(flowerName.trim());
-        const matches = await db.list(TABLES.STOCK, {
-          filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
-          maxRecords: 1,
-        });
-        if (matches.length > 0) {
-          resolvedStockItemId = matches[0].id;
-        } else {
-          const newItem = await stockRepo.create({
-            'Display Name': flowerName.trim(),
-            'Purchase Name': flowerName.trim(),
-            'Current Quantity': 0,
-            'Current Cost Price': Number(costPrice) || 0,
-            'Current Sell Price': Number(sellPrice) || 0,
-            Supplier: supplier || '',
-            Category: 'Other',
-            Active: true,
-          });
-          resolvedStockItemId = newItem.id;
-        }
-      } catch { /* best effort */ }
+        resolvedStockItemId = await resolveOrCreateStockItem(flowerName, { costPrice, sellPrice, supplier });
+      } catch (err) {
+        console.error(`[STOCK-ORDER] Auto-link/create failed for "${flowerName}":`, err.message);
+      }
     }
     const line = await db.create(TABLES.STOCK_ORDER_LINES, {
       'Stock Orders': [req.params.id],
