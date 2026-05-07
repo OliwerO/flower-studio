@@ -43,3 +43,8 @@ The driver needs to see exactly what to do next with zero ambiguity — where to
 - API client from `packages/shared/` with auto-attached PIN
 - Driver name attached to all status changes via `req.driverName` (set by auth middleware from PIN)
 - SSE listener for real-time PO assignment notifications
+
+## Skill Triggers
+
+See root CLAUDE.md "Skill Quick-Reference" for the full table. Delivery-specific defaults:
+- **Bug in delivery status cascade** → `diagnose` before proposing a fix (delivery ↔ order bidirectional cascade is subtle — see root CLAUDE.md "Cascade Rules")

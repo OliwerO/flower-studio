@@ -8,11 +8,11 @@ import { authorize } from '../middleware/auth.js';
 import { getBackupDriverName, setBackupDriverName } from '../services/driverState.js';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { sendAlert } from '../services/telegram.js';
 import { DELIVERY_STATUS } from '../constants/statuses.js';
 import * as appConfigRepo from '../repos/appConfigRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
+import * as orderRepo from '../repos/orderRepo.js';
 
 const router = Router();
 
@@ -381,12 +381,12 @@ router.put('/driver-of-day', authorize('admin'), async (req, res, next) => {
     let assignedCount = 0;
     if (driverName) {
       const today = new Date().toISOString().split('T')[0];
-      const unassigned = await db.list(TABLES.DELIVERIES, {
-        filterByFormula: `AND(DATESTR({Delivery Date}) = '${sanitizeFormulaValue(today)}', {Assigned Driver} = '', {Status} != '${DELIVERY_STATUS.DELIVERED}')`,
-        fields: ['Assigned Driver'],
-      });
+      const allToday = await orderRepo.listDeliveries({ pg: { date: today } });
+      const unassigned = allToday.filter(
+        d => !d['Assigned Driver'] && d.Status !== DELIVERY_STATUS.DELIVERED
+      );
       for (const d of unassigned) {
-        await db.update(TABLES.DELIVERIES, d.id, { 'Assigned Driver': driverName });
+        await orderRepo.updateDelivery(d.id, { 'Assigned Driver': driverName });
         assignedCount++;
       }
     }

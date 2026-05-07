@@ -573,23 +573,20 @@ router.get('/:id/usage', async (req, res, next) => {
 
     // 2. Loss log — fetch recent entries and filter by Stock Item link in JS
     let usageLosses = [];
-    if (TABLES.STOCK_LOSS_LOG) {
-      try {
-        const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
-        const allLosses = await db.list(TABLES.STOCK_LOSS_LOG, {
-          filterByFormula: `NOT(IS_BEFORE({Date}, '${ninetyDaysAgo}'))`,
-          sort: [{ field: 'Date', direction: 'desc' }],
-        });
-        usageLosses = allLosses
-          .filter(l => siblingIds.has(l['Stock Item']?.[0]))
-          .map(l => ({
-            type: 'writeoff',
-            date: l.Date || null,
-            reason: l.Reason || '',
-            notes: l.Notes || '',
-            quantity: -(l.Quantity || 0),
-          }));
-      } catch { /* table may not exist */ }
+    try {
+      const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
+      const allLosses = await stockLossRepo.list({ from: ninetyDaysAgo });
+      usageLosses = allLosses
+        .filter(l => siblingIds.has(l['Stock Item']?.[0]))
+        .map(l => ({
+          type: 'writeoff',
+          date: l.Date || null,
+          reason: l.Reason || '',
+          notes: l.Notes || '',
+          quantity: -(l.Quantity || 0),
+        }));
+    } catch (err) {
+      console.error('stock usage: loss log fetch failed', err);
     }
 
     // 3. Purchase records — fetch and filter by Flower link in JS.
