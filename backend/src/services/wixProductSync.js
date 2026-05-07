@@ -950,7 +950,8 @@ export async function runPush(onProgress = NO_PROGRESS) {
       if (!pid || !vid) continue;
       if (!byProduct.has(pid)) byProduct.set(pid, []);
       const rawQty = row['Quantity'];
-      const qty = typeof rawQty === 'number' ? rawQty : Number(rawQty);
+      // null means "untracked" from PG — treat same as undefined/NaN, not 0.
+      const qty = rawQty == null ? NaN : (typeof rawQty === 'number' ? rawQty : Number(rawQty));
       byProduct.get(pid).push({
         variantId: vid,
         active: row['Active'] === true,
