@@ -206,43 +206,23 @@ function OrderCard({
   }
 
   async function patchDelivery(fields) {
+    const deliveryId = detail?.delivery?.id;
+    if (!deliveryId) return;
     setSaving(true);
     try {
-      // If no delivery record is attached yet (Airtable's back-link from
-      // Deliveries → Orders can be eventually-consistent, and some older
-      // Delivery orders were created before the explicit back-link write
-      // in orderService), create one on-the-fly. /convert-to-delivery 400s
-      // if a record exists on the server; in that case, refetch to pull
-      // the now-attached delivery before patching.
-      let deliveryId = detail?.delivery?.id;
-      if (!deliveryId) {
-        try {
-          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
-          deliveryId = res.data.id;
-          setDetail(prev => prev ? { ...prev, 'Delivery Type': 'Delivery', delivery: res.data } : prev);
-        } catch (convertErr) {
-          if (convertErr.response?.status === 400) {
-            const fresh = await client.get(`/orders/${order.id}`);
-            deliveryId = fresh.data.delivery?.id;
-            if (deliveryId) setDetail(fresh.data);
-          }
-          if (!deliveryId) throw convertErr;
-        }
-      }
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setDetail(prev => ({
         ...prev,
         delivery: { ...prev.delivery, ...fields },
       }));
-      // Also update the order-level fields so the collapsed view refreshes
+      // Propagate delivery date/time changes to the collapsed card in the list.
       onOrderUpdated?.(order.id, {
         'Delivery Date': fields['Delivery Date'] ?? detail.delivery['Delivery Date'],
         'Delivery Time': fields['Delivery Time'] ?? detail.delivery['Delivery Time'],
       });
       showToast(t.updated, 'success');
     } catch (err) {
-      const msg = err.response?.data?.error || t.updateError;
-      showToast(msg, 'error');
+      showToast(err.response?.data?.error || t.updateError, 'error');
     } finally {
       setSaving(false);
     }

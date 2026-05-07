@@ -235,35 +235,15 @@ export default function OrderDetailPage() {
   // Patch the linked delivery record (address, recipient, fee, driver assignment).
   // Mirrors OrderCard.patchDelivery so the full-page detail and the list card stay in sync.
   async function patchDelivery(fields) {
+    const deliveryId = order?.delivery?.id;
+    if (!deliveryId) return;
     setSaving(true);
     try {
-      // See OrderCard.patchDelivery for the full rationale: Airtable's
-      // reciprocal back-link Deliveries → Orders is eventually-consistent,
-      // so a freshly-created Delivery order may arrive here without
-      // order.delivery populated. Heal via convert-to-delivery when needed;
-      // if that 400s ("already exists"), refetch to pull the delivery that
-      // has since been linked.
-      let deliveryId = order?.delivery?.id;
-      if (!deliveryId) {
-        try {
-          const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
-          deliveryId = res.data.id;
-          setOrder(prev => prev ? { ...prev, 'Delivery Type': 'Delivery', delivery: res.data } : prev);
-        } catch (convertErr) {
-          if (convertErr.response?.status === 400) {
-            const fresh = await client.get(`/orders/${order.id}`);
-            deliveryId = fresh.data.delivery?.id;
-            if (deliveryId) setOrder(fresh.data);
-          }
-          if (!deliveryId) throw convertErr;
-        }
-      }
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setOrder(prev => prev ? { ...prev, delivery: { ...prev.delivery, ...fields } } : prev);
       showToast(t.updated || 'Updated!', 'success');
     } catch (err) {
-      const msg = err.response?.data?.error || t.updateError || 'Failed to update delivery.';
-      showToast(msg, 'error');
+      showToast(err.response?.data?.error || t.updateError || 'Failed to update delivery.', 'error');
     } finally {
       setSaving(false);
     }
