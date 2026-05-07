@@ -16,7 +16,7 @@ function toWire(row) {
 export async function list({ from, to } = {}) {
   const conditions = [isNull(marketingSpend.deletedAt)];
   if (from) conditions.push(gte(marketingSpend.month, `${from}-01`));
-  if (to)   conditions.push(lte(marketingSpend.month, `${to}-28`));
+  if (to)   conditions.push(lte(marketingSpend.month, `${to}-31`));
   const rows = await db.select().from(marketingSpend).where(and(...conditions)).orderBy(desc(marketingSpend.month));
   return rows.map(toWire);
 }
