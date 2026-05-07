@@ -615,14 +615,6 @@ async function logSync(direction, stats) {
     console.error('[SYNC] Failed to write sync log:', err.message);
   }
 
-  if (stats.errors.length > 0) {
-    const errorSummary = stats.errors.slice(0, 5).join('\n');
-    await sendAlert(
-      `SYNC ${direction.toUpperCase()} FAILED\n\n`
-      + `Errors: ${stats.errors.length}\n\n${errorSummary}`
-      + (stats.errors.length > 5 ? `\n...and ${stats.errors.length - 5} more` : '')
-    );
-  }
 }
 
 /**
@@ -870,7 +862,7 @@ export async function runPull() {
  *                    direct callers (e.g. the legacy `runSync`) can omit it.
  */
 export async function runPush(onProgress = NO_PROGRESS) {
-  const stats = { pricesSynced: 0, stockSynced: 0, categoriesSynced: 0, descriptionsSynced: 0, translationsSynced: 0, errors: [] };
+  const stats = { pricesSynced: 0, stockSynced: 0, categoriesSynced: 0, descriptionsSynced: 0, translationsSynced: 0, errors: [], warnings: [] };
   const log = (kind, message, level = 'info') => {
     try { onProgress({ kind, message, level }); } catch { /* never fail push because of a progress hook */ }
   };
@@ -981,9 +973,9 @@ export async function runPush(onProgress = NO_PROGRESS) {
 
     if (staleInventoryIds.size > 0) {
       const ids = [...staleInventoryIds].join(', ');
-      stats.errors.push(
+      stats.warnings.push(
         `${staleInventoryIds.size} Wix product${staleInventoryIds.size === 1 ? '' : 's'} referenced by PRODUCT_CONFIG no longer exist in Wix: ${ids}. ` +
-        `Clear the Wix Product ID on those Airtable rows (or delete the rows) to stop this warning.`
+        `Clear the Wix Product ID in product config to stop this warning.`
       );
       log('item', `Внимание: ${staleInventoryIds.size} товар(ов) удалены в Wix — очистите их из конфигурации.`, 'warn');
     }
