@@ -21,6 +21,7 @@ components/
   Sheet.jsx                   → Bottom-sheet modal primitive (mobile UX)
   EmptyState.jsx              → Empty-list illustration + CTA
   FilterBar.jsx               → Search + filter chips composite
+  BatchPickerModal.jsx        → Disambiguation modal shown when a flower variety has multiple Stock Items (Batches + Demand Entry). Used by BouquetEditor (florist) and BouquetSection (dashboard). Receives `t` prop for bilingual strings.
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
