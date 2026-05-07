@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
-import { useAuth, FeedbackModal } from '@flower-studio/shared';
+import { FeedbackModal } from '@flower-studio/shared';
 
 const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
 const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
@@ -28,7 +28,7 @@ function TabFallback() {
 }
 
 export default function DashboardPage() {
-  const { role } = useAuth();
+
   // TABS defined inside component so the Proxy reads the current language on each render
   const TABS = [
     { key: 'today',     label: t.tabToday },
@@ -201,7 +201,7 @@ export default function DashboardPage() {
       {reportOpen && (
         <FeedbackModal
           t={t}
-          reporterRole={role || 'owner'}
+          reporterRole="owner"
           reporterName="Owner"
           appArea="dashboard"
           onClose={() => setReportOpen(false)}
