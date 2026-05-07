@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -171,55 +173,39 @@ router.get('/premade-committed', async (req, res, next) => {
 router.get('/committed', async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const orders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
-      fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
-      maxRecords: 500,
+
+    const activeOrders = await orderRepo.list({
+      pg: {
+        excludeStatuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED],
+        requiredByFrom: today,
+      },
     });
 
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const allLines = await listByIds(TABLES.ORDER_LINES, allLineIds, {
-      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
-      maxRecords: 2000,
-    });
-
-    const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const allCustomers = await listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
-      fields: ['Name', 'Nickname'],
-    });
+    const uniqueCustomerIds = [...new Set(activeOrders.flatMap(o => o.Customer || []))];
+    const allCustomers = uniqueCustomerIds.length > 0 ? await customerRepo.findMany(uniqueCustomerIds) : [];
     const customerMap = {};
-    for (const c of allCustomers) customerMap[c.id] = c;
-
-    const orderMap = {};
-    for (const o of orders) {
-      const custId = o.Customer?.[0];
-      orderMap[o.id] = {
-        appOrderId: o['App Order ID'] || '',
-        customerName: customerMap[custId]?.Name || customerMap[custId]?.Nickname || '',
-        requiredBy: o['Required By'] || null,
-        status: o.Status || 'New',
-      };
+    for (const c of allCustomers) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
     }
 
     const committed = {};
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-
-      if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
-      committed[stockId].committed += qty;
-
-      const orderId = line.Order?.[0];
-      const orderInfo = orderId ? orderMap[orderId] : null;
-      if (orderInfo) {
+    for (const order of activeOrders) {
+      const custId = order.Customer?.[0];
+      const customerName = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      for (const line of (order._lines || [])) {
+        const stockId = line['Stock Item']?.[0];
+        if (!stockId) continue;
+        const qty = Number(line.Quantity || 0);
+        if (qty <= 0) continue;
+        if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
+        committed[stockId].committed += qty;
         committed[stockId].orders.push({
-          orderId,
-          appOrderId: orderInfo.appOrderId,
-          customerName: orderInfo.customerName,
-          requiredBy: orderInfo.requiredBy,
-          status: orderInfo.status,
+          orderId: order.id,
+          appOrderId: order['App Order ID'] || '',
+          customerName,
+          requiredBy: order['Required By'] || null,
+          status: order.Status || 'New',
           qty,
         });
       }
