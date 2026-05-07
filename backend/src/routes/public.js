@@ -6,7 +6,7 @@
 import { Router } from 'express';
 import * as db from '../services/airtable.js';
 import { TABLES } from '../config/airtable.js';
-import { getConfig, getActiveSeasonalCategory } from '../services/configService.js';
+import { getConfig, getActiveSeasonalCategory, getActiveSeasonalSlots } from '../services/configService.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 
 const router = Router();
@@ -198,7 +198,9 @@ router.get('/delivery-pricing', (req, res) => {
 // Returns a slug-keyed `categoryMap` so Velo can look up any category's translations.
 router.get('/categories', (_req, res) => {
   const sc = getConfig('storefrontCategories') || {};
-  const seasonal = getActiveSeasonalCategory();
+  const activeSlots = getActiveSeasonalSlots();
+  const seasonal  = activeSlots[0]?.category || null;
+  const seasonal2 = activeSlots[1]?.category || null;
 
   const permanent = sc.permanent || [];
   const auto = sc.auto || [];
@@ -206,7 +208,11 @@ router.get('/categories', (_req, res) => {
 
   // Flat name lists (backward compat for product assignment / nav rendering)
   const permanentNames = permanent.map(p => typeof p === 'string' ? p : p.name);
-  const all = [...permanentNames, ...(seasonal ? [seasonal.name] : [])];
+  const all = [
+    ...permanentNames,
+    ...(seasonal  ? [seasonal.name]  : []),
+    ...(seasonal2 ? [seasonal2.name] : []),
+  ];
   const allCategories = [...new Set([...permanentNames, ...allSeasonal])];
 
   // Count "Available Today" products from the products cache (no extra Airtable call).
@@ -249,13 +255,11 @@ router.get('/categories', (_req, res) => {
   res.json({
     permanent: permanentNames,
     seasonal: seasonal
-      ? {
-          name: seasonal.name,
-          slug: seasonal.slug,
-          description: seasonal.description || '',
-          translations: seasonal.translations || {},
-        }
+      ? { name: seasonal.name, slug: seasonal.slug, description: seasonal.description || '', translations: seasonal.translations || {} }
       : { active: null, slug: null },
+    seasonal2: seasonal2
+      ? { name: seasonal2.name, slug: seasonal2.slug, description: seasonal2.description || '', translations: seasonal2.translations || {} }
+      : null,
     auto: autoObjects,
     all,
     allCategories,
