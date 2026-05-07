@@ -4,6 +4,7 @@ import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as productRepo from '../repos/productRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -161,9 +162,7 @@ router.get('/', async (req, res, next) => {
             fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity', 'Flower Name'],
             maxRecords: 1000,
           }),
-      listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
-        fields: ['Name', 'Nickname', 'Phone'],
-      }),
+      customerRepo.findMany(uniqueCustomerIds),
       pgEmbeds
         ? Promise.resolve(orders.map(o => o._delivery).filter(Boolean))
         : listByIds(TABLES.DELIVERIES, allDeliveryIds, {
@@ -173,7 +172,10 @@ router.get('/', async (req, res, next) => {
 
     // Index customers and deliveries by ID
     const customerMap = {};
-    for (const c of allCustomers) customerMap[c.id] = c;
+    for (const c of allCustomers) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
+    }
 
     const deliveryMap = {};
     for (const d of allDeliveries) deliveryMap[d.id] = d;
@@ -289,7 +291,7 @@ router.get('/:id', async (req, res, next) => {
         ? Promise.resolve(order._lines)
         : listByIds(TABLES.ORDER_LINES, lineIds),
       custId
-        ? db.getById(TABLES.CUSTOMERS, custId).catch(() => null)
+        ? customerRepo.findMany([custId]).then(r => r[0] ?? null).catch(() => null)
         : Promise.resolve(null),
       hasPgEmbeds
         ? Promise.resolve(order._delivery)

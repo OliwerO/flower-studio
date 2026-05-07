@@ -9,7 +9,7 @@
 
 import { db } from '../db/index.js';
 import { customers, keyPeople, legacyOrders, orders } from '../db/schema.js';
-import { eq, and, or, ilike, like, isNull, asc, desc, sql } from 'drizzle-orm';
+import { eq, and, or, ilike, like, isNull, inArray, asc, desc, sql } from 'drizzle-orm';
 
 // ── Field mapping: request body → PG column ──
 const PATCH_MAP = {
@@ -140,6 +140,70 @@ export async function list({ search, withAggregates = true } = {}) {
     [],
     withAggregates ? (aggMap[row.id] ?? EMPTY_AGG) : null,
   ));
+}
+
+export async function findMany(ids) {
+  if (!ids || ids.length === 0) return [];
+  const safeIds = ids.filter(Boolean);
+  if (safeIds.length === 0) return [];
+
+  // orders.customer_id is text holding either a PG UUID (post-Phase-5 backfill)
+  // or a legacy recXXX Airtable ID. Match whichever column applies.
+  const recIds  = safeIds.filter(id => id.startsWith('rec'));
+  const uuidIds = safeIds.filter(id => !id.startsWith('rec'));
+
+  const orParts = [];
+  if (recIds.length)  orParts.push(inArray(customers.airtableId, recIds));
+  if (uuidIds.length) orParts.push(inArray(customers.id, uuidIds));
+  if (orParts.length === 0) return [];
+
+  const rows = await db
+    .select({
+      id:         customers.id,
+      airtableId: customers.airtableId,
+      name:       customers.name,
+      nickname:   customers.nickname,
+      phone:      customers.phone,
+    })
+    .from(customers)
+    .where(and(
+      isNull(customers.deletedAt),
+      orParts.length === 1 ? orParts[0] : or(...orParts),
+    ));
+
+  return rows.map(row => ({
+    id:         row.id,
+    airtableId: row.airtableId,
+    Name:       row.name,
+    Nickname:   row.nickname ?? null,
+    Phone:      row.phone ?? null,
+  }));
+}
+
+export async function findByPhoneOrEmail(phone, email) {
+  const orParts = [];
+  if (phone) {
+    const clean = phone.replace(/\s/g, '');
+    orParts.push(sql`REPLACE(${customers.phone}, ' ', '') LIKE ${'%' + clean + '%'}`);
+  }
+  if (email) {
+    orParts.push(sql`LOWER(${customers.email}) LIKE ${('%' + email + '%').toLowerCase()}`);
+  }
+  if (orParts.length === 0) return null;
+  const rows = await db.select().from(customers)
+    .where(and(isNull(customers.deletedAt), or(...orParts)))
+    .limit(1);
+  return rows.length > 0 ? _pgCustomerToResponse(rows[0]) : null;
+}
+
+export async function findByExactName(name) {
+  const rows = await db.select().from(customers)
+    .where(and(
+      isNull(customers.deletedAt),
+      sql`LOWER(${customers.name}) = LOWER(${name})`,
+    ))
+    .limit(1);
+  return rows.length > 0 ? _pgCustomerToResponse(rows[0]) : null;
 }
 
 export async function getById(id) {
