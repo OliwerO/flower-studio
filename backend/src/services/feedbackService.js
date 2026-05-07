@@ -44,16 +44,17 @@ Domain glossary (use exact terms in issue bodies — never use the "Avoid" alter
 For BUG reports, you need: which screen, what action was taken, what actually happened, what should have happened.
 For FEATURE REQUESTS, you need: what problem needs solving, what success looks like.
 
-Ask ONE clarifying question at a time in plain Russian. Keep questions short with a concrete example.
+Ask ONE clarifying question at a time. Keep questions short with a concrete example.
+IMPORTANT: Respond in the SAME language the reporter used. If they write in Russian, respond in Russian. If English, respond in English. Match their language exactly.
 When you have enough information, respond with done:true and all fields.
 
 ALWAYS respond with valid JSON only — no markdown fences, no extra text:
 
 If more info needed:
-{"done": false, "question": "Russian question string"}
+{"done": false, "question": "question in reporter's language"}
 
 When complete:
-{"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "russianSummary": "Plain Russian summary of what will be submitted — 2-3 sentences"}
+{"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "summary": "Plain summary in reporter's language — 2-3 sentences"}
 Note: "type" must be exactly "bug" or "feature" — no other values.`;
 
 async function callAI(messages) {
@@ -106,7 +107,7 @@ export async function startSession({ text, appArea, reporterRole, reporterName }
       englishDescription: aiResult.englishDescription || text,
       acceptanceCriteria: aiResult.acceptanceCriteria || [],
       originalQuote: aiResult.originalQuote || text,
-      russianSummary: aiResult.russianSummary || text,
+      summary: (aiResult.summary ?? aiResult.russianSummary) || text,
       type: aiResult.type || 'bug',
     });
     sessions.set(sessionId, session);
@@ -148,7 +149,7 @@ export async function continueSession(sessionId, message) {
       englishDescription: aiResult.englishDescription || message,
       acceptanceCriteria: aiResult.acceptanceCriteria || [],
       originalQuote: aiResult.originalQuote || nextMessages[0]?.content || message,
-      russianSummary: aiResult.russianSummary || message,
+      summary: (aiResult.summary ?? aiResult.russianSummary) || message,
       type: aiResult.type || 'bug',
     });
     return { done: true };
@@ -165,7 +166,7 @@ export async function previewSession(sessionId) {
   const session = sessions.get(sessionId);
   if (!session) throw new Error('Session not found or expired');
   if (!session.done) throw new Error('Session not complete yet');
-  return { summary: session.russianSummary };
+  return { summary: session.summary };
 }
 
 /**

@@ -35,7 +35,7 @@ function doneResponse(overrides = {}) {
       englishDescription: 'The save button on the Order edit screen does nothing when tapped.',
       acceptanceCriteria: ['Tapping Save on the Order edit screen saves changes'],
       originalQuote: 'кнопка не работает',
-      russianSummary: 'Кнопка сохранения на экране редактирования заказа не работает.',
+      summary: 'Кнопка сохранения на экране редактирования заказа не работает.',
       ...overrides,
     }) }],
   };
@@ -110,7 +110,7 @@ describe('startSession', () => {
         englishDescription: 'Add date range filter for delivery/pickup dates.',
         acceptanceCriteria: ['Orders tab has delivery date filter'],
         originalQuote: 'filter by delivery date',
-        russianSummary: 'Добавить фильтр по дате доставки.',
+        summary: 'Добавить фильтр по дате доставки.',
       }) + '\n```' }],
     });
     const result = await startSession({ text: 'filter by delivery date', reporterRole: 'owner', reporterName: 'Owner' });
@@ -199,7 +199,7 @@ describe('continueSession', () => {
 // ── previewSession ────────────────────────────────────────────────────────────
 
 describe('previewSession', () => {
-  it('returns russianSummary from completed session', async () => {
+  it('returns summary from completed session', async () => {
     const { sessionId } = await startSession({
       text: 'кнопка не работает',
       reporterRole: 'florist',
