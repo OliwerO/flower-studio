@@ -36,6 +36,20 @@
       "when": 1777920000000,
       "tag": "0004_phase4_followup",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1777334400000,
+      "tag": "0005_orders_image_url",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1778112000000,
+      "tag": "0006_phase5_customers",
+      "breakpoints": true
     }
   ]
 }
