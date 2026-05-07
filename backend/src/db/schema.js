@@ -9,7 +9,7 @@ import {
   pgTable, text, timestamp, jsonb, bigserial, index, uuid,
   integer, numeric, boolean, date, uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { isNotNull } from 'drizzle-orm';
+import { isNotNull, and } from 'drizzle-orm';
 
 // Single-row-per-key tracking. Phase 3+ writes rows like
 //   ('stock_cutover_at', '2026-05-...') when entity cutovers happen, so
@@ -416,7 +416,7 @@ export const productConfig = pgTable('product_config', {
   deletedAt:     timestamp('deleted_at', { withTimezone: true }),
 }, (t) => ({
   airtableIdx: uniqueIndex('product_config_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
-  wixPairIdx:  uniqueIndex('product_config_wix_pair_idx').on(t.wixProductId, t.wixVariantId).where(isNotNull(t.wixProductId)),
+  wixPairIdx:  uniqueIndex('product_config_wix_pair_idx').on(t.wixProductId, t.wixVariantId).where(and(isNotNull(t.wixProductId), isNotNull(t.wixVariantId))),
   productIdx:  index('product_config_wix_product_id_idx').on(t.wixProductId),
   activeIdx:   index('product_config_active_idx').on(t.active),
 }));
