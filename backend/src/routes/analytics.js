@@ -4,7 +4,7 @@ import * as db from '../services/airtable.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { getConfig } from './settings.js';
+import { getConfig } from '../services/configService.js';
 import { ORDER_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import {
   enrichOrderPrices, calculateRevenueMetrics, calculateWasteMetrics,

@@ -11,10 +11,6 @@ import {
   driverNames, autoClearIfNewDay,
 } from '../services/configService.js';
 
-// Re-export for backward-compat with existing callers that haven't been updated yet.
-// TODO: remove once all callers import directly from configService.
-export { getConfig, updateConfig, generateOrderId, isPastCutoff, getActiveSeasonalCategory, getDriverOfDay } from '../services/configService.js';
-
 const router = Router();
 
 // ── GET /api/settings — read all settings + config ──
