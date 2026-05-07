@@ -12,7 +12,7 @@ import Step3Details  from './steps/Step3Details.jsx';
 import Step4Review   from './steps/Step4Review.jsx';
 
 const emptyForm = {
-  customerId: '', customerName: '',
+  customerId: '', customerName: '', keyPersonId: null, keyPersonName: '',
   customerRequest: '', orderLines: [], priceOverride: '',
   source: 'In-store', deliveryType: 'Pickup',
   recipientName: '', recipientPhone: '',
@@ -105,6 +105,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
     setForm(prev => ({ ...prev, orderLines: updaterFn(prev.orderLines) }));
   }
 
+  // Called by Step1Customer after the user taps Continue (includes optional keyPersonId)
   function handleCustomerSelected(patch) {
     updateForm(patch);
     setStep(1);
@@ -151,6 +152,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
         paymentMethod:       form.paymentMethod,
         priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
         orderLines:          form.orderLines,
+        keyPersonId:         form.keyPersonId || null,
       };
       if (form.deliveryType === 'Delivery') {
         body.delivery = {

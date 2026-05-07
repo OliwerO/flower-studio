@@ -348,7 +348,7 @@ router.post('/', async (req, res, next) => {
       customer, customerRequest, source, communicationMethod, deliveryType,
       orderLines = [], delivery, notes, floristNote, paymentStatus, paymentMethod,
       priceOverride, requiredBy, cardText, deliveryTime,
-      payment1Amount, payment1Method,
+      payment1Amount, payment1Method, keyPersonId,
     } = req.body;
 
     // --- Input validation ---
@@ -392,7 +392,7 @@ router.post('/', async (req, res, next) => {
         orderLines, delivery, notes, floristNote,
         paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
         paymentMethod, priceOverride, requiredBy, cardText, deliveryTime,
-        payment1Amount, payment1Method,
+        payment1Amount, payment1Method, keyPersonId: keyPersonId || null,
         createdBy: req.role === 'owner' ? 'Owner' : 'Florist',
         isOwner: req.role === 'owner',
       }, { getConfig, getDriverOfDay, generateOrderId });

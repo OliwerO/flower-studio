@@ -144,12 +144,14 @@ router.patch('/:id', async (req, res, next) => {
 
     if (delta !== 0 && stockItemId) {
       await stockRepo.adjustQuantity(stockItemId, delta, { actor: actorFromReq(req) });
-      // Adjust Dead/Unsold Stems counter
-      const stockItem = await db.getById(TABLES.STOCK, stockItemId);
+      // Adjust Dead/Unsold Stems counter — route through stockRepo so the
+      // update lands in Postgres (STOCK_BACKEND=postgres) rather than the
+      // frozen Airtable snapshot.
+      const stockItem = await stockRepo.getById(stockItemId);
       const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
-      await db.update(TABLES.STOCK, stockItemId, {
+      await stockRepo.update(stockItemId, {
         'Dead/Unsold Stems': Math.max(0, currentDead - delta),
-      });
+      }, { actor: actorFromReq(req) });
     }
 
     const updated = await db.update(TABLES.STOCK_LOSS_LOG, req.params.id, fields);
@@ -172,11 +174,11 @@ router.delete('/:id', async (req, res, next) => {
 
     if (stockItemId && qty > 0) {
       await stockRepo.adjustQuantity(stockItemId, +qty, { actor: actorFromReq(req) });
-      const stockItem = await db.getById(TABLES.STOCK, stockItemId);
+      const stockItem = await stockRepo.getById(stockItemId);
       const currentDead = Number(stockItem['Dead/Unsold Stems'] || 0);
-      await db.update(TABLES.STOCK, stockItemId, {
+      await stockRepo.update(stockItemId, {
         'Dead/Unsold Stems': Math.max(0, currentDead - qty),
-      });
+      }, { actor: actorFromReq(req) });
     }
 
     await db.deleteRecord(TABLES.STOCK_LOSS_LOG, req.params.id);

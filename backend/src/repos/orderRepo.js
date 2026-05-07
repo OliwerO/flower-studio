@@ -102,6 +102,7 @@ export function pgOrderToResponse(row, lineIds = [], deliveryId = null) {
     'Payment 1 Amount':   row.payment1Amount != null ? Number(row.payment1Amount) : null,
     'Payment 1 Method':   row.payment1Method ?? null,
     'Image URL':          row.imageUrl ?? null,
+    keyPersonId:          row.keyPersonId ?? null,
     'Order Lines':        lineIds,
     Deliveries:           deliveryId ? [deliveryId] : [],
   };
@@ -168,6 +169,7 @@ function orderResponseToPg(fields) {
   if ('Payment 1 Amount' in fields) out.payment1Amount = fields['Payment 1 Amount'] != null ? String(fields['Payment 1 Amount']) : null;
   if ('Payment 1 Method' in fields) out.payment1Method = fields['Payment 1 Method'] || null;
   if ('Image URL' in fields)        out.imageUrl = fields['Image URL'] || null;
+  if ('keyPersonId' in fields)      out.keyPersonId = fields.keyPersonId || null;
   return out;
 }
 
@@ -511,7 +513,7 @@ export async function createOrder(params, config, opts = {}) {
     customer, customerRequest, source, communicationMethod, deliveryType,
     orderLines: lines, delivery, notes, floristNote, paymentStatus, paymentMethod, priceOverride,
     requiredBy, cardText, deliveryTime, createdBy,
-    payment1Amount, payment1Method,
+    payment1Amount, payment1Method, keyPersonId,
   } = params;
   const { getConfig, getDriverOfDay, generateOrderId } = config;
   const { skipStockDeduction = false, actor: rawActor } = opts;
@@ -565,6 +567,7 @@ export async function createOrder(params, config, opts = {}) {
       ...(payment1Method ? { 'Payment 1 Method': payment1Method } : {}),
       ...(p1AmountBackfill != null ? { 'Payment 1 Amount': p1AmountBackfill } : {}),
       ...(p1MethodBackfill ? { 'Payment 1 Method': p1MethodBackfill } : {}),
+      ...(keyPersonId ? { keyPersonId } : {}),
     };
     const [orderRow] = await tx.insert(orders).values(orderResponseToPg(orderFields)).returning();
     await tryAudit(tx, {

@@ -11,7 +11,7 @@ import Step3Details  from '../components/steps/Step3Details.jsx';
 import Step4Review   from '../components/steps/Step4Review.jsx';
 
 const emptyForm = {
-  customerId: '', customerName: '',
+  customerId: '', customerName: '', keyPersonId: null, keyPersonName: '',
   customerRequest: '', orderLines: [], priceOverride: '',
   source: 'In-store', deliveryType: 'Pickup',
   requiredBy: '', recipientName: '', recipientPhone: '',
@@ -172,7 +172,7 @@ export default function NewOrderPage() {
     setForm(prev => ({ ...prev, orderLines: updaterFn(prev.orderLines) }));
   }
 
-  // Called by Step1Customer after a customer is selected or created → auto-advance
+  // Called by Step1Customer after the user taps Continue (includes optional keyPersonId)
   function handleCustomerSelected(patch) {
     updateForm(patch);
     setStep(1);
@@ -253,6 +253,7 @@ export default function NewOrderPage() {
         payment1Method:      form.paymentStatus === 'Partial' && form.paymentMethod ? form.paymentMethod : null,
         priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
         orderLines:          form.orderLines,
+        keyPersonId:         form.keyPersonId || null,
       };
       // Card text + date/time apply to both delivery and pickup
       body.cardText = form.cardText || '';

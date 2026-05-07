@@ -268,6 +268,45 @@ export async function update(id, fields) {
   return _pgCustomerToResponse(updatedRow, kps);
 }
 
+// ── Key People ──
+
+export async function listKeyPeople(customerId) {
+  const rows = await db.select().from(keyPeople)
+    .where(and(eq(keyPeople.customerId, customerId), isNull(keyPeople.deletedAt)))
+    .orderBy(asc(keyPeople.createdAt));
+  return rows.map(r => ({
+    id:            r.id,
+    name:          r.name,
+    contactDetails: r.contactDetails ?? null,
+    importantDate:  r.importantDate ?? null,
+    importantDateLabel: r.importantDateLabel ?? null,
+    createdAt:     r.createdAt,
+  }));
+}
+
+export async function createKeyPerson(customerId, { name, contactDetails = null, importantDate = null, importantDateLabel = null } = {}) {
+  if (!name || !name.trim()) {
+    const err = new Error('name is required');
+    err.statusCode = 400;
+    throw err;
+  }
+  const [row] = await db.insert(keyPeople).values({
+    customerId,
+    name: name.trim(),
+    contactDetails: contactDetails || null,
+    importantDate: importantDate || null,
+    importantDateLabel: importantDateLabel || null,
+  }).returning();
+  return {
+    id:            row.id,
+    name:          row.name,
+    contactDetails: row.contactDetails ?? null,
+    importantDate:  row.importantDate ?? null,
+    importantDateLabel: row.importantDateLabel ?? null,
+    createdAt:     row.createdAt,
+  };
+}
+
 export async function listOrders(customerId) {
   const [appRows, legacyRows] = await Promise.all([
     db.select({
