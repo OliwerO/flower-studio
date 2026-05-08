@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
+import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -171,55 +173,39 @@ router.get('/premade-committed', async (req, res, next) => {
 router.get('/committed', async (req, res, next) => {
   try {
     const today = new Date().toISOString().split('T')[0];
-    const orders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
-      fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
-      maxRecords: 500,
+
+    const activeOrders = await orderRepo.list({
+      pg: {
+        excludeStatuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED],
+        requiredByFrom: today,
+      },
     });
 
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const allLines = await listByIds(TABLES.ORDER_LINES, allLineIds, {
-      fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
-      maxRecords: 2000,
-    });
-
-    const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const allCustomers = await listByIds(TABLES.CUSTOMERS, uniqueCustomerIds, {
-      fields: ['Name', 'Nickname'],
-    });
+    const uniqueCustomerIds = [...new Set(activeOrders.flatMap(o => o.Customer || []))];
+    const allCustomers = uniqueCustomerIds.length > 0 ? await customerRepo.findMany(uniqueCustomerIds) : [];
     const customerMap = {};
-    for (const c of allCustomers) customerMap[c.id] = c;
-
-    const orderMap = {};
-    for (const o of orders) {
-      const custId = o.Customer?.[0];
-      orderMap[o.id] = {
-        appOrderId: o['App Order ID'] || '',
-        customerName: customerMap[custId]?.Name || customerMap[custId]?.Nickname || '',
-        requiredBy: o['Required By'] || null,
-        status: o.Status || 'New',
-      };
+    for (const c of allCustomers) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
     }
 
     const committed = {};
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-
-      if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
-      committed[stockId].committed += qty;
-
-      const orderId = line.Order?.[0];
-      const orderInfo = orderId ? orderMap[orderId] : null;
-      if (orderInfo) {
+    for (const order of activeOrders) {
+      const custId = order.Customer?.[0];
+      const customerName = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      for (const line of (order._lines || [])) {
+        const stockId = line['Stock Item']?.[0];
+        if (!stockId) continue;
+        const qty = Number(line.Quantity || 0);
+        if (qty <= 0) continue;
+        if (!committed[stockId]) committed[stockId] = { committed: 0, orders: [] };
+        committed[stockId].committed += qty;
         committed[stockId].orders.push({
-          orderId,
-          appOrderId: orderInfo.appOrderId,
-          customerName: orderInfo.customerName,
-          requiredBy: orderInfo.requiredBy,
-          status: orderInfo.status,
+          orderId: order.id,
+          appOrderId: order['App Order ID'] || '',
+          customerName,
+          requiredBy: order['Required By'] || null,
+          status: order.Status || 'New',
           qty,
         });
       }
@@ -518,43 +504,35 @@ router.get('/:id/usage', async (req, res, next) => {
     // a larger result set. For a small shop (<2000 orders/year) both queries
     // return in well under a second via the rate-limited queue.
     const orderCutoff = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
-    const recentOrders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `OR({Order Date} = '', NOT(IS_BEFORE({Order Date}, '${orderCutoff}')))`,
-      fields: ['Order Lines', 'App Order ID', 'Customer', 'Status', 'Required By', 'Order Date'],
-      maxRecords: 2000,
-    });
-    const allLineIds = recentOrders.flatMap(o => o['Order Lines'] || []);
-    const allLines = allLineIds.length > 0
-      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Flower Name', 'Quantity', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Stock Item'],
-        })
-      : [];
-    // Keep only lines whose Stock Item link resolves to one of our siblings.
-    // Orphan lines (no link) don't affect qty (atomicStockAdjust needs a
-    // stock ID), so dropping them is harmless.
-    const matchedLines = allLines.filter(l => siblingIds.has(l['Stock Item']?.[0]));
+    const recentOrders = await orderRepo.list({
+      pg: { dateFrom: orderCutoff },
+    }).catch(err => { console.error('[STOCK] usage orderRepo.list failed:', err.message); return []; });
 
-    // Build the order map from the orders we already fetched — no second
-    // round-trip needed.
+    // Filter _lines to those whose Stock Item resolves to one of our siblings
+    const matchedLines = [];
     const orderMap = {};
-    for (const o of recentOrders) orderMap[o.id] = o;
+    for (const o of recentOrders) {
+      orderMap[o.id] = o;
+      for (const line of (o._lines || [])) {
+        if (siblingIds.has(line['Stock Item']?.[0])) {
+          matchedLines.push({ ...line, _orderId: o.id });
+        }
+      }
+    }
 
-    // Fetch only the customers whose orders actually matched this stock —
-    // otherwise we'd pull every customer from the past year.
-    const matchedOrderIds = new Set(matchedLines.flatMap(l => l.Order || []));
+    const matchedOrderIds = new Set(matchedLines.map(l => l._orderId));
     const customerIds = [...new Set(
-      recentOrders
-        .filter(o => matchedOrderIds.has(o.id))
-        .flatMap(o => o.Customer || [])
+      recentOrders.filter(o => matchedOrderIds.has(o.id)).flatMap(o => o.Customer || [])
     )];
-    const customers = customerIds.length > 0
-      ? await listByIds(TABLES.CUSTOMERS, customerIds, { fields: ['Name', 'Nickname'] })
-      : [];
+    const custList = customerIds.length > 0 ? await customerRepo.findMany(customerIds) : [];
     const customerMap = {};
-    for (const c of customers) customerMap[c.id] = c;
+    for (const c of custList) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
+    }
 
     const usageOrders = matchedLines.map(l => {
-      const orderId = l.Order?.[0];
+      const orderId = l._orderId;
       const o = orderId ? orderMap[orderId] : null;
       const custId = o?.Customer?.[0];
       const cust = custId ? customerMap[custId] : null;
@@ -893,27 +871,20 @@ router.get('/reconciliation', async (req, res, next) => {
 
     // 3. Non-terminal orders + lines — find which lines still reference an
     //    original so the owner knows which orders need swapping.
-    const orders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-      fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
-      maxRecords: 1000,
-    });
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-    const allLines = allLineIds.length > 0
-      ? await listByIds(TABLES.ORDER_LINES, allLineIds, {
-          fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
-        })
-      : [];
+    const activeOrders = await orderRepo.list({
+      pg: { excludeStatuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED] },
+    }).catch(err => { console.error('[STOCK] substitute-swap orderRepo.list failed:', err.message); return []; });
 
-    const custIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const custs = custIds.length > 0
-      ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
-      : [];
+    const custIds = [...new Set(activeOrders.flatMap(o => o.Customer || []))];
+    const custs = custIds.length > 0 ? await customerRepo.findMany(custIds) : [];
     const custMap = {};
-    for (const c of custs) custMap[c.id] = c;
+    for (const c of custs) {
+      custMap[c.id] = c;
+      if (c.airtableId) custMap[c.airtableId] = c;
+    }
 
     const orderMap = {};
-    for (const o of orders) {
+    for (const o of activeOrders) {
       const cid = o.Customer?.[0];
       orderMap[o.id] = {
         appOrderId: o['App Order ID'] || '',
@@ -927,25 +898,26 @@ router.get('/reconciliation', async (req, res, next) => {
     // swapped or zeroed out — no work left).
     const linesByOriginal = {};
     const originalIdSet = new Set(originalIds);
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId || !originalIdSet.has(stockId)) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-      const oid = line.Order?.[0];
-      const oi = oid ? orderMap[oid] : null;
-      if (!oi) continue;
-      if (!linesByOriginal[stockId]) linesByOriginal[stockId] = [];
-      linesByOriginal[stockId].push({
-        lineId: line.id,
-        orderId: oid,
-        appOrderId: oi.appOrderId,
-        customerName: oi.customerName,
-        requiredBy: oi.requiredBy,
-        orderStatus: oi.status,
-        quantity: qty,
-        suggestedSwapQty: qty,
-      });
+    for (const order of activeOrders) {
+      for (const line of (order._lines || [])) {
+        const stockId = line['Stock Item']?.[0];
+        if (!stockId || !originalIdSet.has(stockId)) continue;
+        const qty = Number(line.Quantity || 0);
+        if (qty <= 0) continue;
+        const oi = orderMap[order.id];
+        if (!oi) continue;
+        if (!linesByOriginal[stockId]) linesByOriginal[stockId] = [];
+        linesByOriginal[stockId].push({
+          lineId: line.id,
+          orderId: order.id,
+          appOrderId: oi.appOrderId,
+          customerName: oi.customerName,
+          requiredBy: oi.requiredBy,
+          orderStatus: oi.status,
+          quantity: qty,
+          suggestedSwapQty: qty,
+        });
+      }
     }
 
     // 4. Build response: only include originals that still have affected lines.

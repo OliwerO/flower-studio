@@ -1,9 +1,11 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
+import * as orderRepo from '../repos/orderRepo.js';
+import * as customerRepo from '../repos/customerRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
-import { TABLES } from '../config/airtable.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { db as pgDb } from '../db/index.js';
+import { orderLines as orderLinesTable, orders as ordersTable } from '../db/schema.js';
+import { and, or, eq, isNull, inArray, gte, lte, asc } from 'drizzle-orm';
 import { ORDER_STATUS, PAYMENT_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
 const router = Router();
@@ -13,192 +15,84 @@ router.use(authorize('dashboard'));
 router.get('/', async (req, res, next) => {
   try {
     // Accept optional ?date= param, default to today
-    const today = sanitizeFormulaValue(req.query.date || new Date().toISOString().split('T')[0]);
+    const today = (req.query.date || new Date().toISOString().split('T')[0]).slice(0, 10);
 
     const tomorrow = new Date(new Date(today).getTime() + 86400000).toISOString().split('T')[0];
 
     const [orders, ordersDueToday, fulfillToday, tomorrowOrders, deliveries, lowStock, unpaidOrders, negativeStockItems, customersWithDates] = await Promise.all([
-      // Today's orders (by Order Date — for revenue, status breakdown)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `DATESTR({Order Date}) = '${today}'`,
-        sort: [{ field: 'Order Date', direction: 'desc' }],
-      }).catch(() => []),
-      // Orders due today (by Required By — for "planned today" count)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-        fields: ['Required By', 'Status'],
-        maxRecords: 200,
-      }).catch(() => []),
-      // Orders to fulfill today: Required By = today, not cancelled (full data for display)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${today}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-        sort: [{ field: 'Required By', direction: 'asc' }],
-        maxRecords: 200,
-      }).catch(() => []),
-      // Tomorrow's orders: Required By = tomorrow, not cancelled (show all for planning)
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(DATESTR({Required By}) = '${tomorrow}', {Status} != '${ORDER_STATUS.CANCELLED}')`,
-        fields: ['Customer', 'Required By', 'Status', 'Delivery Type', 'Order Lines', 'Customer Request', 'App Order ID', 'Delivery Time'],
-        maxRecords: 100,
-      }).catch(() => []),
-      // Today's pending deliveries (all statuses — we filter below)
-      db.list(TABLES.DELIVERIES, {
-        filterByFormula: `AND(DATESTR({Delivery Date}) = '${today}', {Status} != '${DELIVERY_STATUS.DELIVERED}')`,
-      }).catch(() => []),
+      // Today's orders by Order Date (for revenue + status breakdown)
+      orderRepo.list({ pg: { forDate: today }, sort: [{ field: 'Order Date', direction: 'desc' }] }).catch(() => []),
+      // Orders due today by Required By (count only — we only need .length)
+      orderRepo.list({ pg: { requiredByFrom: today, requiredByTo: today, excludeStatuses: [ORDER_STATUS.CANCELLED] } }).catch(() => []),
+      // Full data for fulfill-today orders
+      orderRepo.list({ pg: { requiredByFrom: today, requiredByTo: today, excludeStatuses: [ORDER_STATUS.CANCELLED] }, sort: [{ field: 'Required By', direction: 'asc' }] }).catch(() => []),
+      // Tomorrow's orders for planning view
+      orderRepo.list({ pg: { requiredByFrom: tomorrow, requiredByTo: tomorrow, excludeStatuses: [ORDER_STATUS.CANCELLED] } }).catch(() => []),
+      // Today's pending deliveries (filter to non-Delivered below)
+      orderRepo.listDeliveries({ pg: { date: today } }).then(rows => rows.filter(d => d.Status !== DELIVERY_STATUS.DELIVERED)).catch(() => []),
       // Stock items below reorder threshold
-      stockRepo.list({
-        filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < {Reorder Threshold})`,
-        sort: [{ field: 'Current Quantity', direction: 'asc' }],
-        // PG-mode equivalent — caller filters threshold below since we
-        // don't have a column-vs-column comparison option yet.
-        pg: { active: true, includeEmpty: true },
-      }).then(rows => rows.filter(r => {
-        // Defence-in-depth: PG-mode returns all active stock; filter on threshold here.
+      stockRepo.list({ pg: { active: true, includeEmpty: true } }).then(rows => rows.filter(r => {
         const t = Number(r['Reorder Threshold'] || 0);
         return t > 0 && Number(r['Current Quantity'] || 0) < t;
       })).catch(() => []),
-      // All unpaid/partial non-cancelled orders for aging calculation
-      // Don't restrict fields — 'Final Price' is a formula field that may not exist in all bases
-      db.list(TABLES.ORDERS, {
-        filterByFormula: `AND(OR({Payment Status} = '${PAYMENT_STATUS.UNPAID}', {Payment Status} = '${PAYMENT_STATUS.PARTIAL}'), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-      }).catch(() => []),
+      // Unpaid/partial non-cancelled orders
+      orderRepo.list({ pg: { excludeStatuses: [ORDER_STATUS.CANCELLED] } })
+        .then(rows => rows.filter(o =>
+          o['Payment Status'] === PAYMENT_STATUS.UNPAID || o['Payment Status'] === PAYMENT_STATUS.PARTIAL
+        )).catch(() => []),
       // Active stock items with negative quantity
-      stockRepo.list({
-        filterByFormula: `AND({Active} = TRUE(), {Current Quantity} < 0)`,
-        fields: ['Display Name', 'Purchase Name', 'Current Quantity', 'Supplier', 'Order Lines'],
-        pg: { active: true, includeEmpty: true },
-      }).then(rows => rows.filter(r => Number(r['Current Quantity'] || 0) < 0))
-        .catch(() => []),
-      // Customers with key person dates set for upcoming reminders
-      // Wrapped in catch — these fields may not exist in all Airtable bases
-      db.list(TABLES.CUSTOMERS, {
-        filterByFormula: `OR({Key person 1 (important DATE)} != '', {Key person 2 (important DATE)} != '')`,
-        fields: ['Name', 'Nickname', 'Key person 1 (Name + Contact details)', 'Key person 1 (important DATE)', 'Key person 2 (Name + Contact details)', 'Key person 2 (important DATE)'],
-      }).catch(() => []),
+      stockRepo.list({ pg: { active: true, includeEmpty: true } }).then(rows => rows.filter(r => Number(r['Current Quantity'] || 0) < 0)).catch(() => []),
+      // Customers with key person reminder dates
+      customerRepo.listWithKeyPeopleHavingDates().catch(() => []),
     ]);
 
-    // Enrich orders with customer names + computed prices
-    // (same bulk-fetch pattern as orders route)
-    const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-
-    const [allCustomers, allLines] = await Promise.all([
-      uniqueCustomerIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${uniqueCustomerIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          }).catch(() => [])
-        : [],
-      allLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${allLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
-            maxRecords: 1000,
-          }).catch(() => [])
-        : [],
-    ]);
-
+    // Build customerMap from all order customer IDs across all order arrays
+    const allCustIds = [...new Set([
+      ...orders.flatMap(o => o.Customer || []),
+      ...fulfillToday.flatMap(o => o.Customer || []),
+      ...tomorrowOrders.flatMap(o => o.Customer || []),
+    ].filter(Boolean))];
+    const custList = allCustIds.length > 0 ? await customerRepo.findMany(allCustIds) : [];
     const customerMap = {};
-    for (const c of allCustomers) customerMap[c.id] = c;
-
-    // Sum order line sell totals by order ID
-    const totalByOrder = {};
-    for (const line of allLines) {
-      const oid = line.Order?.[0];
-      if (oid) {
-        totalByOrder[oid] = (totalByOrder[oid] || 0)
-          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-      }
+    for (const c of custList) {
+      customerMap[c.id] = c;
+      if (c.airtableId) customerMap[c.airtableId] = c;
     }
 
-    for (const order of orders) {
+    function computeSellTotal(order) {
+      return (order._lines || []).reduce(
+        (sum, l) => sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0
+      );
+    }
+    function enrichOrder(order) {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
-
-      // Compute effective price (Final Price is an Airtable formula that may not return)
-      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
-        order['Sell Total'] = totalByOrder[order.id];
+      if (!order['Price Override']) {
+        order['Sell Total'] = computeSellTotal(order);
       }
-      const deliveryFee = Number(order['Delivery Fee'] || 0);
-      // Price Override replaces flower total only; delivery fee always added on top
+      const deliveryFee = Number(
+        order['Delivery Fee'] || order._delivery?.['Delivery Fee'] || 0
+      );
       order['Effective Price'] = order['Final Price']
         ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
     }
 
-    // Enrich fulfillToday orders with customer names + effective prices
-    // (reuse the same customerMap + totalByOrder if they overlap, fetch missing)
-    const fulfillCustIds = [...new Set(fulfillToday.flatMap(o => o.Customer || []).filter(id => !customerMap[id]))];
-    const fulfillLineIds = fulfillToday.flatMap(o => o['Order Lines'] || []).filter(id => !allLineIds.includes(id));
+    for (const order of orders) enrichOrder(order);
 
-    const [extraFulfillCusts, extraFulfillLines] = await Promise.all([
-      fulfillCustIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${fulfillCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          }).catch(() => [])
-        : [],
-      fulfillLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${fulfillLineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Sell Price Per Unit', 'Quantity', 'Flower Name'],
-            maxRecords: 1000,
-          }).catch(() => [])
-        : [],
-    ]);
-    for (const c of extraFulfillCusts) customerMap[c.id] = c;
-    for (const line of extraFulfillLines) {
-      const oid = line.Order?.[0];
-      if (oid) {
-        totalByOrder[oid] = (totalByOrder[oid] || 0)
-          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-      }
-    }
+    for (const order of fulfillToday) enrichOrder(order);
 
-    for (const order of fulfillToday) {
-      const custId = order.Customer?.[0];
-      order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
-      if (!order['Price Override'] && totalByOrder[order.id] !== undefined) {
-        order['Sell Total'] = totalByOrder[order.id];
-      }
-      const deliveryFee = Number(order['Delivery Fee'] || 0);
-      order['Effective Price'] = order['Final Price']
-        ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
-    }
-
-    // Enrich tomorrowOrders with customer names + order line summaries
-    const tmrwCustIds = [...new Set(tomorrowOrders.flatMap(o => o.Customer || []).filter(id => !customerMap[id]))];
-    const tmrwLineIds = tomorrowOrders.flatMap(o => o['Order Lines'] || []);
-
-    const [extraTmrwCusts, tmrwLines] = await Promise.all([
-      tmrwCustIds.length > 0
-        ? db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${tmrwCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          }).catch(() => [])
-        : [],
-      tmrwLineIds.length > 0
-        ? db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${tmrwLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order', 'Flower Name', 'Quantity'],
-            maxRecords: 500,
-          }).catch(() => [])
-        : [],
-    ]);
-    for (const c of extraTmrwCusts) customerMap[c.id] = c;
-
-    // Build line summaries per order for tomorrow
+    // Enrich tomorrowOrders with customer names + line summaries from embedded _lines
     const tmrwLineSummary = {};
-    for (const line of tmrwLines) {
-      const oid = line.Order?.[0];
-      if (!oid) continue;
-      if (!tmrwLineSummary[oid]) tmrwLineSummary[oid] = { items: [], count: 0 };
-      tmrwLineSummary[oid].items.push(`${line['Flower Name'] || '?'} ×${line.Quantity || 1}`);
-      tmrwLineSummary[oid].count++;
-    }
-
     for (const order of tomorrowOrders) {
       const custId = order.Customer?.[0];
       order['Customer Name'] = customerMap[custId]?.Name || customerMap[custId]?.Nickname || '';
+      const lines = order._lines || [];
+      if (lines.length > 0) {
+        tmrwLineSummary[order.id] = {
+          items: lines.map(l => `${l['Flower Name'] || '?'} ×${l.Quantity || 1}`),
+          count: lines.length,
+        };
+      }
       const summary = tmrwLineSummary[order.id];
       order['Line Summary'] = summary ? summary.items.join(', ') : '';
       order['Line Count'] = summary ? summary.count : 0;
@@ -222,23 +116,10 @@ router.get('/', async (req, res, next) => {
       d.Status !== DELIVERY_STATUS.DELIVERED
     );
 
-    // Bulk-fetch order lines for unpaid orders to calculate accurate sell totals.
-    // Can't rely on 'Sell Price Total' rollup — it may be stale after price edits.
-    const unpaidLineIds = unpaidOrders.flatMap(o => o['Order Lines'] || []);
-    const unpaidLines = unpaidLineIds.length > 0
-      ? await db.list(TABLES.ORDER_LINES, {
-          filterByFormula: `OR(${unpaidLineIds.slice(0, 200).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          fields: ['Order', 'Sell Price Per Unit', 'Quantity'],
-          maxRecords: 1000,
-        }).catch(() => [])
-      : [];
+    // Compute unpaid order sell totals from embedded _lines
     const unpaidTotalByOrder = {};
-    for (const line of unpaidLines) {
-      const oid = line.Order?.[0];
-      if (oid) {
-        unpaidTotalByOrder[oid] = (unpaidTotalByOrder[oid] || 0)
-          + Number(line['Sell Price Per Unit'] || 0) * Number(line['Quantity'] || 0);
-      }
+    for (const o of unpaidOrders) {
+      unpaidTotalByOrder[o.id] = computeSellTotal(o);
     }
 
     // Unpaid orders aging: group by how old they are relative to today
@@ -302,8 +183,6 @@ router.get('/', async (req, res, next) => {
     keyDateReminders.sort((a, b) => a.daysUntil - b.daysUntil);
 
     // Enrich pending deliveries with customer name (who ordered)
-    // by following the chain: Delivery → Order → Customer.
-    // We already have orders loaded, so we only need the link hop.
     const orderIdSet = new Set(orders.map(o => o.id));
     const orderMapForDeliveries = {};
     for (const o of orders) orderMapForDeliveries[o.id] = o;
@@ -314,19 +193,16 @@ router.get('/', async (req, res, next) => {
       .filter(id => !orderIdSet.has(id));
 
     if (missingOrderIds.length > 0) {
-      const extraOrders = await db.list(TABLES.ORDERS, {
-        filterByFormula: `OR(${missingOrderIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Customer'],
-      });
-      const extraCustIds = [...new Set(extraOrders.flatMap(o => o.Customer || []))];
-      const extraCusts = extraCustIds.length > 0
-        ? await db.list(TABLES.CUSTOMERS, {
-            filterByFormula: `OR(${extraCustIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Name', 'Nickname'],
-          })
-        : [];
-      for (const c of extraCusts) customerMap[c.id] = c;
-      for (const o of extraOrders) orderMapForDeliveries[o.id] = o;
+      const extraOrders = await Promise.all(
+        missingOrderIds.map(id => orderRepo.getById(id).catch(() => null))
+      );
+      const extraCustIds = extraOrders.filter(Boolean).flatMap(o => o.Customer || []);
+      const extraCusts = extraCustIds.length > 0 ? await customerRepo.findMany(extraCustIds) : [];
+      for (const c of extraCusts) {
+        customerMap[c.id] = c;
+        if (c.airtableId) customerMap[c.airtableId] = c;
+      }
+      for (const o of extraOrders.filter(Boolean)) orderMapForDeliveries[o.id] = o;
     }
 
     for (const d of deliveries) {
@@ -334,109 +210,96 @@ router.get('/', async (req, res, next) => {
       const order = orderMapForDeliveries[orderId];
       const custId = order?.Customer?.[0];
       const cust = customerMap[custId];
-      if (cust) {
-        d['Customer Name'] = cust.Name || cust.Nickname || '';
-      }
+      if (cust) d['Customer Name'] = cust.Name || cust.Nickname || '';
     }
 
     // Include deferred order lines as additional demand in "Flowers Needed".
     // Deferred lines have Stock Deferred = true — they signal "need to buy" without deducting stock.
-    const deferredLines = await db.list(TABLES.ORDER_LINES, {
-      filterByFormula: `AND({Stock Deferred} = TRUE())`,
-      fields: ['Stock Item', 'Flower Name', 'Quantity', 'Order'],
-      maxRecords: 500,
-    }).catch(() => []);
+    const rawDeferredLines = await pgDb.select().from(orderLinesTable)
+      .where(and(eq(orderLinesTable.stockDeferred, true), isNull(orderLinesTable.deletedAt)));
 
     // Aggregate deferred demand by stock item: stockId → { name, qty, neededBy }
     const deferredDemand = {};
-    if (deferredLines.length > 0) {
-      // Fetch parent orders to get Required By dates and exclude cancelled orders
-      const deferredOrderIds = [...new Set(deferredLines.flatMap(l => l.Order || []))];
+    if (rawDeferredLines.length > 0) {
+      const deferredOrderIds = [...new Set(rawDeferredLines.map(l => l.orderId).filter(Boolean))];
       const deferredOrders = deferredOrderIds.length > 0
-        ? await db.list(TABLES.ORDERS, {
-            filterByFormula: `AND(OR(${deferredOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-            fields: ['Required By'],
-          }).catch(() => [])
+        ? await orderRepo.list({ pg: { excludeStatuses: [ORDER_STATUS.CANCELLED] } })
+            .then(rows => rows.filter(o => deferredOrderIds.includes(o._pgId || o.id)))
         : [];
-      const deferredOrderMap = {};
-      for (const o of deferredOrders) deferredOrderMap[o.id] = o;
 
-      for (const line of deferredLines) {
-        const stockId = line['Stock Item']?.[0];
+      const deferredOrderMap = {};
+      for (const o of deferredOrders) {
+        if (o._pgId) deferredOrderMap[o._pgId] = o;
+        deferredOrderMap[o.id] = o;
+      }
+
+      for (const line of rawDeferredLines) {
+        const stockId = line.stockItemId;
         if (!stockId) continue;
-        const orderId = line.Order?.[0];
-        const parentOrder = deferredOrderMap[orderId];
-        if (!parentOrder) continue; // order cancelled or not found
+        const parentOrder = deferredOrderMap[line.orderId];
+        if (!parentOrder) continue;
         const reqBy = parentOrder['Required By'] || null;
 
         if (!deferredDemand[stockId]) {
-          deferredDemand[stockId] = { name: line['Flower Name'] || '?', qty: 0, neededBy: null };
+          deferredDemand[stockId] = { name: line.flowerName || '?', qty: 0, neededBy: null };
         }
-        deferredDemand[stockId].qty += Number(line.Quantity || 0);
+        deferredDemand[stockId].qty += Number(line.quantity || 0);
         if (reqBy && (!deferredDemand[stockId].neededBy || reqBy < deferredDemand[stockId].neededBy)) {
           deferredDemand[stockId].neededBy = reqBy;
         }
       }
     }
 
-    // Compute needed-by dates for negative stock items
-    // For each negative item, find linked order lines → parent order → earliest Required By date
+    // Compute needed-by dates for negative stock items via PG order_lines
     let negativeStock = [];
     if (negativeStockItems.length > 0) {
-      // Collect all order line IDs from negative stock items
-      const negLineIds = negativeStockItems.flatMap(s => s['Order Lines'] || []);
-      const negLines = negLineIds.length > 0
-        ? await db.list(TABLES.ORDER_LINES, {
-            filterByFormula: `OR(${negLineIds.slice(0, 100).map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-            fields: ['Order'],
-            maxRecords: 200,
-          }).catch(() => [])
+      const negPgIds = negativeStockItems.map(s => s._pgId).filter(Boolean);
+
+      const negLines = negPgIds.length > 0
+        ? await pgDb.select({
+            orderId:     orderLinesTable.orderId,
+            stockItemId: orderLinesTable.stockItemId,
+          }).from(orderLinesTable)
+            .where(and(inArray(orderLinesTable.stockItemId, negPgIds), isNull(orderLinesTable.deletedAt)))
         : [];
 
-      // Get unique parent order IDs
-      const parentOrderIds = [...new Set(negLines.flatMap(l => l.Order || []))];
-      const parentOrders = parentOrderIds.length > 0
-        ? await db.list(TABLES.ORDERS, {
-            filterByFormula: `AND(OR(${parentOrderIds.slice(0, 50).map(id => `RECORD_ID() = "${id}"`).join(',')}), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-            fields: ['Required By', 'Order Lines'],
-          }).catch(() => [])
+      const negOrderIds = [...new Set(negLines.map(l => l.orderId).filter(Boolean))];
+      const negOrders = negOrderIds.length > 0
+        ? await orderRepo.list({ pg: { excludeStatuses: [ORDER_STATUS.CANCELLED] } })
+            .then(rows => rows.filter(o => negOrderIds.includes(o._pgId || o.id)))
         : [];
+      const negOrderMap = {};
+      for (const o of negOrders) {
+        if (o._pgId) negOrderMap[o._pgId] = o;
+        negOrderMap[o.id] = o;
+      }
 
-      // Build map: stockId → earliest neededBy
       const neededByMap = {};
-      for (const order of parentOrders) {
-        const reqBy = order['Required By'];
-        if (!reqBy) continue;
-        const orderLineIds = new Set(order['Order Lines'] || []);
-        for (const si of negativeStockItems) {
-          const siLineIds = si['Order Lines'] || [];
-          if (siLineIds.some(lid => orderLineIds.has(lid))) {
-            if (!neededByMap[si.id] || reqBy < neededByMap[si.id]) {
-              neededByMap[si.id] = reqBy;
-            }
-          }
+      for (const nl of negLines) {
+        const order = negOrderMap[nl.orderId];
+        if (!order?.['Required By']) continue;
+        if (!neededByMap[nl.stockItemId] || order['Required By'] < neededByMap[nl.stockItemId]) {
+          neededByMap[nl.stockItemId] = order['Required By'];
         }
       }
 
-      // Group negative stock by Purchase Name (flower type) so batches merge into one demand line.
-      // Like aggregating material demand across warehouse bins in MRP.
       const groupMap = new Map();
       for (const s of negativeStockItems) {
         const groupKey = s['Purchase Name'] || s['Display Name'];
         if (!groupMap.has(groupKey)) {
           groupMap.set(groupKey, {
-            id: s.id,          // primary batch ID (for PO linking)
-            batchIds: [],      // all batch IDs in this group
-            name: groupKey,    // clean flower type name (no date suffix)
+            id: s.id,
+            batchIds: [],
+            name: groupKey,
             qty: 0,
             neededBy: null,
             supplier: s.Supplier || null,
           });
         }
         const group = groupMap.get(groupKey);
-        group.qty += s['Current Quantity'];
-        group.batchIds.push(s.id);
-        const nb = neededByMap[s.id];
+        group.qty += Number(s['Current Quantity'] || 0);
+        group.batchIds.push(s._pgId || s.id);
+        const nb = neededByMap[s._pgId];
         if (nb && (!group.neededBy || nb < group.neededBy)) group.neededBy = nb;
         if (!group.supplier && s.Supplier) group.supplier = s.Supplier;
       }
@@ -451,7 +314,7 @@ router.get('/', async (req, res, next) => {
     // Merge deferred demand into negativeStock list.
     // Match by batch ID (deferred items reference specific stock records within a group).
     for (const [stockId, demand] of Object.entries(deferredDemand)) {
-      const existing = negativeStock.find(s => s.id === stockId || s.batchIds?.includes(stockId));
+      const existing = negativeStock.find(s => s._pgId === stockId || s.id === stockId || s.batchIds?.includes(stockId));
       if (existing) {
         existing.deferredQty = (existing.deferredQty || 0) + demand.qty;
         if (demand.neededBy && (!existing.neededBy || demand.neededBy < existing.neededBy)) {

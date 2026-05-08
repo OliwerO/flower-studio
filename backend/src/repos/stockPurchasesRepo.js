@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { stockPurchases } from '../db/schema.js';
-import { eq, and, like, desc } from 'drizzle-orm';
+import { eq, and, like, desc, gte, lte } from 'drizzle-orm';
 
 function toWire(row) {
   return {
@@ -30,6 +30,18 @@ export async function create({ purchaseDate, supplier, stockId, stockAirtableId,
 
   const [row] = await db.insert(stockPurchases).values(values).returning();
   return toWire(row);
+}
+
+export async function list({ from, to } = {}) {
+  const conditions = [];
+  if (from) conditions.push(gte(stockPurchases.purchaseDate, from));
+  if (to)   conditions.push(lte(stockPurchases.purchaseDate, to));
+
+  const rows = await db.select().from(stockPurchases)
+    .where(conditions.length ? and(...conditions) : undefined)
+    .orderBy(desc(stockPurchases.purchaseDate));
+
+  return rows.map(toWire);
 }
 
 // Returns true when a row whose Notes field contains `marker` already exists.
