@@ -405,6 +405,83 @@ export async function mirrorAirtableOrder({ order, lines = [], delivery = null }
   });
 }
 
+// ── createWixOrder — direct PG transactional write for the Wix webhook ──
+//
+// Wix webhook bypasses orderService.createOrder because:
+//   - No stock deduction (Wix products don't 1:1 map to stock items;
+//     florist composes the bouquet manually post-order).
+//   - No auto-match prompts, owner-price cascades, driver-of-day.
+//   - Source/createdBy/Status are Wix invariants.
+// Replaces the old "create-in-Airtable then mirrorAirtableOrder" flow that
+// lived in wix.js until PR 2a.
+export async function createWixOrder(params) {
+  if (MODE !== 'postgres') {
+    throw new Error('orderRepo.createWixOrder: requires ORDER_BACKEND=postgres');
+  }
+  if (!db) throw new Error('orderRepo.createWixOrder: postgres backend not configured');
+
+  const {
+    customerId, appOrderId, wixOrderId, customerRequest,
+    requiredBy, paymentStatus, paymentMethod, priceOverride,
+    lines: lineParams, delivery: deliveryParams,
+  } = params;
+
+  return await db.transaction(async (tx) => {
+    const orderInsert = {
+      customerId,
+      appOrderId,
+      wixOrderId: wixOrderId || null,
+      source: 'Wix',
+      createdBy: 'Wix Webhook',
+      status: ORDER_STATUS.NEW,
+      deliveryType: 'Delivery',
+      orderDate: new Date().toISOString().split('T')[0],
+      requiredBy: requiredBy || null,
+      customerRequest: customerRequest || '',
+      notesOriginal: customerRequest || '',
+      greetingCardText: '',
+      paymentStatus: paymentStatus || 'Unpaid',
+      paymentMethod: paymentMethod || null,
+      priceOverride: priceOverride != null ? String(priceOverride) : null,
+      deliveryFee: String(Number(deliveryParams?.fee) || 0),
+    };
+
+    const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
+
+    const insertedLines = [];
+    for (const line of lineParams || []) {
+      const lineInsert = {
+        orderId:          insertedOrder.id,
+        stockItemId:      line.stockItemId || null,
+        flowerName:       line.flowerName || '',
+        quantity:         Number(line.quantity) || 0,
+        costPricePerUnit: line.costPricePerUnit != null ? String(line.costPricePerUnit) : null,
+        sellPricePerUnit: line.sellPricePerUnit != null ? String(line.sellPricePerUnit) : null,
+      };
+      const [insertedLine] = await tx.insert(orderLines).values(lineInsert).returning();
+      insertedLines.push(insertedLine);
+    }
+
+    const deliveryInsert = {
+      orderId:         insertedOrder.id,
+      deliveryAddress: deliveryParams?.address || '',
+      recipientName:   deliveryParams?.recipientName || '',
+      recipientPhone:  deliveryParams?.recipientPhone || '',
+      deliveryDate:    deliveryParams?.date || null,
+      deliveryTime:    '',
+      deliveryFee:     String(Number(deliveryParams?.fee) || 0),
+      status:          DELIVERY_STATUS.PENDING,
+    };
+    const [insertedDelivery] = await tx.insert(deliveries).values(deliveryInsert).returning();
+
+    return {
+      order:    pgOrderToResponse(insertedOrder, insertedLines.map(l => l.id), insertedDelivery.id),
+      lines:    insertedLines.map(pgLineToResponse),
+      delivery: pgDeliveryToResponse({ ...insertedDelivery, orderId: insertedOrder.id }),
+    };
+  });
+}
+
 // listByIds — bulk-fetch orders by mixed Airtable / PG ids. Used by
 // routes/deliveries.js to enrich linked-order info without N round-trips.
 export async function listByIds(ids, { fields } = {}) {
