@@ -301,13 +301,21 @@ export async function returnPremadeBouquetToStock(id) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
       if (stockId && qty > 0) {
-        const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
-        returnedItems.push({
-          stockId,
-          flowerName: line['Flower Name'] || '?',
-          quantityReturned: qty,
-          newStockQty: newQty,
-        });
+        try {
+          const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
+          returnedItems.push({
+            stockId,
+            flowerName: line['Flower Name'] || '?',
+            quantityReturned: qty,
+            newStockQty: newQty,
+          });
+        } catch (err) {
+          if (err.statusCode === 404) {
+            console.warn(`[PREMADE] Stock item ${stockId} not found during return — skipping quantity restore for "${line['Flower Name'] || '?'}"`);
+          } else {
+            throw err;
+          }
+        }
       }
       // Delete the line record
       await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(err =>
