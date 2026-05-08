@@ -64,6 +64,15 @@ When complete:
 {"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "summary": "Plain summary in reporter's language — 2-3 sentences"}
 Note: "type" must be exactly "bug" or "feature" — no other values.`;
 
+function tryParseAIResponse(raw) {
+  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  const text = fenceMatch ? fenceMatch[1] : raw;
+  try { return JSON.parse(text); } catch {}
+  const objMatch = raw.match(/\{[\s\S]*\}/);
+  if (objMatch) { try { return JSON.parse(objMatch[0]); } catch {} }
+  return null;
+}
+
 async function callAI(messages) {
   const res = await anthropic.messages.create({
     model: MODEL,
@@ -73,18 +82,27 @@ async function callAI(messages) {
   });
 
   const raw = res.content[0]?.text || '{}';
-  // Haiku occasionally wraps JSON in ```json ... ``` despite instructions — strip fences.
-  const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
-  const text = fenceMatch ? fenceMatch[1] : raw;
-  try {
-    return JSON.parse(text);
-  } catch {
-    const objMatch = raw.match(/\{[\s\S]*\}/);
-    if (objMatch) {
-      try { return JSON.parse(objMatch[0]); } catch {}
-    }
-    return { done: false, question: 'Извините, что-то пошло не так. Пожалуйста, опишите проблему ещё раз.' };
-  }
+  const parsed = tryParseAIResponse(raw);
+  if (parsed) return parsed;
+
+  // Haiku returned non-JSON — retry once with explicit correction prompt
+  console.warn('[FEEDBACK] AI non-JSON response, retrying. Raw:', raw.slice(0, 300));
+  const res2 = await anthropic.messages.create({
+    model: MODEL,
+    max_tokens: 2048,
+    system: SYSTEM_PROMPT,
+    messages: [
+      ...messages,
+      { role: 'assistant', content: raw },
+      { role: 'user', content: 'Respond with valid JSON only. No explanations, no markdown, just the JSON object.' },
+    ],
+  });
+  const raw2 = res2.content[0]?.text || '{}';
+  const parsed2 = tryParseAIResponse(raw2);
+  if (parsed2) return parsed2;
+
+  console.error('[FEEDBACK] AI parse failed after retry. Raw2:', raw2.slice(0, 300));
+  return { done: false, _parseError: true, question: 'Извините, что-то пошло не так. Пожалуйста, опишите проблему ещё раз.' };
 }
 
 // Load session from DB into memory cache. Returns null if not found/expired/published.
@@ -214,6 +232,11 @@ export async function continueSession(sessionId, message) {
   nextMessages.push({ role: 'user', content: message });
 
   const aiResult = await callAI(nextMessages);
+
+  // Don't corrupt session state on AI parse failure — user can resend unchanged
+  if (aiResult._parseError) {
+    return { done: false, question: aiResult.question };
+  }
 
   session.messages = nextMessages;
   session.lastQuestion = null;

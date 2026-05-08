@@ -130,9 +130,9 @@ describe('startSession', () => {
   });
 
   it('falls back to Russian error only on truly unparseable response', async () => {
-    mockCreate.mockResolvedValueOnce({
-      content: [{ text: 'Sorry, I cannot help with that.' }], // plain prose — not JSON at all
-    });
+    // Both the initial call and the retry return non-JSON
+    mockCreate.mockResolvedValueOnce({ content: [{ text: 'Sorry, I cannot help with that.' }] });
+    mockCreate.mockResolvedValueOnce({ content: [{ text: 'Still not JSON.' }] });
     const result = await startSession({ text: 'x', reporterRole: 'driver', reporterName: 'Timur' });
     expect(result.done).toBe(false);
     expect(result.question).toMatch(/Извините/);
