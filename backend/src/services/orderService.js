@@ -747,15 +747,19 @@ export async function findOrdersNeedingSubstitution(substitutionsMade) {
   // Pull customer names
   const custIds = [...new Set(openOrders.map(o => o.Customer?.[0]).filter(Boolean))];
   const customers = custIds.length ? await customerRepo.findMany(custIds) : [];
-  const custByPgId = {};
+  // orders.customer_id may be a recXXX (pre-cutover) or uuid (post-cutover).
+  // findMany() returns customers with id (uuid) and airtableId (recXXX or null).
+  // Key by both so the lookup matches whatever format was stored on orders.
+  const custByEitherId = {};
   for (const c of customers) {
-    if (c._pgId) custByPgId[c._pgId] = c;
+    if (c.id)         custByEitherId[c.id]         = c;
+    if (c.airtableId) custByEitherId[c.airtableId] = c;
   }
 
   const orderInfo = {};
   for (const o of openOrders) {
     const cid = o.Customer?.[0];
-    const cust = cid ? custByPgId[cid] : null;
+    const cust = cid ? custByEitherId[cid] : null;
     orderInfo[o._pgId] = {
       appOrderId:   o['App Order ID'] || '',
       customerName: cust?.Name || cust?.Nickname || '',
