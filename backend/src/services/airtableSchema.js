@@ -30,31 +30,15 @@ import { TABLES } from '../config/airtable.js';
 // or service starts writing it. Stale entries are harmless (they just
 // mean "still expected to exist") but missing entries defeat the guard.
 const EXPECTED_WRITE_FIELDS = {
-  [TABLES.STOCK_ORDER_LINES]: [
-    'Stock Orders', 'Stock Item', 'Flower Name', 'Quantity Needed',
-    'Supplier', 'Cost Price', 'Sell Price', 'Lot Size', 'Farmer',
-    'Driver Status', 'Quantity Found',
-    'Alt Supplier', 'Alt Quantity Found', 'Alt Flower Name', 'Alt Cost',
-    'Quantity Accepted', 'Write Off Qty', 'Notes',
-    'Price Needs Review', 'Eval Status',
-  ],
-  [TABLES.STOCK_ORDERS]: [
-    'Status', 'Assigned Driver', 'Created Date', 'Planned Date',
-    'Stock Order ID', 'Supplier Payments', 'Driver Payment',
-  ],
   [TABLES.STOCK]: [
     'Display Name', 'Purchase Name', 'Category',
     'Current Quantity', 'Current Cost Price', 'Current Sell Price',
     'Supplier', 'Unit', 'Reorder Threshold', 'Active', 'Last Restocked',
     'Substitute For',
   ],
-  [TABLES.PREMADE_BOUQUETS]: [
-    'Name', 'Created By', 'Price Override', 'Notes', 'Lines',
-  ],
-  [TABLES.PREMADE_BOUQUET_LINES]: [
-    'Premade Bouquets', 'Stock Item', 'Flower Name', 'Quantity',
-    'Cost Price Per Unit', 'Sell Price Per Unit',
-  ],
+  // Phase 7 (2026-05-08) migrated STOCK_ORDERS, STOCK_ORDER_LINES,
+  // PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES to Postgres. Tables are frozen
+  // — no backend writes hit them anymore, so no schema-drift risk to guard.
   [TABLES.CUSTOMERS]: [
     'Name', 'Nickname', 'Phone', 'Email', 'Link', 'Language',
     'Home address', 'Sex / Business',

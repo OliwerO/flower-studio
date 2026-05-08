@@ -22,9 +22,10 @@
 import { Router } from 'express';
 import { resetToFixture, _snapshotAllTables, _getTable } from '../services/airtable-mock.js';
 import { db, isPgliteMode } from '../db/index.js';
-import { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders } from '../db/schema.js';
+import { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders, stockOrders, stockOrderLines, premadeBouquets, premadeBouquetLines } from '../db/schema.js';
 import { TABLES } from '../config/airtable.js';
 import { sql } from 'drizzle-orm';
+import { seedPhase7 } from '../__tests__/helpers/phase7-seed.js';
 
 const router = Router();
 
@@ -172,15 +173,19 @@ router.post('/reset', async (_req, res, next) => {
     resetToFixture();
 
     let seeded = { stock: 0, orders: 0, lines: 0, deliveries: 0, customers: 0 };
+    let phase7Seeded = { stockOrders: 0, stockOrderLines: 0, premadeBouquets: 0, premadeBouquetLines: 0 };
     if (db) {
       // Truncate PG tables so each spec starts with empty audit/parity logs
       // and zero rows in the migrated tables. The mock Airtable side is
       // already wiped + reseeded by resetToFixture above.
-      await db.execute(sql`TRUNCATE TABLE legacy_orders, key_people, customers, audit_log, parity_log, stock, orders, order_lines, deliveries RESTART IDENTITY CASCADE`);
+      await db.execute(sql`TRUNCATE TABLE legacy_orders, key_people, customers, audit_log, parity_log, stock, orders, order_lines, deliveries, stock_orders, stock_order_lines, premade_bouquets, premade_bouquet_lines RESTART IDENTITY CASCADE`);
       seeded = await seedPgFromFixture();
+      // Phase 7 fixtures (POs + premade bouquets) live in PG only — seed
+      // after stock so line.stock_id can reference real rows.
+      phase7Seeded = await seedPhase7(db);
     }
 
-    res.json({ ok: true, mode: isPgliteMode ? 'pglite' : 'real-pg', seeded });
+    res.json({ ok: true, mode: isPgliteMode ? 'pglite' : 'real-pg', seeded, phase7Seeded });
   } catch (err) {
     next(err);
   }
@@ -190,14 +195,20 @@ router.get('/state', async (_req, res, next) => {
   try {
     const airtableState = _snapshotAllTables();
     const counts = {};
+    const pg = {};
     if (db) {
-      const tables = { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders };
+      const tables = {
+        auditLog, parityLog, stock, orders, orderLines, deliveries,
+        customers, keyPeople, legacyOrders,
+        stockOrders, stockOrderLines, premadeBouquets, premadeBouquetLines,
+      };
       for (const [name, tbl] of Object.entries(tables)) {
         const rows = await db.select().from(tbl);
         counts[name] = rows.length;
+        pg[name]    = rows;  // full row dump — useful for E2E invariants like `pg.stockOrders.length === 2`
       }
     }
-    res.json({ airtable: airtableState, postgresCounts: counts });
+    res.json({ airtable: airtableState, postgresCounts: counts, pg });
   } catch (err) {
     next(err);
   }

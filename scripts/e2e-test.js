@@ -262,7 +262,8 @@ async function section1Boot() {
   assert('Mock has 3 orders', state.body.airtable.tblMockOrders?.length === 3);
   assert('Mock has 4 order lines', state.body.airtable.tblMockOrderLines?.length === 4);
   assert('Mock has 2 deliveries', state.body.airtable.tblMockDeliveries?.length === 2);
-  assert('Mock has 2 POs', state.body.airtable.tblMockStockOrders?.length === 2);
+  // Phase 7: POs migrated to PG. Seeded by /test/reset via seedPhase7().
+  assert('PG has 2 POs', state.body.pg?.stockOrders?.length === 2);
 
   eq('PG audit_log empty after reset', state.body.postgresCounts.auditLog, 0);
   eq('PG parity_log empty after reset', state.body.postgresCounts.parityLog, 0);

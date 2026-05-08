@@ -7,12 +7,14 @@
       "Phone": "+48 555 100 001",
       "Email": "maria.test@example.com",
       "Language": "pl",
-      "Home address": "ul. Floriańska 1, 31-019 Kraków",
+      "Home address": "ul. Floria\u0144ska 1, 31-019 Krak\u00f3w",
       "Sex / Business": "Female",
       "Segment (client)": "VIP",
       "Communication method": "Phone",
       "Order Source": "Phone",
-      "App Orders": ["recMockOrd1"]
+      "App Orders": [
+        "recMockOrd1"
+      ]
     },
     {
       "id": "recMockCust2",
@@ -21,34 +23,38 @@
       "Phone": "+48 555 100 002",
       "Email": "anna.test@example.com",
       "Language": "pl",
-      "Home address": "ul. Grodzka 5, 31-006 Kraków",
+      "Home address": "ul. Grodzka 5, 31-006 Krak\u00f3w",
       "Sex / Business": "Female",
       "Segment (client)": "Regular",
       "Communication method": "WhatsApp",
       "Order Source": "Wix",
-      "App Orders": ["recMockOrd2"]
+      "App Orders": [
+        "recMockOrd2"
+      ]
     },
     {
       "id": "recMockCust3",
-      "Name": "Tomasz Wiśniewski",
+      "Name": "Tomasz Wi\u015bniewski",
       "Nickname": "Tomek",
       "Phone": "+48 555 100 003",
       "Email": "tomasz.test@example.com",
       "Language": "pl",
-      "Home address": "ul. Karmelicka 8, 31-128 Kraków",
+      "Home address": "ul. Karmelicka 8, 31-128 Krak\u00f3w",
       "Sex / Business": "Male",
       "Segment (client)": "Rare",
       "Communication method": "Phone",
       "Order Source": "In-store",
-      "App Orders": ["recMockOrd3"]
+      "App Orders": [
+        "recMockOrd3"
+      ]
     },
     {
       "id": "recMockCust4",
-      "Name": "Kawiarnia Pod Lipą",
+      "Name": "Kawiarnia Pod Lip\u0105",
       "Phone": "+48 555 100 004",
       "Email": "biuro.test@example.com",
       "Language": "pl",
-      "Home address": "ul. Szewska 12, 31-009 Kraków",
+      "Home address": "ul. Szewska 12, 31-009 Krak\u00f3w",
       "Sex / Business": "Business",
       "Segment (client)": "Business",
       "Communication method": "Email",
@@ -62,7 +68,7 @@
       "Phone": "+48 555 100 005",
       "Email": "iwona.test@example.com",
       "Language": "pl",
-      "Home address": "ul. Bracka 3, 31-005 Kraków",
+      "Home address": "ul. Bracka 3, 31-005 Krak\u00f3w",
       "Sex / Business": "Female",
       "Segment (client)": "Regular",
       "Communication method": "Phone",
@@ -223,7 +229,9 @@
     {
       "id": "recMockOrd1",
       "App Order ID": "BLO-20260427-1",
-      "Customer": ["recMockCust1"],
+      "Customer": [
+        "recMockCust1"
+      ],
       "Customer Request": "Romantic bouquet for anniversary, mostly roses",
       "Source": "Phone",
       "Delivery Type": "Delivery",
@@ -232,7 +240,7 @@
       "Delivery Time": "afternoon",
       "Notes Original": "Wife loves red roses",
       "Florist Note": "",
-      "Greeting Card Text": "С годовщиной, любимая!",
+      "Greeting Card Text": "\u0421 \u0433\u043e\u0434\u043e\u0432\u0449\u0438\u043d\u043e\u0439, \u043b\u044e\u0431\u0438\u043c\u0430\u044f!",
       "Payment Status": "Paid",
       "Payment Method": "Cash",
       "Payment 1 Amount": 235,
@@ -240,13 +248,20 @@
       "Delivery Fee": 25,
       "Status": "New",
       "Created By": "Owner",
-      "Order Lines": ["recMockLine1", "recMockLine2"],
-      "Deliveries": ["recMockDel1"]
+      "Order Lines": [
+        "recMockLine1",
+        "recMockLine2"
+      ],
+      "Deliveries": [
+        "recMockDel1"
+      ]
     },
     {
       "id": "recMockOrd2",
       "App Order ID": "BLO-20260427-2",
-      "Customer": ["recMockCust2"],
+      "Customer": [
+        "recMockCust2"
+      ],
       "Customer Request": "Spring vibes, tulips and daisies",
       "Source": "Wix",
       "Delivery Type": "Delivery",
@@ -260,13 +275,19 @@
       "Delivery Fee": 20,
       "Status": "Ready",
       "Created By": "Wix Webhook",
-      "Order Lines": ["recMockLine3"],
-      "Deliveries": ["recMockDel2"]
+      "Order Lines": [
+        "recMockLine3"
+      ],
+      "Deliveries": [
+        "recMockDel2"
+      ]
     },
     {
       "id": "recMockOrd3",
       "App Order ID": "BLO-20260427-3",
-      "Customer": ["recMockCust3"],
+      "Customer": [
+        "recMockCust3"
+      ],
       "Customer Request": "Pickup, simple bouquet",
       "Source": "In-store",
       "Delivery Type": "Pickup",
@@ -276,15 +297,21 @@
       "Delivery Fee": 0,
       "Status": "New",
       "Created By": "Owner",
-      "Order Lines": ["recMockLine4"],
+      "Order Lines": [
+        "recMockLine4"
+      ],
       "Deliveries": []
     }
   ],
   "tblMockOrderLines": [
     {
       "id": "recMockLine1",
-      "Order": ["recMockOrd1"],
-      "Stock Item": ["recMockStock1"],
+      "Order": [
+        "recMockOrd1"
+      ],
+      "Stock Item": [
+        "recMockStock1"
+      ],
       "Flower Name": "Red Rose",
       "Quantity": 12,
       "Cost Price Per Unit": 4.5,
@@ -293,8 +320,12 @@
     },
     {
       "id": "recMockLine2",
-      "Order": ["recMockOrd1"],
-      "Stock Item": ["recMockStock3"],
+      "Order": [
+        "recMockOrd1"
+      ],
+      "Stock Item": [
+        "recMockStock3"
+      ],
       "Flower Name": "White Lily",
       "Quantity": 5,
       "Cost Price Per Unit": 6.0,
@@ -303,8 +334,12 @@
     },
     {
       "id": "recMockLine3",
-      "Order": ["recMockOrd2"],
-      "Stock Item": ["recMockStock2"],
+      "Order": [
+        "recMockOrd2"
+      ],
+      "Stock Item": [
+        "recMockStock2"
+      ],
       "Flower Name": "Pink Tulip",
       "Quantity": 8,
       "Cost Price Per Unit": 3.0,
@@ -313,8 +348,12 @@
     },
     {
       "id": "recMockLine4",
-      "Order": ["recMockOrd3"],
-      "Stock Item": ["recMockStock4"],
+      "Order": [
+        "recMockOrd3"
+      ],
+      "Stock Item": [
+        "recMockStock4"
+      ],
       "Flower Name": "Yellow Daisy",
       "Quantity": 6,
       "Cost Price Per Unit": 2.0,
@@ -325,8 +364,10 @@
   "tblMockDeliveries": [
     {
       "id": "recMockDel1",
-      "Linked Order": ["recMockOrd1"],
-      "Delivery Address": "ul. Floriańska 1, 31-019 Kraków",
+      "Linked Order": [
+        "recMockOrd1"
+      ],
+      "Delivery Address": "ul. Floria\u0144ska 1, 31-019 Krak\u00f3w",
       "Recipient Name": "Maria Kowalska",
       "Recipient Phone": "+48 555 100 001",
       "Delivery Date": "2026-04-28",
@@ -340,8 +381,10 @@
     },
     {
       "id": "recMockDel2",
-      "Linked Order": ["recMockOrd2"],
-      "Delivery Address": "ul. Grodzka 5, 31-006 Kraków",
+      "Linked Order": [
+        "recMockOrd2"
+      ],
+      "Delivery Address": "ul. Grodzka 5, 31-006 Krak\u00f3w",
       "Recipient Name": "Anna Nowak",
       "Recipient Phone": "+48 555 100 002",
       "Delivery Date": "2026-04-28",
@@ -351,61 +394,6 @@
       "Delivery Method": "Driver",
       "Driver Payout": 12,
       "Status": "Pending"
-    }
-  ],
-  "tblMockStockOrders": [
-    {
-      "id": "recMockPO1",
-      "Stock Order ID": "PO-20260427-1",
-      "Status": "Draft",
-      "Assigned Driver": "Timur",
-      "Created Date": "2026-04-27",
-      "Planned Date": "2026-04-29",
-      "Stock Order Lines": ["recMockPOLine1", "recMockPOLine2"]
-    },
-    {
-      "id": "recMockPO2",
-      "Stock Order ID": "PO-20260427-2",
-      "Status": "Sent",
-      "Assigned Driver": "Nikita",
-      "Created Date": "2026-04-27",
-      "Planned Date": "2026-04-28",
-      "Stock Order Lines": ["recMockPOLine3"]
-    }
-  ],
-  "tblMockStockOrderLines": [
-    {
-      "id": "recMockPOLine1",
-      "Stock Orders": ["recMockPO1"],
-      "Stock Item": ["recMockStock7"],
-      "Flower Name": "Peony",
-      "Quantity Needed": 30,
-      "Supplier": "FlowerNet",
-      "Cost Price": 8.0,
-      "Sell Price": 28,
-      "Lot Size": 5
-    },
-    {
-      "id": "recMockPOLine2",
-      "Stock Orders": ["recMockPO1"],
-      "Stock Item": ["recMockStock9"],
-      "Flower Name": "Sunflower",
-      "Quantity Needed": 15,
-      "Supplier": "Hurt-Kwiat",
-      "Cost Price": 4.0,
-      "Sell Price": 14,
-      "Lot Size": 10
-    },
-    {
-      "id": "recMockPOLine3",
-      "Stock Orders": ["recMockPO2"],
-      "Stock Item": ["recMockStock5"],
-      "Flower Name": "Blue Iris",
-      "Quantity Needed": 20,
-      "Supplier": "FlowerNet",
-      "Cost Price": 5.5,
-      "Sell Price": 18,
-      "Lot Size": 10
     }
   ],
   "tblMockAppConfig": [
@@ -432,7 +420,5 @@
   "tblMockStockPurchases": [],
   "tblMockLegacyOrders": [],
   "tblMockProductConfig": [],
-  "tblMockSyncLog": [],
-  "tblMockPremadeBouquets": [],
-  "tblMockPremadeBouquetLines": []
+  "tblMockSyncLog": []
 }
