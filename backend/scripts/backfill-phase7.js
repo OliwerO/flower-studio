@@ -44,11 +44,13 @@ async function backfillStockOrders() {
 
   // Map Airtable PO id → PG uuid. Pre-populate from existing PG rows so a
   // re-run can resolve line links even when the header upsert is a no-op.
+  // Also runs in dry mode so dry-run logs accurately show line resolution.
   const poIdMap = new Map();
-  if (!DRY && headers.length > 0) {
+  if (headers.length > 0) {
     const existing = await db.select({ id: stockOrders.id, airtableId: stockOrders.airtableId }).from(stockOrders);
     for (const r of existing) if (r.airtableId) poIdMap.set(r.airtableId, r.id);
   }
+  let orphanLineCount = 0;
 
   for (const h of headers) {
     const f = h.fields;
@@ -79,9 +81,9 @@ async function backfillStockOrders() {
   for (const l of lines) {
     const f = l.fields;
     const poAirtableId = Array.isArray(f['Stock Orders']) ? f['Stock Orders'][0] : null;
-    if (!poAirtableId) { console.warn(`[backfill] line ${l.id} has no PO link, skipping`); continue; }
+    if (!poAirtableId) { console.warn(`[backfill] line ${l.id} has no PO link, skipping`); orphanLineCount++; continue; }
     const poPgId = poIdMap.get(poAirtableId);
-    if (!poPgId) { console.warn(`[backfill] line ${l.id} references missing PO ${poAirtableId}, skipping`); continue; }
+    if (!poPgId) { console.warn(`[backfill] line ${l.id} references missing PO ${poAirtableId}, skipping`); orphanLineCount++; continue; }
 
     const stockAtId = Array.isArray(f['Stock Item']) ? f['Stock Item'][0] : null;
     const stockPgId = await findStockPgIdByAirtableId(stockAtId);
@@ -120,6 +122,9 @@ async function backfillStockOrders() {
         set: updateSet,
       });
   }
+  if (orphanLineCount > 0) {
+    console.log(`[backfill] Skipped ${orphanLineCount} orphan stock_order_lines (missing or unlinked parent PO).`);
+  }
   console.log(`[backfill] Stock Orders done.`);
 }
 
@@ -130,10 +135,11 @@ async function backfillPremadeBouquets() {
   console.log(`[backfill] ${headers.length} bouquets, ${lines.length} lines`);
 
   const bouquetIdMap = new Map();
-  if (!DRY && headers.length > 0) {
+  if (headers.length > 0) {
     const existing = await db.select({ id: premadeBouquets.id, airtableId: premadeBouquets.airtableId }).from(premadeBouquets);
     for (const r of existing) if (r.airtableId) bouquetIdMap.set(r.airtableId, r.id);
   }
+  let orphanPremadeLineCount = 0;
 
   for (const h of headers) {
     const f = h.fields;
@@ -159,9 +165,9 @@ async function backfillPremadeBouquets() {
   for (const l of lines) {
     const f = l.fields;
     const bouquetAtId = Array.isArray(f['Premade Bouquets']) ? f['Premade Bouquets'][0] : null;
-    if (!bouquetAtId) continue;
+    if (!bouquetAtId) { orphanPremadeLineCount++; continue; }
     const bouquetPgId = bouquetIdMap.get(bouquetAtId);
-    if (!bouquetPgId) { console.warn(`[backfill] premade line ${l.id} references missing bouquet`); continue; }
+    if (!bouquetPgId) { console.warn(`[backfill] premade line ${l.id} references missing bouquet`); orphanPremadeLineCount++; continue; }
 
     const stockAtId = Array.isArray(f['Stock Item']) ? f['Stock Item'][0] : null;
     const stockPgId = await findStockPgIdByAirtableId(stockAtId);
@@ -184,6 +190,9 @@ async function backfillPremadeBouquets() {
         target: premadeBouquetLines.airtableId,
         set: updateSet,
       });
+  }
+  if (orphanPremadeLineCount > 0) {
+    console.log(`[backfill] Skipped ${orphanPremadeLineCount} orphan premade_bouquet_lines (missing or unlinked parent bouquet).`);
   }
   console.log(`[backfill] Premade Bouquets done.`);
 }
