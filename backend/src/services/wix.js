@@ -12,13 +12,11 @@ import * as stockRepo from '../repos/stockRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { TABLES } from '../config/airtable.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
 import { generateOrderId } from './configService.js';
 import { listByIds } from '../utils/batchQuery.js';
-import { DELIVERY_STATUS } from '../constants/statuses.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -151,7 +149,7 @@ export async function processWixOrder(payload) {
     const existing = await orderRepo.findByWixOrderId(wixOrderId);
     if (existing) {
       log('2-DEDUP', `Already exists as ${existing.id} — skipping`);
-      await logWebhookEvent({ status: 'Duplicate', wixOrderId, appOrderId: existing.id });
+      await logWebhookEvent({ status: 'Duplicate', wixOrderId, appOrderId: existing['App Order ID'] || existing.id });
       return;
     }
     log('2-DEDUP', 'New order — processing');
@@ -390,8 +388,6 @@ export async function processWixOrder(payload) {
     });
 
     const order = result.order;
-    const createdLines = result.orderLines;
-    const deliveryRecord = result.delivery;
 
     log('10-ORDER', `Created order: ${order.id}`);
     log('12-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
