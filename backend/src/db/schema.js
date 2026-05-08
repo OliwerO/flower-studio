@@ -399,6 +399,29 @@ export const feedbackReports = pgTable('feedback_reports', {
   createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// In-progress Report conversations. Written on session start, updated after
+// each AI turn, marked published=true after GitHub issue creation.
+// Survives container restarts — sessions reload from here on demand.
+export const feedbackSessions = pgTable('feedback_sessions', {
+  id:                  uuid('id').primaryKey().defaultRandom(),
+  reporterRole:        text('reporter_role').notNull(),
+  reporterName:        text('reporter_name').notNull(),
+  appArea:             text('app_area'),
+  messages:            jsonb('messages').notNull().default([]),
+  lastQuestion:        text('last_question'),
+  done:                boolean('done').notNull().default(false),
+  title:               text('title'),
+  englishDescription:  text('english_description'),
+  acceptanceCriteria:  jsonb('acceptance_criteria'),
+  originalQuote:       text('original_quote'),
+  summary:             text('summary'),
+  type:                text('type'),
+  telegramChatId:      text('telegram_chat_id'),
+  published:           boolean('published').notNull().default(false),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  expiresAt:           timestamp('expires_at', { withTimezone: true }).notNull(),
+});
+
 // Supplier delivery records — one row per batch receive event.
 // Written by POST /stock-purchases (manual florist entry) and by the PO
 // evaluate flow in stockOrders.js. `stock_id` links to the *batch* stock

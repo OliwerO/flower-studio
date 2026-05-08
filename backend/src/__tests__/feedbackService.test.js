@@ -3,10 +3,18 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 // ── Mocks (must be before imports) ────────────────────────────────────────────
 
 // Use vi.hoisted so these variables are available inside vi.mock factories (which are hoisted)
-const { mockCreate, valuesMock } = vi.hoisted(() => ({
-  mockCreate: vi.fn(),
-  valuesMock: vi.fn().mockResolvedValue(undefined),
-}));
+const { mockCreate, valuesMock, whereMock, setMock, updateMock, limitMock, fromMock } = vi.hoisted(() => {
+  const limitMock = vi.fn().mockResolvedValue([]);
+  const whereMock = vi.fn().mockReturnValue({ limit: limitMock });
+  const fromMock  = vi.fn().mockReturnValue({ where: whereMock });
+  const setMock   = vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) });
+  const updateMock = vi.fn().mockReturnValue({ set: setMock });
+  return {
+    mockCreate:  vi.fn(),
+    valuesMock:  vi.fn().mockResolvedValue(undefined),
+    whereMock, setMock, updateMock, limitMock, fromMock,
+  };
+});
 
 vi.mock('@anthropic-ai/sdk', () => ({
   default: class {
@@ -17,9 +25,12 @@ vi.mock('@anthropic-ai/sdk', () => ({
 vi.mock('../db/index.js', () => ({
   db: {
     insert: vi.fn().mockReturnValue({ values: valuesMock }),
+    update: updateMock,
+    delete: vi.fn().mockReturnValue({ where: vi.fn().mockResolvedValue(undefined) }),
+    select: vi.fn().mockReturnValue({ from: fromMock }),
   },
 }));
-vi.mock('../db/schema.js', () => ({ feedbackReports: {} }));
+vi.mock('../db/schema.js', () => ({ feedbackReports: {}, feedbackSessions: {} }));
 
 global.fetch = vi.fn();
 process.env.GITHUB_TOKEN = 'test-token';

@@ -71,6 +71,13 @@
       "when": 1746734400000,
       "tag": "0009_stock_purchases",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772841600000,
+      "tag": "0010_feedback_sessions",
+      "breakpoints": true
     }
   ]
 }

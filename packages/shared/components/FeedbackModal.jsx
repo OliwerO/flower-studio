@@ -64,7 +64,7 @@ const IconImagePlus = ({ size, className }) => (
 // ──────────────────────────────────────────────────────────────────────────────
 
 export default function FeedbackModal({ t, reporterRole, reporterName, appArea, onClose }) {
-  const [phase, setPhase] = useState('input'); // input | asking | preview | done | error
+  const [phase, setPhase] = useState('input'); // input | asking | preview | done | error | expired
   const [text, setText]   = useState('');
   const [question, setQuestion] = useState('');
   const [answer, setAnswer]     = useState('');
@@ -116,7 +116,7 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
       }
     } catch (err) {
       console.error('[FeedbackModal] continue error', err);
-      setPhase('error');
+      setPhase(err.response?.status === 404 ? 'expired' : 'error');
     } finally {
       setLoading(false);
     }
@@ -129,7 +129,7 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
       setPhase('preview');
     } catch (err) {
       console.error('[FeedbackModal] preview error', err);
-      setPhase('error');
+      setPhase(err.response?.status === 404 ? 'expired' : 'error');
     }
   }
 
@@ -273,6 +273,18 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
               <button
                 onClick={() => { setPhase('input'); setSessionId(null); setQuestion(''); setAnswer(''); setSummary(''); setIssueUrl(''); }}
                 className={btnSecondary + ' w-full'}>
+                {t.reportRetry}
+              </button>
+            </div>
+          )}
+
+          {/* Phase: expired — session lost due to server restart or 2h TTL */}
+          {phase === 'expired' && (
+            <div className="space-y-3">
+              <p className="text-sm text-amber-600 dark:text-amber-400">{t.reportExpired}</p>
+              <button
+                onClick={() => { setPhase('input'); setSessionId(null); setQuestion(''); setAnswer(''); setSummary(''); setIssueUrl(''); }}
+                className={btnPrimary}>
                 {t.reportRetry}
               </button>
             </div>
