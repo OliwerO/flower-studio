@@ -1,13 +1,13 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
-import { TABLES } from '../config/airtable.js';
+import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
+import * as stockOrderRepo from '../repos/stockOrderRepo.js';
+import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { listByIds } from '../utils/batchQuery.js';
 import { actorFromReq } from '../utils/actor.js';
 import { ORDER_STATUS, PO_STATUS, LOSS_REASON } from '../constants/statuses.js';
 
@@ -65,34 +65,14 @@ router.get('/velocity', async (req, res, next) => {
     const thirtyDaysAgo = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
     const today = new Date().toISOString().split('T')[0];
 
-    // Fetch non-cancelled orders in the last 30 days
-    const recentOrders = await db.list(TABLES.ORDERS, {
-      filterByFormula: `AND(NOT(IS_BEFORE({Order Date}, '${thirtyDaysAgo}')), NOT(IS_AFTER({Order Date}, '${today}')), {Status} != '${ORDER_STATUS.CANCELLED}')`,
-      fields: ['Order Lines'],
-    });
-
-    const lineIds = recentOrders.flatMap(o => o['Order Lines'] || []);
-
-    // Batch-fetch order lines (100 per request — Airtable formula length limit)
-    const lines = [];
-    for (let i = 0; i < lineIds.length; i += 100) {
-      const batch = lineIds.slice(i, i + 100);
-      if (batch.length === 0) continue;
-      const recs = await db.list(TABLES.ORDER_LINES, {
-        filterByFormula: `OR(${batch.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Stock Item', 'Quantity'],
-        maxRecords: 100,
-      });
-      lines.push(...recs);
-    }
+    const lines = await orderRepo.getLinesForVelocity(thirtyDaysAgo, today);
 
     // Sum qty sold per stock item over the 30-day window
     const qtySoldByStock = {};
     for (const line of lines) {
-      const stockId = line['Stock Item']?.[0];
-      if (stockId) {
-        qtySoldByStock[stockId] = (qtySoldByStock[stockId] || 0) + (line.Quantity || 0);
-      }
+      const id = line.stockItemId;
+      if (!id) continue;
+      qtySoldByStock[id] = (qtySoldByStock[id] || 0) + Number(line.quantity || 0);
     }
 
     // Build velocity map: stockId → { qtySold30d, avgDailyUsage }
@@ -120,51 +100,39 @@ router.get('/velocity', async (req, res, next) => {
 // an order needs more stems than are freely available.
 router.get('/premade-committed', async (req, res, next) => {
   try {
-    if (!TABLES.PREMADE_BOUQUETS || !TABLES.PREMADE_BOUQUET_LINES) {
-      return res.json({});
-    }
-    const bouquets = await db.list(TABLES.PREMADE_BOUQUETS, {
-      fields: ['Name', 'Lines'],
-      maxRecords: 500,
-    });
-    const allLineIds = bouquets.flatMap(b => b['Lines'] || []);
-    const allLines = allLineIds.length > 0
-      ? await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds, {
-          fields: ['Premade Bouquets', 'Stock Item', 'Quantity', 'Flower Name'],
-        })
-      : [];
-    const bouquetMap = {};
-    for (const b of bouquets) bouquetMap[b.id] = b;
-
-    // Keyed by whatever Stock Item ID Airtable stored (may be a phantom rec
-    // ID if the premade was created against a post-cutover UUID stock item).
+    const bouquets = await premadeBouquetRepo.list();
+    // Keyed by whatever Stock Item ID the line carries (may be a phantom rec
+    // ID from premade lines created in Airtable against a post-cutover UUID
+    // stock item — Airtable can't store UUIDs in linked fields).
     const rawCommitted = {};
-    for (const line of allLines) {
-      const stockId = line['Stock Item']?.[0];
-      if (!stockId) continue;
-      const qty = Number(line.Quantity || 0);
-      if (qty <= 0) continue;
-      const bouquetId = line['Premade Bouquets']?.[0];
-      const bouquet = bouquetId ? bouquetMap[bouquetId] : null;
-      if (!bouquet) continue;
-      if (!rawCommitted[stockId]) rawCommitted[stockId] = { qty: 0, bouquets: [], _flowerName: line['Flower Name'] || '' };
-      rawCommitted[stockId].qty += qty;
-      rawCommitted[stockId].bouquets.push({ bouquetId, name: bouquet.Name || '?', qty });
+    for (const bouquet of bouquets) {
+      const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
+      for (const line of lines) {
+        const stockId = line['Stock Item']?.[0];
+        if (!stockId) continue;
+        const qty = Number(line.Quantity || 0);
+        if (qty <= 0) continue;
+        if (!rawCommitted[stockId]) {
+          rawCommitted[stockId] = { qty: 0, bouquets: [], _flowerName: line['Flower Name'] || '' };
+        }
+        rawCommitted[stockId].qty += qty;
+        rawCommitted[stockId].bouquets.push({ bouquetId: bouquet.id, name: bouquet.Name || '?', qty });
+      }
     }
 
-    // Resolve each Airtable stock ID to the PG stock ID the frontend uses.
-    // Post-cutover stock items have UUID ids; premade lines created against them
-    // store phantom rec IDs in Airtable (Airtable can't store UUIDs in linked
-    // fields). For those, fall back to matching by flower name.
+    // Resolve each Stock Item ID to the PG stock ID the frontend uses. For
+    // phantom recXXX that don't resolve, fall back to matching by flower name.
     const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
-    const stockById  = new Map(allStock.map(s => [s.id, s]));
+    const stockById   = new Map(allStock.map(s => [s.id, s]));
     const stockByName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
 
     const committed = {};
     for (const [atId, entry] of Object.entries(rawCommitted)) {
       const { _flowerName, ...data } = entry;
-      let pgId = stockById.has(atId) ? atId : stockByName.get((_flowerName || '').toLowerCase())?.id;
-      if (!pgId) continue; // can't resolve — omit rather than pollute the map
+      const pgId = stockById.has(atId)
+        ? atId
+        : stockByName.get((_flowerName || '').toLowerCase())?.id;
+      if (!pgId) continue;
       if (!committed[pgId]) committed[pgId] = { qty: 0, bouquets: [] };
       committed[pgId].qty += data.qty;
       committed[pgId].bouquets.push(...data.bouquets);
@@ -240,104 +208,89 @@ router.get('/committed', async (req, res, next) => {
 // Used by bouquet builders so florists can see what's coming and plan accordingly.
 router.get('/pending-po', async (req, res, next) => {
   try {
-    const pendingPOs = await db.list(TABLES.STOCK_ORDERS, {
-      filterByFormula: `OR({Status} = '${PO_STATUS.DRAFT}', {Status} = '${PO_STATUS.SENT}', {Status} = '${PO_STATUS.SHOPPING}', {Status} = '${PO_STATUS.REVIEWING}', {Status} = '${PO_STATUS.EVALUATING}', {Status} = '${PO_STATUS.EVAL_ERROR}')`,
-      fields: ['Status', 'Stock Order ID', 'Order Lines', 'Planned Date'],
-    });
+    const pendingStatuses = [
+      PO_STATUS.DRAFT, PO_STATUS.SENT, PO_STATUS.SHOPPING,
+      PO_STATUS.REVIEWING, PO_STATUS.EVALUATING, PO_STATUS.EVAL_ERROR,
+    ];
 
-    if (pendingPOs.length === 0) return res.json({});
+    // List all pending POs across statuses (small N — typically <30).
+    const allPendingPOs = [];
+    for (const s of pendingStatuses) {
+      const pos = await stockOrderRepo.list({ status: s });
+      allPendingPOs.push(...pos);
+    }
+    if (allPendingPOs.length === 0) return res.json({});
 
-    const allLineIds = pendingPOs.flatMap(po => po['Order Lines'] || []);
-    if (allLineIds.length === 0) return res.json({});
-
-    // Batch-fetch PO lines (Airtable formula length limit)
+    const poIds = allPendingPOs.map(po => po._pgId).filter(Boolean);
+    const linesByPo = await stockOrderRepo.getLinesForPos(poIds);
     const allLines = [];
-    const CHUNK = 100;
-    for (let i = 0; i < allLineIds.length; i += CHUNK) {
-      const chunk = allLineIds.slice(i, i + CHUNK);
-      const chunkLines = await db.list(TABLES.STOCK_ORDER_LINES, {
-        filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-        fields: ['Stock Item', 'Quantity Needed', 'Flower Name', 'Stock Orders', 'Lot Size', 'Cost Price', 'Sell Price', 'Supplier'],
-      });
-      allLines.push(...chunkLines);
+    for (const po of allPendingPOs) {
+      const ls = linesByPo.get(po._pgId) || [];
+      for (const l of ls) allLines.push({ ...l, _poPgId: po._pgId });
     }
 
-    // Build PO lookup
     const poMap = {};
-    for (const po of pendingPOs) {
-      poMap[po.id] = { id: po.id, number: po['Stock Order ID'] || '', status: po.Status, plannedDate: po['Planned Date'] || null };
+    for (const po of allPendingPOs) {
+      poMap[po._pgId] = {
+        id: po.id, number: po['Stock Order ID'] || '',
+        status: po.Status, plannedDate: po['Planned Date'] || null,
+      };
     }
 
-    // Collect unlinked flower names for batch resolution
-    const unlinked = []; // { lineIdx, flowerName }
-    for (let i = 0; i < allLines.length; i++) {
-      if (!allLines[i]['Stock Item']?.[0] && allLines[i]['Flower Name']) {
-        unlinked.push({ idx: i, name: allLines[i]['Flower Name'].trim() });
-      }
-    }
+    // Auto-resolve unlinked lines (Flower Name → Stock Item).
+    const unlinked = allLines
+      .map((l, idx) => ({ idx, line: l }))
+      .filter(({ line }) => !line['Stock Item']?.[0] && line['Flower Name']);
 
-    // Resolve unlinked lines by matching Flower Name → Stock Item Display Name.
-    // If no match found, auto-create a stock item with qty=0 so the flower
-    // appears in the bouquet picker. Also link the PO line for future consistency.
+    const nameToId = {};
     if (unlinked.length > 0) {
-      const uniqueNames = [...new Set(unlinked.map(u => u.name))];
-      const nameToId = {};
+      const uniqueNames = [...new Set(unlinked.map(u => u.line['Flower Name'].trim()))];
       for (const name of uniqueNames) {
         try {
-          const safe = sanitizeFormulaValue(name);
           const matches = await stockRepo.list({
-            filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
-            fields: ['Display Name', 'Current Cost Price', 'Current Sell Price'],
-            maxRecords: 1,
             pg: { active: true, includeEmpty: true, displayName: name },
+            maxRecords: 1,
           });
           if (matches.length > 0) {
             nameToId[name] = matches[0].id;
-            // Backfill missing prices on existing zero-qty items from PO line data
+            // Backfill missing prices on existing zero-qty items from PO line data.
             const existing = matches[0];
             if (!existing['Current Cost Price'] && !existing['Current Sell Price']) {
-              const poLine = allLines[unlinked.find(x => x.name === name)?.idx];
-              if (poLine && (Number(poLine['Cost Price']) || Number(poLine['Sell Price']))) {
+              const samplePoLine = unlinked.find(x => x.line['Flower Name']?.trim() === name)?.line;
+              if (samplePoLine && (Number(samplePoLine['Cost Price']) || Number(samplePoLine['Sell Price']))) {
                 stockRepo.update(existing.id, {
-                  'Current Cost Price': Number(poLine['Cost Price']) || 0,
-                  'Current Sell Price': Number(poLine['Sell Price']) || 0,
-                  ...(poLine.Supplier ? { Supplier: poLine.Supplier } : {}),
+                  'Current Cost Price': Number(samplePoLine['Cost Price']) || 0,
+                  'Current Sell Price': Number(samplePoLine['Sell Price']) || 0,
+                  ...(samplePoLine.Supplier ? { Supplier: samplePoLine.Supplier } : {}),
                 }, { actor: actorFromReq(req) }).catch(err =>
-                  console.error(`[STOCK] Price backfill failed for ${existing.id}:`, err.message)
-                );
+                  console.error(`[STOCK] Price backfill failed for ${existing.id}:`, err.message));
               }
             }
           } else {
             // Auto-create stock item so the flower shows up in pickers.
-            // Pull cost/sell from the PO line that triggered this.
-            const poLine = allLines[unlinked.find(x => x.name === name)?.idx];
+            const samplePoLine = unlinked.find(x => x.line['Flower Name']?.trim() === name)?.line;
             const created = await stockRepo.create({
-              'Display Name': name,
-              'Purchase Name': name,
-              'Current Quantity': 0,
-              'Current Cost Price': Number(poLine?.['Cost Price']) || 0,
-              'Current Sell Price': Number(poLine?.['Sell Price']) || 0,
-              Supplier: poLine?.Supplier || '',
-              Category: 'Other',
-              Active: true,
+              'Display Name':       name,
+              'Purchase Name':      name,
+              'Current Quantity':   0,
+              'Current Cost Price': Number(samplePoLine?.['Cost Price']) || 0,
+              'Current Sell Price': Number(samplePoLine?.['Sell Price']) || 0,
+              Supplier:             samplePoLine?.Supplier || '',
+              Category:             'Other',
+              Active:               true,
             }, { actor: actorFromReq(req) });
             nameToId[name] = created.id;
             console.log(`[STOCK] Auto-created "${name}" (${created.id}) from pending PO line`);
           }
         } catch { /* skip */ }
       }
-      // Link resolved/created stock items back to PO lines (fire-and-forget)
-      // Stays on direct db.update — this writes to STOCK_ORDER_LINES, not the
-      // stock table itself, so it isn't part of the Phase 3 cutover.
+      // Persist the auto-link via stockOrderRepo (was direct Airtable update).
       for (const u of unlinked) {
-        if (nameToId[u.name]) {
-          allLines[u.idx]._resolvedStockId = nameToId[u.name];
-          const lineId = allLines[u.idx].id;
-          if (lineId) {
-            db.update(TABLES.STOCK_ORDER_LINES, lineId, { 'Stock Item': [nameToId[u.name]] }).catch(err =>
-              console.error(`[STOCK] Failed to link PO line ${lineId} to stock ${nameToId[u.name]}:`, err.message)
-            );
-          }
+        const stockId = nameToId[u.line['Flower Name'].trim()];
+        if (stockId && u.line.id) {
+          allLines[u.idx]._resolvedStockId = stockId;
+          stockOrderRepo.updateLine(u.line.id, { 'Stock Item': [stockId] }).catch(err =>
+            console.error(`[STOCK] Failed to link PO line ${u.line.id} to stock ${stockId}:`, err.message));
         }
       }
     }
@@ -357,21 +310,15 @@ router.get('/pending-po', async (req, res, next) => {
 
       if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [], flowerName: '' };
       result[stockId].ordered += qty;
-      // Keep the first non-empty flower name.
-      // Airtable may return an array if Flower Name is a lookup field —
-      // normalise to a plain string so the frontend never receives an array.
       if (!result[stockId].flowerName && line['Flower Name']) {
-        const raw = line['Flower Name'];
-        result[stockId].flowerName = Array.isArray(raw) ? (raw[0] || '') : String(raw);
+        result[stockId].flowerName = String(line['Flower Name']);
       }
 
-      const poId = line['Stock Orders']?.[0];
-      const po = poId ? poMap[poId] : null;
-      if (po) {
-        result[stockId].pos.push({ id: po.id, number: po.number, quantity: qty, plannedDate: po.plannedDate });
-        // Track earliest planned date across all POs for this item
-        if (po.plannedDate && (!result[stockId].plannedDate || po.plannedDate < result[stockId].plannedDate)) {
-          result[stockId].plannedDate = po.plannedDate;
+      const poInfo = poMap[line._poPgId];
+      if (poInfo) {
+        result[stockId].pos.push({ id: poInfo.id, number: poInfo.number, quantity: qty, plannedDate: poInfo.plannedDate });
+        if (poInfo.plannedDate && (!result[stockId].plannedDate || poInfo.plannedDate < result[stockId].plannedDate)) {
+          result[stockId].plannedDate = poInfo.plannedDate;
         }
       }
     }
@@ -391,7 +338,6 @@ router.get('/pending-po', async (req, res, next) => {
       }
     }
     if (Object.keys(backfillCandidates).length > 0) {
-      // Batch-fetch to check current prices before overwriting
       const ids = Object.keys(backfillCandidates);
       const CHUNK = 100;
       for (let i = 0; i < ids.length; i += CHUNK) {
@@ -410,8 +356,7 @@ router.get('/pending-po', async (req, res, next) => {
                 ...(!hasSell && src.sell > 0 ? { 'Current Sell Price': src.sell } : {}),
                 ...(src.supplier ? { Supplier: src.supplier } : {}),
               }, { actor: actorFromReq(req) }).catch(err =>
-                console.error(`[STOCK] Batch backfill failed for ${item.id}:`, err.message)
-              );
+                console.error(`[STOCK] Batch backfill failed for ${item.id}:`, err.message));
             }
           }
         } catch { /* skip batch */ }
@@ -492,7 +437,8 @@ router.get('/:id/usage', async (req, res, next) => {
         fields: ['Display Name', 'Current Quantity'],
         pg: { active: true, includeEmpty: true },
       });
-      // PG mode returns all active stock (no formula support) — filter JS-side.
+      // PG mode returns all active stock (no formula support) — filter JS-side
+      // for the exact base name or "<base> (" dated-batch prefix.
       siblingStocks = allForName.filter(s => {
         const n = s['Display Name'] || '';
         return n === baseName || n.startsWith(baseName + ' (');
@@ -587,44 +533,38 @@ router.get('/:id/usage', async (req, res, next) => {
       console.error('stock usage: loss log fetch failed', err);
     }
 
-    // 3. Purchase records — fetch and filter by Flower link in JS.
-    // Purchases created by the PO evaluate flow carry a Notes marker like
-    // "PO #recXXX L#recYYY primary". Parse it out and resolve the PO's
-    // display ID (e.g. "PO-20260415-1") so the trace shows a human reference
-    // instead of raw Airtable record IDs.
+    // 3. Purchase records — Postgres. Purchases created by the PO evaluate
+    // flow carry a Notes marker. ADR-0003: the format changed in Phase 7 from
+    // "PO #recXXX L#recYYY primary" (Airtable era) to "PO #PO-20260508-1 L#<uuid>
+    // primary" (PG era — embeds the human-readable PO number directly).
+    // The regex matches both; resolution branches on whether the PO ref looks
+    // like a recXXX (lookup needed) or a PO-NNNNNNNN-N string (use directly).
     let usagePurchases = [];
     try {
-      const allPurchases = await db.list(TABLES.STOCK_PURCHASES, {
-        filterByFormula: `{Supplier} != ''`,
-        sort: [{ field: 'Purchase Date', direction: 'desc' }],
-        maxRecords: 500,
-      });
+      const allPurchases = await stockPurchasesRepo.list({});
       const linePurchases = allPurchases.filter(p => siblingIds.has(p.Flower?.[0]));
 
-      // Parse PO marker from Notes; batch-fetch the parent POs to resolve
-      // Stock Order ID. The marker is a stable format produced by the
-      // evaluate endpoint; we leave Notes unchanged for idempotency.
-      const poMarkerRe = /PO #(rec[A-Za-z0-9]+)\s+L#(rec[A-Za-z0-9]+)\s+(primary|substitute|alt)/;
-      const poIdSet = new Set();
+      const poMarkerRe = /PO #([A-Za-z0-9_\-]+)\s+L#([A-Za-z0-9_\-]+)\s+(primary|substitute|alt)/;
+      const poRefSet = new Set();
       for (const p of linePurchases) {
         const m = p.Notes?.match(poMarkerRe);
-        if (m) poIdSet.add(m[1]);
+        if (m && m[1].startsWith('rec')) poRefSet.add(m[1]);
       }
       const poMap = {};
-      if (poIdSet.size > 0) {
+      if (poRefSet.size > 0) {
         try {
-          const poRecs = await listByIds(TABLES.STOCK_ORDERS, [...poIdSet], {
-            fields: ['Stock Order ID'],
-          });
+          const poRecs = await stockOrderRepo.listByIds([...poRefSet]);
           for (const po of poRecs) poMap[po.id] = po['Stock Order ID'] || '';
         } catch { /* best effort — fall back to raw Notes */ }
       }
 
       usagePurchases = linePurchases.map(p => {
         const m = p.Notes?.match(poMarkerRe);
-        const poRecordId = m?.[1] || null;
-        const poDisplayId = poRecordId ? (poMap[poRecordId] || '') : '';
-        const variant = m?.[3] || ''; // primary | substitute | alt
+        const poRef = m?.[1] || null;
+        const poDisplayId = poRef
+          ? (poRef.startsWith('rec') ? (poMap[poRef] || '') : poRef)
+          : '';
+        const variant = m?.[3] || '';
         return {
           type: 'purchase',
           date: p['Purchase Date'] || null,
@@ -636,7 +576,7 @@ router.get('/:id/usage', async (req, res, next) => {
           variant,
         };
       });
-    } catch { /* table may not exist */ }
+    } catch { /* best effort */ }
 
     // 4. Active premade bouquet lines — stems physically locked in a premade
     // that hasn't been sold/dissolved yet. These were deducted from qty when
@@ -646,36 +586,23 @@ router.get('/:id/usage', async (req, res, next) => {
     // returned to stock via a reverse atomicStockAdjust — both of which are
     // already represented in the 'order' and 'purchase' trails respectively).
     let usagePremades = [];
-    if (TABLES.PREMADE_BOUQUETS && TABLES.PREMADE_BOUQUET_LINES) {
-      try {
-        const bouquets = await db.list(TABLES.PREMADE_BOUQUETS, {
-          fields: ['Name', 'Lines'],
-          maxRecords: 500,
-        });
-        const allLineIds = bouquets.flatMap(b => b['Lines'] || []);
-        const allLines = allLineIds.length > 0
-          ? await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds, {
-              fields: ['Premade Bouquets', 'Stock Item', 'Quantity', 'Flower Name'],
-            })
-          : [];
-        const bouquetMap = {};
-        for (const b of bouquets) bouquetMap[b.id] = b;
-        usagePremades = allLines
-          .filter(l => siblingIds.has(l['Stock Item']?.[0]))
-          .map(l => {
-            const bouquetId = l['Premade Bouquets']?.[0];
-            const bouquet = bouquetId ? bouquetMap[bouquetId] : null;
-            return {
-              type: 'premade',
-              date: null, // no timestamp on premade lines in Airtable
-              quantity: -(Number(l.Quantity) || 0),
-              bouquetId: bouquetId || '',
-              bouquetName: bouquet?.Name || '?',
-              flowerName: l['Flower Name'] || displayName,
-            };
+    try {
+      const allBouquets = await premadeBouquetRepo.list();
+      for (const bouquet of allBouquets) {
+        const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
+        for (const l of lines) {
+          if (!siblingIds.has(l['Stock Item']?.[0])) continue;
+          usagePremades.push({
+            type: 'premade',
+            date: null,
+            quantity: -(Number(l.Quantity) || 0),
+            bouquetId: bouquet.id,
+            bouquetName: bouquet.Name || '?',
+            flowerName: l['Flower Name'] || displayName,
           });
-      } catch { /* premade tables may not exist in some envs */ }
-    }
+        }
+      }
+    } catch { /* best effort */ }
 
     // Combine and sort chronologically (newest first).
     // Premade entries have null date — they sort to the top as "ongoing".
@@ -723,24 +650,20 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // Cascade price changes to Premade Bouquet Lines that reference this stock
-    // item. Can't filterByFormula against a linked-record field (Airtable
-    // returns display names via ARRAYJOIN — see CLAUDE.md pitfalls), so list
-    // all lines and filter in memory. Volume is small (<500 lines in practice).
+    // item. Direct FK query via repo — no linked-record formula gymnastics.
     const costChanged = 'Current Cost Price' in safeFields;
     const sellChanged = 'Current Sell Price' in safeFields;
-    if ((costChanged || sellChanged) && TABLES.PREMADE_BOUQUET_LINES) {
-      const allPremadeLines = await db.list(TABLES.PREMADE_BOUQUET_LINES, {
-        fields: ['Stock Item', 'Cost Price Per Unit', 'Sell Price Per Unit'],
-        maxRecords: 500,
-      });
-      const matching = allPremadeLines.filter(
-        l => Array.isArray(l['Stock Item']) && l['Stock Item'][0] === req.params.id,
-      );
-      for (const line of matching) {
-        const patch = {};
-        if (costChanged) patch['Cost Price Per Unit'] = Number(safeFields['Current Cost Price']) || 0;
-        if (sellChanged) patch['Sell Price Per Unit'] = Number(safeFields['Current Sell Price']) || 0;
-        await db.update(TABLES.PREMADE_BOUQUET_LINES, line.id, patch);
+    if (costChanged || sellChanged) {
+      try {
+        const matchingLines = await premadeBouquetRepo.getLinesByStockId(req.params.id);
+        for (const line of matchingLines) {
+          const patch = {};
+          if (costChanged) patch['Cost Price Per Unit'] = Number(safeFields['Current Cost Price']) || 0;
+          if (sellChanged) patch['Sell Price Per Unit'] = Number(safeFields['Current Sell Price']) || 0;
+          await premadeBouquetRepo.updateLine(line.id, patch);
+        }
+      } catch (err) {
+        console.error('[STOCK] premade price-sync failed:', err.message);
       }
     }
 

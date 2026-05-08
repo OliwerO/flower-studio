@@ -13,9 +13,10 @@ If a future Claude session is opening this repo cold, here's the live state and 
 - Phase 4 (Orders) **CUT OVER 2026-05-02**. `ORDER_BACKEND=postgres` live on prod. Airtable Orders / Order Lines / Deliveries = frozen legacy snapshots. Order shadow window was skipped — backfill + harness Wix replay + spot-check served as the verification gate (see `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`).
 - Phase 5 (Customers) **CUT OVER 2026-05-06**. `customers`, `key_people`, `legacy_orders` tables live. 1110 customers + 1524 legacy orders backfilled. Direct cutover, no shadow window.
 - Phase 6 (Config + log tables) **CUT OVER 2026-05-07**. app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config now on Postgres.
+- Phase 7 PR 1 (Stock Orders + Premade Bouquets) **CUT OVER 2026-05-08**. `stock_orders`, `stock_order_lines`, `premade_bouquets`, `premade_bouquet_lines` tables live. All `stockOrders.js` + `premadeBouquetService.js` routes on Postgres. 5 live Airtable bypasses fixed in `stock.js` (`/velocity`, `/pending-po`, `/:id/usage`, PATCH `/:id` premade cascade, `/meta/lookups`). New ADR-0003 PO marker format (human-readable PO number). Backfill: `backend/scripts/backfill-phase7.js`. Plan: `docs/superpowers/plans/2026-05-08-phase7-stock-orders-premade.md`.
 - **STOCK_PURCHASES** writes now go to Postgres via `stockPurchasesRepo` (PR #256, 2026-05-07). PO retry idempotency reads also from PG.
-- **Read-path bypasses fixed 2026-05-08** (PR #258): dashboard.js, analytics.js, stock.js committed/usage/substitute-swap all read from `orderRepo`/`customerRepo`/`stockPurchasesRepo`. Remaining Airtable reads: STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS (Phase 7 scope).
-- Remaining Airtable tables not yet migrated: STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES.
+- **Read-path bypasses fixed 2026-05-08** (PR #258): dashboard.js, analytics.js, stock.js committed/usage/substitute-swap all read from `orderRepo`/`customerRepo`/`stockPurchasesRepo`. Remaining Phase 7 bypasses cleaned up in PR 1 (this commit).
+- After Phase 7 PR 1, **no production code path reads from or writes to Airtable.** Remaining `airtable.js` / `airtableSchema.js` / `config/airtable.js` / `airtable` npm dep / `STOCK_BACKEND`+`ORDER_BACKEND` flag logic = Phase 7 PR 2 scope.
 
 **Health check after cutover** (~30 sec):
 ```bash
@@ -36,10 +37,11 @@ Reports row counts in PG + audit activity. parity_log is no longer fed (shadow m
 7. **`scripts/simulate-orders.js`** — owner-runnable day-in-the-life. Integration tests already cover the same scenarios; this is convenience.
 8. **Phase 5 prep — Customers** (after Phase 4 cutover proves stable) — design doc, schema (with FK to existing customer_id text columns), customerRepo skeleton, dedup tooling for Universe A (legacy) + B (app).
 9. ~~**Phase 6 — Config + log tables**~~ — DONE 2026-05-07. App Config, Florist Hours, Marketing Spend, Stock Loss Log, Webhook Log, Sync Log, Product Config migrated to Postgres. Direct cutover, no shadow window. Backfill: `backend/scripts/backfill-phase6.js`.
-10. **Phase 7 — Retire Airtable** — delete services/airtable.js, services/airtableSchema.js, config/airtable.js. Cancel subscription. Final snapshot.
+10. **Phase 7 PR 2 — Retire Airtable** (IN PROGRESS, separate PR) — delete `backend/src/services/airtable.js`, `airtable-real.js`, `airtable-mock.js`, `airtable-mock-formula.js`, `airtableSchema.js`, `config/airtable.js`. Drop `airtable` npm dependency. Strip `STOCK_BACKEND` / `ORDER_BACKEND` env flag logic + boot guard from `index.js` / `orderRepo.js` / `stockRepo.js` (PG-only after PR 1). Remove `tblMockStock*` etc. fixture data still needed only by airtable-mock. Final Airtable snapshot. Cancel subscription. Phase 7 PR 1 (this) lays the groundwork: no production code reads from or writes to Airtable anymore.
 
 **Standing investigations (have shadow data now to debug with):**
 - "Stock not deducted via bouquet edit" bug from memory — once shadow has a few days of data, query `audit_log` for stock updates triggered by bouquet edits and cross-reference with the suspicious orders. Far easier to diagnose now.
+- **PO evaluate write-off retry idempotency** — `stock_loss_log` rows duplicate when an evaluate retries after partial failure. ADR-0003 marker idempotency was extended to receives (`stock_purchases`) only. Fix: add a `lossMarker` column or `lossMarkerExists` analog to `stockLossRepo`, gate write-off logging in `stockOrders.js` evaluate the same way receives are gated. Captured by `it.todo` in `backend/src/__tests__/stockOrderRepo.integration.test.js`. Surfaced by Phase 7 T9 Opus review (2026-05-08).
 
 **Stale local branches to clean up** (low priority):
 - `feat/sql-migration-phase-1` (PR #156 merged via squash — local branch obsolete)

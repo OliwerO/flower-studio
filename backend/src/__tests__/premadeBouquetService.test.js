@@ -1,44 +1,29 @@
-// Tests for premadeBouquetService — create/return/match flows.
+// Tests for premadeBouquetService — create / return / match flows.
 //
-// These tests mock the Airtable layer (services/airtable.js) and the order
-// service's createOrder so we can assert the business logic without touching
-// the real Airtable base.
+// Phase 7: persistence is now via premadeBouquetRepo (not airtable.js).
+// These tests mock the repo and the order service's createOrder so we can
+// assert the business logic without touching real Postgres.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Stub TABLES so the service sees real string IDs for our new tables even
-// when env vars aren't set in the test environment.
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: {
-    PREMADE_BOUQUETS: 'tblPremadeBouquets',
-    PREMADE_BOUQUET_LINES: 'tblPremadeBouquetLines',
-    STOCK: 'tblStock',
-    ORDERS: 'tblOrders',
-    ORDER_LINES: 'tblOrderLines',
-    DELIVERIES: 'tblDeliveries',
-    CUSTOMERS: 'tblCustomers',
-  },
-}));
-
-// ── Mock the database layer ──
-vi.mock('../services/airtable.js', () => ({
-  create: vi.fn(),
-  update: vi.fn(),
-  deleteRecord: vi.fn(),
-  getById: vi.fn(),
-  list: vi.fn(),
-  atomicStockAdjust: vi.fn(),
+// ── Mock the premade bouquet repo ──
+vi.mock('../repos/premadeBouquetRepo.js', () => ({
+  list:                vi.fn(),
+  getById:             vi.fn(),
+  create:              vi.fn(),
+  update:              vi.fn(),
+  deleteById:          vi.fn(),
+  createLine:          vi.fn(),
+  getLineById:         vi.fn(),
+  getLinesByBouquetId: vi.fn(),
+  getLinesByStockId:   vi.fn(),
+  updateLine:          vi.fn(),
+  deleteLineById:      vi.fn(),
 }));
 
 // ── Mock stockRepo (post-cutover stock adjustments route through here) ──
 vi.mock('../repos/stockRepo.js', () => ({
   adjustQuantity: vi.fn(),
-}));
-
-// ── Mock batchQuery (listByIds) ──
-vi.mock('../utils/batchQuery.js', () => ({
-  listByIds: vi.fn(),
 }));
 
 // ── Mock notifications ──
@@ -52,9 +37,8 @@ vi.mock('../services/orderService.js', () => ({
   createOrder: vi.fn(),
 }));
 
-import * as db from '../services/airtable.js';
+import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
-import { listByIds } from '../utils/batchQuery.js';
 import { broadcast } from '../services/notifications.js';
 import { createOrder } from '../services/orderService.js';
 import {
@@ -65,23 +49,27 @@ import {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  // Default: deleteRecord returns a resolved promise so `.catch()` chains don't blow up.
-  db.deleteRecord.mockResolvedValue({ deleted: true });
+  premadeBouquetRepo.deleteById.mockResolvedValue(undefined);
+  premadeBouquetRepo.deleteLineById.mockResolvedValue(undefined);
 });
 
 describe('createPremadeBouquet', () => {
   it('creates the bouquet, lines, and deducts stock', async () => {
-    db.create
-      .mockResolvedValueOnce({ id: 'recBouquet1', Name: 'Spring Pink' })   // parent
-      .mockResolvedValueOnce({ id: 'recLine1' })                            // line 1
-      .mockResolvedValueOnce({ id: 'recLine2' });                           // line 2
-    stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 7 });
-    db.getById.mockResolvedValue({
-      id: 'recBouquet1', Name: 'Spring Pink', Lines: ['recLine1', 'recLine2'],
+    premadeBouquetRepo.create.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Spring Pink',
     });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Flower Name': 'Rose', Quantity: 3, 'Sell Price Per Unit': 10, 'Cost Price Per Unit': 4 },
-      { id: 'recLine2', 'Flower Name': 'Eucalyptus', Quantity: 2, 'Sell Price Per Unit': 5, 'Cost Price Per Unit': 2 },
+    premadeBouquetRepo.createLine
+      .mockResolvedValueOnce({ id: 'recLine1', _pgId: 'uuid-line-1' })
+      .mockResolvedValueOnce({ id: 'recLine2', _pgId: 'uuid-line-2' });
+    stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 7 });
+
+    // getPremadeBouquet() at the end calls getById + getLinesByBouquetId
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Spring Pink', 'Price Override': null,
+    });
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([
+      { id: 'recLine1', _pgId: 'uuid-line-1', 'Flower Name': 'Rose', Quantity: 3, 'Sell Price Per Unit': 10, 'Cost Price Per Unit': 4 },
+      { id: 'recLine2', _pgId: 'uuid-line-2', 'Flower Name': 'Eucalyptus', Quantity: 2, 'Sell Price Per Unit': 5, 'Cost Price Per Unit': 2 },
     ]);
 
     const result = await createPremadeBouquet({
@@ -93,14 +81,19 @@ describe('createPremadeBouquet', () => {
       createdBy: 'Florist',
     });
 
-    // Parent + 2 lines created
-    expect(db.create).toHaveBeenCalledTimes(3);
+    // Parent created + 2 lines created
+    expect(premadeBouquetRepo.create).toHaveBeenCalledTimes(1);
+    expect(premadeBouquetRepo.createLine).toHaveBeenCalledTimes(2);
+    // Lines linked to the parent's _pgId (uuid)
+    expect(premadeBouquetRepo.createLine).toHaveBeenCalledWith(expect.objectContaining({
+      'Premade Bouquets': ['uuid-bouquet-1'],
+      'Flower Name': 'Rose',
+      Quantity: 3,
+    }));
     // Stock deducted twice via stockRepo, with negative deltas
     expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock1', -3);
     expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock2', -2);
-    // Legacy direct-Airtable path must NOT fire post-cutover
-    expect(db.atomicStockAdjust).not.toHaveBeenCalled();
-    // Broadcast fired
+    // Broadcast fired with the wire-format id (airtableId || uuid)
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'premade_bouquet_created',
       bouquetId: 'recBouquet1',
@@ -115,7 +108,7 @@ describe('createPremadeBouquet', () => {
       name: '',
       lines: [{ stockItemId: 'x', flowerName: 'Rose', quantity: 1 }],
     })).rejects.toThrow(/name is required/);
-    expect(db.create).not.toHaveBeenCalled();
+    expect(premadeBouquetRepo.create).not.toHaveBeenCalled();
   });
 
   it('rejects when lines array is empty', async () => {
@@ -123,7 +116,7 @@ describe('createPremadeBouquet', () => {
       name: 'Test',
       lines: [],
     })).rejects.toThrow(/at least one flower line/);
-    expect(db.create).not.toHaveBeenCalled();
+    expect(premadeBouquetRepo.create).not.toHaveBeenCalled();
   });
 
   it('rejects when a line quantity is not positive', async () => {
@@ -131,15 +124,16 @@ describe('createPremadeBouquet', () => {
       name: 'Test',
       lines: [{ stockItemId: 'x', flowerName: 'Rose', quantity: 0 }],
     })).rejects.toThrow(/quantity must be a positive number/);
-    expect(db.create).not.toHaveBeenCalled();
+    expect(premadeBouquetRepo.create).not.toHaveBeenCalled();
   });
 
   it('rolls back stock and deletes records on failure', async () => {
-    db.create
-      .mockResolvedValueOnce({ id: 'recBouquet1' })  // parent created
-      .mockResolvedValueOnce({ id: 'recLine1' })     // line 1 created
-      .mockRejectedValueOnce(new Error('airtable exploded')); // line 2 fails
-    stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 10, newQty: 9 });
+    premadeBouquetRepo.create.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1',
+    });
+    premadeBouquetRepo.createLine
+      .mockResolvedValueOnce({ id: 'recLine1', _pgId: 'uuid-line-1' })
+      .mockRejectedValueOnce(new Error('repo exploded'));
 
     await expect(createPremadeBouquet({
       name: 'Boom',
@@ -147,24 +141,24 @@ describe('createPremadeBouquet', () => {
         { stockItemId: 'recStock1', flowerName: 'Rose', quantity: 1, costPricePerUnit: 4, sellPricePerUnit: 10 },
         { stockItemId: 'recStock2', flowerName: 'Eucalyptus', quantity: 1, costPricePerUnit: 2, sellPricePerUnit: 5 },
       ],
-    })).rejects.toThrow(/airtable exploded/);
+    })).rejects.toThrow(/repo exploded/);
 
-    // Note: stock deduction happens after all lines are created, so in this
-    // scenario (line 2 creation fails) there were no stock adjustments to undo.
-    // But the created parent + line 1 should be deleted as cleanup.
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine1');
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recBouquet1');
+    // Stock deduction happens AFTER all lines created, so failure on line 2
+    // means no stock adjustments to undo. But the created parent + line 1
+    // should be deleted as cleanup.
+    expect(premadeBouquetRepo.deleteLineById).toHaveBeenCalledWith('uuid-line-1');
+    expect(premadeBouquetRepo.deleteById).toHaveBeenCalledWith('uuid-bouquet-1');
   });
 });
 
 describe('returnPremadeBouquetToStock', () => {
-  it('increments stock for each line and deletes records', async () => {
-    db.getById.mockResolvedValue({
-      id: 'recBouquet1', Name: 'Spring Pink', Lines: ['recLine1', 'recLine2'],
+  it('increments stock for each line and deletes the bouquet (CASCADE handles lines)', async () => {
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Spring Pink',
     });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3 },
-      { id: 'recLine2', 'Stock Item': ['recStock2'], 'Flower Name': 'Eucalyptus', Quantity: 2 },
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([
+      { id: 'recLine1', _pgId: 'uuid-line-1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3 },
+      { id: 'recLine2', _pgId: 'uuid-line-2', 'Stock Item': ['recStock2'], 'Flower Name': 'Eucalyptus', Quantity: 2 },
     ]);
     stockRepo.adjustQuantity.mockResolvedValue({ stockId: 'x', previousQty: 0, newQty: 3 });
 
@@ -173,13 +167,8 @@ describe('returnPremadeBouquetToStock', () => {
     // Stock adjusted with POSITIVE deltas (returning to inventory) via stockRepo
     expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock1', 3);
     expect(stockRepo.adjustQuantity).toHaveBeenCalledWith('recStock2', 2);
-    // Must not bypass the repo — that was the 2026-05-04 bug.
-    expect(db.atomicStockAdjust).not.toHaveBeenCalled();
-    // Lines deleted
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine1');
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine2');
-    // Bouquet deleted
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recBouquet1');
+    // Bouquet deleted (CASCADE removes lines)
+    expect(premadeBouquetRepo.deleteById).toHaveBeenCalledWith('uuid-bouquet-1');
     // Broadcast
     expect(broadcast).toHaveBeenCalledWith(expect.objectContaining({
       type: 'premade_bouquet_returned',
@@ -192,16 +181,12 @@ describe('returnPremadeBouquetToStock', () => {
 
 describe('matchPremadeBouquetToOrder', () => {
   it('creates an order from premade lines WITHOUT re-deducting stock, then deletes premade', async () => {
-    // First call: getPremadeBouquet() inside matchPremadeBouquetToOrder
-    db.getById.mockResolvedValue({
-      id: 'recBouquet1',
-      Name: 'Spring Pink',
-      Lines: ['recLine1', 'recLine2'],
-      'Price Override': null,
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Spring Pink', 'Price Override': null,
     });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3, 'Cost Price Per Unit': 4, 'Sell Price Per Unit': 10 },
-      { id: 'recLine2', 'Stock Item': ['recStock2'], 'Flower Name': 'Eucalyptus', Quantity: 2, 'Cost Price Per Unit': 2, 'Sell Price Per Unit': 5 },
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([
+      { id: 'recLine1', _pgId: 'uuid-line-1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3, 'Cost Price Per Unit': 4, 'Sell Price Per Unit': 10 },
+      { id: 'recLine2', _pgId: 'uuid-line-2', 'Stock Item': ['recStock2'], 'Flower Name': 'Eucalyptus', Quantity: 2, 'Cost Price Per Unit': 2, 'Sell Price Per Unit': 5 },
     ]);
     createOrder.mockResolvedValue({
       order: { id: 'recOrder1' },
@@ -232,13 +217,10 @@ describe('matchPremadeBouquetToOrder', () => {
       { skipStockDeduction: true },
     );
 
-    // Premade cleanup — lines and parent deleted
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine1');
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recLine2');
-    expect(db.deleteRecord).toHaveBeenCalledWith(expect.anything(), 'recBouquet1');
+    // Premade cleanup — bouquet deleted (CASCADE removes lines)
+    expect(premadeBouquetRepo.deleteById).toHaveBeenCalledWith('uuid-bouquet-1');
 
-    // No stock adjustments made directly from match flow
-    expect(db.atomicStockAdjust).not.toHaveBeenCalled();
+    // No direct stock adjustments made from match flow
     expect(stockRepo.adjustQuantity).not.toHaveBeenCalled();
 
     // Broadcast fired
@@ -254,11 +236,11 @@ describe('matchPremadeBouquetToOrder', () => {
   });
 
   it('carries the premade price override into the order when caller did not supply one', async () => {
-    db.getById.mockResolvedValue({
-      id: 'recBouquet1', Name: 'Spring Pink', Lines: ['recLine1'], 'Price Override': 150,
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Spring Pink', 'Price Override': 150,
     });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3, 'Cost Price Per Unit': 4, 'Sell Price Per Unit': 10 },
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([
+      { id: 'recLine1', _pgId: 'uuid-line-1', 'Stock Item': ['recStock1'], 'Flower Name': 'Rose', Quantity: 3, 'Cost Price Per Unit': 4, 'Sell Price Per Unit': 10 },
     ]);
     createOrder.mockResolvedValue({ order: { id: 'recOrder1' }, orderLines: [], delivery: null });
 
@@ -276,8 +258,10 @@ describe('matchPremadeBouquetToOrder', () => {
   });
 
   it('rejects when the premade has no lines', async () => {
-    db.getById.mockResolvedValue({ id: 'recBouquet1', Lines: [] });
-    listByIds.mockResolvedValue([]);
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1',
+    });
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([]);
 
     await expect(matchPremadeBouquetToOrder(
       'recBouquet1',
