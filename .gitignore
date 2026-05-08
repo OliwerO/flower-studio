@@ -31,3 +31,6 @@ backend/package-lock.json
 
 # Airtable / database backups — too large + sensitive for git
 backups/
+
+# Lab harness scratch
+lab/.tmp/
