@@ -6,7 +6,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
-import { stock, orders } from '../db/schema.js';
+import { stock, orders, orderLines as orderLinesTable } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
@@ -94,9 +94,9 @@ describe('orderRepo.createWixOrder', () => {
     expect(result.order['Price Override']).toBe(250);
     expect(result.order.Customer).toEqual([customer.id]);
 
-    expect(result.lines).toHaveLength(1);
-    expect(result.lines[0]['Flower Name']).toBe('Roses Red');
-    expect(result.lines[0].Quantity).toBe(5);
+    expect(result.orderLines).toHaveLength(1);
+    expect(result.orderLines[0]['Flower Name']).toBe('Roses Red');
+    expect(result.orderLines[0].Quantity).toBe(5);
 
     expect(result.delivery['Linked Order']).toEqual([result.order.id]);
     expect(result.delivery['Delivery Address']).toBe('ul. Krakowska 1, Krakow');
@@ -120,7 +120,7 @@ describe('orderRepo.createWixOrder', () => {
     });
 
     // Wire format returns [] for no stock item (the Airtable linked-record shape).
-    expect(result.lines[0]['Stock Item']).toHaveLength(0);
+    expect(result.orderLines[0]['Stock Item']).toHaveLength(0);
   });
 
   it('preserves Stock Item link when stockItemId is present', async () => {
@@ -154,7 +154,7 @@ describe('orderRepo.createWixOrder', () => {
       delivery: { address: 'A', recipientName: 'R', recipientPhone: '+48500000000', date: null, fee: 0 },
     });
 
-    expect(result.lines[0]['Stock Item']).toEqual([stockRow.id]);
+    expect(result.orderLines[0]['Stock Item']).toEqual([stockRow.id]);
   });
 
   it('rolls back on duplicate appOrderId (unique constraint violation)', async () => {
@@ -184,6 +184,44 @@ describe('orderRepo.createWixOrder', () => {
     // Only one order row — the transaction for the second call was fully rolled back.
     const rows = await harness.db.select().from(orders).where(eq(orders.appOrderId, '202605-DUPE'));
     expect(rows).toHaveLength(1);
+  });
+
+  it('rolls back order + first line when a second line insert fails mid-transaction', async () => {
+    // Proves true multi-row atomicity: the duplicate-appOrderId test fires on the
+    // FIRST insert (orders) so lines and delivery never run. This test supplies two
+    // lines with the same airtableId ('rec-dup-line'), which trips the unique index on
+    // order_lines.airtable_id on the second line insert — AFTER the order row and the
+    // first line are already written to the transaction. A real rollback is required to
+    // keep the database clean.
+    const customer = await makeCustomer();
+    const badAppOrderId = '202605-ROLLBACK-MID';
+
+    await expect(orderRepo.createWixOrder({
+      customerId: customer.id,
+      appOrderId: badAppOrderId,
+      wixOrderId: 'wix-uuid-rollback-mid',
+      customerRequest: 'Duplicate airtableId test',
+      requiredBy: null,
+      paymentStatus: 'Unpaid',
+      paymentMethod: null,
+      priceOverride: null,
+      lines: [
+        { airtableId: 'rec-dup-line', flowerName: 'Rose', quantity: 1, costPricePerUnit: 0, sellPricePerUnit: 0 },
+        { airtableId: 'rec-dup-line', flowerName: 'Tulip', quantity: 2, costPricePerUnit: 0, sellPricePerUnit: 0 },
+      ],
+      delivery: { address: '', recipientName: '', recipientPhone: '', date: null, fee: 0 },
+    })).rejects.toThrow();
+
+    // The order row must not exist — the transaction fully rolled back.
+    const orderRow = await harness.db.query.orders.findFirst({
+      where: (o, { eq: eqFn }) => eqFn(o.appOrderId, badAppOrderId),
+    });
+    expect(orderRow).toBeUndefined();
+
+    // No orphan lines from the first successful line insert.
+    const lineRows = await harness.db.select().from(orderLinesTable)
+      .where(eq(orderLinesTable.airtableId, 'rec-dup-line'));
+    expect(lineRows).toHaveLength(0);
   });
 
   it.skip('throws if MODE !== postgres (informational — MODE captured at module load)', async () => {

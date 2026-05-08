@@ -447,11 +447,21 @@ export async function createWixOrder(params) {
     };
 
     const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
+    await tryAudit(tx, {
+      entityType: 'order',
+      entityId: insertedOrder.id,
+      action: 'create',
+      before: null,
+      after: pgOrderToResponse(insertedOrder),
+      actorRole: 'webhook',
+      actorPinLabel: 'Wix',
+    });
 
     const insertedLines = [];
     for (const line of lineParams || []) {
       const lineInsert = {
         orderId:          insertedOrder.id,
+        airtableId:       line.airtableId || null,
         stockItemId:      line.stockItemId || null,
         flowerName:       line.flowerName || '',
         quantity:         Number(line.quantity) || 0,
@@ -473,11 +483,20 @@ export async function createWixOrder(params) {
       status:          DELIVERY_STATUS.PENDING,
     };
     const [insertedDelivery] = await tx.insert(deliveries).values(deliveryInsert).returning();
+    await tryAudit(tx, {
+      entityType: 'delivery',
+      entityId: insertedDelivery.id,
+      action: 'create',
+      before: null,
+      after: pgDeliveryToResponse(insertedDelivery),
+      actorRole: 'webhook',
+      actorPinLabel: 'Wix',
+    });
 
     return {
-      order:    pgOrderToResponse(insertedOrder, insertedLines.map(l => l.id), insertedDelivery.id),
-      lines:    insertedLines.map(pgLineToResponse),
-      delivery: pgDeliveryToResponse({ ...insertedDelivery, orderId: insertedOrder.id }),
+      order:      pgOrderToResponse(insertedOrder, insertedLines.map(l => l.id), insertedDelivery.id),
+      orderLines: insertedLines.map(pgLineToResponse),
+      delivery:   pgDeliveryToResponse({ ...insertedDelivery, orderId: insertedOrder.id }),
     };
   });
 }
