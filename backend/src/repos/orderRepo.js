@@ -31,7 +31,7 @@ import { TABLES } from '../config/airtable.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
-import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
 
 // ── Backend mode ──
@@ -380,7 +380,7 @@ export async function mirrorAirtableOrder({ order, lines = [], delivery = null }
     if (!orderInsert.customerId) orderInsert.customerId = order.Customer?.[0] || 'unknown';
     if (!orderInsert.deliveryType) orderInsert.deliveryType = order['Delivery Type'] || 'Pickup';
     if (!orderInsert.status) orderInsert.status = order.Status || ORDER_STATUS.NEW;
-    if (!orderInsert.paymentStatus) orderInsert.paymentStatus = order['Payment Status'] || 'Unpaid';
+    if (!orderInsert.paymentStatus) orderInsert.paymentStatus = order['Payment Status'] || PAYMENT_STATUS.UNPAID;
     if (!orderInsert.orderDate) orderInsert.orderDate = order['Order Date'] || new Date().toISOString().split('T')[0];
 
     const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
@@ -440,7 +440,7 @@ export async function createWixOrder(params) {
       customerRequest: customerRequest || '',
       notesOriginal: customerRequest || '',
       greetingCardText: '',
-      paymentStatus: paymentStatus || 'Unpaid',
+      paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
       paymentMethod: paymentMethod || null,
       priceOverride: priceOverride != null ? String(priceOverride) : null,
       deliveryFee: String(Number(deliveryParams?.fee) || 0),
@@ -633,7 +633,7 @@ export async function createOrder(params, config, opts = {}) {
     (sum, l) => sum + (Number(l.sellPricePerUnit) || 0) * (Number(l.quantity) || 0), 0,
   );
   const finalPriceAtCreate = (Number(priceOverride) || flowerTotal) + resolvedDeliveryFee;
-  const p1AmountBackfill = paymentStatus === 'Paid'
+  const p1AmountBackfill = paymentStatus === PAYMENT_STATUS.PAID
     && payment1Amount == null && finalPriceAtCreate > 0
     ? finalPriceAtCreate : null;
   const p1MethodBackfill = p1AmountBackfill != null && !payment1Method

@@ -8,7 +8,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
 import { stock, orders, orderLines as orderLinesTable } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
-import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 
 const dbHolder = { db: null };
 
@@ -69,7 +69,7 @@ describe('orderRepo.createWixOrder', () => {
       wixOrderId: 'wix-uuid-1',
       customerRequest: 'Wix Order #12345',
       requiredBy: '2026-05-10',
-      paymentStatus: 'Paid',
+      paymentStatus: PAYMENT_STATUS.PAID,
       paymentMethod: 'Card',
       priceOverride: 250,
       lines: [
@@ -112,7 +112,7 @@ describe('orderRepo.createWixOrder', () => {
       wixOrderId: 'wix-uuid-2',
       customerRequest: 'Wix Order #2',
       requiredBy: null,
-      paymentStatus: 'Unpaid',
+      paymentStatus: PAYMENT_STATUS.UNPAID,
       paymentMethod: null,
       priceOverride: null,
       lines: [{ flowerName: 'Mystery', quantity: 1, costPricePerUnit: 0, sellPricePerUnit: 0 }],
@@ -141,7 +141,7 @@ describe('orderRepo.createWixOrder', () => {
       wixOrderId: 'wix-uuid-3',
       customerRequest: 'Wix Order #3',
       requiredBy: null,
-      paymentStatus: 'Paid',
+      paymentStatus: PAYMENT_STATUS.PAID,
       paymentMethod: 'Card',
       priceOverride: 100,
       lines: [{
@@ -165,7 +165,7 @@ describe('orderRepo.createWixOrder', () => {
       wixOrderId: 'wix-uuid-dupe-1',
       customerRequest: 'Wix Order Dupe',
       requiredBy: null,
-      paymentStatus: 'Paid',
+      paymentStatus: PAYMENT_STATUS.PAID,
       paymentMethod: 'Card',
       priceOverride: 50,
       lines: [{ flowerName: 'Rose', quantity: 1, costPricePerUnit: 0, sellPricePerUnit: 0 }],
@@ -202,7 +202,7 @@ describe('orderRepo.createWixOrder', () => {
       wixOrderId: 'wix-uuid-rollback-mid',
       customerRequest: 'Duplicate airtableId test',
       requiredBy: null,
-      paymentStatus: 'Unpaid',
+      paymentStatus: PAYMENT_STATUS.UNPAID,
       paymentMethod: null,
       priceOverride: null,
       lines: [
@@ -237,7 +237,7 @@ describe('orderRepo.createWixOrder', () => {
       wixOrderId: 'x',
       customerRequest: 'x',
       requiredBy: null,
-      paymentStatus: 'Paid',
+      paymentStatus: PAYMENT_STATUS.PAID,
       paymentMethod: null,
       priceOverride: null,
       lines: [],

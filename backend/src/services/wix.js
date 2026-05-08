@@ -16,6 +16,7 @@ import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
 import { generateOrderId } from './configService.js';
+import { PAYMENT_STATUS } from '../constants/statuses.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -373,7 +374,7 @@ export async function processWixOrder(payload) {
       wixOrderId,
       customerRequest,
       requiredBy:    deliveryDateIso,
-      paymentStatus: wixOrder.paymentStatus === 'NOT_PAID' ? 'Unpaid' : 'Paid',
+      paymentStatus: wixOrder.paymentStatus === 'NOT_PAID' ? PAYMENT_STATUS.UNPAID : PAYMENT_STATUS.PAID,
       paymentMethod: paymentMethodLabel,
       priceOverride: totalPrice > 0 ? totalPrice : null,
       lines:         linesForRepo,
