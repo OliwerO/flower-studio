@@ -5,6 +5,32 @@ Review this entire file before flipping to production.
 
 ---
 
+## Postgres read-path cleanup — dashboard, analytics, stock (2026-05-08)
+
+Fixes GH #227, #228, #229. All Airtable reads for ORDERS/ORDER_LINES/DELIVERIES/CUSTOMERS in three routes replaced with `orderRepo`/`customerRepo`/`stockPurchasesRepo`. Post-cutover orders (since 2026-05-02) now visible in owner dashboard, analytics KPIs, and stock committed/usage views.
+
+### Modified backend files
+- `backend/src/routes/analytics.js` — orders, lines, deliveries, customers, stock purchases all from PG repos
+- `backend/src/routes/dashboard.js` — full route now reads from PG repos + direct Drizzle
+- `backend/src/routes/stock.js` — `/committed`, `/usage`, substitute-swap from PG repos
+- `backend/src/repos/stockPurchasesRepo.js` — added `list({ from, to })`
+- `backend/src/repos/customerRepo.js` — added `listWithKeyPeopleHavingDates()`
+
+### No schema changes, no env vars, no deployment actions required.
+
+---
+
+## STOCK_PURCHASES writes → Postgres (2026-05-07)
+
+PR #256. `POST /api/stock-purchases` and PO evaluate endpoint write purchase records to `stock_purchases` PG table. PO retry idempotency check also reads from PG.
+
+### Schema
+- Migration 0009: `stock_purchases` table
+
+### No env vars required.
+
+---
+
 ## Dual Seasonal Slots — two independent variable category slots (2026-05-08)
 
 ### Config change (auto-migrated)

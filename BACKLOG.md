@@ -6,13 +6,16 @@ Features and improvements tracked against original build phases.
 
 ## ⚡ Pick-up checklist for the next session
 
-If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-05-07.
+If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-05-08.
 
 **Migration cutover state:**
 - Phase 3 (Stock) **CUT OVER 2026-05-02**. `STOCK_BACKEND=postgres` live on prod. Airtable Stock = frozen legacy snapshot.
 - Phase 4 (Orders) **CUT OVER 2026-05-02**. `ORDER_BACKEND=postgres` live on prod. Airtable Orders / Order Lines / Deliveries = frozen legacy snapshots. Order shadow window was skipped — backfill + harness Wix replay + spot-check served as the verification gate (see `docs/superpowers/plans/2026-05-02-phase-3-4-cutover.md`).
 - Phase 5 (Customers) **CUT OVER 2026-05-06**. `customers`, `key_people`, `legacy_orders` tables live. 1110 customers + 1524 legacy orders backfilled. Direct cutover, no shadow window.
-- Phase 6 (Config + log tables) **CUT OVER 2026-05-07**. app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config now on Postgres. Remaining Airtable tables: STOCK_PURCHASES, STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES (not yet migrated).
+- Phase 6 (Config + log tables) **CUT OVER 2026-05-07**. app_config, florist_hours, marketing_spend, stock_loss_log, webhook_log, sync_log, product_config now on Postgres.
+- **STOCK_PURCHASES** writes now go to Postgres via `stockPurchasesRepo` (PR #256, 2026-05-07). PO retry idempotency reads also from PG.
+- **Read-path bypasses fixed 2026-05-08** (PR #258): dashboard.js, analytics.js, stock.js committed/usage/substitute-swap all read from `orderRepo`/`customerRepo`/`stockPurchasesRepo`. Remaining Airtable reads: STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS (Phase 7 scope).
+- Remaining Airtable tables not yet migrated: STOCK_ORDERS, STOCK_ORDER_LINES, PREMADE_BOUQUETS, PREMADE_BOUQUET_LINES.
 
 **Health check after cutover** (~30 sec):
 ```bash
