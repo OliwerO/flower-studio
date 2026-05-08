@@ -494,7 +494,7 @@ export const stockOrders = pgTable('stock_orders', {
   poNumberIdx:    uniqueIndex('stock_orders_po_number_idx').on(t.poNumber).where(sql`${t.poNumber} <> ''`),
   statusIdx:      index('stock_orders_status_idx').on(t.status),
   createdDateIdx: index('stock_orders_created_date_idx').on(t.createdDate),
-  driverIdx:      index('stock_orders_driver_idx').on(t.assignedDriver),
+  driverIdx:      index('stock_orders_driver_idx').on(t.assignedDriver).where(sql`${t.assignedDriver} <> ''`),
 }));
 
 export const stockOrderLines = pgTable('stock_order_lines', {

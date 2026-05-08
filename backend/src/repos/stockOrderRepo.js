@@ -40,8 +40,8 @@ function poToPg(fields) {
   if ('Assigned Driver' in fields)   out.assignedDriver   = fields['Assigned Driver'] || '';
   if ('Planned Date' in fields)      out.plannedDate      = fields['Planned Date'] || null;
   if ('Notes' in fields)             out.notes            = fields.Notes || '';
-  if ('Supplier Payments' in fields) out.supplierPayments = fields['Supplier Payments'] || '';
-  if ('Driver Payment' in fields)    out.driverPayment    = fields['Driver Payment'] || '';
+  if ('Supplier Payments' in fields) out.supplierPayments = String(fields['Supplier Payments'] ?? '');
+  if ('Driver Payment' in fields)    out.driverPayment    = String(fields['Driver Payment'] ?? '');
   return out;
 }
 
@@ -133,8 +133,9 @@ export async function nextPoSequence(date /* YYYY-MM-DD */) {
   let maxN = 0;
   for (const r of rows) {
     const tail = r.poNumber.slice(prefix.length);
+    if (!/^\d+$/.test(tail)) continue;
     const n = parseInt(tail, 10);
-    if (!isNaN(n) && n > maxN) maxN = n;
+    if (n > maxN) maxN = n;
   }
   return maxN + 1;
 }
