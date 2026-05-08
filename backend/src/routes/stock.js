@@ -136,7 +136,9 @@ router.get('/premade-committed', async (req, res, next) => {
     const bouquetMap = {};
     for (const b of bouquets) bouquetMap[b.id] = b;
 
-    const committed = {};
+    // Keyed by whatever Stock Item ID Airtable stored (may be a phantom rec
+    // ID if the premade was created against a post-cutover UUID stock item).
+    const rawCommitted = {};
     for (const line of allLines) {
       const stockId = line['Stock Item']?.[0];
       if (!stockId) continue;
@@ -145,14 +147,29 @@ router.get('/premade-committed', async (req, res, next) => {
       const bouquetId = line['Premade Bouquets']?.[0];
       const bouquet = bouquetId ? bouquetMap[bouquetId] : null;
       if (!bouquet) continue;
-      if (!committed[stockId]) committed[stockId] = { qty: 0, bouquets: [] };
-      committed[stockId].qty += qty;
-      committed[stockId].bouquets.push({
-        bouquetId,
-        name: bouquet.Name || '?',
-        qty,
-      });
+      if (!rawCommitted[stockId]) rawCommitted[stockId] = { qty: 0, bouquets: [], _flowerName: line['Flower Name'] || '' };
+      rawCommitted[stockId].qty += qty;
+      rawCommitted[stockId].bouquets.push({ bouquetId, name: bouquet.Name || '?', qty });
     }
+
+    // Resolve each Airtable stock ID to the PG stock ID the frontend uses.
+    // Post-cutover stock items have UUID ids; premade lines created against them
+    // store phantom rec IDs in Airtable (Airtable can't store UUIDs in linked
+    // fields). For those, fall back to matching by flower name.
+    const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
+    const stockById  = new Map(allStock.map(s => [s.id, s]));
+    const stockByName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
+
+    const committed = {};
+    for (const [atId, entry] of Object.entries(rawCommitted)) {
+      const { _flowerName, ...data } = entry;
+      let pgId = stockById.has(atId) ? atId : stockByName.get((_flowerName || '').toLowerCase())?.id;
+      if (!pgId) continue; // can't resolve — omit rather than pollute the map
+      if (!committed[pgId]) committed[pgId] = { qty: 0, bouquets: [] };
+      committed[pgId].qty += data.qty;
+      committed[pgId].bouquets.push(...data.bouquets);
+    }
+
     res.json(committed);
   } catch (err) {
     next(err);
