@@ -487,12 +487,15 @@ router.get('/:id/usage', async (req, res, next) => {
     // "<base> (dd.Mmm.)" dated batches.
     let siblingStocks = [];
     try {
-      siblingStocks = await stockRepo.list({
+      const allForName = await stockRepo.list({
         filterByFormula: `OR({Display Name} = '${safeBase}', FIND('${safeBase} (', {Display Name} & '') = 1)`,
         fields: ['Display Name', 'Current Quantity'],
-        // PG-mode: no formula equivalent — caller filters on returned rows.
-        // Return all active stock for the base name; JS filter below handles the variant match.
         pg: { active: true, includeEmpty: true },
+      });
+      // PG mode returns all active stock (no formula support) — filter JS-side.
+      siblingStocks = allForName.filter(s => {
+        const n = s['Display Name'] || '';
+        return n === baseName || n.startsWith(baseName + ' (');
       });
     } catch {
       siblingStocks = [stockItem];
