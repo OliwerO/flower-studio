@@ -61,7 +61,7 @@ If more info needed:
 {"done": false, "question": "question in reporter's language"}
 
 When complete:
-{"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "summary": "Plain summary in reporter's language — 2-3 sentences"}
+{"done": true, "type": "bug", "englishTitle": "Short English title under 70 chars", "englishDescription": "Clear English description of the problem and context", "acceptanceCriteria": ["English criterion 1", "English criterion 2"], "originalQuote": "reporter's exact words", "summary": "Plain summary in English — 2-3 sentences. Always English regardless of what language the reporter used."}
 Note: "type" must be exactly "bug" or "feature" — no other values.`;
 
 function tryParseAIResponse(raw) {
