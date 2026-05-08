@@ -25,8 +25,33 @@ const chatSessions = new Map();
 const chatReporters = new Map();
 
 const REPORTERS = {
-  [process.env.PIN_OWNER]: { reporterRole: 'owner', reporterName: 'Owner' },
-  [process.env.PIN_ADMIN]: { reporterRole: 'admin', reporterName: 'Oliwer' },
+  [process.env.PIN_OWNER]: { reporterRole: 'owner', reporterName: 'Owner', lang: 'ru' },
+  [process.env.PIN_ADMIN]: { reporterRole: 'admin', reporterName: 'Oliwer', lang: 'en' },
+};
+
+const STRINGS = {
+  ru: {
+    registered:    (name) => `Привет, ${name}! 👋 Бот для отчётов зарегистрирован. Напишите любое сообщение, чтобы сообщить о проблеме или пожелании.`,
+    badPin:        'Неверный PIN. Попробуйте: /start <PIN>',
+    notRegistered: 'Пожалуйста, зарегистрируйтесь: /start <PIN>',
+    resuming:      (q) => `(продолжаем ваш сеанс)\n\n${q}`,
+    continuePrompt: 'Пожалуйста, продолжите описание.',
+    preview:       (summary) => `📋 Проверьте ваш отчёт:\n\n${summary}\n\nОтветьте "Отправить" для подтверждения или напишите исправление.`,
+    published:     (url) => `✅ Отчёт отправлен!\n${url}`,
+    publishFail:   'Не удалось отправить отчёт. Попробуйте написать "Отправить" ещё раз.',
+    error:         'Что-то пошло не так. Попробуйте написать ещё раз.',
+  },
+  en: {
+    registered:    (name) => `Hey, ${name}! 👋 Report bot registered. Send any message to report a bug or request a feature.`,
+    badPin:        'Wrong PIN. Try: /start <PIN>',
+    notRegistered: 'Please register first: /start <PIN>',
+    resuming:      (q) => `(resuming your session)\n\n${q}`,
+    continuePrompt: 'Please continue your description.',
+    preview:       (summary) => `📋 Check your report:\n\n${summary}\n\nReply "Send" to confirm or type a correction.`,
+    published:     (url) => `✅ Report submitted!\n${url}`,
+    publishFail:   'Failed to submit report. Try writing "Send" again.',
+    error:         'Something went wrong. Please try again.',
+  },
 };
 
 async function loadChatReporters() {
@@ -38,7 +63,7 @@ async function loadChatReporters() {
     }).from(feedbackReports).where(eq(feedbackReports.githubIssueNumber, 0));
     for (const row of rows) {
       if (row.telegramChatId) {
-        chatReporters.set(row.telegramChatId, { reporterRole: row.reporterRole, reporterName: row.reporterName });
+        chatReporters.set(row.telegramChatId, { reporterRole: row.reporterRole, reporterName: row.reporterName, lang: row.reporterRole === 'admin' ? 'en' : 'ru' });
       }
     }
   } catch (err) {
@@ -48,42 +73,37 @@ async function loadChatReporters() {
 
 const CONFIRM_PHRASES = ['отправить', 'да', 'yes', 'подтвердить', 'confirm', 'ок', 'ok'];
 
-async function handleConfirmation(token, chatId, text, sessionId) {
+async function handleConfirmation(token, chatId, text, sessionId, s) {
   const lower = text.toLowerCase();
   if (CONFIRM_PHRASES.some(p => lower.includes(p))) {
     try {
       const { issueUrl } = await feedbackService.publishSession(sessionId);
       chatSessions.delete(chatId);
-      await send(token, chatId, `✅ Отчёт отправлен!\n${issueUrl}`);
+      await send(token, chatId, s.published(issueUrl));
     } catch (err) {
       console.error('[FEEDBACK_BOT] publish error:', err.message);
-      // Session still valid — keep chatId mapped so owner can retry
-      await send(token, chatId, 'Не удалось отправить отчёт. Попробуйте написать "Отправить" ещё раз.');
+      await send(token, chatId, s.publishFail);
     }
   } else {
-    // Treat as correction — continue the conversation
     chatSessions.set(chatId, sessionId);
     try {
       const result = await feedbackService.continueSession(sessionId, text);
       if (result.done) {
-        await showPreview(token, chatId, sessionId);
+        await showPreview(token, chatId, sessionId, s);
       } else {
         await send(token, chatId, result.question);
       }
     } catch (err) {
       console.error('[FEEDBACK_BOT] continue error:', err.message);
-      // Keep chatSessions entry — transient error, owner can resend
-      await send(token, chatId, 'Что-то пошло не так. Попробуйте написать ещё раз.');
+      await send(token, chatId, s.error);
     }
   }
 }
 
-async function showPreview(token, chatId, sessionId) {
+async function showPreview(token, chatId, sessionId, s) {
   const { summary } = await feedbackService.previewSession(sessionId);
   chatSessions.set(chatId, `preview:${sessionId}`);
-  await send(token, chatId,
-    `📋 Проверьте ваш отчёт:\n\n${summary}\n\nОтветьте "Отправить" для подтверждения или напишите исправление.`
-  );
+  await send(token, chatId, s.preview(summary));
 }
 
 // Find most recent active (non-published, non-expired) session for a Telegram chatId.
@@ -107,28 +127,28 @@ async function findActiveSessionForChat(chatId) {
 async function routeMessage(token, chatId, text) {
   const reporter = chatReporters.get(chatId);
   if (!reporter) {
-    await send(token, chatId, 'Пожалуйста, зарегистрируйтесь: /start <PIN>');
+    await send(token, chatId, STRINGS.ru.notRegistered);
     return;
   }
 
+  const s = STRINGS[reporter.lang] ?? STRINGS.ru;
   const existing = chatSessions.get(chatId);
 
   if (existing?.startsWith('preview:')) {
-    return handleConfirmation(token, chatId, text, existing.slice(8));
+    return handleConfirmation(token, chatId, text, existing.slice(8), s);
   }
 
   try {
     if (!existing) {
-      // Check DB for an active session from before a restart
       const activeRow = await findActiveSessionForChat(chatId);
       if (activeRow) {
         if (activeRow.done) {
           chatSessions.set(chatId, `preview:${activeRow.id}`);
-          await showPreview(token, chatId, activeRow.id);
+          await showPreview(token, chatId, activeRow.id, s);
         } else {
           chatSessions.set(chatId, activeRow.id);
-          const q = activeRow.lastQuestion || 'Пожалуйста, продолжите описание.';
-          await send(token, chatId, `(продолжаем ваш сеанс)\n\n${q}`);
+          const q = activeRow.lastQuestion || s.continuePrompt;
+          await send(token, chatId, s.resuming(q));
         }
         return;
       }
@@ -143,22 +163,21 @@ async function routeMessage(token, chatId, text) {
       chatSessions.set(chatId, result.sessionId);
 
       if (result.done) {
-        await showPreview(token, chatId, result.sessionId);
+        await showPreview(token, chatId, result.sessionId, s);
       } else {
         await send(token, chatId, result.question);
       }
     } else {
       const result = await feedbackService.continueSession(existing, text);
       if (result.done) {
-        await showPreview(token, chatId, existing);
+        await showPreview(token, chatId, existing, s);
       } else {
         await send(token, chatId, result.question);
       }
     }
   } catch (err) {
     console.error('[FEEDBACK_BOT] route error:', err.message);
-    // Keep chatSessions entry — transient error, owner can resend
-    await send(token, chatId, 'Что-то пошло не так. Попробуйте написать снова.');
+    await send(token, chatId, s.error);
   }
 }
 
@@ -184,9 +203,10 @@ async function handleUpdate(token, update) {
       } catch (err) {
         console.error('[FEEDBACK_BOT] register error:', err.message);
       }
-      await send(token, chatId, `Привет, ${reporter.reporterName}! 👋 Бот для отчётов зарегистрирован. Напишите любое сообщение, чтобы сообщить о проблеме или пожелании.`);
+      const s = STRINGS[reporter.lang] ?? STRINGS.ru;
+      await send(token, chatId, s.registered(reporter.reporterName));
     } else {
-      await send(token, chatId, 'Неверный PIN. Попробуйте: /start <PIN>');
+      await send(token, chatId, STRINGS.ru.badPin);
     }
     return;
   }
