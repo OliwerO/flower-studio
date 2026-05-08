@@ -6,6 +6,7 @@
   "description": "Local Docker-PG rehearsal harness. See lab/README.md.",
   "devDependencies": {
     "@faker-js/faker": "^9.0.0",
+    "concurrently": "^9.2.1",
     "pg": "^8.20.0",
     "vitest": "^3.0.0"
   }
