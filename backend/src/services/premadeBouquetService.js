@@ -1,81 +1,41 @@
-// Premade bouquet business logic.
+// Premade bouquet business logic. Phase 7: persistence via premadeBouquetRepo.
 //
 // A premade bouquet is a composition the florist builds BEFORE any order exists.
-// Stock is deducted at creation time (the flowers are physically in the bouquet).
-// Later the bouquet can either:
-//   1. Be matched to a client — at which point a real Order is created from its
-//      lines, the premade record is deleted, and stock is NOT re-deducted.
-//   2. Be returned to stock — the flowers go back to inventory and the premade
-//      record is deleted. No order is ever created.
-//
-// Design trade-off: we deliberately keep premade bouquets in a SEPARATE table
-// (not as Orders with a flag) because:
-//   - They have no customer, no delivery, no payment — all irrelevant until sold
-//   - The "return to stock" flow must not leave an order record behind
-//   - It's cleaner to archive/delete premades than to filter special statuses
-//     from every order query across the whole app.
+// Stock is deducted at creation time. The bouquet can later be:
+//   1. Matched to a client — Order created from its lines, premade record deleted.
+//   2. Returned to stock — flowers go back to inventory, premade record deleted.
 
-import * as db from './airtable.js';
+import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
-import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
-import { listByIds } from '../utils/batchQuery.js';
 import { autoMatchStock, createOrder } from './orderService.js';
 
-/**
- * Fetch a premade bouquet with its lines enriched.
- * @returns {Promise<Object>} bouquet with `lines` array attached
- */
 export async function getPremadeBouquet(id) {
-  const bouquet = await db.getById(TABLES.PREMADE_BOUQUETS, id);
-  const lineIds = bouquet['Lines'] || [];
-  const lines = lineIds.length > 0
-    ? await listByIds(TABLES.PREMADE_BOUQUET_LINES, lineIds)
-    : [];
+  const bouquet = await premadeBouquetRepo.getById(id);
+  const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
   bouquet.lines = lines;
+  bouquet.Lines = lines.map(l => l.id);
   bouquet['Computed Sell Total'] = lines.reduce(
-    (s, l) => s + Number(l['Sell Price Per Unit'] || 0) * Number(l.Quantity || 0),
-    0,
-  );
+    (s, l) => s + Number(l['Sell Price Per Unit'] || 0) * Number(l.Quantity || 0), 0);
   bouquet['Computed Cost Total'] = lines.reduce(
-    (s, l) => s + Number(l['Cost Price Per Unit'] || 0) * Number(l.Quantity || 0),
-    0,
-  );
+    (s, l) => s + Number(l['Cost Price Per Unit'] || 0) * Number(l.Quantity || 0), 0);
   bouquet['Final Price'] = bouquet['Price Override'] || bouquet['Computed Sell Total'];
   return bouquet;
 }
 
-/**
- * List all premade bouquets with enriched lines + computed totals.
- */
 export async function listPremadeBouquets() {
-  const bouquets = await db.list(TABLES.PREMADE_BOUQUETS, {
-    sort: [{ field: 'Created At', direction: 'desc' }],
-    maxRecords: 200,
-  });
+  const bouquets = await premadeBouquetRepo.list();
   if (bouquets.length === 0) return [];
 
-  const allLineIds = bouquets.flatMap(b => b['Lines'] || []);
-  const allLines = await listByIds(TABLES.PREMADE_BOUQUET_LINES, allLineIds);
-  const linesByBouquet = {};
-  for (const line of allLines) {
-    const bid = line['Premade Bouquets']?.[0];
-    if (!bid) continue;
-    if (!linesByBouquet[bid]) linesByBouquet[bid] = [];
-    linesByBouquet[bid].push(line);
-  }
-
+  // Bulk fetch all lines via individual queries (small N — premades are 0–20 rows in practice)
   for (const bouquet of bouquets) {
-    const lines = linesByBouquet[bouquet.id] || [];
+    const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
     bouquet.lines = lines;
+    bouquet.Lines = lines.map(l => l.id);
     bouquet['Computed Sell Total'] = lines.reduce(
-      (s, l) => s + Number(l['Sell Price Per Unit'] || 0) * Number(l.Quantity || 0),
-      0,
-    );
+      (s, l) => s + Number(l['Sell Price Per Unit'] || 0) * Number(l.Quantity || 0), 0);
     bouquet['Computed Cost Total'] = lines.reduce(
-      (s, l) => s + Number(l['Cost Price Per Unit'] || 0) * Number(l.Quantity || 0),
-      0,
-    );
+      (s, l) => s + Number(l['Cost Price Per Unit'] || 0) * Number(l.Quantity || 0), 0);
     bouquet['Final Price'] = bouquet['Price Override'] || bouquet['Computed Sell Total'];
     bouquet['Bouquet Summary'] = lines
       .map(l => `${Number(l.Quantity || 0)}× ${l['Flower Name'] || '?'}`)
@@ -84,20 +44,9 @@ export async function listPremadeBouquets() {
   return bouquets;
 }
 
-/**
- * Create a premade bouquet + lines + deduct stock atomically with rollback.
- * @param {Object} params
- * @param {string} params.name
- * @param {Array}  params.lines - [{ flowerName, stockItemId?, quantity, costPricePerUnit, sellPricePerUnit }]
- * @param {number} [params.priceOverride]
- * @param {string} [params.notes]
- * @param {string} [params.createdBy]
- * @returns {Promise<{ bouquet, lines }>}
- */
 export async function createPremadeBouquet(params) {
   const { name, lines, priceOverride, notes, createdBy } = params;
 
-  // Validation
   if (!name || typeof name !== 'string' || !name.trim()) {
     const err = new Error('Premade bouquet name is required.');
     err.statusCode = 400;
@@ -109,32 +58,27 @@ export async function createPremadeBouquet(params) {
     throw err;
   }
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-    if (typeof line.quantity !== 'number' || line.quantity <= 0) {
+    if (typeof lines[i].quantity !== 'number' || lines[i].quantity <= 0) {
       const err = new Error(`lines[${i}].quantity must be a positive number.`);
       err.statusCode = 400;
       throw err;
     }
   }
 
-  // Rollback tracking
   let bouquet = null;
   const createdLineIds = [];
   const stockAdjustments = [];
 
   try {
-    // 1. Create the parent record
-    bouquet = await db.create(TABLES.PREMADE_BOUQUETS, {
-      Name: name.trim(),
-      'Created By': createdBy || null,
+    bouquet = await premadeBouquetRepo.create({
+      Name:             name.trim(),
+      'Created By':     createdBy || '',
       'Price Override': priceOverride || null,
-      Notes: notes || '',
+      Notes:            notes || '',
     });
 
-    // 2a. Auto-match unlinked lines to stock by Display Name
     await autoMatchStock(lines);
 
-    // 2a-bis. Reject orphan lines — same rationale as orderService.createOrder().
     const orphans = lines.filter(l => !l.stockItemId);
     if (orphans.length > 0) {
       const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
@@ -146,20 +90,18 @@ export async function createPremadeBouquet(params) {
       throw err;
     }
 
-    // 2b. Create the line records (price snapshotting)
     for (const line of lines) {
-      const created = await db.create(TABLES.PREMADE_BOUQUET_LINES, {
-        'Premade Bouquets':    [bouquet.id],
+      const created = await premadeBouquetRepo.createLine({
+        'Premade Bouquets':    [bouquet._pgId],
         'Stock Item':          [line.stockItemId],
         'Flower Name':         line.flowerName,
         Quantity:              line.quantity,
         'Cost Price Per Unit': line.costPricePerUnit || 0,
         'Sell Price Per Unit': line.sellPricePerUnit || 0,
       });
-      createdLineIds.push(created.id);
+      createdLineIds.push(created._pgId);
     }
 
-    // 3. Deduct stock via stockRepo (routes to current STOCK_BACKEND).
     for (const line of lines) {
       if (line.stockItemId) {
         await stockRepo.adjustQuantity(line.stockItemId, -line.quantity);
@@ -167,13 +109,7 @@ export async function createPremadeBouquet(params) {
       }
     }
 
-    // 4. Broadcast
-    broadcast({
-      type: 'premade_bouquet_created',
-      bouquetId: bouquet.id,
-      name: bouquet.Name,
-    });
-
+    broadcast({ type: 'premade_bouquet_created', bouquetId: bouquet.id, name: bouquet.Name });
     return await getPremadeBouquet(bouquet.id);
   } catch (err) {
     console.error('[PREMADE] Creation failed, rolling back:', err.message);
@@ -184,64 +120,44 @@ export async function createPremadeBouquet(params) {
       catch (e) { rollbackErrors.push(`stock ${adj.stockId}: ${e.message}`); }
     }
     for (const lineId of createdLineIds) {
-      try { await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, lineId); }
+      try { await premadeBouquetRepo.deleteLineById(lineId); }
       catch (e) { rollbackErrors.push(`line ${lineId}: ${e.message}`); }
     }
     if (bouquet) {
-      try { await db.deleteRecord(TABLES.PREMADE_BOUQUETS, bouquet.id); }
-      catch (e) { rollbackErrors.push(`bouquet ${bouquet.id}: ${e.message}`); }
+      try { await premadeBouquetRepo.deleteById(bouquet._pgId); }
+      catch (e) { rollbackErrors.push(`bouquet ${bouquet._pgId}: ${e.message}`); }
     }
-    if (rollbackErrors.length > 0) {
-      console.error('[PREMADE] Rollback errors:', rollbackErrors);
-    }
+    if (rollbackErrors.length > 0) console.error('[PREMADE] Rollback errors:', rollbackErrors);
     throw err;
   }
 }
 
-/**
- * Update top-level fields (name, price override, notes). Does NOT edit lines.
- */
 export async function updatePremadeBouquet(id, patch) {
   const fields = {};
-  if (patch.name !== undefined) fields.Name = patch.name;
+  if (patch.name !== undefined)          fields.Name             = patch.name;
   if (patch.priceOverride !== undefined) fields['Price Override'] = patch.priceOverride || null;
-  if (patch.notes !== undefined) fields.Notes = patch.notes;
-  await db.update(TABLES.PREMADE_BOUQUETS, id, fields);
+  if (patch.notes !== undefined)         fields.Notes            = patch.notes;
+  await premadeBouquetRepo.update(id, fields);
   return await getPremadeBouquet(id);
 }
 
-/**
- * Edit bouquet lines — handle removals (return to stock), new lines, qty changes.
- * Mirrors editBouquetLines() in orderService.js but for premade bouquets.
- * @param {string} id - premade bouquet record ID
- * @param {Object} params
- * @param {Array}  params.lines - [{ id?, stockItemId, flowerName, quantity, _originalQty?, costPricePerUnit, sellPricePerUnit }]
- * @param {Array}  params.removedLines - [{ lineId?, stockItemId, quantity }]
- * @returns {{ updated: true, createdLines }}
- */
 export async function editPremadeBouquetLines(id, { lines = [], removedLines = [] }) {
-  // Verify bouquet exists
-  await db.getById(TABLES.PREMADE_BOUQUETS, id);
+  const bouquet = await premadeBouquetRepo.getById(id);
 
-  // 1. Handle removed lines — always return to stock (no writeoff for premade)
   for (const rem of removedLines) {
     if (rem.stockItemId && rem.quantity > 0) {
       await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity);
     }
     if (rem.lineId) {
-      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, rem.lineId).catch(err =>
-        console.error(`[PREMADE] Failed to delete removed line ${rem.lineId}:`, err.message)
+      await premadeBouquetRepo.deleteLineById(rem.lineId).catch(err =>
+        console.error(`[PREMADE] Failed to delete removed line ${rem.lineId}:`, err.message),
       );
     }
   }
 
-  // 2a. Auto-match new unlinked lines
   const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
-  if (newUnmatched.length > 0) {
-    await autoMatchStock(newUnmatched);
-  }
+  if (newUnmatched.length > 0) await autoMatchStock(newUnmatched);
 
-  // 2a-bis. Reject orphan new lines
   const orphans = lines.filter(l => !l.id && !l.stockItemId);
   if (orphans.length > 0) {
     const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
@@ -253,25 +169,22 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
     throw err;
   }
 
-  // 2b. Process new/updated lines
   const createdLines = [];
   for (const line of lines) {
     if (line.id) {
-      // Existing line — update quantity, adjust stock for delta
       if (line._originalQty != null && line.quantity !== line._originalQty) {
         const delta = line._originalQty - line.quantity;
         if (line.stockItemId && delta !== 0) {
           await stockRepo.adjustQuantity(line.stockItemId, delta);
         }
-        await db.update(TABLES.PREMADE_BOUQUET_LINES, line.id, { Quantity: line.quantity });
+        await premadeBouquetRepo.updateLine(line.id, { Quantity: line.quantity });
       }
     } else {
-      // New line — create + deduct stock
-      const created = await db.create(TABLES.PREMADE_BOUQUET_LINES, {
-        'Premade Bouquets': [id],
+      const created = await premadeBouquetRepo.createLine({
+        'Premade Bouquets':    [bouquet._pgId],
         ...(line.stockItemId ? { 'Stock Item': [line.stockItemId] } : {}),
-        'Flower Name': line.flowerName,
-        Quantity: line.quantity,
+        'Flower Name':         line.flowerName,
+        Quantity:              line.quantity,
         'Cost Price Per Unit': line.costPricePerUnit || 0,
         'Sell Price Per Unit': line.sellPricePerUnit || 0,
       });
@@ -285,68 +198,41 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
   return { updated: true, createdLines };
 }
 
-/**
- * Return all flowers in a premade bouquet to stock, then delete the records.
- * Mirrors cancelWithStockReturn() in orderService.js.
- * @returns {{ message, returnedItems }}
- */
 export async function returnPremadeBouquetToStock(id) {
-  const bouquet = await db.getById(TABLES.PREMADE_BOUQUETS, id);
-  const lineIds = bouquet['Lines'] || [];
+  const bouquet = await premadeBouquetRepo.getById(id);
+  const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
   const returnedItems = [];
 
-  if (lineIds.length > 0) {
-    const lines = await listByIds(TABLES.PREMADE_BOUQUET_LINES, lineIds);
-    for (const line of lines) {
-      const stockId = line['Stock Item']?.[0];
-      const qty = Number(line.Quantity || 0);
-      if (stockId && qty > 0) {
-        try {
-          const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
-          returnedItems.push({
-            stockId,
-            flowerName: line['Flower Name'] || '?',
-            quantityReturned: qty,
-            newStockQty: newQty,
-          });
-        } catch (err) {
-          if (err.statusCode === 404) {
-            console.warn(`[PREMADE] Stock item ${stockId} not found during return — skipping quantity restore for "${line['Flower Name'] || '?'}"`);
-          } else {
-            throw err;
-          }
+  for (const line of lines) {
+    const stockId = line['Stock Item']?.[0];
+    const qty = Number(line.Quantity || 0);
+    if (stockId && qty > 0) {
+      try {
+        const { newQty } = await stockRepo.adjustQuantity(stockId, qty);
+        returnedItems.push({
+          stockId,
+          flowerName:       line['Flower Name'] || '?',
+          quantityReturned: qty,
+          newStockQty:      newQty,
+        });
+      } catch (err) {
+        if (err.statusCode === 404) {
+          console.warn(`[PREMADE] Stock item ${stockId} not found during return — skipping quantity restore for "${line['Flower Name'] || '?'}"`);
+        } else {
+          throw err;
         }
       }
-      // Delete the line record
-      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(err =>
-        console.error(`[PREMADE] Failed to delete returned line ${line.id}:`, err.message)
-      );
     }
   }
 
-  // Delete the bouquet record itself
-  await db.deleteRecord(TABLES.PREMADE_BOUQUETS, id);
+  // CASCADE deletes lines when the bouquet is deleted
+  await premadeBouquetRepo.deleteById(bouquet._pgId);
 
-  broadcast({
-    type: 'premade_bouquet_returned',
-    bouquetId: id,
-    name: bouquet.Name || '',
-  });
-
+  broadcast({ type: 'premade_bouquet_returned', bouquetId: id, name: bouquet.Name || '' });
   return { message: 'Premade bouquet returned to stock.', returnedItems };
 }
 
-/**
- * Match a premade bouquet to a customer — creates a real Order from the premade's
- * lines, deletes the premade, and does NOT re-deduct stock.
- *
- * @param {string} id - premade bouquet record ID
- * @param {Object} orderData - the fields a normal order needs (customer, deliveryType, delivery, etc.)
- * @param {Object} config - { getConfig, getDriverOfDay, generateOrderId }
- * @returns {Promise<{ order, orderLines, delivery, premadeBouquetId }>}
- */
 export async function matchPremadeBouquetToOrder(id, orderData, config) {
-  // 1. Load the premade + its lines
   const premade = await getPremadeBouquet(id);
   if (!premade.lines || premade.lines.length === 0) {
     const err = new Error('Premade bouquet has no lines — cannot match to order.');
@@ -354,56 +240,35 @@ export async function matchPremadeBouquetToOrder(id, orderData, config) {
     throw err;
   }
 
-  // 2. Convert premade lines to order-line format expected by createOrder.
-  //    Prices are taken from the premade snapshots so the customer pays exactly
-  //    what the florist/owner saw when composing/advertising the bouquet.
   const orderLines = premade.lines.map(l => ({
-    stockItemId: l['Stock Item']?.[0] || null,
-    flowerName: l['Flower Name'] || '',
-    quantity: Number(l.Quantity || 0),
+    stockItemId:      l['Stock Item']?.[0] || null,
+    flowerName:       l['Flower Name'] || '',
+    quantity:         Number(l.Quantity || 0),
     costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
     sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
   }));
 
-  // 3. If the premade had a Price Override and the caller didn't supply one,
-  //    carry it over so the advertised price stays as the sale price.
   const priceOverride = orderData.priceOverride != null
     ? orderData.priceOverride
     : (premade['Price Override'] || null);
 
-  // 4. Create the order with stock deduction SKIPPED — stock was already
-  //    deducted when the premade was built.
   const result = await createOrder(
     {
       ...orderData,
       orderLines,
       priceOverride,
-      // Preserve any notes the florist captured at composition time
       notes: orderData.notes || premade.Notes || '',
     },
     config,
     { skipStockDeduction: true },
   );
 
-  // 5. Delete the premade records now that they've been "consumed" into the order.
-  //    If this fails, we log but don't throw — the order is already created and
-  //    the user shouldn't see a failure for a bookkeeping cleanup issue.
   try {
-    for (const line of premade.lines) {
-      await db.deleteRecord(TABLES.PREMADE_BOUQUET_LINES, line.id).catch(err =>
-        console.error(`[PREMADE] Failed to delete consumed line ${line.id}:`, err.message)
-      );
-    }
-    await db.deleteRecord(TABLES.PREMADE_BOUQUETS, id);
+    await premadeBouquetRepo.deleteById(premade._pgId);  // CASCADE removes lines
   } catch (cleanupErr) {
     console.error('[PREMADE] Cleanup after match failed:', cleanupErr.message);
   }
 
-  broadcast({
-    type: 'premade_bouquet_matched',
-    bouquetId: id,
-    orderId: result.order?.id || null,
-  });
-
+  broadcast({ type: 'premade_bouquet_matched', bouquetId: id, orderId: result.order?.id || null });
   return { ...result, premadeBouquetId: id };
 }
