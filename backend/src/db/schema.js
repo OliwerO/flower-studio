@@ -9,7 +9,7 @@ import {
   pgTable, text, timestamp, jsonb, bigserial, index, uuid,
   integer, numeric, boolean, date, uniqueIndex,
 } from 'drizzle-orm/pg-core';
-import { isNotNull, and } from 'drizzle-orm';
+import { isNotNull, and, sql } from 'drizzle-orm';
 
 // Single-row-per-key tracking. Phase 3+ writes rows like
 //   ('stock_cutover_at', '2026-05-...') when entity cutovers happen, so
@@ -474,4 +474,86 @@ export const productConfig = pgTable('product_config', {
   wixPairIdx:  uniqueIndex('product_config_wix_pair_idx').on(t.wixProductId, t.wixVariantId).where(and(isNotNull(t.wixProductId), isNotNull(t.wixVariantId))),
   productIdx:  index('product_config_wix_product_id_idx').on(t.wixProductId),
   activeIdx:   index('product_config_active_idx').on(t.active),
+}));
+
+// ── Phase 7: Stock Orders ──
+export const stockOrders = pgTable('stock_orders', {
+  id:                uuid('id').primaryKey().defaultRandom(),
+  airtableId:        text('airtable_id'),
+  poNumber:          text('po_number').notNull().default(''),
+  status:            text('status').notNull().default('Draft'),
+  createdDate:       text('created_date').notNull().default(''),
+  assignedDriver:    text('assigned_driver').notNull().default(''),
+  plannedDate:       text('planned_date'),
+  notes:             text('notes').notNull().default(''),
+  supplierPayments:  text('supplier_payments').notNull().default(''),
+  driverPayment:     text('driver_payment').notNull().default(''),
+  createdAt:         timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  airtableIdx:    uniqueIndex('stock_orders_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  poNumberIdx:    uniqueIndex('stock_orders_po_number_idx').on(t.poNumber).where(sql`${t.poNumber} <> ''`),
+  statusIdx:      index('stock_orders_status_idx').on(t.status),
+  createdDateIdx: index('stock_orders_created_date_idx').on(t.createdDate),
+  driverIdx:      index('stock_orders_driver_idx').on(t.assignedDriver),
+}));
+
+export const stockOrderLines = pgTable('stock_order_lines', {
+  id:                       uuid('id').primaryKey().defaultRandom(),
+  airtableId:               text('airtable_id'),
+  poId:                     uuid('po_id').notNull().references(() => stockOrders.id, { onDelete: 'cascade' }),
+  stockId:                  uuid('stock_id').references(() => stock.id),
+  stockAirtableId:          text('stock_airtable_id'),
+  flowerName:               text('flower_name').notNull().default(''),
+  quantityNeeded:           integer('quantity_needed').notNull().default(0),
+  quantityFound:            integer('quantity_found').notNull().default(0),
+  lotSize:                  integer('lot_size').notNull().default(0),
+  driverStatus:             text('driver_status').notNull().default('Pending'),
+  supplier:                 text('supplier').notNull().default(''),
+  costPrice:                numeric('cost_price', { precision: 10, scale: 4 }).notNull().default('0'),
+  sellPrice:                numeric('sell_price', { precision: 10, scale: 4 }).notNull().default('0'),
+  farmer:                   text('farmer').notNull().default(''),
+  notes:                    text('notes').notNull().default(''),
+  substituteFlowerName:     text('substitute_flower_name').notNull().default(''),
+  substituteStatus:         text('substitute_status').notNull().default(''),
+  substituteQuantityFound:  integer('substitute_quantity_found').notNull().default(0),
+  substituteCost:           numeric('substitute_cost', { precision: 10, scale: 4 }).notNull().default('0'),
+  substituteSupplier:       text('substitute_supplier').notNull().default(''),
+  quantityAccepted:         integer('quantity_accepted').notNull().default(0),
+  writeOffQty:              integer('write_off_qty').notNull().default(0),
+  evalStatus:               text('eval_status').notNull().default(''),
+  createdAt:                timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  airtableIdx: uniqueIndex('stock_order_lines_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  poIdx:       index('stock_order_lines_po_id_idx').on(t.poId),
+  stockIdx:    index('stock_order_lines_stock_id_idx').on(t.stockId),
+}));
+
+// ── Phase 7: Premade Bouquets ──
+export const premadeBouquets = pgTable('premade_bouquets', {
+  id:             uuid('id').primaryKey().defaultRandom(),
+  airtableId:     text('airtable_id'),
+  name:           text('name').notNull().default(''),
+  createdBy:      text('created_by').notNull().default(''),
+  priceOverride:  numeric('price_override', { precision: 10, scale: 2 }),
+  notes:          text('notes').notNull().default(''),
+  createdAt:      timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  airtableIdx: uniqueIndex('premade_bouquets_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+}));
+
+export const premadeBouquetLines = pgTable('premade_bouquet_lines', {
+  id:                  uuid('id').primaryKey().defaultRandom(),
+  airtableId:          text('airtable_id'),
+  bouquetId:           uuid('bouquet_id').notNull().references(() => premadeBouquets.id, { onDelete: 'cascade' }),
+  stockId:             uuid('stock_id').references(() => stock.id),
+  stockAirtableId:     text('stock_airtable_id'),
+  flowerName:          text('flower_name').notNull().default(''),
+  quantity:            integer('quantity').notNull().default(0),
+  costPricePerUnit:    numeric('cost_price_per_unit', { precision: 10, scale: 4 }).notNull().default('0'),
+  sellPricePerUnit:    numeric('sell_price_per_unit', { precision: 10, scale: 4 }).notNull().default('0'),
+  createdAt:           timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  airtableIdx: uniqueIndex('premade_bouquet_lines_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),
+  bouquetIdx:  index('premade_bouquet_lines_bouquet_id_idx').on(t.bouquetId),
+  stockIdx:    index('premade_bouquet_lines_stock_id_idx').on(t.stockId),
 }));
