@@ -11,6 +11,8 @@ import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
 import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
+import * as stockOrderRepo from '../repos/stockOrderRepo.js';
+import * as orderService from '../services/orderService.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
@@ -30,28 +32,24 @@ const VALID_STATUSES = VALID_PO_STATUSES;
 async function resolveOrCreateStockItem(flowerName, { costPrice = 0, sellPrice = 0, supplier = '' } = {}) {
   const name = flowerName.trim();
   const matches = await stockRepo.list({
-    filterByFormula: '', // ignored in PG mode
     maxRecords: 1,
     pg: { displayName: name, active: true, includeEmpty: true },
   });
   if (matches.length > 0) {
-    // id is airtableId || uuid — only safe to link in AT if it starts with 'rec'
-    return matches[0].id.startsWith('rec') ? matches[0].id : null;
+    return matches[0].id.startsWith('rec') ? matches[0].id : matches[0]._pgId || matches[0].id;
   }
-  // Not found — create a zero-qty stock card so it shows in the picker
   const newItem = await stockRepo.create({
-    'Display Name': name,
-    'Purchase Name': name,
-    'Current Quantity': 0,
+    'Display Name':       name,
+    'Purchase Name':      name,
+    'Current Quantity':   0,
     'Current Cost Price': Number(costPrice) || 0,
     'Current Sell Price': Number(sellPrice) || 0,
-    Supplier: supplier || '',
-    Category: 'Other',
-    Active: true,
+    Supplier:             supplier || '',
+    Category:             'Other',
+    Active:               true,
   });
   console.log(`[STOCK-ORDER] Auto-created stock item "${name}" (${newItem.id}) from PO line`);
-  // New PG-only item — no Airtable ID, don't link in AT
-  return null;
+  return newItem.id.startsWith('rec') ? newItem.id : newItem._pgId || newItem.id;
 }
 
 // Airtable may return Flower Name as an array (lookup field) or a string
@@ -78,11 +76,10 @@ const router = Router();
 // /settings, so this exposes only the minimal fields they need.
 router.get('/meta/lookups', authorize('stock-orders'), async (req, res, next) => {
   try {
-    const stock = await db.list(TABLES.STOCK, {
-      filterByFormula: '{Active}',
-      fields: ['Display Name', 'Supplier', 'Current Cost Price'],
+    const items = await stockRepo.list({
+      pg: { active: true, includeEmpty: true },
     });
-    const flowers = stock.map(s => ({
+    const flowers = items.map(s => ({
       id:       s.id,
       name:     s['Display Name'] || '',
       supplier: s.Supplier || '',
@@ -100,49 +97,22 @@ router.get('/meta/lookups', authorize('stock-orders'), async (req, res, next) =>
 router.get('/', authorize('stock-orders'), async (req, res, next) => {
   try {
     const { status, include } = req.query;
-    const filters = [];
-    if (status) {
-      if (!VALID_STATUSES.includes(status)) return res.status(400).json({ error: 'Invalid status value' });
-      filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
+    if (status && !VALID_PO_STATUSES.includes(status)) {
+      return res.status(400).json({ error: 'Invalid status value' });
     }
-    // Driver scope: only POs where Assigned Driver matches this driver's badge.
-    // This is what was missing — without it every driver saw every PO.
-    if (req.role === 'driver' && req.driverName) {
-      filters.push(`{Assigned Driver} = '${sanitizeFormulaValue(req.driverName)}'`);
-    }
-    const formula = filters.length > 0 ? `AND(${filters.join(', ')})` : '';
-
-    const orders = await db.list(TABLES.STOCK_ORDERS, {
-      filterByFormula: formula || undefined,
-      sort: [{ field: 'Created Date', direction: 'desc' }],
+    const orders = await stockOrderRepo.list({
+      status: status || undefined,
+      role:   req.role,
+      driverName: req.driverName,
     });
 
-    // Optionally include lines in a single batch fetch instead of N+1 calls
     if (include === 'lines' && orders.length > 0) {
-      const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
-      const allLines = [];
-      if (allLineIds.length > 0) {
-        // Airtable formula limit: batch into chunks of 100 IDs
-        const CHUNK = 100;
-        for (let i = 0; i < allLineIds.length; i += CHUNK) {
-          const chunk = allLineIds.slice(i, i + CHUNK);
-          const chunkLines = await db.list(TABLES.STOCK_ORDER_LINES, {
-            filterByFormula: `OR(${chunk.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-          });
-          allLines.push(...chunkLines);
-        }
-      }
-      // Normalise Flower Name on every line — Airtable may return arrays
-      // from lookup fields, but frontends expect a plain string.
-      for (const l of allLines) {
-        if (l['Flower Name'] != null) l['Flower Name'] = normaliseFlowerName(l['Flower Name']);
-        if (l['Alt Flower Name'] != null) l['Alt Flower Name'] = normaliseFlowerName(l['Alt Flower Name']);
-      }
-      // Index lines by ID for fast lookup
-      const lineMap = new Map(allLines.map(l => [l.id, l]));
+      const poIds = orders.map(o => o._pgId).filter(Boolean);
+      const linesByPo = await stockOrderRepo.getLinesForPos(poIds);
       const result = orders.map(o => ({
         ...o,
-        lines: (o['Order Lines'] || []).map(id => lineMap.get(id)).filter(Boolean),
+        lines: linesByPo.get(o._pgId) || [],
+        'Order Lines': (linesByPo.get(o._pgId) || []).map(l => l.id),
       }));
       return res.json(result);
     }
@@ -156,23 +126,12 @@ router.get('/', authorize('stock-orders'), async (req, res, next) => {
 // GET /api/stock-orders/:id — single PO with its lines
 router.get('/:id', authorize('stock-orders'), async (req, res, next) => {
   try {
-    const order = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-    // Same scope rule as the list endpoint: drivers can only fetch their own PO.
+    const order = await stockOrderRepo.getById(req.params.id);
     if (req.role === 'driver' && req.driverName && order['Assigned Driver'] !== req.driverName) {
       return res.status(404).json({ error: 'PO not found.' });
     }
-    const lineIds = order['Order Lines'] || [];
-    let lines = [];
-    if (lineIds.length > 0) {
-      lines = await db.list(TABLES.STOCK_ORDER_LINES, {
-        filterByFormula: `OR(${lineIds.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-      });
-      for (const l of lines) {
-        if (l['Flower Name'] != null) l['Flower Name'] = normaliseFlowerName(l['Flower Name']);
-        if (l['Alt Flower Name'] != null) l['Alt Flower Name'] = normaliseFlowerName(l['Alt Flower Name']);
-      }
-    }
-    res.json({ ...order, lines });
+    const lines = await stockOrderRepo.getLinesByPoId(order._pgId);
+    res.json({ ...order, lines, 'Order Lines': lines.map(l => l.id) });
   } catch (err) {
     next(err);
   }
