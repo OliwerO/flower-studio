@@ -22,7 +22,8 @@
     "lab:db:logs": "docker compose -f docker-compose.lab.yml logs -f postgres",
     "lab:migrate": "DATABASE_URL=postgres://lab:lab@localhost:5433/lab PGSSL_DISABLE=true node backend/src/db/migrate.js",
     "lab:backend": "node lab/scripts/start-lab-backend.js",
-    "lab:test:unit": "cd lab && npx vitest run --config vitest.config.js factories scenarios helpers"
+    "lab:test:unit": "cd lab && npx vitest run --config vitest.config.js factories scenarios helpers",
+    "lab:seed": "node lab/scripts/seed-cli.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"
