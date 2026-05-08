@@ -16,7 +16,6 @@ import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
 import { generateOrderId } from './configService.js';
-import { listByIds } from '../utils/batchQuery.js';
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
@@ -470,9 +469,7 @@ export async function reprocessWixOrder(wixOrderId, { force = false, actor = nul
 
   if (!force) {
     const lineRecords = existing._lines
-      || (lineIds.length > 0
-        ? await listByIds(TABLES.ORDER_LINES, lineIds, { fields: ['Stock Item', 'Flower Name', 'Quantity'] })
-        : []);
+      || (lineIds.length > 0 ? await orderRepo.getLinesForOrders([existing.id]) : []);
 
     const reasons = [];
     if (existing.Status && existing.Status !== 'New') {
