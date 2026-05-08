@@ -73,7 +73,7 @@ async function loadChatReporters() {
   }
 }
 
-const CONFIRM_PHRASES = ['отправить', 'да', 'yes', 'подтвердить', 'confirm', 'ок', 'ok'];
+const CONFIRM_PHRASES = ['отправить', 'да', 'yes', 'подтвердить', 'confirm', 'ок', 'ok', 'send'];
 
 async function handleConfirmation(token, chatId, text, sessionId, s) {
   const lower = text.toLowerCase();
