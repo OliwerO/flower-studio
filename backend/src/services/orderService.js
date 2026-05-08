@@ -6,6 +6,7 @@ import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
+import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
@@ -251,24 +252,23 @@ export async function createOrder(params, config, opts = {}) {
         for (const { stockId, patch } of stockUpdates) {
           await stockRepo.update(stockId, patch);
         }
-        // Cascade to Premade Bouquet Lines. Same pattern as PATCH /stock:id —
-        // fetch all lines once and filter in memory by Stock Item link
-        // (filterByFormula on linked records returns display names, not IDs).
-        if (TABLES.PREMADE_BOUQUET_LINES) {
-          const allPremadeLines = await db.list(TABLES.PREMADE_BOUQUET_LINES, {
-            fields: ['Stock Item'],
-            maxRecords: 500,
-          });
+        // Cascade price changes to Premade Bouquet Lines via the repo.
+        // Uses getLinesByStockId per affected stock item to avoid a full-table scan.
+        try {
           const stockToPatch = new Map(stockUpdates.map(u => [u.stockId, u.patch]));
-          for (const pbl of allPremadeLines) {
-            const linkedStockId = Array.isArray(pbl['Stock Item']) ? pbl['Stock Item'][0] : null;
-            const stockPatch = linkedStockId ? stockToPatch.get(linkedStockId) : null;
-            if (!stockPatch) continue;
-            const linePatch = {};
-            if ('Current Cost Price' in stockPatch) linePatch['Cost Price Per Unit'] = stockPatch['Current Cost Price'];
-            if ('Current Sell Price' in stockPatch) linePatch['Sell Price Per Unit'] = stockPatch['Current Sell Price'];
-            await db.update(TABLES.PREMADE_BOUQUET_LINES, pbl.id, linePatch);
+          for (const [stockId, stockPatch] of stockToPatch) {
+            const matchingLines = await premadeBouquetRepo.getLinesByStockId(stockId);
+            for (const pbl of matchingLines) {
+              const linePatch = {};
+              if ('Current Cost Price' in stockPatch) linePatch['Cost Price Per Unit'] = stockPatch['Current Cost Price'];
+              if ('Current Sell Price' in stockPatch) linePatch['Sell Price Per Unit'] = stockPatch['Current Sell Price'];
+              if (Object.keys(linePatch).length > 0) {
+                await premadeBouquetRepo.updateLine(pbl.id, linePatch);
+              }
+            }
           }
+        } catch (err) {
+          console.error('[ORDER] premade price-sync cascade failed:', err.message);
         }
       }
     }
@@ -714,4 +714,73 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
   }
 
   return { updated: true, createdLines };
+}
+
+/**
+ * After a Stock Order evaluation creates Substitutes, find which open orders
+ * (delivery date in the future, non-terminal) have lines pointing at the
+ * original Stock Item — those orders need owner reconciliation.
+ *
+ * @param {Array} substitutionsMade - [{ originalStockId, originalFlowerName, substituteStockId, receivedQty }]
+ * @returns {Array} - same shape with `affectedOrders: [{ orderId, appOrderId, customerName, requiredBy, qty }]` populated
+ */
+export async function findOrdersNeedingSubstitution(substitutionsMade) {
+  if (!Array.isArray(substitutionsMade) || substitutionsMade.length === 0) return [];
+
+  const today = new Date().toISOString().split('T')[0];
+  const openOrders = await orderRepo.list({
+    pg: {
+      excludeStatuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED],
+      requiredByFrom:  today,
+      limit:           500,
+    },
+  });
+
+  if (!openOrders.length) {
+    return substitutionsMade.map(s => ({ ...s, affectedOrders: [] }));
+  }
+
+  // Pull lines for these orders (UUIDs only — _pgId is the canonical FK)
+  const orderUuids = openOrders.map(o => o._pgId).filter(Boolean);
+  const allLines = await orderRepo.getLinesForOrders(orderUuids);
+
+  // Pull customer names
+  const custIds = [...new Set(openOrders.map(o => o.Customer?.[0]).filter(Boolean))];
+  const customers = custIds.length ? await customerRepo.findMany(custIds) : [];
+  const custByPgId = {};
+  for (const c of customers) {
+    if (c._pgId) custByPgId[c._pgId] = c;
+  }
+
+  const orderInfo = {};
+  for (const o of openOrders) {
+    const cid = o.Customer?.[0];
+    const cust = cid ? custByPgId[cid] : null;
+    orderInfo[o._pgId] = {
+      appOrderId:   o['App Order ID'] || '',
+      customerName: cust?.Name || cust?.Nickname || '',
+      requiredBy:   o['Required By'] || null,
+    };
+  }
+
+  return substitutionsMade.map(sub => {
+    const affectedOrders = [];
+    for (const line of allLines) {
+      // stockItemId on order_lines is text — may hold recXXX or uuid.
+      // sub.originalStockId comes from stockOrderRepo.lineToWire which uses
+      // stock_airtable_id || stock_id, so the format matches whichever was
+      // originally assigned to both sides.
+      if (line.stockItemId !== sub.originalStockId) continue;
+      const oi = orderInfo[line.orderId];
+      if (!oi) continue;
+      affectedOrders.push({
+        orderId:      line.orderId,
+        appOrderId:   oi.appOrderId,
+        customerName: oi.customerName,
+        requiredBy:   oi.requiredBy,
+        qty:          Number(line.quantity || 0),
+      });
+    }
+    return { ...sub, affectedOrders };
+  });
 }

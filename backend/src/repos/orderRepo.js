@@ -1267,6 +1267,49 @@ export async function runParityCheck() {
   };
 }
 
+// Returns aggregated stock-item line data for non-cancelled orders within
+// [dateFrom, dateTo] (YYYY-MM-DD). Used by GET /stock/velocity to compute
+// days-of-supply. Postgres-only — replaces a frozen-Airtable read path.
+export async function getLinesForVelocity(dateFrom, dateTo) {
+  if (!db) throw new Error('orderRepo.getLinesForVelocity: no database configured');
+  const rows = await db
+    .select({
+      stockItemId: orderLines.stockItemId,
+      quantity:    orderLines.quantity,
+    })
+    .from(orderLines)
+    .innerJoin(orders, eq(orderLines.orderId, orders.id))
+    .where(and(
+      isNull(orders.deletedAt),
+      isNull(orderLines.deletedAt),
+      gte(orders.orderDate, dateFrom),
+      lte(orders.orderDate, dateTo),
+      sql`${orders.status} != ${ORDER_STATUS.CANCELLED}`,
+    ));
+  return rows;
+}
+
+// Returns line records for a list of order IDs (UUIDs). Used by
+// orderService.findOrdersNeedingSubstitution() to detect which orders
+// reference an originalStockId after a Substitute is received.
+export async function getLinesForOrders(orderIds) {
+  if (!orderIds?.length || !db) return [];
+  const rows = await db
+    .select({
+      id:          orderLines.id,
+      orderId:     orderLines.orderId,
+      stockItemId: orderLines.stockItemId,
+      quantity:    orderLines.quantity,
+      flowerName:  orderLines.flowerName,
+    })
+    .from(orderLines)
+    .where(and(
+      isNull(orderLines.deletedAt),
+      inArray(orderLines.orderId, orderIds),
+    ));
+  return rows;
+}
+
 // ── Internal exports for tests ──
 export const _internal = {
   ORDER_WRITE_ALLOWED,
