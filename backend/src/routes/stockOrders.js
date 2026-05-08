@@ -151,34 +151,20 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
     }
 
     const today = new Date().toISOString().split('T')[0];
-
-    // Generate PO number: PO-YYYYMMDD-N (date prefix + sequence)
-    const existingPOs = await db.list(TABLES.STOCK_ORDERS, {
-      filterByFormula: `DATESTR({Created Date}) = '${today}'`,
-      fields: ['Created Date'],
-    });
-    const seq = existingPOs.length + 1;
+    const seq = await stockOrderRepo.nextPoSequence(today);
     const poNumber = `PO-${today.replace(/-/g, '')}-${seq}`;
 
-    // Create the PO header
-    const orderFields = {
-      Status: PO_STATUS.DRAFT,
-      'Created Date': today,
+    const order = await stockOrderRepo.create({
+      Status:           PO_STATUS.DRAFT,
+      'Created Date':   today,
       'Stock Order ID': poNumber,
-      Notes: notes || '',
-    };
-    if (driver) orderFields['Assigned Driver'] = driver;
-    if (plannedDate) orderFields['Planned Date'] = plannedDate;
+      Notes:            notes || '',
+      ...(driver       ? { 'Assigned Driver': driver } : {}),
+      ...(plannedDate  ? { 'Planned Date': plannedDate } : {}),
+    });
 
-    const order = await db.create(TABLES.STOCK_ORDERS, orderFields);
-
-    // Create lines — use lot size from the PO form (owner can set/override),
-    // falling back to the stock item's configured lot size, then 1.
     const createdLines = [];
-    for (const line of (lines || [])) {
-      // Auto-link or auto-create: if no stockItemId but flowerName is given,
-      // find a matching stock item. If not found, create one with qty=0 so it
-      // appears in the stock picker with an "on order" badge immediately.
+    for (const line of lines || []) {
       let resolvedStockItemId = line.stockItemId || null;
       if (!resolvedStockItemId && line.flowerName) {
         try {
@@ -192,25 +178,25 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       let lotSize = Number(line.lotSize) || 0;
       if (!lotSize && resolvedStockItemId) {
         try {
-          const stockItem = await db.getById(TABLES.STOCK, resolvedStockItemId);
+          const stockItem = await stockRepo.getById(resolvedStockItemId);
           lotSize = Number(stockItem['Lot Size']) || 0;
         } catch { /* stock item may have been deleted */ }
       }
       const lineFields = {
-        'Stock Orders': [order.id],
+        'Stock Orders':    [order._pgId],
         ...(resolvedStockItemId ? { 'Stock Item': [resolvedStockItemId] } : {}),
-        'Flower Name': line.flowerName || '',
+        'Flower Name':     line.flowerName || '',
         'Quantity Needed': Number(line.quantity) || 0,
         ...(lotSize > 0 ? { 'Lot Size': lotSize } : {}),
-        'Driver Status': PO_LINE_STATUS.PENDING,
-        Supplier: line.supplier || '',
-        'Cost Price': Number(line.costPrice) || 0,
-        'Sell Price': Number(line.sellPrice) || 0,
+        'Driver Status':   PO_LINE_STATUS.PENDING,
+        Supplier:          line.supplier || '',
+        'Cost Price':      Number(line.costPrice) || 0,
+        'Sell Price':      Number(line.sellPrice) || 0,
       };
       if (line.farmer) lineFields.Farmer = line.farmer;
-      if (line.notes) lineFields.Notes = line.notes;
+      if (line.notes)  lineFields.Notes = line.notes;
 
-      const lineRec = await db.create(TABLES.STOCK_ORDER_LINES, lineFields);
+      const lineRec = await stockOrderRepo.createLine(lineFields);
       createdLines.push(lineRec);
     }
 
@@ -235,11 +221,11 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
     }
 
     if (Object.keys(fields).length === 0) {
-      return res.json(await db.getById(TABLES.STOCK_ORDERS, req.params.id));
+      return res.json(await stockOrderRepo.getById(req.params.id));
     }
 
     if (fields.Status) {
-      const current = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+      const current = await stockOrderRepo.getById(req.params.id);
       const valid = ALLOWED_TRANSITIONS[current.Status];
       if (!valid || !valid.includes(fields.Status)) {
         return res.status(400).json({
@@ -248,10 +234,8 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
       }
     }
 
-    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, fields);
+    const updated = await stockOrderRepo.update(req.params.id, fields);
 
-    // SSE: driver app needs to refetch on ANY header change while the PO is live,
-    // and owner needs a re-notify if the driver reassignment moved the PO to someone else.
     if ('Assigned Driver' in fields) {
       broadcast({
         type: 'stock_pickup_assigned',
@@ -278,8 +262,7 @@ const PO_OWNER_ONLY_STATUSES = [PO_STATUS.REVIEWING, PO_STATUS.EVALUATING, PO_ST
 
 router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, next) => {
   try {
-    // Edit-window guard
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (po.Status === PO_STATUS.COMPLETE) {
       return res.status(409).json({
         error: `PO is "${PO_STATUS.COMPLETE}" — closed books. Create an adjustment instead.`,
@@ -302,15 +285,11 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       if (key in req.body) fields[key] = req.body[key];
     }
     if (Object.keys(fields).length === 0) {
-      return res.json(await db.getById(TABLES.STOCK_ORDER_LINES, req.params.lineId));
+      return res.json(await stockOrderRepo.getLineById(req.params.lineId));
     }
 
-    // Guard: if the PATCH tries to shorten Flower Name to fewer than 2 chars
-    // while the line has a linked Stock Item, reject it — this is almost
-    // certainly a race from the keystroke-by-keystroke search input, not an
-    // intentional rename. The full name will arrive in a subsequent PATCH.
     if ('Flower Name' in fields && typeof fields['Flower Name'] === 'string' && fields['Flower Name'].length < 2) {
-      const existing = await db.getById(TABLES.STOCK_ORDER_LINES, req.params.lineId);
+      const existing = await stockOrderRepo.getLineById(req.params.lineId);
       const hasStockItem = !!existing['Stock Item']?.[0];
       const currentName = existing['Flower Name'] || '';
       if (hasStockItem && currentName.length >= 2) {
@@ -319,25 +298,18 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       }
     }
 
-    const updated = await db.update(TABLES.STOCK_ORDER_LINES, req.params.lineId, fields);
+    const updated = await stockOrderRepo.updateLine(req.params.lineId, fields);
 
-    if ('Driver Status' in fields) {
-      const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
-      if (po.Status === PO_STATUS.SENT) {
-        await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.SHOPPING });
-      }
+    if ('Driver Status' in fields && po.Status === PO_STATUS.SENT) {
+      await stockOrderRepo.update(req.params.id, { Status: PO_STATUS.SHOPPING });
     }
 
-    // SSE broadcast: notify owner and driver of line changes in real time
     broadcast({
       type: 'stock_order_line_updated',
       stockOrderId: req.params.id,
       lineId: req.params.lineId,
     });
 
-    // Normalise Flower Name in response
-    if (updated['Flower Name'] != null) updated['Flower Name'] = normaliseFlowerName(updated['Flower Name']);
-    if (updated['Alt Flower Name'] != null) updated['Alt Flower Name'] = normaliseFlowerName(updated['Alt Flower Name']);
     res.json(updated);
   } catch (err) {
     next(err);
@@ -351,7 +323,7 @@ const EDITABLE_PO_STATUSES = [PO_STATUS.DRAFT, PO_STATUS.SENT, PO_STATUS.SHOPPIN
 
 router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
       return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
@@ -364,7 +336,6 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     if (!rawStockItemId && !flowerName?.trim() && po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: 'PO line must have a stock item or flower name.' });
     }
-    // Auto-link or auto-create stock item
     let resolvedStockItemId = rawStockItemId || null;
     if (!resolvedStockItemId && flowerName) {
       try {
@@ -373,19 +344,18 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
         console.error(`[STOCK-ORDER] Auto-link/create failed for "${flowerName}":`, err.message);
       }
     }
-    const line = await db.create(TABLES.STOCK_ORDER_LINES, {
-      'Stock Orders': [req.params.id],
-      'Stock Item': resolvedStockItemId ? [resolvedStockItemId] : undefined,
-      'Flower Name': flowerName || '',
+    const line = await stockOrderRepo.createLine({
+      'Stock Orders':    [po._pgId],
+      ...(resolvedStockItemId ? { 'Stock Item': [resolvedStockItemId] } : {}),
+      'Flower Name':     flowerName || '',
       'Quantity Needed': Number(quantity) || 1,
-      Supplier: supplier || '',
-      'Cost Price': Number(costPrice) || 0,
-      'Sell Price': Number(sellPrice) || 0,
-      'Lot Size': Number(lotSize) || 0,
-      'Driver Status': PO_LINE_STATUS.PENDING,
+      Supplier:          supplier || '',
+      'Cost Price':      Number(costPrice) || 0,
+      'Sell Price':      Number(sellPrice) || 0,
+      'Lot Size':        Number(lotSize) || 0,
+      'Driver Status':   PO_LINE_STATUS.PENDING,
     });
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: line.id });
-    if (line['Flower Name'] != null) line['Flower Name'] = normaliseFlowerName(line['Flower Name']);
     res.json(line);
   } catch (err) {
     next(err);
@@ -396,18 +366,11 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
 // Removes all its lines first, then the PO header.
 router.delete('/:id', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: `Only Draft POs can be deleted. This PO is "${po.Status}".` });
     }
-    // Delete all lines first
-    const lineIds = po['Order Lines'] || [];
-    for (const lineId of lineIds) {
-      await db.deleteRecord(TABLES.STOCK_ORDER_LINES, lineId).catch(err =>
-        console.error(`[PO] Failed to delete line ${lineId} during PO delete:`, err.message)
-      );
-    }
-    await db.deleteRecord(TABLES.STOCK_ORDERS, req.params.id);
+    await stockOrderRepo.deleteById(req.params.id);  // CASCADE handles lines
     broadcast({ type: 'stock_order_deleted', stockOrderId: req.params.id });
     res.json({ deleted: true });
   } catch (err) {
@@ -418,11 +381,11 @@ router.delete('/:id', authorize('stock-orders', ['owner']), async (req, res, nex
 // DELETE /api/stock-orders/:id/lines/:lineId — remove a line from an editable PO
 router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
       return res.status(400).json({ error: `Cannot remove lines from a "${po.Status}" PO.` });
     }
-    await db.deleteRecord(TABLES.STOCK_ORDER_LINES, req.params.lineId);
+    await stockOrderRepo.deleteLineById(req.params.lineId);
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: req.params.lineId });
     res.json({ deleted: true });
   } catch (err) {
