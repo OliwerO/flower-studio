@@ -8,6 +8,7 @@
 
 import * as db from './airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { TABLES } from '../config/airtable.js';
@@ -126,7 +127,8 @@ function localizedText(v) {
  * 2. Dedup by Wix Order ID
  * 3. Fetch canonical order from Wix API (fall back to webhook payload)
  * 4. Match/create customer
- * 5. Create App Order + Order Lines + Delivery
+ * 5. Create order + lines + delivery in one PG transaction (orderRepo.createWixOrder)
+ *    + decrement Wix per-variant stock counters (productConfigRepo).
  */
 export async function processWixOrder(payload) {
   const log = (step, msg) => console.log(`[WIX] ${step}: ${msg}`);
@@ -311,40 +313,23 @@ export async function processWixOrder(payload) {
     // Normalise to YYYY-MM-DD. Wix may send ISO timestamp or date-only string.
     const deliveryDateIso = deliveryDate ? String(deliveryDate).slice(0, 10) : null;
 
-    // 10. Create the App Order. Wix is delivery-only today — hard-code the type.
+    // 10. Build line params and create order + lines + delivery in one PG
+    //     transaction. Wix is delivery-only today — hard-code the type.
     //     Price Override carries the total the buyer paid (flowers + shipping)
     //     so the dashboard shows exactly what Wix charged.
     const appOrderId = await generateOrderId();
     const humanOrderNumber = wixOrder.number || wixOrderId;
-    const order = await db.create(TABLES.ORDERS, {
-      Customer: [customerId],
-      'Customer Request': customerRequest,
-      Source: 'Wix',
-      'Delivery Type': 'Delivery',
-      'Order Date': new Date().toISOString().split('T')[0],
-      'Required By': deliveryDateIso,
-      'Notes Original': `Wix Order #${humanOrderNumber}`,
-      'Greeting Card Text': '',
-      'Payment Status': wixOrder.paymentStatus === 'NOT_PAID' ? 'Unpaid' : 'Paid',
-      'Payment Method': paymentMethodLabel,
-      'Price Override': totalPrice > 0 ? totalPrice : null,
-      'App Order ID': appOrderId,
-      Status: 'New',
-      'Created By': 'Wix Webhook',
-      'Wix Order ID': wixOrderId,
-    });
-    log('10-ORDER', `Created order: ${order.id}`);
 
-    // 11. Create order lines. Fuzzy-match to stock by name so the bouquet
-    //     editor can pull live cost/sell for those flowers; Wix "product"
-    //     names rarely match the florist's actual stock cards 1:1, so most
-    //     lines will land as text-only — florist composes manually later.
-    const stock = await db.list(TABLES.STOCK, {
-      filterByFormula: '{Active} = TRUE()',
-      fields: ['Display Name', 'Current Quantity', 'Current Cost Price', 'Current Sell Price'],
-    });
+    // 11. Fuzzy-match line items to stock by name so the bouquet editor can
+    //     pull live cost/sell for those flowers. Wix "product" names rarely
+    //     match the florist's actual stock cards 1:1, so most lines will land
+    //     as text-only — florist composes manually later.
+    //     stockRepo.list in postgres mode returns active rows; we include
+    //     zero/negative-quantity items too (pg: { includeEmpty: true }) so
+    //     stock items can still be matched even if temporarily out of stock.
+    const stockList = await stockRepo.list({ pg: { includeEmpty: true } });
     const stockByName = {};
-    for (const s of stock) {
+    for (const s of stockList) {
       stockByName[(s['Display Name'] || '').toLowerCase()] = s;
     }
     function fuzzyMatchStock(productName) {
@@ -356,7 +341,9 @@ export async function processWixOrder(payload) {
       return null;
     }
 
-    const createdLines = [];
+    // Build linesForRepo — one entry per Wix line item.
+    // Log before the repo call so a transaction failure still leaves a trace.
+    const linesForRepo = [];
     for (const li of lineItems) {
       const productName = localizedText(li.productName) || li.name || 'Wix Item';
       const qty = li.quantity || 1;
@@ -366,25 +353,48 @@ export async function processWixOrder(payload) {
         || moneyAmount(li.priceData?.price);
       const matched = fuzzyMatchStock(productName);
 
-      const lineFields = {
-        Order: [order.id],
-        'Flower Name': productName,
-        Quantity: qty,
-        'Cost Price Per Unit': matched ? Number(matched['Current Cost Price'] || 0) : 0,
-        'Sell Price Per Unit': matched ? Number(matched['Current Sell Price'] || 0) : unitPrice,
-      };
-      if (matched) lineFields['Stock Item'] = [matched.id];
-
-      const createdLine = await db.create(TABLES.ORDER_LINES, lineFields);
-      createdLines.push(createdLine);
-
       // No stock deduction for Wix orders — Wix "bouquets" don't map to
       // individual flower stock items. The florist opens the order later and
       // manually composes the real bouquet from actual stock.
       log('11-LINE', matched
         ? `"${productName}" matched stock "${matched['Display Name']}"`
         : `"${productName}" (no stock match — text-only)`);
+
+      linesForRepo.push({
+        stockItemId:      matched ? matched._pgId || matched.id : undefined,
+        flowerName:       productName,
+        quantity:         qty,
+        costPricePerUnit: matched ? Number(matched['Current Cost Price'] || 0) : 0,
+        sellPricePerUnit: matched ? Number(matched['Current Sell Price'] || 0) : unitPrice,
+      });
     }
+
+    // Single PG transaction: order + lines + delivery.
+    const result = await orderRepo.createWixOrder({
+      customerId,
+      appOrderId,
+      wixOrderId,
+      customerRequest,
+      requiredBy:    deliveryDateIso,
+      paymentStatus: wixOrder.paymentStatus === 'NOT_PAID' ? 'Unpaid' : 'Paid',
+      paymentMethod: paymentMethodLabel,
+      priceOverride: totalPrice > 0 ? totalPrice : null,
+      lines:         linesForRepo,
+      delivery: {
+        address:        deliveryAddress,
+        recipientName,
+        recipientPhone,
+        date:           deliveryDateIso,
+        fee:            shippingFee,
+      },
+    });
+
+    const order = result.order;
+    const createdLines = result.orderLines;
+    const deliveryRecord = result.delivery;
+
+    log('10-ORDER', `Created order: ${order.id}`);
+    log('12-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
 
     // 11b. Decrement tracked inventory on PRODUCT_CONFIG.
     //      For each line item, look up the PG row by
@@ -408,39 +418,6 @@ export async function processWixOrder(payload) {
         log('11b-INV', `Decremented ${orderedQty} for ${wixProductId}/${wixVariantId}`);
       } catch (err) {
         log('11b-INV', `Error decrementing ${wixProductId}/${wixVariantId}: ${err.message}`, 'error');
-      }
-    }
-
-    // 12. Always create the delivery record (Wix is delivery-only today).
-    //     If address or contact info is missing, the florist fills it in
-    //     later; leaving the delivery sub-record absent would break driver
-    //     assignment and the list enrichment pipeline.
-    const deliveryRecord = await db.create(TABLES.DELIVERIES, {
-      'Linked Order': [order.id],
-      'Delivery Address': deliveryAddress,
-      'Recipient Name': recipientName,
-      'Recipient Phone': recipientPhone,
-      'Delivery Date': deliveryDateIso,
-      'Delivery Time': '',
-      'Delivery Fee': shippingFee,
-      Status: DELIVERY_STATUS.PENDING,
-    });
-    log('12-DELIVERY', `Delivery created → ${deliveryAddress || '(empty — florist to fill)'}`);
-
-    // Phase 4 cutover: mirror to Postgres so GET /orders (which reads from PG
-    // when ORDER_BACKEND=postgres) sees the new Wix order. No-op in airtable
-    // mode. Uses the airtable-shaped records as source-of-truth — the order's
-    // recXXX id becomes the PG row's airtable_id, preserving traceability.
-    if (orderRepo.getBackendMode() !== 'airtable') {
-      try {
-        await orderRepo.mirrorAirtableOrder({
-          order,
-          lines: createdLines,
-          delivery: deliveryRecord,
-        });
-        log('12-PG', 'Mirrored to Postgres');
-      } catch (mirrorErr) {
-        console.error('[WIX] PG mirror failed:', mirrorErr.message);
       }
     }
 
