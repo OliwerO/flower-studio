@@ -40,6 +40,7 @@ const STRINGS = {
     published:     (url) => `✅ Отчёт отправлен!\n${url}`,
     publishFail:   'Не удалось отправить отчёт. Попробуйте написать "Отправить" ещё раз.',
     error:         'Что-то пошло не так. Попробуйте написать ещё раз.',
+    reset:         'Сеанс сброшен. Напишите что-нибудь, чтобы начать заново.',
   },
   en: {
     registered:    (name) => `Hey, ${name}! 👋 Report bot registered. Send any message to report a bug or request a feature.`,
@@ -51,6 +52,7 @@ const STRINGS = {
     published:     (url) => `✅ Report submitted!\n${url}`,
     publishFail:   'Failed to submit report. Try writing "Send" again.',
     error:         'Something went wrong. Please try again.',
+    reset:         'Session cleared. Send any message to start fresh.',
   },
 };
 
@@ -187,6 +189,21 @@ async function handleUpdate(token, update) {
 
   const chatId = String(msg.chat.id);
   const text = msg.text.trim();
+
+  if (text === '/reset') {
+    chatSessions.delete(chatId);
+    try {
+      await db.delete(feedbackSessions).where(
+        and(eq(feedbackSessions.telegramChatId, chatId), eq(feedbackSessions.published, false))
+      );
+    } catch (err) {
+      console.error('[FEEDBACK_BOT] reset error:', err.message);
+    }
+    const reporter = chatReporters.get(chatId);
+    const s = STRINGS[(reporter?.lang)] ?? STRINGS.ru;
+    await send(token, chatId, s.reset);
+    return;
+  }
 
   if (text.startsWith('/start')) {
     const pin = text.split(' ')[1];
