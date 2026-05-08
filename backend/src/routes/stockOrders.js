@@ -7,18 +7,15 @@
 
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as stockLossRepo from '../repos/stockLossRepo.js';
 import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
 import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 import * as orderService from '../services/orderService.js';
-import { TABLES } from '../config/airtable.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
-import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON, ORDER_STATUS } from '../constants/statuses.js';
+import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 import { getConfig, getDriverOfDay } from '../services/configService.js';
-import { listByIds } from '../utils/batchQuery.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
@@ -50,14 +47,6 @@ async function resolveOrCreateStockItem(flowerName, { costPrice = 0, sellPrice =
   });
   console.log(`[STOCK-ORDER] Auto-created stock item "${name}" (${newItem.id}) from PO line`);
   return newItem.id.startsWith('rec') ? newItem.id : newItem._pgId || newItem.id;
-}
-
-// Airtable may return Flower Name as an array (lookup field) or a string
-// (text field). Normalise to a plain string so downstream code (.trim(),
-// template literals, formula values) never receives an array.
-function normaliseFlowerName(raw) {
-  if (Array.isArray(raw)) return String(raw[0] || '');
-  return String(raw || '');
 }
 
 const ALLOWED_TRANSITIONS = {
@@ -470,11 +459,10 @@ router.post('/:id/approve-review', authorize('stock-orders', ['owner']), async (
   }
 });
 
-// Idempotency helper — returns true if a STOCK_PURCHASES row already exists
-// for this PO + line + variant (primary/alt). Used on retry after a partial
-// failure, so a second receiveIntoStock does NOT double-credit the batch.
-async function purchaseAlreadyRecorded(poId, lineId, variant) {
-  const marker = `PO #${poId} L#${lineId} ${variant}`;
+// Idempotency helper — returns true if a STOCK_PURCHASES row with this exact
+// notes marker already exists. Caller constructs the marker (see ADR-0003 for
+// format). Used on retry after a partial failure to skip double-credit.
+async function purchaseAlreadyRecorded(marker) {
   try {
     return await stockPurchasesRepo.noteMarkerExists(marker);
   } catch (e) {
@@ -610,19 +598,25 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
 router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), async (req, res, next) => {
   try {
     // H1: Guard against double-evaluate — allow Evaluating (first attempt) or Eval Error (retry)
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (po.Status !== PO_STATUS.EVALUATING && po.Status !== PO_STATUS.EVAL_ERROR) {
-      return res.status(409).json({ error: `PO is "${po.Status}", not "${PO_STATUS.EVALUATING}". Already processed?` });
+      return res.status(409).json({
+        error: `PO is "${po.Status}", not "${PO_STATUS.EVALUATING}". Already processed?`,
+      });
     }
 
+    // poDisplayId is the human-readable PO number (PO-YYYYMMDD-N) — embedded
+    // in the stock_purchases.notes idempotency marker per ADR-0003.
+    const poDisplayId = po['Stock Order ID'] || po.id;
     const { lines } = req.body;
+
     // On first attempt use today's date. On Eval Error retry, reuse the date
     // from lines already processed in the first attempt so all stock entries
     // for this PO share the same receive date (the day flowers actually arrived).
     let evalDate = new Date().toISOString().split('T')[0];
     if (po.Status === PO_STATUS.EVAL_ERROR) {
       try {
-        const prevDate = await stockPurchasesRepo.findDateByPoMarker(req.params.id);
+        const prevDate = await stockPurchasesRepo.findDateByPoMarker(poDisplayId);
         if (prevDate) evalDate = prevDate;
       } catch { /* fall back to today */ }
     }
@@ -630,7 +624,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
 
     for (const evalLine of (lines || [])) {
       try {
-        const line = await db.getById(TABLES.STOCK_ORDER_LINES, evalLine.lineId);
+        const line = await stockOrderRepo.getLineById(evalLine.lineId);
 
         // Skip lines already processed on a previous attempt (idempotency guard)
         if (line['Eval Status'] === PO_LINE_STATUS.PROCESSED) {
@@ -652,80 +646,79 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         // find a matching stock record and link it. This handles lines created
         // from freetext input (no stock item selected in the PO form).
         if (!stockItemId && (accepted > 0 || writeOff > 0)) {
-          const flowerName = normaliseFlowerName(line['Flower Name']).trim();
+          const flowerName = String(line['Flower Name'] || '').trim();
           if (!flowerName) {
             throw new Error(
-              `Line "${evalLine.lineId}" has no Stock Item and no Flower Name — cannot resolve.`
+              `Line "${evalLine.lineId}" has no Stock Item and no Flower Name — cannot resolve.`,
             );
           }
-          const safe = sanitizeFormulaValue(flowerName);
-          const matches = await db.list(TABLES.STOCK, {
-            filterByFormula: `AND({Display Name} = '${safe}', {Active} = TRUE())`,
+          const matches = await stockRepo.list({
+            pg: { displayName: flowerName, active: true, includeEmpty: true },
             maxRecords: 1,
           });
           if (matches.length > 0) {
             stockItemId = matches[0].id;
-            await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, { 'Stock Item': [stockItemId] });
+            await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
             console.log(`[STOCK-ORDER] Auto-linked "${flowerName}" → stock item ${stockItemId}`);
           } else {
             // Create a new stock item so the line can be received
             const markup = Number(getConfig('targetMarkup')) || 1;
             const autoSell = sellPrice || Math.round(costPrice * markup * 100) / 100;
             const created = await stockRepo.create({
-              'Display Name': flowerName,
-              'Purchase Name': flowerName,
-              Category: 'Other',
-              'Current Quantity': 0,
+              'Display Name':       flowerName,
+              'Purchase Name':      flowerName,
+              Category:             'Other',
+              'Current Quantity':   0,
               'Current Cost Price': costPrice,
               'Current Sell Price': autoSell,
-              Supplier: supplier,
-              Unit: 'Stems',
-              Active: true,
+              Supplier:             supplier,
+              Unit:                 'Stems',
+              Active:               true,
             });
             stockItemId = created.id;
-            await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, { 'Stock Item': [stockItemId] });
+            await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
             console.log(`[STOCK-ORDER] Created & linked stock item for "${flowerName}" (${stockItemId})`);
           }
         }
-        // Alt quantities without a stock item require at least an Alt Flower Name
-        // so we know what substitute stock card to create.
+
+        // Substitute quantities without a stock item require at least an Alt
+        // Flower Name so we know what substitute stock card to create.
         if (!stockItemId && (altAcceptedPre > 0 || altWriteOffPre > 0) && !line['Alt Flower Name']) {
           throw new Error(
-            `Line "${normaliseFlowerName(line['Flower Name']) || evalLine.lineId}" has no linked Stock Item and no Alt Flower Name — ` +
-            `link a Stock Item or add substitute details, then retry.`
+            `Line "${line['Flower Name'] || evalLine.lineId}" has no linked Stock Item and no Alt Flower Name — ` +
+            `link a Stock Item or add substitute details, then retry.`,
           );
         }
 
-        // Primary supplier: receive into stock with batch logic.
-        // Idempotency: on retry after a partial failure, skip if the
-        // STOCK_PURCHASES row for this (PO, line, primary) already exists.
-        // Otherwise receiveIntoStock would credit the batch a second time.
+        // Primary receive — idempotency marker uses the human-readable PO
+        // number per ADR-0003. line._pgId is the canonical UUID; fall back to
+        // evalLine.lineId (recXXX or uuid) when _pgId isn't surfaced.
         if (stockItemId && accepted > 0) {
-          const already = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'primary');
+          const primaryMarker = `PO #${poDisplayId} L#${line._pgId || evalLine.lineId} primary`;
+          const already = await purchaseAlreadyRecorded(primaryMarker);
           if (!already) {
             const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate);
-
-            // Marker must match purchaseAlreadyRecorded() exactly.
             const batchItem = await stockRepo.getById(finalItemId).catch(() => null);
             await stockPurchasesRepo.create({
               purchaseDate:      evalDate,
               supplier,
               stockId:           batchItem?._pgId || null,
-              stockAirtableId:   finalItemId.startsWith('rec') ? finalItemId : null,
+              stockAirtableId:   typeof finalItemId === 'string' && finalItemId.startsWith('rec') ? finalItemId : null,
               quantityPurchased: accepted,
               pricePerUnit:      costPrice,
-              notes:             `PO #${req.params.id} L#${evalLine.lineId} primary`,
+              notes:             primaryMarker,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping primary receive for line ${evalLine.lineId} — already recorded`);
           }
         }
 
-        // Alt supplier: substitute becomes its own stock card (Phase A substitution policy).
-        // Find-or-create a Stock record by exact Alt Flower Name, receive the
-        // accepted qty there at the REAL per-stem cost the driver paid (not
-        // the original planned cost). Sell price derives from targetMarkup.
-        // Skip entirely if florist accepted 0 of the substitute (edge case 6).
+        // Substitute supplier: Substitute becomes its own stock card (Phase A
+        // substitution policy). Find-or-create a Stock record by exact Alt
+        // Flower Name, receive the accepted qty there at the REAL per-stem
+        // cost the driver paid (not the original planned cost). Sell price
+        // derives from targetMarkup. Skip entirely if florist accepted 0 of
+        // the Substitute (edge case 6).
         const altAccepted = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOff = Number(evalLine.altWriteOffQty) || 0;
         const altSupplier = line['Alt Supplier'] || '';
@@ -738,22 +731,23 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
 
         let substituteStockId = null;
         if (altAccepted > 0 && altFlowerName) {
-          const alreadyAlt = await purchaseAlreadyRecorded(req.params.id, evalLine.lineId, 'alt');
+          const altMarker = `PO #${poDisplayId} L#${line._pgId || evalLine.lineId} alt`;
+          const alreadyAlt = await purchaseAlreadyRecorded(altMarker);
           if (!alreadyAlt) {
             // Fetch the originally-ordered stock item once so the helper can
-            // copy Category/Unit/Reorder Threshold as defaults.
-            // If the PO line has no Stock Item link (e.g. new flower not yet
-            // in stock), pass null — the helper uses sensible defaults.
+            // copy Category/Unit/Reorder Threshold as defaults. If the PO
+            // line has no Stock Item link (e.g. new flower not yet in stock),
+            // pass null — the helper uses sensible defaults.
             const originalStockItem = stockItemId
               ? await stockRepo.getById(stockItemId).catch(() => null)
               : null;
             substituteStockId = await findOrCreateSubstituteStock(
-              altFlowerName, altSupplier, altCostPerStem, originalStockItem, stockItemId, evalDate
+              altFlowerName, altSupplier, altCostPerStem, originalStockItem, stockItemId, evalDate,
             );
             const markup = Number(getConfig('targetMarkup')) || 1;
             const altSellPerStem = Math.round(altCostPerStem * markup * 100) / 100;
             const altFinalId = await receiveIntoStock(
-              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate
+              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate,
             );
             substituteStockId = altFinalId; // may be a new batch id
 
@@ -762,22 +756,20 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               purchaseDate:      evalDate,
               supplier:          altSupplier,
               stockId:           altBatchItem?._pgId || null,
-              stockAirtableId:   altFinalId.startsWith('rec') ? altFinalId : null,
+              stockAirtableId:   typeof altFinalId === 'string' && altFinalId.startsWith('rec') ? altFinalId : null,
               quantityPurchased: altAccepted,
               pricePerUnit:      altCostPerStem,
-              notes:             `PO #${req.params.id} L#${evalLine.lineId} alt - substitute for "${normaliseFlowerName(line['Flower Name'])}"`,
+              notes:             `${altMarker} - substitute for "${line['Flower Name'] || ''}"`,
             });
           } else {
             console.log(`[STOCK-ORDER] Skipping alt receive for line ${evalLine.lineId} — already recorded`);
           }
         }
 
-        // Log write-offs per source (primary vs substitute) via Postgres repo.
+        // Log write-offs per source (primary vs Substitute) via Postgres repo.
         // Primary write-offs land on the original stock item. Substitute
-        // write-offs land on the substitute card (or on the original if
-        // we never created a substitute because accepted = 0).
-        // stockItemId and substituteStockId are Airtable recXXX IDs here;
-        // resolve each to a PG UUID via stockRepo.getById before writing.
+        // write-offs land on the substitute card (or on the original if we
+        // never created a substitute because accepted = 0).
         if (stockItemId && writeOff > 0) {
           const reason = evalLine.writeOffReason || LOSS_REASON.DAMAGED;
           stockRepo.getById(stockItemId)
@@ -785,7 +777,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               date:     evalDate,
               stockId:  item._pgId || null,
               quantity: writeOff,
-              reason:   reason === LOSS_REASON.WILTED || reason === LOSS_REASON.DAMAGED || reason === LOSS_REASON.ARRIVED_BROKEN ? reason : LOSS_REASON.OTHER,
+              reason:   [LOSS_REASON.WILTED, LOSS_REASON.DAMAGED, LOSS_REASON.ARRIVED_BROKEN].includes(reason) ? reason : LOSS_REASON.OTHER,
               notes:    'PO evaluation write-off (primary)',
             }))
             .catch(err => console.error('[STOCK-ORDER] Failed to log primary write-off:', err.message));
@@ -802,7 +794,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
                 date:     evalDate,
                 stockId:  item._pgId || null,
                 quantity: altWriteOff,
-                reason:   altReason === LOSS_REASON.WILTED || altReason === LOSS_REASON.DAMAGED || altReason === LOSS_REASON.ARRIVED_BROKEN ? altReason : LOSS_REASON.OTHER,
+                reason:   [LOSS_REASON.WILTED, LOSS_REASON.DAMAGED, LOSS_REASON.ARRIVED_BROKEN].includes(altReason) ? altReason : LOSS_REASON.OTHER,
                 notes:    'PO evaluation write-off (substitute)',
               }))
               .catch(err => console.error('[STOCK-ORDER] Failed to log alt write-off:', err.message));
@@ -810,19 +802,19 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         }
 
         // Mark line as fully processed + save acceptance data (single write)
-        await db.update(TABLES.STOCK_ORDER_LINES, evalLine.lineId, {
+        await stockOrderRepo.updateLine(evalLine.lineId, {
           'Quantity Accepted': accepted,
-          'Write Off Qty': writeOff,
-          'Eval Status': PO_LINE_STATUS.PROCESSED,
+          'Write Off Qty':     writeOff,
+          'Eval Status':       PO_LINE_STATUS.PROCESSED,
         });
 
         lineResults.push({
-          lineId: evalLine.lineId,
-          status: 'ok',
-          substituteStockId: substituteStockId || null,
-          originalStockId: stockItemId || null,
-          originalFlowerName: normaliseFlowerName(line['Flower Name']),
-          receivedQty: altAccepted || 0,
+          lineId:             evalLine.lineId,
+          status:             'ok',
+          substituteStockId:  substituteStockId || null,
+          originalStockId:    stockItemId || null,
+          originalFlowerName: line['Flower Name'] || '',
+          receivedQty:        altAccepted || 0,
         });
       } catch (lineErr) {
         console.error(`[STOCK-ORDER] Evaluate line ${evalLine.lineId} failed:`, lineErr.message);
@@ -833,7 +825,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
     const failed = lineResults.filter(r => r.status === 'error');
     if (failed.length > 0) {
       // Partial failure: mark PO with error state so owner can see and retry
-      await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.EVAL_ERROR });
+      await stockOrderRepo.update(req.params.id, { Status: PO_STATUS.EVAL_ERROR });
       return res.status(207).json({
         success: false,
         message: `${failed.length} of ${lineResults.length} lines failed. PO marked as "Eval Error" — retry will skip already-processed lines.`,
@@ -842,68 +834,33 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
     }
 
     // All lines processed — mark PO as complete
-    await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.COMPLETE });
+    await stockOrderRepo.update(req.params.id, { Status: PO_STATUS.COMPLETE });
 
-    // Phase B: detect orders needing reconciliation after substitution.
-    // For each substitute received, check if open orders are waiting for the original.
-    const substitutionsMade = lineResults.filter(
-      r => r.status === 'ok' && r.substituteStockId && r.originalStockId
-    );
+    // Phase B: detect orders needing reconciliation after Substitution.
+    // Delegated to orderService.findOrdersNeedingSubstitution (extracted in T5;
+    // queries Postgres via orderRepo + customerRepo). Non-blocking — a failure
+    // here must not affect the evaluate response.
+    const substitutionsMade = lineResults
+      .filter(r => r.status === 'ok' && r.substituteStockId && r.originalStockId)
+      .map(r => ({
+        originalStockId:    r.originalStockId,
+        originalFlowerName: r.originalFlowerName,
+        substituteStockId:  r.substituteStockId,
+        receivedQty:        r.receivedQty,
+      }));
+
     if (substitutionsMade.length > 0) {
       try {
-        const today = new Date().toISOString().split('T')[0];
-        // Fetch non-terminal future orders (same logic as GET /stock/committed)
-        const openOrders = await db.list(TABLES.ORDERS, {
-          filterByFormula: `AND({Status} != '${ORDER_STATUS.DELIVERED}', {Status} != '${ORDER_STATUS.PICKED_UP}', {Status} != '${ORDER_STATUS.CANCELLED}', IS_AFTER({Required By}, '${today}'))`,
-          fields: ['Order Lines', 'Customer', 'Required By', 'App Order ID', 'Status'],
-          maxRecords: 500,
-        });
-        const allSubLineIds = openOrders.flatMap(o => o['Order Lines'] || []);
-        const allSubLines = allSubLineIds.length > 0
-          ? await listByIds(TABLES.ORDER_LINES, allSubLineIds, {
-              fields: ['Order', 'Stock Item', 'Quantity', 'Flower Name'],
-            })
-          : [];
-        const custIds = [...new Set(openOrders.flatMap(o => o.Customer || []))];
-        const custs = custIds.length > 0
-          ? await listByIds(TABLES.CUSTOMERS, custIds, { fields: ['Name', 'Nickname'] })
-          : [];
-        const custMap = {};
-        for (const c of custs) custMap[c.id] = c;
-        const orderInfoMap = {};
-        for (const o of openOrders) {
-          const cid = o.Customer?.[0];
-          orderInfoMap[o.id] = {
-            appOrderId: o['App Order ID'] || '',
-            customerName: custMap[cid]?.Name || custMap[cid]?.Nickname || '',
-            requiredBy: o['Required By'] || null,
-          };
-        }
-
-        for (const sub of substitutionsMade) {
-          const affectedOrders = [];
-          for (const line of allSubLines) {
-            if (line['Stock Item']?.[0] !== sub.originalStockId) continue;
-            const oid = line.Order?.[0];
-            const oi = oid ? orderInfoMap[oid] : null;
-            if (oi) {
-              affectedOrders.push({
-                orderId: oid,
-                appOrderId: oi.appOrderId,
-                customerName: oi.customerName,
-                requiredBy: oi.requiredBy,
-                qty: Number(line.Quantity || 0),
-              });
-            }
-          }
-          if (affectedOrders.length > 0) {
+        const enriched = await orderService.findOrdersNeedingSubstitution(substitutionsMade);
+        for (const sub of enriched) {
+          if (sub.affectedOrders.length > 0) {
             broadcast({
-              type: 'substitute_reconciliation_needed',
-              originalStockId: sub.originalStockId,
+              type:               'substitute_reconciliation_needed',
+              originalStockId:    sub.originalStockId,
               originalFlowerName: sub.originalFlowerName,
-              substituteStockId: sub.substituteStockId,
-              affectedOrders,
-              substituteQty: sub.receivedQty,
+              substituteStockId:  sub.substituteStockId,
+              affectedOrders:     sub.affectedOrders,
+              substituteQty:      sub.receivedQty,
             });
           }
         }
