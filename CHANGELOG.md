@@ -5,6 +5,49 @@ Review this entire file before flipping to production.
 
 ---
 
+## Phase 7 PR 1 — Stock Orders + Premade Bouquets on Postgres (2026-05-08)
+
+Migrates the last two domains writing to Airtable. After this PR, **no production code path reads from or writes to Airtable.** PR 2 (separate plan) will delete the airtable.js / airtableSchema.js / config / npm dep / dead env-flag logic.
+
+### Schema (migration 0011)
+- New tables: `stock_orders`, `stock_order_lines`, `premade_bouquets`, `premade_bouquet_lines` with FK + CASCADE
+- `substitute_*` columns on `stock_order_lines` (CONTEXT.md domain term; API surface keeps "Alt *" for frontend compat)
+- Partial unique indexes: `airtable_id IS NOT NULL`, `po_number <> ''`. Indexes on status / created_date / driver / po_id / bouquet_id / stock_id
+
+### Code migration
+- `backend/src/repos/stockOrderRepo.js` (new): header + line CRUD with dual-lookup (recXXX or uuid). `nextPoSequence(date)` returns `MAX(N)+1` of existing `PO-YYYYMMDD-N` values (was COUNT — would corrupt under backfill)
+- `backend/src/repos/premadeBouquetRepo.js` (new): bouquet + line CRUD; `getLinesByStockId` for /stock PATCH cascade and orderService premade price-sync
+- `backend/src/routes/stockOrders.js` (~1000 LOC fully migrated): all `db.*` calls routed through `stockOrderRepo` / `stockRepo` / `stockPurchasesRepo`
+- `backend/src/services/premadeBouquetService.js` (rewritten): full migration to `premadeBouquetRepo`
+- `backend/src/routes/stock.js` 5 live bypasses fixed: `/velocity` (was reading frozen ORDERS), `/pending-po`, `/:id/usage` (purchase trail + premade trail), PATCH `/:id` premade price-sync, `/meta/lookups`
+- `backend/src/services/orderService.js`: extracted `findOrdersNeedingSubstitution(substitutionsMade)` from the evaluate endpoint (it was reading frozen Airtable since 2026-05-02). Fixed premade price-sync in `createOrder` (same root cause)
+
+### Operational
+- New PO marker format embeds human-readable PO number: `PO #PO-20260508-1 L#<uuid> primary` (see ADR-0003). Old `recXXX` markers in historical `stock_purchases.notes` rows degrade gracefully (regex matches both formats; lookup falls back to empty `poDisplayId` after Airtable retirement)
+- Backfill script: `backend/scripts/backfill-phase7.js` (DESTRUCTIVE, idempotent ON CONFLICT DO UPDATE on `airtable_id`). Captures all POs (Draft/Sent/Shopping/Reviewing/Evaluating/Complete) + premade bouquets. Pre-populates poIdMap + bouquetIdMap from existing PG rows so re-runs resolve line links after no-op upserts. Logs orphan-line counts.
+- E2E harness: PO + premade fixtures migrated from `airtable-test-base.json` mock to `backend/src/__tests__/helpers/phase7-seed.js` (pglite SQL seed). `/test/state` now exposes `pg.stockOrders[]` / `pg.premadeBouquets[]` for boot-invariant checks
+- `airtableSchema.js` write-field validation entries for STOCK_ORDERS/STOCK_ORDER_LINES/PREMADE tables removed (frozen, never written)
+- Carry-over: write-off retry idempotency gap on PO evaluate captured by `it.todo` in `stockOrderRepo.integration.test.js`. Pre-existing — predates Phase 7. Standing investigation entry added to BACKLOG; fix sketch is "extend ADR-0003 marker pattern to write-offs".
+
+### Verification
+- Backend Vitest: 343 passed + 1 todo (write-off retry capture)
+- Shared Vitest: 130 passed
+- Florist + Dashboard + Delivery vite builds: GREEN
+- E2E: 186 passed, 0 failed (24 sections + Phase 5 customer CRUD)
+
+### Out of scope (PR 2)
+- Delete `airtable.js`, `airtable-real.js`, `airtable-mock.js`, `airtable-mock-formula.js`, `airtableSchema.js`, `config/airtable.js`
+- Drop `airtable` npm dependency
+- Remove `STOCK_BACKEND` / `ORDER_BACKEND` env flag logic + boot guard
+- Cancel Airtable subscription, take final snapshot
+
+### Plan + ADR
+- `docs/superpowers/plans/2026-05-08-phase7-stock-orders-premade.md`
+- `docs/adr/0003-po-marker-format-dual-format.md`
+- `docs/adr/0002-demand-entry-aggregate-model.md` corrected (in-place text was inaccurate; receiveIntoStock creates a new Batch and zeroes the Demand Entry)
+
+---
+
 ## Postgres read-path cleanup — dashboard, analytics, stock (2026-05-08)
 
 Fixes GH #227, #228, #229. All Airtable reads for ORDERS/ORDER_LINES/DELIVERIES/CUSTOMERS in three routes replaced with `orderRepo`/`customerRepo`/`stockPurchasesRepo`. Post-cutover orders (since 2026-05-02) now visible in owner dashboard, analytics KPIs, and stock committed/usage views.

@@ -25,10 +25,10 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | customers.js | GET/POST/PATCH /customers, GET /customers/insights | CRM + RFM segmentation |
 | stock.js | GET/POST/PATCH /stock, GET /stock/velocity | Inventory + velocity forecasting. Delegates to stockRepo when STOCK_BACKEND ≠ airtable. |
 | deliveries.js | GET/PATCH /deliveries | Driver assignments + status cascade to orders |
-| stockOrders.js | Full CRUD /stock-orders | PO lifecycle: create, send, shop, review, evaluate |
+| stockOrders.js | Full CRUD /stock-orders | PO lifecycle: create, send, shop, review, evaluate. **Postgres** via `stockOrderRepo` (Phase 7). New PO markers embed human-readable PO number (ADR-0003). |
 | stockPurchases.js | POST /stock-purchases | Record supplier deliveries with batch tracking. Routes STOCK reads/writes through stockRepo; purchase records through stockPurchasesRepo. |
 | stockLoss.js | GET/POST /stock-loss | Waste logging by reason |
-| premadeBouquets.js | CRUD /premade-bouquets | Premade bouquet templates (composed of stock items) |
+| premadeBouquets.js | CRUD /premade-bouquets | Premade bouquet templates (composed of stock items). Service uses `premadeBouquetRepo` (Postgres, Phase 7). |
 | dashboard.js | GET /dashboard | Today's operational summary for owner |
 | analytics.js | GET /analytics | Financial KPIs with period comparison |
 | settings.js | GET/POST /settings | Thin HTTP layer for app config. State lives in `services/configService.js`. Re-exports its getters for backward compat — callers should migrate to importing from configService directly. |
@@ -54,7 +54,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | __fixtures__/ | Seed data + sample records for the mock (used by harness + integration tests). |
 | airtableSchema.js | Startup validation — checks all expected fields exist in live Airtable base. Skipped under `TEST_BACKEND=mock-airtable`. |
 | orderService.js | Order state machine, auto-match stock, create with rollback, cancel with stock return, edit bouquet lines. Delegates to `orderRepo` when ORDER_BACKEND ≠ airtable. |
-| premadeBouquetService.js | Dissolve premade bouquets into constituent stock-item lines on order creation. |
+| premadeBouquetService.js | Dissolve premade bouquets into constituent stock-item lines on order creation. Persistence via `premadeBouquetRepo` (Postgres, Phase 7). |
 | notifications.js | SSE broadcast to all connected clients (heartbeat every 30s). No catch-up buffer yet — clients miss events while disconnected. |
 | wix.js | Wix webhook processor — parses payload, creates order + lines + delivery. |
 | wixProductSync.js | Bidirectional Wix product pull/push with sync logging. `runPush` accepts `onProgress(entry)` and parallelizes Wix API calls per phase via `p-queue` (concurrency 8) so the full push lands in 10–20s. Pull mirrors Wix → Airtable for prices and descriptions (the 2026-04-22 lockout was specific to the legacy `runSync` flow, which the UI no longer calls). (1200+ L — split candidate.) |
@@ -66,13 +66,12 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | configService.js | App config singleton — DEFAULTS, in-memory config state, loadConfig/saveConfig, migrations, driver-of-day daily state, cutoff reminder interval. Exports: `getConfig`, `updateConfig`, `generateOrderId`, `getDriverOfDay`, `isPastCutoff`, `getActiveSeasonalCategory`. Import from here, not from routes/settings.js. |
 | driverState.js | In-memory backup driver state (resets daily at midnight). |
 
-## Database (in transition — Phase 3+ SQL migration)
-Backend is mid-migration from Airtable to Postgres. Two flags control routing:
+## Database (Phases 3–7 complete, PR 2 cleanup pending)
+Backend has finished migrating from Airtable to Postgres. After Phase 7 PR 1 (2026-05-08), no production code path reads from or writes to Airtable. Phase 7 PR 2 will delete the now-dead infrastructure:
 
-- `STOCK_BACKEND` ∈ {airtable, shadow, postgres} (default airtable). Phase 3 — currently in shadow week on prod.
-- `ORDER_BACKEND` ∈ {airtable, shadow, postgres} (default airtable). Phase 4 — implementation merged but not flipped; read-path migration is the active blocker (see `BACKLOG.md`).
-
-Boot guard in `index.js` rejects mixed modes (e.g. `ORDER_BACKEND=postgres` with `STOCK_BACKEND=airtable`) — order/stock cross-domain transactions cannot span two stores.
+- Phase 3 (Stock), Phase 4 (Orders/Lines/Deliveries), Phase 5 (Customers/KeyPeople/LegacyOrders), Phase 6 (config + log tables), and Phase 7 PR 1 (StockOrders/Lines + Premade Bouquets/Lines) are all live on Postgres.
+- `STOCK_BACKEND` / `ORDER_BACKEND` env flags are dead code awaiting PR 2 removal — the only valid value at this point is `postgres`. Boot guard in `index.js` still validates them; will be deleted in PR 2.
+- New repos in Phase 7: `stockOrderRepo.js`, `premadeBouquetRepo.js` — same wire-format pattern as Phase 3+ repos, dual-lookup (recXXX or uuid) so in-flight callers from before the cutover keep working.
 
 Key paths:
 - `db/schema.js` — Drizzle table definitions (orders, order_lines, deliveries, stock, stock_movements, audit_log, parity_log, ...).
