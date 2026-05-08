@@ -403,13 +403,12 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
     // reassignment) skip the check because their lines were already validated
     // on the previous send. Without this gate, blank Draft lines would reach
     // the driver as "what am I buying?" rows.
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (po.Status === PO_STATUS.DRAFT) {
-      const lineIds = po['Order Lines'] || [];
-      if (lineIds.length === 0) {
+      const lines = await stockOrderRepo.getLinesByPoId(po._pgId);
+      if (lines.length === 0) {
         return res.status(400).json({ error: 'Cannot send an empty PO. Add at least one line first.' });
       }
-      const lines = await listByIds(TABLES.STOCK_ORDER_LINES, lineIds);
       const blankCount = lines.filter(l => {
         const hasStockItem = Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0;
         const hasFlowerName = String(l['Flower Name'] || '').trim() !== '';
@@ -421,7 +420,7 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
         });
       }
     }
-    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
+    const updated = await stockOrderRepo.update(req.params.id, {
       Status: PO_STATUS.SENT,
       'Assigned Driver': resolvedDriver,
     });
@@ -439,11 +438,11 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
 // Goes to Reviewing first (owner can adjust), then owner or auto → Evaluating
 router.post('/:id/driver-complete', authorize('stock-orders'), async (req, res, next) => {
   try {
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (![PO_STATUS.SENT, PO_STATUS.SHOPPING].includes(po.Status)) {
       return res.status(400).json({ error: `PO is "${po.Status}", cannot complete shopping.` });
     }
-    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, {
+    const updated = await stockOrderRepo.update(req.params.id, {
       Status: PO_STATUS.REVIEWING,
     });
 
@@ -459,11 +458,11 @@ router.post('/:id/driver-complete', authorize('stock-orders'), async (req, res, 
 // POST /api/stock-orders/:id/approve-review — owner approves, moves to Evaluating
 router.post('/:id/approve-review', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
-    const po = await db.getById(TABLES.STOCK_ORDERS, req.params.id);
+    const po = await stockOrderRepo.getById(req.params.id);
     if (po.Status !== PO_STATUS.REVIEWING) {
       return res.status(400).json({ error: `PO is "${po.Status}", not "${PO_STATUS.REVIEWING}".` });
     }
-    const updated = await db.update(TABLES.STOCK_ORDERS, req.params.id, { Status: PO_STATUS.EVALUATING });
+    const updated = await stockOrderRepo.update(req.params.id, { Status: PO_STATUS.EVALUATING });
     broadcast({ type: 'stock_evaluation_ready', stockOrderId: req.params.id });
     res.json(updated);
   } catch (err) {
