@@ -1,15 +1,14 @@
-// premadeBouquetService integration tests — exercise the stock-adjustment
-// path against a real Postgres (via pglite) to prove writes land in PG, not
-// Airtable. Backstops the 2026-05-04 bug where return-to-stock incremented
-// Airtable (frozen post-cutover) while the dashboard read from PG.
+// premadeBouquetService integration tests — exercise the full service against
+// real Postgres (via pglite). Phase 7: premade bouquets and lines now live in
+// PG, so seeding goes via Drizzle inserts directly into the new tables, not
+// the airtable mock.
 //
-// Premade bouquet records themselves still live on Airtable (no PG migration
-// for that table yet), so those calls remain mocked. Only the stock side is
-// real-SQL.
+// Backstops the 2026-05-04 bug where return-to-stock incremented Airtable
+// (frozen post-cutover) while the dashboard read from PG.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
-import { stock } from '../db/schema.js';
+import { stock, premadeBouquets, premadeBouquetLines } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 const dbHolder = { db: null };
@@ -22,28 +21,17 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-// Airtable layer — premade bouquet table operations stay on Airtable; only
-// stub deleteRecord + getById since those are the only premade-side calls
-// the return-to-stock flow makes.
+// Airtable layer should NOT fire post-cutover. Stub atomicStockAdjust so the
+// regression assertion can confirm the legacy path stays cold.
 vi.mock('../services/airtable.js', () => ({
   create: vi.fn(),
   update: vi.fn(),
-  deleteRecord: vi.fn().mockResolvedValue({ deleted: true }),
+  deleteRecord: vi.fn(),
   getById: vi.fn(),
   list: vi.fn(),
   atomicStockAdjust: vi.fn(),
 }));
 
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: {
-    PREMADE_BOUQUETS: 'tblPremadeBouquets',
-    PREMADE_BOUQUET_LINES: 'tblPremadeBouquetLines',
-    STOCK: 'tblStock',
-  },
-}));
-
-vi.mock('../utils/batchQuery.js', () => ({ listByIds: vi.fn() }));
 vi.mock('../services/notifications.js', () => ({ broadcast: vi.fn() }));
 vi.mock('../services/orderService.js', () => ({
   autoMatchStock: vi.fn().mockResolvedValue(0),
@@ -51,7 +39,6 @@ vi.mock('../services/orderService.js', () => ({
 }));
 
 import * as airtable from '../services/airtable.js';
-import { listByIds } from '../utils/batchQuery.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import {
   returnPremadeBouquetToStock,
@@ -64,7 +51,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  airtable.deleteRecord.mockResolvedValue({ deleted: true });
   stockRepo._setMode('postgres');
 });
 
@@ -85,6 +71,24 @@ async function seedStockRow(displayName, qty) {
   return row;
 }
 
+// Seeds a premade bouquet + its lines directly into pglite.
+async function seedPremadeBouquet(name, lineSpecs /* [{stockUuid, flowerName, qty}] */) {
+  const [b] = await harness.db.insert(premadeBouquets).values({
+    name,
+  }).returning();
+  for (const ls of lineSpecs) {
+    await harness.db.insert(premadeBouquetLines).values({
+      bouquetId:        b.id,
+      stockId:          ls.stockUuid,
+      flowerName:       ls.flowerName,
+      quantity:         ls.qty,
+      costPricePerUnit: '1',
+      sellPricePerUnit: '5',
+    });
+  }
+  return b;
+}
+
 describe('returnPremadeBouquetToStock — postgres mode (regression for 2026-05-04 bug)', () => {
   it('increments PG stock quantities, not Airtable', async () => {
     // Seed two stock rows in PG with the qty AFTER the premade was created
@@ -92,17 +96,13 @@ describe('returnPremadeBouquetToStock — postgres mode (regression for 2026-05-
     const rose = await seedStockRow('Rose', 7);        // started at 10, 3 in bouquet
     const euca = await seedStockRow('Eucalyptus', 8);  // started at 10, 2 in bouquet
 
-    airtable.getById.mockResolvedValue({
-      id: 'recBouquet1',
-      Name: 'Spring Pink',
-      Lines: ['recLine1', 'recLine2'],
-    });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Stock Item': [rose.airtableId], 'Flower Name': 'Rose', Quantity: 3 },
-      { id: 'recLine2', 'Stock Item': [euca.airtableId], 'Flower Name': 'Eucalyptus', Quantity: 2 },
+    // Seed the premade in PG (rather than Airtable mock)
+    const bouquet = await seedPremadeBouquet('Spring Pink', [
+      { stockUuid: rose.id, flowerName: 'Rose', qty: 3 },
+      { stockUuid: euca.id, flowerName: 'Eucalyptus', qty: 2 },
     ]);
 
-    const result = await returnPremadeBouquetToStock('recBouquet1');
+    const result = await returnPremadeBouquetToStock(bouquet.id);
 
     // PG rows should be back to their pre-bouquet quantities.
     const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
@@ -110,10 +110,13 @@ describe('returnPremadeBouquetToStock — postgres mode (regression for 2026-05-
     expect(roseAfter.currentQuantity).toBe(10);
     expect(eucaAfter.currentQuantity).toBe(10);
 
-    // Airtable stock-adjust must NOT have fired — Airtable Stock is the
-    // frozen legacy snapshot post-cutover. Bypassing the repo here was the
-    // exact bug owner hit on 2026-05-04.
+    // Airtable stock-adjust must NOT have fired — Airtable Stock is frozen
+    // post-cutover. Bypassing the repo here was the exact 2026-05-04 bug.
     expect(airtable.atomicStockAdjust).not.toHaveBeenCalled();
+
+    // Bouquet record removed (CASCADE removes lines)
+    const [check] = await harness.db.select().from(premadeBouquets).where(eq(premadeBouquets.id, bouquet.id));
+    expect(check).toBeUndefined();
 
     // Service still reports per-line summary so the toast can name what came back.
     expect(result.returnedItems).toHaveLength(2);
@@ -123,17 +126,14 @@ describe('returnPremadeBouquetToStock — postgres mode (regression for 2026-05-
   it('handles a line whose Stock Item link is missing without aborting other returns', async () => {
     const rose = await seedStockRow('Rose', 7);
 
-    airtable.getById.mockResolvedValue({
-      id: 'recBouquet2',
-      Name: 'Mixed',
-      Lines: ['recLine1', 'recLine2'],
-    });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Stock Item': [rose.airtableId], 'Flower Name': 'Rose', Quantity: 3 },
-      { id: 'recLine2', 'Stock Item': [], 'Flower Name': 'Mystery', Quantity: 2 },
+    // Seed bouquet with one linked + one orphan line
+    const [b] = await harness.db.insert(premadeBouquets).values({ name: 'Mixed' }).returning();
+    await harness.db.insert(premadeBouquetLines).values([
+      { bouquetId: b.id, stockId: rose.id, flowerName: 'Rose', quantity: 3, costPricePerUnit: '1', sellPricePerUnit: '5' },
+      { bouquetId: b.id, stockId: null, flowerName: 'Mystery', quantity: 2, costPricePerUnit: '1', sellPricePerUnit: '5' },
     ]);
 
-    const result = await returnPremadeBouquetToStock('recBouquet2');
+    const result = await returnPremadeBouquetToStock(b.id);
 
     const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
     expect(roseAfter.currentQuantity).toBe(10);
@@ -146,19 +146,10 @@ describe('createPremadeBouquet — postgres mode', () => {
   it('decrements PG stock when the bouquet is composed', async () => {
     const rose = await seedStockRow('Rose', 10);
 
-    airtable.create
-      .mockResolvedValueOnce({ id: 'recBouquet1', Name: 'Solo' })
-      .mockResolvedValueOnce({ id: 'recLine1' });
-    airtable.getById.mockResolvedValue({
-      id: 'recBouquet1', Name: 'Solo', Lines: ['recLine1'],
-    });
-    listByIds.mockResolvedValue([
-      { id: 'recLine1', 'Flower Name': 'Rose', Quantity: 4, 'Sell Price Per Unit': 10, 'Cost Price Per Unit': 4 },
-    ]);
-
     await createPremadeBouquet({
       name: 'Solo',
       lines: [
+        // Pass the airtableId — stockRepo.adjustQuantity accepts either form.
         { stockItemId: rose.airtableId, flowerName: 'Rose', quantity: 4, costPricePerUnit: 4, sellPricePerUnit: 10 },
       ],
       createdBy: 'Florist',
@@ -167,5 +158,13 @@ describe('createPremadeBouquet — postgres mode', () => {
     const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
     expect(roseAfter.currentQuantity).toBe(6);
     expect(airtable.atomicStockAdjust).not.toHaveBeenCalled();
+
+    // PG bouquet + line should exist
+    const allBouquets = await harness.db.select().from(premadeBouquets);
+    expect(allBouquets).toHaveLength(1);
+    expect(allBouquets[0].name).toBe('Solo');
+    const allLines = await harness.db.select().from(premadeBouquetLines);
+    expect(allLines).toHaveLength(1);
+    expect(allLines[0].quantity).toBe(4);
   });
 });
