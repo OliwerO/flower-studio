@@ -5,6 +5,32 @@ Review this entire file before flipping to production.
 
 ---
 
+## Dual Seasonal Slots — two independent variable category slots (2026-05-08)
+
+### Config change (auto-migrated)
+- `storefrontCategories.autoSchedule` and `storefrontCategories.manualOverride` flat fields replaced by `storefrontCategories.slots[]` array
+- Existing prod config auto-migrated on first boot: old flat fields → `slots[0]`; `slots[1]` defaults to manual/empty
+- No manual DB intervention required
+
+### Backend
+- `backend/src/services/configService.js` — `getActiveSeasonalSlots()` exported; `getActiveSeasonalCategory()` kept as backward-compat wrapper
+- `backend/src/routes/public.js` — `GET /api/public/categories` now returns `seasonal2` field (null when slot 2 inactive)
+- `backend/src/services/wixProductSync.js` — iterates both slots; empties Wix collection when slot has no active category
+
+### Dashboard UI
+- `StorefrontCategoriesSection` — two slot sub-sections replace single auto/manual controls; seasonal library rows show "Slot 1" / "Slot 2" badge when active
+- New translation keys: `sfSlot1`, `sfSlot2`, `sfSlot2Hint`, `sfSlot1Active`, `sfSlot2Active`
+
+### Wix (Blossom-Wix repo, separate deployment)
+- `masterPage.js` — handles `seasonal2` from categories API; null-slot nav items explicitly removed from all menu types
+
+### One-time Wix setup required (owner, issue #254)
+- Create `seasonal-2` Wix Stores collection
+- Add nav item → `/category/seasonal-2` in all 4 language menus
+- Paste collection ID into Dashboard → Settings → wixCategoryMap → `seasonal-2`
+
+---
+
 ## Report System — In-app bug/feature reporting with AI (2026-05-07)
 
 ### Schema
