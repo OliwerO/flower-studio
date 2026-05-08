@@ -23,7 +23,9 @@
     "lab:migrate": "DATABASE_URL=postgres://lab:lab@localhost:5433/lab PGSSL_DISABLE=true node backend/src/db/migrate.js",
     "lab:backend": "node lab/scripts/start-lab-backend.js",
     "lab:test:unit": "cd lab && npx vitest run --config vitest.config.js factories scenarios helpers",
-    "lab:seed": "node lab/scripts/seed-cli.js"
+    "lab:seed": "node lab/scripts/seed-cli.js",
+    "lab:template:rebuild": "node lab/scripts/rebuild-template.js",
+    "lab:reset": "node -e \"import('./lab/helpers/reset.js').then(m => m.resetLabDb()).then(() => console.log('[LAB] Reset complete.'))\""
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"
