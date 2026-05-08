@@ -26,7 +26,8 @@
     "lab:seed": "node lab/scripts/seed-cli.js",
     "lab:template:rebuild": "node lab/scripts/rebuild-template.js",
     "lab:reset": "node -e \"import('./lab/helpers/reset.js').then(m => m.resetLabDb()).then(() => console.log('[LAB] Reset complete.'))\"",
-    "lab:test:api": "cd lab && npx vitest run --config vitest.config.js tests/api"
+    "lab:test:api": "cd lab && npx vitest run --config vitest.config.js tests/api",
+    "lab:test:ui": "playwright test --config=playwright.lab.config.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"

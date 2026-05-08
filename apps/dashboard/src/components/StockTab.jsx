@@ -894,7 +894,7 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
 
   return (
     <>
-      <tr className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
+      <tr data-testid="stock-row" className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
         <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{stockBaseName(item['Display Name'])}</td>
         <td className="px-2 py-1.5">
           <InlineDate value={lastRestocked} displayName={item['Display Name']} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} hideTag={isNegative} />
