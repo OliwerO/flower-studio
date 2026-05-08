@@ -44,6 +44,18 @@ npm run lab:test:api    # vitest: API integration tests against lab backend
 npm run lab:test:ui     # Playwright: UI smoke + flow tests
 ```
 
+## CI
+
+The `lab-api` GitHub Actions job runs on every PR and push to master. It:
+1. Spins up a Postgres 15 service container (matches local Docker config).
+2. Runs `npm run lab:test:unit` (factory + scenario tests).
+3. Rebuilds `lab_template` with baseline scenario.
+4. Runs `npm run lab:test:api` (API integration tests).
+
+UI tests (`npm run lab:test:ui`) do NOT run in CI — they are agent-driven during overhauls per ADR 0004. Promote critical UI flows to CI by adding their API equivalents to `lab/tests/api/` when the contract stabilises.
+
+The existing pglite `e2e` job continues to gate CI in parallel — `lab-api` is additive.
+
 ## Tearing down
 
 ```bash
