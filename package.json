@@ -20,7 +20,8 @@
     "lab:db:up": "docker compose -f docker-compose.lab.yml up -d postgres && docker compose -f docker-compose.lab.yml exec -T postgres sh -c 'until pg_isready -U lab -d lab; do sleep 0.5; done'",
     "lab:db:down": "docker compose -f docker-compose.lab.yml down",
     "lab:db:logs": "docker compose -f docker-compose.lab.yml logs -f postgres",
-    "lab:migrate": "DATABASE_URL=postgres://lab:lab@localhost:5433/lab PGSSL_DISABLE=true node backend/src/db/migrate.js"
+    "lab:migrate": "DATABASE_URL=postgres://lab:lab@localhost:5433/lab PGSSL_DISABLE=true node backend/src/db/migrate.js",
+    "lab:backend": "node lab/scripts/start-lab-backend.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"
