@@ -78,6 +78,13 @@
       "when": 1779043200000,
       "tag": "0010_feedback_sessions",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779129600000,
+      "tag": "0011_phase7_stock_orders_premade",
+      "breakpoints": true
     }
   ]
 }
