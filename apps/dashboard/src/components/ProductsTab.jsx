@@ -10,6 +10,7 @@ import SyncLogSection from './products/SyncLogSection.jsx';
 import AvailableTodayBanner from './products/AvailableTodayBanner.jsx';
 import ProductCard from './products/ProductCard.jsx';
 import { SkeletonCard } from './Skeleton.jsx';
+import StorefrontCategoriesSection from './settings/StorefrontCategoriesSection.jsx';
 
 export default function ProductsTab() {
   const [products, setProducts] = useState([]);
@@ -35,6 +36,9 @@ export default function ProductsTab() {
   const [showAddToCategory, setShowAddToCategory] = useState(false);
   const [addToCategorySelected, setAddToCategorySelected] = useState(() => new Set());
   const [addingToCategory, setAddingToCategory] = useState(false);
+  const [catSettingsOpen, setCatSettingsOpen] = useState(false);
+  const [catConfig, setCatConfig] = useState(null);
+  const [catConfigLoading, setCatConfigLoading] = useState(false);
   const { showToast } = useToast();
 
   const fetchProducts = useCallback(async () => {
@@ -184,6 +188,31 @@ export default function ProductsTab() {
     ));
   }
 
+  async function toggleCatSettings() {
+    const next = !catSettingsOpen;
+    setCatSettingsOpen(next);
+    if (next && !catConfig && !catConfigLoading) {
+      setCatConfigLoading(true);
+      try {
+        const r = await cachedGet('/settings');
+        setCatConfig(r.data.config);
+      } catch {
+        showToast(t.error, 'error');
+      } finally {
+        setCatConfigLoading(false);
+      }
+    }
+  }
+
+  async function updateCatConfig(updates) {
+    try {
+      const { data } = await client.put('/settings/config', updates);
+      setCatConfig(data.config);
+    } catch {
+      showToast(t.error, 'error');
+    }
+  }
+
   // Add currently-filtered category to every selected bouquet's variants.
   // Runs PATCH /products/:id once per variant (reuses the existing single-
   // product endpoint). We append the category to the existing list rather
@@ -239,6 +268,28 @@ export default function ProductsTab() {
             {pushing ? t.prodSyncing : t.prodPushToWix}
           </button>
         </div>
+      </div>
+
+      {/* Storefront category settings — infrequent, collapsed by default */}
+      <div className="mb-4 border border-gray-200 rounded-xl overflow-hidden">
+        <button
+          className="w-full flex items-center justify-between px-4 py-3 bg-gray-50 hover:bg-gray-100 transition-colors text-left"
+          onClick={toggleCatSettings}
+        >
+          <span className="text-sm font-medium text-gray-700">{t.sfCategories}</span>
+          <span className="text-gray-400 text-base" style={{ transform: catSettingsOpen ? 'rotate(180deg)' : 'none', display: 'inline-block', transition: 'transform 0.15s' }}>▾</span>
+        </button>
+        {catSettingsOpen && (
+          <div className="px-4 py-2">
+            {catConfigLoading ? (
+              <div className="flex justify-center py-6">
+                <div className="w-6 h-6 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
+              </div>
+            ) : catConfig ? (
+              <StorefrontCategoriesSection config={catConfig} onUpdate={updateCatConfig} />
+            ) : null}
+          </div>
+        )}
       </div>
 
       <AvailableTodayBanner products={availableTodayProducts} onFilter={() => setFilter('today')} />

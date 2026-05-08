@@ -5,7 +5,6 @@ import { ConfigRow, ListEditor, Section } from './settings/SettingsPrimitives.js
 import { RateTypesEditor, FloristRatesEditor } from './settings/RateEditors.jsx';
 import DriverSettingsSection from './settings/DriverSettingsSection.jsx';
 import DeliveryZonesSection from './settings/DeliveryZonesSection.jsx';
-import StorefrontCategoriesSection from './settings/StorefrontCategoriesSection.jsx';
 import MarketingSpendSection from './settings/MarketingSpendSection.jsx';
 import StockLossSection from './settings/StockLossSection.jsx';
 
@@ -85,9 +84,6 @@ export default function SettingsTab() {
         <RateTypesEditor types={config.rateTypes || ['Standard', 'Wedding', 'Holidays']} onSave={v => updateConfig({ rateTypes: v })} />
         <FloristRatesEditor names={config.floristNames || []} rateTypes={config.rateTypes || ['Standard', 'Wedding', 'Holidays']} rates={config.floristRates || {}} onSave={v => updateConfig({ floristRates: v })} />
       </Section>
-
-      {/* Storefront Categories */}
-      <StorefrontCategoriesSection config={config} onUpdate={updateConfig} />
 
       {/* Delivery Zones */}
       <DeliveryZonesSection config={config} onUpdate={updateConfig} />
