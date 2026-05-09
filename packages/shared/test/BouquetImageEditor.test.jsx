@@ -2,13 +2,43 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, fireEvent, screen, waitFor, cleanup } from '@testing-library/react';
 
+const mockShowToast = vi.fn();
+vi.mock('../context/ToastContext.jsx', () => ({
+  useToast: () => ({ showToast: mockShowToast }),
+}));
+
 vi.mock('../api/uploadImage.js', () => ({
   uploadBouquetImage: vi.fn().mockResolvedValue({ imageUrl: 'https://static/new.jpg' }),
   removeBouquetImage: vi.fn().mockResolvedValue({ ok: true }),
+  uploadOrderImage: vi.fn().mockResolvedValue({ imageUrl: 'https://static/new.jpg' }),
+  removeOrderImage: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 import BouquetImageEditor from '../components/BouquetImageEditor.jsx';
 import { uploadBouquetImage, removeBouquetImage } from '../api/uploadImage.js';
+
+function stubClipboard(imageBlob = null) {
+  const mockRead = imageBlob
+    ? vi.fn().mockResolvedValue([{
+        types: [imageBlob.type],
+        getType: vi.fn().mockResolvedValue(imageBlob),
+      }])
+    : vi.fn().mockResolvedValue([{ types: ['text/plain'], getType: vi.fn() }]);
+  Object.defineProperty(navigator, 'clipboard', {
+    value: { read: mockRead },
+    writable: true,
+    configurable: true,
+  });
+  return mockRead;
+}
+
+function removeClipboard() {
+  Object.defineProperty(navigator, 'clipboard', {
+    value: undefined,
+    writable: true,
+    configurable: true,
+  });
+}
 
 beforeEach(() => { vi.clearAllMocks(); });
 // Vitest doesn't auto-cleanup testing-library renders unless `globals: true`,
@@ -50,5 +80,49 @@ describe('BouquetImageEditor', () => {
     fireEvent.click(btn);
     await waitFor(() => expect(removeBouquetImage).toHaveBeenCalledWith('p1'));
     await waitFor(() => expect(onChange).toHaveBeenCalledWith(''));
+  });
+
+  describe('clipboard paste button', () => {
+    afterEach(() => { removeClipboard(); });
+
+    it('shows clipboard button when navigator.clipboard.read is available', () => {
+      stubClipboard();
+      render(<BouquetImageEditor wixProductId="p1" currentUrl="" canRemove={false} onChange={() => {}} />);
+      expect(screen.getByTestId('clipboard-paste-btn')).toBeTruthy();
+    });
+
+    it('hides clipboard button when navigator.clipboard is unavailable', () => {
+      removeClipboard();
+      render(<BouquetImageEditor wixProductId="p1" currentUrl="" canRemove={false} onChange={() => {}} />);
+      expect(screen.queryByTestId('clipboard-paste-btn')).toBeNull();
+    });
+
+    it('reads image from clipboard and uploads on button click', async () => {
+      const onChange = vi.fn();
+      const blob = new Blob([new Uint8Array([1])], { type: 'image/png' });
+      stubClipboard(blob);
+      render(<BouquetImageEditor wixProductId="p1" currentUrl="" canRemove={false} onChange={onChange} />);
+      fireEvent.click(screen.getByTestId('clipboard-paste-btn'));
+      await waitFor(() => expect(uploadBouquetImage).toHaveBeenCalled());
+      await waitFor(() => expect(onChange).toHaveBeenCalledWith('https://static/new.jpg'));
+    });
+
+    it('shows error toast when clipboard has no image', async () => {
+      stubClipboard(null);
+      render(<BouquetImageEditor wixProductId="p1" currentUrl="" canRemove={false} onChange={() => {}} />);
+      fireEvent.click(screen.getByTestId('clipboard-paste-btn'));
+      await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(expect.stringMatching(/буфере нет/i), 'error'));
+    });
+
+    it('shows permission denied toast on NotAllowedError', async () => {
+      const err = Object.assign(new Error('denied'), { name: 'NotAllowedError' });
+      Object.defineProperty(navigator, 'clipboard', {
+        value: { read: vi.fn().mockRejectedValue(err) },
+        writable: true, configurable: true,
+      });
+      render(<BouquetImageEditor wixProductId="p1" currentUrl="" canRemove={false} onChange={() => {}} />);
+      fireEvent.click(screen.getByTestId('clipboard-paste-btn'));
+      await waitFor(() => expect(mockShowToast).toHaveBeenCalledWith(expect.stringMatching(/доступа/i), 'error'));
+    });
   });
 });
