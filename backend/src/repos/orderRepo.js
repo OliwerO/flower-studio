@@ -1393,7 +1393,7 @@ export async function getLinesByIds(ids) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   if (!db) throw new Error('orderRepo.getLinesByIds: postgres backend not configured');
   const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
-  const uuidIds = ids.filter(id => !airtableIds.includes(id));
+  const uuidIds = ids.filter(id => typeof id === 'string' && !id.startsWith('rec'));
   const wheres = [];
   if (airtableIds.length) wheres.push(inArray(orderLines.airtableId, airtableIds));
   if (uuidIds.length)     wheres.push(inArray(orderLines.id, uuidIds));
@@ -1409,7 +1409,7 @@ export async function getDeliveriesByIds(ids) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
   if (!db) throw new Error('orderRepo.getDeliveriesByIds: postgres backend not configured');
   const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
-  const uuidIds = ids.filter(id => !airtableIds.includes(id));
+  const uuidIds = ids.filter(id => typeof id === 'string' && !id.startsWith('rec'));
   const wheres = [];
   if (airtableIds.length) wheres.push(inArray(deliveries.airtableId, airtableIds));
   if (uuidIds.length)     wheres.push(inArray(deliveries.id, uuidIds));

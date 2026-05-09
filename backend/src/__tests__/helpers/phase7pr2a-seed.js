@@ -65,7 +65,7 @@ export async function seedAllFromFixture(db) {
     florist_hours, marketing_spend, stock_loss_log,
     app_config,
     audit_log, parity_log, sync_log, webhook_log, product_config,
-    feedback_sessions
+    feedback_sessions, feedback_reports
     RESTART IDENTITY CASCADE`);
 
   // ── STOCK ──────────────────────────────────────────────────────────────────
