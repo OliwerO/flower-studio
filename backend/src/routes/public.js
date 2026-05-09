@@ -4,8 +4,7 @@
 // well within Airtable's 5 req/sec limit even under traffic spikes.
 
 import { Router } from 'express';
-import * as db from '../services/airtable.js';
-import { TABLES } from '../config/airtable.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import { getConfig, getActiveSeasonalCategory, getActiveSeasonalSlots } from '../services/configService.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 
@@ -40,10 +39,7 @@ router.get('/products', cached('products', async () => {
   const rows = await productConfigRepo.list({ activeOnly: true });
 
   // Also fetch stock quantities for inStock check
-  const stockRows = await db.list(TABLES.STOCK, {
-    filterByFormula: '{Active} = TRUE()',
-    fields: ['Display Name', 'Current Quantity'],
-  });
+  const stockRows = await stockRepo.list({ pg: { includeEmpty: true } });
   const stockMap = Object.fromEntries(
     stockRows.map(s => [s['Display Name'], Number(s['Current Quantity'] || 0)])
   );
@@ -138,10 +134,7 @@ router.get('/products', cached('products', async () => {
 // ── GET /api/public/stock-availability ─────────────────────
 // Lightweight stock check — Wix Velo uses this for real-time badge updates.
 router.get('/stock-availability', cached('stock', async () => {
-  const rows = await db.list(TABLES.STOCK, {
-    filterByFormula: '{Active} = TRUE()',
-    fields: ['Display Name', 'Current Quantity'],
-  });
+  const rows = await stockRepo.list({ pg: { includeEmpty: true } });
 
   return {
     items: rows.map(r => ({
