@@ -153,7 +153,6 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -189,8 +188,8 @@ export default function OrderDetailPage() {
     }
   }
 
-  // Termination flow — cancel paths (cancelWithReturn, cancelOnly, requestCancel, dismiss).
-  // Shared seam via useOrderTerminationFlow; CLAUDE.md Pitfall #7.
+  // Termination flow — cancel + delete paths behind shared seam.
+  // CLAUDE.md Pitfall #7: all three termination sites use this hook.
   // cancelOnly note: hook does NOT toast on success — onSuccess shows t.updated here
   // to preserve the user-visible confirmation that the state changed.
   const term = useOrderTerminationFlow({
@@ -198,7 +197,12 @@ export default function OrderDetailPage() {
     apiClient: client,
     showToast,
     t,
-    onSuccess: async ({ withStockReturn }) => {
+    onSuccess: async ({ kind, withStockReturn }) => {
+      if (kind === 'delete') {
+        // Delete hook already toasted; navigate away — record is gone.
+        navigate('/orders');
+        return;
+      }
       const res = await client.get(`/orders/${id}`);
       setOrder(res.data);
       if (!withStockReturn) {
@@ -208,23 +212,6 @@ export default function OrderDetailPage() {
       }
     },
   });
-
-  async function handleDelete() {
-    setSaving(true);
-    try {
-      const res = await client.delete(`/orders/${id}`);
-      const returned = res.data.returnedItems || [];
-      const summary = returned.length > 0
-        ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
-        : '';
-      showToast(`${t.orderDeleted || 'Order deleted'}${summary ? '. ' + summary : ''}`, 'success');
-      navigate('/orders');
-    } catch (err) {
-      showToast(err.response?.data?.error || t.updateError || 'Failed to delete order.', 'error');
-      setConfirmDelete(false);
-      setSaving(false);
-    }
-  }
 
   // Patch the linked delivery record (address, recipient, fee, driver assignment).
   // Mirrors OrderCard.patchDelivery so the full-page detail and the list card stay in sync.
@@ -634,7 +621,9 @@ export default function OrderDetailPage() {
                     />
                   );
                 })()}
-                {term.confirmOpen && <OrderTerminationConfirm flow={term} t={t} />}
+                {term.confirmOpen && term.pendingKind === 'cancel' && (
+                  <OrderTerminationConfirm flow={term} t={t} />
+                )}
               </div>
             </div>
 
@@ -756,39 +745,18 @@ export default function OrderDetailPage() {
               )}
             </div>
 
-            {/* Danger zone — owner only. Two-tap delete. */}
+            {/* Danger zone — owner only. Delete via shared termination seam. */}
             {isOwner && (
               <div className="pt-4 border-t border-dashed border-gray-200">
-                {!confirmDelete ? (
-                  <button
-                    onClick={() => setConfirmDelete(true)}
-                    disabled={saving}
-                    className="w-full py-2.5 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
-                  >
-                    🗑 {t.deleteOrder || 'Delete order'}
-                  </button>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-ios-red font-semibold text-center">
-                      {t.deleteOrderConfirm || 'Delete this order permanently? This cannot be undone.'}
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleDelete}
-                        disabled={saving}
-                        className="flex-1 py-2.5 rounded-xl bg-ios-red text-white text-sm font-semibold active-scale disabled:opacity-50"
-                      >
-                        🗑 {t.deleteOrderConfirmYes || 'Delete permanently'}
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(false)}
-                        disabled={saving}
-                        className="flex-1 py-2.5 rounded-xl bg-gray-100 text-ios-label text-sm font-medium active-scale"
-                      >
-                        {t.cancel}
-                      </button>
-                    </div>
-                  </div>
+                <button
+                  onClick={() => term.requestDelete()}
+                  disabled={term.saving || term.confirmOpen}
+                  className="w-full py-2.5 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
+                >
+                  🗑 {t.deleteOrder || 'Delete order'}
+                </button>
+                {term.confirmOpen && term.pendingKind === 'delete' && (
+                  <OrderTerminationConfirm flow={term} t={t} allowDelete={isOwner} />
                 )}
               </div>
             )}
