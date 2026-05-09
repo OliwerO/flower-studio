@@ -10,7 +10,6 @@ import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
-import { listByIds } from '../utils/batchQuery.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 
 // ── Side-effect helpers ──
@@ -455,9 +454,7 @@ export async function sendDeliveryCompleteAlert(orderId) {
         ? db.getById(TABLES.DELIVERIES, deliveryId).catch(() => null)
         : Promise.resolve(null),
       lineIds.length > 0
-        ? listByIds(TABLES.ORDER_LINES, lineIds, {
-            fields: ['Flower Name', 'Quantity'],
-          }).catch(() => [])
+        ? orderRepo.getLinesByIds(lineIds).catch(() => [])
         : Promise.resolve([]),
     ]);
 
@@ -505,7 +502,7 @@ export async function cancelWithStockReturn(orderId) {
   const returnedItems = [];
 
   if (lineIds.length > 0) {
-    const lines = await listByIds(TABLES.ORDER_LINES, lineIds);
+    const lines = await orderRepo.getLinesByIds(lineIds);
     for (const line of lines) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);
@@ -564,7 +561,7 @@ export async function deleteOrder(orderId) {
 
   // 1. Return stock for non-terminal orders.
   if (!isTerminal && lineIds.length > 0) {
-    const lines = await listByIds(TABLES.ORDER_LINES, lineIds);
+    const lines = await orderRepo.getLinesByIds(lineIds);
     for (const line of lines) {
       const stockId = line['Stock Item']?.[0];
       const qty = Number(line.Quantity || 0);

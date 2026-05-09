@@ -1385,6 +1385,41 @@ export async function getLinesForVelocity(dateFrom, dateTo) {
   return rows;
 }
 
+// Bulk-fetch order lines by their own ids (mixed Airtable recXXX or PG uuid).
+// Replaces utils/batchQuery.js#listByIds(TABLES.ORDER_LINES, ...) at orders.js
+// + orderService.js call sites. Returns wire-format records (bracket keys) so
+// existing consumers don't need shape adapters.
+export async function getLinesByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (!db) throw new Error('orderRepo.getLinesByIds: postgres backend not configured');
+  const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
+  const uuidIds = ids.filter(id => !airtableIds.includes(id));
+  const wheres = [];
+  if (airtableIds.length) wheres.push(inArray(orderLines.airtableId, airtableIds));
+  if (uuidIds.length)     wheres.push(inArray(orderLines.id, uuidIds));
+  if (wheres.length === 0) return [];
+  const filter = wheres.length === 1 ? wheres[0] : or(...wheres);
+  const rows = await db.select().from(orderLines)
+    .where(and(filter, isNull(orderLines.deletedAt)));
+  return rows.map(pgLineToResponse);
+}
+
+// Bulk-fetch deliveries by their own ids. Same pattern as getLinesByIds.
+export async function getDeliveriesByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (!db) throw new Error('orderRepo.getDeliveriesByIds: postgres backend not configured');
+  const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
+  const uuidIds = ids.filter(id => !airtableIds.includes(id));
+  const wheres = [];
+  if (airtableIds.length) wheres.push(inArray(deliveries.airtableId, airtableIds));
+  if (uuidIds.length)     wheres.push(inArray(deliveries.id, uuidIds));
+  if (wheres.length === 0) return [];
+  const filter = wheres.length === 1 ? wheres[0] : or(...wheres);
+  const rows = await db.select().from(deliveries)
+    .where(and(filter, isNull(deliveries.deletedAt)));
+  return rows.map(pgDeliveryToResponse);
+}
+
 // Returns line records for a list of order IDs (UUIDs). Used by
 // orderService.findOrdersNeedingSubstitution() to detect which orders
 // reference an originalStockId after a Substitute is received.
