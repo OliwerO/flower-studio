@@ -16,6 +16,7 @@ function makeProps(overrides = {}) {
     showToast: vi.fn(),
     t: {
       orderCancelled: 'Order cancelled',
+      orderDeleted:   'Order deleted',
       stockReturned:  'Stock returned',
       updateError:    'Update error',
     },
@@ -202,5 +203,120 @@ describe('useOrderTerminationFlow', () => {
       await promise;
     });
     expect(result.current.saving).toBe(false);
+  });
+
+  // ── deleteWithReturn ──────────────────────────────────────────────────────
+
+  it('deleteWithReturn - DELETEs correct endpoint, composes toast with returnedItems, calls onSuccess', async () => {
+    const props = makeProps();
+    props.apiClient.delete.mockResolvedValue({
+      data: {
+        returnedItems: [
+          { flowerName: 'Rose', quantityReturned: 3 },
+          { flowerName: 'Tulip', quantityReturned: 5 },
+        ],
+      },
+    });
+
+    const { result } = renderHook(() => useOrderTerminationFlow(props));
+
+    await act(async () => {
+      await result.current.deleteWithReturn();
+    });
+
+    expect(props.apiClient.delete).toHaveBeenCalledWith(`/orders/${ORDER_ID}`);
+    expect(props.showToast).toHaveBeenCalledWith(
+      'Order deleted. Stock returned: Rose: +3, Tulip: +5',
+      'success',
+    );
+    expect(props.onSuccess).toHaveBeenCalledWith({
+      kind:            'delete',
+      returnedItems:   [
+        { flowerName: 'Rose', quantityReturned: 3 },
+        { flowerName: 'Tulip', quantityReturned: 5 },
+      ],
+      withStockReturn: true,
+    });
+  });
+
+  it('deleteWithReturn - empty returnedItems shows only orderDeleted', async () => {
+    const props = makeProps();
+    props.apiClient.delete.mockResolvedValue({
+      data: { returnedItems: [] },
+    });
+
+    const { result } = renderHook(() => useOrderTerminationFlow(props));
+
+    await act(async () => {
+      await result.current.deleteWithReturn();
+    });
+
+    expect(props.showToast).toHaveBeenCalledWith('Order deleted', 'success');
+    expect(props.onSuccess).toHaveBeenCalledWith({
+      kind:            'delete',
+      returnedItems:   [],
+      withStockReturn: true,
+    });
+  });
+
+  it('deleteWithReturn - error path shows toast and calls onError', async () => {
+    const props = makeProps();
+    const apiErr = { response: { data: { error: 'Cannot delete delivered order' } } };
+    props.apiClient.delete.mockRejectedValue(apiErr);
+
+    const { result } = renderHook(() => useOrderTerminationFlow(props));
+
+    await act(async () => {
+      await result.current.deleteWithReturn();
+    });
+
+    expect(props.showToast).toHaveBeenCalledWith('Cannot delete delivered order', 'error');
+    expect(props.onError).toHaveBeenCalledWith(apiErr);
+    expect(props.onSuccess).not.toHaveBeenCalled();
+  });
+
+  it('deleteWithReturn - error without response falls back to t.updateError', async () => {
+    const props = makeProps();
+    props.apiClient.delete.mockRejectedValue({});
+
+    const { result } = renderHook(() => useOrderTerminationFlow(props));
+
+    await act(async () => {
+      await result.current.deleteWithReturn();
+    });
+
+    expect(props.showToast).toHaveBeenCalledWith('Update error', 'error');
+  });
+
+  // ── requestDelete ─────────────────────────────────────────────────────────
+
+  it('requestDelete sets confirmOpen=true, pendingKind=delete', () => {
+    const props = makeProps();
+    const { result } = renderHook(() => useOrderTerminationFlow(props));
+
+    expect(result.current.pendingKind).toBeNull();
+
+    act(() => {
+      result.current.requestDelete();
+    });
+
+    expect(result.current.confirmOpen).toBe(true);
+    expect(result.current.pendingKind).toBe('delete');
+  });
+
+  it('requestCancel then requestDelete then dismiss - pendingKind cycles correctly, no bleed', () => {
+    const props = makeProps();
+    const { result } = renderHook(() => useOrderTerminationFlow(props));
+
+    act(() => { result.current.requestCancel(); });
+    expect(result.current.pendingKind).toBe('cancel');
+
+    act(() => { result.current.requestDelete(); });
+    expect(result.current.pendingKind).toBe('delete');
+    expect(result.current.confirmOpen).toBe(true);
+
+    act(() => { result.current.dismiss(); });
+    expect(result.current.pendingKind).toBeNull();
+    expect(result.current.confirmOpen).toBe(false);
   });
 });
