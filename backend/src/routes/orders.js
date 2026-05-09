@@ -599,11 +599,7 @@ router.post('/:id/swap-bouquet-line', async (req, res, next) => {
     const oldQty = Number(line.Quantity || 0);
     const qty = newQty != null ? Number(newQty) : oldQty;
 
-    // Fetch substitute stock item for cost/sell/name. Stock still routes
-    // through airtable.getById here because the route doesn't yet have a
-    // stockRepo.getById helper; the airtable mock + STOCK_BACKEND=shadow keep
-    // both stores in sync, so this read is fine.
-    const substituteStock = await db.getById(TABLES.STOCK, toStockItemId);
+    const substituteStock = await stockRepo.getById(toStockItemId);
 
     // Return stock to original (undo the deduction). Route through stockRepo
     // so the adjustment lands in Postgres when STOCK_BACKEND=shadow|postgres.
