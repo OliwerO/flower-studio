@@ -27,17 +27,6 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-// stockRepo still imports these (Task 2 removes them). Mock so the real
-// Airtable client never initialises during the test run.
-vi.mock('../services/airtable.js', () => ({
-  list: vi.fn(), getById: vi.fn(), create: vi.fn(), update: vi.fn(),
-  deleteRecord: vi.fn(), atomicStockAdjust: vi.fn(),
-}));
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: { STOCK: 'tblStock', ORDERS: 'tblOrders', ORDER_LINES: 'tblLines', DELIVERIES: 'tblDelivery' },
-}));
-
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 
