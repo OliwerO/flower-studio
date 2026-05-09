@@ -27,21 +27,20 @@ function timeAgo(iso) {
 
 export default function PremadeBouquetList({ onMatchClicked }) {
   const { showToast } = useToast();
-  const [bouquets, setBouquets] = useState([]);
-  const [loading, setLoading] = useState(true);
+  // null = not yet loaded (show spinner); [] or [...] = loaded (render list).
+  // Background polls only call setBouquets — they never touch a loading flag,
+  // so the create modal is never unmounted mid-composition.
+  const [bouquets, setBouquets] = useState(null);
   const [expandedId, setExpanded] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
 
   const fetchBouquets = useCallback(async () => {
-    setLoading(true);
     try {
       const res = await client.get('/premade-bouquets');
       setBouquets(res.data || []);
     } catch (err) {
       console.error('Failed to fetch premade bouquets:', err);
       showToast(err.response?.data?.error || t.error, 'error');
-    } finally {
-      setLoading(false);
     }
   }, [showToast]);
 
@@ -65,7 +64,7 @@ export default function PremadeBouquetList({ onMatchClicked }) {
     }
   }
 
-  if (loading) {
+  if (bouquets === null) {
     return (
       <div className="text-center py-12 text-ios-tertiary">{t.loading || 'Loading...'}</div>
     );
