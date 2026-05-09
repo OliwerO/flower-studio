@@ -40,6 +40,18 @@ _Avoid_: Shipment, dispatch
 Any person with an order history. Created on first order; looked up by name or contact details on subsequent orders to avoid duplicates.
 _Avoid_: Client, buyer, user
 
+**Termination**:
+A terminal action that ends an Order's lifecycle. Two kinds: **Cancellation** (Status flips to Cancelled, the Order remains in the system, can be reopened) and **Deletion** (record removed, irreversible, Owner-only). Both kinds offer an explicit choice: return Stems to inventory or leave them deducted (presumed used or lost).
+_Avoid_: Closure, ending, cancel-or-delete
+
+**Cancellation**:
+Marking an Order as Cancelled. The Order remains visible in lists and can be reopened (Cancelled → New). Stems are not auto-returned — the Owner or Florist explicitly chooses *Cancel + return stock* or *Cancel only* at the moment of cancellation. Pickup, delivery, and any other Order kind cancel through the same flow.
+_Avoid_: Cancel (verb form is fine; the noun is Cancellation)
+
+**Deletion**:
+Permanent removal of an Order record. Owner-only. Returned Stems (if any) are computed and surfaced in the success toast. Used when an Order was created in error, not when fulfilment is cancelled.
+_Avoid_: Removal, purge
+
 **Supplier**:
 A flower wholesaler or market vendor Blossom buys stock from. A managed list shared across Stock Items and Stock Orders — new entries are added as needed but duplicates are avoided.
 _Avoid_: Vendor, distributor

@@ -61,3 +61,7 @@ export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
 export { default as BatchPickerModal } from './components/BatchPickerModal.jsx';
 export { findAllMatchingVariety } from './hooks/useOrderEditing.js';
 export { default as FeedbackModal } from './components/FeedbackModal.jsx';
+
+// Order termination seam (cancel + delete shared hook + confirm UI)
+export { default as useOrderTerminationFlow } from './hooks/useOrderTerminationFlow.js';
+export { default as OrderTerminationConfirm } from './components/OrderTerminationConfirm.jsx';

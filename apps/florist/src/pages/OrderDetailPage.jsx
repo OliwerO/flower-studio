@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -153,8 +153,6 @@ export default function OrderDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmCancel, setConfirmCancel] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -190,47 +188,30 @@ export default function OrderDetailPage() {
     }
   }
 
-  // Cancel an order with explicit choice on stock. Mirrors OrderCard.handleCancel
-  // and dashboard OrderDetailPanel.handleCancel — keep the three in lockstep.
-  async function handleCancel(returnStock) {
-    setSaving(true);
-    try {
-      if (returnStock) {
-        const res = await client.post(`/orders/${id}/cancel-with-return`);
-        const returned = res.data.returnedItems || [];
-        const summary = returned.length > 0
-          ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
-          : '';
-        showToast(`${t.orderCancelled}${summary ? '. ' + t.stockReturned + ': ' + summary : ''}`, 'success');
-        const fresh = await client.get(`/orders/${id}`);
-        setOrder(fresh.data);
-      } else {
-        await patch({ 'Status': 'Cancelled' });
+  // Termination flow — cancel + delete paths behind shared seam.
+  // CLAUDE.md Pitfall #7: all three termination sites use this hook.
+  // cancelOnly note: hook does NOT toast on success — onSuccess shows t.updated here
+  // to preserve the user-visible confirmation that the state changed.
+  const term = useOrderTerminationFlow({
+    orderId:   id,
+    apiClient: client,
+    showToast,
+    t,
+    onSuccess: async ({ kind, withStockReturn }) => {
+      if (kind === 'delete') {
+        // Delete hook already toasted; navigate away — record is gone.
+        navigate('/orders');
+        return;
       }
-    } catch (err) {
-      showToast(err.response?.data?.error || t.updateError || 'Failed to cancel.', 'error');
-    } finally {
-      setSaving(false);
-      setConfirmCancel(false);
-    }
-  }
-
-  async function handleDelete() {
-    setSaving(true);
-    try {
-      const res = await client.delete(`/orders/${id}`);
-      const returned = res.data.returnedItems || [];
-      const summary = returned.length > 0
-        ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
-        : '';
-      showToast(`${t.orderDeleted || 'Order deleted'}${summary ? '. ' + summary : ''}`, 'success');
-      navigate('/orders');
-    } catch (err) {
-      showToast(err.response?.data?.error || t.updateError || 'Failed to delete order.', 'error');
-      setConfirmDelete(false);
-      setSaving(false);
-    }
-  }
+      const res = await client.get(`/orders/${id}`);
+      setOrder(res.data);
+      if (!withStockReturn) {
+        // cancelOnly path — hook skips toast; show the generic "updated" toast here
+        // so the user sees confirmation (mirrors old patch() success toast).
+        showToast(t.updated, 'success');
+      }
+    },
+  });
 
   // Patch the linked delivery record (address, recipient, fee, driver assignment).
   // Mirrors OrderCard.patchDelivery so the full-page detail and the list card stay in sync.
@@ -630,7 +611,7 @@ export default function OrderDetailPage() {
                         // picks return-stock vs status-only cancel. Same
                         // pattern as OrderCard + dashboard OrderDetailPanel.
                         if (val === 'Cancelled' && current !== 'Cancelled') {
-                          setConfirmCancel(true);
+                          term.requestCancel();
                         } else {
                           patch({ 'Status': val });
                         }
@@ -640,27 +621,8 @@ export default function OrderDetailPage() {
                     />
                   );
                 })()}
-                {confirmCancel && (
-                  <div className="mt-2 ios-card p-3 space-y-2">
-                    <p className="text-xs font-semibold text-ios-red">{t.cancelConfirm}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleCancel(true)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold disabled:opacity-40"
-                      >{t.cancelAndReturn}</button>
-                      <button
-                        onClick={() => handleCancel(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold disabled:opacity-40"
-                      >{t.cancelNoReturn}</button>
-                      <button
-                        onClick={() => setConfirmCancel(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs disabled:opacity-40"
-                      >{t.cancel}</button>
-                    </div>
-                  </div>
+                {term.confirmOpen && term.pendingKind === 'cancel' && (
+                  <OrderTerminationConfirm flow={term} t={t} />
                 )}
               </div>
             </div>
@@ -783,39 +745,18 @@ export default function OrderDetailPage() {
               )}
             </div>
 
-            {/* Danger zone — owner only. Two-tap delete. */}
+            {/* Danger zone — owner only. Delete via shared termination seam. */}
             {isOwner && (
               <div className="pt-4 border-t border-dashed border-gray-200">
-                {!confirmDelete ? (
-                  <button
-                    onClick={() => setConfirmDelete(true)}
-                    disabled={saving}
-                    className="w-full py-2.5 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
-                  >
-                    🗑 {t.deleteOrder || 'Delete order'}
-                  </button>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-xs text-ios-red font-semibold text-center">
-                      {t.deleteOrderConfirm || 'Delete this order permanently? This cannot be undone.'}
-                    </p>
-                    <div className="flex gap-2">
-                      <button
-                        onClick={handleDelete}
-                        disabled={saving}
-                        className="flex-1 py-2.5 rounded-xl bg-ios-red text-white text-sm font-semibold active-scale disabled:opacity-50"
-                      >
-                        🗑 {t.deleteOrderConfirmYes || 'Delete permanently'}
-                      </button>
-                      <button
-                        onClick={() => setConfirmDelete(false)}
-                        disabled={saving}
-                        className="flex-1 py-2.5 rounded-xl bg-gray-100 text-ios-label text-sm font-medium active-scale"
-                      >
-                        {t.cancel}
-                      </button>
-                    </div>
-                  </div>
+                <button
+                  onClick={() => term.requestDelete()}
+                  disabled={term.saving || term.confirmOpen}
+                  className="w-full py-2.5 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
+                >
+                  🗑 {t.deleteOrder || 'Delete order'}
+                </button>
+                {term.confirmOpen && term.pendingKind === 'delete' && (
+                  <OrderTerminationConfirm flow={term} t={t} allowDelete={isOwner} />
                 )}
               </div>
             )}
