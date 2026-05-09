@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -1191,6 +1191,19 @@ function OrderCard({
                   {detail['Notes Original'] && <Row label={t.customerNote} value={detail['Notes Original']} />}
                 </div>
               )}
+
+              {/* ── Bouquet photo — florist+owner upload, owner removes ── */}
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wide text-pink-700 dark:text-pink-400 mb-1">
+                  📸 {t.bouquetPhotoLabel || 'Фото букета'}
+                </p>
+                <BouquetImageEditor
+                  orderId={order.id}
+                  currentUrl={detail['Image URL'] || detail.bouquetImageUrl || ''}
+                  canRemove={isOwner}
+                  onChange={(url) => setDetail(prev => prev ? { ...prev, 'Image URL': url, bouquetImageUrl: url } : prev)}
+                />
+              </div>
 
               {/* ── Owner-authored notes (editable at any stage) ── */}
               <div className="space-y-2">
