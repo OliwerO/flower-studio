@@ -160,10 +160,6 @@ jobs:
       - name: Install lab deps
         run: cd lab && npm install --no-audit --no-fund
 
-      - name: Grant CREATEDB to lab role (for template-DB clone)
-        run: |
-          docker exec ${{ job.services.postgres.id }} psql -U postgres -c "ALTER USER lab CREATEDB;"
-
       - name: Apply migrations to lab DB
         run: npm run lab:migrate
 
