@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -154,7 +154,6 @@ export default function OrderDetailPage() {
   const [error, setError]     = useState(false);
   const [saving, setSaving]   = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmCancel, setConfirmCancel] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -190,30 +189,25 @@ export default function OrderDetailPage() {
     }
   }
 
-  // Cancel an order with explicit choice on stock. Mirrors OrderCard.handleCancel
-  // and dashboard OrderDetailPanel.handleCancel — keep the three in lockstep.
-  async function handleCancel(returnStock) {
-    setSaving(true);
-    try {
-      if (returnStock) {
-        const res = await client.post(`/orders/${id}/cancel-with-return`);
-        const returned = res.data.returnedItems || [];
-        const summary = returned.length > 0
-          ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
-          : '';
-        showToast(`${t.orderCancelled}${summary ? '. ' + t.stockReturned + ': ' + summary : ''}`, 'success');
-        const fresh = await client.get(`/orders/${id}`);
-        setOrder(fresh.data);
-      } else {
-        await patch({ 'Status': 'Cancelled' });
+  // Termination flow — cancel paths (cancelWithReturn, cancelOnly, requestCancel, dismiss).
+  // Shared seam via useOrderTerminationFlow; CLAUDE.md Pitfall #7.
+  // cancelOnly note: hook does NOT toast on success — onSuccess shows t.updated here
+  // to preserve the user-visible confirmation that the state changed.
+  const term = useOrderTerminationFlow({
+    orderId:   id,
+    apiClient: client,
+    showToast,
+    t,
+    onSuccess: async ({ withStockReturn }) => {
+      const res = await client.get(`/orders/${id}`);
+      setOrder(res.data);
+      if (!withStockReturn) {
+        // cancelOnly path — hook skips toast; show the generic "updated" toast here
+        // so the user sees confirmation (mirrors old patch() success toast).
+        showToast(t.updated, 'success');
       }
-    } catch (err) {
-      showToast(err.response?.data?.error || t.updateError || 'Failed to cancel.', 'error');
-    } finally {
-      setSaving(false);
-      setConfirmCancel(false);
-    }
-  }
+    },
+  });
 
   async function handleDelete() {
     setSaving(true);
@@ -630,7 +624,7 @@ export default function OrderDetailPage() {
                         // picks return-stock vs status-only cancel. Same
                         // pattern as OrderCard + dashboard OrderDetailPanel.
                         if (val === 'Cancelled' && current !== 'Cancelled') {
-                          setConfirmCancel(true);
+                          term.requestCancel();
                         } else {
                           patch({ 'Status': val });
                         }
@@ -640,28 +634,7 @@ export default function OrderDetailPage() {
                     />
                   );
                 })()}
-                {confirmCancel && (
-                  <div className="mt-2 ios-card p-3 space-y-2">
-                    <p className="text-xs font-semibold text-ios-red">{t.cancelConfirm}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleCancel(true)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold disabled:opacity-40"
-                      >{t.cancelAndReturn}</button>
-                      <button
-                        onClick={() => handleCancel(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold disabled:opacity-40"
-                      >{t.cancelNoReturn}</button>
-                      <button
-                        onClick={() => setConfirmCancel(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs disabled:opacity-40"
-                      >{t.cancel}</button>
-                    </div>
-                  </div>
-                )}
+                {term.confirmOpen && <OrderTerminationConfirm flow={term} t={t} />}
               </div>
             </div>
 
