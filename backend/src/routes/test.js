@@ -62,8 +62,9 @@ router.get('/state', async (_req, res, next) => {
     }
 
     // Build the `airtable` key from the fixture JSON so the E2E assertions
-    // that check `state.body.airtable.tblMockXxx.length` keep passing without
-    // reading from the in-memory airtable-mock. The fixture is the contract.
+    // that check `state.body.airtable.tblMockXxx.length` keep passing.
+    // The fixture file at __fixtures__/airtable-test-base.json is the contract
+    // (filename kept for now; rename is a future cosmetic PR).
     const fixture = loadFixture();
     const airtable = {};
     for (const [key, rows] of Object.entries(fixture)) {

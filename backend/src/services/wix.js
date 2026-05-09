@@ -6,12 +6,10 @@
 // authoritative order data by fetching /ecom/v1/orders/:id from Wix right
 // after receiving the webhook — that's the canonical shape we parse against.
 
-import * as db from './airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
-import { TABLES } from '../config/airtable.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
 import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
@@ -144,8 +142,7 @@ export async function processWixOrder(payload) {
     log('1-PARSE', `Wix Order ID: ${wixOrderId}`);
 
     // 2. Dedup — check if we already processed this order. Goes through
-    // orderRepo so PG-mode picks up the partial-unique index on wix_order_id;
-    // airtable mode falls back to the existing filterByFormula path.
+    // orderRepo which uses the partial-unique index on wix_order_id.
     const existing = await orderRepo.findByWixOrderId(wixOrderId);
     if (existing) {
       log('2-DEDUP', `Already exists as ${existing.id} — skipping`);
@@ -499,23 +496,8 @@ export async function reprocessWixOrder(wixOrderId, { force = false, actor = nul
     }
   }
 
-  // Delete the existing order. Postgres mode cascades to lines + delivery via
-  // ON DELETE CASCADE. Airtable mode deletes records individually.
-  if (orderRepo.getBackendMode() === 'postgres') {
-    await orderRepo.deleteOrder(existing._pgId || existing.id, { actor });
-  } else {
-    for (const lineId of lineIds) {
-      await db.deleteRecord(TABLES.ORDER_LINES, lineId).catch(err => {
-        console.warn(`[REPROCESS] delete line ${lineId}:`, err.message);
-      });
-    }
-    for (const delId of deliveryIds) {
-      await db.deleteRecord(TABLES.DELIVERIES, delId).catch(err => {
-        console.warn(`[REPROCESS] delete delivery ${delId}:`, err.message);
-      });
-    }
-    await db.deleteRecord(TABLES.ORDERS, existing.id);
-  }
+  // Delete the existing order. ON DELETE CASCADE removes lines + delivery.
+  await orderRepo.deleteOrder(existing._pgId || existing.id, { actor });
 
   // Re-run the canonical Wix intake pipeline. Dedup won't fire (record was
   // just deleted) so the pipeline fetches fresh data from the Wix API.
