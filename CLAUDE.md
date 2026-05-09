@@ -11,7 +11,7 @@ Operational platform for **Blossom**, a flower studio in Krakow. Each role — f
 - UI language: **Russian** — all visible strings via `t.xxx` from `translations.js`
 
 ## Stack
-- **DB:** Airtable (live) → Postgres (in transition). Phase 3 (Stock) is in shadow week on prod. Phase 4 (Orders) merged but not flipped — read-path migration is the active blocker. See `backend/src/db/README.md` and `BACKLOG.md` pickup checklist. Routes pick the backend via `STOCK_BACKEND` / `ORDER_BACKEND` env flags, default `airtable`. Boot guard rejects mixed modes.
+- **DB:** Postgres (Drizzle ORM, hosted on Railway). Phase 7 PR 2b retired Airtable on 2026-05-09 — historical migration notes in `docs/migration/` archive.
 - **Backend:** Node.js + Express, hosted on Railway
 - **Frontend:** 3 React apps (Vite + Tailwind) on Vercel
 - **Auth:** Stateless PIN via `X-Auth-PIN` header (Owner → all, Florist → orders/stock, Driver → deliveries)
@@ -21,7 +21,7 @@ Operational platform for **Blossom**, a flower studio in Krakow. Each role — f
 
 ## Monorepo Layout
 ```
-backend/            → Express API + Airtable services + integrations
+backend/            → Express API + Postgres repos/services + integrations
 apps/florist/       → Order management, bouquet builder, stock, POs, evaluation, hours (768px+)
 apps/delivery/      → Driver deliveries, PO shopping runs, map navigation (375px+)
 apps/dashboard/     → Full owner control: orders, stock, CRM, finances, products, settings (1024px+)
@@ -35,8 +35,8 @@ From repo root (npm workspaces — install once with `npm install`):
 - `npm run florist`        — Vite dev server for the florist app
 - `npm run dashboard`      — Vite dev server for the dashboard
 - `npm run delivery`       — Vite dev server for the delivery app
-- `npm run harness`        — boot the test backend (mock Airtable + pglite)
-- `npm run test:e2e`       — run the 24-section / 153-assertion API E2E suite (against `npm run harness`)
+- `npm run harness`        — boot the test backend (pglite in-memory)
+- `npm run test:e2e`       — run the 25-section API E2E suite (against `npm run harness`)
 - `npm run test:e2e:ui`    — Playwright UI mode
 
 Backend tests:
@@ -66,14 +66,11 @@ Shared package tests: `cd packages/shared && npx vitest run`.
 - Coverage thresholds are enforced in CI for `packages/shared/utils/` and `packages/shared/hooks/` (80% lines)
 - Run backend tests: `cd backend && npx vitest run`
 
-## Airtable Rules (CRITICAL)
-- Rate limit: **5 req/sec** — always use `p-queue` for concurrency
-- **Always** use `filterByFormula` server-side, never fetch-all-then-filter
-- **NEVER** use `ARRAYJOIN` on linked record fields to match by record ID — it returns display names, not IDs. Query by text fields or pass IDs directly.
-- Price snapshotting: Order Lines COPY cost/sell prices at creation time
-- Field names: match exactly what's in Airtable (case-sensitive)
-- `typecast: true` on create/update calls
-- Stock can go negative — this is intentional (triggers PO demand signals)
+## Postgres Rules
+- Use repos (`orderRepo`, `stockRepo`, etc.); routes must not run raw SQL directly.
+- Use `db.transaction(...)` for multi-row writes — partial commits leave data corrupt.
+- Audit log writes happen inside repo transactions — never write audit rows from routes.
+- Stock can go negative — this is intentional (triggers PO demand signals).
 
 ## Status Workflows (match `backend/src/constants/statuses.js`)
 - **Order (delivery):** New → Ready → Out for Delivery → Delivered
@@ -121,7 +118,7 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 - `BACKLOG.md` — feature tracking, open items, known issues
 - `CHANGELOG.md` — all changes, schema diffs, go-live checklist
 - `backend/src/constants/statuses.js` — single source of truth for all status enums
-- `backend/src/services/airtable.js` — core CRUD with rate limiting
+- `backend/src/repos/` — data-access layer (orderRepo, stockRepo, etc.)
 - `backend/src/services/orderService.js` — order state machine + business logic
 - `backend/src/routes/` — all API endpoints
 - `packages/shared/` — shared contexts, hooks, API client, utils
@@ -173,7 +170,7 @@ For any change > one-line, run `/feature <one-line description>`. Full sequence 
 - Create a git branch per feature/fix using prefixes `feat/ fix/ chore/ docs/ test/`. **Never** use a `claude/*` prefix — Claude-spawned branches with random suffixes turn into a graveyard. Use intent-driven names so a future session knows what was being attempted.
 - **Land or kill within 7 days.** Open a PR (draft is fine) within a day of branching so GitHub tracks the state. Branches that go >100 commits behind master are deleted, not rebased — the work is either re-done from current main or abandoned with a note in BACKLOG.
 - **Update the relevant CLAUDE.md in the same PR** that adds/removes a route, page, service, repo, or shared util. The structure tables in sub-CLAUDE.md files only stay accurate if every PR touches them; drift is what made the 2026-04 audit necessary.
-- **Production only** — there is no dev/staging environment. All work targets the production Airtable base, Railway backend, and Vercel frontends directly. Be careful with destructive operations.
+- **Production only** — there is no dev/staging environment. All work targets the production Postgres DB (Railway), Railway backend, and Vercel frontends directly. Production Postgres is the live DB. Use the `claude_ro` DSN for reads. Vercel previews + Railway preDeployCommand handle deploys. Be careful with destructive operations.
 - **Default to read-only** when poking at prod from a Claude session — use the `claude_ro` DSN for any Postgres read. Escalate to a write-capable token only when the user explicitly approves the specific change.
 - **Railway CLI is installed and authenticated.** Use it directly to diagnose production issues — do not ask the user to run Railway commands. Key commands:
   - `railway logs` — tail recent backend logs (grep for `[FEEDBACK]`, `[PG]`, `[ERROR]`, etc.)
@@ -216,47 +213,10 @@ Every script in `scripts/` and `backend/scripts/` carries one category in a head
 
 | Category | Meaning | Example |
 |---|---|---|
-| SAFE | Read-only or pglite-isolated. Cannot mutate prod. | `backend/scripts/shadow-health.js`, `scripts/airtable-backup.mjs` |
+| SAFE | Read-only or pglite-isolated. Cannot mutate prod. | `backend/scripts/shadow-health.js` |
 | GUARDED | Refuses to run in `NODE_ENV=production` (or only mutates pglite). | `backend/scripts/start-test-backend.js`, anything seeding the test fixture |
-| DESTRUCTIVE | Mutates prod Airtable / Railway PG. Requires explicit owner approval phrase before run. | `scripts/cleanup-test-orders.js`, `backend/scripts/backfill-stock.js` (idempotent but writes prod) |
+| DESTRUCTIVE | Mutates prod Railway PG. Requires explicit owner approval phrase before run. | `scripts/cleanup-test-orders.js`, `backend/scripts/backfill-stock.js` (idempotent but writes prod) |
 | STALE | Pending deletion — kept only because removal isn't free. Never run. | `scripts/create-dev-base.js`, `scripts/setup-dev-base.js` (dev-base path was abandoned) |
-
-## Working During Shadow Windows
-
-A "shadow window" is the 7-day period between flipping a domain to `<DOMAIN>_BACKEND=shadow` (writes go to BOTH Airtable and Postgres, reads still come from Airtable, parity is logged) and flipping it to `postgres` (PG becomes source of truth). It is a runtime mode, **not a code freeze.** Bug fixes and features ship normally — but the constrained domain has rules.
-
-### Phase status check before working
-1. Read the "Migration cutover state" block at the top of `BACKLOG.md`. It records which `*_BACKEND` flag is at which value, and when the shadow window started.
-2. The constrained domain is whichever flag is currently at `shadow`. As of 2026-04-30: **Stock**.
-3. Validate at any time with `CLAUDE_RO_URL='<from railway>' node backend/scripts/shadow-health.js`. Output should say "✓ Shadow-write is healthy. No parity issues to investigate."
-
-### Domain decision table (Stock shadow example — generalises to whichever domain is in shadow)
-
-| You're touching... | Shadow-domain risk | What to do |
-|---|---|---|
-| UI / read-only feature / analytics / new report | None | Ship normally. |
-| A non-shadowed domain (orders, customers, POs, deliveries, hours, marketing, Wix sync) | None | Ship normally. |
-| A bug fix in routes already going through `stockRepo` | Low | Ship — `stockRepo` dispatches to the right store. Add or update an integration test if write semantics change. |
-| A new feature that **writes** to the shadowed domain | Medium | Must use the repo (`stockRepo.update / .create / .atomicAdjust`). **Never** call `airtable.atomicStockAdjust()` directly — it bypasses the shadow path. New write paths require a `*.integration.test.js` exercising them against pglite. |
-| Adding a column to the shadowed table | High — schema drift | See "Schema changes" sequence below. |
-| A backfill / data-migration script | High | Run against prod only with explicit owner approval. Idempotent or it doesn't ship. |
-
-### Schema changes — strict sequence
-A new column on a shadowed entity must land in lockstep across both stores or `parity_log` will fire on every record.
-
-1. **Airtable first** — owner adds the column in Airtable UI (production base). Confirms correct field name + type.
-2. **PG migration** — Drizzle migration (`backend/src/db/migrations/`) adds the column. Commit + deploy.
-3. **Mappers updated in the SAME PR** — `airtableTo*` / `*ToAirtable` in the affected repo (`stockRepo.js`, `orderRepo.js`, etc.). Otherwise reads/writes silently drop the field.
-4. **Wait 24h** — let the next day's writes flow through the new field.
-5. **Re-run shadow-health** — confirm `parity_log` is still 0. THEN start writing the field in business logic (services, routes).
-
-### Discipline during shadow
-- **Don't edit Airtable directly while shadow is on.** Owner-side manual stock edits in the Airtable UI bypass the backend → PG never sees them → next shadow-write reports a divergence that isn't real. If you need to fix Airtable data, do it through the app (florist or dashboard), which routes through `stockRepo`.
-- **Treat parity_log → freeze trigger.** If `parity_log` row count goes 0 → N during a shadow window, freeze merges that touch the constrained domain until root cause is found and parity is restored to 0. The shadow-health agent (Telegram, daily) is the canary.
-- **Don't try to "speed-run" the shadow week.** The 7 clean days exist to catch race conditions, edge-case writes (cancel-with-return, bouquet edit, premade dissolve), and concurrent multi-actor sequences. Cutting it short trades a week of caution for hours of incident.
-
-### Mixed-mode is rejected at boot
-The boot guard in `backend/src/index.js` refuses combinations that split a single business operation across two stores. Specifically: `ORDER_BACKEND=postgres` requires `STOCK_BACKEND=postgres`; `ORDER_BACKEND=shadow` requires `STOCK_BACKEND ∈ {shadow, postgres}`. Order creation deducts stock — running orders on PG while stock stays on Airtable would commit one half on each store with no shared transaction. Always cut over the dependency-leaf domain (stock) before its dependents (orders).
 
 ## Change Summaries (IMPORTANT)
 After completing each logical step of work (not just at the end), write a short **owner-friendly summary** explaining:
