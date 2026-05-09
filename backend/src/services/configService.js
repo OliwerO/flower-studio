@@ -228,6 +228,57 @@ function migrateDeliveryTimeSlots() {
   saveConfig().catch(err => console.error('[SETTINGS] Timeslot migration save failed:', err.message));
 }
 
+// Restores values lost when Postgres was seeded from DEFAULTS instead of
+// the live Airtable config during the Phase 7 cutover (2026-05-08).
+// Each field only restores if it still exactly matches the DEFAULT value —
+// meaning the owner hasn't touched it since the reset.
+// Source of truth: backups/2026-05-02/App_Config.json.
+function migrateRestoreAirtableConfig() {
+  // Sorted stringification for array equality checks
+  const sortedStr = arr => JSON.stringify([...arr].sort());
+
+  const patches = {};
+
+  if (config.targetMarkup === 2.2)
+    patches.targetMarkup = 2.5;
+
+  if (config.freeDeliveryThreshold === 300)
+    patches.freeDeliveryThreshold = 600;
+
+  const defaultSuppliers = ['Stojek', '4f', 'Stefan', 'Mateusz', 'Other'];
+  if (sortedStr(config.suppliers || []) === sortedStr(defaultSuppliers))
+    patches.suppliers = ['4f', 'Arek', 'Bisping', 'Mateusz', 'Other', 'OZ', 'Pani Marysia', 'Stefan', 'Stojek'];
+
+  const defaultCategories = ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'];
+  if (sortedStr(config.stockCategories || []) === sortedStr(defaultCategories))
+    patches.stockCategories = [
+      'Accessories', 'Dahlias', 'Dianthus', 'Freesias', 'Greenery',
+      'Hydrangeas', 'Lisianthus', 'Other', 'Oxypetalum', 'Ranunculus',
+      'Red Roses', 'Roses', 'Seasonal', 'Tulips',
+    ];
+
+  const defaultPayment = ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'];
+  if (sortedStr(config.paymentMethods || []) === sortedStr(defaultPayment))
+    patches.paymentMethods = ['Cash', 'Mbank', 'Monobank', 'PayPal', 'Revolut', 'RUB', 'Stripe', 'TwojStartUp'];
+
+  const defaultSources = ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'];
+  if (sortedStr(config.orderSources || []) === sortedStr(defaultSources))
+    patches.orderSources = ['Facebook', 'Flowwow', 'In-store', 'Instagram', 'Other', 'Phone', 'Telegram', 'WhatsApp', 'Wix'];
+
+  const defaultFlorists = ['Anya', 'Daria'];
+  if (sortedStr(config.floristNames || []) === sortedStr(defaultFlorists)) {
+    patches.floristNames = ['Sasha'];
+    // Only restore rates if floristNames was also reset — avoid stomping manual edits
+    if (Object.keys(config.floristRates || {}).length === 0)
+      patches.floristRates = { Sasha: { Standard: 33 } };
+  }
+
+  if (Object.keys(patches).length === 0) return;
+  console.log('[SETTINGS] Restoring Airtable config lost during Phase 7 cutover:', Object.keys(patches).join(', '));
+  Object.assign(config, patches);
+  saveConfig().catch(err => console.error('[SETTINGS] Airtable config restore failed:', err.message));
+}
+
 async function saveConfig(before) {
   try {
     await appConfigRepo.set('config', config);
@@ -258,6 +309,7 @@ async function loadConfig() {
       migrateFloristRates();
       migrateSeasonalSlots();
       migrateDeliveryTimeSlots();
+      migrateRestoreAirtableConfig();
       console.log('[SETTINGS] Config loaded from Postgres');
     } else {
       await appConfigRepo.set('config', DEFAULTS);
