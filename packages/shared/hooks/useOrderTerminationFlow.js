@@ -91,8 +91,40 @@ export default function useOrderTerminationFlow({
     if (mountedRef.current) setSaving(false);
   }, [orderId, apiClient, showToast, t, onSuccess, onError]);
 
+  const deleteWithReturn = useCallback(async () => {
+    setSaving(true);
+    try {
+      const res = await apiClient.delete(`/orders/${orderId}`);
+      const returnedItems = res.data?.returnedItems || [];
+      const summary = buildReturnSummary(returnedItems);
+      const msg = summary
+        ? `${t.orderDeleted}. ${t.stockReturned}: ${summary}`
+        : t.orderDeleted;
+      showToast(msg, 'success');
+      if (mountedRef.current) {
+        setConfirmOpen(false);
+        setPendingKind(null);
+        onSuccess?.({ kind: 'delete', returnedItems, withStockReturn: true });
+      }
+    } catch (err) {
+      const msg = err.response?.data?.error || t.updateError;
+      showToast(msg, 'error');
+      if (onError) {
+        onError(err);
+      }
+      if (mountedRef.current) setSaving(false);
+      return;
+    }
+    if (mountedRef.current) setSaving(false);
+  }, [orderId, apiClient, showToast, t, onSuccess, onError]);
+
   const requestCancel = useCallback(() => {
     setPendingKind('cancel');
+    setConfirmOpen(true);
+  }, []);
+
+  const requestDelete = useCallback(() => {
+    setPendingKind('delete');
     setConfirmOpen(true);
   }, []);
 
@@ -106,10 +138,10 @@ export default function useOrderTerminationFlow({
     pendingKind,
     saving,
     requestCancel,
-    // requestDelete — slice 4
+    requestDelete,
     cancelWithReturn,
     cancelOnly,
-    // deleteWithReturn — slice 4
+    deleteWithReturn,
     dismiss,
   };
 }
