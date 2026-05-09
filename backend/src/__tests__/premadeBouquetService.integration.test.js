@@ -51,7 +51,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  stockRepo._setMode('postgres');
 });
 
 afterEach(async () => {

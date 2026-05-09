@@ -4,13 +4,13 @@
 //   • SQL syntax errors (the unit tests' chainable façade hides them).
 //   • Transaction semantics — that audit_log writes ARE in the same tx
 //     as the entity write (rollback test verifies).
-//   • Concurrent atomicStockAdjust correctness under postgres mode.
+//   • Concurrent adjustQuantity correctness (PG atomic UPDATE).
 //   • Real default values (created_at, updated_at, deleted_at).
-//   • UUID vs airtable_id resolution in postgres mode.
+//   • UUID vs airtable_id resolution.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness, harnessAsDbModule } from './helpers/pgHarness.js';
-import { stock, auditLog, parityLog } from '../db/schema.js';
+import { stock, auditLog } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
 
 // ── Mock the production db module to point at the pglite harness ──
@@ -25,23 +25,6 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-// ── Mock airtable.js — postgres-mode tests don't touch it; shadow-mode
-//    tests stub specific methods inline. ──
-vi.mock('../services/airtable.js', () => ({
-  list: vi.fn(),
-  getById: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-  deleteRecord: vi.fn(),
-  atomicStockAdjust: vi.fn(),
-}));
-
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: { STOCK: 'tblStock' },
-}));
-
-import * as airtable from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 
 let harness;
@@ -50,7 +33,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  stockRepo._setMode('postgres');
 });
 
 afterEach(async () => {
@@ -311,84 +293,3 @@ describe('opts.tx — participate in an outer transaction (Phase 4 contract)', (
   });
 });
 
-describe('shadow mode — Airtable trusted, PG mirrored', () => {
-  beforeEach(() => stockRepo._setMode('shadow'));
-
-  it('create() writes to Airtable then mirrors to PG with audit', async () => {
-    airtable.create.mockResolvedValue({
-      id: 'recShadow1',
-      'Display Name': 'Mirrored Rose',
-      'Current Quantity': 5,
-      Active: true,
-    });
-
-    const out = await stockRepo.create({
-      'Display Name': 'Mirrored Rose',
-      'Current Quantity': 5,
-    }, { actor: { actorRole: 'owner' } });
-
-    // Airtable returned this — repo passes through.
-    expect(out.id).toBe('recShadow1');
-
-    // PG side: row should exist with airtable_id set.
-    const pgRows = await harness.db.select().from(stock);
-    expect(pgRows).toHaveLength(1);
-    expect(pgRows[0].airtableId).toBe('recShadow1');
-    expect(pgRows[0].displayName).toBe('Mirrored Rose');
-
-    // Audit log captured the PG-side write.
-    const audits = await harness.db.select().from(auditLog);
-    expect(audits[0].action).toBe('create');
-    expect(audits[0].actorRole).toBe('owner');
-  });
-
-  it('shadow mode logs parity_log when PG insert throws', async () => {
-    airtable.create.mockResolvedValue({
-      id: 'recShadow2',
-      'Display Name': 'Test',
-      'Current Quantity': 5,
-    });
-
-    // Force PG insert to fail by inserting a duplicate airtable_id first.
-    await harness.db.insert(stock).values({
-      airtableId: 'recShadow2',
-      displayName: 'Pre-existing',
-      currentQuantity: 99,
-    });
-
-    const out = await stockRepo.create({
-      'Display Name': 'Test', 'Current Quantity': 5,
-    });
-
-    // Airtable response still returned — the request didn't fail.
-    expect(out.id).toBe('recShadow2');
-
-    // parity_log captured the PG write failure.
-    const parities = await harness.db.select().from(parityLog);
-    expect(parities).toHaveLength(1);
-    expect(parities[0].kind).toBe('write_failed');
-    expect(parities[0].context.op).toBe('create');
-  });
-
-  it('adjustQuantity in shadow mode mirrors the delta to PG', async () => {
-    airtable.atomicStockAdjust.mockResolvedValue({
-      stockId: 'recShadow3', previousQty: 30, newQty: 25,
-    });
-
-    // Seed PG row first (as backfill would have done).
-    await harness.db.insert(stock).values({
-      airtableId: 'recShadow3',
-      displayName: 'Seeded',
-      currentQuantity: 30,
-    });
-
-    await stockRepo.adjustQuantity('recShadow3', -5, { actor: { actorRole: 'florist' } });
-
-    const [row] = await harness.db.select().from(stock).where(eq(stock.airtableId, 'recShadow3'));
-    expect(row.currentQuantity).toBe(25);
-
-    const audits = await harness.db.select().from(auditLog);
-    const adjustAudit = audits.find(a => a.diff.after?.['Current Quantity'] === 25);
-    expect(adjustAudit).toBeTruthy();
-  });
-});

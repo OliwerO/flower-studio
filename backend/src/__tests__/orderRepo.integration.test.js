@@ -48,7 +48,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  stockRepo._setMode('postgres');
 
   // Seed a couple of stock rows so createOrder has something to deduct from.
   const [s1] = await harness.db.insert(stock).values({

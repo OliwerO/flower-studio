@@ -1,32 +1,12 @@
-// stockRepo tests — pin the persistence-boundary behaviour for the Phase 3
-// SQL migration cutover. We assert all three modes (airtable / shadow /
-// postgres) on the same code paths so swapping STOCK_BACKEND can't quietly
-// change the API the routes depend on.
+// stockRepo tests — pin the persistence-boundary behaviour for the Postgres
+// backend (Phase 7 PR 2b: Airtable fallback branches removed).
 //
-// Mocking strategy: the real airtable.js + db/index.js + db/audit.js are
-// stubbed so no real network or DB calls occur. The Drizzle handle exposes
-// a chainable query-builder façade backed by mock functions; we assert on
-// the methods that were called rather than executing real SQL.
+// Mocking strategy: db/index.js + db/audit.js are stubbed so no real network
+// or DB calls occur. The Drizzle handle exposes a chainable query-builder
+// façade backed by mock functions; we assert on the methods that were called
+// rather than executing real SQL.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// ── airtable.js mock — replaces the legacy single-store path. ──
-vi.mock('../services/airtable.js', () => ({
-  list:               vi.fn(),
-  getById:            vi.fn(),
-  create:             vi.fn(),
-  update:             vi.fn(),
-  deleteRecord:       vi.fn(),
-  atomicStockAdjust:  vi.fn(),
-}));
-
-// ── config/airtable.js mock — TABLES.STOCK becomes a sentinel string. ──
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: {
-    STOCK: 'tblStock',
-  },
-}));
 
 // ── db/audit.js mock — recordAudit captures arguments per call. ──
 vi.mock('../db/audit.js', () => ({
@@ -127,14 +107,12 @@ vi.mock('drizzle-orm', () => {
   };
 });
 
-import * as airtable from '../services/airtable.js';
 import { recordAudit } from '../db/audit.js';
 import * as stockRepo from '../repos/stockRepo.js';
 
 beforeEach(() => {
   vi.clearAllMocks();
   mockDb = makeMockDb();
-  stockRepo._setMode('airtable');
 });
 
 // ─────────────────────────────────────────────────────────────────────
@@ -182,121 +160,24 @@ describe('pgToResponse + responseToPg round-trip', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// Airtable mode (today's behaviour — no PG involvement)
-// ─────────────────────────────────────────────────────────────────────
-
-describe('airtable mode', () => {
-  beforeEach(() => stockRepo._setMode('airtable'));
-
-  it('list() passes filterByFormula straight through to airtable.list', async () => {
-    airtable.list.mockResolvedValue([{ id: 'recA', 'Display Name': 'Tulip' }]);
-    const out = await stockRepo.list({ filterByFormula: '{Active} = TRUE()' });
-    expect(airtable.list).toHaveBeenCalledWith('tblStock', { filterByFormula: '{Active} = TRUE()' });
-    expect(out).toEqual([{ id: 'recA', 'Display Name': 'Tulip' }]);
-  });
-
-  it('create() drops disallowed fields and writes only to Airtable', async () => {
-    airtable.create.mockResolvedValue({ id: 'recA', 'Display Name': 'Lily' });
-    await stockRepo.create({ 'Display Name': 'Lily', BogusField: 'x' });
-    expect(airtable.create).toHaveBeenCalledWith('tblStock', { 'Display Name': 'Lily' });
-    expect(recordAudit).not.toHaveBeenCalled();
-  });
-
-  it('create() throws 400 when Display Name missing', async () => {
-    await expect(stockRepo.create({ Category: 'Roses' }))
-      .rejects.toMatchObject({ statusCode: 400 });
-    expect(airtable.create).not.toHaveBeenCalled();
-  });
-
-  it('update() rejects when no allowed fields survive', async () => {
-    await expect(stockRepo.update('recA', { BogusField: 'x' }))
-      .rejects.toMatchObject({ statusCode: 400 });
-    expect(airtable.update).not.toHaveBeenCalled();
-  });
-
-  it('adjustQuantity() delegates to atomicStockAdjust', async () => {
-    airtable.atomicStockAdjust.mockResolvedValue({ stockId: 'recA', previousQty: 5, newQty: 3 });
-    const r = await stockRepo.adjustQuantity('recA', -2);
-    expect(airtable.atomicStockAdjust).toHaveBeenCalledWith('recA', -2);
-    expect(r).toEqual({ stockId: 'recA', previousQty: 5, newQty: 3 });
-  });
-
-  it('softDelete() sets Active=false in Airtable', async () => {
-    airtable.update.mockResolvedValue({ id: 'recA', Active: false });
-    await stockRepo.softDelete('recA');
-    expect(airtable.update).toHaveBeenCalledWith('tblStock', 'recA', { Active: false });
-  });
-
-  it('restore() throws — restore requires PG-backed mode', async () => {
-    await expect(stockRepo.restore('recA'))
-      .rejects.toMatchObject({ statusCode: 400 });
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// Shadow mode (Airtable trusted, PG best-effort)
-// ─────────────────────────────────────────────────────────────────────
-
-describe('shadow mode', () => {
-  beforeEach(() => stockRepo._setMode('shadow'));
-
-  it('list() reads from Airtable (trusted store) — never touches PG', async () => {
-    airtable.list.mockResolvedValue([{ id: 'recA' }]);
-    const out = await stockRepo.list({ filterByFormula: '{Active}' });
-    expect(airtable.list).toHaveBeenCalled();
-    expect(out).toEqual([{ id: 'recA' }]);
-  });
-
-  it('create() writes Airtable first, then mirrors to PG with audit', async () => {
-    airtable.create.mockResolvedValue({ id: 'recA', 'Display Name': 'Lily', 'Current Quantity': 5 });
-    await stockRepo.create({ 'Display Name': 'Lily', 'Current Quantity': 5 }, {
-      actor: { actorRole: 'florist', actorPinLabel: null },
-    });
-    expect(airtable.create).toHaveBeenCalledWith('tblStock', { 'Display Name': 'Lily', 'Current Quantity': 5 });
-    expect(recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
-      entityType: 'stock',
-      action: 'create',
-      actorRole: 'florist',
-    }));
-  });
-
-  it('create() returns Airtable response even when PG insert throws', async () => {
-    airtable.create.mockResolvedValue({ id: 'recA', 'Display Name': 'Lily' });
-    // Force PG insert to throw by replacing the transaction handler.
-    mockDb.transaction = async () => { throw new Error('PG down'); };
-    const out = await stockRepo.create({ 'Display Name': 'Lily' });
-    expect(out).toEqual({ id: 'recA', 'Display Name': 'Lily' });
-  });
-
-  it('adjustQuantity() defers to atomicStockAdjust for the Airtable side', async () => {
-    airtable.atomicStockAdjust.mockResolvedValue({ stockId: 'recA', previousQty: 10, newQty: 7 });
-    const r = await stockRepo.adjustQuantity('recA', -3);
-    expect(airtable.atomicStockAdjust).toHaveBeenCalledWith('recA', -3);
-    expect(r.newQty).toBe(7);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────
 // Postgres mode
 // ─────────────────────────────────────────────────────────────────────
 
 describe('postgres mode', () => {
   beforeEach(() => {
-    stockRepo._setMode('postgres');
     mockDb._reset();
   });
 
-  it('list() never calls airtable.list', async () => {
+  it('list() never calls airtable (no airtable dependency)', async () => {
     mockDb._setRows([]);
+    // Should complete without error — PG-only path.
     await stockRepo.list({ pg: { active: true } });
-    expect(airtable.list).not.toHaveBeenCalled();
   });
 
   it('create() inserts to PG with audit, returns Airtable-shaped response', async () => {
     const out = await stockRepo.create({ 'Display Name': 'Peony', 'Current Quantity': 12 }, {
       actor: { actorRole: 'owner', actorPinLabel: null },
     });
-    expect(airtable.create).not.toHaveBeenCalled();
     expect(out['Display Name']).toBe('Peony');
     expect(out['Current Quantity']).toBe(12);
     expect(recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -306,13 +187,24 @@ describe('postgres mode', () => {
     }));
   });
 
+  it('create() throws 400 when Display Name missing', async () => {
+    await expect(stockRepo.create({ Category: 'Roses' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it('update() rejects when no allowed fields survive', async () => {
+    await expect(stockRepo.update('recA', { BogusField: 'x' }))
+      .rejects.toMatchObject({ statusCode: 400 });
+  });
+
   it('softDelete() throws 404 when row not found', async () => {
     mockDb._setRows([]);
     await expect(stockRepo.softDelete('recMissing'))
       .rejects.toMatchObject({ statusCode: 404 });
   });
 
-  it('restore() refuses without backend mode (already covered) — succeeds with audit in postgres mode', async () => {
+  it('restore() succeeds with audit in postgres mode', async () => {
     mockDb._setRows([{ id: 'pg-1', airtableId: 'recA', displayName: 'X', deletedAt: new Date(), active: false, currentQuantity: 0, deadStems: 0 }]);
     await stockRepo.restore('recA', { actor: { actorRole: 'owner' } });
     expect(recordAudit).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
@@ -320,56 +212,8 @@ describe('postgres mode', () => {
       actorRole: 'owner',
     }));
   });
-});
 
-// ─────────────────────────────────────────────────────────────────────
-// valuesEqual (parity diff helper)
-// ─────────────────────────────────────────────────────────────────────
-
-describe('valuesEqual', () => {
-  const { valuesEqual } = stockRepo._internal;
-
-  it('treats null / undefined / empty string as equal', () => {
-    expect(valuesEqual(null, undefined)).toBe(true);
-    expect(valuesEqual('', null)).toBe(true);
-    expect(valuesEqual(undefined, '')).toBe(true);
-  });
-
-  it('compares numbers strictly', () => {
-    expect(valuesEqual(5, 5)).toBe(true);
-    expect(valuesEqual(5, 6)).toBe(false);
-  });
-
-  it('compares booleans strictly', () => {
-    expect(valuesEqual(true, true)).toBe(true);
-    expect(valuesEqual(true, false)).toBe(false);
-  });
-
-  it('serialises arrays for content equality', () => {
-    expect(valuesEqual(['a', 'b'], ['a', 'b'])).toBe(true);
-    expect(valuesEqual(['a', 'b'], ['b', 'a'])).toBe(false);
-  });
-
-  it('does not coerce string-vs-number — Airtable always returns numbers for numeric fields', () => {
-    // Locks the strict-equality contract. A string-shaped quantity from
-    // either store would be a real bug worth surfacing, not papering over.
-    expect(valuesEqual('5', 5)).toBe(false);
-  });
-});
-
-// ─────────────────────────────────────────────────────────────────────
-// Mode getter / setter
-// ─────────────────────────────────────────────────────────────────────
-
-describe('mode helpers', () => {
-  it('_setMode + getBackendMode round-trip', () => {
-    stockRepo._setMode('shadow');
-    expect(stockRepo.getBackendMode()).toBe('shadow');
-    stockRepo._setMode('postgres');
+  it('getBackendMode() always returns postgres', () => {
     expect(stockRepo.getBackendMode()).toBe('postgres');
-  });
-
-  it('_setMode rejects invalid values', () => {
-    expect(() => stockRepo._setMode('mongo')).toThrow();
   });
 });
