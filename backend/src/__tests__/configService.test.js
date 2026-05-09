@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../repos/appConfigRepo.js', () => ({
   get: vi.fn().mockResolvedValue(null),
@@ -33,6 +33,41 @@ function setSlots(slot1Overrides = {}, slot2Overrides = {}) {
 beforeEach(() => {
   vi.useRealTimers();
   setSlots();
+});
+
+describe('deliveryTimeSlots defaults and migration', () => {
+  it('DEFAULTS include 08:00-10:00 and 18:00-20:00', () => {
+    // The module boots with appConfigRepo.get=null, so config is seeded from DEFAULTS.
+    const slots = getConfig('deliveryTimeSlots');
+    expect(slots).toContain('08:00-10:00');
+    expect(slots).toContain('18:00-20:00');
+  });
+
+  it('migrateDeliveryTimeSlots restores missing slots when stored config only has 4', async () => {
+    vi.resetModules();
+    vi.doMock('../repos/appConfigRepo.js', () => ({
+      get: vi.fn().mockResolvedValue({
+        deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+      nextOrderId: vi.fn().mockResolvedValue('202605-001'),
+    }));
+    vi.doMock('../repos/productConfigRepo.js', () => ({ list: vi.fn().mockResolvedValue([]) }));
+    vi.doMock('../services/telegram.js', () => ({ sendAlert: vi.fn() }));
+    vi.doMock('../db/index.js', () => ({ db: {} }));
+    vi.doMock('../db/audit.js', () => ({ recordAudit: vi.fn() }));
+
+    const { getConfig: getConfigFresh } = await import('../services/configService.js');
+    // loadConfig is async; give it one tick to complete
+    await new Promise(r => setTimeout(r, 50));
+
+    const slots = getConfigFresh('deliveryTimeSlots');
+    expect(slots).toContain('08:00-10:00');
+    expect(slots).toContain('18:00-20:00');
+    expect(slots.length).toBeGreaterThanOrEqual(6);
+  });
+
+  afterEach(() => { vi.resetModules(); });
 });
 
 describe('getActiveSeasonalSlots', () => {

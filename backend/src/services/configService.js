@@ -61,7 +61,7 @@ const DEFAULTS = {
   ],
   freeDeliveryThreshold: 300,
   expressSurcharge: 20,
-  deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+  deliveryTimeSlots: ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00', '18:00-20:00'],
   availableTodayCutoff: '18:00',
   availableTodayTimezone: 'Europe/Warsaw',
   cutoffReminderLastDate: null,
@@ -218,6 +218,16 @@ function migrateSeasonalSlots() {
   saveConfig().catch(err => console.error('[SETTINGS] Slot migration save failed:', err.message));
 }
 
+function migrateDeliveryTimeSlots() {
+  const required = ['08:00-10:00', '18:00-20:00'];
+  const stored = config.deliveryTimeSlots || [];
+  const missing = required.filter(s => !stored.includes(s));
+  if (missing.length === 0) return;
+  console.log(`[SETTINGS] Restoring missing timeslots: ${missing.join(', ')}`);
+  config.deliveryTimeSlots = [...stored, ...missing].sort();
+  saveConfig().catch(err => console.error('[SETTINGS] Timeslot migration save failed:', err.message));
+}
+
 async function saveConfig(before) {
   try {
     await appConfigRepo.set('config', config);
@@ -247,6 +257,7 @@ async function loadConfig() {
       migrateAutoCategoryTranslations();
       migrateFloristRates();
       migrateSeasonalSlots();
+      migrateDeliveryTimeSlots();
       console.log('[SETTINGS] Config loaded from Postgres');
     } else {
       await appConfigRepo.set('config', DEFAULTS);
