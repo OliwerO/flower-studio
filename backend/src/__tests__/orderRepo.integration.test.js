@@ -27,20 +27,6 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-vi.mock('../services/airtable.js', () => ({
-  list: vi.fn(),
-  getById: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-  deleteRecord: vi.fn(),
-  atomicStockAdjust: vi.fn(),
-}));
-
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: { STOCK: 'tblStock', ORDERS: 'tblOrders', ORDER_LINES: 'tblLines', DELIVERIES: 'tblDelivery' },
-}));
-
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 
@@ -51,8 +37,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  orderRepo._setMode('postgres');
-  stockRepo._setMode('postgres');
 
   // Seed a couple of stock rows so createOrder has something to deduct from.
   const [s1] = await harness.db.insert(stock).values({
@@ -84,7 +68,7 @@ const config = {
 // createOrder — the headline transactional rewrite
 // ─────────────────────────────────────────────────────────────────────
 
-describe('createOrder (postgres mode)', () => {
+describe('createOrder', () => {
   it('inserts order + lines + delivery + adjusts stock atomically', async () => {
     const { order, orderLines: createdLines, delivery } = await orderRepo.createOrder({
       customer: 'recCust1',
@@ -209,7 +193,7 @@ describe('createOrder (postgres mode)', () => {
 // transitionStatus — state machine + delivery cascade
 // ─────────────────────────────────────────────────────────────────────
 
-describe('transitionStatus (postgres mode)', () => {
+describe('transitionStatus', () => {
   async function seedOrder() {
     return await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'X', deliveryType: 'Delivery',
@@ -256,7 +240,7 @@ describe('transitionStatus (postgres mode)', () => {
 // cancelWithStockReturn — cancel + N stock returns + delivery cascade
 // ─────────────────────────────────────────────────────────────────────
 
-describe('cancelWithStockReturn (postgres mode)', () => {
+describe('cancelWithStockReturn', () => {
   it('returns each line qty to stock + cancels order + cascades delivery', async () => {
     const { order } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'Will cancel', deliveryType: 'Delivery',
@@ -310,7 +294,7 @@ describe('cancelWithStockReturn (postgres mode)', () => {
 // deleteOrder — hard delete with ON DELETE CASCADE
 // ─────────────────────────────────────────────────────────────────────
 
-describe('deleteOrder (postgres mode)', () => {
+describe('deleteOrder', () => {
   it('deletes order + cascades lines + delivery via FK', async () => {
     const { order } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'Will delete', deliveryType: 'Delivery',
@@ -360,7 +344,7 @@ describe('deleteOrder (postgres mode)', () => {
 // editBouquetLines — add / update / remove with stock adjustments
 // ─────────────────────────────────────────────────────────────────────
 
-describe('editBouquetLines (postgres mode)', () => {
+describe('editBouquetLines', () => {
   it('adding a new line deducts stock atomically', async () => {
     const { order } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'X', deliveryType: 'Pickup',
@@ -445,7 +429,7 @@ describe('editBouquetLines (postgres mode)', () => {
 // list + getById
 // ─────────────────────────────────────────────────────────────────────
 
-describe('list + getById (postgres mode)', () => {
+describe('list + getById', () => {
   it('list filters by status', async () => {
     await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'A', deliveryType: 'Pickup',

@@ -54,15 +54,14 @@ router.get('/entities', (_req, res) => {
   });
 });
 
-// GET /api/admin/status — per-entity backend mode + general PG health.
-// Drives the AdminTab's "Stock backend: shadow" banner so the owner can
-// see at a glance which phase the cutover is in, without needing to peek
-// at Railway env vars.
+// GET /api/admin/status — general PG health.
+// `backends.stock` is always 'postgres' post-Phase-7 PR 2b. Kept for
+// backward compat with AdminTab (frontend reads this field).
 router.get('/status', (_req, res) => {
   res.json({
     databaseUrlConfigured: isPostgresConfigured,
     backends: {
-      stock: stockRepo.getBackendMode(),
+      stock: 'postgres',
     },
   });
 });
@@ -129,22 +128,6 @@ router.get('/parity/:entity', async (req, res, next) => {
     const countsByKind = Object.fromEntries(allCountsRaw.map(r => [r.kind, Number(r.c)]));
 
     res.json({ rows, countsByKind });
-  } catch (err) {
-    next(err);
-  }
-});
-
-// POST /api/admin/parity/:entity/recheck — runs a fresh full diff for the
-// entity. Slow during peak hours; the owner triggers this from the AdminTab
-// during quiet hours to certify that flip-to-PG is safe.
-router.post('/parity/:entity/recheck', async (req, res, next) => {
-  try {
-    const { entity } = req.params;
-    if (entity !== 'stock') {
-      return res.status(400).json({ error: `Recheck not implemented for: ${entity}` });
-    }
-    const summary = await stockRepo.runParityCheck();
-    res.json(summary);
   } catch (err) {
     next(err);
   }

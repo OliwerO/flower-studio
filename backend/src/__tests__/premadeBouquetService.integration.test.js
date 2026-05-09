@@ -21,24 +21,12 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-// Airtable layer should NOT fire post-cutover. Stub atomicStockAdjust so the
-// regression assertion can confirm the legacy path stays cold.
-vi.mock('../services/airtable.js', () => ({
-  create: vi.fn(),
-  update: vi.fn(),
-  deleteRecord: vi.fn(),
-  getById: vi.fn(),
-  list: vi.fn(),
-  atomicStockAdjust: vi.fn(),
-}));
-
 vi.mock('../services/notifications.js', () => ({ broadcast: vi.fn() }));
 vi.mock('../services/orderService.js', () => ({
   autoMatchStock: vi.fn().mockResolvedValue(0),
   createOrder: vi.fn(),
 }));
 
-import * as airtable from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import {
   returnPremadeBouquetToStock,
@@ -51,7 +39,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  stockRepo._setMode('postgres');
 });
 
 afterEach(async () => {
@@ -110,10 +97,6 @@ describe('returnPremadeBouquetToStock — postgres mode (regression for 2026-05-
     expect(roseAfter.currentQuantity).toBe(10);
     expect(eucaAfter.currentQuantity).toBe(10);
 
-    // Airtable stock-adjust must NOT have fired — Airtable Stock is frozen
-    // post-cutover. Bypassing the repo here was the exact 2026-05-04 bug.
-    expect(airtable.atomicStockAdjust).not.toHaveBeenCalled();
-
     // Bouquet record removed (CASCADE removes lines)
     const [check] = await harness.db.select().from(premadeBouquets).where(eq(premadeBouquets.id, bouquet.id));
     expect(check).toBeUndefined();
@@ -157,7 +140,6 @@ describe('createPremadeBouquet — postgres mode', () => {
 
     const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
     expect(roseAfter.currentQuantity).toBe(6);
-    expect(airtable.atomicStockAdjust).not.toHaveBeenCalled();
 
     // PG bouquet + line should exist
     const allBouquets = await harness.db.select().from(premadeBouquets);

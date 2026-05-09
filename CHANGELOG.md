@@ -5,6 +5,36 @@ Review this entire file before flipping to production.
 
 ---
 
+## Phase 7 PR 2b — Airtable retirement (2026-05-09)
+
+After PR 2a left no production code path reading from or writing to Airtable, PR 2b deletes the dead infrastructure:
+
+### Deleted
+- 7 source files: `services/airtable.js`, `airtable-real.js`, `airtable-mock.js`, `airtable-mock-formula.js`, `airtableSchema.js`, `config/airtable.js`, `utils/batchQuery.js`. ~1000 LOC.
+- `airtable` npm dependency (^0.12.2). Lockfile regenerated.
+- `mirrorAirtableOrder()` (orderRepo.js) — no callers since PR 2a.
+- `runParityCheck()` (stockRepo.js) + `POST /admin/parity/<entity>/recheck` route — PG ↔ Airtable comparison meaningless.
+- E2E section 22 (Parity recheck) — tested deleted route.
+
+### Stripped
+- ~600 LOC of dead Airtable fallback branches across `orderRepo.js`, `stockRepo.js`, `orderService.js`, `wix.js`, `routes/orders.js`, `routes/deliveries.js`.
+- Boot guard for `STOCK_BACKEND` / `ORDER_BACKEND` mode-flag combinations (env vars now meaningless).
+- Harness env-var setup: dropped `TEST_BACKEND=mock-airtable`, `STOCK_BACKEND`, `ORDER_BACKEND`, 18× `AIRTABLE_*_TABLE`, `AIRTABLE_API_KEY`, `AIRTABLE_BASE_ID`. The `IS_TEST_BACKEND` gate in `index.js` is replaced with `IS_HARNESS = DATABASE_URL === 'pglite:memory'`.
+- 23 dead-code airtable-mode tests deleted (3 entire test files: `editBouquetLines.test.js`, `orders.image.test.js`, `deliveries.image.test.js`, `parityCheck.integration.test.js`; describe blocks in 3 others).
+
+### Owner action items post-merge
+- **Cancel the Airtable subscription** (annual/monthly).
+- **Remove `STOCK_BACKEND`, `ORDER_BACKEND`, `TEST_BACKEND`, `AIRTABLE_*` env vars from Railway** (no longer read).
+- (Optional) Take a final Airtable JSON snapshot for `docs/migration/archive/`.
+
+### Verification
+- Backend Vitest: 319 passed | 1 todo (down from 364 — 45 dead-code tests removed across the strip)
+- Shared Vitest: 130 passed
+- Apps build: 3 clean (florist + dashboard + delivery)
+- E2E harness: 180/180 across 25 sections (was 26 — section 22 retired)
+
+---
+
 ## Phase 7 PR 2a — Migrate live Airtable bypasses to Postgres (2026-05-09)
 
 Removes every remaining production-path Airtable bypass in the backend. After this PR runs in prod for ≥48h, **PR 2b** will delete `airtable.js` + the `airtable` npm dep + the `STOCK_BACKEND` / `ORDER_BACKEND` flag plumbing without breaking the Wix webhook, the public storefront, the intake parser, the test harness, or any owner/florist flow.

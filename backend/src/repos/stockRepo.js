@@ -1,59 +1,28 @@
 // Stock repository — the persistence boundary for Stock records.
 //
-// Phase 3 of the SQL migration. Three modes selectable via STOCK_BACKEND:
-//
-//   'airtable' (default) → today's behaviour. Reads + writes go straight to
-//                         Airtable via services/airtable.js. No PG involvement.
-//   'shadow'             → reads from Airtable (the trusted store). Writes
-//                         to BOTH stores: Airtable first (must succeed),
-//                         then Postgres (best-effort; failures land in
-//                         parity_log with kind='write_failed', the request
-//                         still returns 200). Audit log populates from
-//                         every PG write so we can reconstruct anything.
-//                         A separate runParityCheck() function does bulk
-//                         diff of the full stock table — driven by the
-//                         admin endpoint, not per-request.
-//   'postgres'           → writes go to PG only. Airtable becomes a frozen
-//                         legacy snapshot. The Airtable serialised stock
-//                         queue is bypassed because PG handles atomic
-//                         increments natively (UPDATE ... SET qty = qty + $1
-//                         RETURNING current_quantity, in a single statement).
+// Phase 3 of the SQL migration completed in Phase 7 PR 2b (2026-05-09).
+// Postgres-only. Airtable infrastructure deleted; see CHANGELOG for details.
 //
 // Wire format: methods return Airtable-shaped records ({ id, 'Display Name',
-// 'Current Quantity', ... }) regardless of backend, so routes + frontends are
-// unchanged across the cutover. The PG row's UUID is exposed as `_pgId`.
+// 'Current Quantity', ... }) so routes + frontends need no changes.
+// The PG row's UUID is exposed as `_pgId`.
 //
 // `id` semantics:
-//   - airtable + shadow modes: returned `id` is the recXXX (Airtable id).
-//   - postgres mode: returned `id` is the airtableId if known (so existing
-//     callers carrying recXXX values keep working), else the PG uuid.
-//   - getById(id) accepts either form in postgres mode and disambiguates by
-//     the `rec` prefix.
+//   - returned `id` is the airtableId if known (so existing callers
+//     carrying recXXX values keep working), else the PG uuid.
+//   - getById(id) accepts either form and disambiguates by the `rec` prefix.
 
-import * as airtable from '../services/airtable.js';
-import { TABLES } from '../config/airtable.js';
 import { pickAllowed } from '../utils/fields.js';
 import { db } from '../db/index.js';
-import { stock, parityLog } from '../db/schema.js';
+import { stock } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
 
-// ── Backend mode ──
-const VALID_MODES = new Set(['airtable', 'shadow', 'postgres']);
-function readMode() {
-  const m = (process.env.STOCK_BACKEND || 'airtable').toLowerCase();
-  return VALID_MODES.has(m) ? m : 'airtable';
-}
-// Cache the value at module load. The mode flips via deploy, not at runtime,
-// so caching it lets tests stub `readMode` cheaply via `_setMode`.
-let MODE = readMode();
-export function getBackendMode() { return MODE; }
-export function _setMode(m) {
-  // Test-only — not exported from the package boundary in production code.
-  if (!VALID_MODES.has(m)) throw new Error(`Invalid STOCK_BACKEND: ${m}`);
-  MODE = m;
-}
-export function _resetMode() { MODE = readMode(); }
+// ── Backend mode stub ──
+// getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
+// remove the callers in orderService.js and wix.js.
+/** @deprecated Remove after Task 3+4 clean up orderService.js / wix.js */
+export function getBackendMode() { return 'postgres'; }
 
 // ── PATCH allowlist (Airtable display names) ──
 // Mirror routes/stock.js — anything outside this list is silently dropped on
@@ -122,7 +91,6 @@ export function responseToPg(fields) {
 // ── Internal helpers ──
 
 // Resolve an incoming id (recXXX or uuid) to a PG row.
-// Used in postgres-mode read/write paths and in shadow-mode parity checks.
 //
 // `handle` lets the caller pass a transaction (`tx`) so the lookup runs on
 // the same connection that holds the surrounding write. Passing the
@@ -139,28 +107,8 @@ async function findPgByAirtableOrUuid(id, handle = db) {
   return row ?? null;
 }
 
-// Parity-log helper — best effort. Never throws. Used to record write-side
-// failures in shadow mode and bulk-diff mismatches in runParityCheck().
-async function logParity({ entityId, kind, field = null, airtableValue = null, postgresValue = null, context = {} }) {
-  if (!db) return;
-  try {
-    await db.insert(parityLog).values({
-      entityType: 'stock',
-      entityId:   String(entityId),
-      kind,
-      field,
-      airtableValue: airtableValue === undefined ? null : airtableValue,
-      postgresValue: postgresValue === undefined ? null : postgresValue,
-      context,
-    });
-  } catch (err) {
-    console.error('[stockRepo] parity log failed:', err.message);
-  }
-}
-
-// Audit helper that swallows missing-actor errors during shadow (when callers
-// haven't been threaded with `req` yet). Production callers should always
-// pass a real actor.
+// Audit helper that swallows errors. Production callers should always pass
+// a real actor.
 async function tryAudit(tx, args) {
   try {
     await recordAudit(tx, args);
@@ -171,23 +119,10 @@ async function tryAudit(tx, args) {
 
 // ── List ──
 //
-// Two calling shapes:
-//   • Airtable shape (current code): `{ filterByFormula, sort, fields, maxRecords }`.
-//     Honoured by airtable + shadow modes (which read from Airtable). Ignored
-//     in postgres mode if `pg` filter not provided.
-//   • PG shape: `{ pg: { active?, includeEmpty?, includeInactive?, category?,
-//     ids? }, sort?: [{ field, direction }] }`. Honoured in postgres mode.
-//     Ignored in airtable + shadow modes.
-//
-// During shadow we read from Airtable so legacy filterByFormula keeps working
-// untouched. Migrating callers to `pg` shape happens incrementally as we get
-// closer to flipping STOCK_BACKEND=postgres.
+// PG shape: `{ pg: { active?, includeEmpty?, includeInactive?, category?,
+//   ids? }, sort?: [{ field, direction }] }`. Reads always from Postgres.
 export async function list(options = {}) {
-  if (MODE === 'postgres') {
-    return listFromPg(options);
-  }
-  // airtable + shadow → Airtable is the source of truth for reads.
-  return airtable.list(TABLES.STOCK, options);
+  return listFromPg(options);
 }
 
 async function listFromPg(options = {}) {
@@ -234,41 +169,31 @@ const SORT_FIELD_MAP = {
   'Last Restocked':   stock.lastRestocked,
 };
 
-// ── listByIds — bulk fetch by Airtable record id (or PG uuid in PG mode) ──
+// ── listByIds — bulk fetch by Airtable record id (or PG uuid) ──
 //
-// Mirrors utils/batchQuery.js#listByIds for the Stock table. Routes that need
-// to resolve many ids at once (substitute reconciliation, premade rollups)
-// use this so cutover is cleanly localised.
-export async function listByIds(ids, options = {}) {
+// Routes that need to resolve many ids at once (substitute reconciliation,
+// premade rollups) use this for a single PG query.
+export async function listByIds(ids) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
-  if (MODE === 'postgres') {
-    return listFromPg({ pg: { ids, includeInactive: true, includeEmpty: true } });
-  }
-  // airtable + shadow — chunked OR-of-RECORD_ID through batchQuery util.
-  const { listByIds: airtableListByIds } = await import('../utils/batchQuery.js');
-  return airtableListByIds(TABLES.STOCK, ids, options);
+  return listFromPg({ pg: { ids, includeInactive: true, includeEmpty: true } });
 }
 
 // ── getById ──
 export async function getById(id) {
-  if (MODE === 'postgres') {
-    const row = await findPgByAirtableOrUuid(id);
-    if (!row) {
-      const err = new Error(`Stock record not found: ${id}`);
-      err.statusCode = 404;
-      throw err;
-    }
-    return pgToResponse(row);
+  const row = await findPgByAirtableOrUuid(id);
+  if (!row) {
+    const err = new Error(`Stock record not found: ${id}`);
+    err.statusCode = 404;
+    throw err;
   }
-  return airtable.getById(TABLES.STOCK, id);
+  return pgToResponse(row);
 }
 
 // ── Create ──
 //
-// `opts.tx` (Phase 4): when passed, the caller is inside an outer
-// transaction (typically `orderRepo.createOrder`'s `db.transaction(...)`).
-// We do PG-only work on the parent tx — Airtable is the caller's concern.
-// This keeps stock adjustments + order writes atomic together.
+// `opts.tx`: when passed, the caller is inside an outer transaction
+// (typically `orderRepo.createOrder`'s `db.transaction(...)`).
+// Stock adjustments + order writes stay atomic.
 export async function create(fields, opts = {}) {
   const safe = pickAllowed(fields, STOCK_WRITE_ALLOWED);
   if (!safe['Display Name']) {
@@ -287,42 +212,6 @@ export async function create(fields, opts = {}) {
     return pgToResponse(row);
   }
 
-  if (MODE === 'airtable') {
-    return airtable.create(TABLES.STOCK, safe);
-  }
-
-  if (MODE === 'shadow') {
-    // Airtable first — it's the source of truth.
-    const at = await airtable.create(TABLES.STOCK, safe);
-    // PG best-effort.
-    if (db) {
-      try {
-        await db.transaction(async (tx) => {
-          const [row] = await tx.insert(stock).values({
-            airtableId: at.id,
-            ...responseToPg(at),  // snapshot what Airtable accepted, not what we sent
-          }).returning();
-          await tryAudit(tx, {
-            entityType: 'stock',
-            entityId:   row.id,
-            action:     'create',
-            before:     null,
-            after:      pgToResponse(row),
-            ...actor,
-          });
-        });
-      } catch (err) {
-        console.error('[stockRepo] shadow PG create failed:', err.message);
-        await logParity({
-          entityId: at.id, kind: 'write_failed',
-          context: { mode: 'shadow', op: 'create', error: err.message },
-        });
-      }
-    }
-    return at;
-  }
-
-  // postgres mode
   if (!db) throw new Error('stockRepo.create: postgres backend but DATABASE_URL not configured');
   const pgRow = await db.transaction(async (tx) => {
     const [row] = await tx.insert(stock).values(responseToPg(safe)).returning();
@@ -368,47 +257,6 @@ export async function update(id, fields, opts = {}) {
     return pgToResponse(after);
   }
 
-  if (MODE === 'airtable') {
-    return airtable.update(TABLES.STOCK, id, safe);
-  }
-
-  if (MODE === 'shadow') {
-    const at = await airtable.update(TABLES.STOCK, id, safe);
-    if (db) {
-      try {
-        await db.transaction(async (tx) => {
-          const [before] = await tx.select().from(stock).where(eq(stock.airtableId, id)).limit(1);
-          if (!before) {
-            // Airtable has the row but PG doesn't — surface as missing_pg parity issue.
-            // Don't attempt to insert here; the backfill script handles seeding.
-            return;
-          }
-          const [after] = await tx
-            .update(stock)
-            .set({ ...responseToPg(at), updatedAt: new Date() })
-            .where(eq(stock.id, before.id))
-            .returning();
-          await tryAudit(tx, {
-            entityType: 'stock',
-            entityId:   after.id,
-            action:     'update',
-            before:     pgToResponse(before),
-            after:      pgToResponse(after),
-            ...actor,
-          });
-        });
-      } catch (err) {
-        console.error('[stockRepo] shadow PG update failed:', err.message);
-        await logParity({
-          entityId: id, kind: 'write_failed',
-          context: { mode: 'shadow', op: 'update', error: err.message },
-        });
-      }
-    }
-    return at;
-  }
-
-  // postgres mode
   if (!db) throw new Error('stockRepo.update: postgres backend but DATABASE_URL not configured');
   const pgRow = await db.transaction(async (tx) => {
     const before = await findPgByAirtableOrUuid(id, tx);
@@ -435,22 +283,17 @@ export async function update(id, fields, opts = {}) {
   return pgToResponse(pgRow);
 }
 
-// ── adjustQuantity (replaces airtable.atomicStockAdjust for stockRepo callers) ──
+// ── adjustQuantity ──
 //
-// In airtable mode: delegates to atomicStockAdjust (existing serialised queue).
-// In shadow mode: same as airtable, then async best-effort PG adjust.
-// In postgres mode: single-statement atomic UPDATE — no serialised queue
-//                   needed because PG row locking handles concurrency.
+// Single-statement atomic UPDATE — no serialised queue needed because
+// PG row locking handles concurrency.
 //
-// Returns { stockId, previousQty, newQty } regardless of mode for callers
-// that compare to airtable.atomicStockAdjust's shape.
+// Returns { stockId, previousQty, newQty }.
 export async function adjustQuantity(id, delta, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  // Phase 4: when called from inside an outer transaction (orderRepo
-  // mutating an order + its lines + adjusting stock atomically), do
-  // PG-only work on the parent tx. Airtable-side adjustment is the
-  // caller's responsibility.
+  // When called from inside an outer transaction (orderRepo mutating an
+  // order + its lines + adjusting stock atomically), use the parent tx.
   if (opts.tx) {
     const before = await findPgByAirtableOrUuid(id, opts.tx);
     if (!before) {
@@ -475,46 +318,6 @@ export async function adjustQuantity(id, delta, opts = {}) {
     };
   }
 
-  if (MODE === 'airtable') {
-    return airtable.atomicStockAdjust(id, delta);
-  }
-
-  if (MODE === 'shadow') {
-    const result = await airtable.atomicStockAdjust(id, delta);
-    if (db) {
-      try {
-        await db.transaction(async (tx) => {
-          const [before] = await tx.select().from(stock).where(eq(stock.airtableId, id)).limit(1);
-          if (!before) return; // covered by parity check; backfill seeds the row
-          const [after] = await tx
-            .update(stock)
-            .set({
-              currentQuantity: sql`${stock.currentQuantity} + ${delta}`,
-              updatedAt: new Date(),
-            })
-            .where(eq(stock.id, before.id))
-            .returning();
-          await tryAudit(tx, {
-            entityType: 'stock',
-            entityId:   after.id,
-            action:     'update',
-            before:     { 'Current Quantity': before.currentQuantity },
-            after:      { 'Current Quantity': after.currentQuantity },
-            ...actor,
-          });
-        });
-      } catch (err) {
-        console.error('[stockRepo] shadow PG adjust failed:', err.message);
-        await logParity({
-          entityId: id, kind: 'write_failed',
-          context: { mode: 'shadow', op: 'adjust', delta, error: err.message },
-        });
-      }
-    }
-    return result;
-  }
-
-  // postgres mode — single-statement atomic
   if (!db) throw new Error('stockRepo.adjustQuantity: postgres backend but DATABASE_URL not configured');
   return await db.transaction(async (tx) => {
     const before = await findPgByAirtableOrUuid(id, tx);
@@ -547,10 +350,8 @@ export async function adjustQuantity(id, delta, opts = {}) {
   });
 }
 
-// ── Soft delete (Phase 2.5 contract) ──
-// On Airtable side: set Active=false (the closest analogue, since Airtable
-// has no soft-delete concept). On PG side: stamp deleted_at. Idempotent.
-// `opts.tx`: see Create.
+// ── Soft delete ──
+// Stamps deleted_at in PG. Idempotent. `opts.tx`: see Create.
 export async function softDelete(id, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
@@ -570,42 +371,6 @@ export async function softDelete(id, opts = {}) {
       before: pgToResponse(before), after: null, ...actor,
     });
     return pgToResponse(after);
-  }
-
-  if (MODE === 'airtable') {
-    return airtable.update(TABLES.STOCK, id, { Active: false });
-  }
-
-  if (MODE === 'shadow') {
-    const at = await airtable.update(TABLES.STOCK, id, { Active: false });
-    if (db) {
-      try {
-        await db.transaction(async (tx) => {
-          const [before] = await tx.select().from(stock).where(eq(stock.airtableId, id)).limit(1);
-          if (!before) return;
-          const [after] = await tx
-            .update(stock)
-            .set({ deletedAt: new Date(), active: false, updatedAt: new Date() })
-            .where(eq(stock.id, before.id))
-            .returning();
-          await tryAudit(tx, {
-            entityType: 'stock',
-            entityId:   after.id,
-            action:     'delete',
-            before:     pgToResponse(before),
-            after:      null,
-            ...actor,
-          });
-        });
-      } catch (err) {
-        console.error('[stockRepo] shadow PG soft-delete failed:', err.message);
-        await logParity({
-          entityId: id, kind: 'write_failed',
-          context: { mode: 'shadow', op: 'softDelete', error: err.message },
-        });
-      }
-    }
-    return at;
   }
 
   if (!db) throw new Error('stockRepo.softDelete: postgres backend but DATABASE_URL not configured');
@@ -635,17 +400,12 @@ export async function softDelete(id, opts = {}) {
 
 // ── Restore (Admin-mode only) ──
 export async function restore(id, opts = {}) {
-  if (MODE !== 'postgres' && MODE !== 'shadow') {
-    const err = new Error('restore is only supported when STOCK_BACKEND is shadow or postgres');
-    err.statusCode = 400;
-    throw err;
-  }
   if (!db) throw new Error('stockRepo.restore: postgres backend not configured');
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
   return await db.transaction(async (tx) => {
     // Restore must include soft-deleted rows in the lookup — that's the
     // whole point. findPgByAirtableOrUuid filters them out, so we use a
-    // direct query here for both modes.
+    // direct query here.
     const isAirtableId = typeof id === 'string' && id.startsWith('rec');
     const where = isAirtableId ? eq(stock.airtableId, id) : eq(stock.id, id);
     const [before] = await tx.select().from(stock).where(where).limit(1);
@@ -667,22 +427,12 @@ export async function restore(id, opts = {}) {
       after:      pgToResponse(after),
       ...actor,
     });
-    if (MODE === 'shadow' && before.airtableId) {
-      // Reactivate in Airtable too so the source of truth matches.
-      airtable.update(TABLES.STOCK, before.airtableId, { Active: true })
-        .catch(err => console.error('[stockRepo] shadow restore Airtable update failed:', err.message));
-    }
     return pgToResponse(after);
   });
 }
 
 // ── Purge (Admin-mode only — owner confirmation gated at the route layer) ──
 export async function purge(id, opts = {}) {
-  if (MODE !== 'postgres' && MODE !== 'shadow') {
-    const err = new Error('purge is only supported when STOCK_BACKEND is shadow or postgres');
-    err.statusCode = 400;
-    throw err;
-  }
   if (!db) throw new Error('stockRepo.purge: postgres backend not configured');
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
   return await db.transaction(async (tx) => {
@@ -703,97 +453,8 @@ export async function purge(id, opts = {}) {
       after:      null,
       ...actor,
     });
-    if (MODE === 'shadow' && before.airtableId) {
-      airtable.deleteRecord(TABLES.STOCK, before.airtableId)
-        .catch(err => console.error('[stockRepo] shadow purge Airtable delete failed:', err.message));
-    }
     return { id: before.airtableId || before.id, purged: true };
   });
-}
-
-// ── Bulk parity check ──
-//
-// Driven by `GET /api/admin/parity/stock?recheck=true`. Pulls the full active
-// Airtable Stock table and the full PG `stock` table (non-deleted), compares
-// them by airtable_id, and writes one parity_log entry per problem found.
-// Returns a summary { airtableCount, postgresCount, mismatches: { kind: N, ... } }.
-//
-// Safe to run any time. Slow during peak Saturday traffic — the owner runs
-// it from the Admin tab during quiet hours.
-const PARITY_FIELDS = [
-  'Display Name', 'Purchase Name', 'Category', 'Current Quantity', 'Unit',
-  'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
-  'Active', 'Dead/Unsold Stems', 'Lot Size', 'Farmer', 'Last Restocked',
-];
-
-function valuesEqual(a, b) {
-  // Treat null/undefined/empty-string as the same — Airtable returns missing
-  // fields as undefined, PG as null. Numbers compared as Number().
-  const norm = (v) => {
-    if (v == null) return null;
-    if (v === '') return null;
-    if (typeof v === 'number') return v;
-    if (typeof v === 'boolean') return v;
-    if (Array.isArray(v)) return JSON.stringify(v);
-    return String(v);
-  };
-  return norm(a) === norm(b);
-}
-
-export async function runParityCheck() {
-  if (!db) {
-    return { ran: false, reason: 'DATABASE_URL not configured' };
-  }
-  const [airtableRows, pgRows] = await Promise.all([
-    airtable.list(TABLES.STOCK, { fields: PARITY_FIELDS }),
-    db.select().from(stock).where(isNull(stock.deletedAt)),
-  ]);
-
-  const pgByAirtableId = new Map(pgRows.filter(r => r.airtableId).map(r => [r.airtableId, r]));
-  const airtableIds = new Set(airtableRows.map(r => r.id));
-
-  const summary = { airtableCount: airtableRows.length, postgresCount: pgRows.length, mismatches: {} };
-  const bump = (k) => { summary.mismatches[k] = (summary.mismatches[k] || 0) + 1; };
-
-  // Airtable rows missing from PG.
-  for (const at of airtableRows) {
-    const pg = pgByAirtableId.get(at.id);
-    if (!pg) {
-      bump('missing_pg');
-      await logParity({
-        entityId: at.id, kind: 'missing_pg',
-        airtableValue: at,
-        context: { source: 'runParityCheck' },
-      });
-      continue;
-    }
-    const pgResp = pgToResponse(pg);
-    for (const field of PARITY_FIELDS) {
-      if (!valuesEqual(at[field], pgResp[field])) {
-        bump('field_mismatch');
-        await logParity({
-          entityId: at.id, kind: 'field_mismatch',
-          field,
-          airtableValue: at[field] ?? null,
-          postgresValue: pgResp[field] ?? null,
-          context: { source: 'runParityCheck' },
-        });
-      }
-    }
-  }
-  // PG rows missing from Airtable (deleted upstream, never seeded, etc).
-  for (const pg of pgRows) {
-    if (pg.airtableId && !airtableIds.has(pg.airtableId)) {
-      bump('missing_at');
-      await logParity({
-        entityId: pg.airtableId, kind: 'missing_at',
-        postgresValue: pgToResponse(pg),
-        context: { source: 'runParityCheck' },
-      });
-    }
-  }
-
-  return { ran: true, ...summary };
 }
 
 // ── Internal exports for tests ──
@@ -801,5 +462,4 @@ export const _internal = {
   STOCK_WRITE_ALLOWED,
   pgToResponse,
   responseToPg,
-  valuesEqual,
 };

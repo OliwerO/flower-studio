@@ -1,12 +1,10 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as productRepo from '../repos/productRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import { actorFromReq } from '../utils/actor.js';
-import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getDriverOfDay, getConfig, generateOrderId } from '../services/configService.js';
 import { pickAllowed } from '../utils/fields.js';
@@ -145,23 +143,14 @@ router.get('/', async (req, res, next) => {
       pg: pgFilter,
     });
 
-    // Bulk-fetch order lines + customers + deliveries in parallel.
-    // In postgres mode, orderRepo embeds _lines + _delivery on each order so
-    // the bulk-by-id fetches below are skipped — they're an airtable-fallback
-    // path retained until PR 2b sweeps the airtable infrastructure.
-    const pgEmbeds = orders.length > 0 && orders[0]._lines !== undefined;
-    const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
+    // Bulk-fetch customers in parallel. orderRepo embeds _lines + _delivery on
+    // each order — no separate bulk fetches needed.
     const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
-    const allDeliveryIds = orders.flatMap(o => o['Deliveries'] || []);
 
-    const [allLines, allCustomers, allDeliveries] = await Promise.all([
-      pgEmbeds
-        ? Promise.resolve(orders.flatMap(o => o._lines || []))
-        : orderRepo.getLinesByIds(allLineIds),
+    const allLines = orders.flatMap(o => o._lines || []);
+    const allDeliveries = orders.map(o => o._delivery).filter(Boolean);
+    const [allCustomers] = await Promise.all([
       customerRepo.findMany(uniqueCustomerIds),
-      pgEmbeds
-        ? Promise.resolve(orders.map(o => o._delivery).filter(Boolean))
-        : orderRepo.getDeliveriesByIds(allDeliveryIds),
     ]);
 
     // Index customers and deliveries by ID
@@ -227,11 +216,9 @@ router.get('/', async (req, res, next) => {
       order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
     }
 
-    // Strip orderRepo's PG-mode embeds before responding — they're an internal
-    // shortcut, not part of the public wire format.
-    if (pgEmbeds) {
-      for (const o of orders) { delete o._lines; delete o._delivery; }
-    }
+    // Strip orderRepo embeds before responding — internal shortcut, not part of
+    // the public wire format.
+    for (const o of orders) { delete o._lines; delete o._delivery; }
 
     // Bouquet image priority: per-order override (`Image URL` set by owner via
     // POST /orders/:id/image) wins; fall back to the storefront product image
@@ -275,26 +262,16 @@ router.get('/:id', async (req, res, next) => {
   try {
     const order = await orderRepo.getById(req.params.id);
 
-    const lineIds = order['Order Lines'] || [];
     const custId = order.Customer?.[0];
-    const deliveryId = order['Deliveries']?.[0];
-    const hasPgEmbeds = order._lines !== undefined;
 
-    const [orderLines, customer, delivery] = await Promise.all([
-      hasPgEmbeds
-        ? Promise.resolve(order._lines)
-        : orderRepo.getLinesByIds(lineIds),
-      custId
-        ? customerRepo.findMany([custId]).then(r => r[0] ?? null).catch(() => null)
-        : Promise.resolve(null),
-      hasPgEmbeds
-        ? Promise.resolve(order._delivery)
-        : (deliveryId
-            ? db.getById(TABLES.DELIVERIES, deliveryId)
-            : Promise.resolve(undefined)),
-    ]);
+    const orderLines = order._lines || [];
+    const delivery = order._delivery;
+    delete order._lines;
+    delete order._delivery;
 
-    if (hasPgEmbeds) { delete order._lines; delete order._delivery; }
+    const customer = custId
+      ? await customerRepo.findMany([custId]).then(r => r[0] ?? null).catch(() => null)
+      : null;
 
     order['Customer Name'] = customer?.Name || customer?.Nickname || '';
     order['Customer Phone'] = customer?.Phone || '';
@@ -454,23 +431,11 @@ router.patch('/:id', async (req, res, next) => {
       const current = await orderRepo.getById(req.params.id).catch(() => null);
       const existingP1 = Number(current?.['Payment 1 Amount']) || 0;
       if (existingP1 === 0) {
-        const hasEmbeds = current?._lines !== undefined;
-        const lineIds = current?.['Order Lines'] || [];
-        const lines = hasEmbeds
-          ? current._lines
-          : (lineIds.length > 0 ? await orderRepo.getLinesByIds(lineIds) : []);
+        const lines = current?._lines || [];
         const flowerTotal = lines.reduce(
           (s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0
         );
-        let deliv = null;
-        if (hasEmbeds) {
-          deliv = current._delivery || null;
-        } else {
-          const deliveryIdsForPrice = current?.['Deliveries'] || [];
-          deliv = deliveryIdsForPrice[0]
-            ? await db.getById(TABLES.DELIVERIES, deliveryIdsForPrice[0]).catch(() => null)
-            : null;
-        }
+        const deliv = current?._delivery || null;
         const delivFee = current?.['Delivery Type'] === 'Delivery'
           ? Number(current?.['Delivery Fee'] ?? deliv?.['Delivery Fee'] ?? 0) : 0;
         const finalPrice = (Number(current?.['Price Override']) || flowerTotal) + delivFee;
@@ -484,8 +449,7 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // No status change — orderRepo.updateOrder handles the linked-delivery
-    // cascade for Required By / Delivery Time inside the same transaction
-    // (postgres mode) or via a follow-up update (airtable mode).
+    // cascade for Required By / Delivery Time inside the same transaction.
     const order = await orderRepo.updateOrder(req.params.id, otherFields, { actor: actorFromReq(req) });
     if (order._lines !== undefined) { delete order._lines; delete order._delivery; }
 
@@ -581,20 +545,9 @@ router.post('/:id/swap-bouquet-line', async (req, res, next) => {
       return res.status(400).json({ error: `Cannot swap bouquet line in "${order.Status}" status` });
     }
 
-    // Verify the line belongs to this order. Use embedded _lines when present
-    // (postgres mode) — saves a round-trip and avoids hitting an Airtable id
-    // path that wouldn't resolve a PG-native uuid.
-    let line;
-    if (order._lines !== undefined) {
-      line = order._lines.find(l => l.id === lineId);
-      if (!line) return res.status(400).json({ error: 'Line does not belong to this order' });
-    } else {
-      line = await db.getById(TABLES.ORDER_LINES, lineId);
-      const lineOrderId = line.Order?.[0];
-      if (lineOrderId !== req.params.id) {
-        return res.status(400).json({ error: 'Line does not belong to this order' });
-      }
-    }
+    // Verify the line belongs to this order via the embedded _lines array.
+    const line = (order._lines || []).find(l => l.id === lineId);
+    if (!line) return res.status(400).json({ error: 'Line does not belong to this order' });
 
     const oldQty = Number(line.Quantity || 0);
     const qty = newQty != null ? Number(newQty) : oldQty;

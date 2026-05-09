@@ -249,7 +249,7 @@ async function section1Boot() {
 
   const health = await api('GET', '/health');
   assert('Backend reachable on harness port', health.status === 200);
-  assert('testBackend flag exposed by /health', health.body?.testBackend === true);
+  assert('harness flag exposed by /health', health.body?.harness === true);
 
   const seeded = await reset();
   assert('/test/reset returned ok', seeded.ok === true);
@@ -1151,41 +1151,12 @@ async function section21AuditPerRole() {
 }
 
 // ──────────── 22. PARITY CHECK ────────────
-
-async function section22Parity() {
-  startSection('22. Parity recheck endpoint detects real PG ↔ Airtable mismatches');
-  await reset();
-
-  // In postgres mode the order's stock decrement lands in PG only — the
-  // Airtable mock is the source of legacy reads but is no longer mutated
-  // for stock ops. So a runParityCheck after a flow EXPECTS to find
-  // field_mismatch entries (the PG row diverges from the mock row). That's
-  // the harness proving the parity endpoint behaves correctly when state
-  // diverges — same machinery the owner uses on prod during shadow week.
-  await api('POST', '/orders', {
-    pin: PIN_OWNER,
-    body: buildOrderBody({
-      customer: FIXTURE.customers.maria,
-      lines: [
-        line(FIXTURE.stock.redRose, 4),
-        line(FIXTURE.stock.pinkTulip, 3),
-        line(FIXTURE.stock.eucalyptus, 6),
-      ],
-    }),
-  });
-
-  const recheck = await api('POST', '/admin/parity/stock/recheck', { pin: PIN_OWNER });
-  eq('Recheck endpoint → 200', recheck.status, 200);
-  assert('Recheck returned a summary object', typeof recheck.body === 'object' && recheck.body !== null);
-  eq('Recheck ran in postgres mode', recheck.body?.ran, true);
-  assert('Field mismatches detected (PG decremented, mock unchanged)',
-    (recheck.body?.mismatches?.field_mismatch || 0) >= 3);
-
-  // Parity log should now have rows — the recheck wrote one per mismatch.
-  const list = await api('GET', '/admin/parity/stock', { pin: PIN_OWNER });
-  eq('Parity list endpoint → 200', list.status, 200);
-  assert('Parity log has mismatch rows after recheck', (list.body?.rows?.length || 0) > 0);
-}
+//
+// Section 22 was retired in Phase 7 PR 2b alongside the deletion of the
+// `POST /admin/parity/<entity>/recheck` route and `runParityCheck` —
+// Airtable is gone, so there is no longer a second datastore to compare
+// against. The numbered slot is intentionally skipped to keep the
+// section numbering of older sections stable.
 
 // ──────────── 24. WIX WEBHOOK REPLAY ────────────
 
@@ -1521,7 +1492,8 @@ async function main() {
     section19ConvertToDelivery,
     section20SwapBouquetLine,
     section21AuditPerRole,
-    section22Parity,
+    // section 22 (Parity recheck) deleted in Phase 7 PR 2b — the PG ↔ Airtable
+    // parity endpoint was retired alongside the airtable.js infrastructure.
     section23AuthGates,
     section24WixWebhook,
     section25BouquetImageUpload,

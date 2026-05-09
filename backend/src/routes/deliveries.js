@@ -1,11 +1,9 @@
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
-import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
 import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
@@ -165,8 +163,7 @@ router.patch('/:id', async (req, res, next) => {
     }
 
     // updateDelivery handles the delivery → order status cascade
-    // transactionally in postgres mode (and as a follow-up update in
-    // airtable mode). The Telegram alert stays out-of-band.
+    // transactionally. The Telegram alert stays out-of-band.
     const { delivery: updated, linkedOrderId } = await orderRepo.updateDelivery(
       req.params.id, fields, { actor: actorFromReq(req) },
     );

@@ -1,52 +1,27 @@
 // Order repository — the persistence boundary for Orders, Order Lines,
 // and Deliveries (the trio that always migrates together).
 //
-// Phase 4 of the SQL migration. See docs/migration/phase-4-orders-design.md
-// for the full rationale.
+// Phase 4 of the SQL migration completed in Phase 7 PR 2b (2026-05-09).
+// Postgres-only. Airtable infrastructure deleted; see CHANGELOG for details.
 //
-// Three modes selectable via ORDER_BACKEND (independent of STOCK_BACKEND):
-//
-//   'airtable' (default) → today's behaviour. orderService still talks
-//                          to airtable.js directly; this repo's stubs at
-//                          the top of each method are no-ops.
-//   'shadow'             → write Airtable first (source of truth), then
-//                          mirror order + lines + delivery to PG in one
-//                          transaction (best-effort; failures land in
-//                          parity_log). Reads from Airtable.
-//   'postgres'           → write to PG only (one tx for order + lines +
-//                          delivery + stock adjustments). Airtable
-//                          becomes a frozen legacy snapshot for orders.
-//
-// The headline architectural win, made concrete in createOrder:
-//   - Today: 538-line manual try/catch with explicit unwinding of
-//     created lines + reversed stock adjustments + deleted order.
-//   - After this file: a single db.transaction(...) that wraps everything.
-//     Any throw rolls every write back automatically — no manual
+// The headline architectural win made concrete in createOrder:
+//   - A single db.transaction(...) wraps order + lines + delivery + stock
+//     adjustments. Any throw rolls every write back automatically — no manual
 //     bookkeeping, no half-torn-down state.
 
-import * as airtable from '../services/airtable.js';
 import * as stockRepo from './stockRepo.js';
 import * as stockLossRepo from './stockLossRepo.js';
-import { TABLES } from '../config/airtable.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
 
-// ── Backend mode ──
-const VALID_MODES = new Set(['airtable', 'shadow', 'postgres']);
-function readMode() {
-  const m = (process.env.ORDER_BACKEND || 'airtable').toLowerCase();
-  return VALID_MODES.has(m) ? m : 'airtable';
-}
-let MODE = readMode();
-export function getBackendMode() { return MODE; }
-export function _setMode(m) {
-  if (!VALID_MODES.has(m)) throw new Error(`Invalid ORDER_BACKEND: ${m}`);
-  MODE = m;
-}
-export function _resetMode() { MODE = readMode(); }
+// ── Backend mode stub ──
+// getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
+// remove the callers in orderService.js and wix.js.
+/** @deprecated Remove after Task 3+4 clean up orderService.js / wix.js */
+export function getBackendMode() { return 'postgres'; }
 
 // ── PATCH allowlists ──
 export const ORDER_WRITE_ALLOWED = [
@@ -244,10 +219,8 @@ function renderOrderRow(orderRow, linesByOrderId, deliveryByOrderId) {
   const delivery = deliveryByOrderId.get(orderRow.id);
   const deliveryId = delivery ? (delivery.airtableId || delivery.id) : null;
   const resp = pgOrderToResponse(orderRow, lineIds, deliveryId);
-  // Embed line + delivery sub-records so callers in postgres mode can skip a
-  // round-trip through airtable.list (which would target PG ids the mock /
-  // Airtable doesn't know about). Frontends never see these — routes strip
-  // them after consuming.
+  // Embed line + delivery sub-records so callers can skip an extra
+  // round-trip. Frontends never see these — routes strip them after consuming.
   resp._lines = lines.map(pgLineToResponse);
   if (delivery) resp._delivery = pgDeliveryToResponse(delivery);
   return resp;
@@ -264,8 +237,7 @@ async function tryAudit(tx, args) {
 // ── Read paths ──
 
 export async function list(options = {}) {
-  if (MODE === 'postgres') return listFromPg(options);
-  return airtable.list(TABLES.ORDERS, options);
+  return listFromPg(options);
 }
 
 async function listFromPg(options = {}) {
@@ -323,7 +295,6 @@ const ORDER_SORT_COLS = {
 };
 
 export async function getById(id) {
-  if (MODE !== 'postgres') return airtable.getById(TABLES.ORDERS, id);
   if (!db) throw new Error('orderRepo.getById: postgres backend not configured');
 
   const row = await findOrderById(id);
@@ -336,18 +307,10 @@ export async function getById(id) {
   return renderOrderRow(row, linesByOrderId, deliveryByOrderId);
 }
 
-// findByWixOrderId — used by the Wix webhook for idempotent dedup. In
-// postgres mode the partial-unique index on wix_order_id makes this O(log n);
-// the airtable path falls back to filterByFormula on the existing column.
+// findByWixOrderId — used by the Wix webhook for idempotent dedup.
+// The partial-unique index on wix_order_id makes this O(log n).
 export async function findByWixOrderId(wixOrderId) {
   if (!wixOrderId) return null;
-  if (MODE !== 'postgres') {
-    const matches = await airtable.list(TABLES.ORDERS, {
-      filterByFormula: `{Wix Order ID} = '${wixOrderId.replace(/'/g, "\\'")}'`,
-      maxRecords: 1,
-    });
-    return matches[0] || null;
-  }
   if (!db) throw new Error('orderRepo.findByWixOrderId: postgres backend not configured');
   const [row] = await db.select().from(orders)
     .where(and(eq(orders.wixOrderId, wixOrderId), isNull(orders.deletedAt)))
@@ -357,54 +320,6 @@ export async function findByWixOrderId(wixOrderId) {
   return renderOrderRow(row, linesByOrderId, deliveryByOrderId);
 }
 
-// mirrorAirtableOrder — copies an Airtable-shaped order (plus its lines and
-// delivery) into Postgres preserving the recXXX ids on `airtable_id`. Used
-// during Phase 4 cutover by code paths that still write to Airtable first
-// (Wix webhook, intake parser) so PG stays consistent with the airtable mock
-// AND the eventual Railway PG. No-op in airtable mode.
-export async function mirrorAirtableOrder({ order, lines = [], delivery = null }) {
-  if (MODE !== 'postgres') return null;
-  if (!db) throw new Error('orderRepo.mirrorAirtableOrder: postgres backend not configured');
-  if (!order || !order.id) return null;
-
-  return await db.transaction(async (tx) => {
-    // Skip if already mirrored.
-    const [existing] = await tx.select().from(orders)
-      .where(eq(orders.airtableId, order.id))
-      .limit(1);
-    if (existing) return { skipped: true, orderId: existing.id };
-
-    const orderInsert = orderResponseToPg(order);
-    orderInsert.airtableId = order.id;
-    if (!orderInsert.appOrderId) orderInsert.appOrderId = order['App Order ID'] || order.id;
-    if (!orderInsert.customerId) orderInsert.customerId = order.Customer?.[0] || 'unknown';
-    if (!orderInsert.deliveryType) orderInsert.deliveryType = order['Delivery Type'] || 'Pickup';
-    if (!orderInsert.status) orderInsert.status = order.Status || ORDER_STATUS.NEW;
-    if (!orderInsert.paymentStatus) orderInsert.paymentStatus = order['Payment Status'] || PAYMENT_STATUS.UNPAID;
-    if (!orderInsert.orderDate) orderInsert.orderDate = order['Order Date'] || new Date().toISOString().split('T')[0];
-
-    const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
-
-    for (const line of lines) {
-      const lineInsert = lineResponseToPg(line);
-      lineInsert.airtableId = line.id;
-      lineInsert.orderId = insertedOrder.id;
-      if (!lineInsert.flowerName) lineInsert.flowerName = line['Flower Name'] || '';
-      await tx.insert(orderLines).values(lineInsert);
-    }
-
-    if (delivery) {
-      const deliveryInsert = deliveryResponseToPg(delivery);
-      deliveryInsert.airtableId = delivery.id;
-      deliveryInsert.orderId = insertedOrder.id;
-      if (!deliveryInsert.status) deliveryInsert.status = delivery.Status || DELIVERY_STATUS.PENDING;
-      await tx.insert(deliveries).values(deliveryInsert);
-    }
-
-    return { skipped: false, orderId: insertedOrder.id };
-  });
-}
-
 // ── createWixOrder — direct PG transactional write for the Wix webhook ──
 //
 // Wix webhook bypasses orderService.createOrder because:
@@ -412,12 +327,8 @@ export async function mirrorAirtableOrder({ order, lines = [], delivery = null }
 //     florist composes the bouquet manually post-order).
 //   - No auto-match prompts, owner-price cascades, driver-of-day.
 //   - Source/createdBy/Status are Wix invariants.
-// Replaces the old "create-in-Airtable then mirrorAirtableOrder" flow that
-// lived in wix.js until PR 2a.
+// Direct PG transactional write — replaces the old Airtable flow removed in PR 2a.
 export async function createWixOrder(params) {
-  if (MODE !== 'postgres') {
-    throw new Error('orderRepo.createWixOrder: requires ORDER_BACKEND=postgres');
-  }
   if (!db) throw new Error('orderRepo.createWixOrder: postgres backend not configured');
 
   const {
@@ -505,12 +416,6 @@ export async function createWixOrder(params) {
 // routes/deliveries.js to enrich linked-order info without N round-trips.
 export async function listByIds(ids, { fields } = {}) {
   if (!Array.isArray(ids) || ids.length === 0) return [];
-  if (MODE !== 'postgres') {
-    return airtable.list(TABLES.ORDERS, {
-      filterByFormula: `OR(${ids.map(id => `RECORD_ID() = "${id}"`).join(',')})`,
-      ...(fields ? { fields } : {}),
-    });
-  }
   if (!db) throw new Error('orderRepo.listByIds: postgres backend not configured');
   const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
   const uuidIds = ids.filter(id => !airtableIds.includes(id));
@@ -548,7 +453,6 @@ async function findOrderLineById(id, handle = db) {
 }
 
 export async function listDeliveries(options = {}) {
-  if (MODE !== 'postgres') return airtable.list(TABLES.DELIVERIES, options);
   if (!db) throw new Error('orderRepo.listDeliveries: postgres backend not configured');
   const pg = options.pg || {};
 
@@ -586,7 +490,6 @@ export async function listDeliveries(options = {}) {
 }
 
 export async function getDeliveryById(id) {
-  if (MODE !== 'postgres') return airtable.getById(TABLES.DELIVERIES, id);
   if (!db) throw new Error('orderRepo.getDeliveryById: postgres backend not configured');
 
   const row = await findDeliveryById(id);
@@ -616,13 +519,6 @@ export async function createOrder(params, config, opts = {}) {
   const { skipStockDeduction = false, actor: rawActor } = opts;
   const actor = rawActor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE === 'airtable') {
-    const err = new Error(
-      'orderRepo.createOrder called in airtable mode — orderService.createOrder should run directly.',
-    );
-    err.statusCode = 500;
-    throw err;
-  }
   if (!db) throw new Error('orderRepo.createOrder: postgres backend not configured');
 
   const appOrderId = await generateOrderId();
@@ -759,11 +655,6 @@ const ALLOWED_TRANSITIONS = {
 export async function transitionStatus(orderId, newStatus, otherFields = {}, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE === 'airtable') {
-    const err = new Error('orderRepo.transitionStatus called in airtable mode.');
-    err.statusCode = 500;
-    throw err;
-  }
   if (!db) throw new Error('orderRepo.transitionStatus: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -838,11 +729,6 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
 export async function cancelWithStockReturn(orderId, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE === 'airtable') {
-    const err = new Error('orderRepo.cancelWithStockReturn called in airtable mode.');
-    err.statusCode = 500;
-    throw err;
-  }
   if (!db) throw new Error('orderRepo.cancelWithStockReturn: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -908,11 +794,6 @@ export async function cancelWithStockReturn(orderId, opts = {}) {
 export async function deleteOrder(orderId, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE === 'airtable') {
-    const err = new Error('orderRepo.deleteOrder called in airtable mode.');
-    err.statusCode = 500;
-    throw err;
-  }
   if (!db) throw new Error('orderRepo.deleteOrder: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -961,11 +842,6 @@ export async function deleteOrder(orderId, opts = {}) {
 export async function editBouquetLines(orderId, { lines = [], removedLines = [] }, isOwner, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE === 'airtable') {
-    const err = new Error('orderRepo.editBouquetLines called in airtable mode.');
-    err.statusCode = 500;
-    throw err;
-  }
   if (!db) throw new Error('orderRepo.editBouquetLines: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -989,10 +865,9 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
         if (rem.action === 'return') {
           await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity, { tx, actor });
         } else if (rem.action === 'writeoff') {
-          // Stock Loss Log still lives on Airtable (Phase 6). Buffer the writes
-          // and run them OUTSIDE the PG transaction so an Airtable hiccup
-          // doesn't roll back the order edit. Loss is non-critical reporting;
-          // PG order/line/stock updates are the actual business state.
+          // Buffer Stock Loss Log writes and run OUTSIDE the PG transaction so
+          // a loss-log failure doesn't roll back the order edit. Loss is
+          // non-critical reporting; order/line/stock updates are the business state.
           writeoffsToLog.push({
             stockItemId: rem.stockItemId,
             quantity:    rem.quantity,
@@ -1009,8 +884,8 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
       }
     }
     // Defer Stock Loss Log writes until after the tx — they go to Postgres
-    // via stockLossRepo. Resolve recXXX IDs to PG UUIDs first (orders
-    // backfilled from Airtable carry Airtable stock IDs in their lines).
+    // via stockLossRepo. Resolve recXXX IDs to PG UUIDs first (legacy orders
+    // backfilled from the pre-migration period carry Airtable-format stock IDs).
     if (writeoffsToLog.length > 0) {
       const today = new Date().toISOString().split('T')[0];
       Promise.all(writeoffsToLog.map(async w => {
@@ -1095,8 +970,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
 //
 // Cascades Required By → delivery.deliveryDate and Delivery Time →
 // delivery.deliveryTime to the linked delivery row, all in a single PG
-// transaction. Airtable mode delegates to airtable.update + a follow-up
-// delivery update (matching today's route behaviour).
+// transaction.
 
 export async function updateOrder(id, fields, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
@@ -1105,16 +979,6 @@ export async function updateOrder(id, fields, opts = {}) {
   if ('Delivery Time' in fields) cascade['Delivery Time'] = fields['Delivery Time'];
   const hasCascade = Object.keys(cascade).length > 0;
 
-  if (MODE !== 'postgres') {
-    const order = await airtable.update(TABLES.ORDERS, id, fields);
-    if (hasCascade) {
-      const deliveryIds = order['Deliveries'] || [];
-      if (deliveryIds.length > 0) {
-        await airtable.update(TABLES.DELIVERIES, deliveryIds[0], cascade);
-      }
-    }
-    return order;
-  }
   if (!db) throw new Error('orderRepo.updateOrder: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -1160,9 +1024,8 @@ export async function updateOrder(id, fields, opts = {}) {
 // ── updateDelivery — driver/owner PATCH on the delivery record. ──
 //
 // Cascades delivery.status → orders.status when the new status is one of
-// OUT_FOR_DELIVERY / DELIVERED / CANCELLED — all in the same tx. Mirrors
-// the existing route-level cascade in deliveries.js. The Telegram alert
-// for DELIVERED stays at the route layer (out-of-band side effect).
+// OUT_FOR_DELIVERY / DELIVERED / CANCELLED — all in the same tx. The Telegram
+// alert for DELIVERED stays at the route layer (out-of-band side effect).
 
 export async function updateDelivery(id, fields, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
@@ -1172,22 +1035,6 @@ export async function updateDelivery(id, fields, opts = {}) {
     DELIVERY_STATUS.CANCELLED,
   ];
 
-  if (MODE !== 'postgres') {
-    if (cascadeStatuses.includes(fields.Status)) {
-      const before = await airtable.getById(TABLES.DELIVERIES, id);
-      const updated = await airtable.update(TABLES.DELIVERIES, id, fields);
-      const linkedOrderId = before['Linked Order']?.[0];
-      if (linkedOrderId) {
-        const orderStatus = fields.Status === DELIVERY_STATUS.CANCELLED
-          ? ORDER_STATUS.CANCELLED
-          : fields.Status;
-        await airtable.update(TABLES.ORDERS, linkedOrderId, { Status: orderStatus });
-      }
-      return { delivery: updated, linkedOrderId: linkedOrderId || null };
-    }
-    const updated = await airtable.update(TABLES.DELIVERIES, id, fields);
-    return { delivery: updated, linkedOrderId: null };
-  }
   if (!db) throw new Error('orderRepo.updateDelivery: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -1245,9 +1092,6 @@ export async function updateDelivery(id, fields, opts = {}) {
 export async function updateOrderLine(lineId, fields, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE !== 'postgres') {
-    return await airtable.update(TABLES.ORDER_LINES, lineId, fields);
-  }
   if (!db) throw new Error('orderRepo.updateOrderLine: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -1280,23 +1124,6 @@ export async function updateOrderLine(lineId, fields, opts = {}) {
 export async function convertToDelivery(orderId, deliveryFields, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
-  if (MODE !== 'postgres') {
-    const order = await airtable.getById(TABLES.ORDERS, orderId);
-    if (order['Deliveries']?.length > 0) {
-      const err = new Error('Delivery record already exists for this order.');
-      err.statusCode = 400;
-      throw err;
-    }
-    const delivery = await airtable.create(TABLES.DELIVERIES, {
-      'Linked Order': [orderId],
-      ...deliveryFields,
-    });
-    await airtable.update(TABLES.ORDERS, orderId, {
-      'Delivery Type': 'Delivery',
-      'Delivery Fee':  deliveryFields['Delivery Fee'] ?? 0,
-    });
-    return delivery;
-  }
   if (!db) throw new Error('orderRepo.convertToDelivery: postgres backend not configured');
 
   return await db.transaction(async (tx) => {
@@ -1348,18 +1175,14 @@ export async function convertToDelivery(orderId, deliveryFields, opts = {}) {
 
 // ── runParityCheck ──
 //
-// Defer the full implementation — the prerequisite is ORDER_BACKEND=shadow
-// being active so the parity_log has data. The shape mirrors stockRepo's so
-// the AdminTab can drive both via the same endpoint pattern. Implementation
-// lands in the follow-up commit that wires the order parity dashboard.
+// Stub — Airtable retired in Phase 7 PR 2b (2026-05-09). There is no longer
+// a second datastore to compare against. Returns a sentinel so the admin
+// route stays valid without crashing.
 export async function runParityCheck() {
   if (!db) return { ran: false, reason: 'DATABASE_URL not configured' };
   return {
     ran: true,
-    airtableCount: 0,
-    postgresCount: 0,
-    mismatches: {},
-    note: 'Order parity check — full implementation lands once ORDER_BACKEND=shadow has data. See docs/migration/phase-4-orders-design.md.',
+    note: 'Airtable retired 2026-05-09 — parity check no longer applicable.',
   };
 }
 

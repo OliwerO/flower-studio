@@ -20,20 +20,6 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-vi.mock('../services/airtable.js', () => ({
-  list: vi.fn(),
-  getById: vi.fn(),
-  create: vi.fn(),
-  update: vi.fn(),
-  deleteRecord: vi.fn(),
-  atomicStockAdjust: vi.fn(),
-}));
-
-vi.mock('../config/airtable.js', () => ({
-  default: {},
-  TABLES: { STOCK: 'tblStock', ORDERS: 'tblOrders', ORDER_LINES: 'tblLines', DELIVERIES: 'tblDelivery' },
-}));
-
 import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 
@@ -43,7 +29,6 @@ beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
   vi.clearAllMocks();
-  orderRepo._setMode('postgres');
 });
 
 afterEach(async () => {
@@ -224,25 +209,4 @@ describe('orderRepo.createWixOrder', () => {
     expect(lineRows).toHaveLength(0);
   });
 
-  it.skip('throws if MODE !== postgres (informational — MODE captured at module load)', async () => {
-    // The runtime guard `if (MODE !== 'postgres') throw ...` inside createWixOrder
-    // protects against accidental misuse. Because MODE is captured at module-load
-    // time via readMode(), toggling ORDER_BACKEND after import doesn't re-evaluate it.
-    // Use orderRepo._setMode('airtable') to test the guard in isolation.
-    orderRepo._setMode('airtable');
-    const customer = await makeCustomer();
-    await expect(orderRepo.createWixOrder({
-      customerId: customer.id,
-      appOrderId: 'x',
-      wixOrderId: 'x',
-      customerRequest: 'x',
-      requiredBy: null,
-      paymentStatus: PAYMENT_STATUS.PAID,
-      paymentMethod: null,
-      priceOverride: null,
-      lines: [],
-      delivery: { address: '', recipientName: '', recipientPhone: '', date: null, fee: 0 },
-    })).rejects.toThrow('orderRepo.createWixOrder: requires ORDER_BACKEND=postgres');
-    orderRepo._setMode('postgres');
-  });
 });
