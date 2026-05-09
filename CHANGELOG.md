@@ -5,6 +5,34 @@ Review this entire file before flipping to production.
 
 ---
 
+## Phase 7 PR 2a — Migrate live Airtable bypasses to Postgres (2026-05-09)
+
+Removes every remaining production-path Airtable bypass in the backend. After this PR runs in prod for ≥48h, **PR 2b** will delete `airtable.js` + the `airtable` npm dep + the `STOCK_BACKEND` / `ORDER_BACKEND` flag plumbing without breaking the Wix webhook, the public storefront, the intake parser, the test harness, or any owner/florist flow.
+
+### What changed (commit-by-commit)
+- New `orderRepo.createWixOrder(params)` — single PG transaction (order + N lines + delivery + audit log writes) for the Wix webhook. Replaces the old "create-in-Airtable then `mirrorAirtableOrder`" double-write
+- `wix.js` `processWixOrder` migrated: stock list via `stockRepo.list({ pg: { includeEmpty: true } })`, order/lines/delivery via `createWixOrder`, dead `mirrorAirtableOrder` block removed, JSDoc updated
+- `wix.js` `reprocessWixOrder` migrated: line lookup via `orderRepo.getLinesForOrders`, `listByIds` import dropped
+- `public.js` (`/products`, `/stock-availability`) reads stock via `stockRepo.list`
+- `intake.js` (`/intake/parse`) reads stock via `stockRepo.list`
+- New `orderRepo.getLinesByIds(ids)` + `getDeliveriesByIds(ids)` (bulk-by-id, dual-lookup, wire-format return) replace 7 `listByIds(TABLES.ORDER_LINES/DELIVERIES, ...)` call sites in `routes/orders.js` and `services/orderService.js`
+- `routes/test.js` `/test/reset` rewritten — new `phase7pr2a-seed.js` helper reads `airtable-test-base.json` directly and seeds Postgres with TRUNCATE…CASCADE + per-table inserts (with FK remap recXXX→uuid). `airtable-mock` import dropped. `/test/state` exposes the same `airtable: { tblMockXxx }` keys but builds them from `loadFixture()` instead of mock state. `/test/audit` and `/test/parity` unchanged
+- Hardcoded `'Paid'` / `'Unpaid'` literals across `wix.js`, `orderRepo.js`, and the new test file replaced with `PAYMENT_STATUS.*` constants (Known Pitfall #3 sweep, surfaced by Phase A boundary review)
+
+### Operational
+- **Wix webhook end-to-end**: production write path now is `webhook.js` → `processWixOrder` → `customerRepo.create` → `stockRepo.list` → `orderRepo.createWixOrder` (single tx) → `productConfigRepo.decrementQuantity` → SSE broadcast → Telegram. No Airtable I/O.
+- **`airtable.js` and the mocks stay alive** through PR 2a. They still get loaded by the harness shim because PR 2a does not yet delete them — PR 2b's job. With airtable mode unreachable in production (`STOCK_BACKEND` / `ORDER_BACKEND` pinned to `postgres` since the cutover), the shim is dead weight, not active state.
+- **Carry-overs to PR 2b** logged in BACKLOG: delete `mirrorAirtableOrder`, delete `utils/batchQuery.js` (one residual dynamic-import inside the dead `stockRepo.listByIds` airtable fallback), replace `db.getById(TABLES.STOCK)` at `routes/orders.js:~605` with `stockRepo.getById`, drop the stale "airtable mode falls back to filterByFormula" dedup comment in `wix.js`.
+
+### Verification
+- Backend Vitest: 35 files, 348 passed / 1 skipped / 1 todo (4 new tests for `createWixOrder` — TDD red→green, audit-log write proven, transactional rollback proven via mid-transaction unique-violation)
+- Shared Vitest: 130 passed
+- Apps build (florist + dashboard + delivery): all clean
+- E2E harness: 186/186 across 26 sections (incl. section 24 Wix webhook HMAC replay + section 25 bouquet image upload + section 26 customer CRUD)
+- Production probe (claude_ro DSN, 2026-05-09): Wix orders mirrored to PG correctly since 2026-04 (5 rows, most recent 2026-05-06 17:14 UTC) — `createWixOrder` produces the same wire shape, verified in T1 integration tests
+
+---
+
 ## Phase 7 PR 1 — Stock Orders + Premade Bouquets on Postgres (2026-05-08)
 
 Migrates the last two domains writing to Airtable. After this PR, **no production code path reads from or writes to Airtable.** PR 2 (separate plan) will delete the airtable.js / airtableSchema.js / config / npm dep / dead env-flag logic.
