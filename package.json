@@ -16,7 +16,19 @@
     "dashboard": "npm run dev --workspace=apps/dashboard",
     "harness": "HARNESS_MOCK_WIX=1 node backend/scripts/start-test-backend.js",
     "test:e2e": "node scripts/e2e-test.js",
-    "test:e2e:ui": "playwright test"
+    "test:e2e:ui": "playwright test",
+    "lab:db:up": "docker compose -f docker-compose.lab.yml up -d postgres && docker compose -f docker-compose.lab.yml exec -T postgres sh -c 'until pg_isready -U lab -d lab; do sleep 0.5; done'",
+    "lab:db:down": "docker compose -f docker-compose.lab.yml down",
+    "lab:db:logs": "docker compose -f docker-compose.lab.yml logs -f postgres",
+    "lab:migrate": "DATABASE_URL=postgres://lab:lab@localhost:5433/lab PGSSL_DISABLE=true node backend/src/db/migrate.js",
+    "lab:backend": "node lab/scripts/start-lab-backend.js",
+    "lab:test:unit": "cd lab && npx vitest run --config vitest.config.js factories scenarios helpers",
+    "lab:seed": "node lab/scripts/seed-cli.js",
+    "lab:template:rebuild": "node lab/scripts/rebuild-template.js",
+    "lab:reset": "node -e \"import('./lab/helpers/reset.js').then(m => m.resetLabDb()).then(() => console.log('[LAB] Reset complete.'))\"",
+    "lab:test:api": "cd lab && npx vitest run --config vitest.config.js tests/api",
+    "lab:test:ui": "playwright test --config=playwright.lab.config.js",
+    "lab:dev": "node lab/scripts/start-lab-dev.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.50.0"

@@ -125,3 +125,51 @@ jobs:
 
       - name: Run E2E suite
         run: npm run test:e2e
+
+  lab-api:
+    name: Lab harness — API integration tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_USER: lab
+          POSTGRES_PASSWORD: lab
+          POSTGRES_DB: lab
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U lab -d lab"
+          --health-interval 2s
+          --health-timeout 2s
+          --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install root deps
+        run: npm ci
+
+      - name: Install lab deps
+        run: cd lab && npm install --no-audit --no-fund
+
+      - name: Apply migrations to lab DB
+        run: npm run lab:migrate
+
+      - name: Run lab unit tests (factories + scenarios)
+        run: npm run lab:test:unit
+
+      - name: Build template DB with baseline
+        run: npm run lab:template:rebuild -- --scenario=baseline
+
+      - name: Run lab API integration tests
+        run: npm run lab:test:api
+        env:
+          LAB_API_URL: http://localhost:3003
