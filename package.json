@@ -7,7 +7,8 @@
     "backend",
     "apps/florist",
     "apps/delivery",
-    "apps/dashboard"
+    "apps/dashboard",
+    "lab"
   ],
   "scripts": {
     "backend": "npm run dev --workspace=backend",
