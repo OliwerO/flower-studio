@@ -147,6 +147,7 @@ When unsure which skill to invoke, consult this table. The right skill at the ri
 | Branch cleanup | `/branches` | Prune gone branches |
 | Create or triage a GitHub issue | `triage` | Issue state machine |
 | New skill needed | `write-a-skill` | Proper structure + progressive disclosure |
+| Major UI overhaul / cross-cutting refactor / schema change | `lab/WORKFLOW.md` | Lab harness: scenario rehearsal + factory discipline + CI `lab-api` gate |
 
 **Canonical entry point: `/feature`.** The `.claude/commands/feature.md` command bundles the chain below with the cost-discipline overrides from this file (Sonnet executors, batched reviews, tight subagent prompts, MVP-sized plans, TDD red-phase exemptions). Use `/feature <one-line description>` instead of invoking the skills one-by-one — the command exists specifically so future sessions don't re-derive the discipline. The manual chain below is documented for cases where `/feature` is overkill or where you need to deviate.
 
@@ -161,6 +162,12 @@ For any feature/bugfix that takes more than a one-line change, this is the defau
 4. **`superpowers:subagent-driven-development`** — execute plan tasks via fresh subagents with two-stage review between tasks. Keeps the main context clean and parallelises independent work.
 5. **`tdd`** or **`superpowers:test-driven-development`** — write the failing test first, then the minimal implementation. Required for backend services + shared utils per the Testing Rules section above.
 6. **`superpowers:verification-before-completion`** — run the actual verification commands (tests, builds, smoke tests) and confirm their output BEFORE claiming the work is done. Evidence beats assertion. Especially load-bearing for prod cutovers and integration changes (also see "Verification Gate" below).
+
+**Lab harness — see `lab/WORKFLOW.md` for the full guide.** Mandatory rules in summary:
+- Schema change (new column, new table, NOT NULL added) → update `lab/factories/<entity>.js` in the SAME PR. Otherwise the `lab-api` CI job fails on the PR with NOT NULL or unknown-column errors. The lab is the canonical place to keep "what does a row look like?" in sync with the schema.
+- Major UI overhaul (Stock redesign, CRM rework, etc.) → build a scenario under `lab/scenarios/<name>.js`, rebuild the template, drive the UI via Playwright + `lab/helpers/api.js` for rehearsal before merge.
+- Determinism tests must compare faker-derived stable fields only — never `created_at`/`updated_at` (Date instances drift on CI under load).
+- Pre-PR matrix MUST include `npm run lab:test:unit` + `npm run lab:test:api` whenever backend, packages/shared, or lab/ changes. The Pre-PR Verification section below has the full check list.
 
 **Bug workflow:** When a bug, test failure, or unexpected behavior appears — invoke **`diagnose`** FIRST. Do not propose hypotheses or fixes before completing the reproduce → minimise → instrument loop. This applies even when the cause looks obvious.
 
@@ -221,6 +228,11 @@ Before opening a PR or pushing changes that will trigger CI/Vercel builds, run t
    - **Build ALL THREE apps**: `cd apps/florist && ./node_modules/.bin/vite build`, then dashboard, then delivery. Shared's `index.js` re-exports reach every app even if only one consumes a given component, so a missing dep in shared (like `lucide-react` not being in shared's peer deps) breaks any app that imports anything from shared. Vercel builds each app in isolation — local npm-workspace hoisting hides the bug. Building all three locally is the only way to catch it before deploy.
 3. **Frontend changes** in any single app: `cd apps/<that-app> && ./node_modules/.bin/vite build`. Plus build any other app that imports a file you touched in `packages/shared/`.
 4. **Static guards** (silent-catch CI guard, etc.): the guards live in `.github/workflows/test.yml` — if you added a new `catch(...)` block to backend, scan the diff for `catch (...) {}`/`catch(() => {})` patterns yourself.
+5. **Lab harness** (anything in `backend/`, `packages/shared/`, or `lab/`):
+   - `npm run lab:test:unit` — factory + scenario unit tests
+   - `npm run lab:test:api` — cancel-with-return regression gate (requires `npm run lab:db:up && npm run lab:template:rebuild -- --scenario=baseline` first if not already done)
+   - `npm run lab:test:ui` — only when UI / scenarios changed (slower, optional)
+   - These run in CI as the `lab-api` job on every PR. Running locally first saves the round-trip when a factory drifted from the schema or a determinism test included `created_at` (will flake on CI). See `lab/WORKFLOW.md`.
 
 **Workflow:** finish work → run the matrix above → if anything fails, fix and re-run until clean → commit → push → open PR. Do not announce "ready for review" / "tests pass" / "PR opened" until **every** applicable check above has produced green output. If a check is broken (e.g. harness won't boot for unrelated reasons), say so explicitly in the PR body — don't silently skip it.
 
