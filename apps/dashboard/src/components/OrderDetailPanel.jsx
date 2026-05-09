@@ -45,7 +45,6 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -186,28 +185,8 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
     }
   }
 
-  async function handleDelete() {
-    setSaving(true);
-    try {
-      const res = await client.delete(`/orders/${orderId}`);
-      const returned = res.data.returnedItems || [];
-      if (returned.length > 0) {
-        const summary = returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ');
-        showToast(`${t.orderDeleted || 'Order deleted'}. ${t.stockReturned || 'Returned'}: ${summary}`, 'success');
-      } else {
-        showToast(t.orderDeleted || 'Order deleted', 'success');
-      }
-      if (onUpdate) onUpdate();
-    } catch (err) {
-      showToast(err.response?.data?.error || t.error, 'error');
-      setConfirmDelete(false);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  // Termination flow — cancel paths (cancelWithReturn, cancelOnly, requestCancel, dismiss).
-  // Shared seam via useOrderTerminationFlow; CLAUDE.md Pitfall #7.
+  // Termination flow — cancel + delete paths behind shared seam.
+  // CLAUDE.md Pitfall #7: all three termination sites use this hook.
   // cancelOnly note: hook does NOT toast on success — onSuccess shows t.updated here
   // to preserve the user-visible confirmation that the state changed.
   const term = useOrderTerminationFlow({
@@ -215,7 +194,12 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
     apiClient: client,
     showToast,
     t,
-    onSuccess: async ({ withStockReturn }) => {
+    onSuccess: async ({ kind, withStockReturn }) => {
+      if (kind === 'delete') {
+        // Delete hook already toasted; tell parent to refetch — record is gone.
+        if (onUpdate) onUpdate();
+        return;
+      }
       const res = await client.get(`/orders/${orderId}`);
       setOrder(res.data);
       if (onUpdate) onUpdate();
@@ -1134,47 +1118,33 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
           <>
             <button
               onClick={() => term.requestCancel()}
-              className="px-4 py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium"
+              disabled={term.saving || term.confirmOpen}
+              className="px-4 py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium disabled:opacity-40"
             >
               {t.cancelOrder}
             </button>
-            {term.confirmOpen && <OrderTerminationConfirm flow={term} t={t} />}
           </>
         )}
 
-        {/* Delete — hard-remove the order from Airtable. Distinct from
+        {/* Delete — hard-remove the order from the database. Distinct from
             Cancel: Cancel keeps the record for audit; Delete makes it
-            disappear. Use for test orders / duplicates / webhook noise. */}
-        {!confirmDelete ? (
-          <button
-            onClick={() => setConfirmDelete(true)}
-            className="px-4 py-2 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium hover:bg-ios-red/5"
-          >
-            🗑 {t.deleteOrder || 'Delete order'}
-          </button>
-        ) : (
-          <div className="space-y-2">
-            <span className="text-xs text-ios-red font-semibold block">
-              {t.deleteOrderConfirm || 'Delete this order permanently? This cannot be undone.'}
-            </span>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleDelete}
-                disabled={saving}
-                className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold disabled:opacity-50"
-              >
-                🗑 {t.deleteOrderConfirmYes || 'Delete permanently'}
-              </button>
-              <button
-                onClick={() => setConfirmDelete(false)}
-                className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs"
-              >
-                {t.cancel}
-              </button>
-            </div>
-          </div>
-        )}
+            disappear. Use for test orders / duplicates / webhook noise.
+            Delete via shared termination seam; always returns stock. */}
+        <button
+          onClick={() => term.requestDelete()}
+          disabled={term.saving || term.confirmOpen}
+          className="px-4 py-2 rounded-xl border border-ios-red/40 text-ios-red text-sm font-medium hover:bg-ios-red/5 disabled:opacity-40"
+        >
+          🗑 {t.deleteOrder || 'Delete order'}
+        </button>
       </div>
+      {/* Inline confirm cards — cancel mode and delete mode rendered near their triggers */}
+      {term.confirmOpen && term.pendingKind === 'cancel' && (
+        <OrderTerminationConfirm flow={term} t={t} />
+      )}
+      {term.confirmOpen && term.pendingKind === 'delete' && (
+        <OrderTerminationConfirm flow={term} t={t} allowDelete />
+      )}
       <DissolvePremadesDialog
         candidates={dissolveCandidates}
         saving={saving}
