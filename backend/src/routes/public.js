@@ -26,6 +26,19 @@ async function getCachedOrBuild(key, fetcher) {
   return data;
 }
 
+// Eviction hook for callers that just mutated the underlying data
+// (e.g. wixPushJob after a successful push). Without this the storefront
+// would serve stale `/products` + `/categories` for up to 60s after the
+// owner clicks Push, on top of any browser/CDN cache. Pass no keys to
+// flush all entries.
+export function invalidatePublicCache(...keys) {
+  if (keys.length === 0) {
+    for (const k of Object.keys(cache)) delete cache[k];
+    return;
+  }
+  for (const k of keys) delete cache[k];
+}
+
 function cached(key, fetcher) {
   return async (_req, res, next) => {
     try {

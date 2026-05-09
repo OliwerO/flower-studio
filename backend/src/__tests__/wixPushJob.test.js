@@ -12,7 +12,13 @@ vi.mock('../services/wixProductSync.js', () => ({
   runPush: (onProgress) => runPushMock(onProgress),
 }));
 
-// Imported AFTER the mock so the module sees our stub.
+const invalidatePublicCacheMock = vi.fn();
+vi.mock('../routes/public.js', () => ({
+  default: {},
+  invalidatePublicCache: (...args) => invalidatePublicCacheMock(...args),
+}));
+
+// Imported AFTER the mocks so the module sees our stubs.
 const { startPushJob, getJob, _resetForTests } = await import('../services/wixPushJob.js');
 
 function nextTick() {
@@ -23,6 +29,7 @@ describe('wixPushJob', () => {
   beforeEach(() => {
     _resetForTests();
     runPushMock.mockReset();
+    invalidatePublicCacheMock.mockReset();
   });
 
   afterEach(() => {
@@ -140,5 +147,42 @@ describe('wixPushJob', () => {
 
   it('returns null from getJob for an unknown id', () => {
     expect(getJob('00000000-0000-0000-0000-000000000000')).toBeNull();
+  });
+
+  it('invalidates the public storefront cache after a successful push', async () => {
+    runPushMock.mockResolvedValue({
+      pricesSynced: 1, stockSynced: 0, categoriesSynced: 1,
+      collectionCounts: { 'available-today': 4 }, errors: [],
+    });
+
+    startPushJob();
+    await nextTick();
+    await nextTick();
+
+    expect(invalidatePublicCacheMock).toHaveBeenCalledTimes(1);
+    expect(invalidatePublicCacheMock).toHaveBeenCalledWith('products', 'stock');
+  });
+
+  it('invalidates the public cache even when the push completes with non-fatal errors (partial)', async () => {
+    runPushMock.mockResolvedValue({
+      pricesSynced: 0, stockSynced: 0, categoriesSynced: 0,
+      errors: ['Description prod-1: timeout'],
+    });
+
+    startPushJob();
+    await nextTick();
+    await nextTick();
+
+    expect(invalidatePublicCacheMock).toHaveBeenCalledWith('products', 'stock');
+  });
+
+  it('does NOT invalidate the public cache when the push throws (failed)', async () => {
+    runPushMock.mockRejectedValue(new Error('Wix down'));
+
+    startPushJob();
+    await nextTick();
+    await nextTick();
+
+    expect(invalidatePublicCacheMock).not.toHaveBeenCalled();
   });
 });
