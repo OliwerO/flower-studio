@@ -142,60 +142,30 @@ When unsure which skill to invoke, consult this table. The right skill at the ri
 | Full feature from idea to PR | `/feature` | Bundles the full chain below |
 | Implement a feature or bugfix (with tests) | `tdd` or `superpowers:test-driven-development` | Red-green-refactor |
 | Bug, test failure, unexpected behavior | `diagnose` | Reproduce → minimise → hypothesise → fix loop |
-| Refactor or improve architecture | `improve-codebase-architecture` | Finds shallow services + deep module opportunities |
+| Architecture audit (pre-redesign / quarterly) | `/audit <area>` | Wraps `improve-codebase-architecture`. Surfaces deep modules + shallow wrappers. No code edits — produces refactor issues. |
 | Verify work before PR | `superpowers:verification-before-completion` | Evidence before assertions, always |
 | Branch cleanup | `/branches` | Prune gone branches |
 | Create or triage a GitHub issue | `triage` | Issue state machine |
 | New skill needed | `write-a-skill` | Proper structure + progressive disclosure |
 | Major UI overhaul / cross-cutting refactor / schema change | `lab/WORKFLOW.md` | Lab harness: scenario rehearsal + factory discipline + CI `lab-api` gate |
 
-**Canonical entry point: `/feature`.** The `.claude/commands/feature.md` command bundles the chain below with the cost-discipline overrides from this file (Sonnet executors, batched reviews, tight subagent prompts, MVP-sized plans, TDD red-phase exemptions). Use `/feature <one-line description>` instead of invoking the skills one-by-one — the command exists specifically so future sessions don't re-derive the discipline. The manual chain below is documented for cases where `/feature` is overkill or where you need to deviate.
+### Canonical entry: `/feature`
 
-**Branch hygiene gate.** The SessionStart hook at `.claude/hooks/branch-audit.sh` runs at every session start and surfaces local branches with `[gone]` upstream, finished worktrees, open PRs by the current user, and local branches >7d old without an upstream. If the hook flags issues, run `/branches` to clean up before starting new work — the May 2026 branch graveyard happened because new features were piled onto whatever branch was checked out instead of landing the prior work first. `/feature` enforces this gate at step 0; if you skip `/feature` for a quick fix, you can still hit it manually with `/branches`. The hook is read-only (never mutates); only `/branches` and `/feature` take destructive action, and only with the safety rails described in those commands.
+For any change > one-line, run `/feature <one-line description>`. Full sequence + cost-discipline overrides + bail-outs live in `.claude/commands/feature.md`. The chain threads Matt's design discipline (`grill-with-docs`, `to-prd`, `to-issues`, vertical slicing, deep modules, CONTEXT.md vocabulary) with superpowers' execution discipline (worktrees, subagent-driven dev, verification gate, branch finishing).
 
-For any feature/bugfix that takes more than a one-line change, this is the default sequence. Future Claude sessions in this repo should follow it without being asked:
+**Skip the chain only for:** typo fixes, one-line bugfixes obvious from a stack trace, dependency bumps, doc-only PRs.
 
-0. **`grill-with-docs`** (preferred when CONTEXT.md/ADRs in scope) or **`grill-me`** — stress-test the design against this project's domain language and prior architectural decisions BEFORE writing a spec. Skippable only if scope is already locked by the user.
-1. **`superpowers:brainstorming`** — explore intent + design BEFORE writing code. Invoked before any plan-mode entry. Skip only if the user has already locked in scope. For larger features, follow with **`to-prd`** to formalize requirements into a PRD, then **`to-issues`** to break them into tracer-bullet GitHub issues.
-2. **`superpowers:writing-plans`** — produce a phased implementation plan saved under `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`. Plans use bite-sized checkbox steps with exact code + commands, no placeholders.
-3. **`superpowers:using-git-worktrees`** — create an isolated worktree under `.worktrees/<feature>/` so the session has its own checkout, branch, and index. **Never share the main repo's working tree across two Claude sessions** — the cross-session git collisions of 2026-05-02 (stray commits, branch flips mid-task, mangled commit messages) were caused by this. Main repo (top-level checkout) stays on `master` for general operations only.
-4. **`superpowers:subagent-driven-development`** — execute plan tasks via fresh subagents with two-stage review between tasks. Keeps the main context clean and parallelises independent work.
-5. **`tdd`** or **`superpowers:test-driven-development`** — write the failing test first, then the minimal implementation. Required for backend services + shared utils per the Testing Rules section above.
-6. **`superpowers:verification-before-completion`** — run the actual verification commands (tests, builds, smoke tests) and confirm their output BEFORE claiming the work is done. Evidence beats assertion. Especially load-bearing for prod cutovers and integration changes (also see "Verification Gate" below).
+### Hard rules `/feature` enforces (apply even when not running it)
 
-**Lab harness — see `lab/WORKFLOW.md` for the full guide.** Mandatory rules in summary:
-- Schema change (new column, new table, NOT NULL added) → update `lab/factories/<entity>.js` in the SAME PR. Otherwise the `lab-api` CI job fails on the PR with NOT NULL or unknown-column errors. The lab is the canonical place to keep "what does a row look like?" in sync with the schema.
-- Major UI overhaul (Stock redesign, CRM rework, etc.) → build a scenario under `lab/scenarios/<name>.js`, rebuild the template, drive the UI via Playwright + `lab/helpers/api.js` for rehearsal before merge.
-- Determinism tests must compare faker-derived stable fields only — never `created_at`/`updated_at` (Date instances drift on CI under load).
-- Pre-PR matrix MUST include `npm run lab:test:unit` + `npm run lab:test:api` whenever backend, packages/shared, or lab/ changes. The Pre-PR Verification section below has the full check list.
-
-**Bug workflow:** When a bug, test failure, or unexpected behavior appears — invoke **`diagnose`** FIRST. Do not propose hypotheses or fixes before completing the reproduce → minimise → instrument loop. This applies even when the cause looks obvious.
-
-Skip the chain only for: typo fixes, one-line bugfixes obvious from a stack trace, dependency bumps, or doc-only PRs.
-
-If two Claude sessions are active in this repo simultaneously, **each session must operate in its own worktree** under `.worktrees/`. Use `git worktree list` before any branch operation to see who's on what.
-
-### Cost discipline (added 2026-05-03 after 2× 5h Opus burn on bouquet-image-upload)
-
-The default chain above is non-negotiable for quality. These tunings cut token cost without weakening it.
-
-**Model selection per role.** Subagents inherit Opus unless overridden. Pass `model` explicitly when spawning agents via the `Agent` tool:
-- **Opus** — planning (`writing-plans`, `code-architect`), final review (`code-reviewer`, `requesting-code-review`), debugging (`systematic-debugging`), brainstorming. Reasoning-heavy steps.
-- **Sonnet** — execution subagents that follow a written plan task ("implement Task 7 exactly as specified"). Sonnet 4.6 is adequate for "follow these steps + run these commands" and ~5× cheaper. Use for: TDD red/green loops on backend services with a clear spec, UI wiring tasks, doc updates, mechanical refactors.
-- **Haiku** — never for code; OK for one-shot greps / file lookups via Explore agent if Sonnet feels overkill.
-
-**When to skip TDD** (still respect the Testing Rules section). TDD red/green is mandatory for: new backend services, new shared utils, new repos, new shared hooks. Skip the formal red phase for: pure UI wiring (importing an existing shared component into a page), CSS/Tailwind tweaks, copy/translation changes, doc-only edits, simple route handlers that compose existing services. For these, write the test alongside or after the implementation — verification still mandatory before commit.
-
-**Batched reviews, not per-task.** `subagent-driven-development` spec defaults to two reviewers (code-quality + spec-compliance) between every task. For a 17-task plan this spawns ~34 review subagents, each re-reading CLAUDE.md + plan + spec. Instead:
-- Run reviews **at phase boundaries** (groups of 3–5 related tasks), not after every task.
-- Final reviewer pass at the end, before the PR, covering the whole branch diff.
-- Keep per-task review only when a task touches a Known Pitfall area (status workflows, stock math, cancel-with-return, Wix sync, shadow-window writes).
-
-**Pre-trim subagent prompts.** Don't paste the full plan into every executor subagent. Paste only that task's section + relevant file paths + the spec excerpt that affects it. The plan exists on disk — the subagent can read the bits it needs.
-
-**Right-size plans.** A 2300-line plan for one feature is a smell. If a plan exceeds ~1500 lines or 15 tasks, split it: land an MVP first, file follow-ups for the rest. Each task should be one commit's worth (≤ ~300 LOC, ≤ 2 files in most cases).
-
-**Rough budget guide.** A 17-task feature like bouquet-image-upload should fit in **one** 5h Opus window when tuned per above (Sonnet for executors, batched reviews, tight subagent prompts). If two windows look likely, the plan is probably too big — split.
+- **Branch hygiene gate.** SessionStart hook (`.claude/hooks/branch-audit.sh`) flags `[gone]` upstreams, finished worktrees, open user PRs, and local branches >7d old without upstream. Run `/branches` before starting new work if flagged. May 2026 branch graveyard came from piling new features onto whatever branch was checked out instead of landing prior work first. The hook is read-only; only `/branches` and `/feature` take destructive action.
+- **Bug workflow.** Invoke `diagnose` FIRST (not `systematic-debugging`). Phase 0 prod-signal sweep (Railway logs → PG via `claude_ro` → shadow-health) is flower-studio-tuned. No hypotheses or fixes before reproduce → minimise → instrument, even when cause looks obvious.
+- **Architecture audit.** `/audit <area>` wraps `improve-codebase-architecture`. Use before major redesigns (Stock overhaul, CRM rework) or quarterly. Produces refactor issues, not edits.
+- **Worktree mandatory for parallel sessions.** Two Claude sessions in this repo simultaneously → each in its own `.worktrees/<feature>/`. Cross-session git collisions of 2026-05-02 (stray commits, branch flips, mangled commit messages) caused by skipping this. `git worktree list` before any branch op.
+- **Lab harness — see `lab/WORKFLOW.md`.** Mandatory rules:
+  - Schema change (new column, new table, NOT NULL added) → update `lab/factories/<entity>.js` in same PR. Otherwise CI `lab-api` fails on NOT NULL or unknown-column.
+  - Major UI overhaul → build scenario under `lab/scenarios/<name>.js`, rebuild template, Playwright rehearsal before merge.
+  - Determinism tests compare faker-derived stable fields only — never `created_at`/`updated_at` (drift on CI).
+  - Pre-PR matrix MUST include `npm run lab:test:unit` + `npm run lab:test:api` when backend, packages/shared, or lab/ changes.
 
 ## Workflow Rules
 - Update `CHANGELOG.md` for any schema, env, or deployment-affecting change
