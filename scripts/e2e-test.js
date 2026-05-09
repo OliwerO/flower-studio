@@ -249,7 +249,7 @@ async function section1Boot() {
 
   const health = await api('GET', '/health');
   assert('Backend reachable on harness port', health.status === 200);
-  assert('testBackend flag exposed by /health', health.body?.testBackend === true);
+  assert('harness flag exposed by /health', health.body?.harness === true);
 
   const seeded = await reset();
   assert('/test/reset returned ok', seeded.ok === true);
