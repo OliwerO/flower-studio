@@ -31,7 +31,7 @@ import { TABLES } from '../config/airtable.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
-import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
 
 // ── Backend mode ──
@@ -380,7 +380,7 @@ export async function mirrorAirtableOrder({ order, lines = [], delivery = null }
     if (!orderInsert.customerId) orderInsert.customerId = order.Customer?.[0] || 'unknown';
     if (!orderInsert.deliveryType) orderInsert.deliveryType = order['Delivery Type'] || 'Pickup';
     if (!orderInsert.status) orderInsert.status = order.Status || ORDER_STATUS.NEW;
-    if (!orderInsert.paymentStatus) orderInsert.paymentStatus = order['Payment Status'] || 'Unpaid';
+    if (!orderInsert.paymentStatus) orderInsert.paymentStatus = order['Payment Status'] || PAYMENT_STATUS.UNPAID;
     if (!orderInsert.orderDate) orderInsert.orderDate = order['Order Date'] || new Date().toISOString().split('T')[0];
 
     const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
@@ -402,6 +402,102 @@ export async function mirrorAirtableOrder({ order, lines = [], delivery = null }
     }
 
     return { skipped: false, orderId: insertedOrder.id };
+  });
+}
+
+// ── createWixOrder — direct PG transactional write for the Wix webhook ──
+//
+// Wix webhook bypasses orderService.createOrder because:
+//   - No stock deduction (Wix products don't 1:1 map to stock items;
+//     florist composes the bouquet manually post-order).
+//   - No auto-match prompts, owner-price cascades, driver-of-day.
+//   - Source/createdBy/Status are Wix invariants.
+// Replaces the old "create-in-Airtable then mirrorAirtableOrder" flow that
+// lived in wix.js until PR 2a.
+export async function createWixOrder(params) {
+  if (MODE !== 'postgres') {
+    throw new Error('orderRepo.createWixOrder: requires ORDER_BACKEND=postgres');
+  }
+  if (!db) throw new Error('orderRepo.createWixOrder: postgres backend not configured');
+
+  const {
+    customerId, appOrderId, wixOrderId, customerRequest,
+    requiredBy, paymentStatus, paymentMethod, priceOverride,
+    lines: lineParams, delivery: deliveryParams,
+  } = params;
+
+  return await db.transaction(async (tx) => {
+    const orderInsert = {
+      customerId,
+      appOrderId,
+      wixOrderId: wixOrderId || null,
+      source: 'Wix',
+      createdBy: 'Wix Webhook',
+      status: ORDER_STATUS.NEW,
+      deliveryType: 'Delivery',
+      orderDate: new Date().toISOString().split('T')[0],
+      requiredBy: requiredBy || null,
+      customerRequest: customerRequest || '',
+      notesOriginal: customerRequest || '',
+      greetingCardText: '',
+      paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
+      paymentMethod: paymentMethod || null,
+      priceOverride: priceOverride != null ? String(priceOverride) : null,
+      deliveryFee: String(Number(deliveryParams?.fee) || 0),
+    };
+
+    const [insertedOrder] = await tx.insert(orders).values(orderInsert).returning();
+    await tryAudit(tx, {
+      entityType: 'order',
+      entityId: insertedOrder.id,
+      action: 'create',
+      before: null,
+      after: pgOrderToResponse(insertedOrder),
+      actorRole: 'webhook',
+      actorPinLabel: 'Wix',
+    });
+
+    const insertedLines = [];
+    for (const line of lineParams || []) {
+      const lineInsert = {
+        orderId:          insertedOrder.id,
+        airtableId:       line.airtableId || null,
+        stockItemId:      line.stockItemId || null,
+        flowerName:       line.flowerName || '',
+        quantity:         Number(line.quantity) || 0,
+        costPricePerUnit: line.costPricePerUnit != null ? String(line.costPricePerUnit) : null,
+        sellPricePerUnit: line.sellPricePerUnit != null ? String(line.sellPricePerUnit) : null,
+      };
+      const [insertedLine] = await tx.insert(orderLines).values(lineInsert).returning();
+      insertedLines.push(insertedLine);
+    }
+
+    const deliveryInsert = {
+      orderId:         insertedOrder.id,
+      deliveryAddress: deliveryParams?.address || '',
+      recipientName:   deliveryParams?.recipientName || '',
+      recipientPhone:  deliveryParams?.recipientPhone || '',
+      deliveryDate:    deliveryParams?.date || null,
+      deliveryTime:    '',
+      deliveryFee:     String(Number(deliveryParams?.fee) || 0),
+      status:          DELIVERY_STATUS.PENDING,
+    };
+    const [insertedDelivery] = await tx.insert(deliveries).values(deliveryInsert).returning();
+    await tryAudit(tx, {
+      entityType: 'delivery',
+      entityId: insertedDelivery.id,
+      action: 'create',
+      before: null,
+      after: pgDeliveryToResponse(insertedDelivery),
+      actorRole: 'webhook',
+      actorPinLabel: 'Wix',
+    });
+
+    return {
+      order:      pgOrderToResponse(insertedOrder, insertedLines.map(l => l.id), insertedDelivery.id),
+      orderLines: insertedLines.map(pgLineToResponse),
+      delivery:   pgDeliveryToResponse({ ...insertedDelivery, orderId: insertedOrder.id }),
+    };
   });
 }
 
@@ -537,7 +633,7 @@ export async function createOrder(params, config, opts = {}) {
     (sum, l) => sum + (Number(l.sellPricePerUnit) || 0) * (Number(l.quantity) || 0), 0,
   );
   const finalPriceAtCreate = (Number(priceOverride) || flowerTotal) + resolvedDeliveryFee;
-  const p1AmountBackfill = paymentStatus === 'Paid'
+  const p1AmountBackfill = paymentStatus === PAYMENT_STATUS.PAID
     && payment1Amount == null && finalPriceAtCreate > 0
     ? finalPriceAtCreate : null;
   const p1MethodBackfill = p1AmountBackfill != null && !payment1Method
@@ -1287,6 +1383,41 @@ export async function getLinesForVelocity(dateFrom, dateTo) {
       sql`${orders.status} != ${ORDER_STATUS.CANCELLED}`,
     ));
   return rows;
+}
+
+// Bulk-fetch order lines by their own ids (mixed Airtable recXXX or PG uuid).
+// Replaces utils/batchQuery.js#listByIds(TABLES.ORDER_LINES, ...) at orders.js
+// + orderService.js call sites. Returns wire-format records (bracket keys) so
+// existing consumers don't need shape adapters.
+export async function getLinesByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (!db) throw new Error('orderRepo.getLinesByIds: postgres backend not configured');
+  const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
+  const uuidIds = ids.filter(id => typeof id === 'string' && !id.startsWith('rec'));
+  const wheres = [];
+  if (airtableIds.length) wheres.push(inArray(orderLines.airtableId, airtableIds));
+  if (uuidIds.length)     wheres.push(inArray(orderLines.id, uuidIds));
+  if (wheres.length === 0) return [];
+  const filter = wheres.length === 1 ? wheres[0] : or(...wheres);
+  const rows = await db.select().from(orderLines)
+    .where(and(filter, isNull(orderLines.deletedAt)));
+  return rows.map(pgLineToResponse);
+}
+
+// Bulk-fetch deliveries by their own ids. Same pattern as getLinesByIds.
+export async function getDeliveriesByIds(ids) {
+  if (!Array.isArray(ids) || ids.length === 0) return [];
+  if (!db) throw new Error('orderRepo.getDeliveriesByIds: postgres backend not configured');
+  const airtableIds = ids.filter(id => typeof id === 'string' && id.startsWith('rec'));
+  const uuidIds = ids.filter(id => typeof id === 'string' && !id.startsWith('rec'));
+  const wheres = [];
+  if (airtableIds.length) wheres.push(inArray(deliveries.airtableId, airtableIds));
+  if (uuidIds.length)     wheres.push(inArray(deliveries.id, uuidIds));
+  if (wheres.length === 0) return [];
+  const filter = wheres.length === 1 ? wheres[0] : or(...wheres);
+  const rows = await db.select().from(deliveries)
+    .where(and(filter, isNull(deliveries.deletedAt)));
+  return rows.map(pgDeliveryToResponse);
 }
 
 // Returns line records for a list of order IDs (UUIDs). Used by

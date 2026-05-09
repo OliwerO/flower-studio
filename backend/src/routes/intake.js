@@ -4,9 +4,7 @@
 
 import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
-import * as db from '../services/airtable.js';
-import { TABLES } from '../config/airtable.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import * as stockRepo from '../repos/stockRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import { parseRawText, parseFlowwowEmail, matchStockItems } from '../services/intake-parser.js';
 import { PAYMENT_STATUS } from '../constants/statuses.js';
@@ -29,11 +27,9 @@ router.post('/parse', async (req, res, next) => {
       return res.status(400).json({ error: 'Text too long (max 10,000 characters)' });
     }
 
-    // 1. Fetch active stock — single Airtable call, used for matching
-    const stockItems = await db.list(TABLES.STOCK, {
-      filterByFormula: '{Active} = TRUE()',
-      fields: ['Display Name', 'Category', 'Current Quantity', 'Current Cost Price', 'Current Sell Price'],
-    });
+    // 1. Fetch active stock for matching. includeEmpty so the parser can still
+    // suggest out-of-stock items (UI surfaces them with a quantity badge).
+    const stockItems = await stockRepo.list({ pg: { includeEmpty: true } });
 
     // 2. Parse text based on type
     const parsed = type === 'flowwow'

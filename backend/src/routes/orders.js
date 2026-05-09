@@ -10,7 +10,6 @@ import { TABLES } from '../config/airtable.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getDriverOfDay, getConfig, generateOrderId } from '../services/configService.js';
 import { pickAllowed } from '../utils/fields.js';
-import { listByIds } from '../utils/batchQuery.js';
 import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS } from '../constants/statuses.js';
 import {
   createOrder,
@@ -148,8 +147,8 @@ router.get('/', async (req, res, next) => {
 
     // Bulk-fetch order lines + customers + deliveries in parallel.
     // In postgres mode, orderRepo embeds _lines + _delivery on each order so
-    // we can skip the listByIds round-trips for those two tables (which target
-    // PG-native UUIDs that the Airtable / mock layer won't resolve).
+    // the bulk-by-id fetches below are skipped — they're an airtable-fallback
+    // path retained until PR 2b sweeps the airtable infrastructure.
     const pgEmbeds = orders.length > 0 && orders[0]._lines !== undefined;
     const allLineIds = orders.flatMap(o => o['Order Lines'] || []);
     const uniqueCustomerIds = [...new Set(orders.flatMap(o => o.Customer || []))];
@@ -158,16 +157,11 @@ router.get('/', async (req, res, next) => {
     const [allLines, allCustomers, allDeliveries] = await Promise.all([
       pgEmbeds
         ? Promise.resolve(orders.flatMap(o => o._lines || []))
-        : listByIds(TABLES.ORDER_LINES, allLineIds, {
-            fields: ['Order', 'Sell Price Per Unit', 'Cost Price Per Unit', 'Quantity', 'Flower Name'],
-            maxRecords: 1000,
-          }),
+        : orderRepo.getLinesByIds(allLineIds),
       customerRepo.findMany(uniqueCustomerIds),
       pgEmbeds
         ? Promise.resolve(orders.map(o => o._delivery).filter(Boolean))
-        : listByIds(TABLES.DELIVERIES, allDeliveryIds, {
-            fields: ['Delivery Date', 'Delivery Time', 'Delivery Fee', 'Delivery Address', 'Assigned Driver', 'Delivery Method', 'Status'],
-          }),
+        : orderRepo.getDeliveriesByIds(allDeliveryIds),
     ]);
 
     // Index customers and deliveries by ID
@@ -289,7 +283,7 @@ router.get('/:id', async (req, res, next) => {
     const [orderLines, customer, delivery] = await Promise.all([
       hasPgEmbeds
         ? Promise.resolve(order._lines)
-        : listByIds(TABLES.ORDER_LINES, lineIds),
+        : orderRepo.getLinesByIds(lineIds),
       custId
         ? customerRepo.findMany([custId]).then(r => r[0] ?? null).catch(() => null)
         : Promise.resolve(null),
@@ -463,7 +457,7 @@ router.patch('/:id', async (req, res, next) => {
         const lineIds = current?.['Order Lines'] || [];
         const lines = hasEmbeds
           ? current._lines
-          : (lineIds.length > 0 ? await listByIds(TABLES.ORDER_LINES, lineIds) : []);
+          : (lineIds.length > 0 ? await orderRepo.getLinesByIds(lineIds) : []);
         const flowerTotal = lines.reduce(
           (s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0
         );
