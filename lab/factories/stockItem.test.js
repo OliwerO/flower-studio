@@ -32,10 +32,16 @@ describe('makeStockItem', () => {
   });
 
   it('is deterministic under the same faker seed', () => {
+    // Compare only faker-derived fields. created_at/updated_at use
+    // `new Date()` (wall clock) and will differ between calls on CI.
     faker.seed(42);
     const a = makeStockItem();
     faker.seed(42);
     const b = makeStockItem();
-    expect(a).toEqual(b);
+    expect(a.id).toEqual(b.id);
+    expect(a.display_name).toEqual(b.display_name);
+    expect(a.current_quantity).toEqual(b.current_quantity);
+    expect(a.current_cost_price).toEqual(b.current_cost_price);
+    expect(a.current_sell_price).toEqual(b.current_sell_price);
   });
 });

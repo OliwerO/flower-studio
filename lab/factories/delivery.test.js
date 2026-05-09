@@ -55,11 +55,17 @@ describe('makeDelivery', () => {
   });
 
   it('is deterministic under the same faker seed', () => {
+    // Compare only faker-derived fields. created_at/updated_at use
+    // `new Date()` (wall clock) and will differ between calls on CI.
     faker.seed(42);
     const a = makeDelivery({ orderId: 'order-x' });
     faker.seed(42);
     const b = makeDelivery({ orderId: 'order-x' });
-    expect(a).toEqual(b);
+    expect(a.id).toEqual(b.id);
+    expect(a.recipient_name).toEqual(b.recipient_name);
+    expect(a.recipient_phone).toEqual(b.recipient_phone);
+    expect(a.delivery_address).toEqual(b.delivery_address);
+    expect(a.delivery_fee).toEqual(b.delivery_fee);
   });
 
   it('accepts order_id directly as well as orderId shorthand', () => {
