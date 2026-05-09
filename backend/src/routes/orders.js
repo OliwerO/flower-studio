@@ -399,6 +399,7 @@ router.post('/', async (req, res, next) => {
       if (creationErr.statusCode === 400) {
         return res.status(400).json({ error: creationErr.message });
       }
+      console.error('[ORDER] createOrder failed:', creationErr.message, creationErr.stack?.split('\n')[1]);
       return res.status(500).json({
         error: 'Order creation failed. Partial records have been cleaned up.',
         detail: creationErr.message,

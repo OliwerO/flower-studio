@@ -22,13 +22,12 @@ import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/stat
 function runPostCreateSideEffects({ order }, params) {
   const { customer, source, customerRequest, communicationMethod, deliveryType, priceOverride } = params;
 
-  // Update customer record (non-blocking — Airtable still owns customers
-  // until Phase 5).
+  // Update customer record with communication method / source (non-blocking).
   const customerPatch = {};
   if (communicationMethod) customerPatch['Communication method'] = communicationMethod;
   if (source) customerPatch['Order Source'] = source;
   if (Object.keys(customerPatch).length > 0) {
-    db.update(TABLES.CUSTOMERS, customer, customerPatch)
+    customerRepo.update(customer, customerPatch)
       .catch(err => console.error('[ORDER] Failed to update customer fields:', err.message));
   }
 
