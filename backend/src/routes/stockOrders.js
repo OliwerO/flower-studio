@@ -642,6 +642,16 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const altAcceptedPre = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOffPre = Number(evalLine.altWriteOffQty) || 0;
 
+        // If the line carries a stale Airtable rec ID that was never backfilled
+        // to PG, treat it as unlinked so auto-resolve can pick it up by name.
+        if (stockItemId) {
+          const exists = await stockRepo.getById(stockItemId).catch(() => null);
+          if (!exists) {
+            console.log(`[STOCK-ORDER] Stock item ${stockItemId} not found in PG — falling back to name resolution for "${line['Flower Name']}"`);
+            stockItemId = null;
+          }
+        }
+
         // Auto-resolve: if PO line has no Stock Item but has Flower Name,
         // find a matching stock record and link it. This handles lines created
         // from freetext input (no stock item selected in the PO form).

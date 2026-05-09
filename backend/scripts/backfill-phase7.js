@@ -68,14 +68,15 @@ async function backfillStockOrders() {
     if (DRY) { console.log(`[dry] would upsert PO ${h.id} → ${values.poNumber}`); continue; }
 
     const updateSet = { ...values };
-    delete updateSet.airtableId;  // do not overwrite key
-    const [row] = await db.insert(stockOrders).values(values)
-      .onConflictDoUpdate({
-        target: stockOrders.airtableId,
-        set: updateSet,
-      })
-      .returning();
-    poIdMap.set(h.id, row.id);
+    delete updateSet.airtableId;
+    const existing = poIdMap.get(h.id);
+    if (existing) {
+      await db.update(stockOrders).set(updateSet).where(eq(stockOrders.id, existing));
+      poIdMap.set(h.id, existing);
+    } else {
+      const [row] = await db.insert(stockOrders).values(values).returning();
+      poIdMap.set(h.id, row.id);
+    }
   }
 
   for (const l of lines) {
@@ -116,11 +117,13 @@ async function backfillStockOrders() {
 
     const updateSet = { ...values };
     delete updateSet.airtableId;
-    await db.insert(stockOrderLines).values(values)
-      .onConflictDoUpdate({
-        target: stockOrderLines.airtableId,
-        set: updateSet,
-      });
+    const [existingLine] = await db.select({ id: stockOrderLines.id }).from(stockOrderLines)
+      .where(eq(stockOrderLines.airtableId, l.id)).limit(1);
+    if (existingLine) {
+      await db.update(stockOrderLines).set(updateSet).where(eq(stockOrderLines.id, existingLine.id));
+    } else {
+      await db.insert(stockOrderLines).values(values);
+    }
   }
   if (orphanLineCount > 0) {
     console.log(`[backfill] Skipped ${orphanLineCount} orphan stock_order_lines (missing or unlinked parent PO).`);
@@ -153,13 +156,14 @@ async function backfillPremadeBouquets() {
     if (DRY) { console.log(`[dry] would upsert premade ${h.id} → ${values.name}`); continue; }
     const updateSet = { ...values };
     delete updateSet.airtableId;
-    const [row] = await db.insert(premadeBouquets).values(values)
-      .onConflictDoUpdate({
-        target: premadeBouquets.airtableId,
-        set: updateSet,
-      })
-      .returning();
-    bouquetIdMap.set(h.id, row.id);
+    const existingBouquet = bouquetIdMap.get(h.id);
+    if (existingBouquet) {
+      await db.update(premadeBouquets).set(updateSet).where(eq(premadeBouquets.id, existingBouquet));
+      bouquetIdMap.set(h.id, existingBouquet);
+    } else {
+      const [row] = await db.insert(premadeBouquets).values(values).returning();
+      bouquetIdMap.set(h.id, row.id);
+    }
   }
 
   for (const l of lines) {
@@ -185,11 +189,13 @@ async function backfillPremadeBouquets() {
     if (DRY) continue;
     const updateSet = { ...values };
     delete updateSet.airtableId;
-    await db.insert(premadeBouquetLines).values(values)
-      .onConflictDoUpdate({
-        target: premadeBouquetLines.airtableId,
-        set: updateSet,
-      });
+    const [existingPremadeLine] = await db.select({ id: premadeBouquetLines.id }).from(premadeBouquetLines)
+      .where(eq(premadeBouquetLines.airtableId, l.id)).limit(1);
+    if (existingPremadeLine) {
+      await db.update(premadeBouquetLines).set(updateSet).where(eq(premadeBouquetLines.id, existingPremadeLine.id));
+    } else {
+      await db.insert(premadeBouquetLines).values(values);
+    }
   }
   if (orphanPremadeLineCount > 0) {
     console.log(`[backfill] Skipped ${orphanPremadeLineCount} orphan premade_bouquet_lines (missing or unlinked parent bouquet).`);
