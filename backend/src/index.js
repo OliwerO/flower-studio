@@ -6,7 +6,6 @@ import helmet from 'helmet';
 
 import { authenticate } from './middleware/auth.js';
 import { errorHandler } from './middleware/errorHandler.js';
-import { validateAirtableSchema } from './services/airtableSchema.js';
 import { connectPostgres, disconnectPostgres } from './db/index.js';
 
 import authRoutes          from './routes/auth.js';
@@ -35,76 +34,21 @@ import feedbackRoutes      from './routes/feedback.js';
 import { startFeedbackBot } from './services/feedbackTelegramBot.js';
 
 // Validate required env vars on startup — fail early instead of silently breaking at runtime.
-// In test-harness mode (TEST_BACKEND=mock-airtable) the AIRTABLE_* keys are
-// not actually used, but we still require them to be set to dummy values so
-// that any code path that reads them gets a defined string. start-test-backend.js
-// fills these with placeholders before importing this file.
-const IS_TEST_BACKEND = process.env.TEST_BACKEND === 'mock-airtable';
-const REQUIRED_ENV = ['AIRTABLE_API_KEY', 'AIRTABLE_BASE_ID', 'PIN_OWNER', 'PIN_FLORIST'];
+const REQUIRED_ENV = ['DATABASE_URL', 'PIN_OWNER', 'PIN_FLORIST'];
 const missing = REQUIRED_ENV.filter(key => !process.env[key]);
 if (missing.length > 0) {
   console.error(`[FATAL] Missing required environment variables: ${missing.join(', ')}`);
   process.exit(1);
 }
 
-// SQL migration boot guards.
-//
-// ORDER_BACKEND and STOCK_BACKEND each accept airtable | shadow | postgres
-// (default airtable). The two flags are independent at the code level —
-// orderRepo and stockRepo read them separately — but cross-domain workflows
-// (order creation deducts stock, cancel-with-return restores it) only stay
-// consistent when the two stores agree. Mixing modes (e.g. orders=postgres,
-// stock=airtable) silently splits a single business operation across two
-// databases with no shared transaction.
-//
-// Rule:
-//   ORDER_BACKEND=postgres ⇒ STOCK_BACKEND=postgres
-//   ORDER_BACKEND=shadow   ⇒ STOCK_BACKEND ∈ {shadow, postgres}
-//
-// Either of {shadow, postgres} also requires DATABASE_URL.
-{
-  const VALID = new Set(['airtable', 'shadow', 'postgres']);
-  const orderBackend = (process.env.ORDER_BACKEND || 'airtable').toLowerCase();
-  const stockBackend = (process.env.STOCK_BACKEND || 'airtable').toLowerCase();
-
-  if (!VALID.has(orderBackend)) {
-    console.error(`[FATAL] Invalid ORDER_BACKEND="${orderBackend}". Allowed: airtable | shadow | postgres.`);
-    process.exit(1);
-  }
-  if (!VALID.has(stockBackend)) {
-    console.error(`[FATAL] Invalid STOCK_BACKEND="${stockBackend}". Allowed: airtable | shadow | postgres.`);
-    process.exit(1);
-  }
-
-  const needsPg = orderBackend !== 'airtable' || stockBackend !== 'airtable';
-  if (needsPg && !process.env.DATABASE_URL) {
-    console.error(
-      `[FATAL] ORDER_BACKEND=${orderBackend} STOCK_BACKEND=${stockBackend} requires DATABASE_URL. ` +
-      `Set DATABASE_URL or revert both flags to "airtable".`
-    );
-    process.exit(1);
-  }
-
-  if (orderBackend === 'postgres' && stockBackend !== 'postgres') {
-    console.error(
-      `[FATAL] ORDER_BACKEND=postgres requires STOCK_BACKEND=postgres (got "${stockBackend}"). ` +
-      `Order creation deducts stock — running orders on PG while stock stays on Airtable splits ` +
-      `a single business operation across two stores with no shared transaction.`
-    );
-    process.exit(1);
-  }
-  if (orderBackend === 'shadow' && stockBackend === 'airtable') {
-    console.error(
-      `[FATAL] ORDER_BACKEND=shadow requires STOCK_BACKEND in {shadow, postgres} (got "airtable"). ` +
-      `Shadow-write of orders without shadow-write of stock makes parity diffs unactionable.`
-    );
-    process.exit(1);
-  }
-
-  if (needsPg) {
-    console.log(`[BACKEND] ORDER_BACKEND=${orderBackend} STOCK_BACKEND=${stockBackend}`);
-  }
-}
+// Test-harness gate. The harness boots with `DATABASE_URL=pglite:memory`,
+// which is also the in-process pglite sentinel in db/index.js. Any boot
+// with a real `postgresql://` DSN is production / dev-prod. Test routes
+// (POST /api/test/reset, GET /api/test/state, etc.) only mount under the
+// pglite gate. Pre-PR-2b this was keyed on TEST_BACKEND=mock-airtable;
+// now the airtable mock is gone and the only test-mode signal we need
+// is "are we running on pglite?".
+const IS_HARNESS = process.env.DATABASE_URL === 'pglite:memory';
 
 const app = express();
 const isProduction = process.env.NODE_ENV === 'production';
@@ -149,17 +93,16 @@ app.use(express.json({ limit: '1mb' }));
 
 // Public routes — no PIN required
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', timestamp: new Date().toISOString(), testBackend: IS_TEST_BACKEND || false });
+  res.json({ status: 'ok', timestamp: new Date().toISOString(), harness: IS_HARNESS });
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/events', eventsRoutes);   // SSE — no auth needed, lightweight event stream
 app.use('/api/public', publicRoutes);   // Storefront data — no auth, consumed by Wix Velo
 
 // Test-only routes (POST /api/test/reset, GET /api/test/state) — mounted
-// ONLY when running under TEST_BACKEND=mock-airtable. Both the shim in
-// services/airtable.js and db/index.js refuse to boot pglite or the mock
-// in NODE_ENV=production, so this conditional is just defence in depth.
-if (IS_TEST_BACKEND) {
+// ONLY under the pglite harness. db/index.js refuses to boot pglite in
+// NODE_ENV=production, so this conditional is defence in depth.
+if (IS_HARNESS) {
   const { default: testRoutes } = await import('./routes/test.js');
   app.use('/api/test', testRoutes);
   console.log('[TEST] Mounted /api/test (reset, state, audit, parity).');
@@ -193,23 +136,8 @@ app.use(errorHandler);
 
 const PORT = process.env.PORT || 3001;
 
-// Verify Airtable field names match what the backend writes — catches
-// trailing-space typos and renamed fields at boot instead of runtime.
-// See backend/src/services/airtableSchema.js for the rationale.
-//
-// Skipped in test-harness mode: the validator hits the Airtable Meta API
-// with the real PAT, which (a) we don't have in tests and (b) would defeat
-// the "no production traffic" guarantee of the harness. The mock has its
-// own fixed schema, so the drift this validator catches doesn't apply.
-if (!IS_TEST_BACKEND) {
-  await validateAirtableSchema();
-} else {
-  console.log('[SCHEMA CHECK] Skipped — TEST_BACKEND=mock-airtable. Mock fixture is authoritative.');
-}
-
-// Postgres — no-op when DATABASE_URL is unset (Phase 1 scaffolding).
-// Becomes mandatory once entity cutovers begin in Phase 3.
-// In pglite mode this also applies migrations; see db/index.js.
+// Postgres connect — applies pending migrations on boot in pglite mode;
+// real-PG mode runs the dir-based migration runner via db/migrate.js.
 await connectPostgres();
 
 startFeedbackBot();

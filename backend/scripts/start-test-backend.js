@@ -2,25 +2,21 @@
 //
 //   node backend/scripts/start-test-backend.js
 //
-// Sets the env vars that flip every relevant subsystem into test mode:
-//   - TEST_BACKEND=mock-airtable     → services/airtable.js loads the mock
+// Sets the env vars that flip the backend into test-harness mode:
 //   - DATABASE_URL=pglite:memory     → db/index.js boots pglite + applies migrations
-//   - STOCK_BACKEND=postgres         → stockRepo writes to PG (cutover path exercised)
-//   - ORDER_BACKEND=postgres         → orderRepo writes to PG when implemented
-//   - AIRTABLE_*                     → dummy values (the mock ignores them, but
-//                                       config/airtable.js is imported lazily
-//                                       through the shim only in real mode, so
-//                                       these are mostly for safety)
-//   - AIRTABLE_*_TABLE               → the table ids the JSON fixture is keyed by
+//                                       in-process. index.js gates `/api/test/*`
+//                                       routes on this sentinel.
 //   - PIN_OWNER / PIN_FLORIST / PIN_DRIVER_TIMUR / PIN_DRIVER_NIKITA → known test PINs
+//   - WIX_WEBHOOK_SECRET / ANTHROPIC_API_KEY / TELEGRAM_BOT_TOKEN → fake placeholders
+//     for clients that init at module load.
 //
 // Refuses to boot when NODE_ENV=production (stacked with the same guard
-// inside airtable.js + db/index.js — three layers).
+// inside db/index.js).
 //
 // Why this lives in backend/scripts/ and not at repo root: it's a backend
 // concern (it spawns the backend), and it's easier to discover next to
-// backfill-stock.js / simulate-stock.js. Playwright's `webServer` config
-// invokes it via `node backend/scripts/start-test-backend.js`.
+// other scripts. Playwright's `webServer` config invokes it via
+// `node backend/scripts/start-test-backend.js`.
 
 if (process.env.NODE_ENV === 'production') {
   console.error('[FATAL] Refusing to start test backend under NODE_ENV=production.');
@@ -35,50 +31,13 @@ if (process.env.NODE_ENV === 'production') {
 
 const TEST_ENV = {
   NODE_ENV:                          process.env.NODE_ENV || 'test',
-  TEST_BACKEND:                      'mock-airtable',
   DATABASE_URL:                      'pglite:memory',
-  STOCK_BACKEND:                     'postgres',
-  // Phase 4 read-path migration completed: GET /orders, GET /orders/:id,
-  // PATCH /orders/:id (non-status), GET/PATCH /deliveries/:id,
-  // /:id/swap-bouquet-line and /:id/convert-to-delivery now route through
-  // orderRepo. Wix webhook mirrors to PG via orderRepo.mirrorAirtableOrder.
-  // Harness defaults to ORDER_BACKEND=postgres so the cutover path is
-  // exercised on every CI run. Override with HARNESS_ORDER_BACKEND=airtable
-  // to validate the legacy path.
-  ORDER_BACKEND:                     process.env.HARNESS_ORDER_BACKEND || 'postgres',
 
   // PINs — known across specs, not secrets.
   PIN_OWNER:                         '1111',
   PIN_FLORIST:                       '2222',
   PIN_DRIVER_TIMUR:                  '3333',
   PIN_DRIVER_NIKITA:                 '4444',
-
-  // Airtable identity — the mock doesn't call the real API, but
-  // config/airtable.js still constructs `new Airtable({apiKey})` defensively
-  // when the shim's NODE_ENV-prod check passes — which it doesn't here, so
-  // these are belt-and-braces.
-  AIRTABLE_API_KEY:                  'test-mock-key',
-  AIRTABLE_BASE_ID:                  'appMockBase',
-
-  // Table ids — must match the keys in airtable-test-base.json.
-  AIRTABLE_CUSTOMERS_TABLE:          'tblMockCustomers',
-  AIRTABLE_ORDERS_TABLE:             'tblMockOrders',
-  AIRTABLE_ORDER_LINES_TABLE:        'tblMockOrderLines',
-  AIRTABLE_STOCK_TABLE:              'tblMockStock',
-  AIRTABLE_DELIVERIES_TABLE:         'tblMockDeliveries',
-  AIRTABLE_STOCK_PURCHASES_TABLE:    'tblMockStockPurchases',
-  AIRTABLE_STOCK_ORDERS_TABLE:       'tblMockStockOrders',
-  AIRTABLE_STOCK_ORDER_LINES_TABLE:  'tblMockStockOrderLines',
-  AIRTABLE_PRODUCT_CONFIG_TABLE:     'tblMockProductConfig',
-  AIRTABLE_SYNC_LOG_TABLE:           'tblMockSyncLog',
-  AIRTABLE_APP_CONFIG_TABLE:         'tblMockAppConfig',
-  AIRTABLE_FLORIST_HOURS_TABLE:      'tblMockFloristHours',
-  AIRTABLE_WEBHOOK_LOG_TABLE:        'tblMockWebhookLog',
-  AIRTABLE_MARKETING_SPEND_TABLE:    'tblMockMarketingSpend',
-  AIRTABLE_STOCK_LOSS_LOG_TABLE:     'tblMockStockLossLog',
-  AIRTABLE_LEGACY_ORDERS_TABLE:      'tblMockLegacyOrders',
-  AIRTABLE_PREMADE_BOUQUETS_TABLE:   'tblMockPremadeBouquets',
-  AIRTABLE_PREMADE_BOUQUET_LINES_TABLE: 'tblMockPremadeBouquetLines',
 
   // Port — 3002 to avoid collision with a real local backend on 3001.
   PORT:                              process.env.PORT || '3002',
@@ -214,13 +173,10 @@ if (process.env.HARNESS_MOCK_WIX === '1') {
 // Loud banner so the operator can never miss what's running.
 console.log('\x1b[36m' + '═'.repeat(70) + '\x1b[0m');
 console.log('\x1b[36m  Flower Studio — TEST HARNESS BACKEND\x1b[0m');
-console.log('\x1b[36m  Mock Airtable + pglite. NOT touching production.\x1b[0m');
+console.log('\x1b[36m  pglite (in-memory Postgres). NOT touching production.\x1b[0m');
 console.log('\x1b[36m' + '═'.repeat(70) + '\x1b[0m');
-console.log(`  Port:           ${process.env.PORT}`);
-console.log(`  TEST_BACKEND:   ${process.env.TEST_BACKEND}`);
-console.log(`  DATABASE_URL:   ${process.env.DATABASE_URL}`);
-console.log(`  STOCK_BACKEND:  ${process.env.STOCK_BACKEND}`);
-console.log(`  ORDER_BACKEND:  ${process.env.ORDER_BACKEND}`);
+console.log(`  Port:         ${process.env.PORT}`);
+console.log(`  DATABASE_URL: ${process.env.DATABASE_URL}`);
 console.log('\x1b[36m' + '─'.repeat(70) + '\x1b[0m');
 console.log('  PINs:');
 console.log(`    Owner:        ${process.env.PIN_OWNER}`);
