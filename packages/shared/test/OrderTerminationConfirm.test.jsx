@@ -6,10 +6,11 @@ afterEach(() => cleanup());
 import OrderTerminationConfirm from '../components/OrderTerminationConfirm.jsx';
 
 const T = {
-  cancelConfirm:   'Are you sure you want to cancel?',
-  cancelAndReturn: 'Cancel + return stock',
-  cancelNoReturn:  'Cancel only',
-  cancel:          'Dismiss',
+  cancelConfirm:        'Are you sure you want to cancel?',
+  cancelAndReturn:      'Cancel + return stock',
+  cancelNoReturn:       'Cancel only',
+  cancel:               'Dismiss',
+  deleteOrderConfirmYes: 'Delete permanently',
 };
 
 function makeFlow(overrides = {}) {
@@ -19,8 +20,10 @@ function makeFlow(overrides = {}) {
     saving:           false,
     cancelWithReturn: vi.fn(),
     cancelOnly:       vi.fn(),
+    deleteWithReturn: vi.fn(),
     dismiss:          vi.fn(),
     requestCancel:    vi.fn(),
+    requestDelete:    vi.fn(),
     ...overrides,
   };
 }
@@ -61,5 +64,43 @@ describe('OrderTerminationConfirm', () => {
     const buttons = screen.getAllByRole('button');
     expect(buttons).toHaveLength(3);
     buttons.forEach(btn => expect(btn.disabled).toBe(true));
+  });
+
+  // ── delete mode ────────────────────────────────────────────────────────────
+
+  it('delete mode: renders two buttons (confirm delete + dismiss) when pendingKind=delete and allowDelete=true', () => {
+    const flow = makeFlow({ pendingKind: 'delete' });
+    render(<OrderTerminationConfirm flow={flow} t={T} allowDelete />);
+
+    // Should have the confirm-delete button and dismiss button
+    expect(screen.getByText(T.deleteOrderConfirmYes, { exact: false })).toBeTruthy();
+    expect(screen.getByText(T.cancel)).toBeTruthy();
+    // Should NOT have cancel-mode buttons
+    expect(screen.queryByText(T.cancelAndReturn)).toBeNull();
+    expect(screen.queryByText(T.cancelNoReturn)).toBeNull();
+  });
+
+  it('delete mode: calls deleteWithReturn when confirm button clicked', () => {
+    const flow = makeFlow({ pendingKind: 'delete' });
+    render(<OrderTerminationConfirm flow={flow} t={T} allowDelete />);
+    screen.getByText(T.deleteOrderConfirmYes, { exact: false }).click();
+    expect(flow.deleteWithReturn).toHaveBeenCalledTimes(1);
+  });
+
+  it('delete mode: calls dismiss when dismiss button clicked', () => {
+    const flow = makeFlow({ pendingKind: 'delete' });
+    render(<OrderTerminationConfirm flow={flow} t={T} allowDelete />);
+    screen.getByText(T.cancel).click();
+    expect(flow.dismiss).toHaveBeenCalledTimes(1);
+  });
+
+  it('delete mode hidden when allowDelete=false (default)', () => {
+    // When pendingKind='delete' but allowDelete is false, falls through to cancel UI
+    // (in practice this state shouldn't occur, but the component is safe)
+    const flow = makeFlow({ pendingKind: 'delete' });
+    render(<OrderTerminationConfirm flow={flow} t={T} />);
+    // Falls back to cancel mode — cancelConfirm copy is present
+    expect(screen.getByText(T.cancelConfirm)).toBeTruthy();
+    expect(screen.queryByText(T.deleteOrderConfirmYes, { exact: false })).toBeNull();
   });
 });
