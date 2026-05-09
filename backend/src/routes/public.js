@@ -16,15 +16,20 @@ const router = Router();
 const cache = {};
 const CACHE_TTL = 60_000; // ms
 
+async function getCachedOrBuild(key, fetcher) {
+  const now = Date.now();
+  if (cache[key] && now - cache[key].ts < CACHE_TTL) {
+    return cache[key].data;
+  }
+  const data = await fetcher();
+  cache[key] = { data, ts: now };
+  return data;
+}
+
 function cached(key, fetcher) {
   return async (_req, res, next) => {
     try {
-      const now = Date.now();
-      if (cache[key] && now - cache[key].ts < CACHE_TTL) {
-        return res.json(cache[key].data);
-      }
-      const data = await fetcher();
-      cache[key] = { data, ts: now };
+      const data = await getCachedOrBuild(key, fetcher);
       res.json(data);
     } catch (err) {
       next(err);
@@ -35,7 +40,7 @@ function cached(key, fetcher) {
 // ── GET /api/public/products ───────────────────────────────
 // Returns all active products grouped for storefront display.
 // Wix Velo calls this to populate category repeaters.
-router.get('/products', cached('products', async () => {
+async function buildProductsPayload() {
   const rows = await productConfigRepo.list({ activeOnly: true });
 
   // Also fetch stock quantities for inStock check
@@ -129,7 +134,9 @@ router.get('/products', cached('products', async () => {
     products,
     updatedAt: new Date().toISOString(),
   };
-}));
+}
+
+router.get('/products', cached('products', buildProductsPayload));
 
 // ── GET /api/public/stock-availability ─────────────────────
 // Lightweight stock check — Wix Velo uses this for real-time badge updates.
@@ -189,7 +196,8 @@ router.get('/delivery-pricing', (req, res) => {
 // ── GET /api/public/categories ─────────────────────────────
 // Category structure for Wix nav — permanent + active seasonal + auto.
 // Returns a slug-keyed `categoryMap` so Velo can look up any category's translations.
-router.get('/categories', (_req, res) => {
+router.get('/categories', async (_req, res, next) => {
+  try {
   const sc = getConfig('storefrontCategories') || {};
   const activeSlots = getActiveSeasonalSlots();
   const seasonal  = activeSlots[0]?.category || null;
@@ -208,12 +216,15 @@ router.get('/categories', (_req, res) => {
   ];
   const allCategories = [...new Set([...permanentNames, ...allSeasonal])];
 
-  // Count "Available Today" products from the products cache (no extra Airtable call).
+  // Count "Available Today" products via the shared products payload — warms
+  // the cache if cold so masterPage.js (which only calls /categories) sees the
+  // real count instead of `null`. Without this, the menu hid Available Today
+  // on any cold-cache page load even though qualifying products existed.
   // Must match push criteria: availableToday (LT=0 + inStock) AND tagged with "Available Today" category.
-  const productsCached = cache['products']?.data;
-  const availTodayCount = productsCached
-    ? productsCached.products.filter(p => p.availableToday && p.category.includes('Available Today')).length
-    : null; // null = cache not warmed yet, frontend should treat as unknown
+  const productsPayload = await getCachedOrBuild('products', buildProductsPayload);
+  const availTodayCount = productsPayload.products.filter(
+    p => p.availableToday && p.category.includes('Available Today')
+  ).length;
 
   // Build auto array as objects with productCount (not bare strings)
   const autoObjects = auto.map(a => {
@@ -259,6 +270,9 @@ router.get('/categories', (_req, res) => {
     categoryMap,
     seasonalSlugs,
   });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── Helpers ────────────────────────────────────────────────
