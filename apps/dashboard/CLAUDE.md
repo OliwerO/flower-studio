@@ -21,7 +21,7 @@ The owner needs two things: (1) daily operational control — same visibility as
 ## Key Components
 | Component | Purpose |
 |-----------|---------|
-| OrderDetailPanel.jsx | Side panel for editing an order — status, payment (partial support), bouquet, delivery, cost/margin. (~1250 L — split candidate.) |
+| OrderDetailPanel.jsx | Side panel for editing an order — status, payment (partial support), bouquet, delivery, cost/margin. (~1250 L — split candidate.) Order Cancellation + Owner Deletion flow through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared (no inline handlers). |
 | StockOrderPanel.jsx | PO management — create, send, edit lines, evaluate. Same PO lifecycle as florist PurchaseOrderPage. (~1390 L — split candidate.) |
 | CustomerDetailView.jsx | Customer detail v2.0 — split-view right pane. Composes CustomerHeader, stat strip, inline-editable profile grid, KeyPersonChips, CustomerTimeline (merged legacy + app orders with expandable rows exposing every raw field). |
 | CustomerDrawer.jsx | Narrow-viewport (<1280px) slide-over wrapper around CustomerDetailView — replaces the inline right pane when the desktop split doesn't fit. |

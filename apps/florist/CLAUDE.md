@@ -10,7 +10,7 @@ The florist should see all relevant information at a glance — what to prepare 
 |------|-------|-----|---------|
 | LoginPage | /login | all | 4-digit PIN entry with numpad |
 | OrderListPage | /orders | all | Today's worklist — active/completed tabs, status filters, owner dashboard alerts |
-| OrderDetailPage | /orders/:id | all | Full-page order detail with inline editing, status transitions, bouquet editor |
+| OrderDetailPage | /orders/:id | all | Full-page order detail with inline editing, status transitions, bouquet editor. Owner can also delete the order — both Cancellation and Deletion flow through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared. |
 | NewOrderPage | /orders/new | all | 4-step wizard: Customer → Bouquet → Details → Review. AI text import shortcut. |
 | StockPanelPage | /stock | all | Inventory view with search, sort, filter, adjust, write-off, receive |
 | StockEvaluationPage | /stock-evaluation | all | Quality inspection of incoming PO deliveries (accept/write-off per line). |
@@ -28,7 +28,7 @@ The florist should see all relevant information at a glance — what to prepare 
 ## Key Components (src/components/)
 | Component | Purpose |
 |-----------|---------|
-| OrderCard.jsx | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component (1300+ L — split candidate; uses `OrderCardSummary.jsx` + `OrderCardExpanded.jsx`). |
+| OrderCard.jsx | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component (1300+ L — split candidate; uses `OrderCardSummary.jsx` + `OrderCardExpanded.jsx`). Order Cancellation flows through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared (no inline handler). |
 | BouquetEditor.jsx | Flower catalog search + cart with qty controls, cost/margin visibility, price override |
 | StockItem.jsx | Single stock row with write-off dialog, adjust buttons, effective-stock display via `getEffectiveStock` |
 | BottomNav.jsx | Tab bar — role-based tabs (florist sees Hours; owner sees Shopping) |

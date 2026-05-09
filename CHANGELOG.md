@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## Order Termination shared seam (2026-05-09)
+
+Order Cancellation and Owner Deletion flows extracted into `packages/shared/hooks/useOrderTerminationFlow.js` + `packages/shared/components/OrderTerminationConfirm.jsx`. Three previously-duplicated handlers (`apps/florist/src/components/OrderCard.jsx`, `apps/florist/src/pages/OrderDetailPage.jsx`, `apps/dashboard/src/components/OrderDetailPanel.jsx`) now consume the seam — drift between sites becomes structurally impossible. CLAUDE.md Pitfall #7 rewritten to point at the seam instead of "three sites must stay in lockstep". CONTEXT.md gains domain vocabulary: **Termination** (umbrella), **Cancellation**, **Deletion**.
+
+### Why
+Pitfall #6 / #7 discipline lived in a comment, not an interface. Toast composition already drifted (ternary vs if/else; English fallbacks present in dashboard / absent in florist). A future fourth site would silently regress to pre-2026-05-02 behaviour (Status flipped, Stems never returned). Surfaced by `/improve-codebase-architecture` audit on 2026-05-09.
+
+### What
+- **Hook** owns confirm state, three endpoints (POST `/orders/:id/cancel-with-return`, PATCH `/orders/:id`, DELETE `/orders/:id`), and toast composition. DI pattern: caller injects `apiClient`, `showToast`, `t`. Slice 1 added cancel paths; slice 4 added delete path with `pendingKind` discriminator.
+- **Component** renders the inline confirm card. `allowDelete` prop (default `false`) gates Owner-only delete UI.
+- **Migration:** all three sites drop their `handleCancel` / `handleDelete` / `confirmCancel` / `confirmDelete` state. Net diff is negative.
+
+### Verification
+- 15 hook tests in `packages/shared/test/useOrderTerminationFlow.test.js` (cancel + delete paths, error path, state transitions).
+- Existing harness E2E `cancel-with-return` section unchanged — covers the wire path.
+
+### No env-var or schema change.
+
+---
+
 ## Phase 7 PR 2b — Airtable retirement (2026-05-09)
 
 After PR 2a left no production code path reading from or writing to Airtable, PR 2b deletes the dead infrastructure:
