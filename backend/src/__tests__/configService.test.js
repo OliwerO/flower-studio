@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../repos/appConfigRepo.js', () => ({
   get: vi.fn().mockResolvedValue(null),
@@ -33,6 +33,130 @@ function setSlots(slot1Overrides = {}, slot2Overrides = {}) {
 beforeEach(() => {
   vi.useRealTimers();
   setSlots();
+});
+
+describe('deliveryTimeSlots defaults and migration', () => {
+  it('DEFAULTS include 08:00-10:00 and 18:00-20:00', () => {
+    // The module boots with appConfigRepo.get=null, so config is seeded from DEFAULTS.
+    const slots = getConfig('deliveryTimeSlots');
+    expect(slots).toContain('08:00-10:00');
+    expect(slots).toContain('18:00-20:00');
+  });
+
+  it('migrateDeliveryTimeSlots restores missing slots when stored config only has 4', async () => {
+    vi.resetModules();
+    vi.doMock('../repos/appConfigRepo.js', () => ({
+      get: vi.fn().mockResolvedValue({
+        deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+      nextOrderId: vi.fn().mockResolvedValue('202605-001'),
+    }));
+    vi.doMock('../repos/productConfigRepo.js', () => ({ list: vi.fn().mockResolvedValue([]) }));
+    vi.doMock('../services/telegram.js', () => ({ sendAlert: vi.fn() }));
+    vi.doMock('../db/index.js', () => ({ db: {} }));
+    vi.doMock('../db/audit.js', () => ({ recordAudit: vi.fn() }));
+
+    const { getConfig: getConfigFresh } = await import('../services/configService.js');
+    // loadConfig is async; give it one tick to complete
+    await new Promise(r => setTimeout(r, 50));
+
+    const slots = getConfigFresh('deliveryTimeSlots');
+    expect(slots).toContain('08:00-10:00');
+    expect(slots).toContain('18:00-20:00');
+    expect(slots.length).toBeGreaterThanOrEqual(6);
+  });
+
+  afterEach(() => { vi.resetModules(); });
+});
+
+describe('migrateRestoreAirtableConfig (Phase 7 cutover regression)', () => {
+  // Simulates Postgres being seeded from DEFAULTS — the regression state.
+  async function loadWithDefaults(overrides = {}) {
+    vi.resetModules();
+    vi.doMock('../repos/appConfigRepo.js', () => ({
+      get: vi.fn().mockResolvedValue({
+        defaultDeliveryFee: 35,
+        targetMarkup: 2.2,
+        suppliers: ['Stojek', '4f', 'Stefan', 'Mateusz', 'Other'],
+        stockCategories: ['Roses', 'Tulips', 'Seasonal', 'Greenery', 'Accessories', 'Other'],
+        paymentMethods: ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
+        orderSources: ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
+        floristNames: ['Anya', 'Daria'],
+        floristRates: {},
+        freeDeliveryThreshold: 300,
+        expressSurcharge: 20,
+        deliveryTimeSlots: ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+        ...overrides,
+      }),
+      set: vi.fn().mockResolvedValue(undefined),
+      nextOrderId: vi.fn().mockResolvedValue('202605-001'),
+    }));
+    vi.doMock('../repos/productConfigRepo.js', () => ({ list: vi.fn().mockResolvedValue([]) }));
+    vi.doMock('../services/telegram.js', () => ({ sendAlert: vi.fn() }));
+    vi.doMock('../db/index.js', () => ({ db: {} }));
+    vi.doMock('../db/audit.js', () => ({ recordAudit: vi.fn() }));
+    const { getConfig: gc } = await import('../services/configService.js');
+    await new Promise(r => setTimeout(r, 50));
+    return gc;
+  }
+
+  afterEach(() => { vi.resetModules(); });
+
+  it('restores freeDeliveryThreshold from 300 → 600', async () => {
+    const gc = await loadWithDefaults();
+    expect(gc('freeDeliveryThreshold')).toBe(600);
+  });
+
+  it('restores targetMarkup from 2.2 → 2.5', async () => {
+    const gc = await loadWithDefaults();
+    expect(gc('targetMarkup')).toBe(2.5);
+  });
+
+  it('restores suppliers — adds Arek, OZ, Pani Marysia, Bisping', async () => {
+    const gc = await loadWithDefaults();
+    const s = gc('suppliers');
+    expect(s).toContain('Arek');
+    expect(s).toContain('OZ');
+    expect(s).toContain('Pani Marysia');
+    expect(s).toContain('Bisping');
+  });
+
+  it('restores stockCategories — adds 8 flower types', async () => {
+    const gc = await loadWithDefaults();
+    const cats = gc('stockCategories');
+    expect(cats).toContain('Ranunculus');
+    expect(cats).toContain('Dahlias');
+    expect(cats).toContain('Hydrangeas');
+    expect(cats.length).toBe(14);
+  });
+
+  it('restores paymentMethods — Stripe, RUB, TwojStartUp', async () => {
+    const gc = await loadWithDefaults();
+    const pm = gc('paymentMethods');
+    expect(pm).toContain('Stripe');
+    expect(pm).toContain('RUB');
+    expect(pm).toContain('TwojStartUp');
+  });
+
+  it('restores orderSources — adds Facebook, Phone', async () => {
+    const gc = await loadWithDefaults();
+    const os = gc('orderSources');
+    expect(os).toContain('Facebook');
+    expect(os).toContain('Phone');
+  });
+
+  it('restores floristNames → [Sasha] and floristRates', async () => {
+    const gc = await loadWithDefaults();
+    expect(gc('floristNames')).toEqual(['Sasha']);
+    expect(gc('floristRates')).toEqual({ Sasha: { Standard: 33 } });
+  });
+
+  it('skips restore when value already differs from DEFAULTS (manual edit preserved)', async () => {
+    const gc = await loadWithDefaults({ freeDeliveryThreshold: 450 });
+    // 450 is neither DEFAULTS (300) nor backup (600) — a manual edit → preserved
+    expect(gc('freeDeliveryThreshold')).toBe(450);
+  });
 });
 
 describe('getActiveSeasonalSlots', () => {
