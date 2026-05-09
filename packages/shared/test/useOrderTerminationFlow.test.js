@@ -51,11 +51,12 @@ describe('useOrderTerminationFlow', () => {
       'success',
     );
     expect(props.onSuccess).toHaveBeenCalledWith({
-      kind:          'cancel',
-      returnedItems: [
+      kind:            'cancel',
+      returnedItems:   [
         { flowerName: 'Rose', quantityReturned: 3 },
         { flowerName: 'Tulip', quantityReturned: 5 },
       ],
+      withStockReturn: true,
     });
   });
 
@@ -73,8 +74,9 @@ describe('useOrderTerminationFlow', () => {
 
     expect(props.showToast).toHaveBeenCalledWith('Order cancelled', 'success');
     expect(props.onSuccess).toHaveBeenCalledWith({
-      kind:          'cancel',
-      returnedItems: [],
+      kind:            'cancel',
+      returnedItems:   [],
+      withStockReturn: true,
     });
   });
 
@@ -106,8 +108,9 @@ describe('useOrderTerminationFlow', () => {
     expect(props.apiClient.patch).toHaveBeenCalledWith(`/orders/${ORDER_ID}`, { Status: 'Cancelled' });
     expect(props.showToast).not.toHaveBeenCalled();
     expect(props.onSuccess).toHaveBeenCalledWith({
-      kind:          'cancel',
-      returnedItems: [],
+      kind:            'cancel',
+      returnedItems:   [],
+      withStockReturn: false,
     });
   });
 

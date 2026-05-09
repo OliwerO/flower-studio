@@ -54,7 +54,7 @@ export default function useOrderTerminationFlow({
       if (mountedRef.current) {
         setConfirmOpen(false);
         setPendingKind(null);
-        onSuccess?.({ kind: 'cancel', returnedItems });
+        onSuccess?.({ kind: 'cancel', returnedItems, withStockReturn: true });
       }
     } catch (err) {
       const msg = err.response?.data?.error || t.updateError;
@@ -77,7 +77,7 @@ export default function useOrderTerminationFlow({
       if (mountedRef.current) {
         setConfirmOpen(false);
         setPendingKind(null);
-        onSuccess?.({ kind: 'cancel', returnedItems: [] });
+        onSuccess?.({ kind: 'cancel', returnedItems: [], withStockReturn: false });
       }
     } catch (err) {
       const msg = err.response?.data?.error || t.updateError;

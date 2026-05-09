@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -97,7 +97,6 @@ function OrderCard({
   const [loading, setLoading]     = useState(false);
   const [saving, setSaving]       = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
-  const [confirmCancel, setConfirmCancel] = useState(false);
   const [editingBouquet, setEditingBouquet] = useState(false);
   const [editLines, setEditLines] = useState([]);
   const [removedLines, setRemovedLines] = useState([]);
@@ -176,34 +175,25 @@ function OrderCard({
     }
   }
 
-  // Cancel an order with an explicit choice on stock. returnStock=true routes
-  // through POST /orders/:id/cancel-with-return (server returns deducted
-  // quantities to stock and reports them in returnedItems). returnStock=false
-  // just flips Status → Cancelled via PATCH; stock stays out (the order's
-  // flowers are presumed used / lost). Keeps confirmCancel UI in lockstep with
-  // dashboard OrderDetailPanel.handleCancel.
-  async function handleCancel(returnStock) {
-    setSaving(true);
-    try {
-      if (returnStock) {
-        const res = await client.post(`/orders/${order.id}/cancel-with-return`);
-        const returned = res.data.returnedItems || [];
-        const summary = returned.length > 0
-          ? returned.map(r => `${r.flowerName}: +${r.quantityReturned}`).join(', ')
-          : '';
-        showToast(`${t.orderCancelled}${summary ? '. ' + t.stockReturned + ': ' + summary : ''}`, 'success');
-        setDetail(prev => prev ? { ...prev, Status: 'Cancelled' } : prev);
-        onOrderUpdated?.(order.id, { Status: 'Cancelled' });
-      } else {
-        await patch({ 'Status': 'Cancelled' });
+  // Termination flow — cancel paths (cancelWithReturn, cancelOnly, requestCancel, dismiss).
+  // Shared seam via useOrderTerminationFlow; CLAUDE.md Pitfall #7.
+  // cancelOnly note: hook does NOT toast on success — onSuccess shows t.updated here
+  // to preserve the user-visible confirmation that the state changed.
+  const term = useOrderTerminationFlow({
+    orderId:   order.id,
+    apiClient: client,
+    showToast,
+    t,
+    onSuccess: ({ withStockReturn }) => {
+      setDetail(prev => prev ? { ...prev, Status: 'Cancelled' } : prev);
+      onOrderUpdated?.(order.id, { Status: 'Cancelled' });
+      if (!withStockReturn) {
+        // cancelOnly path — hook skips toast; show the generic "updated" toast here
+        // so the user sees confirmation (mirrors old patch() success toast).
+        showToast(t.updated, 'success');
       }
-    } catch (err) {
-      showToast(err.response?.data?.error || t.updateError, 'error');
-    } finally {
-      setSaving(false);
-      setConfirmCancel(false);
-    }
-  }
+    },
+  });
 
   async function patchDelivery(fields) {
     const deliveryId = detail?.delivery?.id;
@@ -838,7 +828,7 @@ function OrderCard({
                         // Intercept the Cancelled pill — show inline confirm
                         // so user picks return-stock vs status-only cancel.
                         if (val === 'Cancelled' && currentStatus !== 'Cancelled') {
-                          setConfirmCancel(true);
+                          term.requestCancel();
                         } else {
                           patch({ 'Status': val });
                         }
@@ -849,33 +839,12 @@ function OrderCard({
                   );
                 })()}
                 {/* Inline cancel confirm — fires from the Cancelled pill (non-terminal)
-                    or the terminal-state cancel button below. Two-button choice
-                    mirrors dashboard OrderDetailPanel.handleCancel. */}
-                {confirmCancel && (
-                  <div className="mt-2 ios-card p-3 space-y-2">
-                    <p className="text-xs font-semibold text-ios-red">{t.cancelConfirm}</p>
-                    <div className="flex flex-wrap gap-2">
-                      <button
-                        onClick={() => handleCancel(true)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold disabled:opacity-40"
-                      >{t.cancelAndReturn}</button>
-                      <button
-                        onClick={() => handleCancel(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold disabled:opacity-40"
-                      >{t.cancelNoReturn}</button>
-                      <button
-                        onClick={() => setConfirmCancel(false)}
-                        disabled={saving}
-                        className="px-3 py-1.5 rounded-lg bg-gray-100 text-xs disabled:opacity-40"
-                      >{t.cancel}</button>
-                    </div>
-                  </div>
-                )}
-                {currentStatus !== 'Cancelled' && isTerminal && !confirmCancel && (
+                    or the terminal-state cancel button below. Shared seam via
+                    useOrderTerminationFlow + OrderTerminationConfirm (CLAUDE.md Pitfall #7). */}
+                {term.confirmOpen && <OrderTerminationConfirm flow={term} t={t} />}
+                {currentStatus !== 'Cancelled' && isTerminal && !term.confirmOpen && (
                   <button
-                    onClick={() => setConfirmCancel(true)}
+                    onClick={term.requestCancel}
                     disabled={saving}
                     className="mt-2 w-full py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium active-scale disabled:opacity-40"
                   >
