@@ -18,6 +18,7 @@
 
 import { randomUUID } from 'crypto';
 import { runPush } from './wixProductSync.js';
+import { invalidatePublicCache } from '../routes/public.js';
 
 const JOB_TTL_MS = 60 * 60 * 1000;   // keep finished jobs queryable for 1h
 const MAX_LOG_ENTRIES = 500;          // cap per-job log to avoid runaway memory
@@ -74,6 +75,10 @@ export function startPushJob() {
       job.status = stats.errors?.length ? 'partial' : 'done';
       job.finishedAt = Date.now();
       job.result = stats;
+      // Evict the storefront cache so /api/public/products and /categories
+      // serve the just-pushed state on the next request instead of waiting
+      // up to 60s for the TTL to expire.
+      invalidatePublicCache('products', 'stock');
     })
     .catch(err => {
       job.status = 'failed';

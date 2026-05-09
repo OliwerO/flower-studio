@@ -12,7 +12,7 @@ import request from 'supertest';
 vi.mock('../repos/productConfigRepo.js', () => ({
   list: vi.fn(),
 }));
-vi.mock('../services/airtable.js', () => ({
+vi.mock('../repos/stockRepo.js', () => ({
   list: vi.fn(),
 }));
 vi.mock('../services/configService.js', () => ({
@@ -20,12 +20,9 @@ vi.mock('../services/configService.js', () => ({
   getActiveSeasonalCategory: vi.fn(() => null),
   getActiveSeasonalSlots: vi.fn(() => []),
 }));
-vi.mock('../config/airtable.js', () => ({
-  TABLES: { STOCK: 'Stock' },
-}));
 
 const productConfigRepo = await import('../repos/productConfigRepo.js');
-const airtable          = await import('../services/airtable.js');
+const stockRepo         = await import('../repos/stockRepo.js');
 const configService     = await import('../services/configService.js');
 
 async function buildApp() {
@@ -77,7 +74,7 @@ describe('GET /api/public/categories', () => {
         'Active': true,
       },
     ]);
-    airtable.list.mockResolvedValue([]); // no stock rows needed — Min Stems=0 + no Key Flower → inStock via Infinity
+    stockRepo.list.mockResolvedValue([]); // no stock rows needed — Min Stems=0 + no Key Flower → inStock via Infinity
 
     const app = await buildApp();
     const res = await request(app).get('/api/public/categories');
@@ -88,6 +85,28 @@ describe('GET /api/public/categories', () => {
     expect(at.productCount).toBe(2);
     // Pre-fix this was `null`. Guarding against regression to null.
     expect(at.productCount).not.toBeNull();
+  });
+
+  it('invalidatePublicCache evicts entries so the next request rebuilds', async () => {
+    productConfigRepo.list.mockResolvedValue([]);
+    stockRepo.list.mockResolvedValue([]);
+
+    vi.resetModules();
+    const m = await import('../routes/public.js');
+    const app = express();
+    app.use('/api/public', m.default);
+
+    await request(app).get('/api/public/products');
+    expect(productConfigRepo.list).toHaveBeenCalledTimes(1);
+
+    // Cached on the next call — fetcher not invoked again.
+    await request(app).get('/api/public/products');
+    expect(productConfigRepo.list).toHaveBeenCalledTimes(1);
+
+    // Eviction forces a rebuild on the next request.
+    m.invalidatePublicCache('products');
+    await request(app).get('/api/public/products');
+    expect(productConfigRepo.list).toHaveBeenCalledTimes(2);
   });
 
   it('returns 0 (not null) when no qualifying products exist', async () => {
@@ -104,7 +123,7 @@ describe('GET /api/public/categories', () => {
         'Active': true,
       },
     ]);
-    airtable.list.mockResolvedValue([]);
+    stockRepo.list.mockResolvedValue([]);
 
     const app = await buildApp();
     const res = await request(app).get('/api/public/categories');

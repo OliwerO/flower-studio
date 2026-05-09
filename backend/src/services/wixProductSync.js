@@ -862,7 +862,18 @@ export async function runPull() {
  *                    direct callers (e.g. the legacy `runSync`) can omit it.
  */
 export async function runPush(onProgress = NO_PROGRESS) {
-  const stats = { pricesSynced: 0, stockSynced: 0, categoriesSynced: 0, descriptionsSynced: 0, translationsSynced: 0, errors: [], warnings: [] };
+  const stats = {
+    pricesSynced: 0,
+    stockSynced: 0,
+    categoriesSynced: 0,
+    descriptionsSynced: 0,
+    translationsSynced: 0,
+    // Per-collection product counts so post-push debugging doesn't require a
+    // round-trip to the Wix API (`Doступно сегодня: 4`, `Peonies: 12`, …).
+    collectionCounts: {},
+    errors: [],
+    warnings: [],
+  };
   const log = (kind, message, level = 'info') => {
     try { onProgress({ kind, message, level }); } catch { /* never fail push because of a progress hook */ }
   };
@@ -1005,6 +1016,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
           try {
             await setWixCategoryProducts(wixCatId, productIds);
             stats.categoriesSynced++;
+            stats.collectionCounts[slug] = productIds.length;
             log('item', `Категория «${catName}»: ${productIds.length} товаров`);
           } catch (err) {
             stats.errors.push(`Category ${catName}: ${err.message}`);
@@ -1048,8 +1060,10 @@ export async function runPush(onProgress = NO_PROGRESS) {
                 }
               }
               stats.categoriesSynced++;
+              stats.collectionCounts[category.slug || `slot-${slot.id}`] = slotProductIds.length;
               log('item', `Слот ${slot.id} («${category.name}»): ${slotProductIds.length} товаров`);
             } else {
+              stats.collectionCounts[`slot-${slot.id}`] = 0;
               log('item', `Слот ${slot.id}: нет активной категории → коллекция очищена`);
             }
           } catch (err) {
@@ -1110,6 +1124,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
           try {
             await setWixCategoryProducts(availTodayId, availProductIds);
             stats.categoriesSynced++;
+            stats.collectionCounts['available-today'] = availProductIds.length;
             log('item', `Доступно сегодня: ${availProductIds.length} товаров`);
           } catch (err) {
             stats.errors.push(`Available Today: ${err.message}`);
