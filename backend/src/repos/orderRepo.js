@@ -10,11 +10,13 @@
 //     bookkeeping, no half-torn-down state.
 
 import * as stockRepo from './stockRepo.js';
+import { getOrCreateDemandEntry, computeDemandDate, updateDemandEntryDate } from './stockRepo.js';
 import * as stockLossRepo from './stockLossRepo.js';
 import { db } from '../db/index.js';
-import { orders, orderLines, deliveries } from '../db/schema.js';
+import { orders, orderLines, deliveries, stock } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
+import { getStockYModelEnabled } from '../services/configService.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
 
 // ── Backend mode stub ──
@@ -592,6 +594,61 @@ export async function createOrder(params, config, opts = {}) {
         stockDeferred:     line.stockDeferred === true,
       }).returning();
       createdLines.push(lineRow);
+    }
+
+    // 3b. Flag-on: create/deepen Demand Entry for each line whose linked
+    //     stock row is a Y-model DE (typeName set AND qty < 0).
+    //
+    //     "Batch coverage" = stock row has typeName set AND qty >= 0 → skip
+    //       (step 4's adjustQuantity handles it, same as legacy).
+    //     "Legacy aggregate" = stock row has typeName null → skip
+    //       (flag-on only routes properly-attributed rows through DE path).
+    //     "Y-model DE" = typeName set AND qty < 0 → route through DE, create/
+    //       deepen dated DE, update order_line FK to canonical DE id.
+    if (getStockYModelEnabled()) {
+      const demandDate = computeDemandDate({
+        requiredBy: requiredBy || delivery?.date || null,
+        orderDate:  new Date().toISOString().split('T')[0],
+      });
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.stockItemId || line.stockDeferred) continue;
+
+        // Look up the stock row inside this transaction to check Variety + qty
+        const [stockRow] = await tx.select({
+          id:              stock.id,
+          currentQuantity: stock.currentQuantity,
+          typeName:        stock.typeName,
+          colour:          stock.colour,
+          sizeCm:          stock.sizeCm,
+          cultivar:        stock.cultivar,
+        }).from(stock)
+          .where(and(eq(stock.id, line.stockItemId), isNull(stock.deletedAt)))
+          .limit(1);
+
+        // Skip if stock row not found, typeName null (legacy), or qty >= 0 (Batch)
+        if (!stockRow || !stockRow.typeName || stockRow.currentQuantity >= 0) continue;
+
+        // Y-model DE row: create or deepen dated DE
+        const varietyKey = {
+          typeName: stockRow.typeName,
+          colour:   stockRow.colour,
+          sizeCm:   stockRow.sizeCm,
+          cultivar: stockRow.cultivar,
+        };
+        const de = await getOrCreateDemandEntry(
+          varietyKey, demandDate, Number(line.quantity), tx, actor,
+        );
+
+        // Update order_line FK to point at the canonical dated DE
+        if (de._pgId !== line.stockItemId) {
+          await tx.update(orderLines)
+            .set({ stockItemId: de._pgId, updatedAt: new Date() })
+            .where(eq(orderLines.id, createdLines[i].id));
+          createdLines[i] = { ...createdLines[i], stockItemId: de._pgId };
+        }
+      }
     }
 
     // 4. Adjust stock — via stockRepo with opts.tx so it participates in

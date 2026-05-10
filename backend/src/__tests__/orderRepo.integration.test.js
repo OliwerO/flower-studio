@@ -27,6 +27,22 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
+// ── configService mock — controls STOCK_Y_MODEL flag per test ──
+// Declared at module level so vi.mock (which is hoisted) can reference it.
+const yModelFlag = { enabled: false };
+vi.mock('../services/configService.js', () => ({
+  getStockYModelEnabled: () => yModelFlag.enabled,
+  getStockXModelEnabled: () => false,
+  getConfig: vi.fn(),
+  updateConfig: vi.fn(),
+  generateOrderId: vi.fn(),
+  getDriverOfDay: vi.fn(),
+  isPastCutoff: vi.fn(),
+  getActiveSeasonalCategory: vi.fn(),
+  loadConfig: vi.fn(),
+  saveConfig: vi.fn(),
+}));
+
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 
@@ -486,30 +502,9 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
   let deStockId1;   // Peony Pink 60cm Sarah Bernhardt — will be the "existing DE"
   let deStockId2;   // Peony Pink 60cm (no cultivar) — different Variety
 
-  // We need to control getStockYModelEnabled() from configService.
-  // Mock the whole module before importing orderRepo.
-  // Since orderRepo is already imported, we use vi.doMock here instead —
-  // but that won't re-execute the already-loaded module. Instead we'll
-  // use a local mock in beforeEach via spyOn on the mock below.
-
-  const configServiceMock = { getStockYModelEnabled: vi.fn() };
-
-  vi.mock('../services/configService.js', () => ({
-    getStockYModelEnabled: () => configServiceMock.getStockYModelEnabled(),
-    getStockXModelEnabled: vi.fn().mockReturnValue(false),
-    getConfig: vi.fn(),
-    updateConfig: vi.fn(),
-    generateOrderId: vi.fn(),
-    getDriverOfDay: vi.fn(),
-    isPastCutoff: vi.fn(),
-    getActiveSeasonalCategory: vi.fn(),
-    loadConfig: vi.fn(),
-    saveConfig: vi.fn(),
-  }));
-
   beforeEach(async () => {
     // Default: flag OFF (regression guard — existing tests unaffected)
-    configServiceMock.getStockYModelEnabled.mockReturnValue(false);
+    yModelFlag.enabled = false;
 
     // Seed DE-shaped stock rows (typeName set, qty < 0)
     const [de1] = await harness.db.insert(stock).values({
@@ -535,7 +530,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
   });
 
   it('flag-off: existing stock deduction still works, no DE created per (Variety, date)', async () => {
-    configServiceMock.getStockYModelEnabled.mockReturnValue(false);
+    yModelFlag.enabled = false;
 
     await orderRepo.createOrder({
       customer: 'recCust1',
@@ -554,7 +549,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
   });
 
   it('flag-on: two orders same (Variety, Required By) → single DE row, two order_lines', async () => {
-    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+    yModelFlag.enabled = true;
 
     // Order 1: line pointing at deStockId1 (which has typeName + qty<0)
     const { orderLines: lines1 } = await orderRepo.createOrder({
@@ -597,7 +592,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
   });
 
   it('flag-on: two orders different Required By → two distinct DE rows', async () => {
-    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+    yModelFlag.enabled = true;
 
     const { orderLines: lines1 } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'A',
@@ -629,7 +624,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
   });
 
   it('flag-on: same Type/Colour/Size, different Cultivar → two distinct DEs', async () => {
-    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+    yModelFlag.enabled = true;
 
     const { orderLines: linesWithCultivar } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'C',
@@ -657,7 +652,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
   });
 
   it('flag-on: Required By fallback — order with orderDate but no requiredBy → DE date = orderDate', async () => {
-    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+    yModelFlag.enabled = true;
 
     const { orderLines: lines } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'E',
