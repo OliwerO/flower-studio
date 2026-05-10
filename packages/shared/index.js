@@ -78,5 +78,8 @@ export { default as VarietyAllocationPicker } from './components/VarietyAllocati
 // Type group sticky collapsible header for Y-model Stock list (issue #289)
 export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
 
+// Variety row with 4-bucket header for Y-model Stock list (issue #289, pitfall #8)
+export { default as VarietyListItem } from './components/VarietyListItem.jsx';
+
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
