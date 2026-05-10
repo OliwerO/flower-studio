@@ -22,9 +22,11 @@
  *                             Not called for Demand Entry rows (those are read-only).
  *                             Kind classification: current_quantity < 0 → 'demand',
  *                             else 'batch' (ADR-0005 negative-qty derivation rule).
- *   premadesByStockId {Map<string,Array>} [optional, Task 7]
+ *   premadesByStockId {Map<string,Array>} [optional]
  *                           — Map from stock-row id → premade-bouquet lines for
- *                             the reserved-tap detail sheet (Task 7). Ignored here.
+ *                             the reserved-tap detail sheet. Each entry: { id, name, qty }.
+ *                             When provided AND reservedForPremades > 0, the reserved
+ *                             bucket becomes a tappable button that reveals a sub-list.
  *   t           {Object}   — Translation strings. Required keys:
  *                              onHand, planned, reserved, net, stems.
  *
@@ -41,6 +43,7 @@
  *
  * References: PRD #283, ADR-0005, ADR-0006, pitfall #8.
  */
+import { useState } from 'react';
 import { getVarietyTotals } from '../utils/stockMath.js';
 import { varietyDisplayName } from '../utils/varietyKey.js';
 
@@ -51,7 +54,7 @@ export default function VarietyListItem({
   expanded = false,
   onToggle,
   onBatchClick,
-  // premadesByStockId reserved for Task 7
+  premadesByStockId,
   t,
 }) {
   // Aggregate the 4 buckets — never inline; always go through the helper (pitfall #8).
@@ -68,14 +71,40 @@ export default function VarietyListItem({
 
   const netNegative = net < 0;
 
+  // Reserved-bucket tap: local toggle state for the premade sub-list.
+  const [premadeOpen, setPremadeOpen] = useState(false);
+
+  // Reserved bucket is interactive only when there are reserved stems AND the host
+  // provided the premades map. Otherwise it's a plain display cell.
+  const reservedInteractive = reservedForPremades > 0 && !!premadesByStockId;
+
+  // Aggregate premade lines across all stock rows for this Variety.
+  const premadeLines = [];
+  if (premadesByStockId) {
+    for (const row of variety.rows) {
+      const lines = premadesByStockId.get(row.id);
+      if (lines) lines.forEach(pm => premadeLines.push(pm));
+    }
+  }
+
+  // Header keyboard handler — treat Enter/Space as click for a11y on the div header.
+  function handleHeaderKey(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onToggle && onToggle();
+    }
+  }
+
   return (
     <div className="border-b border-gray-100 last:border-b-0">
-      {/* ── Header row ── */}
-      <button
-        type="button"
+      {/* ── Header row — div+role to allow nested interactive elements (reserved button) ── */}
+      <div
+        role="button"
+        tabIndex={0}
         data-testid="variety-header"
         onClick={onToggle}
-        className="w-full flex items-center px-4 py-2.5 text-left transition-colors active:bg-gray-50"
+        onKeyDown={handleHeaderKey}
+        className="w-full flex items-center px-4 py-2.5 text-left transition-colors active:bg-gray-50 cursor-pointer"
       >
         {/* Left: Variety display name */}
         <span className="flex-1 min-w-0 text-sm font-medium text-gray-800 truncate pr-3">
@@ -100,11 +129,25 @@ export default function VarietyListItem({
             <span className="text-[10px] text-gray-400 leading-none">{t.planned}</span>
           </span>
 
-          {/* reserved (for premades) */}
+          {/* reserved (for premades) — interactive button when tappable, span otherwise */}
           <span className="flex flex-col items-end">
-            <span data-testid="bucket-reserved" className="text-sm font-semibold text-gray-900 tabular-nums">
-              {reservedForPremades}
-            </span>
+            {reservedInteractive ? (
+              <button
+                type="button"
+                data-testid="bucket-reserved"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setPremadeOpen(open => !open);
+                }}
+                className="text-sm font-semibold text-indigo-600 tabular-nums underline decoration-dotted"
+              >
+                {reservedForPremades}
+              </button>
+            ) : (
+              <span data-testid="bucket-reserved" className="text-sm font-semibold text-gray-900 tabular-nums">
+                {reservedForPremades}
+              </span>
+            )}
             <span className="text-[10px] text-gray-400 leading-none">{t.reserved}</span>
           </span>
 
@@ -119,7 +162,23 @@ export default function VarietyListItem({
             <span className="text-[10px] text-gray-400 leading-none">{t.net}</span>
           </span>
         </span>
-      </button>
+      </div>
+
+      {/* ── Premade sub-list (tap on reserved bucket) ── */}
+      {premadeOpen && premadeLines.length > 0 && (
+        <ul className="bg-indigo-50 border-t border-indigo-100 pl-4 py-1">
+          {premadeLines.map(pm => (
+            <li
+              key={pm.id}
+              data-testid={`premade-row-${pm.id}`}
+              className="flex justify-between text-xs text-indigo-800 py-0.5 pr-4"
+            >
+              <span>{pm.name}</span>
+              <span className="tabular-nums font-medium">{pm.qty}</span>
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* ── Expansion body ── */}
       {expanded && (

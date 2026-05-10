@@ -99,3 +99,66 @@ describe('VarietyListItem expansion', () => {
     expect(onBatchClick).not.toHaveBeenCalled();
   });
 });
+
+describe('VarietyListItem reserved-bucket tap', () => {
+  const v = {
+    key: 'Rose|Pink|60|',
+    type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+    rows: [{ id: 'b1', current_quantity: 10, date: '2026-05-10' }],
+  };
+  const premades = new Map([
+    ['b1', [
+      { id: 'pm1', name: 'Spring Bouquet', qty: 2 },
+      { id: 'pm2', name: 'Wedding Pink',  qty: 3 },
+    ]],
+  ]);
+
+  it('reserved bucket is a clickable button when reservedForPremades > 0 AND premadesByStockId provided', () => {
+    render(<VarietyListItem variety={v} reservations={new Map([['b1', 5]])} t={t}
+      hideType={true} expanded={false} onToggle={() => {}}
+      premadesByStockId={premades} />);
+    expect(screen.getByTestId('bucket-reserved').tagName).toBe('BUTTON');
+  });
+
+  it('reserved bucket is inert (not a button) when reservedForPremades === 0', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}}
+      premadesByStockId={premades} />);
+    expect(screen.getByTestId('bucket-reserved').tagName).not.toBe('BUTTON');
+  });
+
+  it('reserved bucket is inert when premadesByStockId is undefined', () => {
+    render(<VarietyListItem variety={v} reservations={new Map([['b1', 5]])} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} />);
+    expect(screen.getByTestId('bucket-reserved').tagName).not.toBe('BUTTON');
+  });
+
+  it('clicking reserved bucket reveals premade list (toggle)', () => {
+    render(<VarietyListItem variety={v} reservations={new Map([['b1', 5]])} t={t}
+      hideType={true} expanded={false} onToggle={() => {}}
+      premadesByStockId={premades} />);
+    expect(screen.queryByText('Spring Bouquet')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('bucket-reserved'));
+    expect(screen.getByText('Spring Bouquet')).toBeInTheDocument();
+    expect(screen.getByText('Wedding Pink')).toBeInTheDocument();
+  });
+
+  it('premade list lists qty per bouquet', () => {
+    render(<VarietyListItem variety={v} reservations={new Map([['b1', 5]])} t={t}
+      hideType={true} expanded={false} onToggle={() => {}}
+      premadesByStockId={premades} />);
+    fireEvent.click(screen.getByTestId('bucket-reserved'));
+    expect(screen.getByTestId('premade-row-pm1')).toHaveTextContent('Spring Bouquet');
+    expect(screen.getByTestId('premade-row-pm1')).toHaveTextContent('2');
+    expect(screen.getByTestId('premade-row-pm2')).toHaveTextContent('3');
+  });
+
+  it('clicking reserved bucket does NOT fire onToggle (header expansion)', () => {
+    const onToggle = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map([['b1', 5]])} t={t}
+      hideType={true} expanded={false} onToggle={onToggle}
+      premadesByStockId={premades} />);
+    fireEvent.click(screen.getByTestId('bucket-reserved'));
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+});
