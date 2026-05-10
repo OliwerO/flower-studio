@@ -37,15 +37,29 @@ export function makeStockItem(overrides = {}) {
 
   // For demand entries, the display_name may be provided directly via columnOverrides.
   // If not, derive from variety (no date suffix for demand entries).
+  // For dated-demand entries, build a full Variety display name per ADR-0006:
+  // "<Type> <Colour> <Size>cm <Cultivar?> (<Date>)"
+  function buildDatedDemandName() {
+    const tn = columnOverrides.type_name ?? variety.split(' ')[0];
+    const parts = [tn];
+    if (columnOverrides.colour)   parts.push(columnOverrides.colour);
+    if (columnOverrides.size_cm)  parts.push(`${columnOverrides.size_cm}cm`);
+    if (columnOverrides.cultivar) parts.push(columnOverrides.cultivar);
+    parts.push(`(${columnOverrides.date ?? new Date().toISOString().split('T')[0]})`);
+    return parts.join(' ');
+  }
+
   const display_name = columnOverrides.display_name !== undefined
     ? columnOverrides.display_name
-    : type === 'demand'
-      ? variety
-      : `${variety} ${dateSuffix(arrivalDate)}`;
+    : type === 'dated-demand'
+      ? buildDatedDemandName()
+      : type === 'demand'
+        ? variety
+        : `${variety} ${dateSuffix(arrivalDate)}`;
 
   const current_quantity = columnOverrides.current_quantity !== undefined
     ? columnOverrides.current_quantity
-    : type === 'demand'
+    : type === 'demand' || type === 'dated-demand'
       ? -faker.number.int({ min: 5, max: 30 })
       : faker.number.int({ min: 0, max: 100 });
 
@@ -71,8 +85,9 @@ export function makeStockItem(overrides = {}) {
     // ── Stock Y-model identity columns (issue #284) ────────────
     // Default null so existing scenarios behave identically. Pass any
     // of these in `overrides` to produce a Variety-shaped row.
-    date:      null,
-    type_name: null,
+    // For 'dated-demand', type_name and date are required — derive from variety if not supplied.
+    date:      type === 'dated-demand' ? (columnOverrides.date ?? new Date().toISOString().split('T')[0]) : null,
+    type_name: type === 'dated-demand' ? (columnOverrides.type_name ?? variety.split(' ')[0]) : null,
     colour:    null,
     size_cm:   null,
     cultivar:  null,

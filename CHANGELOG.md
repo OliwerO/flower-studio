@@ -5,6 +5,48 @@ Review this entire file before flipping to production.
 
 ---
 
+## Stock Y-model — dated Demand Entry + Required By cascade (#286, 2026-05-10)
+
+Slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Behind `STOCK_Y_MODEL=true`. No production behavior change when flag is off; legacy paths byte-for-byte unchanged. Issue: [#286](https://github.com/OliwerO/flower-studio/issues/286).
+
+### Schema diff
+
+Migration `0013_stock_y_demand_index.sql` adds two indexes to `stock`:
+
+| Index | Purpose |
+|---|---|
+| `stock_demand_variety_date_idx` — UNIQUE on `(type_name, colour, size_cm, cultivar, date) NULLS NOT DISTINCT WHERE current_quantity < 0` | Enforces one Demand Entry per (Variety, date). `NULLS NOT DISTINCT` placed before `WHERE` (PG 17 syntax). |
+| `stock_demand_variety_idx` — on `(type_name, colour, size_cm, cultivar) WHERE current_quantity < 0` | Fast lookup of all Demand Entries for a given Variety. |
+
+No new columns. No table changes. Safe to apply to production at any time.
+
+### New exports from `stockRepo.js`
+
+| Export | Purpose |
+|---|---|
+| `computeDemandDate(order)` | Pure helper — Required By → Order Date → today fallback chain. |
+| `getOrCreateDemandEntry(varietyKey, date, qty, tx, actor)` | Upsert-with-sum: create or deepen a dated DE. NULL-aware WHERE; display name per ADR-0006. |
+| `updateDemandEntryDate(orderLineId, newDate, tx, actor)` | Cascade Required By change to the linked DE. Sole-owner: update in place. Shared: split — new DE created, order_line FK redirected, old DE decremented. |
+
+### Behavior changes (STOCK_Y_MODEL=true only)
+
+- `createOrder`: each line whose stock row has `typeName` set AND `currentQuantity < 0` is routed through `getOrCreateDemandEntry`. Two orders for the same Variety on the same Required By date share one DE row; different dates get separate DE rows.
+- `updateOrder`: when `Required By` changes, every `order_line`'s linked DE gets its `date` updated or split via `updateDemandEntryDate`.
+
+### Known limitation
+
+`SELECT FOR UPDATE` is not supported in pglite (single-connection WASM). Concurrency safety in production comes from the partial unique index (concurrent INSERTs conflict) and Postgres row-level locks on UPDATE. Integration tests verify uniqueness via sequential assertions.
+
+### Verification
+
+- `backend/src/__tests__/stockRepo.test.js` — 5 new `computeDemandDate` unit tests.
+- `backend/src/__tests__/stockYDatedDemand.integration.test.js` (new) — 16 pglite tests: create, sum-on-reuse, date-split, cultivar strict identity, partial-index enforcement, display name, cascade sole/shared.
+- `backend/src/__tests__/orderRepo.integration.test.js` — 9 new flag-on createOrder + cascade tests.
+- `lab/scenarios/stockYDemand.js` (new) — shared Variety + crossed dates fixture.
+- `lab/factories/stockItem.js` — extended with `type='dated-demand'`.
+
+---
+
 ## Stock Y-model — Variety attribute backfill UI (2026-05-10)
 
 Owner-facing admin page for backfilling Variety attributes (Type, Colour, Size, Cultivar) on Stock Items with `type_name IS NULL`. Pre-cutover step for #291. Issue: [#292](https://github.com/OliwerO/flower-studio/issues/292).

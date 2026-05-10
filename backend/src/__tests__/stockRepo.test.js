@@ -6,7 +6,7 @@
 // façade backed by mock functions; we assert on the methods that were called
 // rather than executing real SQL.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // ── db/audit.js mock — recordAudit captures arguments per call. ──
 vi.mock('../db/audit.js', () => ({
@@ -215,5 +215,44 @@ describe('postgres mode', () => {
 
   it('getBackendMode() always returns postgres', () => {
     expect(stockRepo.getBackendMode()).toBe('postgres');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// computeDemandDate — pure helper, no DB I/O
+// ─────────────────────────────────────────────────────────────────────
+
+describe('computeDemandDate', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('returns requiredBy when present', () => {
+    const result = stockRepo.computeDemandDate({ requiredBy: '2026-05-15', orderDate: '2026-05-10' });
+    expect(result).toBe('2026-05-15');
+  });
+
+  it('returns orderDate when requiredBy is absent', () => {
+    const result = stockRepo.computeDemandDate({ orderDate: '2026-05-10' });
+    expect(result).toBe('2026-05-10');
+  });
+
+  it('returns today (YYYY-MM-DD) when neither is present', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-10T12:00:00.000Z'));
+    const result = stockRepo.computeDemandDate({});
+    expect(result).toBe('2026-05-10');
+  });
+
+  it('returns today when called with no argument', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-01T00:00:00.000Z'));
+    const result = stockRepo.computeDemandDate();
+    expect(result).toBe('2026-06-01');
+  });
+
+  it('null requiredBy falls through to orderDate', () => {
+    const result = stockRepo.computeDemandDate({ requiredBy: null, orderDate: '2026-05-12' });
+    expect(result).toBe('2026-05-12');
   });
 });
