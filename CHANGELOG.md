@@ -39,6 +39,35 @@ After all rows are backfilled, run the #291 migration script: `SELECT count(*) F
 
 ---
 
+## Stock Y-model — premade reservation model (2026-05-10)
+
+Second slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Activates only when `STOCK_Y_MODEL=true` (default false). No production behavior change with the flag off. Issue: [#285](https://github.com/OliwerO/flower-studio/issues/285).
+
+### What changed (flag-on)
+
+- `createPremadeBouquet` writes `premade_bouquet_lines` only — Batch quantity is unchanged.
+- `returnPremadeBouquetToStock` deletes lines (no Batch credit).
+- `matchPremadeBouquetToOrder` deletes lines first then routes the new order through standard `createOrder` allocation (drops `skipStockDeduction`).
+- `validateFreeQty` uses `SELECT FOR UPDATE` per Stock Item to serialize concurrent builds in production Postgres. pglite is single-connection and ignores the lock; sequential tests verify the arithmetic.
+- `/stock/premade-committed` reads from `getPremadeReservations` (aggregated by Stock Item id).
+
+### Pitfall #8 retired for premades
+
+Pre-#285 the build path silently decremented Batch quantity, creating a parallel source of truth (lines + Batch). The reservation model makes it impossible: lines are the only ledger; the Batch reflects only physical stems.
+
+### Verification
+
+- New unit tests in `stockRepo.premadeReservations.test.js` (3 tests).
+- New flag-on integration tests in `premadeBouquetService.integration.test.js` (5 tests including sequential concurrency).
+- Lab scenario `premadeReservation` rehearses the lifecycle.
+- Full backend vitest (333 tests), lab unit (37 tests), lab API, E2E suites green; all 3 Vite app builds clean.
+
+### Go-live impact
+
+None until `STOCK_Y_MODEL=true` is set in Railway. The migration was already applied with #284; this PR changes only service code. Cutover (#291) flips the flag.
+
+---
+
 ## Stock Y-model — schema foundation (2026-05-10)
 
 First slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283) (Stock Y-model). No production behavior change; lays the columns, flag, and vocabulary every subsequent slice depends on. Issue: [#284](https://github.com/OliwerO/flower-studio/issues/284).
