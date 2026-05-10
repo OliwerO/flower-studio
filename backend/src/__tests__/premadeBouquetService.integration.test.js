@@ -31,7 +31,14 @@ import * as stockRepo from '../repos/stockRepo.js';
 import {
   returnPremadeBouquetToStock,
   createPremadeBouquet,
+  matchPremadeBouquetToOrder,
 } from '../services/premadeBouquetService.js';
+
+const defaultConfig = {
+  defaultDeliveryFee: 20,
+  defaultMarkup: 1.2,
+  timeslots: [],
+};
 
 let harness;
 
@@ -148,5 +155,119 @@ describe('createPremadeBouquet — postgres mode', () => {
     const allLines = await harness.db.select().from(premadeBouquetLines);
     expect(allLines).toHaveLength(1);
     expect(allLines[0].quantity).toBe(4);
+  });
+});
+
+// ── Flag-on integration tests (STOCK_Y_MODEL=true) — issue #285 ──
+// These tests verify the reservation model: build does NOT decrement Batch,
+// dissolve clears lines without crediting Batch, sale routes through standard
+// createOrder allocation (no skipDeduction).
+//
+// configService is spied on so toggling doesn't affect the legacy describe blocks above.
+
+import * as configService from '../services/configService.js';
+import { createOrder } from '../services/orderService.js';
+
+describe('createPremadeBouquet flag-on (STOCK_Y_MODEL=true) — issue #285', () => {
+  let flagSpy;
+
+  beforeEach(() => {
+    flagSpy = vi.spyOn(configService, 'getStockYModelEnabled').mockReturnValue(true);
+  });
+
+  afterEach(() => {
+    flagSpy.mockRestore();
+  });
+
+  it('build leaves Batch unchanged + writes premade_bouquet_lines row', async () => {
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Pink Rose 60cm', currentQuantity: 10, typeName: 'Rose', colour: 'Pink', sizeCm: 60,
+    }).returning();
+    await createPremadeBouquet({
+      name: 'B1',
+      lines: [{ stockItemId: rose.id, flowerName: 'Pink Rose 60cm', quantity: 4, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'Florist',
+    });
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(10);                       // Batch UNCHANGED
+    const lines = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.stockId, rose.id));
+    expect(lines).toHaveLength(1);
+    expect(lines[0].quantity).toBe(4);
+  });
+
+  it('build rejects when free qty insufficient', async () => {
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Rose', currentQuantity: 5, typeName: 'Rose',
+    }).returning();
+    const [bq] = await harness.db.insert(premadeBouquets).values({ name: 'Existing' }).returning();
+    await harness.db.insert(premadeBouquetLines).values({
+      bouquetId: bq.id, stockId: rose.id, flowerName: 'Rose', quantity: 4,
+    });
+    await expect(createPremadeBouquet({
+      name: 'New',
+      lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 3, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'Florist',
+    })).rejects.toThrow(/Insufficient free stems/);
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(5);                        // Batch unchanged on rejection
+  });
+
+  it('dissolve removes lines, Batch unchanged', async () => {
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Rose', currentQuantity: 10, typeName: 'Rose',
+    }).returning();
+    const built = await createPremadeBouquet({
+      name: 'B', lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 3, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'F',
+    });
+    await returnPremadeBouquetToStock(built.id);
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(10);
+    const linesAfter = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.stockId, rose.id));
+    expect(linesAfter).toHaveLength(0);
+  });
+
+  it('sale routes through standard createOrder (no skipDeduction)', async () => {
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Rose', currentQuantity: 10, typeName: 'Rose',
+    }).returning();
+    const built = await createPremadeBouquet({
+      name: 'B', lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 4, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'F',
+    });
+    // createOrder mock: decrement stock manually to simulate standard allocation
+    createOrder.mockImplementationOnce(async (orderData, config) => {
+      for (const line of (orderData.orderLines || [])) {
+        if (line.stockItemId) {
+          await stockRepo.adjustQuantity(line.stockItemId, -line.quantity, { tx: undefined });
+        }
+      }
+      return { order: { id: 'mock-order-id' } };
+    });
+    await matchPremadeBouquetToOrder(built.id, {
+      customerName: 'Test', deliveryType: 'pickup', orderDate: '2026-05-10',
+    }, defaultConfig);
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(6);                        // 10 - 4 (standard deduction ran)
+    const linesAfter = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.stockId, rose.id));
+    expect(linesAfter).toHaveLength(0);                           // premade lines deleted
+  });
+
+  it('sequential builds against 5-stem pool: first succeeds, second rejects', async () => {
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Rose', currentQuantity: 5, typeName: 'Rose',
+    }).returning();
+    await expect(createPremadeBouquet({
+      name: 'First', lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 5, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'F',
+    })).resolves.toBeDefined();
+    await expect(createPremadeBouquet({
+      name: 'Second', lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 5, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'F',
+    })).rejects.toThrow(/Insufficient free stems/);
+    const allLines = await harness.db.select().from(premadeBouquetLines);
+    expect(allLines).toHaveLength(1);
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(5);
   });
 });
