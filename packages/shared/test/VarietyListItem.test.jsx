@@ -42,3 +42,60 @@ describe('VarietyListItem header', () => {
     expect(onToggle).toHaveBeenCalled();
   });
 });
+
+describe('VarietyListItem expansion', () => {
+  const v = {
+    key: 'Rose|Pink|60|',
+    type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+    rows: [
+      { id: 'b1', current_quantity: 10, date: '2026-05-10' },
+      { id: 'b2', current_quantity:  5, date: '2026-05-11' },
+      { id: 'd1', current_quantity: -3, date: '2026-05-12' },
+    ],
+  };
+
+  it('shows one nested row per Stock Item when expanded', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    expect(screen.getAllByTestId('stock-item-row')).toHaveLength(3);
+  });
+
+  it('hides nested rows when collapsed', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} />);
+    expect(screen.queryAllByTestId('stock-item-row')).toHaveLength(0);
+  });
+
+  it('row label includes (date) suffix per ADR-0006', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    expect(screen.getByText(/2026-05-10/)).toBeInTheDocument();
+  });
+
+  it('Demand Entry rows are visually distinct (data-row-kind="demand")', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    const rows = screen.getAllByTestId('stock-item-row');
+    const kinds = rows.map(r => r.getAttribute('data-row-kind'));
+    expect(kinds.filter(k => k === 'batch')).toHaveLength(2);
+    expect(kinds.filter(k => k === 'demand')).toHaveLength(1);
+  });
+
+  it('clicking a Batch row fires onBatchClick(stockItemId)', () => {
+    const onBatchClick = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onBatchClick={onBatchClick} />);
+    const batches = screen.getAllByTestId('stock-item-row').filter(r => r.getAttribute('data-row-kind') === 'batch');
+    fireEvent.click(batches[0]);
+    expect(onBatchClick).toHaveBeenCalledWith('b1');
+  });
+
+  it('clicking a Demand Entry row does NOT fire onBatchClick', () => {
+    const onBatchClick = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onBatchClick={onBatchClick} />);
+    const demand = screen.getAllByTestId('stock-item-row').find(r => r.getAttribute('data-row-kind') === 'demand');
+    fireEvent.click(demand);
+    expect(onBatchClick).not.toHaveBeenCalled();
+  });
+});
