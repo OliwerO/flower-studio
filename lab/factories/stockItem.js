@@ -9,6 +9,7 @@
 //         current_quantity, unit, current_cost_price, current_sell_price,
 //         supplier, reorder_threshold, active, supplier_notes, dead_stems,
 //         lot_size, farmer, last_restocked, substitute_for,
+//         date, type_name, colour, size_cm, cultivar,
 //         created_at, updated_at, deleted_at
 
 import { faker } from '@faker-js/faker';
@@ -67,6 +68,14 @@ export function makeStockItem(overrides = {}) {
     farmer: null,
     last_restocked: null,
     substitute_for: null,
+    // ── Stock Y-model identity columns (issue #284) ────────────
+    // Default null so existing scenarios behave identically. Pass any
+    // of these in `overrides` to produce a Variety-shaped row.
+    date:      null,
+    type_name: null,
+    colour:    null,
+    size_cm:   null,
+    cultivar:  null,
     created_at: new Date(),
     updated_at: new Date(),
     deleted_at: null,
