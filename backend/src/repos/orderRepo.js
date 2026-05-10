@@ -1073,6 +1073,22 @@ export async function updateOrder(id, fields, opts = {}) {
       }
     }
 
+    // Flag-on Required By cascade → Demand Entry date update.
+    if (getStockYModelEnabled() && 'Required By' in fields && fields['Required By']) {
+      const newDate = fields['Required By'];
+      // Fetch all order_lines for this order
+      const orderLineRows = await tx.select({
+        id:          orderLines.id,
+        stockItemId: orderLines.stockItemId,
+      }).from(orderLines)
+        .where(and(eq(orderLines.orderId, after.id), isNull(orderLines.deletedAt)));
+
+      for (const line of orderLineRows) {
+        if (!line.stockItemId) continue;
+        await updateDemandEntryDate(line.id, newDate, tx, actor);
+      }
+    }
+
     const { linesByOrderId, deliveryByOrderId } = await loadChildren([after], tx);
     return renderOrderRow(after, linesByOrderId, deliveryByOrderId);
   });
