@@ -44,6 +44,11 @@ export default function VarietyAllocationPicker({
   const [search, setSearch] = useState('');
   const [expandedKey, setExpandedKey] = useState(null);
 
+  // Task 4: Create new Variety form state
+  const [creating, setCreating] = useState(false);
+  const [draft, setDraft] = useState({ type_name: '', colour: '', size_cm: '', cultivar: '' });
+  const [saving, setSaving] = useState(false);
+
   const needle = search.trim().toLowerCase();
 
   const groups = useMemo(() => {
@@ -122,6 +127,31 @@ export default function VarietyAllocationPicker({
     onSelectStock({ kind: 'fresh', date: requiredBy });
   }
 
+  function handleDraftChange(field, value) {
+    setDraft((prev) => ({ ...prev, [field]: value }));
+  }
+
+  async function handleSaveVariety() {
+    if (!draft.type_name.trim() || saving) return;
+    setSaving(true);
+    try {
+      const payload = {
+        type_name: draft.type_name.trim(),
+        colour: draft.colour.trim() || null,
+        // TODO: host wires cultivar prefill externally — plain input for now
+        cultivar: draft.cultivar.trim() || null,
+        size_cm: draft.size_cm !== '' ? parseInt(draft.size_cm, 10) || null : null,
+      };
+      const newStockItem = await onCreateVariety(payload);
+      onSelectStock(newStockItem);
+      // Reset form state after successful creation
+      setCreating(false);
+      setDraft({ type_name: '', colour: '', size_cm: '', cultivar: '' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div
       className="fixed inset-0 bg-black/40 z-50 flex items-end sm:items-center justify-center p-4"
@@ -177,17 +207,91 @@ export default function VarietyAllocationPicker({
           ))}
         </div>
 
-        {isOwner && (
+        {isOwner && !creating && (
           <div className="px-4 py-2 border-t border-gray-100">
             <button
               type="button"
-              onClick={() => {
-                // Task 4: expand inline form here
-              }}
+              onClick={() => setCreating(true)}
               className="text-sm text-indigo-700 font-medium hover:text-indigo-900"
             >
               {t.pickerCreateNew}
             </button>
+          </div>
+        )}
+
+        {isOwner && creating && (
+          <div className="px-4 py-3 border-t border-gray-100 space-y-2">
+            <div className="space-y-2">
+              <div>
+                <label htmlFor="variety-type" className="block text-xs font-medium text-gray-700 mb-0.5">
+                  Type <span className="text-red-500">*</span>
+                </label>
+                <input
+                  id="variety-type"
+                  type="text"
+                  value={draft.type_name}
+                  onChange={(e) => handleDraftChange('type_name', e.target.value)}
+                  className="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                />
+              </div>
+              <div>
+                <label htmlFor="variety-colour" className="block text-xs font-medium text-gray-700 mb-0.5">
+                  Colour
+                </label>
+                <input
+                  id="variety-colour"
+                  type="text"
+                  value={draft.colour}
+                  onChange={(e) => handleDraftChange('colour', e.target.value)}
+                  className="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                />
+              </div>
+              <div>
+                <label htmlFor="variety-size" className="block text-xs font-medium text-gray-700 mb-0.5">
+                  Size (cm)
+                </label>
+                <input
+                  id="variety-size"
+                  type="number"
+                  value={draft.size_cm}
+                  onChange={(e) => handleDraftChange('size_cm', e.target.value)}
+                  className="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                />
+              </div>
+              <div>
+                {/* TODO: host wires cultivar prefill externally — plain input for now */}
+                <label htmlFor="variety-cultivar" className="block text-xs font-medium text-gray-700 mb-0.5">
+                  Cultivar
+                </label>
+                <input
+                  id="variety-cultivar"
+                  type="text"
+                  value={draft.cultivar}
+                  onChange={(e) => handleDraftChange('cultivar', e.target.value)}
+                  className="w-full text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <button
+                type="button"
+                onClick={handleSaveVariety}
+                disabled={!draft.type_name.trim() || saving}
+                className="flex-1 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t.pickerSaveContinue ?? 'Save & continue'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setCreating(false);
+                  setDraft({ type_name: '', colour: '', size_cm: '', cultivar: '' });
+                }}
+                className="text-sm text-gray-500 hover:text-gray-700 px-2"
+              >
+                {t.cancel ?? 'Cancel'}
+              </button>
+            </div>
           </div>
         )}
 

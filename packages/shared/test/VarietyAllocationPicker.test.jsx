@@ -12,6 +12,7 @@ const t = {
   planned: 'planned',
   reserved: 'reserved',
   net: 'net',
+  pickerSaveContinue: 'Save & continue',
 };
 
 const makeRows = () => [
@@ -121,5 +122,44 @@ describe('VarietyAllocationPicker — Stage 2 allocation panel', () => {
     fireEvent.click(screen.getAllByTestId('variety-row')[0]);
     fireEvent.click(screen.getByTestId('option-fresh'));
     expect(onSelectStock).toHaveBeenCalledWith({ kind: 'fresh', date: '2026-05-12' });
+  });
+});
+
+describe('VarietyAllocationPicker — Create new Variety (Owner)', () => {
+  it('expands inline 4-field form when clicked (Owner)', () => {
+    render(<VarietyAllocationPicker stockItems={[]} reservations={new Map()}
+      requiredBy="2026-05-12" qty={1} role="owner" t={t}
+      onSelectStock={() => {}} onClose={() => {}}
+      onCreateVariety={vi.fn()} />);
+    fireEvent.click(screen.getByText('+ Create new Variety'));
+    expect(screen.getByLabelText(/Type/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Colour/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Size/)).toBeInTheDocument();
+    expect(screen.getByLabelText(/Cultivar/)).toBeInTheDocument();
+  });
+
+  it('Save & continue calls onCreateVariety with the draft', async () => {
+    const onCreate = vi.fn().mockResolvedValue({ id: 'new-stock-id' });
+    const onSelect = vi.fn();
+    render(<VarietyAllocationPicker stockItems={[]} reservations={new Map()}
+      requiredBy="2026-05-12" qty={1} role="owner" t={t}
+      onSelectStock={onSelect} onClose={() => {}} onCreateVariety={onCreate} />);
+    fireEvent.click(screen.getByText('+ Create new Variety'));
+    fireEvent.change(screen.getByLabelText(/Type/), { target: { value: 'Tulip' } });
+    fireEvent.change(screen.getByLabelText(/Colour/), { target: { value: 'Yellow' } });
+    fireEvent.click(screen.getByText(t.pickerSaveContinue || 'Save & continue'));
+    await vi.waitFor(() => {
+      expect(onCreate).toHaveBeenCalledWith(expect.objectContaining({
+        type_name: 'Tulip', colour: 'Yellow', size_cm: null, cultivar: null,
+      }));
+    });
+  });
+
+  it('Type is required — Save disabled with empty Type', () => {
+    render(<VarietyAllocationPicker stockItems={[]} reservations={new Map()}
+      requiredBy="2026-05-12" qty={1} role="owner" t={t}
+      onSelectStock={() => {}} onClose={() => {}} onCreateVariety={vi.fn()} />);
+    fireEvent.click(screen.getByText('+ Create new Variety'));
+    expect(screen.getByText(t.pickerSaveContinue || 'Save & continue')).toBeDisabled();
   });
 });
