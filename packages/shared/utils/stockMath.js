@@ -26,6 +26,66 @@
 // tweaks here.
 
 /**
+ * Aggregates per-row stock data into the four Variety-level buckets defined by
+ * ADR-0005 (Stock Y-model) and PRD #283.
+ *
+ * Bucket definitions (ADR-0005):
+ *   onHand            — sum of positive current_quantity rows (Batches: physical stems on shelf)
+ *   planned           — absolute sum of negative current_quantity rows (Demand Entries: shortage to fill)
+ *   reservedForPremades — stems committed to premade bouquets (read from premade_bouquet_lines at
+ *                         query time, passed in as a Map<rowId, count>)
+ *   net               — onHand − planned − reservedForPremades (effective availability)
+ *   reclaimable       — min(reservedForPremades, max(0, planned − onHand))
+ *                       "how many premade stems could be dissolved to cover the shortfall"
+ *
+ * Pitfall #8 history (two prior failure modes encoded as regression tests):
+ *   v1 (pre-2026-04-22): `qty - committed` double-counted demand already baked into qty.
+ *       Fix: ignore `committed` entirely — it is an informational breakdown, not a subtraction.
+ *       This helper only reads `current_quantity`; any `committed` field on a row is silently ignored.
+ *   v2 (2026-04-22 interim): `qty < 0 ? qty : qty - committed` hid cumulative shortfall.
+ *       Fix: the positive/negative split here uses raw `current_quantity` with no committed involvement.
+ *
+ * Per-row `getEffectiveStock(qty)` is unchanged — it always returns qty directly. This helper
+ * is the ONLY site that subtracts reservedForPremades, and it does so exactly once at the
+ * Variety-summary level (not per-row), so there is no double-count.
+ *
+ * References: PRD #283, ADR-0005 (dated Demand Entries), ADR-0006 (Variety identity), pitfall #8.
+ *
+ * @param {Array<{id: string, current_quantity: number}>} rows
+ *   All stock rows for a single Variety (Batches with positive qty + Demand Entries with negative qty).
+ * @param {Map<string, number>} [reservations=new Map()]
+ *   Map from row id → reserved stem count for premade bouquets (from premade_bouquet_lines JOIN).
+ * @returns {{ onHand: number, planned: number, reservedForPremades: number, net: number, reclaimable: number }}
+ */
+export function getVarietyTotals(rows, reservations = new Map()) {
+  let onHand = 0;
+  let planned = 0;
+  let reservedForPremades = 0;
+
+  for (const row of rows) {
+    const qty = Number(row.current_quantity) || 0;
+    if (qty >= 0) {
+      onHand += qty;
+    } else {
+      planned += -qty; // store as positive magnitude
+    }
+    reservedForPremades += Number(reservations.get(row.id)) || 0;
+  }
+
+  const net = onHand - planned - reservedForPremades;
+  // reclaimable: how many premade-reserved stems could be freed without leaving orders short.
+  // When onHand already covers planned demand (no shortfall), ALL reserved stems are reclaimable.
+  // When there is a shortfall (planned > onHand), dissolving premades helps up to the shortfall amount,
+  // so reclaimable = min(reserved, planned − onHand).
+  const onHandShortfall = Math.max(0, planned - onHand);
+  const reclaimable = onHandShortfall === 0
+    ? reservedForPremades
+    : Math.min(reservedForPremades, onHandShortfall);
+
+  return { onHand, planned, reservedForPremades, net, reclaimable };
+}
+
+/**
  * Effective stems available for new orders.
  *
  * Always returns `qty`. The `committed` parameter is accepted for backward
