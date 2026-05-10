@@ -71,3 +71,6 @@ export { stockAllocationEngine } from './utils/stockAllocationEngine.js';
 
 // Variety identity helpers per ADR-0006 (issue #288)
 export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyKey.js';
+
+// Variety allocation picker — Stage 1 typeahead (issue #288)
+export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
