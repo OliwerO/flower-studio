@@ -219,6 +219,33 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setAddingFlower(false);
   }
 
+  // ── New Variety (Owner-only "+ Create new Variety" path) ─────────
+  // Creates a new Stock Item with full 4-tuple Variety attrs and qty=0.
+  // Returns the new row so callers (e.g. VarietyAllocationPicker) can
+  // pass it back through onSelectStock to add a line.
+  async function addNewVariety(draft) {
+    const displayName = (draft.baseName || varietyDisplayName(draft) || '').trim();
+    if (!displayName) {
+      showToast(t.updateError || 'Error creating Variety', 'error');
+      return null;
+    }
+    try {
+      const res = await apiClient.post('/stock', {
+        displayName,
+        typeName: draft.type_name ?? null,
+        colour: draft.colour ?? null,
+        sizeCm: draft.size_cm ?? null,
+        cultivar: draft.cultivar ?? null,
+        quantity: 0,
+      });
+      setStockItems(prev => [...prev, res.data]);
+      return res.data;
+    } catch {
+      showToast(t.updateError || 'Error creating Variety', 'error');
+      return null;
+    }
+  }
+
   // ── Demand Entry path ──────────────────────────────────────────────
   // Creates or deepens the single undated Demand Entry for a variety.
   // If one already exists, uses it (deepens aggregate negative qty).
@@ -506,6 +533,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     openNewFlowerForm,
     addNewFlower,
     addNewFlowerQuick,
+    addNewVariety,
     getFilteredStock,
     doSave,
     handleSaveClick,

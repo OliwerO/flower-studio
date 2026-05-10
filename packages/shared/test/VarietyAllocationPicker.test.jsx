@@ -122,7 +122,11 @@ describe('VarietyAllocationPicker — Stage 2 allocation panel', () => {
       onSelectStock={onSelectStock} onClose={() => {}} />);
     fireEvent.click(screen.getAllByTestId('variety-row')[0]);
     fireEvent.click(screen.getByTestId('option-fresh'));
-    expect(onSelectStock).toHaveBeenCalledWith({ kind: 'fresh', date: '2026-05-12' });
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'fresh',
+      date: '2026-05-12',
+      variety: expect.objectContaining({ type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null }),
+    }));
   });
 });
 
