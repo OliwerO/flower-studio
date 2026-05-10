@@ -17,10 +17,10 @@ ALTER TABLE stock
 
 -- Lookups by Variety identity (Type + Colour + Size + Cultivar). Used by
 -- #287's allocation engine to find candidate Stock Items per Variety and
--- by #289's Variety collapse aggregation. NULLS NOT DISTINCT keeps two
--- "Pink Peony 60cm" rows with NULL cultivar from being treated as
--- different Varieties at index lookup time. The unique-per-(Variety,date)
--- constraint lands in #286.
+-- by #289's Variety collapse aggregation. NULL keys are still indexed by
+-- the B-tree, so legacy rows with NULL type_name remain reachable via
+-- index scan. The unique-per-(Variety,date) constraint with NULLS NOT
+-- DISTINCT lands in #286.
 CREATE INDEX IF NOT EXISTS stock_variety_idx
   ON stock (type_name, colour, size_cm, cultivar);
 

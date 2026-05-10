@@ -31,7 +31,7 @@ describe('stock Y-model foundation columns (migration 0012)', () => {
       ['colour', 'cultivar', 'date', 'size_cm', 'type_name']
     );
     // Every new column is nullable in this foundation slice. The NOT NULL
-    // constraints land later in #290 (date) and #292 (type_name).
+    // constraints land later in #290 (date) and #291 (type_name).
     for (const r of rows) expect(r.is_nullable).toBe('YES');
   });
 
