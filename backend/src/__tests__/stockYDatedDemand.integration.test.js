@@ -10,7 +10,7 @@
 //   • updateDemandEntryDate sole-owner: date updated in place, FK unchanged.
 //   • updateDemandEntryDate shared: new DE created, order_line FK updated, old decremented.
 
-import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi, afterAll } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
 import { stock, orders, orderLines } from '../db/schema.js';
 import { eq, and, isNull } from 'drizzle-orm';
@@ -312,5 +312,95 @@ describe('updateDemandEntryDate', () => {
     });
 
     expect(result).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// Acceptance criteria — additional partial unique index + display name
+// ─────────────────────────────────────────────────────────────────────
+
+import { computeDemandDate } from '../repos/stockRepo.js';
+
+describe('partial unique index — NULLS NOT DISTINCT acceptance', () => {
+  it('two raw inserts same (Variety, null-colour, date) → second insert throws', async () => {
+    // First insert with NULL colour
+    await harness.db.insert(stock).values({
+      displayName: 'Rose (2026-05-15)',
+      currentQuantity: -5,
+      typeName: 'Rose',
+      colour: null,
+      sizeCm: null,
+      cultivar: null,
+      date: '2026-05-15',
+      active: true,
+    });
+
+    // Second insert with same Variety (null colour) and same date → must fail
+    await expect(
+      harness.db.insert(stock).values({
+        displayName: 'Rose (2026-05-15) [dup]',
+        currentQuantity: -3,
+        typeName: 'Rose',
+        colour: null,
+        sizeCm: null,
+        cultivar: null,
+        date: '2026-05-15',
+        active: true,
+      }),
+    ).rejects.toThrow(); // unique constraint violation
+  });
+
+  it('same Type/Size, different cultivar (null vs Sarah Bernhardt) → both succeed', async () => {
+    // Insert with cultivar = null
+    await harness.db.insert(stock).values({
+      displayName: 'Peony Pink 60cm (2026-05-15)',
+      currentQuantity: -5,
+      typeName: 'Peony',
+      colour: 'Pink',
+      sizeCm: 60,
+      cultivar: null,
+      date: '2026-05-15',
+      active: true,
+    });
+
+    // Insert with cultivar = 'Sarah Bernhardt' — should NOT conflict (different Variety)
+    await expect(
+      harness.db.insert(stock).values({
+        displayName: 'Peony Pink 60cm Sarah Bernhardt (2026-05-15)',
+        currentQuantity: -8,
+        typeName: 'Peony',
+        colour: 'Pink',
+        sizeCm: 60,
+        cultivar: 'Sarah Bernhardt',
+        date: '2026-05-15',
+        active: true,
+      }),
+    ).resolves.toBeDefined();
+
+    const rows = await harness.db.select().from(stock);
+    expect(rows).toHaveLength(2);
+  });
+});
+
+describe('computeDemandDate acceptance criteria', () => {
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('required by → order date → today (YYYY-MM-DD from fake timer)', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-05-10T00:00:00.000Z'));
+    expect(computeDemandDate({})).toBe('2026-05-10');
+  });
+
+  it('display name format: "Peony Pink 60cm Sarah Bernhardt (2026-05-15)"', async () => {
+    const de = await harness.db.transaction(async (tx) => {
+      return getOrCreateDemandEntry(
+        { typeName: 'Peony', colour: 'Pink', sizeCm: 60, cultivar: 'Sarah Bernhardt' },
+        '2026-05-15',
+        5,
+        tx,
+        ACTOR,
+      );
+    });
+    expect(de['Display Name']).toBe('Peony Pink 60cm Sarah Bernhardt (2026-05-15)');
   });
 });
