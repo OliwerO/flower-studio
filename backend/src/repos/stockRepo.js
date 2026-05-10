@@ -14,7 +14,7 @@
 
 import { pickAllowed } from '../utils/fields.js';
 import { db } from '../db/index.js';
-import { stock } from '../db/schema.js';
+import { stock, premadeBouquetLines } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
 
@@ -455,6 +455,56 @@ export async function purge(id, opts = {}) {
     });
     return { id: before.airtableId || before.id, purged: true };
   });
+}
+
+// ── getPremadeReservations (Stock Y-model, issue #285) ──
+// Returns Map<stockId, summed qty> for premade_bouquet_lines whose stockId
+// is in the given list. Pass `tx` when called inside a transaction so reads
+// see the same snapshot as concurrent locks.
+export async function getPremadeReservations(stockIds, tx = null) {
+  if (!Array.isArray(stockIds) || stockIds.length === 0) return new Map();
+  const handle = tx || db;
+  if (!handle) return new Map();
+  const rows = await handle
+    .select({
+      stockId:  premadeBouquetLines.stockId,
+      totalQty: sql`SUM(${premadeBouquetLines.quantity})`,
+    })
+    .from(premadeBouquetLines)
+    .where(inArray(premadeBouquetLines.stockId, stockIds))
+    .groupBy(premadeBouquetLines.stockId);
+  const out = new Map();
+  for (const r of rows) {
+    if (r.stockId) out.set(r.stockId, Number(r.totalQty) || 0);
+  }
+  return out;
+}
+
+// ── validateFreeQty (Stock Y-model, issue #285) ──
+// Inside an outer transaction (caller holds BEGIN): locks the Batch row via
+// SELECT FOR UPDATE in production Postgres, computes
+//   freeQty = current_quantity - SUM(existing reservations)
+// throws 400 if freeQty < requestedQty.
+//
+// pglite (test harness) is single-connection WASM and ignores FOR UPDATE.
+// Concurrency tests rely on sequential calls — the first call's reservation
+// is visible to the second call's free-qty check.
+export async function validateFreeQty(stockId, requestedQty, tx) {
+  if (!tx) throw new Error('validateFreeQty: must be called inside a transaction');
+  const rows = await tx.execute(
+    sql`SELECT current_quantity FROM stock WHERE id = ${stockId} FOR UPDATE`
+  );
+  const batchQty = Number(rows.rows?.[0]?.current_quantity ?? rows[0]?.current_quantity ?? 0);
+  const reservations = await getPremadeReservations([stockId], tx);
+  const reserved = reservations.get(stockId) ?? 0;
+  const freeQty = batchQty - reserved;
+  if (freeQty < requestedQty) {
+    const err = new Error(
+      `Insufficient free stems: ${freeQty} available (${batchQty} on hand minus ${reserved} reserved for premades), ${requestedQty} requested.`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
 }
 
 // ── Internal exports for tests ──
