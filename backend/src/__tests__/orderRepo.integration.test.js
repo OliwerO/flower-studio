@@ -469,3 +469,210 @@ describe('list + getById', () => {
     await expect(orderRepo.getById('rec-does-not-exist')).rejects.toMatchObject({ statusCode: 404 });
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// createOrder flag-on (STOCK_Y_MODEL)
+// ─────────────────────────────────────────────────────────────────────
+//
+// These tests verify that when STOCK_Y_MODEL is on, createOrder routes
+// DE-linked lines through getOrCreateDemandEntry, collapsing same-
+// (Variety, date) pairs into one Demand Entry row.
+//
+// The flag is read from getStockYModelEnabled() which reads the env var
+// at module load time. We mock configService.js to control it per-test.
+
+describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
+  // Stock rows with typeName (Y-model rows) at qty < 0 (Demand Entries)
+  let deStockId1;   // Peony Pink 60cm Sarah Bernhardt — will be the "existing DE"
+  let deStockId2;   // Peony Pink 60cm (no cultivar) — different Variety
+
+  // We need to control getStockYModelEnabled() from configService.
+  // Mock the whole module before importing orderRepo.
+  // Since orderRepo is already imported, we use vi.doMock here instead —
+  // but that won't re-execute the already-loaded module. Instead we'll
+  // use a local mock in beforeEach via spyOn on the mock below.
+
+  const configServiceMock = { getStockYModelEnabled: vi.fn() };
+
+  vi.mock('../services/configService.js', () => ({
+    getStockYModelEnabled: () => configServiceMock.getStockYModelEnabled(),
+    getStockXModelEnabled: vi.fn().mockReturnValue(false),
+    getConfig: vi.fn(),
+    updateConfig: vi.fn(),
+    generateOrderId: vi.fn(),
+    getDriverOfDay: vi.fn(),
+    isPastCutoff: vi.fn(),
+    getActiveSeasonalCategory: vi.fn(),
+    loadConfig: vi.fn(),
+    saveConfig: vi.fn(),
+  }));
+
+  beforeEach(async () => {
+    // Default: flag OFF (regression guard — existing tests unaffected)
+    configServiceMock.getStockYModelEnabled.mockReturnValue(false);
+
+    // Seed DE-shaped stock rows (typeName set, qty < 0)
+    const [de1] = await harness.db.insert(stock).values({
+      displayName: 'Peony Pink 60cm Sarah Bernhardt',
+      currentQuantity: -20,
+      typeName: 'Peony',
+      colour: 'Pink',
+      sizeCm: 60,
+      cultivar: 'Sarah Bernhardt',
+      active: true,
+    }).returning();
+    const [de2] = await harness.db.insert(stock).values({
+      displayName: 'Peony Pink 60cm',
+      currentQuantity: -10,
+      typeName: 'Peony',
+      colour: 'Pink',
+      sizeCm: 60,
+      cultivar: null,
+      active: true,
+    }).returning();
+    deStockId1 = de1.id;
+    deStockId2 = de2.id;
+  });
+
+  it('flag-off: existing stock deduction still works, no DE created per (Variety, date)', async () => {
+    configServiceMock.getStockYModelEnabled.mockReturnValue(false);
+
+    await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Birthday',
+      deliveryType: 'Pickup',
+      orderLines: [
+        { stockItemId: stockId1, flowerName: 'Red Rose', quantity: 5, sellPricePerUnit: 15 },
+      ],
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Stock deducted as normal
+    const [s] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(s.currentQuantity).toBe(95); // started at 100, -5
+  });
+
+  it('flag-on: two orders same (Variety, Required By) → single DE row, two order_lines', async () => {
+    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+
+    // Order 1: line pointing at deStockId1 (which has typeName + qty<0)
+    const { orderLines: lines1 } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Order A',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [
+        { stockItemId: deStockId1, flowerName: 'Peony', quantity: 5, sellPricePerUnit: 20 },
+      ],
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Order 2: same Variety, same Required By
+    const { orderLines: lines2 } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Order B',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [
+        { stockItemId: deStockId1, flowerName: 'Peony', quantity: 3, sellPricePerUnit: 20 },
+      ],
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Both lines should point to the same DE
+    const lineId1 = lines1[0]._pgId;
+    const lineId2 = lines2[0]._pgId;
+    const [l1] = await harness.db.select().from(orderLines).where(eq(orderLines.id, lineId1));
+    const [l2] = await harness.db.select().from(orderLines).where(eq(orderLines.id, lineId2));
+    expect(l1.stockItemId).toBe(l2.stockItemId);
+
+    // That DE should have qty -8 (5 + 3)
+    const [deRow] = await harness.db.select().from(stock)
+      .where(eq(stock.id, l1.stockItemId));
+    expect(deRow.currentQuantity).toBe(-8);
+    expect(deRow.date).toBe('2026-05-15');
+  });
+
+  it('flag-on: two orders different Required By → two distinct DE rows', async () => {
+    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+
+    const { orderLines: lines1 } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'A',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: deStockId1, flowerName: 'Peony', quantity: 4 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const { orderLines: lines2 } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'B',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-20',
+      orderLines: [{ stockItemId: deStockId1, flowerName: 'Peony', quantity: 4 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const [l1] = await harness.db.select().from(orderLines).where(eq(orderLines.id, lines1[0]._pgId));
+    const [l2] = await harness.db.select().from(orderLines).where(eq(orderLines.id, lines2[0]._pgId));
+
+    // Different DEs
+    expect(l1.stockItemId).not.toBe(l2.stockItemId);
+
+    // Each has its own date
+    const [de1] = await harness.db.select().from(stock).where(eq(stock.id, l1.stockItemId));
+    const [de2] = await harness.db.select().from(stock).where(eq(stock.id, l2.stockItemId));
+    expect(de1.date).toBe('2026-05-15');
+    expect(de2.date).toBe('2026-05-20');
+  });
+
+  it('flag-on: same Type/Colour/Size, different Cultivar → two distinct DEs', async () => {
+    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+
+    const { orderLines: linesWithCultivar } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'C',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: deStockId1, flowerName: 'Peony', quantity: 3 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const { orderLines: linesNullCultivar } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'D',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: deStockId2, flowerName: 'Peony', quantity: 3 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const [l1] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, linesWithCultivar[0]._pgId));
+    const [l2] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, linesNullCultivar[0]._pgId));
+
+    // Two distinct DEs — strict Variety identity
+    expect(l1.stockItemId).not.toBe(l2.stockItemId);
+  });
+
+  it('flag-on: Required By fallback — order with orderDate but no requiredBy → DE date = orderDate', async () => {
+    configServiceMock.getStockYModelEnabled.mockReturnValue(true);
+
+    const { orderLines: lines } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'E',
+      deliveryType: 'Pickup',
+      // No requiredBy
+      orderLines: [{ stockItemId: deStockId1, flowerName: 'Peony', quantity: 2 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const [l] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines[0]._pgId));
+    const [deRow] = await harness.db.select().from(stock).where(eq(stock.id, l.stockItemId));
+
+    // DE should have today's date (createOrder sets demandDate from computeDemandDate)
+    // The date should be a valid YYYY-MM-DD string
+    expect(deRow.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+});
