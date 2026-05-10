@@ -20,6 +20,14 @@ import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
  *   onCreateVariety  — (varietyDraft) => Promise<stockItem>  (Owner-only, Task 4)
  *   premadesByStockId — Map<stockId, [{id, name, qty}]> — optional, for reserved expand
  *   onClose          — () => void
+ *   bulkCandidates   — string[] | undefined — list of varietyKey strings the host marks as
+ *                      "unmet, fresh-needed." When length > 1 and onBulkFreshForAll is also
+ *                      provided, the picker renders an "Order fresh for all" CTA above the
+ *                      close button. A single missing line uses the single-row fresh option
+ *                      instead, so the threshold is strictly > 1.
+ *   onBulkFreshForAll — (varietyKeys: string[]) => void | undefined — called with
+ *                      bulkCandidates when the host-driven CTA is clicked. Picker does NOT
+ *                      auto-close; the host decides what to do next.
  *
  * Stage 1 list rule: one row per Variety (4-tuple). A Variety is visible when
  *   - search is empty AND its summed current_quantity across rows > 0, OR
@@ -40,6 +48,8 @@ export default function VarietyAllocationPicker({
   onCreateVariety,
   premadesByStockId,
   onClose,
+  bulkCandidates,
+  onBulkFreshForAll,
 }) {
   const [search, setSearch] = useState('');
   const [expandedKey, setExpandedKey] = useState(null);
@@ -292,6 +302,18 @@ export default function VarietyAllocationPicker({
                 {t.cancel ?? 'Cancel'}
               </button>
             </div>
+          </div>
+        )}
+
+        {bulkCandidates?.length > 1 && onBulkFreshForAll && (
+          <div className="px-4 py-2 border-t border-gray-100">
+            <button
+              type="button"
+              onClick={() => onBulkFreshForAll(bulkCandidates)}
+              className="w-full py-2 text-sm font-medium text-indigo-700 bg-indigo-50 rounded-lg"
+            >
+              {t.pickerOrderFreshAll ?? 'Order fresh for all'}
+            </button>
           </div>
         )}
 

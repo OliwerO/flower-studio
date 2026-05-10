@@ -13,6 +13,7 @@ const t = {
   reserved: 'reserved',
   net: 'net',
   pickerSaveContinue: 'Save & continue',
+  pickerOrderFreshAll: 'Order fresh for all',
 };
 
 const makeRows = () => [
@@ -161,5 +162,25 @@ describe('VarietyAllocationPicker — Create new Variety (Owner)', () => {
       onSelectStock={() => {}} onClose={() => {}} onCreateVariety={vi.fn()} />);
     fireEvent.click(screen.getByText('+ Create new Variety'));
     expect(screen.getByText(t.pickerSaveContinue || 'Save & continue')).toBeDisabled();
+  });
+});
+
+describe('VarietyAllocationPicker — Order fresh for all', () => {
+  it('renders "Order fresh for all" CTA when host passes bulkCandidates', () => {
+    const onBulkFresh = vi.fn();
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}}
+      bulkCandidates={['Rose|Pink|60|', 'Rose|White|70|Sarah Bernhardt']}
+      onBulkFreshForAll={onBulkFresh} />);
+    fireEvent.click(screen.getByText(t.pickerOrderFreshAll || 'Order fresh for all'));
+    expect(onBulkFresh).toHaveBeenCalledWith(['Rose|Pink|60|', 'Rose|White|70|Sarah Bernhardt']);
+  });
+
+  it('CTA hidden when bulkCandidates is empty/undefined', () => {
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText(t.pickerOrderFreshAll || 'Order fresh for all')).not.toBeInTheDocument();
   });
 });
