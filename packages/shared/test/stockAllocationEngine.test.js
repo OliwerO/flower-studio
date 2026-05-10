@@ -11,6 +11,50 @@ function demandEntry(id, currentQuantity, date) {
   return { id, currentQuantity, date, isDemandEntry: true };
 }
 
+// ─── Fixture 5: Multiple Demand Entries on different dates ───────────────────
+describe('stockAllocationEngine — fixture 5: multiple demand entries', () => {
+  const rows = [
+    demandEntry('d1', -2, '2026-05-18'),
+    demandEntry('d2', -5, '2026-05-20'), // same date as requiredBy
+    demandEntry('d3', -1, '2026-05-25'),
+  ];
+  const requiredBy = '2026-05-20';
+
+  it('returns merge options for all demand entries plus fresh', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const merges = options.filter((o) => o.kind === 'merge');
+    expect(merges).toHaveLength(3);
+    expect(options.filter((o) => o.kind === 'fresh')).toHaveLength(1);
+  });
+
+  it('merge options carry their respective dates', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const merges = options.filter((o) => o.kind === 'merge');
+    const dates = merges.map((m) => m.date).sort();
+    expect(dates).toEqual(['2026-05-18', '2026-05-20', '2026-05-25']);
+  });
+
+  it('merge options carry stockId references', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const mergeIds = options.filter((o) => o.kind === 'merge').map((m) => m.stockId);
+    expect(mergeIds).toContain('d1');
+    expect(mergeIds).toContain('d2');
+    expect(mergeIds).toContain('d3');
+  });
+
+  it('smart-default: same-date merge (d2) is default', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const def = options.find((o) => o.isDefault);
+    expect(def.kind).toBe('merge');
+    expect(def.stockId).toBe('d2');
+  });
+
+  it('exactly one option is the default', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    expect(options.filter((o) => o.isDefault)).toHaveLength(1);
+  });
+});
+
 // ─── Fixture 4: Same-date Demand Entry (no Batch) ────────────────────────────
 describe('stockAllocationEngine — fixture 4: same-date demand entry, no batch', () => {
   it('returns a merge option and a fresh option', () => {
