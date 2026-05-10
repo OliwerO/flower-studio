@@ -61,6 +61,11 @@ export function pgToResponse(row) {
     Farmer:               row.farmer ?? null,
     'Last Restocked':     row.lastRestocked ?? null,
     'Substitute For':     row.substituteFor ?? [],
+    // Stock Y-model identity columns (issue #284 / #292)
+    Type:                 row.typeName ?? null,
+    Colour:               row.colour ?? null,
+    Size:                 row.sizeCm ?? null,
+    Cultivar:             row.cultivar ?? null,
   };
 }
 
