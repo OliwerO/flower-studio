@@ -727,6 +727,13 @@ const en = {
   sex:                       'Sex / Business',
   invalidEmail:              'Invalid email',
   invalidPhone:              'Invalid phone',
+
+  // ── Y-model picker strings (Task 6) ──
+  pickerSearchPlaceholder:   'Search…',
+  pickerCreateNew:           '+ Create new Variety',
+  pickerNoResults:           'No matches',
+  pickerSaveContinue:        'Save & continue',
+  pickerOrderFreshAll:       'Order fresh for all',
 };
 
 const ru = {
@@ -1453,6 +1460,13 @@ const ru = {
   sex:                       'Пол / Бизнес',
   invalidEmail:              'Неверный email',
   invalidPhone:              'Неверный телефон',
+
+  // ── Y-model picker strings (Task 6) ──
+  pickerSearchPlaceholder:   'Поиск…',
+  pickerCreateNew:           '+ Создать сорт',
+  pickerNoResults:           'Ничего не найдено',
+  pickerSaveContinue:        'Сохранить и продолжить',
+  pickerOrderFreshAll:       'Заказать свежие для всех',
 };
 
 // ── Proxy-based dynamic translation ──
