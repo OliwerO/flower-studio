@@ -1,11 +1,12 @@
 import { useMemo, useState } from 'react';
 import { groupByVariety, varietyDisplayName } from '../utils/varietyKey.js';
+import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
 
 /**
  * Hybrid two-stage Variety picker — replaces BatchPickerModal under STOCK_Y_MODEL.
  * Stage 1 = single search bar with cross-field substring match across the 4-tuple
  * Variety identity (ADR-0006); one row per Variety.
- * Stage 2 (Task 3) = inline allocation panel rendering engine options.
+ * Stage 2 = inline allocation panel rendering engine options (batch / merge / fresh).
  *
  * Props:
  *   stockItems       — Y-model rows (type_name/colour/size_cm/cultivar/current_quantity/date)
@@ -15,14 +16,18 @@ import { groupByVariety, varietyDisplayName } from '../utils/varietyKey.js';
  *   role             — 'owner' | 'florist' (gates "+ Create new Variety")
  *   t                — translation strings (pickerSearchPlaceholder, pickerCreateNew,
  *                      pickerNoResults, stems, onHand, planned, reserved, net, cancel)
- *   onSelectStock    — (stockItem | { kind: 'fresh', date }) => void  (Task 3)
+ *   onSelectStock    — (stockItem | { kind: 'fresh', date }) => void
  *   onCreateVariety  — (varietyDraft) => Promise<stockItem>  (Owner-only, Task 4)
+ *   premadesByStockId — Map<stockId, [{id, name, qty}]> — optional, for reserved expand
  *   onClose          — () => void
  *
  * Stage 1 list rule: one row per Variety (4-tuple). A Variety is visible when
  *   - search is empty AND its summed current_quantity across rows > 0, OR
  *   - search is non-empty AND any 4-tuple field (or computed display name)
  *     contains the search substring (case-insensitive).
+ *
+ * Stage 2 panel: renders inline below the expanded Variety row. Tap the row
+ * again to collapse. Options come from stockAllocationEngine (batch/merge/fresh).
  */
 export default function VarietyAllocationPicker({
   stockItems = [],
@@ -33,10 +38,11 @@ export default function VarietyAllocationPicker({
   t,
   onSelectStock,
   onCreateVariety,
+  premadesByStockId,
   onClose,
 }) {
   const [search, setSearch] = useState('');
-  const [expandedKey, setExpandedKey] = useState(null); // Task 3: Stage 2 expansion
+  const [expandedKey, setExpandedKey] = useState(null);
 
   const needle = search.trim().toLowerCase();
 
@@ -71,7 +77,50 @@ export default function VarietyAllocationPicker({
     return visible;
   }, [stockItems, needle]);
 
+  // Build a lookup map from id → original stockItem row for click handlers.
+  const stockById = useMemo(() => {
+    const map = new Map();
+    for (const row of stockItems) map.set(row.id, row);
+    return map;
+  }, [stockItems]);
+
+  // When a Variety row is expanded, compute engine options for that group.
+  const expandedOptions = useMemo(() => {
+    if (!expandedKey) return null;
+    const group = groups.find((g) => g.key === expandedKey);
+    if (!group) return null;
+
+    // Adapt snake_case rows to engine's camelCase contract.
+    // isDemandEntry = currentQuantity < 0 per ADR-0005.
+    const engineRows = group.rows.map((r) => ({
+      id: r.id,
+      currentQuantity: Number(r.current_quantity) || 0,
+      date: r.date,
+      isDemandEntry: (Number(r.current_quantity) || 0) < 0,
+    }));
+
+    return stockAllocationEngine(engineRows, reservations, requiredBy, qty);
+  }, [expandedKey, groups, reservations, requiredBy, qty]);
+
   const isOwner = role === 'owner';
+
+  function handleRowClick(key) {
+    setExpandedKey((prev) => (prev === key ? null : key));
+  }
+
+  function handleBatchClick(option) {
+    const original = stockById.get(option.stockId);
+    if (original) onSelectStock(original);
+  }
+
+  function handleMergeClick(option) {
+    const original = stockById.get(option.stockId);
+    if (original) onSelectStock(original);
+  }
+
+  function handleFreshClick() {
+    onSelectStock({ kind: 'fresh', date: requiredBy });
+  }
 
   return (
     <div
@@ -100,19 +149,31 @@ export default function VarietyAllocationPicker({
             </p>
           )}
           {groups.map((g) => (
-            <button
-              key={g.key}
-              type="button"
-              data-testid="variety-row"
-              onClick={() => setExpandedKey(g.key)}
-              className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-            >
-              <div className="text-sm font-medium text-gray-900">{g.displayName}</div>
-              <div className="text-xs text-gray-500 mt-0.5">
-                {g.totalQty} {t.stems}
-              </div>
-              {/* Task 3: Stage 2 panel renders here when expandedKey === g.key */}
-            </button>
+            <div key={g.key}>
+              <button
+                type="button"
+                data-testid="variety-row"
+                onClick={() => handleRowClick(g.key)}
+                className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+              >
+                <div className="text-sm font-medium text-gray-900">{g.displayName}</div>
+                <div className="text-xs text-gray-500 mt-0.5">
+                  {g.totalQty} {t.stems}
+                </div>
+              </button>
+
+              {/* Stage 2: inline allocation panel */}
+              {expandedKey === g.key && expandedOptions && (
+                <AllocationPanel
+                  options={expandedOptions}
+                  onBatch={handleBatchClick}
+                  onMerge={handleMergeClick}
+                  onFresh={handleFreshClick}
+                  premadesByStockId={premadesByStockId}
+                  t={t}
+                />
+              )}
+            </div>
           ))}
         </div>
 
@@ -141,5 +202,123 @@ export default function VarietyAllocationPicker({
         </div>
       </div>
     </div>
+  );
+}
+
+/**
+ * AllocationPanel — renders the engine options for one expanded Variety.
+ * Renders inline below the Variety row header.
+ */
+function AllocationPanel({ options, onBatch, onMerge, onFresh, premadesByStockId, t }) {
+  const batchOptions = options.filter((o) => o.kind === 'batch');
+  const mergeOptions = options.filter((o) => o.kind === 'merge');
+  const freshOption = options.find((o) => o.kind === 'fresh');
+
+  return (
+    <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 space-y-2">
+      {/* Batch options */}
+      {batchOptions.map((opt) => (
+        <BatchOptionButton
+          key={opt.stockId}
+          option={opt}
+          onClick={() => onBatch(opt)}
+          premades={premadesByStockId?.get(opt.stockId)}
+          t={t}
+        />
+      ))}
+
+      {/* Merge (Demand Entry) options */}
+      {mergeOptions.map((opt) => (
+        <button
+          key={opt.stockId}
+          type="button"
+          data-testid="option-merge"
+          data-default={String(opt.isDefault)}
+          onClick={() => onMerge(opt)}
+          className={[
+            'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
+            opt.isPastDate
+              ? 'text-gray-400 border-gray-200 bg-white'
+              : opt.isDefault
+                ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+                : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
+          ].join(' ')}
+        >
+          <span className="font-medium">{opt.date}</span>
+          {' · '}
+          <span>{Math.abs(opt.currentQty)} {t.planned ?? 'planned'}</span>
+          {opt.isPastDate && (
+            <span className="ml-2 text-xs text-gray-400">(past)</span>
+          )}
+        </button>
+      ))}
+
+      {/* Fresh option */}
+      {freshOption && (
+        <button
+          type="button"
+          data-testid="option-fresh"
+          data-default={String(freshOption.isDefault)}
+          onClick={onFresh}
+          className={[
+            'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
+            freshOption.isDefault
+              ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+              : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
+          ].join(' ')}
+        >
+          {t.orderFresh ?? 'Order fresh'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * BatchOptionButton — renders a single Batch option with free/total/reserved breakdown.
+ */
+function BatchOptionButton({ option, onClick, premades, t }) {
+  return (
+    <button
+      type="button"
+      data-testid="option-batch"
+      data-default={String(option.isDefault)}
+      onClick={onClick}
+      className={[
+        'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
+        option.isDefault
+          ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+          : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
+      ].join(' ')}
+    >
+      <div className="flex items-center justify-between">
+        <span className="font-medium">{option.date}</span>
+        <span className="text-xs text-gray-500">
+          <span className="font-semibold text-gray-800">{option.freeQty}</span>
+          {' / '}
+          <span>{option.total}</span>
+          {option.reservedQty > 0 && (
+            <span className="ml-1 text-amber-600">
+              ({option.reservedQty} {t.reserved ?? 'reserved'})
+            </span>
+          )}
+        </span>
+      </div>
+      {/* Reserved premade list — deferred to lab Playwright test (Task 3 note) */}
+      {option.reservedQty > 0 && premades && premades.length > 0 && (
+        <details className="mt-1">
+          <summary className="text-xs text-gray-400 cursor-pointer">
+            {t.reserved ?? 'reserved'} ({option.reservedQty})
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {premades.map((p) => (
+              <li key={p.id} className="text-xs text-gray-500">
+                {p.name} × {p.qty}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+    </button>
   );
 }

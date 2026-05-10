@@ -71,3 +71,55 @@ describe('VarietyAllocationPicker — Stage 1 typeahead', () => {
     expect(screen.getByText('+ Create new Variety')).toBeInTheDocument();
   });
 });
+
+describe('VarietyAllocationPicker — Stage 2 allocation panel', () => {
+  it('renders engine options when a Variety row is expanded', () => {
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    expect(screen.getByTestId('option-batch')).toBeInTheDocument();
+    expect(screen.getByTestId('option-merge')).toBeInTheDocument();
+    expect(screen.getByTestId('option-fresh')).toBeInTheDocument();
+  });
+
+  it('marks default option per smart-default rule (same-date Demand Entry)', () => {
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    expect(screen.getByTestId('option-merge')).toHaveAttribute('data-default', 'true');
+  });
+
+  it('shows free/total/reserved breakdown per Batch', () => {
+    const reservations = new Map([['b1', 4]]);
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={reservations}
+      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    const batch = screen.getByTestId('option-batch');
+    expect(batch).toHaveTextContent('6');  // freeQty = 10 - 4
+    expect(batch).toHaveTextContent('10'); // total
+    expect(batch).toHaveTextContent('4');  // reservedQty
+  });
+
+  it('clicking a Batch option calls onSelectStock with the row', () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    fireEvent.click(screen.getByTestId('option-batch'));
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }));
+  });
+
+  it('clicking fresh fires onSelectStock with kind:fresh + requiredBy', () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    fireEvent.click(screen.getByTestId('option-fresh'));
+    expect(onSelectStock).toHaveBeenCalledWith({ kind: 'fresh', date: '2026-05-12' });
+  });
+});
