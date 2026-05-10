@@ -11,6 +11,46 @@ function demandEntry(id, currentQuantity, date) {
   return { id, currentQuantity, date, isDemandEntry: true };
 }
 
+// ─── Fixture 6: Past-date Demand Entries ─────────────────────────────────────
+describe('stockAllocationEngine — fixture 6: past-date demand entries', () => {
+  const requiredBy = '2026-05-20';
+  const rows = [
+    demandEntry('d_old', -3, '2026-05-10'), // earlier than requiredBy → past
+    demandEntry('d_future', -2, '2026-05-25'), // later than requiredBy
+  ];
+
+  it('past-date merge is flagged with isPastDate: true', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const old = options.find((o) => o.kind === 'merge' && o.stockId === 'd_old');
+    expect(old.isPastDate).toBe(true);
+  });
+
+  it('future-date merge is NOT flagged with isPastDate', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const future = options.find((o) => o.kind === 'merge' && o.stockId === 'd_future');
+    expect(future.isPastDate).toBe(false);
+  });
+
+  it('smart-default: past-date merge is never the default', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const def = options.find((o) => o.isDefault);
+    // No same-date merge, no sufficient batch → default is fresh
+    expect(def.kind).toBe('fresh');
+    expect(def.isDefault).toBe(true);
+  });
+
+  it('past-date merge is still in the options list (UI can show/grey it)', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    const old = options.find((o) => o.kind === 'merge' && o.stockId === 'd_old');
+    expect(old).toBeDefined();
+  });
+
+  it('exactly one option is the default', () => {
+    const options = stockAllocationEngine(rows, new Map(), requiredBy, 5);
+    expect(options.filter((o) => o.isDefault)).toHaveLength(1);
+  });
+});
+
 // ─── Fixture 5: Multiple Demand Entries on different dates ───────────────────
 describe('stockAllocationEngine — fixture 5: multiple demand entries', () => {
   const rows = [
