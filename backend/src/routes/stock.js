@@ -523,6 +523,16 @@ router.get('/:id/usage', async (req, res, next) => {
     const displayName = stockItem['Display Name'] || '';
     const stockId = req.params.id;
 
+    // ── Y-model exact-ID path (issue #289, ADR-0007) ──
+    // Each Batch is an addressable identity; no sibling aggregation.
+    if (getStockYModelEnabled()) {
+      const trail = await stockRepo.getUsageByExactId(stockItem._pgId || stockId);
+      return res.json({
+        stockItem: { id: stockItem.id, displayName, currentQty: stockItem['Current Quantity'] || 0 },
+        trail,
+      });
+    }
+
     // Aggregate across sibling batches sharing the same base flower name.
     // receiveIntoStock creates a new dated batch record for each receive,
     // and order lines stay linked to whichever record existed at creation —

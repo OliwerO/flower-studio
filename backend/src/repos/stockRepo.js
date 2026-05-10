@@ -14,9 +14,18 @@
 
 import { pickAllowed } from '../utils/fields.js';
 import { db } from '../db/index.js';
-import { stock, orderLines, premadeBouquetLines } from '../db/schema.js';
+import {
+  stock,
+  orders,
+  orderLines,
+  customers,
+  stockLossLog,
+  stockPurchases,
+  premadeBouquets,
+  premadeBouquetLines,
+} from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
-import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
+import { and, eq, ilike, isNull, inArray, gt, sql, desc } from 'drizzle-orm';
 
 /**
  * Resolves the demand date for a new Demand Entry from order data.
@@ -935,6 +944,154 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
   }
 
   return result;
+}
+
+// ── getUsageByExactId (Stock Y-model, issue #289, ADR-0007) ──
+//
+// Under STOCK_Y_MODEL=true, each Batch is an addressable identity — siblings
+// of the same Variety that share a base display name must NOT be aggregated.
+// This helper filters EVERY usage table by the exact stock UUID so the trace
+// shows only events tied to this specific Batch.
+//
+// Trail event shapes mirror the legacy path exactly so frontend consumers
+// (florist StockItem, dashboard StockTab) need no changes.
+//
+// Quantity sign convention (same as legacy):
+//   order / writeoff / premade → negative (stems consumed / locked)
+//   purchase                   → positive (stems received)
+//
+// Date convention:
+//   All types use the domain date string (YYYY-MM-DD) except premade lines
+//   which have no creation timestamp in the schema — they use null and sort
+//   to the top of the chronological list (same as legacy).
+//
+// Sort: date DESC, null dates first (same as legacy localeCompare behaviour:
+//   `(b.date || '').localeCompare(a.date || '')` — nulls become '' which is
+//   lexicographically largest when other dates are '' too, but they sort
+//   before real dates because '' < '2026-…').
+//
+// Note: stock_item_id on order_lines is TEXT (may hold UUID or legacy recXXX).
+// Exact-ID comparison works because post-Phase-7 new lines write the PG uuid.
+// Legacy recXXX-linked lines still appear on the sibling path; new Y-model
+// order lines always carry the uuid from atomicStockAdjust.
+export async function getUsageByExactId(stockItemId) {
+  if (!db) throw new Error('getUsageByExactId: postgres backend not configured');
+  if (!stockItemId) throw new Error('getUsageByExactId: stockItemId is required');
+
+  // 1. Order lines — join to orders for date/status/appOrderId,
+  //                  then join customers for name.
+  //
+  // orders.customerId is TEXT (holds UUID string or legacy recXXX).
+  // customers.id is UUID. Drizzle doesn't handle the implicit TEXT↔UUID cast
+  // on the join condition; we use sql`` to cast explicitly.
+  const orderRows = await db
+    .select({
+      orderId:        orders.id,
+      appOrderId:     orders.appOrderId,
+      orderDate:      orders.orderDate,
+      requiredBy:     orders.requiredBy,
+      status:         orders.status,
+      customerId:     orders.customerId,
+      customerName:   customers.name,
+      customerNick:   customers.nickname,
+      lineQty:        orderLines.quantity,
+      flowerName:     orderLines.flowerName,
+    })
+    .from(orderLines)
+    .innerJoin(orders,    eq(orderLines.orderId, orders.id))
+    .leftJoin(customers,  sql`${orders.customerId}::uuid = ${customers.id}`)
+    .where(and(
+      eq(orderLines.stockItemId, stockItemId),
+      isNull(orderLines.deletedAt),
+      isNull(orders.deletedAt),
+    ));
+
+  const usageOrders = orderRows.map(r => ({
+    type:          'order',
+    date:          r.requiredBy || r.orderDate || null,
+    requiredBy:    r.requiredBy || null,
+    orderRecordId: r.orderId    || '',
+    orderId:       r.appOrderId || r.orderId || '',
+    customer:      r.customerName || r.customerNick || '',
+    status:        r.status      || '',
+    quantity:      -(Number(r.lineQty) || 0),
+    flowerName:    r.flowerName  || '',
+  }));
+
+  // 2. Write-offs — stock_loss_log.stock_id is UUID FK.
+  const lossRows = await db
+    .select()
+    .from(stockLossLog)
+    .where(and(
+      eq(stockLossLog.stockId, stockItemId),
+      isNull(stockLossLog.deletedAt),
+    ));
+
+  const usageLosses = lossRows.map(l => ({
+    type:     'writeoff',
+    date:     l.date    || null,
+    reason:   l.reason  || '',
+    notes:    l.notes   || '',
+    quantity: -(Number(l.quantity) || 0),
+  }));
+
+  // 3. Purchases — stock_purchases.stock_id is UUID FK.
+  //    The PO marker format (ADR-0003) is identical to the legacy path;
+  //    resolving poDisplayId is skipped here because exact-ID mode is for
+  //    new Y-model rows which embed the human-readable PO number directly
+  //    in Notes ("PO #PO-20260508-1 L#<uuid> primary").
+  //    The regex still handles the recXXX legacy form so old data is safe.
+  const purchaseRows = await db
+    .select()
+    .from(stockPurchases)
+    .where(eq(stockPurchases.stockId, stockItemId));
+
+  const poMarkerRe = /PO #([A-Za-z0-9_\-]+)\s+L#([A-Za-z0-9_\-]+)\s+(primary|substitute|alt)/;
+  const usagePurchases = purchaseRows.map(p => {
+    const m    = p.notes?.match(poMarkerRe);
+    const variant    = m?.[3] || '';
+    const poRef      = m?.[1] || null;
+    // For PG-era rows the PO ref IS the human-readable id; no lookup needed.
+    const poDisplayId = poRef && !poRef.startsWith('rec') ? poRef : '';
+    return {
+      type:        'purchase',
+      date:        p.purchaseDate || null,
+      quantity:    Number(p.quantityPurchased) || 0,
+      supplier:    p.supplier     || '',
+      costPerUnit: p.pricePerUnit != null ? Number(p.pricePerUnit) : 0,
+      notes:       p.notes        || '',
+      poDisplayId,
+      variant,
+    };
+  });
+
+  // 4. Active premade bouquet lines — premade_bouquet_lines.stock_id is UUID FK.
+  //    Join to premade_bouquets for name.
+  const premadeRows = await db
+    .select({
+      bouquetId:   premadeBouquetLines.bouquetId,
+      bouquetName: premadeBouquets.name,
+      lineQty:     premadeBouquetLines.quantity,
+      flowerName:  premadeBouquetLines.flowerName,
+    })
+    .from(premadeBouquetLines)
+    .innerJoin(premadeBouquets, eq(premadeBouquetLines.bouquetId, premadeBouquets.id))
+    .where(eq(premadeBouquetLines.stockId, stockItemId));
+
+  const usagePremades = premadeRows.map(l => ({
+    type:        'premade',
+    date:        null,     // no creation timestamp on premade lines (same as legacy)
+    quantity:    -(Number(l.lineQty) || 0),
+    bouquetId:   l.bouquetId   || '',
+    bouquetName: l.bouquetName || '?',
+    flowerName:  l.flowerName  || '',
+  }));
+
+  // Combine + sort: newest first, null dates sort to top (same as legacy).
+  const trail = [...usageOrders, ...usageLosses, ...usagePurchases, ...usagePremades]
+    .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  return trail;
 }
 
 // ── Internal exports for tests ──
