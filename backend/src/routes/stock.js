@@ -30,6 +30,20 @@ router.use(authorize('stock'));
 router.get('/', async (req, res, next) => {
   try {
     const { category, includeEmpty, includeInactive } = req.query;
+
+    // ── Y-model grouped path (issue #289) ──
+    // When STOCK_Y_MODEL is enabled AND caller passes ?grouped=true, return
+    // Variety-grouped aggregation: { groups: [{ key, type_name, colour,
+    // size_cm, cultivar, rows: StockItem[], reservedForPremades }] }.
+    // All other query params are ignored on this path — the grouped query
+    // fetches all Y-model rows and applies its own includeEmpty logic.
+    if (getStockYModelEnabled() && req.query.grouped === 'true') {
+      const groups = await stockRepo.listGroupedByVariety({
+        includeEmpty: includeEmpty === 'true',
+      });
+      return res.json({ groups });
+    }
+
     const filters = [];
 
     if (includeInactive !== 'true') filters.push('{Active} = TRUE()');

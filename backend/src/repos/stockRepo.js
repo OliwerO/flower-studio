@@ -838,6 +838,105 @@ export async function validateFreeQty(stockId, requestedQty, tx) {
   }
 }
 
+// ── listGroupedByVariety (Stock Y-model, issue #289) ──
+//
+// Groups all Y-model stock rows (type_name IS NOT NULL) by their 4-tuple
+// (type_name, colour, size_cm, cultivar) using NULL-aware key serialization
+// identical to the shared varietyKey util: "Type|Colour|Size|Cultivar".
+// NULL attributes are serialized as '' so null-colour and "Green"-colour
+// sort into distinct keys — SQL NULL = NULL is false; the key fixes that.
+//
+// Attaches reservedForPremades per group via getPremadeReservations.
+//
+// Returns:
+//   [{ key, type_name, colour, size_cm, cultivar,
+//      rows: StockItem[],          ← wire-format from pgToResponse
+//      reservedForPremades: number }]
+//
+// Options:
+//   includeEmpty (default false) — when false, hides groups where
+//   totalQty === 0 AND reservedForPremades === 0. Keeps groups that
+//   have reservations even when on-hand qty is zero (premades lock stems).
+//
+// Note: backend duplicates the 4-line varietyKey serialization inline
+// to stay self-contained — backend does not import from packages/shared/.
+function _varietyKey(typeName, colour, sizeCm, cultivar) {
+  return [
+    typeName  ?? '',
+    colour    ?? '',
+    sizeCm    != null ? String(sizeCm) : '',
+    cultivar  ?? '',
+  ].join('|');
+}
+
+export async function listGroupedByVariety({ includeEmpty = false } = {}) {
+  if (!db) throw new Error('listGroupedByVariety: postgres backend not configured');
+
+  // Fetch all Y-model stock rows (type_name IS NOT NULL, not deleted).
+  // Include inactive + zero-qty rows so we can show groups with reservations
+  // even when on-hand stock is depleted. We'll filter below per includeEmpty.
+  const rows = await db
+    .select()
+    .from(stock)
+    .where(and(
+      sql`${stock.typeName} IS NOT NULL`,
+      isNull(stock.deletedAt),
+    ));
+
+  // Group rows by 4-tuple key (JS-side grouping — small N in a flower shop).
+  const groupMap = new Map(); // key → { meta, rows: pgRow[] }
+  for (const row of rows) {
+    const key = _varietyKey(row.typeName, row.colour, row.sizeCm, row.cultivar);
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        key,
+        type_name: row.typeName,
+        colour:    row.colour    ?? null,
+        size_cm:   row.sizeCm   ?? null,
+        cultivar:  row.cultivar ?? null,
+        _pgIds:    [],
+        _rows:     [],
+      });
+    }
+    const g = groupMap.get(key);
+    g._pgIds.push(row.id);
+    g._rows.push(row);
+  }
+
+  if (groupMap.size === 0) return [];
+
+  // Fetch premade reservations for all stock IDs in one query.
+  const allStockIds = [...groupMap.values()].flatMap(g => g._pgIds);
+  const reservations = await getPremadeReservations(allStockIds);
+
+  // Build final output.
+  const result = [];
+  for (const g of groupMap.values()) {
+    // Sum totalQty across all rows in this group.
+    const totalQty = g._rows.reduce((sum, r) => sum + (r.currentQuantity ?? 0), 0);
+    // Sum reservations across all rows in this group.
+    const reservedForPremades = g._pgIds.reduce(
+      (sum, id) => sum + (reservations.get(id) ?? 0),
+      0,
+    );
+
+    // Apply includeEmpty filter.
+    if (!includeEmpty && totalQty === 0 && reservedForPremades === 0) continue;
+
+    result.push({
+      key:                g.key,
+      type_name:          g.type_name,
+      colour:             g.colour,
+      size_cm:            g.size_cm,
+      cultivar:           g.cultivar,
+      rows:               g._rows.map(pgToResponse),
+      reservedForPremades,
+    });
+  }
+
+  return result;
+}
+
 // ── Internal exports for tests ──
 export const _internal = {
   STOCK_WRITE_ALLOWED,
