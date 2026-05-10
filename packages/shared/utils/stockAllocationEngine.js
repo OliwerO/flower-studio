@@ -19,16 +19,25 @@
  * ADR-0006: Variety identity is the four-tuple (Type, Colour?, Size?, Cultivar?).
  *
  * @param {Array<{id: string, currentQuantity: number, date: string, isDemandEntry: boolean}>} rows
- *   — Variety's stock rows, pre-filtered to a single Variety
+ *   — Variety's stock rows, pre-filtered to a single Variety. The selector
+ *   layer derives `isDemandEntry` as `currentQuantity < 0` (per ADR-0005:
+ *   a Demand Entry IS a stock row with negative quantity — there is no
+ *   `is_demand_entry` column on the schema).
  * @param {Map<string, number>} reservations
- *   — stockId → reserved qty (from getPremadeReservations)
- * @param {string} requiredBy — YYYY-MM-DD; the order's needed-by date
- * @param {number} qty — stems needed
+ *   — stockId → reserved qty (from getPremadeReservations). Pass an empty
+ *   Map if no premades exist for this Variety.
+ * @param {string} requiredBy — YYYY-MM-DD strict (no ISO timestamps);
+ *   the order's needed-by date. Same-form comparison used throughout.
+ * @param {number} qty — stems needed (positive integer)
  * @returns {Array<Option>} — ranked options
  *
  * Each Option is one of:
  *   { kind: 'batch',  stockId, freeQty, total, reservedQty, date, sufficient, isDefault }
+ *     — `freeQty` may be negative if reservations exceed currentQuantity
+ *       (data-integrity signal — never marked sufficient).
  *   { kind: 'merge',  stockId, date, currentQty, isPastDate, isDefault }
+ *     — `currentQty` is the raw `stock.current_quantity`, which is
+ *       negative for a Demand Entry (committed-demand magnitude).
  *   { kind: 'fresh',  date, isDefault }
  *
  * Smart-default rule (exactly ONE option has isDefault: true):
@@ -57,7 +66,10 @@ export function stockAllocationEngine(rows, reservations, requiredBy, qty) {
       total: row.currentQuantity,
       reservedQty,
       date: row.date,
-      sufficient: freeQty >= qty,
+      // Tightened guard: negative freeQty (reservation overflow) is never
+      // sufficient regardless of qty. Preserves the negative signal for
+      // the picker UI to surface as a data-integrity warning.
+      sufficient: freeQty > 0 && freeQty >= qty,
       isDefault: false,
     };
   });

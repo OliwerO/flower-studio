@@ -283,6 +283,45 @@ describe('stockAllocationEngine — fixture 2: batch covers fully', () => {
   });
 });
 
+// ─── Fixture 8: Over-reserved row (data-integrity edge case) ─────────────────
+// Reservations exceed currentQuantity → freeQty negative.
+// The engine must NOT mark the row as sufficient and must NOT default to it,
+// regardless of qty (incl. zero/negative qty). The negative freeQty itself is
+// preserved on the option so the picker UI can surface it as a warning.
+describe('stockAllocationEngine — fixture 8: over-reserved row', () => {
+  const requiredBy = '2026-05-20';
+
+  it('negative freeQty is exposed but never sufficient (qty > 0)', () => {
+    const rows = [batch('b1', 5, '2026-05-05')];           // 5 stems
+    const reservations = new Map([['b1', 12]]);            // 12 reserved (overflow)
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 3);
+    const b1 = options.find((o) => o.kind === 'batch');
+    expect(b1.freeQty).toBe(-7);                           // raw signed math preserved
+    expect(b1.reservedQty).toBe(12);
+    expect(b1.sufficient).toBe(false);                     // never sufficient
+    expect(b1.isDefault).toBe(false);
+  });
+
+  it('over-reserved row never sufficient even when qty <= 0', () => {
+    // qty=0 (degenerate) — without the freeQty>0 guard, freeQty=-7 would
+    // be >= 0 and the engine would have falsely marked the batch sufficient.
+    const rows = [batch('b1', 5, '2026-05-05')];
+    const reservations = new Map([['b1', 12]]);
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 0);
+    const b1 = options.find((o) => o.kind === 'batch');
+    expect(b1.sufficient).toBe(false);
+    expect(b1.isDefault).toBe(false);
+  });
+
+  it('smart-default falls through to fresh when only over-reserved batches exist', () => {
+    const rows = [batch('b1', 5, '2026-05-05')];
+    const reservations = new Map([['b1', 12]]);
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 3);
+    const def = options.find((o) => o.isDefault);
+    expect(def.kind).toBe('fresh');
+  });
+});
+
 // ─── Fixture 1: No Batch and no Demand Entry ─────────────────────────────────
 describe('stockAllocationEngine — fixture 1: no rows', () => {
   it('returns only a fresh option when there are no rows', () => {
