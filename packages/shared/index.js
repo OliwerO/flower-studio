@@ -83,3 +83,7 @@ export { default as VarietyListItem } from './components/VarietyListItem.jsx';
 
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
+
+// Per-batch trace UX seam — panel (inline, dashboard) + modal wrapper (florist) (issue #289)
+export { default as BatchTracePanel } from './components/BatchTracePanel.jsx';
+export { default as BatchTraceModal } from './components/BatchTraceModal.jsx';
