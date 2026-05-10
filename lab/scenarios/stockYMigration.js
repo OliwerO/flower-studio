@@ -96,6 +96,20 @@ export function buildStockYMigration() {
   });
   stockItems.push(orphanDE);
 
+  // ── Phase 3 fixture: positive-qty undated row → synthetic Batch dated migration day ──
+  // Simulates a "Rose Red 50cm" batch row with qty=12 and no date.
+  // The script must set date = today (migration day) while preserving qty and Variety.
+  const positiveUndated = makeStockItem({
+    type:             'batch',
+    display_name:     'Rose Red 50cm',
+    type_name:        'Rose',
+    colour:           'Red',
+    size_cm:          50,
+    current_quantity: 12,
+    date:             null,
+  });
+  stockItems.push(positiveUndated);
+
   const cust = base.customers[0];
   const orderA = makeOrder({ customerId: cust.id, status: 'New', delivery_type: 'Pickup', required_by: PHASE1_DATE_A });
   const orderB = makeOrder({ customerId: cust.id, status: 'New', delivery_type: 'Pickup', required_by: PHASE1_DATE_B });

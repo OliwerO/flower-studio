@@ -130,3 +130,40 @@ describe('migrate-stock-y-model — Phase 2: orphan negative → today', () => {
     }
   }, 60_000);
 });
+
+describe('migrate-stock-y-model — Phase 3: positive undated → synthetic Batch', () => {
+  beforeEach(async () => { await resetLabDb(); });
+
+  it('dates all positive-qty undated rows to today, preserving qty', async () => {
+    const pool = labPool();
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      // Pre: find the known fixture row.
+      const pre = await pool.query(
+        `SELECT id, current_quantity FROM stock WHERE display_name = 'Rose Red 50cm' AND date IS NULL`
+      );
+      expect(pre.rows.length).toBe(1);
+      const { id: fixtureId, current_quantity: preQty } = pre.rows[0];
+
+      const res = runScript();
+      expect(res.status).toBe(0);
+
+      // Post: row now has date = today, qty preserved.
+      const post = await pool.query(
+        `SELECT date::text, current_quantity FROM stock WHERE id = $1`,
+        [fixtureId]
+      );
+      expect(post.rows.length).toBe(1);
+      expect(post.rows[0].date).toBe(today);
+      expect(post.rows[0].current_quantity).toBe(preQty);
+
+      // Post: no positive-qty undated rows remain (bulk UPDATE covered all).
+      const remaining = await pool.query(
+        `SELECT count(*)::int AS cnt FROM stock WHERE current_quantity >= 0 AND date IS NULL AND deleted_at IS NULL`
+      );
+      expect(remaining.rows[0].cnt).toBe(0);
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
+});

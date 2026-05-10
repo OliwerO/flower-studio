@@ -124,6 +124,14 @@ async function phase2OrphanNegative(client, today) {
   console.log(`[phase2] Dated ${orphans.length} orphan aggregate DE(s) → ${today}.`);
 }
 
+async function phase3PositiveUndated(client, today) {
+  const { rowCount } = await client.query(`
+    UPDATE stock SET date = $1, updated_at = NOW()
+    WHERE current_quantity >= 0 AND date IS NULL AND deleted_at IS NULL
+  `, [today]);
+  console.log(`[phase3] Dated ${rowCount} positive-qty undated row(s) → ${today}.`);
+}
+
 async function run() {
   const client = await pool.connect();
   try {
@@ -131,8 +139,9 @@ async function run() {
     await preCondition(client);
     await phase1Split(client);
     await phase2OrphanNegative(client, today);
+    await phase3PositiveUndated(client, today);
 
-    // Phases 3-5 added in subsequent tasks.
+    // Phases 4-5 added in subsequent tasks.
 
     if (DRY_RUN) {
       console.log('[migrate] DRY RUN — rolling back transaction.');
