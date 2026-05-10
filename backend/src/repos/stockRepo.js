@@ -222,6 +222,8 @@ export const STOCK_WRITE_ALLOWED = [
   'Current Cost Price', 'Current Sell Price', 'Supplier', 'Reorder Threshold',
   'Active', 'Supplier Notes', 'Dead/Unsold Stems', 'Lot Size', 'Farmer',
   'Last Restocked', 'Substitute For',
+  // Stock Y-model 4-tuple Variety attributes (issue #284 / #287)
+  'Type', 'Colour', 'Size', 'Cultivar',
 ];
 
 // ── Wire-format ↔ PG-row mapping ──
@@ -279,6 +281,15 @@ export function responseToPg(fields) {
   if ('Farmer' in fields)             out.farmer            = fields.Farmer || null;
   if ('Last Restocked' in fields)     out.lastRestocked     = fields['Last Restocked'] || null;
   if ('Substitute For' in fields)     out.substituteFor     = Array.isArray(fields['Substitute For']) ? fields['Substitute For'] : null;
+  // Stock Y-model 4-tuple Variety attributes (issue #284 / #287)
+  // Empty strings normalised to null; sizeCm coerced to integer or null.
+  if ('Type' in fields)     out.typeName = fields.Type    ? String(fields.Type).trim()    || null : null;
+  if ('Colour' in fields)   out.colour   = fields.Colour  ? String(fields.Colour).trim()  || null : null;
+  if ('Cultivar' in fields) out.cultivar = fields.Cultivar ? String(fields.Cultivar).trim() || null : null;
+  if ('Size' in fields) {
+    const n = parseInt(fields.Size, 10);
+    out.sizeCm = Number.isFinite(n) ? n : null;
+  }
   return out;
 }
 
@@ -816,6 +827,41 @@ export async function getPremadeReservations(stockIds, tx = null) {
   const out = new Map();
   for (const r of rows) {
     if (r.stockId) out.set(r.stockId, Number(r.totalQty) || 0);
+  }
+  return out;
+}
+
+// ── getPremadeReservationDetails (Stock Y-model, issue #288 follow-up) ──
+// Like getPremadeReservations but returns full bouquet context per stock item.
+// Returns Map<stockId, { totalQty, bouquets: [{ bouquetId, name, qty }] }>
+// so the /stock/premade-committed Y-model branch can populate bouquets[].
+// Joins premade_bouquet_lines → premade_bouquets, groups by (stockId, bouquetId, name).
+// Does NOT accept a `tx` argument — this is a read-only endpoint, no transaction needed.
+export async function getPremadeReservationDetails(stockIds) {
+  if (!Array.isArray(stockIds) || stockIds.length === 0) return new Map();
+  if (!db) return new Map();
+  const rows = await db
+    .select({
+      stockId:     premadeBouquetLines.stockId,
+      bouquetId:   premadeBouquetLines.bouquetId,
+      bouquetName: premadeBouquets.name,
+      lineQty:     sql`SUM(${premadeBouquetLines.quantity})`,
+    })
+    .from(premadeBouquetLines)
+    .innerJoin(premadeBouquets, eq(premadeBouquetLines.bouquetId, premadeBouquets.id))
+    .where(inArray(premadeBouquetLines.stockId, stockIds))
+    .groupBy(premadeBouquetLines.stockId, premadeBouquetLines.bouquetId, premadeBouquets.name);
+
+  const out = new Map();
+  for (const r of rows) {
+    if (!r.stockId) continue;
+    const qty = Number(r.lineQty) || 0;
+    if (!out.has(r.stockId)) {
+      out.set(r.stockId, { totalQty: 0, bouquets: [] });
+    }
+    const entry = out.get(r.stockId);
+    entry.totalQty += qty;
+    entry.bouquets.push({ bouquetId: r.bouquetId, name: r.bouquetName, qty });
   }
   return out;
 }

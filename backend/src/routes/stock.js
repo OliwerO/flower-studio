@@ -120,10 +120,10 @@ router.get('/premade-committed', async (req, res, next) => {
     if (getStockYModelEnabled()) {
       const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
       const allStockIds = allStock.map(s => s._pgId).filter(Boolean);
-      const reservations = await stockRepo.getPremadeReservations(allStockIds);
+      const details = await stockRepo.getPremadeReservationDetails(allStockIds);
       const committed = {};
-      for (const [stockId, qty] of reservations) {
-        if (qty > 0) committed[stockId] = { qty, bouquets: [] };
+      for (const [stockId, { totalQty, bouquets }] of details) {
+        if (totalQty > 0) committed[stockId] = { qty: totalQty, bouquets };
       }
       return res.json(committed);
     }
@@ -398,10 +398,18 @@ router.get('/pending-po', async (req, res, next) => {
 });
 
 // POST /api/stock — create a new stock item (florist quick-add during spontaneous delivery)
-// Body: { displayName, category, quantity, costPrice, sellPrice?, supplier?, unit? }
+// Body: { displayName, category, quantity, costPrice, sellPrice?, supplier?, unit?,
+//         typeName?, colour?, sizeCm?, cultivar? }
+// The 4-tuple Variety attrs (typeName/colour/sizeCm/cultivar) are optional pass-through
+// fields added for issue #287. sizeCm is coerced to integer or null; empty strings for
+// string attrs normalise to null. No further validation beyond coercion.
 router.post('/', async (req, res, next) => {
   try {
-    const { displayName, category, quantity, costPrice, sellPrice, supplier, unit, lotSize, farmer } = req.body;
+    const {
+      displayName, category, quantity, costPrice, sellPrice, supplier, unit, lotSize, farmer,
+      // Stock Y-model 4-tuple Variety attrs (camelCase wire → Airtable-style field names)
+      typeName, colour, sizeCm, cultivar,
+    } = req.body;
     if (!displayName) return res.status(400).json({ error: 'displayName is required' });
 
     const fields = {
@@ -417,6 +425,13 @@ router.post('/', async (req, res, next) => {
     if (unit)       fields['Unit'] = unit;
     if (lotSize)    fields['Lot Size'] = Number(lotSize);
     if (farmer)     fields['Farmer'] = farmer;
+
+    // 4-tuple Variety attrs — always pass so responseToPg can normalise them
+    // (empty strings → null handled inside responseToPg / stockRepo).
+    if (typeName  !== undefined) fields['Type']    = typeName;
+    if (colour    !== undefined) fields['Colour']  = colour;
+    if (sizeCm    !== undefined) fields['Size']    = sizeCm;
+    if (cultivar  !== undefined) fields['Cultivar'] = cultivar;
 
     const item = await stockRepo.create(fields, { actor: actorFromReq(req) });
     res.status(201).json(item);
