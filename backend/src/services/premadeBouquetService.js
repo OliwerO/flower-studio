@@ -1,14 +1,28 @@
 // Premade bouquet business logic. Phase 7: persistence via premadeBouquetRepo.
 //
 // A premade bouquet is a composition the florist builds BEFORE any order exists.
-// Stock is deducted at creation time. The bouquet can later be:
-//   1. Matched to a client — Order created from its lines, premade record deleted.
-//   2. Returned to stock — flowers go back to inventory, premade record deleted.
+//
+// Legacy (STOCK_Y_MODEL=false): Stock is deducted at creation time. The bouquet
+// can later be:
+//   1. Matched to a client — Order created with skipStockDeduction (already deducted).
+//   2. Returned to stock — flowers credited back, premade record deleted.
+//
+// Y-model (STOCK_Y_MODEL=true, issue #285): Batch quantity is NOT deducted at
+// creation time. premade_bouquet_lines rows are the reservation ledger.
+//   1. Matched to a client — Lines deleted first, then createOrder runs WITHOUT
+//      skipStockDeduction so standard Batch deduction happens at sale time.
+//   2. Dissolved — Lines deleted, Batch unchanged (no credit needed).
+//
+// Pitfall #8 retired for this path: premade_bouquet_lines are the sole ledger;
+// the Batch can never be double-counted.
 
 import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import { broadcast } from './notifications.js';
 import { autoMatchStock, createOrder } from './orderService.js';
+import { getStockYModelEnabled } from './configService.js';
+import { db } from '../db/index.js';
+import { premadeBouquets, premadeBouquetLines } from '../db/schema.js';
 
 export async function getPremadeBouquet(id) {
   const bouquet = await premadeBouquetRepo.getById(id);
@@ -45,7 +59,7 @@ export async function listPremadeBouquets() {
 }
 
 export async function createPremadeBouquet(params) {
-  const { name, lines, priceOverride, notes, createdBy } = params;
+  const { name, lines } = params;
 
   if (!name || typeof name !== 'string' || !name.trim()) {
     const err = new Error('Premade bouquet name is required.');
@@ -65,6 +79,63 @@ export async function createPremadeBouquet(params) {
     }
   }
 
+  // Auto-match stock by flower name (read-only, runs before any writes).
+  await autoMatchStock(lines);
+
+  if (getStockYModelEnabled()) {
+    return await _createPremadeBouquetYModel(params);
+  }
+  return await _createPremadeBouquetLegacy(params);
+}
+
+// ── Y-model build path (STOCK_Y_MODEL=true) ──
+// Validates free qty per line (SELECT FOR UPDATE in production), inserts
+// the bouquet header + lines in a single transaction. Batch quantity is
+// intentionally unchanged — premade_bouquet_lines are the reservation ledger.
+async function _createPremadeBouquetYModel({ name, lines, priceOverride, notes, createdBy }) {
+  const orphans = lines.filter(l => !l.stockItemId);
+  if (orphans.length > 0) {
+    const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
+    const err = new Error(
+      `Bouquet line(s) without a Stock Item are not allowed: ${names}. ` +
+      `Create the flower in Stock first.`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const created = await db.transaction(async (tx) => {
+    // Validate free qty for each line (production: locks Batch row per line).
+    for (const line of lines) {
+      await stockRepo.validateFreeQty(line.stockItemId, Number(line.quantity), tx);
+    }
+    // Insert bouquet header.
+    const [bq] = await tx.insert(premadeBouquets).values({
+      name:          name.trim(),
+      createdBy:     createdBy || '',
+      priceOverride: priceOverride != null ? String(priceOverride) : null,
+      notes:         notes || '',
+    }).returning();
+    // Insert lines — NO Batch update; reservation lives in lines only.
+    if (lines.length > 0) {
+      await tx.insert(premadeBouquetLines).values(lines.map(l => ({
+        bouquetId:        bq.id,
+        stockId:          l.stockItemId,
+        flowerName:       l.flowerName,
+        quantity:         Number(l.quantity),
+        costPricePerUnit: String(Number(l.costPricePerUnit) || 0),
+        sellPricePerUnit: String(Number(l.sellPricePerUnit) || 0),
+      })));
+    }
+    return bq;
+  });
+
+  broadcast({ type: 'premade_bouquet_created', bouquetId: created.id, name: created.name });
+  return await getPremadeBouquet(created.id);
+}
+
+// ── Legacy build path (STOCK_Y_MODEL=false) — byte-for-byte unchanged ──
+async function _createPremadeBouquetLegacy({ name, lines, priceOverride, notes, createdBy }) {
   let bouquet = null;
   const createdLineIds = [];
   const stockAdjustments = [];
@@ -76,8 +147,6 @@ export async function createPremadeBouquet(params) {
       'Price Override': priceOverride || null,
       Notes:            notes || '',
     });
-
-    await autoMatchStock(lines);
 
     const orphans = lines.filter(l => !l.stockItemId);
     if (orphans.length > 0) {
@@ -199,6 +268,28 @@ export async function editPremadeBouquetLines(id, { lines = [], removedLines = [
 }
 
 export async function returnPremadeBouquetToStock(id) {
+  if (getStockYModelEnabled()) return await _dissolvePremadeYModel(id);
+  return await _returnPremadeToStockLegacy(id);
+}
+
+// ── Y-model dissolve path (STOCK_Y_MODEL=true) ──
+// Deletes the bouquet header; CASCADE removes lines. Batch quantity
+// is intentionally unchanged — no credit because nothing was deducted at build.
+async function _dissolvePremadeYModel(id) {
+  const bouquet = await premadeBouquetRepo.getById(id);
+  if (!bouquet) {
+    const err = new Error(`Premade bouquet not found: ${id}`);
+    err.statusCode = 404;
+    throw err;
+  }
+  // CASCADE deletes the lines along with the bouquet header.
+  await premadeBouquetRepo.deleteById(bouquet._pgId);
+  broadcast({ type: 'premade_bouquet_returned', bouquetId: id, name: bouquet.Name || '' });
+  return { message: 'Premade bouquet dissolved. Reservations cleared; Batch quantity unchanged.' };
+}
+
+// ── Legacy dissolve path (STOCK_Y_MODEL=false) — byte-for-byte unchanged ──
+async function _returnPremadeToStockLegacy(id) {
   const bouquet = await premadeBouquetRepo.getById(id);
   const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
   const returnedItems = [];
@@ -233,6 +324,49 @@ export async function returnPremadeBouquetToStock(id) {
 }
 
 export async function matchPremadeBouquetToOrder(id, orderData, config) {
+  if (getStockYModelEnabled()) return await _matchPremadeYModel(id, orderData, config);
+  return await _matchPremadeLegacy(id, orderData, config);
+}
+
+// ── Y-model sale path (STOCK_Y_MODEL=true) ──
+// Deletes lines FIRST (frees the reservation), then routes through standard
+// createOrder WITHOUT skipStockDeduction so the Batch is decremented at
+// sale time (exactly once, via the normal allocation path).
+async function _matchPremadeYModel(id, orderData, config) {
+  const premade = await getPremadeBouquet(id);
+  if (!premade.lines || premade.lines.length === 0) {
+    const err = new Error('Premade bouquet has no lines — cannot match to order.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const orderLines = premade.lines.map(l => ({
+    stockItemId:      l['Stock Item']?.[0] || null,
+    flowerName:       l['Flower Name'] || '',
+    quantity:         Number(l.Quantity || 0),
+    costPricePerUnit: Number(l['Cost Price Per Unit'] || 0),
+    sellPricePerUnit: Number(l['Sell Price Per Unit'] || 0),
+  }));
+
+  const priceOverride = orderData.priceOverride != null
+    ? orderData.priceOverride
+    : (premade['Price Override'] || null);
+
+  // Delete lines FIRST — frees the reservation before standard order deduction.
+  await premadeBouquetRepo.deleteById(premade._pgId);
+
+  // Standard createOrder — NO skipStockDeduction. Batch decremented now.
+  const result = await createOrder(
+    { ...orderData, orderLines, priceOverride, notes: orderData.notes || premade.Notes || '' },
+    config,
+  );
+
+  broadcast({ type: 'premade_bouquet_matched', bouquetId: id, orderId: result.order?.id || null });
+  return { ...result, premadeBouquetId: id };
+}
+
+// ── Legacy sale path (STOCK_Y_MODEL=false) — byte-for-byte unchanged ──
+async function _matchPremadeLegacy(id, orderData, config) {
   const premade = await getPremadeBouquet(id);
   if (!premade.lines || premade.lines.length === 0) {
     const err = new Error('Premade bouquet has no lines — cannot match to order.');

@@ -10,6 +10,7 @@ import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { actorFromReq } from '../utils/actor.js';
 import { ORDER_STATUS, PO_STATUS, LOSS_REASON } from '../constants/statuses.js';
+import { getStockYModelEnabled } from '../services/configService.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -100,6 +101,19 @@ router.get('/velocity', async (req, res, next) => {
 // an order needs more stems than are freely available.
 router.get('/premade-committed', async (req, res, next) => {
   try {
+    // Y-model: aggregate directly from premade_bouquet_lines per Stock Item id.
+    // Same response shape as legacy { stockId: { qty: N, bouquets: [] } }.
+    if (getStockYModelEnabled()) {
+      const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
+      const allStockIds = allStock.map(s => s._pgId).filter(Boolean);
+      const reservations = await stockRepo.getPremadeReservations(allStockIds);
+      const committed = {};
+      for (const [stockId, qty] of reservations) {
+        if (qty > 0) committed[stockId] = { qty, bouquets: [] };
+      }
+      return res.json(committed);
+    }
+
     const bouquets = await premadeBouquetRepo.list();
     // Keyed by whatever Stock Item ID the line carries (may be a phantom rec
     // ID from premade lines created in Airtable against a post-cutover UUID
