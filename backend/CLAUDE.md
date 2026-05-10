@@ -22,7 +22,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | auth.js | POST /auth/verify | PIN validation with rate limiting (5 attempts/15min) |
 | orders.js | GET/POST/PATCH/DELETE /orders | Order CRUD + status transitions + delivery cascade. All reads/writes via orderRepo. |
 | customers.js | GET/POST/PATCH /customers, GET /customers/insights | CRM + RFM segmentation |
-| stock.js | GET/POST/PATCH /stock, GET /stock/velocity | Inventory + velocity forecasting. All reads/writes via stockRepo. |
+| stock.js | GET/POST/PATCH /stock, GET /stock/velocity, GET /stock/committed, GET /stock/pending-po, POST /stock, GET /stock/:id/usage, PATCH /stock/:id, POST /stock/:id/adjust, POST /stock/:id/write-off, GET /stock/reconciliation, GET /stock/needs-backfill, GET /stock/distinct/:column, PATCH /stock/:id/variety-attrs, PATCH /stock/variety-attrs/bulk (Owner-only) | Inventory + velocity + variety backfill |
 | deliveries.js | GET/PATCH /deliveries | Driver assignments + status cascade to orders |
 | stockOrders.js | Full CRUD /stock-orders | PO lifecycle: create, send, shop, review, evaluate. **Postgres** via `stockOrderRepo` (Phase 7). New PO markers embed human-readable PO number (ADR-0003). |
 | stockPurchases.js | POST /stock-purchases | Record supplier deliveries with batch tracking. Routes STOCK reads/writes through stockRepo; purchase records through stockPurchasesRepo. |
@@ -47,7 +47,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | File | Purpose |
 |------|---------|
 | orderService.js | Order state machine, auto-match stock, create with rollback, cancel with stock return, edit bouquet lines. All paths via orderRepo (Postgres). |
-| premadeBouquetService.js | Dissolve premade bouquets into constituent stock-item lines on order creation. Persistence via `premadeBouquetRepo` (Postgres, Phase 7). |
+| premadeBouquetService.js | Build / dissolve / sell Premade Bouquets. Flag-on path (STOCK_Y_MODEL=true, issue #285) uses reservation model — `premade_bouquet_lines` are the ledger; Batch quantity is touched only at sale via standard allocation. Legacy path preserved under `_*Legacy` functions. Persistence via `premadeBouquetRepo` (Postgres, Phase 7). |
 | notifications.js | SSE broadcast to all connected clients (heartbeat every 30s). No catch-up buffer yet — clients miss events while disconnected. |
 | wix.js | Wix webhook processor — parses payload, creates order + lines + delivery. |
 | wixProductSync.js | Bidirectional Wix product pull/push with sync logging. `runPush` accepts `onProgress(entry)` and parallelizes Wix API calls per phase via `p-queue` (concurrency 8) so the full push lands in 10–20s. Pull mirrors Wix prices and descriptions into the local product_config table (the 2026-04-22 lockout was specific to the legacy `runSync` flow, which the UI no longer calls). (1200+ L — split candidate.) |

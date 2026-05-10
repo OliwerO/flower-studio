@@ -7,7 +7,7 @@ Review this entire file before flipping to production.
 
 ## Stock Y-model — dated Demand Entry + Required By cascade (#286, 2026-05-10)
 
-Second slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Behind `STOCK_Y_MODEL=true`. No production behavior change when flag is off; legacy paths byte-for-byte unchanged. Issue: [#286](https://github.com/OliwerO/flower-studio/issues/286).
+Slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Behind `STOCK_Y_MODEL=true`. No production behavior change when flag is off; legacy paths byte-for-byte unchanged. Issue: [#286](https://github.com/OliwerO/flower-studio/issues/286).
 
 ### Schema diff
 
@@ -44,6 +44,69 @@ No new columns. No table changes. Safe to apply to production at any time.
 - `backend/src/__tests__/orderRepo.integration.test.js` — 9 new flag-on createOrder + cascade tests.
 - `lab/scenarios/stockYDemand.js` (new) — shared Variety + crossed dates fixture.
 - `lab/factories/stockItem.js` — extended with `type='dated-demand'`.
+
+---
+
+## Stock Y-model — Variety attribute backfill UI (2026-05-10)
+
+Owner-facing admin page for backfilling Variety attributes (Type, Colour, Size, Cultivar) on Stock Items with `type_name IS NULL`. Pre-cutover step for #291. Issue: [#292](https://github.com/OliwerO/flower-studio/issues/292).
+
+### New endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stock/needs-backfill` | List items with `type_name IS NULL`; returns `{ rows, total, remaining }` |
+| GET | `/api/stock/distinct/:column` | Sorted distinct values for one Variety column (autocomplete) |
+| PATCH | `/api/stock/:id/variety-attrs` | Set Variety attrs on one Stock Item; audit `action = 'variety_backfill'` |
+| PATCH | `/api/stock/variety-attrs/bulk` | Set Variety attrs on a batch of Stock Items in a single transaction |
+
+All four require Owner role; Florist receives 403.
+
+### New dashboard tab
+
+`VarietyBackfillTab` — lazy-loaded as "Variety Backfill" in the dashboard nav. Features:
+- Status banner: `N of M still need backfill` (live after every save)
+- Row table: legacy `display_name`, four autocomplete inputs (Type, Colour, Size, Cultivar), Save button per row
+- Cultivar prefill: selecting an existing Cultivar prefills Type/Colour/Size from the most recent matching row
+- Checkbox selection + bulk-edit panel: filter by name, apply attrs to selected rows in one PATCH request
+- "Show backfilled" toggle reveals completed rows
+
+### Go-live impact
+
+None for Florist sessions — no code path changes for non-Owner roles. Owner tab is visible but non-destructive. The `STOCK_Y_MODEL` flag is not involved in this slice.
+
+### Cutover prerequisite
+
+After all rows are backfilled, run the #291 migration script: `SELECT count(*) FROM stock WHERE type_name IS NULL` must return 0 before the NOT NULL constraint can be applied.
+
+---
+
+## Stock Y-model — premade reservation model (2026-05-10)
+
+Second slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Activates only when `STOCK_Y_MODEL=true` (default false). No production behavior change with the flag off. Issue: [#285](https://github.com/OliwerO/flower-studio/issues/285).
+
+### What changed (flag-on)
+
+- `createPremadeBouquet` writes `premade_bouquet_lines` only — Batch quantity is unchanged.
+- `returnPremadeBouquetToStock` deletes lines (no Batch credit).
+- `matchPremadeBouquetToOrder` deletes lines first then routes the new order through standard `createOrder` allocation (drops `skipStockDeduction`).
+- `validateFreeQty` uses `SELECT FOR UPDATE` per Stock Item to serialize concurrent builds in production Postgres. pglite is single-connection and ignores the lock; sequential tests verify the arithmetic.
+- `/stock/premade-committed` reads from `getPremadeReservations` (aggregated by Stock Item id).
+
+### Pitfall #8 retired for premades
+
+Pre-#285 the build path silently decremented Batch quantity, creating a parallel source of truth (lines + Batch). The reservation model makes it impossible: lines are the only ledger; the Batch reflects only physical stems.
+
+### Verification
+
+- New unit tests in `stockRepo.premadeReservations.test.js` (3 tests).
+- New flag-on integration tests in `premadeBouquetService.integration.test.js` (5 tests including sequential concurrency).
+- Lab scenario `premadeReservation` rehearses the lifecycle.
+- Full backend vitest (333 tests), lab unit (37 tests), lab API, E2E suites green; all 3 Vite app builds clean.
+
+### Go-live impact
+
+None until `STOCK_Y_MODEL=true` is set in Railway. The migration was already applied with #284; this PR changes only service code. Cutover (#291) flips the flag.
 
 ---
 

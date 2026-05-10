@@ -10,6 +10,7 @@ import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { actorFromReq } from '../utils/actor.js';
 import { ORDER_STATUS, PO_STATUS, LOSS_REASON } from '../constants/statuses.js';
+import { getStockYModelEnabled } from '../services/configService.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -100,6 +101,19 @@ router.get('/velocity', async (req, res, next) => {
 // an order needs more stems than are freely available.
 router.get('/premade-committed', async (req, res, next) => {
   try {
+    // Y-model: aggregate directly from premade_bouquet_lines per Stock Item id.
+    // Same response shape as legacy { stockId: { qty: N, bouquets: [] } }.
+    if (getStockYModelEnabled()) {
+      const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
+      const allStockIds = allStock.map(s => s._pgId).filter(Boolean);
+      const reservations = await stockRepo.getPremadeReservations(allStockIds);
+      const committed = {};
+      for (const [stockId, qty] of reservations) {
+        if (qty > 0) committed[stockId] = { qty, bouquets: [] };
+      }
+      return res.json(committed);
+    }
+
     const bouquets = await premadeBouquetRepo.list();
     // Keyed by whatever Stock Item ID the line carries (may be a phantom rec
     // ID from premade lines created in Airtable against a post-cutover UUID
@@ -392,6 +406,82 @@ router.post('/', async (req, res, next) => {
 
     const item = await stockRepo.create(fields, { actor: actorFromReq(req) });
     res.status(201).json(item);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ── Variety backfill endpoints (issue #292) ──
+// All four require Owner role. Florist gets 403.
+
+// GET /api/stock/needs-backfill?includeBackfilled=true
+// Returns { rows, total, remaining }.
+//   rows      — stock items with type_name IS NULL (default) or all rows when
+//               includeBackfilled=true. Sorted by display_name.
+//   total     — count of all non-deleted stock rows.
+//   remaining — count still needing backfill (type_name IS NULL).
+// Used by the status banner ("N of M still need backfill").
+router.get('/needs-backfill', authorize('stock', ['owner']), async (req, res, next) => {
+  try {
+    const includeBackfilled = req.query.includeBackfilled === 'true';
+    const [rows, allRows] = await Promise.all([
+      stockRepo.findByTypeNameNull({ includeBackfilled }),
+      stockRepo.findByTypeNameNull({ includeBackfilled: true }),
+    ]);
+    const total     = allRows.length;
+    const remaining = allRows.filter(r => r['Type'] == null).length;
+    res.json({ rows, total, remaining });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/stock/distinct/:column
+// Returns a sorted array of distinct non-null values for one of the four
+// Variety columns. Used by autocomplete inputs. Allowed columns:
+// typeName, colour, sizeCm, cultivar.
+router.get('/distinct/:column', authorize('stock', ['owner']), async (req, res, next) => {
+  try {
+    const values = await stockRepo.distinctValues(req.params.column);
+    res.json(values);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/stock/variety-attrs/bulk
+// Body: { ids: string[], attrs: { typeName, colour?, sizeCm?, cultivar? } }
+// Applies attrs to all ids in a single transaction.
+// Returns { updated: [...varietyResponse] }.
+// NOTE: Must be defined BEFORE router.patch('/:id', ...) and BEFORE the
+// router.patch('/:id/variety-attrs', ...) below — Express matches in
+// definition order, and "variety-attrs" would otherwise be treated as :id.
+router.patch('/variety-attrs/bulk', authorize('stock', ['owner']), async (req, res, next) => {
+  try {
+    const { ids, attrs } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'ids must be a non-empty array' });
+    }
+    const updated = await stockRepo.bulkUpdateVarietyAttrs(ids, attrs, { actor: actorFromReq(req) });
+    res.json({ updated });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /api/stock/:id/variety-attrs
+// Body: { typeName: string (required), colour?: string, sizeCm?: number, cultivar?: string }
+// Returns the updated row in the varietyResponse shape.
+// NOTE: This route MUST appear before router.patch('/:id', ...) so ":id"
+// does not capture the literal "variety-attrs" string. The route is defined
+// here with the literal path suffix "/variety-attrs".
+router.patch('/:id/variety-attrs', authorize('stock', ['owner']), async (req, res, next) => {
+  try {
+    const { typeName, colour, sizeCm, cultivar } = req.body;
+    const item = await stockRepo.updateVarietyAttrs(req.params.id, {
+      typeName, colour, sizeCm, cultivar,
+    }, { actor: actorFromReq(req) });
+    res.json(item);
   } catch (err) {
     next(err);
   }

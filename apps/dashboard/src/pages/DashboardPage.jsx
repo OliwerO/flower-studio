@@ -17,6 +17,7 @@ const CustomersTab = lazy(() => import('../components/CustomersTab.jsx'));
 const ProductsTab = lazy(() => import('../components/ProductsTab.jsx'));
 const AdminTab = lazy(() => import('../components/AdminTab.jsx'));
 const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
+const VarietyBackfillTab = lazy(() => import('../components/VarietyBackfillTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 
 function TabFallback() {
@@ -39,6 +40,7 @@ export default function DashboardPage() {
     { key: 'financial', label: t.tabFinancial },
     { key: 'products', label: t.tabProducts },
     { key: 'admin',    label: '\u26a0 ' + t.tabAdmin },
+    { key: 'backfill', label: t.tabBackfill },
     { key: 'settings', label: '\u2699 ' + t.tabSettings },
   ];
   const [activeTab, setActiveTab] = useState(() => {
@@ -184,6 +186,9 @@ export default function DashboardPage() {
         )}
         {renderMountedTab('admin',
           <AdminTab />
+        )}
+        {renderMountedTab('backfill',
+          <VarietyBackfillTab />
         )}
         {renderMountedTab('settings',
           <SettingsTab />

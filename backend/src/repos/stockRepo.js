@@ -14,7 +14,7 @@
 
 import { pickAllowed } from '../utils/fields.js';
 import { db } from '../db/index.js';
-import { stock, orderLines } from '../db/schema.js';
+import { stock, orderLines, premadeBouquetLines } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
 
@@ -241,6 +241,11 @@ export function pgToResponse(row) {
     Farmer:               row.farmer ?? null,
     'Last Restocked':     row.lastRestocked ?? null,
     'Substitute For':     row.substituteFor ?? [],
+    // Stock Y-model identity columns (issue #284 / #292)
+    Type:                 row.typeName ?? null,
+    Colour:               row.colour ?? null,
+    Size:                 row.sizeCm ?? null,
+    Cultivar:             row.cultivar ?? null,
   };
 }
 
@@ -635,6 +640,202 @@ export async function purge(id, opts = {}) {
     });
     return { id: before.airtableId || before.id, purged: true };
   });
+}
+
+// ── Variety backfill helpers (issue #292) ──
+
+// Allowed column names for distinctValues — prevents SQL injection via
+// untrusted :column param. The route validates against this set before calling.
+export const VARIETY_COLUMNS = ['typeName', 'colour', 'sizeCm', 'cultivar'];
+
+const VARIETY_COLUMN_MAP = {
+  typeName: stock.typeName,
+  colour:   stock.colour,
+  sizeCm:   stock.sizeCm,
+  cultivar: stock.cultivar,
+};
+
+// findByTypeNameNull — list stock items that still need Variety backfill.
+// Default sort: display_name ASC. When includeBackfilled=true, returns all
+// non-deleted rows (used by "Show backfilled" toggle).
+export async function findByTypeNameNull(opts = {}) {
+  if (!db) throw new Error('stockRepo.findByTypeNameNull: db not configured');
+  const filters = [isNull(stock.deletedAt)];
+  if (!opts.includeBackfilled) filters.push(isNull(stock.typeName));
+  const rows = await db
+    .select()
+    .from(stock)
+    .where(and(...filters))
+    .orderBy(sql`${stock.displayName} ASC NULLS LAST`);
+  return rows.map(pgToResponse);
+}
+
+// distinctValues — SELECT DISTINCT for one of the four Variety columns.
+// Used by the autocomplete inputs in the backfill UI. Only the four identity
+// columns are allowed; anything else throws so the route can 400 cleanly.
+export async function distinctValues(column) {
+  if (!VARIETY_COLUMNS.includes(column)) {
+    const err = new Error(`distinctValues: column "${column}" is not allowed`);
+    err.statusCode = 400;
+    throw err;
+  }
+  if (!db) throw new Error('stockRepo.distinctValues: db not configured');
+  const col = VARIETY_COLUMN_MAP[column];
+  const rows = await db
+    .selectDistinct({ value: col })
+    .from(stock)
+    .where(and(isNull(stock.deletedAt), sql`${col} IS NOT NULL`))
+    .orderBy(sql`${col} ASC`);
+  return rows.map(r => r.value).filter(Boolean);
+}
+
+// updateVarietyAttrs — sets the four Variety identity columns on one stock
+// row. Type is required (non-empty); the others are optional (null clears them).
+// Audit action is 'variety_backfill' (distinct from generic 'update') so the
+// admin log can filter backfill activity separately.
+export async function updateVarietyAttrs(id, attrs, opts = {}) {
+  const { typeName, colour, sizeCm, cultivar } = attrs;
+  if (!typeName || !String(typeName).trim()) {
+    const err = new Error('Type is required for variety backfill');
+    err.statusCode = 400;
+    throw err;
+  }
+  const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+  if (!db) throw new Error('stockRepo.updateVarietyAttrs: db not configured');
+
+  return await db.transaction(async (tx) => {
+    const before = await findPgByAirtableOrUuid(id, tx);
+    if (!before) {
+      const err = new Error(`Stock record not found: ${id}`);
+      err.statusCode = 404;
+      throw err;
+    }
+    const patch = {
+      typeName: String(typeName).trim(),
+      colour:   colour != null ? String(colour).trim() || null : null,
+      sizeCm:   sizeCm != null ? Number(sizeCm) || null : null,
+      cultivar: cultivar != null ? String(cultivar).trim() || null : null,
+      updatedAt: new Date(),
+    };
+    const [after] = await tx.update(stock).set(patch).where(eq(stock.id, before.id)).returning();
+    await tryAudit(tx, {
+      entityType: 'stock',
+      entityId:   after.id,
+      action:     'variety_backfill',
+      before:     { Type: before.typeName, Colour: before.colour, Size: before.sizeCm, Cultivar: before.cultivar },
+      after:      { Type: after.typeName, Colour: after.colour, Size: after.sizeCm, Cultivar: after.cultivar },
+      ...actor,
+    });
+    return varietyResponse(after);
+  });
+}
+
+// bulkUpdateVarietyAttrs — applies attrs to a list of ids in one transaction.
+// If any id is not found, the whole batch is rolled back (partial commits are
+// worse than a full failure — the Owner can retry the batch).
+export async function bulkUpdateVarietyAttrs(ids, attrs, opts = {}) {
+  const { typeName, colour, sizeCm, cultivar } = attrs;
+  if (!typeName || !String(typeName).trim()) {
+    const err = new Error('Type is required for variety backfill');
+    err.statusCode = 400;
+    throw err;
+  }
+  const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
+  if (!db) throw new Error('stockRepo.bulkUpdateVarietyAttrs: db not configured');
+
+  return await db.transaction(async (tx) => {
+    const results = [];
+    for (const id of ids) {
+      const before = await findPgByAirtableOrUuid(id, tx);
+      if (!before) {
+        const err = new Error(`Stock record not found: ${id}`);
+        err.statusCode = 404;
+        throw err;
+      }
+      const patch = {
+        typeName: String(typeName).trim(),
+        colour:   colour != null ? String(colour).trim() || null : null,
+        sizeCm:   sizeCm != null ? Number(sizeCm) || null : null,
+        cultivar: cultivar != null ? String(cultivar).trim() || null : null,
+        updatedAt: new Date(),
+      };
+      const [after] = await tx.update(stock).set(patch).where(eq(stock.id, before.id)).returning();
+      await tryAudit(tx, {
+        entityType: 'stock',
+        entityId:   after.id,
+        action:     'variety_backfill',
+        before:     { Type: before.typeName, Colour: before.colour, Size: before.sizeCm, Cultivar: before.cultivar },
+        after:      { Type: after.typeName, Colour: after.colour, Size: after.sizeCm, Cultivar: after.cultivar },
+        ...actor,
+      });
+      results.push(varietyResponse(after));
+    }
+    return results;
+  });
+}
+
+// varietyResponse — minimal wire format for backfill endpoint responses.
+// Returns the display-name identity fields the UI needs to update its local state.
+function varietyResponse(row) {
+  return {
+    id:          row.id,
+    _pgId:       row.id,
+    'Display Name': row.displayName,
+    'Type':      row.typeName,
+    'Colour':    row.colour,
+    'Size':      row.sizeCm,
+    'Cultivar':  row.cultivar,
+  };
+}
+
+// ── getPremadeReservations (Stock Y-model, issue #285) ──
+// Returns Map<stockId, summed qty> for premade_bouquet_lines whose stockId
+// is in the given list. Pass `tx` when called inside a transaction so reads
+// see the same snapshot as concurrent locks.
+export async function getPremadeReservations(stockIds, tx = null) {
+  if (!Array.isArray(stockIds) || stockIds.length === 0) return new Map();
+  const handle = tx || db;
+  if (!handle) return new Map();
+  const rows = await handle
+    .select({
+      stockId:  premadeBouquetLines.stockId,
+      totalQty: sql`SUM(${premadeBouquetLines.quantity})`,
+    })
+    .from(premadeBouquetLines)
+    .where(inArray(premadeBouquetLines.stockId, stockIds))
+    .groupBy(premadeBouquetLines.stockId);
+  const out = new Map();
+  for (const r of rows) {
+    if (r.stockId) out.set(r.stockId, Number(r.totalQty) || 0);
+  }
+  return out;
+}
+
+// ── validateFreeQty (Stock Y-model, issue #285) ──
+// Inside an outer transaction (caller holds BEGIN): locks the Batch row via
+// SELECT FOR UPDATE in production Postgres, computes
+//   freeQty = current_quantity - SUM(existing reservations)
+// throws 400 if freeQty < requestedQty.
+//
+// pglite (test harness) is single-connection WASM and ignores FOR UPDATE.
+// Concurrency tests rely on sequential calls — the first call's reservation
+// is visible to the second call's free-qty check.
+export async function validateFreeQty(stockId, requestedQty, tx) {
+  if (!tx) throw new Error('validateFreeQty: must be called inside a transaction');
+  const rows = await tx.execute(
+    sql`SELECT current_quantity FROM stock WHERE id = ${stockId} FOR UPDATE`
+  );
+  const batchQty = Number(rows.rows?.[0]?.current_quantity ?? rows[0]?.current_quantity ?? 0);
+  const reservations = await getPremadeReservations([stockId], tx);
+  const reserved = reservations.get(stockId) ?? 0;
+  const freeQty = batchQty - reserved;
+  if (freeQty < requestedQty) {
+    const err = new Error(
+      `Insufficient free stems: ${freeQty} available (${batchQty} on hand minus ${reserved} reserved for premades), ${requestedQty} requested.`
+    );
+    err.statusCode = 400;
+    throw err;
+  }
 }
 
 // ── Internal exports for tests ──
