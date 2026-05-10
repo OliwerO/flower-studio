@@ -11,6 +11,7 @@
 // matching the ADR-0002 "one aggregate per variety" invariant.
 
 import { faker } from '@faker-js/faker';
+import { randomUUID } from 'crypto';
 import { buildStockOverhaul } from './stockOverhaul.js';
 import { makeStockItem, makeOrder, makeOrderLine } from '../factories/index.js';
 
@@ -116,11 +117,51 @@ export function buildStockYMigration() {
   const lineA  = makeOrderLine({ orderId: orderA.id, stockItemId: aggDE.id, flower_name: aggDE.display_name, quantity: 5 });
   const lineB  = makeOrderLine({ orderId: orderB.id, stockItemId: aggDE.id, flower_name: aggDE.display_name, quantity: 3 });
 
+  // ── Phase 4 fixture: premade reservation back-add ──
+  // Simulates a "Hydrangea Blue 30cm" Batch with qty=20, linked to one
+  // premade bouquet line with quantity=7. The script must ADD 7 back to
+  // current_quantity → post-state: 27.
+  const targetBatch = makeStockItem({
+    type:             'batch',
+    display_name:     'Hydrangea Blue 30cm (10.May.)',
+    type_name:        'Hydrangea',
+    colour:           'Blue',
+    size_cm:          30,
+    current_quantity: 20,
+    date:             '2026-05-10',
+  });
+  stockItems.push(targetBatch);
+
+  const premadeBouquet = {
+    id:             randomUUID(),
+    airtable_id:    null,
+    name:           'Migration test bouquet',
+    created_by:     '',
+    price_override: null,
+    notes:          '',
+    created_at:     new Date(),
+  };
+
+  const premadeLine = {
+    id:                   randomUUID(),
+    airtable_id:          null,
+    bouquet_id:           premadeBouquet.id,
+    stock_id:             targetBatch.id,
+    stock_airtable_id:    null,
+    flower_name:          targetBatch.display_name,
+    quantity:             7,
+    cost_price_per_unit:  '0',
+    sell_price_per_unit:  '0',
+    created_at:           new Date(),
+  };
+
   return {
-    customers:  base.customers,
+    customers:          base.customers,
     stockItems,
-    orders:     [...base.orders, orderA, orderB],
-    orderLines: [...orderLines, lineA, lineB],
-    deliveries: base.deliveries,
+    orders:             [...base.orders, orderA, orderB],
+    orderLines:         [...orderLines, lineA, lineB],
+    deliveries:         base.deliveries,
+    premadeBouquets:    [premadeBouquet],
+    premadeBouquetLines: [premadeLine],
   };
 }

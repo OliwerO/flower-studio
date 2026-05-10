@@ -167,3 +167,32 @@ describe('migrate-stock-y-model — Phase 3: positive undated → synthetic Batc
     }
   }, 60_000);
 });
+
+describe('migrate-stock-y-model — Phase 4: premade back-add', () => {
+  beforeEach(async () => { await resetLabDb(); });
+
+  it('adds premade_bouquet_lines.quantity back to matching Batch current_quantity', async () => {
+    const pool = labPool();
+    try {
+      // Pre: find the Hydrangea Batch inserted by the scenario fixture.
+      const pre = await pool.query(
+        `SELECT id, current_quantity FROM stock WHERE display_name = 'Hydrangea Blue 30cm (10.May.)'`
+      );
+      expect(pre.rows.length).toBe(1);
+      const { id: batchId, current_quantity: preQty } = pre.rows[0];
+
+      const res = runScript();
+      expect(res.status).toBe(0);
+
+      // Post: current_quantity must have increased by the premade line quantity (7).
+      const post = await pool.query(
+        `SELECT current_quantity FROM stock WHERE id = $1`,
+        [batchId]
+      );
+      expect(post.rows.length).toBe(1);
+      expect(post.rows[0].current_quantity).toBe(preQty + 7);
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
+});

@@ -132,6 +132,24 @@ async function phase3PositiveUndated(client, today) {
   console.log(`[phase3] Dated ${rowCount} positive-qty undated row(s) → ${today}.`);
 }
 
+async function phase4PremadeBackAdd(client) {
+  const { rows: sums } = await client.query(`
+    SELECT stock_id, SUM(quantity)::int AS reserved
+    FROM premade_bouquet_lines
+    WHERE stock_id IS NOT NULL
+    GROUP BY stock_id
+  `);
+  for (const { stock_id, reserved } of sums) {
+    if (reserved > 0) {
+      await client.query(
+        `UPDATE stock SET current_quantity = current_quantity + $1, updated_at = NOW() WHERE id = $2`,
+        [reserved, stock_id]
+      );
+    }
+  }
+  console.log(`[phase4] Back-added premade reservations to ${sums.length} Batch(es).`);
+}
+
 async function run() {
   const client = await pool.connect();
   try {
@@ -140,8 +158,9 @@ async function run() {
     await phase1Split(client);
     await phase2OrphanNegative(client, today);
     await phase3PositiveUndated(client, today);
+    await phase4PremadeBackAdd(client);
 
-    // Phases 4-5 added in subsequent tasks.
+    // Phase 5 added in subsequent tasks.
 
     if (DRY_RUN) {
       console.log('[migrate] DRY RUN — rolling back transaction.');
