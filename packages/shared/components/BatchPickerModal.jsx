@@ -1,3 +1,12 @@
+/**
+ * DEPRECATED — superseded by `<VarietyAllocationPicker>` (issue #288, 2026-05-10).
+ *
+ * Retained as the flag-off fallback in BouquetEditor + BouquetSection until the
+ * Y-model cutover (#291) backfills four-tuple Variety attributes on every Stock
+ * Item. Once `STOCK_Y_MODEL` is permanently on in production, this component is
+ * to be deleted along with the flag-off branches in the two host components.
+ */
+
 import parseBatchName from '../utils/parseBatchName.js';
 
 /**

@@ -1,6 +1,9 @@
 import { useState } from 'react';
 import t from '../../translations.js';
-import { parseBatchName, findAllMatchingVariety, BatchPickerModal } from '@flower-studio/shared';
+import {
+  parseBatchName, findAllMatchingVariety,
+  BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
+} from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -11,9 +14,15 @@ function formatPoDate(dateStr) {
 }
 
 export default function BouquetSection({ order, editing, isTerminal, saving, targetMarkup, doSave }) {
+  const yEnabled = useStockYModelFlag();
+  const { role } = useAuth();
+
   const o = order;
   const [pickerModalVariety, setPickerModalVariety] = useState(null);
   const [pickerModalMatches, setPickerModalMatches] = useState([]);
+  // Y-model picker state: show VarietyAllocationPicker when yEnabled
+  const [yPickerOpen, setYPickerOpen] = useState(false);
+  const [yPickerQty, setYPickerQty] = useState(1);
   if (!o.orderLines?.length) return null;
 
   return (
@@ -114,13 +123,20 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     return (
                       <button key={s.id} type="button"
                         onClick={() => {
-                          const baseName = parseBatchName(s['Display Name'] || '').name;
-                          const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
-                          if (allMatches.length <= 1) {
-                            editing.addFlowerFromStock(s);
+                          if (yEnabled) {
+                            // Y-model: open VarietyAllocationPicker for the full variety decision
+                            setYPickerOpen(true);
+                            setYPickerQty(1);
                           } else {
-                            setPickerModalVariety(baseName);
-                            setPickerModalMatches(allMatches);
+                            // Legacy: disambiguate batches via BatchPickerModal
+                            const baseName = parseBatchName(s['Display Name'] || '').name;
+                            const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
+                            if (allMatches.length <= 1) {
+                              editing.addFlowerFromStock(s);
+                            } else {
+                              setPickerModalVariety(baseName);
+                              setPickerModalMatches(allMatches);
+                            }
                           }
                         }}
                         className={`w-full flex flex-col px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${poQty > 0 ? 'bg-blue-50/50' : qty <= 0 ? 'bg-amber-50/50' : ''}`}
@@ -158,7 +174,8 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
             </div>
           )}
 
-          {pickerModalVariety && (
+          {/* Legacy picker — only rendered when flag is off (Pitfall #4: never gate out valid paths) */}
+          {!yEnabled && pickerModalVariety && (
             <BatchPickerModal
               baseName={pickerModalVariety}
               matches={pickerModalMatches}
@@ -185,6 +202,55 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                 cancel:            t.cancel,
                 stems:             t.stems,
               }}
+            />
+          )}
+
+          {/* Y-model picker — only rendered when flag is on */}
+          {yEnabled && yPickerOpen && (
+            <VarietyAllocationPicker
+              stockItems={editing.stockItems}
+              reservations={new Map(
+                Object.entries(editing.premadeMap || {}).map(([id, v]) => [id, v.qty || 0])
+              )}
+              requiredBy={o['Required By'] || null}
+              qty={yPickerQty}
+              role={role}
+              t={{
+                pickerSearchPlaceholder: t.pickerSearchPlaceholder,
+                pickerCreateNew:         t.pickerCreateNew,
+                pickerNoResults:         t.pickerNoResults,
+                pickerSaveContinue:      t.pickerSaveContinue,
+                pickerOrderFreshAll:     t.pickerOrderFreshAll,
+                stems:                   t.stems,
+                cancel:                  t.cancel,
+              }}
+              onSelectStock={picked => {
+                if (picked && picked.kind === 'fresh') {
+                  // TODO(Task 7): pass full variety attrs once createDemandEntry supports new shape.
+                  // For now fall back to display name so the call doesn't 4xx in production.
+                  editing.createDemandEntry(picked.displayName || picked.date || '');
+                } else if (picked) {
+                  const existing = editing.editLines.findIndex(l => l.stockItemId === picked.id);
+                  if (existing >= 0) {
+                    editing.incrementQty(existing);
+                  } else {
+                    editing.addFlowerFromStock(picked);
+                  }
+                }
+                setYPickerOpen(false);
+                editing.setFlowerSearch('');
+                editing.setAddingFlower(false);
+              }}
+              onCreateVariety={async draft => {
+                // TODO(Task 7): POST /stock four-tuple support not yet confirmed.
+                // POST /stock only accepts displayName — pass legacy shape so we don't 4xx.
+                const legacyName = [draft.type_name, draft.colour].filter(Boolean).join(' ');
+                await editing.addNewFlower
+                  ? editing.openNewFlowerForm(legacyName || draft.type_name)
+                  : editing.addNewFlowerQuick(legacyName || draft.type_name);
+                setYPickerOpen(false);
+              }}
+              onClose={() => setYPickerOpen(false)}
             />
           )}
 

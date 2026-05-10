@@ -68,3 +68,12 @@ export { default as OrderTerminationConfirm } from './components/OrderTerminatio
 
 // Stock Y-model allocation engine (issue #287, PRD #283)
 export { stockAllocationEngine } from './utils/stockAllocationEngine.js';
+
+// Variety identity helpers per ADR-0006 (issue #288)
+export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyKey.js';
+
+// Variety allocation picker — Stage 1 typeahead (issue #288)
+export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
+
+// STOCK_Y_MODEL feature flag hook (Task 6)
+export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';

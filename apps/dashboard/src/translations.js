@@ -948,6 +948,13 @@ const en = {
   backfillCultivarPrefill:      'Prefilled from existing cultivar',
   backfillSelectAll:            'Select all',
   backfillDeselectAll:          'Deselect all',
+
+  // ── Y-model picker strings (Task 6) ──
+  pickerSearchPlaceholder:      'Search…',
+  pickerCreateNew:              '+ Create new Variety',
+  pickerNoResults:              'No matches',
+  pickerSaveContinue:           'Save & continue',
+  pickerOrderFreshAll:          'Order fresh for all',
 };
 
 const ru = {
@@ -1897,6 +1904,13 @@ const ru = {
   backfillCultivarPrefill:      'Заполнено из существующего сорта',
   backfillSelectAll:            'Выбрать все',
   backfillDeselectAll:          'Снять выбор',
+
+  // ── Y-model picker strings (Task 6) ──
+  pickerSearchPlaceholder:      'Поиск…',
+  pickerCreateNew:              '+ Создать сорт',
+  pickerNoResults:              'Ничего не найдено',
+  pickerSaveContinue:           'Сохранить и продолжить',
+  pickerOrderFreshAll:          'Заказать свежие для всех',
 };
 
 // ── Proxy-based dynamic translation ──
