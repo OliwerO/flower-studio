@@ -58,16 +58,36 @@ _Avoid_: Vendor, distributor
 
 ### Inventory and procurement
 
+**Type**:
+The species or kind of a flower. Required field on every Stock Item. Examples: "Peony", "Rose", "Tulip", "Eucalyptus". Free-text with autocomplete from existing values; new Types created as needed (Owner-only).
+_Avoid_: Flower Type (was used informally in pre-Variety drafts; "Type" is the canonical short form), Species, Family
+
+**Colour**:
+The colour of a Stock Item, as the Florist would describe it. Optional — many flowers have an obvious default colour (Eucalyptus is green) and Owner can leave the field empty. Two Stock Items differ if one is empty and the other is "Green" (strict identity, no automatic coalescing).
+_Avoid_: Color (UK spelling locked for consistency with existing Russian translations)
+
+**Size**:
+Stem length in centimetres. Optional — only meaningful for stem-based flowers where length matters (Roses, Peonies, Tulips); leave empty for non-stem items, fillers, or when the Owner doesn't track it. Distinct from `unit` (stems / bunches / kg) which is the existing column on Stock Item.
+_Avoid_: Length, stem length
+
+**Cultivar**:
+The specific cultivated variety name (e.g. "Sarah Bernhardt", "White O'Hara", "Coral Charm"). Optional. Visibility rule: if filled, the Florist sees it; if empty, only Type/Colour/Size show. Owner fills it when the cultivar matters for fulfilment (specific Rose cultivars) or when autocomplete prefills from a previously-bought cultivar. Free-text with autocomplete; new cultivars created as needed (Owner-only).
+_Avoid_: Variety (Variety is the four-tuple, not the cultivar), Sort
+
+**Variety**:
+The grouping unit for Stock Items — the four-tuple (Type, Colour?, Size?, Cultivar?). Two Stock Items belong to the same Variety when all four fields match exactly, including matching null values. The Stock list collapses by Variety; the order-line picker returns one row per Variety; aggregation buckets (onHand / planned / reservedForPremades / net) are per Variety.
+_Avoid_: Flower Type (was used in PRD #283 drafts to mean Variety; replaced by Variety here), SKU, Flower Kind, Flower Spec
+
 **Stock Item**:
-A named flower variety tracked in inventory. Exists in two forms: a **Demand Entry** (no date suffix, e.g. "Pink Peonies") representing planned future stock with no physical stems yet, and a **Batch** (date suffix, e.g. "Pink Peonies (06.May.)") representing a physically arrived lot. The unit of quantity is the **stem**.
-_Avoid_: Product (a Product is a Wix catalog item, not a stem), item
+A single inventory row for a Variety on a specific date. Exists in two forms: a **Demand Entry** (negative quantity, no physical stems yet, dated by when stems are needed) and a **Batch** (positive quantity, physically arrived, dated by arrival). Belongs to exactly one Variety; the Variety is the four-tuple (Type, Colour?, Size?, Cultivar?). Quantity unit is the **Stem** for flowers; non-flower categories use other units (bunches, kg).
+_Avoid_: Product (Product is a Wix catalog entry), item
 
 **Batch**:
-A Stock Item that has physically arrived. Identified by a date suffix (e.g. "Pink Peonies (06.May.)") where the date is the arrival date — used to track freshness when multiple lots of the same variety coexist. A flower variety may have zero, one, or several Batches at any time, plus at most one Demand Entry.
+A Stock Item that has physically arrived. Identified by the Variety + arrival date. A single Variety may have zero, one, or several Batches at any time (different arrival dates), plus zero or more Demand Entries.
 _Avoid_: lot, shipment, delivery (Delivery is a different concept)
 
 **Demand Entry**:
-A Stock Item with no date suffix (e.g. "Pink Peonies"). Represents a commitment to procure stems for a specific order — stock quantity is negative until a Batch arrives and fills the demand. Created when stems are added to an order but no Batch exists or the Owner explicitly chooses not to draw from an existing Batch.
+A Stock Item with negative quantity representing committed future demand. Identified by the Variety + needed-by date (defaults to the linked Order's Required By with fallback Order Date → today). Created when stems are added to an order but no Batch covers the demand. At most one Demand Entry per (Variety, date) — superseding ADR-0002's "at most one per variety" invariant.
 _Avoid_: placeholder, open order, pre-order
 
 **Stem**:
@@ -136,6 +156,7 @@ _Avoid_: Receiver, delivery target
 - A **Delivery** is always linked to an **Order** — it cannot exist independently
 - A **Delivery** has one **Recipient** (Recipient Name/Phone fields), which may or may not correspond to a **Key Person** on the Customer
 - A **Customer** has zero or more **Key People**
+- A **Variety** is identified by the four-tuple (Type, Colour, Size, Cultivar), where Type is required and the others are optional. Two **Stock Items** belong to the same Variety when all four fields match exactly (including matching null values).
 - A **Stock Order** has one or more lines, each referencing a **Stock Item** by name
 - A **Premade Bouquet** consumes **Stock Items** (stems) immediately on creation
 - A **Product** (Wix) is a bouquet for sale online — it is not directly tied to a specific **Stock Item**; the mapping is implicit through the bouquet's composition
