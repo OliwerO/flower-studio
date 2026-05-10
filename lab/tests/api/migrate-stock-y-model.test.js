@@ -4,13 +4,14 @@
 // Boots lab Postgres template, runs the script via spawnSync, asserts
 // post-state. Each phase has its own describe block.
 
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, beforeAll, afterAll } from 'vitest';
 import { spawnSync } from 'child_process';
 import path from 'path';
 import { resetLabDb } from '../../helpers/reset.js';
 import { labPool } from '../../helpers/db.js';
 
-const SCRIPT = path.resolve(process.cwd(), '../backend/scripts/migrate-stock-y-model.js');
+const REPO_ROOT = path.resolve(process.cwd(), '..');
+const SCRIPT = path.resolve(REPO_ROOT, 'backend/scripts/migrate-stock-y-model.js');
 const LAB_DSN = 'postgres://lab:lab@localhost:5433/lab';
 
 function runScript(args = []) {
@@ -19,6 +20,28 @@ function runScript(args = []) {
     encoding: 'utf8',
   });
 }
+
+function rebuildTemplate(scenario) {
+  const res = spawnSync('node', ['lab/scripts/rebuild-template.js', `--scenario=${scenario}`], {
+    encoding: 'utf8',
+    cwd: REPO_ROOT,
+    stdio: 'pipe',
+  });
+  if (res.status !== 0) {
+    throw new Error(`rebuild-template (${scenario}) failed: ${res.stderr || res.stdout}`);
+  }
+}
+
+// Bootstrap template with our scenario so this test file is self-contained
+// regardless of the CI ordering. Restore baseline on teardown so later
+// suites in the same `lab:test:api` run still see the default fixture.
+beforeAll(() => {
+  rebuildTemplate('stock-y-migration');
+}, 60_000);
+
+afterAll(() => {
+  rebuildTemplate('baseline');
+}, 60_000);
 
 describe('migrate-stock-y-model — pre-condition', () => {
   beforeEach(async () => { await resetLabDb(); });
