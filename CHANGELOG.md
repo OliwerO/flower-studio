@@ -5,6 +5,33 @@ Review this entire file before flipping to production.
 
 ---
 
+## Stock Y-model — per-Variety allocation engine (#287, 2026-05-10)
+
+Slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Pure helper, no schema change, no production behavior change. Issue: [#287](https://github.com/OliwerO/flower-studio/issues/287).
+
+### New util: `packages/shared/utils/stockAllocationEngine.js`
+
+Exported as `stockAllocationEngine` from `packages/shared/index.js`. Takes a single Variety's Stock Item rows (pre-filtered by the selector layer, issue #288), a `Map<stockId, reservedQty>` of premade reservations, a `requiredBy` date string, and a `qty` integer. Returns a ranked array of allocation options:
+
+| Kind | Fields |
+|---|---|
+| `batch` | `stockId, freeQty, total, reservedQty, date, sufficient, isDefault` |
+| `merge` | `stockId, date, currentQty, isPastDate, isDefault` |
+| `fresh` | `date, isDefault` |
+
+Smart-default rule (exactly one `isDefault: true`):
+1. Same-date Demand Entry exists → that merge option
+2. Else oldest Batch with `freeQty >= qty` (FIFO)
+3. Else fresh
+
+Pitfall #8 immunity: `freeQty = currentQuantity - reservedQty`. Batch.currentQuantity is never adjusted for committed order demand (already reflected). Reservations (premade lines) are the only separate bucket. See ADR-0005.
+
+### New test: `packages/shared/test/stockAllocationEngine.test.js`
+
+32 assertions across 7 fixtures, each verified red-then-green. Coverage ≥80%.
+
+---
+
 ## Stock Y-model — dated Demand Entry + Required By cascade (#286, 2026-05-10)
 
 Slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Behind `STOCK_Y_MODEL=true`. No production behavior change when flag is off; legacy paths byte-for-byte unchanged. Issue: [#286](https://github.com/OliwerO/flower-studio/issues/286).
