@@ -230,3 +230,37 @@ describe('migrate-stock-y-model — Phase 1 filter: terminated orders excluded',
     }
   }, 60_000);
 });
+
+describe('migrate-stock-y-model — Phase 5 + idempotency', () => {
+  beforeEach(async () => { await resetLabDb(); });
+
+  it('is a no-op when re-run after a clean migration', async () => {
+    const first = runScript();
+    expect(first.status).toBe(0);
+
+    const second = runScript();
+    expect(second.status).toBe(0);
+    // Second run should hit the alreadyMigrated() guard.
+    expect(second.stdout).toMatch(/already complete/i);
+  }, 90_000);
+
+  it('applies NOT NULL on stock.date and stock.type_name', async () => {
+    const res = runScript();
+    expect(res.status).toBe(0);
+    const pool = labPool();
+    try {
+      const { rows } = await pool.query(`
+        SELECT column_name, is_nullable
+        FROM information_schema.columns
+        WHERE table_name = 'stock' AND column_name IN ('date', 'type_name')
+        ORDER BY column_name
+      `);
+      expect(rows).toEqual([
+        { column_name: 'date',      is_nullable: 'NO' },
+        { column_name: 'type_name', is_nullable: 'NO' },
+      ]);
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
+});

@@ -157,6 +157,12 @@ async function phase3PositiveUndated(client, today) {
   console.log(`[phase3] Dated ${rowCount} positive-qty undated row(s) → ${today}.`);
 }
 
+async function phase5SetNotNull(client) {
+  await client.query(`ALTER TABLE stock ALTER COLUMN date SET NOT NULL`);
+  await client.query(`ALTER TABLE stock ALTER COLUMN type_name SET NOT NULL`);
+  console.log('[phase5] Applied NOT NULL on stock.date and stock.type_name.');
+}
+
 async function phase4PremadeBackAdd(client) {
   const { rows: sums } = await client.query(`
     SELECT stock_id, SUM(quantity)::int AS reserved
@@ -199,8 +205,7 @@ async function run() {
     await phase2OrphanNegative(client, today);
     await phase3PositiveUndated(client, today);
     await phase4PremadeBackAdd(client);
-
-    // Phase 5 added in subsequent tasks.
+    await phase5SetNotNull(client);
 
     if (DRY_RUN) {
       console.log('[migrate] DRY RUN — rolling back transaction.');
