@@ -30,6 +30,20 @@ router.use(authorize('stock'));
 router.get('/', async (req, res, next) => {
   try {
     const { category, includeEmpty, includeInactive } = req.query;
+
+    // ── Y-model grouped path (issue #289) ──
+    // When STOCK_Y_MODEL is enabled AND caller passes ?grouped=true, return
+    // Variety-grouped aggregation: { groups: [{ key, type_name, colour,
+    // size_cm, cultivar, rows: StockItem[], reservedForPremades }] }.
+    // All other query params are ignored on this path — the grouped query
+    // fetches all Y-model rows and applies its own includeEmpty logic.
+    if (getStockYModelEnabled() && req.query.grouped === 'true') {
+      const groups = await stockRepo.listGroupedByVariety({
+        includeEmpty: includeEmpty === 'true',
+      });
+      return res.json({ groups });
+    }
+
     const filters = [];
 
     if (includeInactive !== 'true') filters.push('{Active} = TRUE()');
@@ -508,6 +522,16 @@ router.get('/:id/usage', async (req, res, next) => {
     const stockItem = await stockRepo.getById(req.params.id);
     const displayName = stockItem['Display Name'] || '';
     const stockId = req.params.id;
+
+    // ── Y-model exact-ID path (issue #289, ADR-0007) ──
+    // Each Batch is an addressable identity; no sibling aggregation.
+    if (getStockYModelEnabled()) {
+      const trail = await stockRepo.getUsageByExactId(stockItem._pgId || stockId);
+      return res.json({
+        stockItem: { id: stockItem.id, displayName, currentQty: stockItem['Current Quantity'] || 0 },
+        trail,
+      });
+    }
 
     // Aggregate across sibling batches sharing the same base flower name.
     // receiveIntoStock creates a new dated batch record for each receive,

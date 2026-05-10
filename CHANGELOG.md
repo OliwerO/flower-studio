@@ -5,6 +5,34 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-10 — Stock Y-model: Variety collapsed list (#289)
+
+### Added (shared)
+- `getVarietyTotals(rows, reservations) → { onHand, planned, reservedForPremades, net, reclaimable }` in `packages/shared/utils/stockMath.js` — per-Variety bucket aggregation per ADR-0005. Pitfall #8 regression fixtures encode both 2026-04-22 prior failures.
+- `<TypeGroupHeader>` — sticky collapsible Type header.
+- `<VarietyListItem>` — Variety row with 4-bucket header, expand-to-Stock-Items, tap-on-reserved → premade list, tap-on-Batch → trace.
+- `<BatchTracePanel>` + `<BatchTraceModal>` — per-Batch trace UI (panel inline, modal wraps panel).
+- `<WriteOffBatchPicker>` — Batch-targeted write-off form (Demand Entries excluded, default oldest by date).
+- ~50 new tests on the shared package (helper + 5 components).
+
+### Added (backend)
+- `GET /stock?grouped=true` returns per-Variety aggregation with premade reservation roll-up under `STOCK_Y_MODEL`. Flat shape preserved under flag-off.
+- `GET /stock/:id/usage` filters by exact Stock Item ID under `STOCK_Y_MODEL` per ADR-0007 (replaces legacy base-name sibling aggregation).
+- `stockRepo.listGroupedByVariety` + `stockRepo.getUsageByExactId` repo helpers.
+
+### Wired (behind STOCK_Y_MODEL flag)
+- Florist `StockPanelPage` — adopts the new components; Batch trace = **modal**.
+- Dashboard `StockTab` — adopts the new components; Batch trace = **inline** panel.
+
+### Known follow-ups
+- `/stock/premade-committed` Y-model branch returns `bouquets: []` (empty); reserved-bucket tap shows count but no premade names. Backend fix tracked separately.
+- Lab Playwright rehearsal — deferred to **#290** scenario extension work (baseline scenario does not seed 4-tuple Variety rows; spec would need docker template rebuild and scenario extension first).
+
+### Notes
+- Pitfall #8 reaffirmed: `getVarietyTotals` is the single Variety-level subtraction site for `reservedForPremades`. Per-row code never subtracts. CLAUDE.md root §Known Pitfalls #8 covers history.
+
+---
+
 ## 2026-05-10 — Stock Y-model: hybrid VarietyAllocationPicker (#288)
 
 ### Added

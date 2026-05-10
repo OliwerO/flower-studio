@@ -43,7 +43,7 @@ export {
   REASON_COLORS,
   reasonBadgeClass,
 } from './utils/lossReasons.js';
-export { getEffectiveStock, hasStockShortfall } from './utils/stockMath.js';
+export { getEffectiveStock, hasStockShortfall, getVarietyTotals } from './utils/stockMath.js';
 export {
   matchesSearch,
   matchesFilters,
@@ -75,5 +75,18 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 // Variety allocation picker — Stage 1 typeahead (issue #288)
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
 
+// Type group sticky collapsible header for Y-model Stock list (issue #289)
+export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
+
+// Variety row with 4-bucket header for Y-model Stock list (issue #289, pitfall #8)
+export { default as VarietyListItem } from './components/VarietyListItem.jsx';
+
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
+
+// Per-batch trace UX seam — panel (inline, dashboard) + modal wrapper (florist) (issue #289)
+export { default as BatchTracePanel } from './components/BatchTracePanel.jsx';
+export { default as BatchTraceModal } from './components/BatchTraceModal.jsx';
+
+// Write-off Batch picker — Demand Entries excluded, default oldest, FIFO (issue #289)
+export { default as WriteOffBatchPicker } from './components/WriteOffBatchPicker.jsx';

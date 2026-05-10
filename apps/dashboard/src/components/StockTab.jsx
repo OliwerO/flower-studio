@@ -6,7 +6,14 @@ import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'rea
 import client, { cachedGet } from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
-import { stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
+import {
+  stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel,
+  useStockYModelFlag,
+  TypeGroupHeader,
+  VarietyListItem,
+  BatchTracePanel,
+  WriteOffBatchPicker,
+} from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import ReconciliationSection from './ReconciliationSection.jsx';
@@ -32,7 +39,9 @@ function formatDateTag(dateStr, color = 'gray') {
 }
 
 export default function StockTab({ initialFilter, onNavigate, isActive = true }) {
+  const stockYModelEnabled          = useStockYModelFlag();
   const [stock, setStock]           = useState([]);
+  const [groups, setGroups]         = useState([]); // Y-model: array from /stock?grouped=true
   const [loading, setLoading]       = useState(true);
   const [search, setSearch]         = useState('');
   const [showReceive, setShowReceive] = useState(false);
@@ -40,6 +49,13 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [showReconcile, setShowReconcile] = useState(false);
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [hideZero, setHideZero]     = useState(true);
+  // Y-model UI state
+  const [expandedKey, setExpandedKey]       = useState(null);   // which Variety row is expanded
+  const [collapsedTypes, setCollapsedTypes] = useState(new Set()); // collapsed Type group keys
+  const [traceStockId, setTraceStockId]     = useState(null);   // inline trace: stock item id
+  const [traceTrail, setTraceTrail]         = useState(null);
+  const [traceLoading, setTraceLoading]     = useState(false);
+  const [writeOffVariety, setWriteOffVariety] = useState(null); // write-off picker (modal)
   // Per-row "Reconcile" button on premade chips. Gated on a backend setting
   // (Settings → Stock → Stock repair tools) so it syncs across devices and
   // stays hidden from the florist's daily flow by default. The setting is
@@ -65,34 +81,48 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [stockRes, poRes, comRes, premadeRes, settingsRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true'),
-        client.get('/stock/pending-po'),
-        client.get('/stock/committed'),
-        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-        cachedGet('/settings').catch(() => ({ data: { config: {} } })),
-      ]);
-      setStock(prev => {
-        if (!stockLoaded.current) return stockRes.data;
-        // Merge: update existing items in place, preserve local UI state
-        const newMap = new Map(stockRes.data.map(s => [s.id, s]));
-        const merged = prev.map(s => newMap.get(s.id) || s).filter(s => newMap.has(s.id));
-        for (const s of stockRes.data) {
-          if (!merged.find(m => m.id === s.id)) merged.push(s);
-        }
-        return merged;
-      });
-      setPendingPO(poRes.data);
-      setCommittedMap(comRes.data);
-      setPremadeMap(premadeRes.data || {});
-      setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
-      stockLoaded.current = true;
+      if (stockYModelEnabled) {
+        // Y-model: fetch grouped stock + premade reservations in parallel.
+        // No pending-PO, committed, or repair-tools fetch needed for the Y-model path.
+        const [groupedRes, premadeRes, settingsRes] = await Promise.all([
+          client.get('/stock?grouped=true'),
+          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+          cachedGet('/settings').catch(() => ({ data: { config: {} } })),
+        ]);
+        setGroups(groupedRes.data.groups || []);
+        setPremadeMap(premadeRes.data || {});
+        setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
+      } else {
+        // Legacy flat list
+        const [stockRes, poRes, comRes, premadeRes, settingsRes] = await Promise.all([
+          client.get('/stock?includeEmpty=true'),
+          client.get('/stock/pending-po'),
+          client.get('/stock/committed'),
+          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+          cachedGet('/settings').catch(() => ({ data: { config: {} } })),
+        ]);
+        setStock(prev => {
+          if (!stockLoaded.current) return stockRes.data;
+          // Merge: update existing items in place, preserve local UI state
+          const newMap = new Map(stockRes.data.map(s => [s.id, s]));
+          const merged = prev.map(s => newMap.get(s.id) || s).filter(s => newMap.has(s.id));
+          for (const s of stockRes.data) {
+            if (!merged.find(m => m.id === s.id)) merged.push(s);
+          }
+          return merged;
+        });
+        setPendingPO(poRes.data);
+        setCommittedMap(comRes.data);
+        setPremadeMap(premadeRes.data || {});
+        setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
+        stockLoaded.current = true;
+      }
     } catch {
       if (!silent) showToast(t.error, 'error');
     } finally {
       setLoading(false);
     }
-  }, [showToast]);
+  }, [showToast, stockYModelEnabled]);
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -299,6 +329,69 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   // row and allow on-demand dissolving during bouquet save, the shortfall
   // panel added more noise than signal. Real shortages still surface via
   // negative Current Quantity on the stock row itself.
+
+  // ── Y-model: derived Maps from premadeMap ──
+  const { premadesByStockId, reservations: reservationsMap } = useMemo(() => {
+    const premadesByStockId = new Map();
+    const reservations = new Map();
+    for (const [stockId, data] of Object.entries(premadeMap)) {
+      const qty = Number(data?.qty) || 0;
+      if (qty > 0) {
+        reservations.set(stockId, qty);
+        premadesByStockId.set(stockId, data?.bouquets || []);
+      }
+    }
+    return { premadesByStockId, reservations };
+  }, [premadeMap]);
+
+  // ── Y-model: group groups by type_name ──
+  const typeGroups = useMemo(() => {
+    const map = new Map();
+    for (const group of groups) {
+      const key = group.type_name || '—';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(group);
+    }
+    return map;
+  }, [groups]);
+
+  // ── Y-model: filter groups by hideZero toggle ──
+  const filteredGroups = useMemo(() => {
+    if (!stockYModelEnabled) return [];
+    if (!hideZero) return groups;
+    return groups.filter(g => {
+      const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+      if (totalQty !== 0) return true;
+      return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
+    });
+  }, [groups, hideZero, stockYModelEnabled, reservationsMap]);
+
+  // ── Y-model: batch trace fetch triggered by traceStockId ──
+  useEffect(() => {
+    if (!traceStockId) return;
+    setTraceTrail(null);
+    setTraceLoading(true);
+    client.get(`/stock/${traceStockId}/usage`)
+      .then(r => setTraceTrail(r.data.trail || []))
+      .catch(() => setTraceTrail([]))
+      .finally(() => setTraceLoading(false));
+  }, [traceStockId]);
+
+  // ── Y-model: write-off handler ──
+  async function handleWriteOffY({ stockId, qty, reason }) {
+    try {
+      await client.post(`/stock/${stockId}/write-off`, { quantity: qty, reason: reason || undefined });
+      showToast(`${qty} ${t.stems} — ${t.writeOff}`, 'success');
+      setWriteOffVariety(null);
+      fetchStock();
+    } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+  }
+
+  // ── Y-model: build reason options for WriteOffBatchPicker ──
+  const writeOffReasons = useMemo(() =>
+    LOSS_REASONS.map(r => ({ value: r, label: reasonLabel(t, r) })),
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  []);
 
   return (
     <div className="space-y-4">
@@ -658,8 +751,113 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
         );
       })()}
 
-      {/* ── Three aligned stock tables: Planned → Needed → Available ── */}
-      {view !== 'waste' && !loading && (
+      {/* ── Y-model: Type→Variety grouped list (flag-on) ── */}
+      {stockYModelEnabled && view !== 'waste' && !loading && (
+        <div className="space-y-0">
+          {filteredGroups.length === 0 ? (
+            <p className="text-center text-sm text-ios-tertiary py-12">{t.noStockFound || 'No items found'}</p>
+          ) : (
+            <div className="glass-card overflow-hidden">
+              {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
+                const visibleRows = hideZero
+                  ? typeRows.filter(g => filteredGroups.includes(g))
+                  : typeRows;
+                if (visibleRows.length === 0) return null;
+                const isCollapsed = collapsedTypes.has(typeName);
+                const totalQty = typeRows.reduce((sum, g) =>
+                  sum + (g.rows || []).reduce((s, r) => s + (Number(r.current_quantity) || 0), 0), 0);
+                return (
+                  <div key={typeName}>
+                    <TypeGroupHeader
+                      typeName={typeName}
+                      totalQty={totalQty}
+                      varietyCount={typeRows.length}
+                      collapsed={isCollapsed}
+                      onToggle={() => setCollapsedTypes(prev => {
+                        const next = new Set(prev);
+                        if (next.has(typeName)) next.delete(typeName);
+                        else next.add(typeName);
+                        return next;
+                      })}
+                      t={t}
+                    />
+                    {!isCollapsed && visibleRows.map(group => (
+                      <div key={group.key}>
+                        <VarietyListItem
+                          variety={group}
+                          reservations={reservationsMap}
+                          hideType={true}
+                          expanded={expandedKey === group.key}
+                          onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
+                          onBatchClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+                          premadesByStockId={premadesByStockId}
+                          t={t}
+                        />
+                        {/* Inline BatchTracePanel — renders below the Variety row when active.
+                            Dashboard UX: inline (not modal), per Q5b spec. */}
+                        {traceStockId && (group.rows || []).some(r => r.id === traceStockId) && (
+                          <div className="px-4 py-3 bg-blue-50/60 border-t border-blue-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+                                {t.batchTraceTitle}
+                              </span>
+                              <button
+                                onClick={() => { setTraceStockId(null); setTraceTrail(null); }}
+                                className="text-xs text-blue-400 hover:text-blue-600"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {traceLoading ? (
+                              <p className="text-xs text-ios-tertiary">{t.loading}</p>
+                            ) : (
+                              <BatchTracePanel trail={traceTrail || []} t={t} />
+                            )}
+                          </div>
+                        )}
+                        {/* Write-off button per variety row */}
+                        <div className="px-4 pb-2 flex justify-end border-b border-gray-100">
+                          <button
+                            type="button"
+                            onClick={() => setWriteOffVariety(group)}
+                            className="text-[11px] text-ios-red font-medium px-2.5 py-1 rounded-full bg-red-50 hover:bg-red-100"
+                          >
+                            {t.writeOff}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {/* Write-off picker modal (small form — modal is fine per spec) */}
+          {writeOffVariety && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black/30"
+              onClick={() => setWriteOffVariety(null)}
+            >
+              <div
+                className="bg-white rounded-2xl p-5 shadow-xl max-w-sm w-full mx-4"
+                onClick={e => e.stopPropagation()}
+              >
+                <h3 className="text-sm font-semibold text-ios-label mb-3">{t.writeOffPickerTitle}</h3>
+                <WriteOffBatchPicker
+                  variety={writeOffVariety}
+                  reasons={writeOffReasons}
+                  t={{ ...t, writeOffQty: t.writeOffPickerQty }}
+                  onConfirm={handleWriteOffY}
+                  onCancel={() => setWriteOffVariety(null)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Three aligned stock tables: Planned → Needed → Available (flag-off) ── */}
+      {!stockYModelEnabled && view !== 'waste' && !loading && (
         <div className="glass-card overflow-x-auto">
           {/* ── PLANNED — flowers arriving from pending POs ── */}
           {plannedRows.length > 0 && (

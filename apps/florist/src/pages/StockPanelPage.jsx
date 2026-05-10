@@ -1,7 +1,16 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Truck, ShoppingCart, ClipboardCheck, Trash2 } from 'lucide-react';
-import { useDebouncedValue } from '@flower-studio/shared';
+import {
+  useDebouncedValue,
+  useStockYModelFlag,
+  TypeGroupHeader,
+  VarietyListItem,
+  BatchTraceModal,
+  WriteOffBatchPicker,
+  LOSS_REASONS,
+  reasonLabel,
+} from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -38,7 +47,9 @@ export default function StockPanelPage() {
   const navigate          = useNavigate();
   const { showToast }     = useToast();
   const { role }          = useAuth();
+  const yEnabled          = useStockYModelFlag();
   const [stock, setStock] = useState([]);
+  const [groups, setGroups] = useState([]); // Y-model: array from /stock?grouped=true
   const [loading, setLoading]     = useState(true);
   const [showReceive, setShowReceive] = useState(false);
   const [editMode, setEditMode]       = useState(false);
@@ -46,6 +57,18 @@ export default function StockPanelPage() {
   const [committedMap, setCommittedMap] = useState({}); // stockId → { committed, orders }
   // Premade-bouquet reservations: { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
   const [premadeMap, setPremadeMap] = useState({});
+
+  // Y-model UI state
+  // expandedKey: which Variety is expanded (string key = variety.key, or null)
+  const [expandedKey, setExpandedKey] = useState(null);
+  // collapsedTypes: Set of type_name strings that are collapsed
+  const [collapsedTypes, setCollapsedTypes] = useState(new Set());
+  // Trace modal state
+  const [traceStockId, setTraceStockId] = useState(null);
+  const [traceTrail, setTraceTrail] = useState(null);
+  const [traceLoading, setTraceLoading] = useState(false);
+  // Write-off modal state
+  const [writeOffVariety, setWriteOffVariety] = useState(null);
 
   // Search, sort, view
   const [search, setSearch]   = useState('');
@@ -57,22 +80,33 @@ export default function StockPanelPage() {
   const [view, setView]       = useState('all');
   const [hideZero, setHideZero] = useState(true);
 
-  async function fetchStock() {
+  const fetchStock = useCallback(async () => {
     setLoading(true);
     try {
-      const [stockRes, committedRes, premadeRes] = await Promise.all([
-        client.get('/stock?includeEmpty=true'),
-        client.get('/stock/committed'),
-        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-      ]);
-      setStock(stockRes.data);
-      setCommittedMap(committedRes.data);
-      setPremadeMap(premadeRes.data || {});
+      if (yEnabled) {
+        // Y-model: fetch grouped stock + premade reservations in parallel.
+        const [groupedRes, premadeRes] = await Promise.all([
+          client.get('/stock?grouped=true'),
+          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        ]);
+        setGroups(groupedRes.data.groups || []);
+        setPremadeMap(premadeRes.data || {});
+      } else {
+        // Legacy flat list
+        const [stockRes, committedRes, premadeRes] = await Promise.all([
+          client.get('/stock?includeEmpty=true'),
+          client.get('/stock/committed'),
+          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        ]);
+        setStock(stockRes.data);
+        setCommittedMap(committedRes.data);
+        setPremadeMap(premadeRes.data || {});
+      }
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
     finally   { setLoading(false); }
-  }
+  }, [yEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { fetchStock(); }, []);
+  useEffect(() => { fetchStock(); }, [fetchStock]);
 
   async function handleAdjust(id, delta) {
     try {
@@ -110,7 +144,81 @@ export default function StockPanelPage() {
     else { setSortKey(key); setSortAsc(true); }
   }
 
-  // Filtered + sorted stock
+  // ── Y-model: derived Maps from premadeMap ──
+  // premadesByStockId: Map<stockId (string), Array<{ id, name, qty }>>
+  // reservations:      Map<stockId (string), number>
+  // Both are derived from the same /stock/premade-committed response.
+  const { premadesByStockId, reservations: reservationsMap } = useMemo(() => {
+    const premadesByStockId = new Map();
+    const reservations = new Map();
+    for (const [stockId, data] of Object.entries(premadeMap)) {
+      const qty = Number(data?.qty) || 0;
+      if (qty > 0) {
+        reservations.set(stockId, qty);
+        // bouquets array may be empty in the Y-model backend path (returns []).
+        const bouquets = data?.bouquets || [];
+        premadesByStockId.set(stockId, bouquets);
+      }
+    }
+    return { premadesByStockId, reservations };
+  }, [premadeMap]);
+
+  // ── Y-model: group groups by type_name ──
+  // typeGroups: Map<typeName, group[]>  (preserving insertion order)
+  const typeGroups = useMemo(() => {
+    const map = new Map();
+    for (const group of groups) {
+      const key = group.type_name || '—';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key).push(group);
+    }
+    return map;
+  }, [groups]);
+
+  // ── Y-model: batch trace fetch ──
+  useEffect(() => {
+    if (!traceStockId) return;
+    setTraceTrail(null);
+    setTraceLoading(true);
+    client.get(`/stock/${traceStockId}/usage`)
+      .then(r => setTraceTrail(r.data.trail || []))
+      .catch(() => setTraceTrail([]))
+      .finally(() => setTraceLoading(false));
+  }, [traceStockId]);
+
+  // ── Y-model: write-off handler ──
+  async function handleWriteOffY({ stockId, qty, reason }) {
+    try {
+      await client.post(`/stock/${stockId}/write-off`, { quantity: qty, reason: reason || undefined });
+      showToast(`${qty} ${t.stems} — ${t.writeOff}`, 'success');
+      setWriteOffVariety(null);
+      fetchStock();
+    } catch (err) { showToast(err.response?.data?.error || t.writeOffError, 'error'); }
+  }
+
+  // Build reason options for WriteOffBatchPicker
+  const writeOffReasons = useMemo(() =>
+    LOSS_REASONS.map(r => ({ value: r, label: reasonLabel(t, r) })),
+  []);
+
+  // ── Y-model: "show cleared rows" toggle maps to hideZero ──
+  // hideZero=true  → hide zero-qty groups (same semantics as today)
+  // hideZero=false → show all groups including zero-qty
+
+  // Filtered group list for Y-model path
+  const filteredGroups = useMemo(() => {
+    if (!yEnabled) return [];
+    if (!hideZero) return groups;
+    return groups.filter(g => {
+      // Keep group if any row has non-zero qty or has premade reservations
+      const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+      if (totalQty !== 0) return true;
+      // Check if any row has premade reservations
+      return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
+    });
+  }, [groups, hideZero, yEnabled, reservationsMap]);
+
+  // Filtered + sorted stock (legacy path)
   const filteredStock = useMemo(() => {
     const now = Date.now();
     const SLOW_DAYS = 14;
@@ -289,7 +397,7 @@ export default function StockPanelPage() {
           ))}
         </div>
 
-        {/* Hide-zero toggle */}
+        {/* Hide-zero / show-cleared toggle — same semantics, different label in Y-model */}
         <div className="flex justify-end mb-2">
           <button
             onClick={() => setHideZero(!hideZero)}
@@ -299,52 +407,133 @@ export default function StockPanelPage() {
                 : 'bg-gray-200 dark:bg-gray-600 text-ios-label dark:text-gray-200'
             }`}
           >
-            {hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock')}
+            {yEnabled
+              ? (hideZero ? (t.showClearedRows || 'Show cleared') : (t.showClearedRows || 'Show cleared'))
+              : (hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock'))}
           </button>
         </div>
 
-        {/* Sort pills */}
-        <div className="flex gap-2 mb-4 overflow-x-auto">
-          {SORT_OPTIONS.map(s => (
-            <button
-              key={s.key}
-              onClick={() => toggleSort(s.key)}
-              className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors active-scale ${
-                sortKey === s.key
-                  ? 'bg-brand-100 text-brand-700'
-                  : 'bg-gray-50 text-ios-tertiary'
-              }`}
-            >
-              {s.label()} {sortKey === s.key && (sortAsc ? '↑' : '↓')}
-            </button>
-          ))}
-        </div>
+        {/* Sort pills — legacy only; Y-model groups by type, then variety */}
+        {!yEnabled && (
+          <div className="flex gap-2 mb-4 overflow-x-auto">
+            {SORT_OPTIONS.map(s => (
+              <button
+                key={s.key}
+                onClick={() => toggleSort(s.key)}
+                className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors active-scale ${
+                  sortKey === s.key
+                    ? 'bg-brand-100 text-brand-700'
+                    : 'bg-gray-50 text-ios-tertiary'
+                }`}
+              >
+                {s.label()} {sortKey === s.key && (sortAsc ? '↑' : '↓')}
+              </button>
+            ))}
+          </div>
+        )}
 
         {loading ? (
           <div className="flex items-center justify-center mt-20">
             <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
           </div>
-        ) : filteredStock.length === 0 ? (
-          <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
+        ) : yEnabled ? (
+          /* ── Y-model: grouped Type → Variety list ── */
+          filteredGroups.length === 0 ? (
+            <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
+          ) : (
+            <div className="ios-card overflow-hidden">
+              {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
+                // Only show types that have at least one visible group after filtering
+                const visibleRows = hideZero
+                  ? typeRows.filter(g => filteredGroups.includes(g))
+                  : typeRows;
+                if (visibleRows.length === 0) return null;
+
+                const isCollapsed = collapsedTypes.has(typeName);
+                const totalQty = typeRows.reduce((sum, g) =>
+                  sum + (g.rows || []).reduce((s, r) => s + (Number(r.current_quantity) || 0), 0), 0);
+                const varietyCount = typeRows.length;
+
+                return (
+                  <div key={typeName}>
+                    <TypeGroupHeader
+                      typeName={typeName}
+                      totalQty={totalQty}
+                      varietyCount={varietyCount}
+                      collapsed={isCollapsed}
+                      onToggle={() => setCollapsedTypes(prev => {
+                        const next = new Set(prev);
+                        if (next.has(typeName)) next.delete(typeName);
+                        else next.add(typeName);
+                        return next;
+                      })}
+                      t={t}
+                    />
+                    {!isCollapsed && visibleRows.map(group => (
+                      <div key={group.key}>
+                        <VarietyListItem
+                          variety={group}
+                          reservations={reservationsMap}
+                          hideType={true}
+                          expanded={expandedKey === group.key}
+                          onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
+                          onBatchClick={(stockId) => setTraceStockId(stockId)}
+                          premadesByStockId={premadesByStockId}
+                          t={t}
+                        />
+                        {/* Write-off button per variety row (below the variety item) */}
+                        <div className="px-4 pb-2 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => setWriteOffVariety(group)}
+                            className="text-[11px] text-ios-red font-medium px-2.5 py-1 rounded-full bg-red-50 active:bg-red-100 active-scale"
+                          >
+                            🗑 {t.writeOff}
+                          </button>
+                        </div>
+                        {/* Write-off picker inline when this variety is selected */}
+                        {writeOffVariety?.key === group.key && (
+                          <div className="px-4 pb-3">
+                            <WriteOffBatchPicker
+                              variety={group}
+                              reasons={writeOffReasons}
+                              t={{ ...t, writeOffQty: t.writeOffPickerQty }}
+                              onConfirm={handleWriteOffY}
+                              onCancel={() => setWriteOffVariety(null)}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
+            </div>
+          )
         ) : (
-          <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
-            {filteredStock.map(item => (
-              <StockItem
-                key={item.id}
-                item={item}
-                editMode={editMode}
-                onAdjust={delta => handleAdjust(item.id, delta)}
-                onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
-                onPatch={fields => handlePatch(item.id, fields)}
-                committedData={committedMap[item.id]}
-                premadeData={premadeMap[item.id]}
-              />
-            ))}
-          </div>
+          /* ── Legacy flat list ── */
+          filteredStock.length === 0 ? (
+            <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
+          ) : (
+            <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
+              {filteredStock.map(item => (
+                <StockItem
+                  key={item.id}
+                  item={item}
+                  editMode={editMode}
+                  onAdjust={delta => handleAdjust(item.id, delta)}
+                  onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
+                  onPatch={fields => handlePatch(item.id, fields)}
+                  committedData={committedMap[item.id]}
+                  premadeData={premadeMap[item.id]}
+                />
+              ))}
+            </div>
+          )
         )}
 
-        {/* Summary bar */}
-        {!loading && filteredStock.length > 0 && (
+        {/* Summary bar — legacy path only */}
+        {!loading && !yEnabled && filteredStock.length > 0 && (
           <div className="mt-3 flex items-center justify-between px-2 text-xs text-ios-tertiary">
             <span>{filteredStock.length} {t.stems}</span>
             <span>
@@ -353,8 +542,8 @@ export default function StockPanelPage() {
           </div>
         )}
 
-        {/* Owner-only edit mode toggle */}
-        {role === 'owner' && !loading && (
+        {/* Owner-only edit mode toggle — legacy path only */}
+        {role === 'owner' && !loading && !yEnabled && (
           <button
             onClick={() => setEditMode(!editMode)}
             className={`w-full mt-4 h-11 rounded-2xl text-sm font-semibold transition-colors ${
@@ -369,6 +558,15 @@ export default function StockPanelPage() {
       </main>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
+
+      {/* ── Y-model: Batch trace modal ── */}
+      {yEnabled && traceStockId && (
+        <BatchTraceModal
+          trail={traceLoading ? [] : (traceTrail || [])}
+          t={t}
+          onClose={() => { setTraceStockId(null); setTraceTrail(null); }}
+        />
+      )}
     </div>
   );
 }

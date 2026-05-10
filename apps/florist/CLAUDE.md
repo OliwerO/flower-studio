@@ -12,7 +12,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | OrderListPage | /orders | all | Today's worklist — active/completed tabs, status filters, owner dashboard alerts |
 | OrderDetailPage | /orders/:id | all | Full-page order detail with inline editing, status transitions, bouquet editor. Owner can also delete the order — both Cancellation and Deletion flow through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared. |
 | NewOrderPage | /orders/new | all | 4-step wizard: Customer → Bouquet → Details → Review. AI text import shortcut. |
-| StockPanelPage | /stock | all | Inventory view with search, sort, filter, adjust, write-off, receive |
+| StockPanelPage | /stock | all | Inventory view with search, sort, filter, adjust, write-off, receive. Y-model collapsed Variety list under `STOCK_Y_MODEL` (TypeGroupHeader + VarietyListItem + BatchTraceModal from shared); legacy flat list when flag off. |
 | StockEvaluationPage | /stock-evaluation | all | Quality inspection of incoming PO deliveries (accept/write-off per line). |
 | PurchaseOrderPage | /purchase-orders | owner | PO management — create from negative stock, assign drivers, track lifecycle |
 | ShoppingSupportPage | /shopping-support | owner | Real-time supervision of active PO shopping runs (SSE + polling) |
