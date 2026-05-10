@@ -110,14 +110,29 @@ async function phase1Split(client) {
   console.log(`[phase1] Split ${aggregates.length} aggregate DE(s).`);
 }
 
+async function phase2OrphanNegative(client, today) {
+  const { rows: orphans } = await client.query(`
+    SELECT s.id FROM stock s
+    WHERE s.current_quantity < 0
+      AND s.date IS NULL
+      AND s.deleted_at IS NULL
+      AND NOT EXISTS (SELECT 1 FROM order_lines ol WHERE ol.stock_item_id = s.id::text)
+  `);
+  for (const o of orphans) {
+    await client.query(`UPDATE stock SET date = $1, updated_at = NOW() WHERE id = $2`, [today, o.id]);
+  }
+  console.log(`[phase2] Dated ${orphans.length} orphan aggregate DE(s) → ${today}.`);
+}
+
 async function run() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await preCondition(client);
     await phase1Split(client);
+    await phase2OrphanNegative(client, today);
 
-    // Phases 2-5 added in subsequent tasks.
+    // Phases 3-5 added in subsequent tasks.
 
     if (DRY_RUN) {
       console.log('[migrate] DRY RUN — rolling back transaction.');

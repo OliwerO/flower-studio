@@ -81,6 +81,21 @@ export function buildStockYMigration() {
   });
   stockItems.push(aggDE);
 
+  // ── Phase 2 fixture: orphan negative DE with no linked order_lines ──
+  // Simulates a "Tulip Yellow 40cm" aggregate DE with qty=-4, no date,
+  // and no order_lines. The script must date it to today (migration day)
+  // while preserving variety attributes and qty.
+  const orphanDE = makeStockItem({
+    type:             'demand',
+    display_name:     'Tulip Yellow 40cm',
+    type_name:        'Tulip',
+    colour:           'Yellow',
+    size_cm:          40,
+    current_quantity: -4,
+    date:             null,
+  });
+  stockItems.push(orphanDE);
+
   const cust = base.customers[0];
   const orderA = makeOrder({ customerId: cust.id, status: 'New', delivery_type: 'Pickup', required_by: PHASE1_DATE_A });
   const orderB = makeOrder({ customerId: cust.id, status: 'New', delivery_type: 'Pickup', required_by: PHASE1_DATE_B });

@@ -92,3 +92,41 @@ describe('migrate-stock-y-model — Phase 1: aggregate split', () => {
     }
   }, 60_000);
 });
+
+describe('migrate-stock-y-model — Phase 2: orphan negative → today', () => {
+  beforeEach(async () => { await resetLabDb(); });
+
+  it('converts orphan aggregate DE to today-dated DE with preserved variety', async () => {
+    const pool = labPool();
+    const today = new Date().toISOString().slice(0, 10);
+    try {
+      // Pre: orphan row exists with date IS NULL.
+      const pre = await pool.query(
+        `SELECT id FROM stock WHERE display_name = 'Tulip Yellow 40cm' AND date IS NULL`
+      );
+      expect(pre.rows.length).toBe(1);
+
+      const res = runScript();
+      expect(res.status).toBe(0);
+
+      // Post: row now has date = today, qty and variety preserved.
+      const post = await pool.query(
+        `SELECT date::text, current_quantity, type_name, colour, size_cm
+         FROM stock WHERE type_name = 'Tulip' AND colour = 'Yellow' AND size_cm = 40
+                    AND current_quantity < 0`
+      );
+      expect(post.rows.length).toBe(1);
+      expect(post.rows[0]).toMatchObject({
+        date: today, current_quantity: -4, type_name: 'Tulip', colour: 'Yellow', size_cm: 40,
+      });
+
+      // Original aggregate gone (no row with date IS NULL for this variety).
+      const gone = await pool.query(
+        `SELECT id FROM stock WHERE display_name = 'Tulip Yellow 40cm' AND date IS NULL`
+      );
+      expect(gone.rows.length).toBe(0);
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
+});
