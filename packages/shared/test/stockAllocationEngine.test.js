@@ -11,6 +11,45 @@ function demandEntry(id, currentQuantity, date) {
   return { id, currentQuantity, date, isDemandEntry: true };
 }
 
+// ─── Fixture 4: Same-date Demand Entry (no Batch) ────────────────────────────
+describe('stockAllocationEngine — fixture 4: same-date demand entry, no batch', () => {
+  it('returns a merge option and a fresh option', () => {
+    const rows = [demandEntry('d1', -3, '2026-05-20')]; // same date as requiredBy
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 5);
+    const kinds = options.map((o) => o.kind);
+    expect(kinds).toContain('merge');
+    expect(kinds).toContain('fresh');
+  });
+
+  it('merge option carries correct metadata', () => {
+    const rows = [demandEntry('d1', -3, '2026-05-20')];
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 5);
+    const m = options.find((o) => o.kind === 'merge');
+    expect(m).toMatchObject({
+      kind: 'merge',
+      stockId: 'd1',
+      date: '2026-05-20',
+      currentQty: -3,
+      isPastDate: false,
+    });
+  });
+
+  it('smart-default: same-date merge is the default (smart-default rule 1)', () => {
+    const rows = [demandEntry('d1', -3, '2026-05-20')];
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 5);
+    const def = options.find((o) => o.isDefault);
+    expect(def).toBeDefined();
+    expect(def.kind).toBe('merge');
+    expect(def.date).toBe('2026-05-20');
+  });
+
+  it('exactly one option is the default', () => {
+    const rows = [demandEntry('d1', -3, '2026-05-20')];
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 5);
+    expect(options.filter((o) => o.isDefault)).toHaveLength(1);
+  });
+});
+
 // ─── Fixture 3: Partial Batch coverage ───────────────────────────────────────
 describe('stockAllocationEngine — fixture 3: partial batch coverage', () => {
   it('returns batch option with sufficient=false when freeQty < qty', () => {
