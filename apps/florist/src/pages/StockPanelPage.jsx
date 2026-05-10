@@ -497,7 +497,7 @@ export default function StockPanelPage() {
                             <WriteOffBatchPicker
                               variety={group}
                               reasons={writeOffReasons}
-                              t={t}
+                              t={{ ...t, writeOffQty: t.writeOffPickerQty }}
                               onConfirm={handleWriteOffY}
                               onCancel={() => setWriteOffVariety(null)}
                             />

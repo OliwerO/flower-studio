@@ -955,6 +955,23 @@ const en = {
   pickerNoResults:              'No matches',
   pickerSaveContinue:           'Save & continue',
   pickerOrderFreshAll:          'Order fresh for all',
+
+  // ── Y-model Stock list strings (Task 11) ──
+  onHand:                       'On hand',
+  reserved:                     'Reserved',
+  net:                          'Net',
+  traceTypeOrder:               'Order',
+  traceTypeWriteoff:            'Write-off',
+  traceTypePurchase:            'Purchase',
+  traceTypePremade:             'Premade',
+  traceEmpty:                   'No history yet',
+  batchTraceTitle:              'Batch history',
+  writeOffPickerTitle:          'Write off stems',
+  writeOffPickerQty:            'Quantity',
+  writeOffBatch:                'Batch',
+  writeOffConfirm:              'Confirm',
+  writeOffReason:               'Select reason',
+  showClearedRows:              'Show cleared rows',
 };
 
 const ru = {
@@ -1911,6 +1928,23 @@ const ru = {
   pickerNoResults:              'Ничего не найдено',
   pickerSaveContinue:           'Сохранить и продолжить',
   pickerOrderFreshAll:          'Заказать свежие для всех',
+
+  // ── Y-model Stock list strings (Task 11) ──
+  onHand:                       'В наличии',
+  reserved:                     'В премейдах',
+  net:                          'Чистый',
+  traceTypeOrder:               'Заказ',
+  traceTypeWriteoff:            'Списание',
+  traceTypePurchase:            'Закупка',
+  traceTypePremade:             'Премейд',
+  traceEmpty:                   'Истории пока нет',
+  batchTraceTitle:              'История партии',
+  writeOffPickerTitle:          'Списание стеблей',
+  writeOffPickerQty:            'Количество',
+  writeOffBatch:                'Партия',
+  writeOffConfirm:              'Подтвердить',
+  writeOffReason:               'Выберите причину',
+  showClearedRows:              'Показать списанные',
 };
 
 // ── Proxy-based dynamic translation ──
