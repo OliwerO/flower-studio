@@ -7,9 +7,10 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import client from '../../api/client.js';
 import { useToast } from '../../context/ToastContext.jsx';
+import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -198,6 +199,8 @@ export default function Step2Bouquet({
   onlyPhysicallyAvailable = false,
 }) {
   const { showToast } = useToast();
+  const { role } = useAuth();
+  const yEnabled = useStockYModelFlag();
   // Determine if the order is for a future date (not today).
   // Future orders allow toggling between "use current stock" and "order new" per line.
   const isFutureOrder = (() => {
@@ -212,6 +215,23 @@ export default function Step2Bouquet({
   const [showCustomFlower, setShowCustomFlower] = useState(false);
   const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
   const [pendingPO, setPendingPO]     = useState({});
+  // Y-model picker state — opens when flag-on AND a Variety has >1 Stock Items
+  const [yPickerOpen, setYPickerOpen] = useState(false);
+  const [yPickerStockItems, setYPickerStockItems] = useState([]);
+
+  // Adapt Airtable-shaped stock rows to snake_case shape expected by varietyKey / VarietyAllocationPicker.
+  // VarietyAllocationPicker expects: { id, type_name, colour, size_cm, cultivar, current_quantity, date }
+  const adaptedStock = useMemo(() =>
+    stock.map(s => ({
+      ...s,
+      type_name:        s.Type ?? null,
+      colour:           s.Colour ?? null,
+      size_cm:          s.Size ?? null,
+      cultivar:         s.Cultivar ?? null,
+      current_quantity: Number(s['Current Quantity']) || 0,
+    })),
+    [stock]
+  );
 
   // Fetch pending PO quantities so florists can see what's coming
   useEffect(() => {
@@ -529,7 +549,20 @@ export default function Step2Bouquet({
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => addOne(s)}
+                  onClick={() => {
+                    if (yEnabled) {
+                      // Y-model: group by 4-tuple to detect multi-row varieties
+                      const adapted = adaptedStock.find(a => a.id === s.id);
+                      const key = adapted ? [adapted.type_name ?? '', adapted.colour ?? '', adapted.size_cm ?? '', adapted.cultivar ?? ''].join('|') : null;
+                      const sameVariety = key ? adaptedStock.filter(a => [a.type_name ?? '', a.colour ?? '', a.size_cm ?? '', a.cultivar ?? ''].join('|') === key) : [adapted || s];
+                      if (sameVariety.length > 1) {
+                        setYPickerStockItems(sameVariety);
+                        setYPickerOpen(true);
+                        return;
+                      }
+                    }
+                    addOne(s);
+                  }}
                   className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors active-scale
                               ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
                 >
@@ -772,6 +805,63 @@ export default function Step2Bouquet({
           <span className="text-ios-tertiary text-sm shrink-0 pr-1">zł</span>
         </div>
       </div>
+
+      {/* Y-model picker — only when flag-on AND user tapped a multi-batch variety */}
+      {yEnabled && yPickerOpen && (
+        <VarietyAllocationPicker
+          stockItems={yPickerStockItems}
+          reservations={new Map()}
+          requiredBy={requiredBy || null}
+          qty={1}
+          role={role}
+          t={{
+            pickerSearchPlaceholder: t.pickerSearchPlaceholder,
+            pickerCreateNew:         t.pickerCreateNew,
+            pickerNoResults:         t.pickerNoResults,
+            pickerSaveContinue:      t.pickerSaveContinue,
+            pickerOrderFreshAll:     t.pickerOrderFreshAll,
+            stems:                   t.stems,
+            cancel:                  t.cancel,
+          }}
+          onSelectStock={picked => {
+            if (picked?.kind === 'fresh') {
+              // TODO: pass full variety attrs once createDemandEntry supports new shape.
+              // Fallback: add a text-only line using the display name from the first item
+              // in the variety group. Backend POST /stock four-tuple not yet confirmed.
+              const firstName = yPickerStockItems[0]?.['Display Name'] || picked.date || '';
+              onLinesChange(lines => {
+                const exists = lines.find(l => !l.stockItemId && l.flowerName === firstName);
+                if (exists) return lines.map(l => !l.stockItemId && l.flowerName === firstName ? { ...l, quantity: l.quantity + 1 } : l);
+                return [...lines, { stockItemId: null, flowerName: firstName, quantity: 1, costPricePerUnit: 0, sellPricePerUnit: 0, stockDeferred: isFutureOrder }];
+              });
+            } else if (picked) {
+              // Find original Airtable-shaped item and add it
+              const original = stock.find(s => s.id === picked.id) || picked;
+              addOne(original);
+            }
+            setYPickerOpen(false);
+            setFlowerQuery('');
+          }}
+          onCreateVariety={async draft => {
+            // TODO: POST /stock four-tuple not yet confirmed. Fall back to legacy display name.
+            const legacyName = [draft.type_name, draft.colour].filter(Boolean).join(' ');
+            try {
+              const res = await client.post('/stock', {
+                displayName: legacyName || draft.type_name,
+                costPrice: 0, sellPrice: 0, quantity: 0,
+              });
+              const newItem = res.data;
+              addOne({ id: newItem.id, 'Display Name': newItem['Display Name'], 'Current Cost Price': 0, 'Current Sell Price': 0 });
+              onStockRefresh();
+            } catch (err) {
+              showToast(err.response?.data?.error || t.error, 'error');
+            }
+            setYPickerOpen(false);
+            return null;
+          }}
+          onClose={() => setYPickerOpen(false)}
+        />
+      )}
     </div>
   );
 }
