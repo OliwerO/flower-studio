@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest';
+// @vitest-environment jsdom
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
 import { findDuplicateStockItem, isStockItemVisible, findAllMatchingVariety } from '../hooks/useOrderEditing.js';
+import useOrderEditing from '../hooks/useOrderEditing.js';
 
 describe('findDuplicateStockItem', () => {
   const stock = [
@@ -100,5 +103,142 @@ describe('findAllMatchingVariety', () => {
   it('handles items with no Display Name', () => {
     const messy = [{ id: 'x1' }, { id: 'x2', 'Display Name': 'Rose' }];
     expect(findAllMatchingVariety(messy, 'Rose').map(s => s.id)).toEqual(['x2']);
+  });
+});
+
+// ── createDemandEntry ──────────────────────────────────────────────────────
+// Tests use renderHook + a mocked apiClient. stockItems starts empty so the
+// duplicate-entry check never fires (no pre-existing Demand Entry).
+
+function makeHookProps(overrides = {}) {
+  return {
+    orderId:   'ord-1',
+    apiClient: {
+      get:  vi.fn().mockResolvedValue({ data: [] }),
+      post: vi.fn().mockResolvedValue({
+        data: { id: 'stock-new', 'Display Name': 'New Item', 'Current Cost Price': 0, 'Current Sell Price': 0 },
+      }),
+    },
+    showToast: vi.fn(),
+    t: { updateError: 'Error' },
+    ...overrides,
+  };
+}
+
+describe('createDemandEntry', () => {
+  // ── Legacy string path ────────────────────────────────────────────────────
+
+  it('legacy string: POSTs /stock with displayName only (no 4-tuple fields)', async () => {
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+
+    await act(async () => {
+      await result.current.createDemandEntry('Rose');
+    });
+
+    expect(props.apiClient.post).toHaveBeenCalledWith('/stock', {
+      displayName: 'Rose',
+      quantity: 0,
+      costPrice: 0,
+      sellPrice: 0,
+    });
+    // 4-tuple fields must NOT be present
+    const body = props.apiClient.post.mock.calls[0][1];
+    expect(body).not.toHaveProperty('typeName');
+    expect(body).not.toHaveProperty('colour');
+    expect(body).not.toHaveProperty('sizeCm');
+    expect(body).not.toHaveProperty('cultivar');
+  });
+
+  // ── 4-tuple draft, no baseName (auto-computed displayName) ───────────────
+
+  it('4-tuple draft without baseName: auto-computes displayName via varietyDisplayName', async () => {
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+
+    await act(async () => {
+      await result.current.createDemandEntry({
+        type_name: 'Rose',
+        colour: 'Pink',
+        size_cm: 60,
+        cultivar: null,
+      });
+    });
+
+    expect(props.apiClient.post).toHaveBeenCalledWith('/stock', {
+      displayName: 'Rose Pink 60cm',
+      typeName: 'Rose',
+      colour: 'Pink',
+      sizeCm: 60,
+      cultivar: null,
+      quantity: 0,
+      costPrice: 0,
+      sellPrice: 0,
+    });
+  });
+
+  // ── 4-tuple draft with explicit baseName (wins over auto-computed) ────────
+
+  it('4-tuple draft with explicit baseName: baseName wins over auto-computed name', async () => {
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+
+    await act(async () => {
+      await result.current.createDemandEntry({
+        baseName: 'My Rose',
+        type_name: 'Rose',
+      });
+    });
+
+    const body = props.apiClient.post.mock.calls[0][1];
+    expect(body.displayName).toBe('My Rose');
+    expect(body.typeName).toBe('Rose');
+    // colour/sizeCm/cultivar absent from draft → not sent
+    expect(body).not.toHaveProperty('colour');
+    expect(body).not.toHaveProperty('sizeCm');
+    expect(body).not.toHaveProperty('cultivar');
+  });
+
+  // ── Existing Demand Entry path (regression: addFlowerFromStock, no POST) ─
+
+  it('when Demand Entry already exists: calls addFlowerFromStock, skips POST', async () => {
+    // Seed stockItems with a pre-existing Demand Entry for 'Rose'
+    const existingEntry = {
+      id: 'stock-existing',
+      'Display Name': 'Rose',        // no batch date → Demand Entry
+      'Current Cost Price': 5,
+      'Current Sell Price': 10,
+      'Current Quantity': -3,
+    };
+    const props = makeHookProps({
+      apiClient: {
+        get:  vi.fn().mockResolvedValue({ data: [existingEntry] }),
+        post: vi.fn(),
+      },
+    });
+    const { result } = renderHook(() => useOrderEditing(props));
+
+    // Boot stockItems by triggering startEditing (which calls apiClient.get)
+    await act(async () => {
+      result.current.startEditing([]);
+    });
+    // Wait for the async fetches inside startEditing to settle
+    await act(async () => {});
+
+    // Clear any POST calls that may have happened during startEditing
+    props.apiClient.post.mockClear();
+
+    await act(async () => {
+      await result.current.createDemandEntry('Rose');
+    });
+
+    // Should NOT have posted a new stock item
+    expect(props.apiClient.post).not.toHaveBeenCalledWith('/stock', expect.anything());
+    // Should have added the existing entry to editLines instead
+    expect(result.current.editLines).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stockItemId: 'stock-existing' }),
+      ]),
+    );
   });
 });
