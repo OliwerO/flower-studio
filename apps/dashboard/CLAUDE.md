@@ -17,6 +17,7 @@ The owner needs two things: (1) daily operational control — same visibility as
 | Products | ProductsTab.jsx | Wix product sync — pull/push products, manage categories (permanent/seasonal/auto), translations. |
 | Settings | SettingsTab.jsx | Delivery zones/fees, driver config, florist rates, payment methods, order sources, marketing spend, stock loss log. |
 | Admin | AdminTab.jsx | Owner-only — Postgres migration health, parity dashboards (stock, soon orders), audit log viewer. Powers the shadow-week verification. |
+| Variety Backfill | VarietyBackfillTab.jsx | Owner-only pre-cutover UI: fills Type/Colour/Size/Cultivar on stock rows where type_name IS NULL. Status banner, autocomplete inputs, cultivar prefill, bulk-edit panel. |
 
 ## Key Components
 | Component | Purpose |

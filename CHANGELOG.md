@@ -5,6 +5,40 @@ Review this entire file before flipping to production.
 
 ---
 
+## Stock Y-model — Variety attribute backfill UI (2026-05-10)
+
+Owner-facing admin page for backfilling Variety attributes (Type, Colour, Size, Cultivar) on Stock Items with `type_name IS NULL`. Pre-cutover step for #291. Issue: [#292](https://github.com/OliwerO/flower-studio/issues/292).
+
+### New endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/stock/needs-backfill` | List items with `type_name IS NULL`; returns `{ rows, total, remaining }` |
+| GET | `/api/stock/distinct/:column` | Sorted distinct values for one Variety column (autocomplete) |
+| PATCH | `/api/stock/:id/variety-attrs` | Set Variety attrs on one Stock Item; audit `action = 'variety_backfill'` |
+| PATCH | `/api/stock/variety-attrs/bulk` | Set Variety attrs on a batch of Stock Items in a single transaction |
+
+All four require Owner role; Florist receives 403.
+
+### New dashboard tab
+
+`VarietyBackfillTab` — lazy-loaded as "Variety Backfill" in the dashboard nav. Features:
+- Status banner: `N of M still need backfill` (live after every save)
+- Row table: legacy `display_name`, four autocomplete inputs (Type, Colour, Size, Cultivar), Save button per row
+- Cultivar prefill: selecting an existing Cultivar prefills Type/Colour/Size from the most recent matching row
+- Checkbox selection + bulk-edit panel: filter by name, apply attrs to selected rows in one PATCH request
+- "Show backfilled" toggle reveals completed rows
+
+### Go-live impact
+
+None for Florist sessions — no code path changes for non-Owner roles. Owner tab is visible but non-destructive. The `STOCK_Y_MODEL` flag is not involved in this slice.
+
+### Cutover prerequisite
+
+After all rows are backfilled, run the #291 migration script: `SELECT count(*) FROM stock WHERE type_name IS NULL` must return 0 before the NOT NULL constraint can be applied.
+
+---
+
 ## Stock Y-model — schema foundation (2026-05-10)
 
 First slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283) (Stock Y-model). No production behavior change; lays the columns, flag, and vocabulary every subsequent slice depends on. Issue: [#284](https://github.com/OliwerO/flower-studio/issues/284).
