@@ -71,6 +71,12 @@ const DEFAULTS = {
   showStockRepairTools: false,
 };
 
+// ── STOCK_Y_MODEL feature flag (issue #284) ─────────────────
+// Read once at module load. String 'true' → boolean true; anything
+// else → false. Strict equality keeps "1", "yes", "TRUE" all false
+// so a typo in Railway never silently turns the rollout on.
+const STOCK_Y_MODEL_ENABLED = process.env.STOCK_Y_MODEL === 'true';
+
 // ── In-memory config (loaded from Postgres on startup) ──────
 let config = structuredClone(DEFAULTS);
 let configLoaded = false;
@@ -402,6 +408,10 @@ export function getConfig(key) {
 
 export function getAllConfig() {
   return config;
+}
+
+export function getStockYModelEnabled() {
+  return STOCK_Y_MODEL_ENABLED;
 }
 
 export function updateConfig(key, value) {

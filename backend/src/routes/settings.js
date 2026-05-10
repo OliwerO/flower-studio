@@ -9,6 +9,7 @@ import {
   getConfig, getAllConfig, updateConfigBulk,
   getDriverOfDay, setDailyDriver, getDailyState,
   driverNames, autoClearIfNewDay,
+  getStockYModelEnabled,
 } from '../services/configService.js';
 
 const router = Router();
@@ -22,11 +23,12 @@ router.get('/', authorize('orders'), (req, res) => {
   const resolvedDrivers = [...new Set([...driverNames, ...config.extraDrivers])]
     .map(name => name === 'Backup' && backupName ? backupName : name);
   res.json({
-    driverOfDay:      daily.driverOfDay,
-    backupDriverName: backupName,
-    drivers:          resolvedDrivers,
-    pinDrivers:       driverNames,
+    driverOfDay:        daily.driverOfDay,
+    backupDriverName:   backupName,
+    drivers:            resolvedDrivers,
+    pinDrivers:         driverNames,
     config,
+    stockYModelEnabled: getStockYModelEnabled(),
   });
 });
 
