@@ -45,3 +45,38 @@ describe('makeStockItem', () => {
     expect(a.current_sell_price).toEqual(b.current_sell_price);
   });
 });
+
+describe('Stock Y-model attribute overrides (issue #284)', () => {
+  it('legacy call produces null for the Y-model fields by default', () => {
+    const s = makeStockItem();
+    expect(s.date).toBeNull();
+    expect(s.type_name).toBeNull();
+    expect(s.colour).toBeNull();
+    expect(s.size_cm).toBeNull();
+    expect(s.cultivar).toBeNull();
+  });
+
+  it('honours the four Variety overrides + date', () => {
+    const s = makeStockItem({
+      type_name: 'Peony',
+      colour:    'Pink',
+      size_cm:   60,
+      cultivar:  'Sarah Bernhardt',
+      date:      '2026-05-12',
+    });
+    expect(s.type_name).toBe('Peony');
+    expect(s.colour).toBe('Pink');
+    expect(s.size_cm).toBe(60);
+    expect(s.cultivar).toBe('Sarah Bernhardt');
+    expect(s.date).toBe('2026-05-12');
+  });
+
+  it('partial overrides leave the rest null', () => {
+    const s = makeStockItem({ type_name: 'Eucalyptus' });
+    expect(s.type_name).toBe('Eucalyptus');
+    expect(s.colour).toBeNull();   // empty colour ≠ "Green" — strict identity (ADR-0006)
+    expect(s.size_cm).toBeNull();
+    expect(s.cultivar).toBeNull();
+    expect(s.date).toBeNull();
+  });
+});

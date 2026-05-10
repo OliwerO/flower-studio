@@ -85,6 +85,16 @@ export const stock = pgTable('stock', {
   lotSize: integer('lot_size'),
   farmer: text('farmer'),
   lastRestocked: date('last_restocked'),
+  // ── Stock Y-model identity columns (issue #284, ADR-0006) ──
+  // All nullable in the foundation slice so legacy inserts keep working.
+  // type_name → NOT NULL applied at #291 cutover after #292 backfill.
+  // date      → NOT NULL applied at #290 cutover after migration script.
+  // colour, size_cm, cultivar stay nullable forever (ADR-0006).
+  date:      date('date'),
+  typeName:  text('type_name'),
+  colour:    text('colour'),
+  sizeCm:    integer('size_cm'),
+  cultivar:  text('cultivar'),
   // text[] of Airtable record ids during cutover. PG syntax: text('substitute_for').array()
   substituteFor: text('substitute_for').array(),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

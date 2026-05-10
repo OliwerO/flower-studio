@@ -5,6 +5,49 @@ Review this entire file before flipping to production.
 
 ---
 
+## Stock Y-model — schema foundation (2026-05-10)
+
+First slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283) (Stock Y-model). No production behavior change; lays the columns, flag, and vocabulary every subsequent slice depends on. Issue: [#284](https://github.com/OliwerO/flower-studio/issues/284).
+
+### Schema diff
+
+Migration `0012_stock_y_foundation.sql` adds five nullable columns to `stock`:
+
+| Column | Type | Lifecycle |
+|---|---|---|
+| `date` | DATE | NOT NULL applied at #290 cutover after backfill |
+| `type_name` | TEXT | NOT NULL applied at #291 cutover after #292 backfill UI |
+| `colour` | TEXT | nullable forever (ADR-0006) |
+| `size_cm` | INTEGER | nullable forever (ADR-0006) |
+| `cultivar` | TEXT | nullable forever (ADR-0006) |
+
+Plus two indexes: `stock_variety_idx (type_name, colour, size_cm, cultivar)` for #287 allocation lookups, `stock_date_idx (date) WHERE date IS NOT NULL` for #289 needed-by grouping.
+
+### New env var
+
+`STOCK_Y_MODEL` (default `false`). Strict equality against `'true'` — `1`/`yes`/`TRUE` are all rejected so a typo never silently flips the rollout on. Read once at backend boot; surfaced through `GET /api/settings` as `stockYModelEnabled`. Subsequent slices (#285 / #286 / #287 / #288 / #289) branch on this flag.
+
+### Docs
+
+- ADR-0005 — Y-model dated Demand Entries + premade reservation. Supersedes ADR-0002.
+- ADR-0006 — Variety four-tuple identity (Type required; Colour/Size/Cultivar nullable; strict identity).
+- ADR-0007 — Order-line consumption keeps Batch decrement; per-Batch trace via existing `/stock/:id/usage`.
+- CONTEXT.md — Type, Colour, Size, Cultivar, Variety added; Stock Item / Batch / Demand Entry rewritten.
+
+### Verification
+
+- `backend/src/__tests__/stockYFoundation.integration.test.js` (new) — pglite asserts columns exist, are nullable, accept Variety-shaped insert.
+- `backend/src/__tests__/configService.test.js` (extended) — env-flag default-false / env-true / non-true-string→false.
+- `lab/factories/stockItem.test.js` (extended) — legacy shape unchanged + Variety overrides honoured.
+- Full backend vitest, lab unit, lab API, and 25-section E2E suites green.
+- All three Vite app builds succeed (no shared-package ripple).
+
+### Go-live impact
+
+None. Migration is pure-additive (`IF NOT EXISTS`); idempotent. `STOCK_Y_MODEL` defaults to `false`, so no code path branches into Y-model behavior in this PR. Setting `STOCK_Y_MODEL=true` in Railway before #285 ships is harmless — there are no Y-model code paths yet.
+
+---
+
 ## Order Termination shared seam (2026-05-09)
 
 Order Cancellation and Owner Deletion flows extracted into `packages/shared/hooks/useOrderTerminationFlow.js` + `packages/shared/components/OrderTerminationConfirm.jsx`. Three previously-duplicated handlers (`apps/florist/src/components/OrderCard.jsx`, `apps/florist/src/pages/OrderDetailPage.jsx`, `apps/dashboard/src/components/OrderDetailPanel.jsx`) now consume the seam — drift between sites becomes structurally impossible. CLAUDE.md Pitfall #7 rewritten to point at the seam instead of "three sites must stay in lockstep". CONTEXT.md gains domain vocabulary: **Termination** (umbrella), **Cancellation**, **Deletion**.
