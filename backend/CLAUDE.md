@@ -71,6 +71,7 @@ Key paths:
 - `db/audit.js` — append-only audit log (`audit_log`); writes are tagged via the actor-context async-hook (`actor.js`) so every change carries who/role/req-id.
 - `db/index.js` — Postgres + pglite boot. Pglite refuses to boot in `NODE_ENV=production`.
 - `repos/orderRepo.js`, `repos/stockRepo.js`, `repos/customerRepo.js`, `repos/productRepo.js` — all Postgres. `repos/stockPurchasesRepo.js` — purchase record CRUD (`noteMarkerExists` + `findDateByPoMarker` used by PO evaluation idempotency). Routes/services call repos directly — no branching on env flags. `productRepo` (`getImage`, `setImage`, `removeImage`, `getImagesBatch`) stores Wix bouquet image URLs in the `product_config` Postgres table.
+- `repos/stockRepo.js` Stock Y-model exports (issue #286, behind `STOCK_Y_MODEL` flag): `computeDemandDate(order)` — pure fallback-chain helper; `getOrCreateDemandEntry(varietyKey, date, qty, tx, actor)` — upsert-with-sum for dated DEs; `updateDemandEntryDate(orderLineId, newDate, tx, actor)` — Required By cascade with sole-owner/shared split logic. All three require a Drizzle `tx` handle (must be called inside `db.transaction`). See `backend/src/db/migrations/0013_stock_y_demand_index.sql` for the partial unique index these functions depend on.
 - `db/README.md` — design notes for the Airtable→Postgres migration (historical reference; migration complete as of 2026-05-09).
 
 ## Auth Model
@@ -97,6 +98,8 @@ Two flavours under `src/__tests__/`:
 - **Integration** (`*.integration.test.js`) — boot pglite in-process, apply migrations, exercise repos and routes against real SQL. Runs in CI via `.github/workflows/test.yml`.
 
 Mock external deps (Telegram, Claude API, Wix). Never make real network calls in tests. Use `vi.useFakeTimers()` for time-dependent logic.
+
+**Known pglite limitation:** `SELECT FOR UPDATE` is not supported in pglite (single-connection WASM). Integration tests that need concurrency-safe reads must use the partial unique index as the dedup guard instead of `FOR UPDATE`. In production Postgres, row-level locks on `UPDATE` provide isolation. This is documented in `appConfigRepo.js` (line with "pglite does NOT support SELECT FOR UPDATE") and in `stockRepo.js` `getOrCreateDemandEntry`. Never add `FOR UPDATE` to pglite integration tests — the query will fail with a syntax error.
 
 The 25-section API-level E2E suite lives at the repo root: `npm run harness` (boots `start-test-backend.js` with pglite) + `npm run test:e2e`. Playwright scaffold at `playwright.config.js` for future browser tests.
 
