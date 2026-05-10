@@ -117,6 +117,28 @@ export function buildStockYMigration() {
   const lineA  = makeOrderLine({ orderId: orderA.id, stockItemId: aggDE.id, flower_name: aggDE.display_name, quantity: 5 });
   const lineB  = makeOrderLine({ orderId: orderB.id, stockItemId: aggDE.id, flower_name: aggDE.display_name, quantity: 3 });
 
+  // ── Phase 1 filter fixture: aggregate linked to one New order + one Cancelled order ──
+  // Expect: dated DE only reflects the New order's qty (5), not the Cancelled line (2).
+  // The aggregate's full current_quantity is -7 (-5 active + -2 cancelled),
+  // but Phase 1 must ignore the Cancelled line — only the -5 active demand
+  // gets a dated DE. The Cancelled qty is intentionally dropped.
+  const FILTER_DATE = '2026-07-01';
+  const filterAggDE = makeStockItem({
+    type:             'demand',
+    display_name:     'Lily White 70cm',
+    type_name:        'Lily',
+    colour:           'White',
+    size_cm:          70,
+    current_quantity: -7,  // -5 (active) + -2 (cancelled, qty stays on aggregate)
+    date:             null,
+  });
+  stockItems.push(filterAggDE);
+
+  const orderActive    = makeOrder({ customerId: cust.id, status: 'New',       delivery_type: 'Pickup', required_by: FILTER_DATE });
+  const orderCancelled = makeOrder({ customerId: cust.id, status: 'Cancelled', delivery_type: 'Pickup', required_by: FILTER_DATE });
+  const filterLineActive    = makeOrderLine({ orderId: orderActive.id,    stockItemId: filterAggDE.id, flower_name: filterAggDE.display_name, quantity: 5 });
+  const filterLineCancelled = makeOrderLine({ orderId: orderCancelled.id, stockItemId: filterAggDE.id, flower_name: filterAggDE.display_name, quantity: 2 });
+
   // ── Phase 4 fixture: premade reservation back-add ──
   // Simulates a "Hydrangea Blue 30cm" Batch with qty=20, linked to one
   // premade bouquet line with quantity=7. The script must ADD 7 back to
@@ -158,8 +180,8 @@ export function buildStockYMigration() {
   return {
     customers:          base.customers,
     stockItems,
-    orders:             [...base.orders, orderA, orderB],
-    orderLines:         [...orderLines, lineA, lineB],
+    orders:             [...base.orders, orderA, orderB, orderActive, orderCancelled],
+    orderLines:         [...orderLines, lineA, lineB, filterLineActive, filterLineCancelled],
     deliveries:         base.deliveries,
     premadeBouquets:    [premadeBouquet],
     premadeBouquetLines: [premadeLine],

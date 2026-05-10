@@ -196,3 +196,37 @@ describe('migrate-stock-y-model — Phase 4: premade back-add', () => {
     }
   }, 60_000);
 });
+
+describe('migrate-stock-y-model — Phase 1 filter: terminated orders excluded', () => {
+  beforeEach(async () => { await resetLabDb(); });
+
+  it('sums only active (non-Cancelled, non-Delivered, non-Picked-Up) lines into dated DEs', async () => {
+    const pool = labPool();
+    try {
+      // Pre: aggregate DE exists with qty=-7 (New line: 5, Cancelled line: 2).
+      const pre = await pool.query(
+        `SELECT id FROM stock WHERE display_name = 'Lily White 70cm' AND date IS NULL AND current_quantity = -7`
+      );
+      expect(pre.rows.length).toBe(1);
+
+      const res = runScript();
+      expect(res.status).toBe(0);
+
+      // Post: exactly one dated DE for Lily White 70cm with qty = -5 (only the active line).
+      // The Cancelled line is ignored; the aggregate's residual -2 is dropped on purpose.
+      const dated = await pool.query(
+        `SELECT date::text, current_quantity
+         FROM stock WHERE type_name = 'Lily' AND colour = 'White' AND size_cm = 70
+                    AND current_quantity < 0 AND date IS NOT NULL`
+      );
+      expect(dated.rows.length).toBe(1);
+      expect(dated.rows[0]).toEqual({ date: '2026-07-01', current_quantity: -5 });
+
+      // Original aggregate gone — no undated row remains for this variety.
+      const gone = await pool.query(`SELECT id FROM stock WHERE display_name = 'Lily White 70cm' AND date IS NULL`);
+      expect(gone.rows.length).toBe(0);
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
+});

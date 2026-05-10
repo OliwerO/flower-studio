@@ -14,7 +14,9 @@
 //   4. Premade reservation back-add to matching Batch on-hand.
 //   5. ALTER COLUMN date / type_name SET NOT NULL.
 //
-// Idempotent: re-running after Phase 5 is a no-op.
+// Idempotent: re-running after Phase 5 (NOT NULL applied) is a no-op
+// via the early-exit guard `alreadyMigrated()`. Phases 1-3 also become
+// no-ops because their predicates require `date IS NULL`.
 //
 // Usage:
 //   APPROVE=yes node backend/scripts/migrate-stock-y-model.js --dry-run
@@ -50,7 +52,11 @@ async function preCondition(client) {
 }
 
 async function phase1Split(client) {
-  // Find aggregate DEs: negative qty, no date, linked to at least one order_line.
+  // Find aggregate DEs: negative qty, no date, linked to at least one active order_line.
+  // Phase 1 sums only **active, non-deleted** order_lines (status NOT IN
+  //   Cancelled/Delivered/Picked Up). If an aggregate's only linked lines
+  //   are terminated, it routes to Phase 2 (orphan path) instead and is
+  //   today-dated for operator review.
   const { rows: aggregates } = await client.query(`
     SELECT s.id, s.display_name, s.type_name, s.colour, s.size_cm, s.cultivar,
            s.current_quantity, s.current_cost_price, s.current_sell_price,
@@ -59,17 +65,29 @@ async function phase1Split(client) {
     WHERE s.current_quantity < 0
       AND s.date IS NULL
       AND s.deleted_at IS NULL
-      AND EXISTS (SELECT 1 FROM order_lines ol WHERE ol.stock_item_id = s.id::text)
+      AND EXISTS (
+        SELECT 1 FROM order_lines ol
+        JOIN orders o ON o.id = ol.order_id
+        WHERE ol.stock_item_id = s.id::text
+          AND o.status NOT IN ('Cancelled', 'Delivered', 'Picked Up')
+          AND o.deleted_at IS NULL
+          AND ol.deleted_at IS NULL
+      )
   `);
 
   for (const agg of aggregates) {
     // Group linked order_lines by Required By fallback chain.
+    // Only active, non-deleted orders/lines — terminated lines persist in
+    // production after cancel-with-return/delivery/pickup and must not be counted.
     const { rows: lines } = await client.query(`
       SELECT ol.id AS line_id, ol.quantity,
              COALESCE(o.required_by::text, o.order_date::text, CURRENT_DATE::text) AS due_date
       FROM order_lines ol
       JOIN orders o ON o.id = ol.order_id
       WHERE ol.stock_item_id = $1::text
+        AND o.status NOT IN ('Cancelled', 'Delivered', 'Picked Up')
+        AND o.deleted_at IS NULL
+        AND ol.deleted_at IS NULL
     `, [agg.id]);
 
     // Group by due_date, summing quantities.
@@ -116,7 +134,14 @@ async function phase2OrphanNegative(client, today) {
     WHERE s.current_quantity < 0
       AND s.date IS NULL
       AND s.deleted_at IS NULL
-      AND NOT EXISTS (SELECT 1 FROM order_lines ol WHERE ol.stock_item_id = s.id::text)
+      AND NOT EXISTS (
+        SELECT 1 FROM order_lines ol
+        JOIN orders o ON o.id = ol.order_id
+        WHERE ol.stock_item_id = s.id::text
+          AND o.status NOT IN ('Cancelled', 'Delivered', 'Picked Up')
+          AND o.deleted_at IS NULL
+          AND ol.deleted_at IS NULL
+      )
   `);
   for (const o of orphans) {
     await client.query(`UPDATE stock SET date = $1, updated_at = NOW() WHERE id = $2`, [today, o.id]);
@@ -150,11 +175,26 @@ async function phase4PremadeBackAdd(client) {
   console.log(`[phase4] Back-added premade reservations to ${sums.length} Batch(es).`);
 }
 
+async function alreadyMigrated(client) {
+  const { rows } = await client.query(`
+    SELECT is_nullable FROM information_schema.columns
+    WHERE table_name = 'stock' AND column_name = 'date'
+  `);
+  return rows[0]?.is_nullable === 'NO';
+}
+
 async function run() {
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
     await preCondition(client);
+
+    if (await alreadyMigrated(client)) {
+      console.log('[migrate] Stock.date already NOT NULL — migration already complete. No-op.');
+      await client.query('ROLLBACK');
+      return;
+    }
+
     await phase1Split(client);
     await phase2OrphanNegative(client, today);
     await phase3PositiveUndated(client, today);
