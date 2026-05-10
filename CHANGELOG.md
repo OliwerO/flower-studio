@@ -5,6 +5,32 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-10 — Stock Y-model: hybrid VarietyAllocationPicker (#288)
+
+### Added
+- `<VarietyAllocationPicker>` in `packages/shared/components/` — hybrid two-stage picker. Stage 1: cross-field typeahead returning one row per Variety (4-tuple identity per ADR-0006). Stage 2: inline allocation panel rendering `stockAllocationEngine` options (batch / merge / fresh). Owner-only "+ Create new Variety" 4-field form.
+- `varietyKey`, `groupByVariety`, `varietyDisplayName` helpers in `packages/shared/utils/varietyKey.js` — NULL-aware 4-tuple identity per ADR-0006.
+- `useStockYModelFlag` shared hook reading `stockYModelEnabled` from `/settings`.
+- Translation keys (RU + EN): `pickerSearchPlaceholder`, `pickerCreateNew`, `pickerNoResults`, `pickerSaveContinue`, `pickerOrderFreshAll`.
+- Test coverage: 16 picker tests + 7 varietyKey tests + 6 hook tests = 29 new tests.
+
+### Wired (behind STOCK_Y_MODEL flag)
+- `apps/florist/src/components/BouquetEditor.jsx` — order detail editing
+- `apps/dashboard/src/components/order/BouquetSection.jsx` — dashboard order detail
+- `apps/florist/src/components/steps/Step2Bouquet.jsx` — new-order wizard step 2
+- `apps/dashboard/src/components/steps/Step2Bouquet.jsx` — same for dashboard
+Flag-off path retains legacy `<BatchPickerModal>` for backward compatibility until the #291 cutover.
+
+### Deprecated
+- `<BatchPickerModal>` — superseded by `<VarietyAllocationPicker>`. Retained as flag-off fallback; deletion deferred to #291 post-cutover when four-tuple backfill is complete.
+
+### Known follow-ups
+- `POST /stock` does not yet accept four-tuple Variety fields (`type_name`, `colour`, `size_cm`, `cultivar`). `onCreateVariety` currently falls back to legacy `displayName` join. Backend extension tracked separately.
+- `useOrderEditing.createDemandEntry` does not yet accept Y-tuple payload. `kind: 'fresh'` selection falls back to a text-only demand line via `displayName`. Hook upgrade tracked separately.
+- Lab Playwright rehearsal — see #288 task T9.
+
+---
+
 ## Stock Y-model — per-Variety allocation engine (#287, 2026-05-10)
 
 Slice of PRD [#283](https://github.com/OliwerO/flower-studio/issues/283). Pure helper, no schema change, no production behavior change. Issue: [#287](https://github.com/OliwerO/flower-studio/issues/287).

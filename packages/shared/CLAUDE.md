@@ -21,7 +21,8 @@ components/
   Sheet.jsx                   → Bottom-sheet modal primitive (mobile UX)
   EmptyState.jsx              → Empty-list illustration + CTA
   FilterBar.jsx               → Search + filter chips composite
-  BatchPickerModal.jsx        → Disambiguation modal shown when a flower variety has multiple Stock Items (Batches + Demand Entry). Used by BouquetEditor (florist) and BouquetSection (dashboard). Receives `t` prop for bilingual strings.
+  BatchPickerModal.jsx        → Disambiguation modal shown when a flower variety has multiple Stock Items (Batches + Demand Entry). Used by BouquetEditor (florist) and BouquetSection (dashboard). Receives `t` prop for bilingual strings. DEPRECATED — see #288
+  VarietyAllocationPicker.jsx → Hybrid two-stage Variety picker — Stage 1 typeahead, Stage 2 engine options, Owner-only "+ Create new Variety". Behind `STOCK_Y_MODEL` in BouquetEditor / BouquetSection / Step2Bouquet (florist + dashboard)
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
@@ -32,11 +33,13 @@ hooks/
   useOrderPatching.js         → Shared order/delivery PATCH helpers (patchOrder, patchDelivery)
   useDebouncedValue.js        → Standard debounce-state hook
   useLongPress.js             → Long-press gesture detection
+  useStockYModelFlag.js       → Reads `stockYModelEnabled` from `/settings`. Single-flight cached.
 utils/
   parseBatchName.js           → Extracts date from batch names like "Rose (14.Mar.)"
   stockName.jsx               → Formats stock display names with age/date labels
   stockMath.js                → getEffectiveStock(qty), hasStockShortfall — LOAD-BEARING per root pitfall #7
   stockAllocationEngine.js    → stockAllocationEngine(rows, reservations, requiredBy, qty) — Y-model ranked allocation options for one order line (issue #287, PRD #283)
+  varietyKey.js               → 4-tuple identity helpers — `varietyKey`, `groupByVariety`, `varietyDisplayName`. NULL-aware per ADR-0006.
   timeSlots.js                → Time slot generation with lead-time filtering
   customerFilters.js          → Customer search + filter predicates (matchesSearch/Filters, EMPTY_FILTERS)
   productGroup.js             → Storefront product grouping (groupByProduct, parseCats, priceRange, ...)
