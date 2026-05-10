@@ -75,5 +75,8 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 // Variety allocation picker — Stage 1 typeahead (issue #288)
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
 
+// Type group sticky collapsible header for Y-model Stock list (issue #289)
+export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
+
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
