@@ -11,6 +11,87 @@ function demandEntry(id, currentQuantity, date) {
   return { id, currentQuantity, date, isDemandEntry: true };
 }
 
+// ─── Fixture 7: Mixed Batch + Demand + Reservation rows ──────────────────────
+describe('stockAllocationEngine — fixture 7: mixed rows with reservations', () => {
+  // Two batches: b1 has 15 stems, 5 reserved for premades → freeQty 10 (sufficient for qty=8)
+  //              b2 has 20 stems, 0 reserved → freeQty 20 (also sufficient)
+  // One same-date demand entry (priority over batches per smart-default rule 1)
+  // One past-date demand entry
+  const requiredBy = '2026-05-20';
+  const rows = [
+    batch('b1', 15, '2026-05-05'),  // older batch (FIFO would pick this first)
+    batch('b2', 20, '2026-05-08'),  // newer batch
+    demandEntry('d_same', -4, '2026-05-20'), // same-date → smart-default
+    demandEntry('d_past', -2, '2026-05-12'), // past-date
+  ];
+  const reservations = new Map([['b1', 5]]); // 5 reserved for premades on b1
+
+  it('all option kinds present', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const kinds = new Set(options.map((o) => o.kind));
+    expect(kinds.has('batch')).toBe(true);
+    expect(kinds.has('merge')).toBe(true);
+    expect(kinds.has('fresh')).toBe(true);
+  });
+
+  it('b1 freeQty accounts for reservations (15 - 5 = 10)', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const b1 = options.find((o) => o.kind === 'batch' && o.stockId === 'b1');
+    expect(b1.freeQty).toBe(10);
+    expect(b1.reservedQty).toBe(5);
+    expect(b1.total).toBe(15);
+    expect(b1.sufficient).toBe(true); // 10 >= 8
+  });
+
+  it('b2 freeQty is unaffected by reservations (20 - 0 = 20)', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const b2 = options.find((o) => o.kind === 'batch' && o.stockId === 'b2');
+    expect(b2.freeQty).toBe(20);
+    expect(b2.reservedQty).toBe(0);
+    expect(b2.sufficient).toBe(true);
+  });
+
+  it('smart-default: same-date merge wins over sufficient batch (rule 1 > rule 2)', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const def = options.find((o) => o.isDefault);
+    expect(def.kind).toBe('merge');
+    expect(def.stockId).toBe('d_same');
+  });
+
+  it('past-date demand entry is flagged isPastDate: true', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const past = options.find((o) => o.kind === 'merge' && o.stockId === 'd_past');
+    expect(past.isPastDate).toBe(true);
+  });
+
+  it('same-date demand entry is NOT flagged isPastDate', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const same = options.find((o) => o.kind === 'merge' && o.stockId === 'd_same');
+    expect(same.isPastDate).toBe(false);
+  });
+
+  it('output order: batches first, then merges, then fresh', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const batchEnd = Math.max(...options.map((o, i) => (o.kind === 'batch' ? i : -1)));
+    const mergeStart = options.findIndex((o) => o.kind === 'merge');
+    const freshIdx = options.findIndex((o) => o.kind === 'fresh');
+    expect(batchEnd).toBeLessThan(mergeStart);
+    expect(mergeStart).toBeLessThan(freshIdx);
+  });
+
+  it('batches ranked FIFO (oldest first)', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    const batches = options.filter((o) => o.kind === 'batch');
+    expect(batches[0].stockId).toBe('b1');
+    expect(batches[1].stockId).toBe('b2');
+  });
+
+  it('exactly one option is the default', () => {
+    const options = stockAllocationEngine(rows, reservations, requiredBy, 8);
+    expect(options.filter((o) => o.isDefault)).toHaveLength(1);
+  });
+});
+
 // ─── Fixture 6: Past-date Demand Entries ─────────────────────────────────────
 describe('stockAllocationEngine — fixture 6: past-date demand entries', () => {
   const requiredBy = '2026-05-20';
