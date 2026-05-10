@@ -65,3 +65,6 @@ export { default as FeedbackModal } from './components/FeedbackModal.jsx';
 // Order termination seam (cancel + delete shared hook + confirm UI)
 export { default as useOrderTerminationFlow } from './hooks/useOrderTerminationFlow.js';
 export { default as OrderTerminationConfirm } from './components/OrderTerminationConfirm.jsx';
+
+// Stock Y-model allocation engine (issue #287, PRD #283)
+export { stockAllocationEngine } from './utils/stockAllocationEngine.js';
