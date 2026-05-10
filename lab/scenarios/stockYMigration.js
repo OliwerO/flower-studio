@@ -12,6 +12,7 @@
 
 import { faker } from '@faker-js/faker';
 import { buildStockOverhaul } from './stockOverhaul.js';
+import { makeStockItem, makeOrder, makeOrderLine } from '../factories/index.js';
 
 export function buildStockYMigration() {
   faker.seed(290);
@@ -61,11 +62,36 @@ export function buildStockYMigration() {
 
   const stockItems = [...backedBatches, ...deduplicatedDemands];
 
+  // ── Phase 1 fixture: 1 aggregate DE shared by 2 orders on 2 different dates ──
+  // Simulates a "Peony Pink 60cm" aggregate DE with qty=-8 and no date,
+  // linked to two Pickup orders with distinct Required By dates.
+  // The script must split this into two dated DEs (-5 and -3) and repoint
+  // the order_lines to the correct dated DE.
+  const PHASE1_DATE_A = '2026-06-01';
+  const PHASE1_DATE_B = '2026-06-03';
+
+  const aggDE = makeStockItem({
+    type:             'demand',
+    display_name:     'Peony Pink 60cm',
+    type_name:        'Peony',
+    colour:           'Pink',
+    size_cm:          60,
+    current_quantity: -8,
+    date:             null,
+  });
+  stockItems.push(aggDE);
+
+  const cust = base.customers[0];
+  const orderA = makeOrder({ customerId: cust.id, status: 'New', delivery_type: 'Pickup', required_by: PHASE1_DATE_A });
+  const orderB = makeOrder({ customerId: cust.id, status: 'New', delivery_type: 'Pickup', required_by: PHASE1_DATE_B });
+  const lineA  = makeOrderLine({ orderId: orderA.id, stockItemId: aggDE.id, flower_name: aggDE.display_name, quantity: 5 });
+  const lineB  = makeOrderLine({ orderId: orderB.id, stockItemId: aggDE.id, flower_name: aggDE.display_name, quantity: 3 });
+
   return {
     customers:  base.customers,
     stockItems,
-    orders:     base.orders,
-    orderLines,
+    orders:     [...base.orders, orderA, orderB],
+    orderLines: [...orderLines, lineA, lineB],
     deliveries: base.deliveries,
   };
 }

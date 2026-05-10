@@ -44,3 +44,51 @@ describe('migrate-stock-y-model — pre-condition', () => {
     expect(res.stdout).toMatch(/DRY RUN/);
   }, 30_000);
 });
+
+describe('migrate-stock-y-model — Phase 1: aggregate split', () => {
+  beforeEach(async () => { await resetLabDb(); });
+
+  it('splits one aggregate DE into per-Required-By dated DEs', async () => {
+    const pool = labPool();
+    try {
+      // Pre: find the aggregate DE by display_name + date IS NULL.
+      const pre = await pool.query(
+        `SELECT id FROM stock WHERE display_name = 'Peony Pink 60cm' AND date IS NULL AND current_quantity = -8`
+      );
+      expect(pre.rows.length).toBe(1);
+      const aggId = pre.rows[0].id;
+
+      const res = runScript();
+      expect(res.status).toBe(0);
+
+      // Post: aggregate gone.
+      const gone = await pool.query(`SELECT id FROM stock WHERE id = $1`, [aggId]);
+      expect(gone.rows.length).toBe(0);
+
+      // Post: 2 dated DEs, one per date, with correct qty.
+      const dated = await pool.query(
+        `SELECT date::text, current_quantity, type_name, colour, size_cm
+         FROM stock WHERE type_name = 'Peony' AND colour = 'Pink' AND size_cm = 60
+                    AND current_quantity < 0 AND date IS NOT NULL
+         ORDER BY date ASC`
+      );
+      expect(dated.rows).toEqual([
+        { date: '2026-06-01', current_quantity: -5, type_name: 'Peony', colour: 'Pink', size_cm: 60 },
+        { date: '2026-06-03', current_quantity: -3, type_name: 'Peony', colour: 'Pink', size_cm: 60 },
+      ]);
+
+      // Post: order_lines repointed to the new dated DEs.
+      const lines = await pool.query(
+        `SELECT ol.stock_item_id, s.date::text
+         FROM order_lines ol JOIN stock s ON s.id::text = ol.stock_item_id
+         WHERE ol.flower_name = 'Peony Pink 60cm'
+         ORDER BY ol.quantity DESC`
+      );
+      expect(lines.rows.length).toBe(2);
+      expect(lines.rows[0].date).toBe('2026-06-01');
+      expect(lines.rows[1].date).toBe('2026-06-03');
+    } finally {
+      await pool.end();
+    }
+  }, 60_000);
+});
