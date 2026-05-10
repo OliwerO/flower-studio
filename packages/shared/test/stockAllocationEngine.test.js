@@ -11,6 +11,32 @@ function demandEntry(id, currentQuantity, date) {
   return { id, currentQuantity, date, isDemandEntry: true };
 }
 
+// ─── Fixture 3: Partial Batch coverage ───────────────────────────────────────
+describe('stockAllocationEngine — fixture 3: partial batch coverage', () => {
+  it('returns batch option with sufficient=false when freeQty < qty', () => {
+    const rows = [batch('b1', 4, '2026-05-05')]; // only 4, need 10
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 10);
+    const b = options.find((o) => o.kind === 'batch');
+    expect(b).toBeDefined();
+    expect(b.sufficient).toBe(false);
+    expect(b.freeQty).toBe(4);
+  });
+
+  it('smart-default: fresh is the default when batch cannot cover fully', () => {
+    const rows = [batch('b1', 4, '2026-05-05')]; // only 4, need 10
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 10);
+    const def = options.find((o) => o.isDefault);
+    expect(def).toBeDefined();
+    expect(def.kind).toBe('fresh');
+  });
+
+  it('exactly one option is the default', () => {
+    const rows = [batch('b1', 4, '2026-05-05')];
+    const options = stockAllocationEngine(rows, new Map(), '2026-05-20', 10);
+    expect(options.filter((o) => o.isDefault)).toHaveLength(1);
+  });
+});
+
 // ─── Fixture 2: Existing Batch covers fully ──────────────────────────────────
 describe('stockAllocationEngine — fixture 2: batch covers fully', () => {
   it('returns a batch option and a fresh option', () => {
