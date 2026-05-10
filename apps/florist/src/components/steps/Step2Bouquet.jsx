@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -825,17 +825,14 @@ export default function Step2Bouquet({
           }}
           onSelectStock={picked => {
             if (picked?.kind === 'fresh') {
-              // TODO: pass full variety attrs once createDemandEntry supports new shape.
-              // Fallback: add a text-only line using the display name from the first item
-              // in the variety group. Backend POST /stock four-tuple not yet confirmed.
-              const firstName = yPickerStockItems[0]?.['Display Name'] || picked.date || '';
+              const v = picked.variety || {};
+              const firstName = varietyDisplayName(v) || yPickerStockItems[0]?.['Display Name'] || picked.date || '';
               onLinesChange(lines => {
                 const exists = lines.find(l => !l.stockItemId && l.flowerName === firstName);
                 if (exists) return lines.map(l => !l.stockItemId && l.flowerName === firstName ? { ...l, quantity: l.quantity + 1 } : l);
                 return [...lines, { stockItemId: null, flowerName: firstName, quantity: 1, costPricePerUnit: 0, sellPricePerUnit: 0, stockDeferred: isFutureOrder }];
               });
             } else if (picked) {
-              // Find original Airtable-shaped item and add it
               const original = stock.find(s => s.id === picked.id) || picked;
               addOne(original);
             }
@@ -843,21 +840,26 @@ export default function Step2Bouquet({
             setFlowerQuery('');
           }}
           onCreateVariety={async draft => {
-            // TODO: POST /stock four-tuple not yet confirmed. Fall back to legacy display name.
-            const legacyName = [draft.type_name, draft.colour].filter(Boolean).join(' ');
+            const displayName = (draft.baseName || varietyDisplayName(draft) || '').trim();
             try {
               const res = await client.post('/stock', {
-                displayName: legacyName || draft.type_name,
+                displayName,
+                typeName: draft.type_name ?? null,
+                colour:   draft.colour ?? null,
+                sizeCm:   draft.size_cm ?? null,
+                cultivar: draft.cultivar ?? null,
                 costPrice: 0, sellPrice: 0, quantity: 0,
               });
               const newItem = res.data;
               addOne({ id: newItem.id, 'Display Name': newItem['Display Name'], 'Current Cost Price': 0, 'Current Sell Price': 0 });
               onStockRefresh();
+              setYPickerOpen(false);
+              return newItem;
             } catch (err) {
               showToast(err.response?.data?.error || t.error, 'error');
+              setYPickerOpen(false);
+              return null;
             }
-            setYPickerOpen(false);
-            return null;
           }}
           onClose={() => setYPickerOpen(false)}
         />

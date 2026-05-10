@@ -7,6 +7,7 @@
 
 import { useState } from 'react';
 import parseBatchName from '../utils/parseBatchName.js';
+import { varietyDisplayName } from '../utils/varietyKey.js';
 
 const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 
@@ -218,12 +219,58 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     setAddingFlower(false);
   }
 
+  // ── New Variety (Owner-only "+ Create new Variety" path) ─────────
+  // Creates a new Stock Item with full 4-tuple Variety attrs and qty=0.
+  // Returns the new row so callers (e.g. VarietyAllocationPicker) can
+  // pass it back through onSelectStock to add a line.
+  async function addNewVariety(draft) {
+    const displayName = (draft.baseName || varietyDisplayName(draft) || '').trim();
+    if (!displayName) {
+      showToast(t.updateError || 'Error creating Variety', 'error');
+      return null;
+    }
+    try {
+      const res = await apiClient.post('/stock', {
+        displayName,
+        typeName: draft.type_name ?? null,
+        colour: draft.colour ?? null,
+        sizeCm: draft.size_cm ?? null,
+        cultivar: draft.cultivar ?? null,
+        quantity: 0,
+      });
+      setStockItems(prev => [...prev, res.data]);
+      return res.data;
+    } catch {
+      showToast(t.updateError || 'Error creating Variety', 'error');
+      return null;
+    }
+  }
+
   // ── Demand Entry path ──────────────────────────────────────────────
   // Creates or deepens the single undated Demand Entry for a variety.
   // If one already exists, uses it (deepens aggregate negative qty).
   // If not, creates one inheriting price from the most recent Batch.
-  async function createDemandEntry(baseName) {
-    const variety = findAllMatchingVariety(stockItems, baseName);
+  //
+  // varietyDraft: string (back-compat) OR
+  //   { baseName?, type_name?, colour?, size_cm?, cultivar? }
+  // When an object is provided the POST body includes the 4-tuple Variety
+  // attrs (typeName/colour/sizeCm/cultivar) so the backend can persist them.
+  // displayName is taken from baseName if given, otherwise auto-computed via
+  // varietyDisplayName.
+  async function createDemandEntry(varietyDraft) {
+    // Normalise to a resolved display name + optional 4-tuple fields.
+    let displayName;
+    let tupleFields = null; // null = legacy path (omit from POST body)
+
+    if (typeof varietyDraft === 'string') {
+      displayName = varietyDraft;
+    } else {
+      const { baseName, type_name, colour, size_cm, cultivar } = varietyDraft;
+      displayName = baseName || varietyDisplayName({ type_name, colour, size_cm, cultivar });
+      tupleFields = { type_name, colour, size_cm, cultivar };
+    }
+
+    const variety = findAllMatchingVariety(stockItems, displayName);
     const demandEntry = variety.find(s => parseBatchName(s['Display Name'] || '').batch === null);
 
     if (demandEntry) {
@@ -241,13 +288,26 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     const costPrice = Number(mostRecentBatch?.['Current Cost Price']) || 0;
     const sellPrice = Number(mostRecentBatch?.['Current Sell Price']) || 0;
 
+    const postBody = {
+      displayName: displayName.trim(),
+      quantity: 0,
+      costPrice,
+      sellPrice,
+    };
+
+    // 4-tuple path: include Variety attrs only when explicitly provided.
+    // Only include fields that were present on the draft (avoid sending
+    // undefined values — back-compat callers omit the whole key).
+    if (tupleFields !== null) {
+      const { type_name, colour, size_cm, cultivar } = tupleFields;
+      if (type_name !== undefined)  postBody.typeName = type_name;
+      if (colour    !== undefined)  postBody.colour   = colour;
+      if (size_cm   !== undefined)  postBody.sizeCm   = size_cm;
+      if (cultivar  !== undefined)  postBody.cultivar = cultivar;
+    }
+
     try {
-      const res = await apiClient.post('/stock', {
-        displayName: baseName.trim(),
-        quantity: 0,
-        costPrice,
-        sellPrice,
-      });
+      const res = await apiClient.post('/stock', postBody);
       setStockItems(prev => [...prev, res.data]);
       setEditLines(prev => [...prev, {
         id: null,
@@ -473,6 +533,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     openNewFlowerForm,
     addNewFlower,
     addNewFlowerQuick,
+    addNewVariety,
     getFilteredStock,
     doSave,
     handleSaveClick,

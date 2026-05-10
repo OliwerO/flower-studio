@@ -226,9 +226,7 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
               }}
               onSelectStock={picked => {
                 if (picked && picked.kind === 'fresh') {
-                  // TODO(Task 7): pass full variety attrs once createDemandEntry supports new shape.
-                  // For now fall back to display name so the call doesn't 4xx in production.
-                  editing.createDemandEntry(picked.displayName || picked.date || '');
+                  editing.createDemandEntry(picked.variety || picked.displayName || picked.date || '');
                 } else if (picked) {
                   const existing = editing.editLines.findIndex(l => l.stockItemId === picked.id);
                   if (existing >= 0) {
@@ -242,13 +240,9 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                 editing.setAddingFlower(false);
               }}
               onCreateVariety={async draft => {
-                // TODO(Task 7): POST /stock four-tuple support not yet confirmed.
-                // POST /stock only accepts displayName — pass legacy shape so we don't 4xx.
-                const legacyName = [draft.type_name, draft.colour].filter(Boolean).join(' ');
-                await editing.addNewFlower
-                  ? editing.openNewFlowerForm(legacyName || draft.type_name)
-                  : editing.addNewFlowerQuick(legacyName || draft.type_name);
+                const res = await editing.addNewVariety(draft);
                 setYPickerOpen(false);
+                return res;
               }}
               onClose={() => setYPickerOpen(false)}
             />

@@ -16,7 +16,7 @@ import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
  *   role             — 'owner' | 'florist' (gates "+ Create new Variety")
  *   t                — translation strings (pickerSearchPlaceholder, pickerCreateNew,
  *                      pickerNoResults, stems, onHand, planned, reserved, net, cancel)
- *   onSelectStock    — (stockItem | { kind: 'fresh', date }) => void
+ *   onSelectStock    — (stockItem | { kind: 'fresh', date, variety: { type_name, colour, size_cm, cultivar } | null }) => void
  *   onCreateVariety  — (varietyDraft) => Promise<stockItem>  (Owner-only, Task 4)
  *   premadesByStockId — Map<stockId, [{id, name, qty}]> — optional, for reserved expand
  *   onClose          — () => void
@@ -134,7 +134,17 @@ export default function VarietyAllocationPicker({
   }
 
   function handleFreshClick() {
-    onSelectStock({ kind: 'fresh', date: requiredBy });
+    const group = groups.find((g) => g.key === expandedKey);
+    onSelectStock({
+      kind: 'fresh',
+      date: requiredBy,
+      variety: group ? {
+        type_name: group.type_name,
+        colour: group.colour,
+        size_cm: group.size_cm,
+        cultivar: group.cultivar,
+      } : null,
+    });
   }
 
   function handleDraftChange(field, value) {

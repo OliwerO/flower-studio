@@ -5,6 +5,25 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-10 — Stock Y-model: backend gap closures (#287/#288/#289 follow-up)
+
+### Backend
+- `POST /stock` now accepts 4-tuple Variety attrs (`typeName`, `colour`, `sizeCm`, `cultivar`) on the wire. Coerced + persisted to `type_name`/`colour`/`size_cm`/`cultivar` columns. Legacy `displayName`-only POST still works.
+- `GET /stock/premade-committed` Y-model branch now populates `bouquets: [{ bouquetId, name, qty }]` (previously empty array). Shape matches legacy branch exactly. New `stockRepo.getPremadeReservationDetails(stockIds)` sibling helper.
+
+### Shared
+- `useOrderEditing.createDemandEntry(varietyDraft)` accepts 4-tuple object draft (back-compat with string baseName). When 4-tuple provided, POST /stock includes all attrs.
+- `useOrderEditing.addNewVariety(draft)` — new helper for Owner "+ Create new Variety" flow. Returns the created Stock Item.
+- `<VarietyAllocationPicker>` `kind: 'fresh'` emission now carries `variety: { type_name, colour, size_cm, cultivar }` so hosts can route the 4-tuple to `createDemandEntry`.
+
+### Frontend
+- 4 picker callsites (BouquetEditor, BouquetSection, Step2Bouquet × 2) now wire `onCreateVariety` + `kind: 'fresh'` paths to the new 4-tuple endpoints. TODOs removed.
+
+### Notes
+- Closes the three known follow-ups noted in PRs #298 (#288 picker) and #299 (#289 list). Owner can now create new Y-model Varieties from the picker; reserved-bucket tap shows premade names.
+
+---
+
 ## 2026-05-10 — Stock Y-model: Variety collapsed list (#289)
 
 ### Added (shared)
