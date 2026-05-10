@@ -18,6 +18,18 @@ import { stock } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
 
+/**
+ * Resolves the demand date for a new Demand Entry from order data.
+ * Fallback chain: Required By → Order Date → today.
+ * @param {{ requiredBy?: string, orderDate?: string }} [order]
+ * @returns {string} YYYY-MM-DD
+ */
+export function computeDemandDate(order) {
+  if (order?.requiredBy) return order.requiredBy;
+  if (order?.orderDate)  return order.orderDate;
+  return new Date().toISOString().split('T')[0];
+}
+
 // ── Backend mode stub ──
 // getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
 // remove the callers in orderService.js and wix.js.
