@@ -87,3 +87,6 @@ export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
 // Per-batch trace UX seam — panel (inline, dashboard) + modal wrapper (florist) (issue #289)
 export { default as BatchTracePanel } from './components/BatchTracePanel.jsx';
 export { default as BatchTraceModal } from './components/BatchTraceModal.jsx';
+
+// Write-off Batch picker — Demand Entries excluded, default oldest, FIFO (issue #289)
+export { default as WriteOffBatchPicker } from './components/WriteOffBatchPicker.jsx';
