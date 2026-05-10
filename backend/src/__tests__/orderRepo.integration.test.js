@@ -671,3 +671,155 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
     expect(deRow.date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// updateOrder Required By cascade (STOCK_Y_MODEL)
+// ─────────────────────────────────────────────────────────────────────
+//
+// When flag is on and Required By changes, each order_line's linked DE
+// should have its date updated (sole-owner) or split (shared).
+
+describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
+  let deStockId;  // Y-model DE stock row
+
+  beforeEach(async () => {
+    // Default: flag OFF
+    yModelFlag.enabled = false;
+
+    // Seed a Y-model DE stock row
+    const [de] = await harness.db.insert(stock).values({
+      displayName: 'Peony Pink 60cm Sarah Bernhardt',
+      currentQuantity: -30,
+      typeName: 'Peony',
+      colour: 'Pink',
+      sizeCm: 60,
+      cultivar: 'Sarah Bernhardt',
+      active: true,
+    }).returning();
+    deStockId = de.id;
+  });
+
+  it('flag-on: changing Required By on sole-owner DE → date updated in place', async () => {
+    yModelFlag.enabled = true;
+
+    // Create order with a line pointing at the DE
+    const { order, orderLines: lines } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'A',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: deStockId, flowerName: 'Peony', quantity: 4 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Find which DE the order_line is now pointing at
+    const [lineRow] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines[0]._pgId));
+    const originalDeId = lineRow.stockItemId;
+
+    // Now change Required By
+    await orderRepo.updateOrder(order.id, { 'Required By': '2026-05-22' }, { actor: { actorRole: 'florist' } });
+
+    // DE date should be updated in place
+    const [deRow] = await harness.db.select().from(stock).where(eq(stock.id, originalDeId));
+    expect(deRow.date).toBe('2026-05-22');
+
+    // order_line FK should be unchanged
+    const [updatedLine] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines[0]._pgId));
+    expect(updatedLine.stockItemId).toBe(originalDeId);
+  });
+
+  it('flag-on: changing Required By on order sharing a DE → new DE created, line FK updated', async () => {
+    yModelFlag.enabled = true;
+
+    // Create TWO orders sharing the same DE (same Variety + same Required By)
+    const { order: order1, orderLines: lines1 } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'A',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: deStockId, flowerName: 'Peony', quantity: 5 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const { order: order2, orderLines: lines2 } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'B',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: deStockId, flowerName: 'Peony', quantity: 3 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Confirm both lines share the same DE
+    const [l1before] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines1[0]._pgId));
+    const [l2before] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines2[0]._pgId));
+    expect(l1before.stockItemId).toBe(l2before.stockItemId);
+    const sharedDeId = l1before.stockItemId;
+
+    // Change Required By for order1 only
+    await orderRepo.updateOrder(order1.id, { 'Required By': '2026-05-22' }, { actor: { actorRole: 'florist' } });
+
+    // order1's line should now point to a new DE
+    const [l1after] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines1[0]._pgId));
+    expect(l1after.stockItemId).not.toBe(sharedDeId);
+
+    // order2's line should still point to the original DE
+    const [l2after] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.id, lines2[0]._pgId));
+    expect(l2after.stockItemId).toBe(sharedDeId);
+
+    // Old DE qty should be decremented by order1's qty (5): original -8 + 5 = -3
+    const [oldDe] = await harness.db.select().from(stock).where(eq(stock.id, sharedDeId));
+    expect(oldDe.currentQuantity).toBe(-3);
+  });
+
+  it('flag-on: changing Required By on Batch line → no DE affected', async () => {
+    yModelFlag.enabled = true;
+
+    // Order with a legacy stock line (no typeName → Batch path)
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Batch test',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 5 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Get stock qty before
+    const [before] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    const beforeQty = before.currentQuantity;
+
+    // Change Required By — should not touch DE (no DE linked)
+    await orderRepo.updateOrder(order.id, { 'Required By': '2026-05-22' }, { actor: { actorRole: 'florist' } });
+
+    // Stock row unchanged
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(after.currentQuantity).toBe(beforeQty);
+    expect(after.date).toBeNull(); // no date column for legacy rows
+  });
+
+  it('flag-off: updateOrder with Required By change → delivery cascade only (legacy)', async () => {
+    yModelFlag.enabled = false;
+
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Delivery test',
+      deliveryType: 'Delivery',
+      requiredBy: '2026-05-15',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 3 }],
+      delivery: { address: 'ul. Test 1', date: '2026-05-15', fee: 25, driver: 'Timur' },
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    await orderRepo.updateOrder(order.id, { 'Required By': '2026-05-20' }, { actor: { actorRole: 'florist' } });
+
+    // Delivery date should be cascaded (existing legacy behavior)
+    const updated = await orderRepo.getById(order.id);
+    expect(updated['Required By']).toBe('2026-05-20');
+    // Delivery date should also be updated via the existing cascade
+    if (updated._delivery) {
+      expect(updated._delivery['Delivery Date']).toBe('2026-05-20');
+    }
+  });
+});
