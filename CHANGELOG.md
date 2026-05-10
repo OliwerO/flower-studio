@@ -5,6 +5,32 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-11 — Stock Y-model: migration script + lab regression gate (#290)
+
+### Backend
+- **NEW DESTRUCTIVE script** `backend/scripts/migrate-stock-y-model.js` — converts legacy aggregate Demand Entry rows to Y-model (dated DEs + premade reservation back-add).
+  - Single transaction; `APPROVE=yes` gate; `--dry-run` rolls back without writing.
+  - Pre-condition: aborts if any `stock.type_name IS NULL` (run #292 Owner backfill UI first).
+  - Top-of-script idempotency guard: skips all phases if `stock.date` is already NOT NULL (re-running after a successful migration = no-op exit 0).
+- **Five phases:**
+  1. **Phase 1 — split aggregates by Required By.** For each aggregate DE with `qty < 0, date IS NULL` and active linked order_lines, group lines by `o.required_by → o.order_date → CURRENT_DATE`, create one dated DE per date with summed qty, repoint `order_lines.stock_item_id`, delete the aggregate. Filter: `o.status NOT IN ('Cancelled', 'Delivered', 'Picked Up') AND o.deleted_at IS NULL AND ol.deleted_at IS NULL` — only active demand flows into dated DEs; terminated lines are dropped.
+  2. **Phase 2 — orphan negative → today-dated DE.** Aggregates whose only linked lines are terminated/deleted (or that have no linked lines at all) become today-dated for owner review. Variety attrs preserved.
+  3. **Phase 3 — positive-qty undated → dated Batch.** Bulk UPDATE: every `qty >= 0, date IS NULL` row gets `date = today`. Covers legacy Batches and positive-qty manual edits identically.
+  4. **Phase 4 — premade reservation back-add.** SUM `premade_bouquet_lines.quantity` per `stock_id`, ADD to that Stock row's `current_quantity`. Per Pitfall #8: post-migration, `current_quantity` once again means physical on-hand, and reservations live in a separate informational bucket served by `/stock/premade-committed`.
+  5. **Phase 5 — apply NOT NULL.** `ALTER COLUMN date / type_name SET NOT NULL` once all rows have values. Phase 5 inside the migration transaction; rolls back cleanly on dry-run or failure.
+
+### Lab harness
+- **NEW scenario** `lab/scenarios/stockYMigration.js` — extends `stockOverhaul` with prod-shaped fixtures: a multi-order aggregate DE (2 dates), an orphan negative DE, a positive-qty manual edit, a premade bouquet with active lines, and an aggregate linked to one `New` + one `Cancelled` order (Phase 1 filter regression). Every stock row has `type_name` set (post-#292 state).
+- **NEW lab API test** `lab/tests/api/migrate-stock-y-model.test.js` — 9 tests covering pre-condition, all 5 phases, idempotency, and the Phase 1 filter. Self-bootstraps the template in `beforeAll` and restores `baseline` in `afterAll`, so it slots cleanly into the existing CI `lab-api` job.
+- **Schema-aware seed:** `lab/helpers/seed.js` now inserts `premade_bouquets` + `premade_bouquet_lines` (FK-safe order).
+
+### Notes
+- **NOT in scope this PR:** prod cutover, `STOCK_Y_MODEL=true` flag flip (both #291), Variety attribute backfill UI (#292).
+- **Cutover order reminder:** #284 (schema/flag) → #292 (Owner attribute backfill) → #285/#286/#287/#288/#289 (Y-model code paths) → #290 (this script, run with `APPROVE=yes`) → #291 (flag flip + retire flag-off branches).
+- **Operator note:** the Phase 1 active-order filter means the magnitude of the resulting dated DEs may be smaller than the aggregate's pre-migration `current_quantity` if any linked orders were cancelled-with-return or already delivered. The aggregate is deleted, so the residual is dropped intentionally — dated DEs represent **future** unfulfilled demand only.
+
+---
+
 ## 2026-05-10 — Stock Y-model: backend gap closures (#287/#288/#289 follow-up)
 
 ### Backend
