@@ -14,7 +14,7 @@
 
 import { pickAllowed } from '../utils/fields.js';
 import { db } from '../db/index.js';
-import { stock } from '../db/schema.js';
+import { stock, orderLines } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { and, eq, ilike, isNull, inArray, gt, sql } from 'drizzle-orm';
 
@@ -28,6 +28,174 @@ export function computeDemandDate(order) {
   if (order?.requiredBy) return order.requiredBy;
   if (order?.orderDate)  return order.orderDate;
   return new Date().toISOString().split('T')[0];
+}
+
+/**
+ * Get or create a Demand Entry for (varietyKey, date).
+ * Must be called inside an outer db.transaction — `tx` is required.
+ *
+ * @param {{ typeName: string, colour?: string|null, sizeCm?: number|null, cultivar?: string|null }} varietyKey
+ * @param {string} date - YYYY-MM-DD
+ * @param {number} qty  - positive number; stored as negative (demand is negative qty)
+ * @param {object} tx   - Drizzle transaction handle
+ * @param {object} [actor]
+ * @returns {Promise<object>} pgToResponse(row)
+ */
+export async function getOrCreateDemandEntry(varietyKey, date, qty, tx, actor = { actorRole: 'system', actorPinLabel: null }) {
+  const { typeName, colour = null, sizeCm = null, cultivar = null } = varietyKey ?? {};
+
+  if (!typeName) {
+    throw Object.assign(new Error('typeName is required for Demand Entry'), { statusCode: 400 });
+  }
+  if (!date) {
+    throw Object.assign(new Error('date is required for Demand Entry'), { statusCode: 400 });
+  }
+
+  // Build the display name per ADR-0006:
+  // "<Type> <Colour> <Size>cm <Cultivar?> (<Date>)"
+  const parts = [typeName];
+  if (colour)   parts.push(colour);
+  if (sizeCm)   parts.push(`${sizeCm}cm`);
+  if (cultivar) parts.push(cultivar);
+  parts.push(`(${date})`);
+  const displayName = parts.join(' ');
+
+  // NULL-aware equality for the WHERE clause.
+  // Drizzle's eq() uses = which is false for NULLs; isNull() needed for optional attrs.
+  const varietyWhere = and(
+    eq(stock.typeName, typeName),
+    colour   ? eq(stock.colour, colour)     : isNull(stock.colour),
+    sizeCm   ? eq(stock.sizeCm, sizeCm)     : isNull(stock.sizeCm),
+    cultivar ? eq(stock.cultivar, cultivar) : isNull(stock.cultivar),
+    eq(stock.date, date),
+    sql`${stock.currentQuantity} < 0`,
+    isNull(stock.deletedAt),
+  );
+
+  // Check for existing DE.
+  // Note: SELECT FOR UPDATE is NOT used here — pglite doesn't support it.
+  // Concurrency safety comes from the partial unique index (violating it on
+  // a concurrent INSERT triggers a conflict). Production PG row-level locks on
+  // the UPDATE statement provide sufficient isolation for the sum-on-reuse path.
+  const [existing] = await tx.select().from(stock).where(varietyWhere).limit(1);
+
+  if (existing) {
+    // Sum qty: deepen the existing Demand Entry.
+    const [after] = await tx.update(stock)
+      .set({
+        currentQuantity: sql`${stock.currentQuantity} - ${qty}`,
+        displayName,
+        updatedAt: new Date(),
+      })
+      .where(eq(stock.id, existing.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'stock', entityId: after.id, action: 'update',
+      before: { 'Current Quantity': existing.currentQuantity },
+      after:  { 'Current Quantity': after.currentQuantity },
+      ...actor,
+    });
+    return pgToResponse(after);
+  }
+
+  // Create new Demand Entry.
+  const [row] = await tx.insert(stock).values({
+    displayName,
+    currentQuantity: -qty,
+    active:   true,
+    typeName,
+    colour:   colour   ?? null,
+    sizeCm:   sizeCm   ?? null,
+    cultivar: cultivar ?? null,
+    date,
+  }).returning();
+  await tryAudit(tx, {
+    entityType: 'stock', entityId: row.id, action: 'create',
+    before: null, after: pgToResponse(row), ...actor,
+  });
+  return pgToResponse(row);
+}
+
+/**
+ * Cascade a Required By change to the linked Demand Entry's date column.
+ *
+ * Sole-owner path: update date in place. order_line FK unchanged.
+ * Shared path: create/deepen a new DE for newDate, point order_line at it,
+ *   decrement old DE qty by the line's quantity (split the demand).
+ *
+ * @param {string} orderLineId - UUID of the order_line row
+ * @param {string} newDate     - new YYYY-MM-DD date
+ * @param {object} tx          - Drizzle transaction handle (required)
+ * @param {object} [actor]
+ * @returns {Promise<{ demandEntryId: string, action: 'updated-in-place' | 'split' } | null>}
+ */
+export async function updateDemandEntryDate(orderLineId, newDate, tx, actor = { actorRole: 'system', actorPinLabel: null }) {
+  // 1. Fetch the order_line to find stockItemId + qty
+  const [line] = await tx.select().from(orderLines)
+    .where(and(eq(orderLines.id, orderLineId), isNull(orderLines.deletedAt)))
+    .limit(1);
+  if (!line) {
+    throw Object.assign(new Error(`order_line not found: ${orderLineId}`), { statusCode: 404 });
+  }
+
+  const deId = line.stockItemId;
+  if (!deId) return null; // no linked DE (stock-deferred or orphan line)
+
+  // 2. Fetch the linked stock row — must be a Demand Entry (qty < 0)
+  const [de] = await tx.select().from(stock)
+    .where(and(eq(stock.id, deId), isNull(stock.deletedAt), sql`${stock.currentQuantity} < 0`))
+    .limit(1);
+  if (!de) return null; // linked stock is a Batch (qty >= 0), not a DE — nothing to cascade
+
+  // 3. Count other order_lines pointing at the same DE
+  const sharingLines = await tx.select({ id: orderLines.id }).from(orderLines)
+    .where(and(
+      eq(orderLines.stockItemId, deId),
+      sql`${orderLines.id}::text != ${orderLineId}`,
+      isNull(orderLines.deletedAt),
+    ));
+
+  if (sharingLines.length === 0) {
+    // Sole owner — update date in place
+    const [after] = await tx.update(stock)
+      .set({ date: newDate, updatedAt: new Date() })
+      .where(eq(stock.id, de.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'stock', entityId: after.id, action: 'update',
+      before: { date: de.date }, after: { date: after.date }, ...actor,
+    });
+    return { demandEntryId: after.id, action: 'updated-in-place' };
+  }
+
+  // Shared — split: create/deepen DE for newDate, move this line's demand
+  const lineQty = Math.abs(Number(line.quantity) || 0);
+  const varietyKey = {
+    typeName: de.typeName,
+    colour:   de.colour,
+    sizeCm:   de.sizeCm,
+    cultivar: de.cultivar,
+  };
+  const newDe = await getOrCreateDemandEntry(varietyKey, newDate, lineQty, tx, actor);
+
+  // Decrement old DE by lineQty (return its share back toward zero)
+  const [oldAfter] = await tx.update(stock)
+    .set({ currentQuantity: sql`${stock.currentQuantity} + ${lineQty}`, updatedAt: new Date() })
+    .where(eq(stock.id, de.id))
+    .returning();
+  await tryAudit(tx, {
+    entityType: 'stock', entityId: oldAfter.id, action: 'update',
+    before: { 'Current Quantity': de.currentQuantity },
+    after:  { 'Current Quantity': oldAfter.currentQuantity },
+    ...actor,
+  });
+
+  // Update order_line to point at new DE (stockItemId is text in schema)
+  await tx.update(orderLines)
+    .set({ stockItemId: newDe._pgId, updatedAt: new Date() })
+    .where(eq(orderLines.id, orderLineId));
+
+  return { demandEntryId: newDe._pgId, action: 'split' };
 }
 
 // ── Backend mode stub ──
