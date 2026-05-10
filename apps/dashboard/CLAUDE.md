@@ -11,7 +11,7 @@ The owner needs two things: (1) daily operational control — same visibility as
 | Today | DayToDayTab.jsx | Kanban board of today's orders, pending deliveries, low stock alerts, unpaid orders. Cross-tab navigation to drill into details. |
 | Orders | OrdersTab.jsx | Full order list with filters (status, date, source, payment). Opens OrderDetailPanel for inline editing. |
 | New Order | NewOrderTab.jsx | 4-step order creation wizard (same steps as florist: Customer → Bouquet → Details → Review). |
-| Stock | StockTab.jsx | Inventory management with optimistic qty adjustments, write-off, visibility toggles, stock receive form. Uses `getEffectiveStock` from shared. |
+| Stock | StockTab.jsx | Inventory management with optimistic qty adjustments, write-off, visibility toggles, stock receive form. Uses `getEffectiveStock` from shared. Y-model collapsed Variety list under `STOCK_Y_MODEL` (TypeGroupHeader + VarietyListItem + BatchTracePanel inline from shared); legacy flat list when flag off. |
 | Customers | CustomersTab.jsx | CRM — customer list with segmentation (RFM scoring), detail panel with order history, editable fields. |
 | Financial | FinancialTab.jsx | Recharts-powered analytics: revenue, margins, top products, waste, source ROI, supplier scorecard. Lazy-loaded. |
 | Products | ProductsTab.jsx | Wix product sync — pull/push products, manage categories (permanent/seasonal/auto), translations. |

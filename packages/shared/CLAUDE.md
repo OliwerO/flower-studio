@@ -23,6 +23,11 @@ components/
   FilterBar.jsx               → Search + filter chips composite
   BatchPickerModal.jsx        → Disambiguation modal shown when a flower variety has multiple Stock Items (Batches + Demand Entry). Used by BouquetEditor (florist) and BouquetSection (dashboard). Receives `t` prop for bilingual strings. DEPRECATED — see #288
   VarietyAllocationPicker.jsx → Hybrid two-stage Variety picker — Stage 1 typeahead, Stage 2 engine options, Owner-only "+ Create new Variety". Behind `STOCK_Y_MODEL` in BouquetEditor / BouquetSection / Step2Bouquet (florist + dashboard)
+  TypeGroupHeader.jsx         → Sticky collapsible Type header for the Y-model stock list. Renders Type label, aggregate bucket totals, and expand/collapse chevron.
+  VarietyListItem.jsx         → Variety row with 4-bucket header (onHand / planned / reserved / net), expand-to-Stock-Items, tap-on-reserved → premade list, tap-on-Batch → trace. Consumed by StockPanelPage (florist) and StockTab (dashboard) under `STOCK_Y_MODEL`.
+  BatchTracePanel.jsx         → Inline per-Batch usage trace panel (florist uses this via BatchTraceModal; dashboard renders it directly as an inline panel).
+  BatchTraceModal.jsx         → Modal wrapper around BatchTracePanel. Used by the florist app where trace opens over a sheet.
+  WriteOffBatchPicker.jsx     → Batch-targeted write-off form. Excludes Demand Entries; defaults to oldest Batch by date. Behind `STOCK_Y_MODEL`.
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
