@@ -45,7 +45,14 @@ function typeBadgeClass(type) {
 
 function trailDetail(entry) {
   switch (entry.type) {
-    case 'order':    return entry.customer ?? null;
+    case 'order': {
+      // Show the human-readable order id alongside the customer so the operator
+      // can match the row back to the order list ("Order #202605-00013 — Hayley Abbott").
+      const oid = entry.orderId ?? null;
+      const customer = entry.customer ?? null;
+      if (oid && customer) return `${oid} — ${customer}`;
+      return oid ?? customer ?? null;
+    }
     case 'writeoff': return entry.reason ?? null;
     case 'purchase': return entry.supplier ?? null;
     case 'premade':  return entry.bouquetName ?? null;

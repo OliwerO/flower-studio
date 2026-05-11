@@ -477,20 +477,11 @@ export default function StockPanelPage() {
                           hideType={true}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
-                          onBatchClick={(stockId) => setTraceStockId(stockId)}
+                          onRowClick={(stockId) => setTraceStockId(stockId)}
+                          onWriteOff={(v) => setWriteOffVariety(v)}
                           premadesByStockId={premadesByStockId}
                           t={t}
                         />
-                        {/* Write-off button per variety row (below the variety item) */}
-                        <div className="px-4 pb-2 flex justify-end">
-                          <button
-                            type="button"
-                            onClick={() => setWriteOffVariety(group)}
-                            className="text-[11px] text-ios-red font-medium px-2.5 py-1 rounded-full bg-red-50 active:bg-red-100 active-scale"
-                          >
-                            🗑 {t.writeOff}
-                          </button>
-                        </div>
                         {/* Write-off picker inline when this variety is selected */}
                         {writeOffVariety?.key === group.key && (
                           <div className="px-4 pb-3">

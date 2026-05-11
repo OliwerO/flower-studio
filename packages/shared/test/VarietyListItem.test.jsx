@@ -11,10 +11,12 @@ const variety = {
 };
 
 describe('VarietyListItem header', () => {
-  it('renders Variety display (drops Type since under TypeGroupHeader): "Pink 60cm"', () => {
+  it('renders identity attrs stacked vertically (drops Type under TypeGroupHeader)', () => {
     render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
       hideType={true} expanded={false} onToggle={() => {}} />);
-    expect(screen.getByText(/Pink 60cm/)).toBeInTheDocument();
+    // Colour and Size live on separate lines now — each scannable independently.
+    expect(screen.getByText('Pink')).toBeInTheDocument();
+    expect(screen.getByText('60cm')).toBeInTheDocument();
     expect(screen.queryByText('Rose')).not.toBeInTheDocument();
   });
 
@@ -81,22 +83,33 @@ describe('VarietyListItem expansion', () => {
     expect(kinds.filter(k => k === 'demand')).toHaveLength(1);
   });
 
-  it('clicking a Batch row fires onBatchClick(stockItemId)', () => {
+  it('clicking a Batch row fires onRowClick(stockItemId)', () => {
+    const onRowClick = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} />);
+    const batches = screen.getAllByTestId('stock-item-row').filter(r => r.getAttribute('data-row-kind') === 'batch');
+    fireEvent.click(batches[0]);
+    expect(onRowClick).toHaveBeenCalledWith('b1');
+  });
+
+  it('clicking a Demand Entry row also fires onRowClick (both kinds open the same trace)', () => {
+    // Both Batches AND DEs are clickable in the redesign — /stock/:id/usage
+    // surfaces the trail for either kind (linked orders for DEs).
+    const onRowClick = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} />);
+    const demand = screen.getAllByTestId('stock-item-row').find(r => r.getAttribute('data-row-kind') === 'demand');
+    fireEvent.click(demand);
+    expect(onRowClick).toHaveBeenCalledWith('d1');
+  });
+
+  it('still honours legacy onBatchClick prop name (back-compat)', () => {
     const onBatchClick = vi.fn();
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} onBatchClick={onBatchClick} />);
     const batches = screen.getAllByTestId('stock-item-row').filter(r => r.getAttribute('data-row-kind') === 'batch');
     fireEvent.click(batches[0]);
     expect(onBatchClick).toHaveBeenCalledWith('b1');
-  });
-
-  it('clicking a Demand Entry row does NOT fire onBatchClick', () => {
-    const onBatchClick = vi.fn();
-    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
-      hideType={true} expanded={true} onToggle={() => {}} onBatchClick={onBatchClick} />);
-    const demand = screen.getAllByTestId('stock-item-row').find(r => r.getAttribute('data-row-kind') === 'demand');
-    fireEvent.click(demand);
-    expect(onBatchClick).not.toHaveBeenCalled();
   });
 });
 
