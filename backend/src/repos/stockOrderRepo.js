@@ -169,6 +169,11 @@ export function lineToWire(row) {
     'Quantity Accepted':   row.quantityAccepted,
     'Write Off Qty':       row.writeOffQty,
     'Eval Status':         row.evalStatus,
+    // Y-model Variety identity for new-Variety lines (issue #304)
+    Type:                  row.typeName ?? null,
+    Colour:                row.colour   ?? null,
+    Size:                  row.sizeCm   ?? null,
+    Cultivar:              row.cultivar ?? null,
   };
 }
 
@@ -192,6 +197,15 @@ function lineToPg(fields) {
   if ('Quantity Accepted' in fields)   out.quantityAccepted         = Number(fields['Quantity Accepted']) || 0;
   if ('Write Off Qty' in fields)       out.writeOffQty              = Number(fields['Write Off Qty']) || 0;
   if ('Eval Status' in fields)         out.evalStatus               = fields['Eval Status'] || '';
+  // Y-model Variety identity (issue #304). Empty string normalised to NULL
+  // so the join in evaluation can NULL-AWARE match other Stock Items.
+  if ('Type' in fields)     out.typeName = fields.Type     ? String(fields.Type).trim()     || null : null;
+  if ('Colour' in fields)   out.colour   = fields.Colour   ? String(fields.Colour).trim()   || null : null;
+  if ('Size' in fields) {
+    const n = Number(fields.Size);
+    out.sizeCm = Number.isFinite(n) && n > 0 ? n : null;
+  }
+  if ('Cultivar' in fields) out.cultivar = fields.Cultivar ? String(fields.Cultivar).trim() || null : null;
   if ('Stock Item' in fields) {
     const raw = Array.isArray(fields['Stock Item']) ? fields['Stock Item'][0] : null;
     out.stockId = null;

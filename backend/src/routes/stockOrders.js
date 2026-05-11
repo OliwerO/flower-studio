@@ -268,6 +268,8 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       'Alt Flower Name', 'Cost Price', 'Sell Price', 'Alt Cost',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
       'Flower Name', 'Supplier', 'Lot Size', 'Farmer',
+      // Y-model Variety identity for new-Variety lines (issue #304)
+      'Type', 'Colour', 'Size', 'Cultivar',
     ];
     const fields = {};
     for (const key of allowed) {
@@ -316,17 +318,26 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
       return res.status(400).json({ error: `Cannot add lines to a "${po.Status}" PO.` });
     }
-    const { stockItemId: rawStockItemId, flowerName, quantity, supplier, costPrice, sellPrice, lotSize } = req.body;
+    const {
+      stockItemId: rawStockItemId, flowerName, quantity, supplier,
+      costPrice, sellPrice, lotSize,
+      type, colour, size, cultivar,
+    } = req.body;
     // Identity rule (root CLAUDE.md known-pitfall #6): every PO line must have
     // either a Stock Item link or a Flower Name *by the time the PO is sent*.
     // For Draft, allow a blank line so the owner can tap "+ Add line" and edit
     // the row inline (matches the wizard flow). The /send endpoint enforces
     // the rule on Draft→Sent so blank rows can never reach the driver.
-    if (!rawStockItemId && !flowerName?.trim() && po.Status !== PO_STATUS.DRAFT) {
+    if (!rawStockItemId && !flowerName?.trim() && !type?.trim() && po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: 'PO line must have a stock item or flower name.' });
     }
+    // Y-model new-Variety lines (issue #304) skip the legacy auto-resolve so
+    // we don't pre-create a Stock Item with a free-text display name and no
+    // Variety attrs. The line carries Type/Colour/Size/Cultivar; evaluation
+    // resolves to a Stock Item with full Y-model identity at receive time.
+    const hasNewVarietyIntent = !!(type && type.trim());
     let resolvedStockItemId = rawStockItemId || null;
-    if (!resolvedStockItemId && flowerName) {
+    if (!resolvedStockItemId && flowerName && !hasNewVarietyIntent) {
       try {
         resolvedStockItemId = await resolveOrCreateStockItem(flowerName, { costPrice, sellPrice, supplier });
       } catch (err) {
@@ -343,6 +354,12 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
       'Sell Price':      Number(sellPrice) || 0,
       'Lot Size':        Number(lotSize) || 0,
       'Driver Status':   PO_LINE_STATUS.PENDING,
+      ...(hasNewVarietyIntent ? {
+        Type:     type,
+        Colour:   colour ?? null,
+        Size:     size ?? null,
+        Cultivar: cultivar ?? null,
+      } : {}),
     });
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: line.id });
     res.json(line);

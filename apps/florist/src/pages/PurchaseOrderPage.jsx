@@ -780,9 +780,19 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   const [flowerName, setFlowerName] = useState(line['Flower Name'] || '');
   useEffect(() => { setFlowerName(line['Flower Name'] || ''); }, [line['Flower Name']]);
 
+  // Y-model Variety identity for new-Variety lines (issue #304). Visible only
+  // when no Stock Item is linked. Local state mirrors line fields so we don't
+  // PATCH on every keystroke.
+  const [vType,     setVType]     = useState(line.Type     || '');
+  const [vColour,   setVColour]   = useState(line.Colour   || '');
+  const [vSize,     setVSize]     = useState(line.Size != null ? String(line.Size) : '');
+  const [vCultivar, setVCultivar] = useState(line.Cultivar || '');
+
   const cost = Number(costPrice) || 0;
   const sell = Number(sellPrice) || 0;
   const computedMarkup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
+  const totalStems = lotSize > 1 ? qty * lotSize : qty;
+  const totalLineCost = totalStems * cost;
 
   function handleStockSelect(item) {
     const itemCost = Number(item['Current Cost Price']) || 0;
@@ -817,11 +827,11 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     setSellPriceManual(true);
   }
 
-  // A line lacks identity if neither flower name nor stock item is set.
-  // /send refuses Draft→Sent while any such line exists; surface that state
-  // visually with an amber ring + hint so the owner sees what's missing.
+  // A line lacks identity if no Stock Item, no Flower Name, AND no new-Variety
+  // Type. /send refuses Draft→Sent while any such line exists; surface that
+  // state visually with an amber ring + hint so the owner sees what's missing.
   const stockItemLinked = Array.isArray(line['Stock Item']) && line['Stock Item'].length > 0;
-  const isBlank = !flowerName.trim() && !stockItemLinked;
+  const isBlank = !flowerName.trim() && !stockItemLinked && !vType.trim();
 
   return (
     <div className={`rounded-2xl border shadow-sm px-3.5 py-3 space-y-3 ${
@@ -910,6 +920,46 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
           onBlur={() => onUpdate(line.id, { Notes: notes })}
           className="field-input flex-1 text-sm py-1" placeholder={t.po?.notes || 'Notes'} />
       </div>
+
+      {/* Variety identity row — only when no Stock Item link (Y-model, #304) */}
+      {!stockItemLinked && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
+            {t.po?.newVariety ?? 'New variety'}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="text" value={vType}
+              onChange={e => setVType(e.target.value)}
+              onBlur={() => onUpdate(line.id, { Type: vType.trim() })}
+              className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
+            <input type="text" value={vColour}
+              onChange={e => setVColour(e.target.value)}
+              onBlur={() => onUpdate(line.id, { Colour: vColour.trim() })}
+              className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
+            <input type="number" value={vSize}
+              onChange={e => setVSize(e.target.value)}
+              onBlur={() => onUpdate(line.id, { Size: vSize ? Number(vSize) : null })}
+              className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
+            <input type="text" value={vCultivar}
+              onChange={e => setVCultivar(e.target.value)}
+              onBlur={() => onUpdate(line.id, { Cultivar: vCultivar.trim() })}
+              className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
+          </div>
+        </div>
+      )}
+
+      {/* Clearly-labeled per-line total (image #15 feedback) */}
+      {totalLineCost > 0 && (
+        <div className="flex items-center justify-end gap-2 pt-1 border-t border-gray-100 text-sm">
+          <span className="text-[11px] uppercase tracking-wide text-ios-tertiary">
+            {t.po?.totalLineCost ?? t.totalCost ?? 'Total cost'}
+          </span>
+          <span className="font-semibold tabular-nums text-ios-label">
+            {totalLineCost.toFixed(2)} {t.zl ?? 'zł'}
+          </span>
+        </div>
+      )}
+
       {isBlank && (
         <p className="text-[11px] text-amber-700">
           {t.po?.blankLineHint || 'Pick a flower or type a name before sending the PO.'}
