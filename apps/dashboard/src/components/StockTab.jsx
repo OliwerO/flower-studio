@@ -789,7 +789,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           hideType={true}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
-                          onBatchClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+                          onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+                          onWriteOff={(v) => setWriteOffVariety(v)}
                           premadesByStockId={premadesByStockId}
                           t={t}
                         />
@@ -815,16 +816,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                             )}
                           </div>
                         )}
-                        {/* Write-off button per variety row */}
-                        <div className="px-4 pb-2 flex justify-end border-b border-gray-100">
-                          <button
-                            type="button"
-                            onClick={() => setWriteOffVariety(group)}
-                            className="text-[11px] text-ios-red font-medium px-2.5 py-1 rounded-full bg-red-50 hover:bg-red-100"
-                          >
-                            {t.writeOff}
-                          </button>
-                        </div>
                       </div>
                     ))}
                   </div>
