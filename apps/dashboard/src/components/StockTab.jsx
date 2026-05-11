@@ -11,6 +11,8 @@ import {
   useStockYModelFlag,
   TypeGroupHeader,
   VarietyListItem,
+  ShortfallSummary,
+  BatchArrivalList,
   BatchTracePanel,
   WriteOffBatchPicker,
 } from '@flower-studio/shared';
@@ -52,6 +54,13 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   // Y-model UI state
   const [expandedKey, setExpandedKey]       = useState(null);   // which Variety row is expanded
   const [collapsedTypes, setCollapsedTypes] = useState(new Set()); // collapsed Type group keys
+  const [viewMode, setViewMode] = useState(
+    () => localStorage.getItem('blossom-stock-view') || 'batch',
+  );
+  function setStockViewMode(v) {
+    setViewMode(v);
+    localStorage.setItem('blossom-stock-view', v);
+  }
   const [traceStockId, setTraceStockId]     = useState(null);   // inline trace: stock item id
   const [traceTrail, setTraceTrail]         = useState(null);
   const [traceLoading, setTraceLoading]     = useState(false);
@@ -355,16 +364,31 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     return map;
   }, [groups]);
 
-  // ── Y-model: filter groups by hideZero toggle ──
+  // ── Y-model: filter groups by search + hideZero ──
   const filteredGroups = useMemo(() => {
     if (!stockYModelEnabled) return [];
-    if (!hideZero) return groups;
-    return groups.filter(g => {
-      const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
-      if (totalQty !== 0) return true;
-      return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
-    });
-  }, [groups, hideZero, stockYModelEnabled, reservationsMap]);
+    let list = groups;
+    const q = (search || '').trim().toLowerCase();
+    if (q) {
+      list = list.filter(g => {
+        const ident = [g.type_name, g.colour, g.size_cm != null ? `${g.size_cm}cm` : null, g.cultivar]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (ident.includes(q)) return true;
+        return (g.rows || []).some(r =>
+          ((r['Display Name'] || r.display_name || '') + ' ' + (r.Supplier || r.supplier || ''))
+            .toLowerCase().includes(q)
+        );
+      });
+    }
+    if (hideZero) {
+      list = list.filter(g => {
+        const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+        if (totalQty !== 0) return true;
+        return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
+      });
+    }
+    return list;
+  }, [groups, hideZero, stockYModelEnabled, reservationsMap, search]);
 
   // ── Y-model: batch trace fetch triggered by traceStockId ──
   useEffect(() => {
@@ -757,6 +781,48 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
           {filteredGroups.length === 0 ? (
             <p className="text-center text-sm text-ios-tertiary py-12">{t.noStockFound || 'No items found'}</p>
           ) : (
+            <>
+            <ShortfallSummary
+              groups={filteredGroups}
+              reservations={reservationsMap}
+              t={t}
+              onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
+              fetchUsage={async (stockId) => {
+                const res = await client.get(`/stock/${stockId}/usage`);
+                return res.data?.trail || [];
+              }}
+            />
+            {/* View toggle: Variety / Batch */}
+            <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
+              <button
+                type="button"
+                data-testid="view-variety"
+                onClick={() => setStockViewMode('variety')}
+                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                  viewMode === 'variety' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                {t.viewVariety || 'By Variety'}
+              </button>
+              <button
+                type="button"
+                data-testid="view-batch"
+                onClick={() => setStockViewMode('batch')}
+                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                  viewMode === 'batch' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                {t.viewBatch || 'By Batch'}
+              </button>
+            </div>
+            {viewMode === 'batch' ? (
+              <BatchArrivalList
+                groups={filteredGroups}
+                reservations={reservationsMap}
+                t={t}
+                onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+              />
+            ) : (
             <div className="glass-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
                 const visibleRows = hideZero
@@ -822,6 +888,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 );
               })}
             </div>
+            )}
+            </>
           )}
           {/* Write-off picker modal (small form — modal is fine per spec) */}
           {writeOffVariety && (
