@@ -984,7 +984,15 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
       colour:             g.colour,
       size_cm:            g.size_cm,
       cultivar:           g.cultivar,
-      rows:               g._rows.map(pgToResponse),
+      // Each row carries legacy display-case fields (pgToResponse) PLUS the
+      // Y-model snake-case fields that VarietyListItem + getVarietyTotals
+      // consume (`current_quantity`, `date`). Without these, the totals
+      // collapse to 0 and the per-Batch label renders "NaN stems".
+      rows: g._rows.map(r => ({
+        ...pgToResponse(r),
+        current_quantity: r.currentQuantity ?? 0,
+        date:             r.date ?? null,
+      })),
       reservedForPremades,
     });
   }
