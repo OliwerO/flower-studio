@@ -12,6 +12,7 @@ import {
   TypeGroupHeader,
   VarietyListItem,
   ShortfallSummary,
+  BatchArrivalList,
   BatchTracePanel,
   WriteOffBatchPicker,
 } from '@flower-studio/shared';
@@ -53,6 +54,13 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   // Y-model UI state
   const [expandedKey, setExpandedKey]       = useState(null);   // which Variety row is expanded
   const [collapsedTypes, setCollapsedTypes] = useState(new Set()); // collapsed Type group keys
+  const [viewMode, setViewMode] = useState(
+    () => localStorage.getItem('blossom-stock-view') || 'variety',
+  );
+  function setStockViewMode(v) {
+    setViewMode(v);
+    localStorage.setItem('blossom-stock-view', v);
+  }
   const [traceStockId, setTraceStockId]     = useState(null);   // inline trace: stock item id
   const [traceTrail, setTraceTrail]         = useState(null);
   const [traceLoading, setTraceLoading]     = useState(false);
@@ -765,6 +773,36 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               t={t}
               onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
             />
+            {/* View toggle: Variety / Batch */}
+            <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
+              <button
+                type="button"
+                data-testid="view-variety"
+                onClick={() => setStockViewMode('variety')}
+                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                  viewMode === 'variety' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                {t.viewVariety || 'By Variety'}
+              </button>
+              <button
+                type="button"
+                data-testid="view-batch"
+                onClick={() => setStockViewMode('batch')}
+                className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
+                  viewMode === 'batch' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
+                }`}
+              >
+                {t.viewBatch || 'By Batch'}
+              </button>
+            </div>
+            {viewMode === 'batch' ? (
+              <BatchArrivalList
+                groups={filteredGroups}
+                t={t}
+                onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+              />
+            ) : (
             <div className="glass-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
                 const visibleRows = hideZero
@@ -830,6 +868,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 );
               })}
             </div>
+            )}
             </>
           )}
           {/* Write-off picker modal (small form — modal is fine per spec) */}
