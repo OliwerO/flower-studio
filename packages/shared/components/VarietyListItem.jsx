@@ -1,37 +1,28 @@
 /**
  * VarietyListItem — collapsible row for a single Variety in the Y-model Stock list.
  *
- * Layout (left → right):
- *   - Identity column: Colour / Size / Cultivar stacked vertically (lines omitted
- *     when null) so each attribute is scannable independently.
- *   - 4-bucket numeric grid: On hand / Planned / Reserved / Net.
- *   - Inline write-off button (when `onWriteOff` provided).
+ * Glance-test design (owner runs flower shop under live-or-death pressure):
  *
- * Expanding the row reveals each Batch and Demand-Entry sub-row, each tagged with
- * a kind badge. Both row kinds are clickable and call `onRowClick(stockId)` so the
- * host can open BatchTraceModal — the same /stock/:id/usage endpoint surfaces the
- * trail of orders / writeoffs / purchases for Batches AND linked orders for DEs.
+ *   ┌─────────────────────────────────────────────────────────────────────┐
+ *   │ ▌ Pink  60cm  Sarah Bernhardt                            ✓ 12   🗑 │
+ *   │ ▌ 33 on hand · 16 orders · 5 reserved                       free   │
+ *   └─────────────────────────────────────────────────────────────────────┘
+ *
+ *   - Left border:  green (free) / amber (tight) / red (short).
+ *   - Net is the primary number — large, coloured, status-iconified.
+ *   - Identity line: Colour bold, Size medium, Cultivar italic light (#308 hierarchy).
+ *   - Bucket chips only render when value > 0; zero-buckets stay in DOM as
+ *     sr-only spans so the data-testid contract is stable.
+ *   - Expand → Batch + Demand breakdown below.
  *
  * Props:
- *   variety     {Object}   — Variety group { key, type_name, colour, size_cm, cultivar, rows[] }.
- *                            Each row must carry { id, current_quantity, date }.
- *   reservations {Map<string,number>} — stock-row id → reserved stem count.
- *   hideType    {boolean}  — when true (under TypeGroupHeader) drop the Type prefix.
- *   expanded    {boolean}  — whether the expansion is visible.
- *   onToggle    {Function} — header click handler.
- *   onRowClick  {Function} — called with stockId when a Batch/Demand row is tapped.
- *                            (Was previously `onBatchClick`; renamed because both
- *                            kinds open the same trace view via /stock/:id/usage.)
- *   onWriteOff  {Function} — called with the variety when the inline write-off
- *                            button is tapped. When omitted, the button is hidden.
- *   premadesByStockId {Map<string,Array>} — id → [{ id, name, qty }, ...]. Reserved
- *                            bucket becomes a button when supplied AND reserved>0.
- *   t           {Object}   — translation strings. Required keys:
- *                              onHand, planned, reserved, net, stems, writeOff,
- *                              batchKind, demandKind.
+ *   variety, reservations, hideType, expanded, onToggle, onRowClick,
+ *   onBatchClick (legacy), onWriteOff, premadesByStockId, t.
  *
- * IMPORTANT: Never inline qty − reserved subtraction here. Always call
- * `getVarietyTotals(variety.rows, reservations)`. Pitfall #8.
+ *   Required translation keys: onHand, planned, reserved, net, stems, writeOff,
+ *     batchKind, demandKind, statusFree, statusShort, statusTight.
+ *
+ * Pitfall #8: never inline qty − reserved subtraction; always use getVarietyTotals.
  */
 import { useState } from 'react';
 import { getVarietyTotals } from '../utils/stockMath.js';
@@ -43,34 +34,38 @@ export default function VarietyListItem({
   expanded = false,
   onToggle,
   onRowClick,
-  onBatchClick, // legacy alias — kept for back-compat with un-migrated callers
+  onBatchClick, // legacy alias
   onWriteOff,
   premadesByStockId,
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
 
-  // Aggregate the 4 buckets — never inline; always go through the helper (pitfall #8).
   const { onHand, planned, reservedForPremades, net } = getVarietyTotals(
     variety.rows,
     reservations,
   );
 
-  // Identity attrs — rendered inline with a typographic hierarchy:
-  //   Type (optional, only when hideType=false) → small uppercase label
-  //   Colour    → primary, bold dark
-  //   Size      → secondary, medium gray, plain weight
-  //   Cultivar  → tertiary, lighter gray, italic
-  // Empties are omitted entirely so a row never shows a stray "—".
-  const showType = !hideType && !!variety.type_name;
+  // Status thresholds: shortfall > tight > free.
+  const isShort = net < 0;
+  const isTight = !isShort && net === 0 && (planned > 0 || reservedForPremades > 0);
+  const borderClass = isShort ? 'border-l-red-400' : isTight ? 'border-l-amber-400' : 'border-l-emerald-400';
+  const statusColour = isShort ? 'text-red-600' : isTight ? 'text-amber-600' : 'text-emerald-600';
+  const statusGlyph = isShort ? '⚠' : isTight ? '○' : '✓';
+  const statusLabel = isShort
+    ? (t.statusShort ?? 'short')
+    : isTight
+      ? (t.statusTight ?? 'tight')
+      : (t.statusFree ?? 'free');
+
+  // Identity attrs.
+  const showType    = !hideType && !!variety.type_name;
   const hasColour   = !!variety.colour;
   const hasSize     = variety.size_cm != null;
   const hasCultivar = !!variety.cultivar;
   const hasAnyIdentity = hasColour || hasSize || hasCultivar || showType;
 
-  const netNegative = net < 0;
-
-  // Reserved-bucket tap: local toggle state for the premade sub-list.
+  // Reserved-bucket interactivity.
   const [premadeOpen, setPremadeOpen] = useState(false);
   const reservedInteractive = reservedForPremades > 0 && !!premadesByStockId;
 
@@ -92,69 +87,72 @@ export default function VarietyListItem({
   return (
     <div className="border-b border-gray-100 last:border-b-0">
       {/* ── Header row ── */}
-      <div
-        role="button"
-        tabIndex={0}
-        data-testid="variety-header"
-        onClick={onToggle}
-        onKeyDown={handleHeaderKey}
-        className="w-full flex items-center px-4 py-2 text-left transition-colors active:bg-gray-50 cursor-pointer gap-3"
-      >
-        {/* Identity column — single-line typographic hierarchy.
-            Colour bold + dark, Size medium, Cultivar lighter + italic.
-            Baseline-aligned so the size badge sits flush with the colour. */}
-        <span className="flex-1 min-w-0 flex items-baseline gap-2 truncate">
-          {showType && (
-            <span className="text-[10px] uppercase tracking-wide text-gray-400 shrink-0">
-              {variety.type_name}
-            </span>
-          )}
-          {hasColour && (
-            <span className="text-sm font-semibold text-gray-900 truncate">
-              {variety.colour}
-            </span>
-          )}
-          {hasSize && (
-            <span className="text-xs text-gray-600 tabular-nums shrink-0">
-              {variety.size_cm}cm
-            </span>
-          )}
-          {hasCultivar && (
-            <span className="text-xs text-gray-400 italic truncate">
-              {variety.cultivar}
-            </span>
-          )}
-          {!hasAnyIdentity && (
-            <span className="text-sm text-gray-400">—</span>
-          )}
-        </span>
+      <div className={`flex items-stretch border-l-4 ${borderClass}`}>
+        <div
+          role="button"
+          tabIndex={0}
+          data-testid="variety-header"
+          onClick={onToggle}
+          onKeyDown={handleHeaderKey}
+          className="flex-1 min-w-0 px-3 py-2 transition-colors active:bg-gray-50 cursor-pointer"
+        >
+          {/* Identity row */}
+          <div className="flex items-baseline gap-2 truncate">
+            {showType && (
+              <span className="text-[10px] uppercase tracking-wide text-gray-400 shrink-0">
+                {variety.type_name}
+              </span>
+            )}
+            {hasColour && (
+              <span className="text-sm font-semibold text-gray-900 truncate">
+                {variety.colour}
+              </span>
+            )}
+            {hasSize && (
+              <span className="text-xs text-gray-600 tabular-nums shrink-0">
+                {variety.size_cm}cm
+              </span>
+            )}
+            {hasCultivar && (
+              <span className="text-xs text-gray-400 italic truncate">
+                {variety.cultivar}
+              </span>
+            )}
+            {!hasAnyIdentity && (
+              <span className="text-sm text-gray-400">—</span>
+            )}
+          </div>
 
-        {/* 4-bucket numeric grid */}
-        <span className="grid grid-cols-4 gap-x-3 text-right shrink-0">
-          <Bucket testid="bucket-onHand"   value={onHand}              label={t.onHand} />
-          <Bucket testid="bucket-planned"  value={planned}             label={t.planned} />
-          <Bucket
-            testid="bucket-reserved"
-            value={reservedForPremades}
-            label={t.reserved}
-            onClick={reservedInteractive ? (e) => { e.stopPropagation(); setPremadeOpen(o => !o); } : null}
-            valueClass={reservedInteractive ? 'text-indigo-600 underline decoration-dotted' : 'text-gray-900'}
-          />
-          <Bucket
-            testid="bucket-net"
-            value={net}
-            label={t.net}
-            valueClass={netNegative ? 'text-red-600' : 'text-gray-900'}
-          />
-        </span>
+          {/* Narrative bucket line. Zero buckets render sr-only so testids stay queryable. */}
+          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            <BucketChip testid="bucket-onHand"   value={onHand}              label={t.onHand}    tone="stock" />
+            <BucketChip testid="bucket-planned"  value={planned}             label={t.planned}   tone="orders" />
+            <BucketChip
+              testid="bucket-reserved"
+              value={reservedForPremades}
+              label={t.reserved}
+              tone="reserved"
+              onClick={reservedInteractive ? (e) => { e.stopPropagation(); setPremadeOpen(o => !o); } : null}
+            />
+          </div>
+        </div>
 
-        {/* Inline write-off button — host opts in via onWriteOff prop */}
+        {/* Net + status — primary signal */}
+        <div className={`flex flex-col items-end justify-center px-3 py-2 leading-none ${statusColour}`}>
+          <div className="flex items-baseline gap-1">
+            <span className="text-base">{statusGlyph}</span>
+            <span data-testid="bucket-net" className="text-lg font-bold tabular-nums">{net}</span>
+          </div>
+          <span className="text-[10px] text-gray-400 mt-0.5">{statusLabel}</span>
+        </div>
+
+        {/* Inline write-off */}
         {onWriteOff && (
           <button
             type="button"
             data-testid="variety-writeoff"
             onClick={(e) => { e.stopPropagation(); onWriteOff(variety); }}
-            className="shrink-0 text-[11px] text-ios-red font-medium px-2 py-1 rounded-full bg-red-50 active:bg-red-100"
+            className="shrink-0 self-center mr-3 text-[11px] text-ios-red font-medium px-2 py-1 rounded-full bg-red-50 active:bg-red-100"
             aria-label={t.writeOff}
           >
             🗑
@@ -162,7 +160,7 @@ export default function VarietyListItem({
         )}
       </div>
 
-      {/* ── Premade sub-list (tap on reserved bucket) ── */}
+      {/* ── Premade sub-list (reserved-bucket tap) ── */}
       {premadeOpen && premadeLines.length > 0 && (
         <ul className="bg-indigo-50 border-t border-indigo-100 pl-4 py-1">
           {premadeLines.map(pm => (
@@ -184,17 +182,15 @@ export default function VarietyListItem({
           {[...variety.rows]
             .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
             .map((row) => {
-              // ADR-0005 negative-qty derivation rule: negative qty → Demand Entry
               const kind = row.current_quantity < 0 ? 'demand' : 'batch';
               const absQty = Math.abs(row.current_quantity);
               const kindLabel = kind === 'batch' ? (t.batchKind ?? 'Batch') : (t.demandKind ?? 'Demand');
               const dateLabel = row.date ?? '—';
 
               const isDemand = kind === 'demand';
-              const baseRow = 'w-full flex items-center justify-between px-6 py-2 text-sm transition-colors active:bg-gray-100';
               const rowClass = isDemand
-                ? `${baseRow} text-red-700 bg-red-50 hover:bg-red-100`
-                : `${baseRow} text-gray-700 hover:bg-gray-100`;
+                ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50 hover:bg-red-100 transition-colors active:bg-red-100'
+                : 'w-full flex items-center justify-between px-6 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors active:bg-gray-100';
 
               return (
                 <li key={row.id}>
@@ -228,18 +224,34 @@ export default function VarietyListItem({
   );
 }
 
-function Bucket({ testid, value, label, onClick, valueClass }) {
-  const cls = `text-sm font-semibold tabular-nums ${valueClass ?? 'text-gray-900'}`;
+function BucketChip({ testid, value, label, tone, onClick }) {
+  if (value === 0) {
+    return <span data-testid={testid} className="sr-only">{value}</span>;
+  }
+  const toneClass = {
+    stock:    'text-gray-700',
+    orders:   'text-amber-700',
+    reserved: 'text-indigo-700',
+  }[tone] ?? 'text-gray-700';
+  const valueClass = `font-semibold tabular-nums ${toneClass}`;
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        data-testid={testid}
+        onClick={onClick}
+        className={`inline-flex items-center underline decoration-dotted ${valueClass}`}
+      >
+        {value}
+        <span className="ml-1 text-gray-400 font-normal">{label}</span>
+      </button>
+    );
+  }
   return (
-    <span className="flex flex-col items-end">
-      {onClick ? (
-        <button type="button" data-testid={testid} onClick={onClick} className={cls}>
-          {value}
-        </button>
-      ) : (
-        <span data-testid={testid} className={cls}>{value}</span>
-      )}
-      <span className="text-[10px] text-gray-400 leading-none">{label}</span>
+    <span data-testid={testid} className={`inline-flex items-center ${valueClass}`}>
+      {value}
+      <span className="ml-1 text-gray-400 font-normal">{label}</span>
     </span>
   );
 }
