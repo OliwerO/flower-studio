@@ -502,6 +502,7 @@ export default function StockPanelPage() {
               {viewMode === 'batch' ? (
                 <BatchArrivalList
                   groups={filteredGroups}
+                  reservations={reservationsMap}
                   t={t}
                   onRowClick={(stockId) => setTraceStockId(stockId)}
                 />

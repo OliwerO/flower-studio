@@ -27,12 +27,12 @@ const COLS = [
   { key: 'supplier',   label: 'supplier',   align: 'left'   },
 ];
 
-export default function BatchArrivalList({ groups, t, onRowClick, today }) {
+export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, today }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [sortKey, setSortKey] = useState('date');
   const [sortDir, setSortDir] = useState('desc');
 
-  const rows = useMemo(() => flatten(groups, today_), [groups, today_]);
+  const rows = useMemo(() => flatten(groups, reservations, today_), [groups, reservations, today_]);
 
   const sortedRows = useMemo(() => {
     const arr = [...rows];
@@ -125,7 +125,12 @@ function BatchRow({ b, t, onRowClick }) {
             ? <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums ${ageCls}`} title={b.date}>{b.tag}</span>
             : <span className="text-gray-300">—</span>}
         </span>
-        <span className="text-right font-semibold tabular-nums text-gray-900">{b.qty}</span>
+        <span className="text-right flex flex-col items-end leading-tight">
+          <span className="font-semibold tabular-nums text-gray-900">{b.qty}</span>
+          {b.reserved > 0 && (
+            <span className="text-[10px] text-indigo-600 tabular-nums">+{b.reserved} {t.reserved ?? 'res'}</span>
+          )}
+        </span>
         <span className="text-right tabular-nums text-gray-700">
           {b.cost != null ? b.cost.toFixed(2) : '—'}
         </span>
@@ -147,7 +152,7 @@ function BatchRow({ b, t, onRowClick }) {
   );
 }
 
-function flatten(groups, today) {
+function flatten(groups, reservations, today) {
   const out = [];
   for (const g of groups ?? []) {
     for (const row of g.rows ?? []) {
@@ -155,7 +160,6 @@ function flatten(groups, today) {
       if (qty >= 0) {
         const date = row.date ?? null;
         const ageDays = date ? Math.round((Date.parse(today) - Date.parse(date)) / 86400000) : null;
-        // Sortable variety key for column sort: stable concat of identity attrs.
         const varietyKey = [g.colour, g.size_cm, g.cultivar].filter(v => v != null).join(' ');
         out.push({
           id:        row.id,
@@ -167,6 +171,7 @@ function flatten(groups, today) {
           cultivar:  g.cultivar ?? null,
           variety:   varietyKey,
           qty,
+          reserved:  reservations.get(row.id) ?? 0,
           cost:      readNum(row, 'Current Cost Price', 'current_cost_price'),
           sell:      readNum(row, 'Current Sell Price', 'current_sell_price'),
           markup:    null,

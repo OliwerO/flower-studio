@@ -818,6 +818,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
             {viewMode === 'batch' ? (
               <BatchArrivalList
                 groups={filteredGroups}
+                reservations={reservationsMap}
                 t={t}
                 onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
               />
