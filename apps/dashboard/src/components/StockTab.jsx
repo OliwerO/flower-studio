@@ -11,6 +11,7 @@ import {
   useStockYModelFlag,
   TypeGroupHeader,
   VarietyListItem,
+  ShortfallSummary,
   BatchTracePanel,
   WriteOffBatchPicker,
 } from '@flower-studio/shared';
@@ -757,6 +758,13 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
           {filteredGroups.length === 0 ? (
             <p className="text-center text-sm text-ios-tertiary py-12">{t.noStockFound || 'No items found'}</p>
           ) : (
+            <>
+            <ShortfallSummary
+              groups={filteredGroups}
+              reservations={reservationsMap}
+              t={t}
+              onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
+            />
             <div className="glass-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
                 const visibleRows = hideZero
@@ -822,6 +830,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 );
               })}
             </div>
+            </>
           )}
           {/* Write-off picker modal (small form — modal is fine per spec) */}
           {writeOffVariety && (

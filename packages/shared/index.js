@@ -81,6 +81,10 @@ export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
 // Variety row with 4-bucket header for Y-model Stock list (issue #289, pitfall #8)
 export { default as VarietyListItem } from './components/VarietyListItem.jsx';
 
+// Date-grouped shortfall summary panel — surfaces all negative-qty Demand Entries
+// above the Variety list so the owner can see when each missing variety is due.
+export { default as ShortfallSummary } from './components/ShortfallSummary.jsx';
+
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
 

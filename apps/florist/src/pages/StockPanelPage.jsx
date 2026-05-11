@@ -6,6 +6,7 @@ import {
   useStockYModelFlag,
   TypeGroupHeader,
   VarietyListItem,
+  ShortfallSummary,
   BatchTraceModal,
   WriteOffBatchPicker,
   LOSS_REASONS,
@@ -441,6 +442,13 @@ export default function StockPanelPage() {
           filteredGroups.length === 0 ? (
             <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
           ) : (
+            <>
+              <ShortfallSummary
+                groups={filteredGroups}
+                reservations={reservationsMap}
+                t={t}
+                onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
+              />
             <div className="ios-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
                 // Only show types that have at least one visible group after filtering
@@ -500,6 +508,7 @@ export default function StockPanelPage() {
                 );
               })}
             </div>
+            </>
           )
         ) : (
           /* ── Legacy flat list ── */
