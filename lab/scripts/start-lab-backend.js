@@ -20,6 +20,7 @@ const LAB_ENV = {
   STOCK_BACKEND:                     'postgres',
   ORDER_BACKEND:                     'postgres',
   TEST_BACKEND:                      'mock-airtable',
+  STOCK_Y_MODEL:                     process.env.STOCK_Y_MODEL ?? 'true',
   PORT:                              process.env.PORT || '3003',
 
   PIN_OWNER:                         '1111',
