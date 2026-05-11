@@ -56,14 +56,17 @@ export default function VarietyListItem({
     reservations,
   );
 
-  // Identity lines, omitting empties. When hideType is false we also expose Type
-  // on its own line — used by hosts that render Varieties outside a TypeGroupHeader.
-  const identityLines = [];
-  if (!hideType && variety.type_name) identityLines.push(variety.type_name);
-  if (variety.colour)                  identityLines.push(variety.colour);
-  if (variety.size_cm != null)         identityLines.push(`${variety.size_cm}cm`);
-  if (variety.cultivar)                identityLines.push(variety.cultivar);
-  if (identityLines.length === 0)      identityLines.push('—');
+  // Identity attrs — rendered inline with a typographic hierarchy:
+  //   Type (optional, only when hideType=false) → small uppercase label
+  //   Colour    → primary, bold dark
+  //   Size      → secondary, medium gray, plain weight
+  //   Cultivar  → tertiary, lighter gray, italic
+  // Empties are omitted entirely so a row never shows a stray "—".
+  const showType = !hideType && !!variety.type_name;
+  const hasColour   = !!variety.colour;
+  const hasSize     = variety.size_cm != null;
+  const hasCultivar = !!variety.cultivar;
+  const hasAnyIdentity = hasColour || hasSize || hasCultivar || showType;
 
   const netNegative = net < 0;
 
@@ -97,16 +100,33 @@ export default function VarietyListItem({
         onKeyDown={handleHeaderKey}
         className="w-full flex items-center px-4 py-2 text-left transition-colors active:bg-gray-50 cursor-pointer gap-3"
       >
-        {/* Identity column — stacked attributes, tight line-height */}
-        <span className="flex-1 min-w-0 flex flex-col leading-tight">
-          {identityLines.map((line, i) => (
-            <span
-              key={i}
-              className={`text-sm truncate ${i === 0 ? 'font-medium text-gray-800' : 'text-gray-500'}`}
-            >
-              {line}
+        {/* Identity column — single-line typographic hierarchy.
+            Colour bold + dark, Size medium, Cultivar lighter + italic.
+            Baseline-aligned so the size badge sits flush with the colour. */}
+        <span className="flex-1 min-w-0 flex items-baseline gap-2 truncate">
+          {showType && (
+            <span className="text-[10px] uppercase tracking-wide text-gray-400 shrink-0">
+              {variety.type_name}
             </span>
-          ))}
+          )}
+          {hasColour && (
+            <span className="text-sm font-semibold text-gray-900 truncate">
+              {variety.colour}
+            </span>
+          )}
+          {hasSize && (
+            <span className="text-xs text-gray-600 tabular-nums shrink-0">
+              {variety.size_cm}cm
+            </span>
+          )}
+          {hasCultivar && (
+            <span className="text-xs text-gray-400 italic truncate">
+              {variety.cultivar}
+            </span>
+          )}
+          {!hasAnyIdentity && (
+            <span className="text-sm text-gray-400">—</span>
+          )}
         </span>
 
         {/* 4-bucket numeric grid */}
