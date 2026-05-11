@@ -154,8 +154,12 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
 
     const createdLines = [];
     for (const line of lines || []) {
+      // Y-model new-Variety intent (#304): when the line carries Type+attrs we
+      // skip the legacy auto-resolve so we don't pre-create a Stock Item with
+      // a free-text display name. Evaluation later creates the Variety properly.
+      const hasNewVarietyIntent = !!(line.type && String(line.type).trim());
       let resolvedStockItemId = line.stockItemId || null;
-      if (!resolvedStockItemId && line.flowerName) {
+      if (!resolvedStockItemId && line.flowerName && !hasNewVarietyIntent) {
         try {
           resolvedStockItemId = await resolveOrCreateStockItem(line.flowerName, {
             costPrice: line.costPrice, sellPrice: line.sellPrice, supplier: line.supplier,
@@ -181,6 +185,12 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
         Supplier:          line.supplier || '',
         'Cost Price':      Number(line.costPrice) || 0,
         'Sell Price':      Number(line.sellPrice) || 0,
+        ...(hasNewVarietyIntent ? {
+          Type:     line.type,
+          Colour:   line.colour ?? null,
+          Size:     line.size ?? null,
+          Cultivar: line.cultivar ?? null,
+        } : {}),
       };
       if (line.farmer) lineFields.Farmer = line.farmer;
       if (line.notes)  lineFields.Notes = line.notes;

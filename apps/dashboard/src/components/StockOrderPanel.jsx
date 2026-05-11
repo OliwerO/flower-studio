@@ -104,7 +104,13 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   }
 
   function emptyLine() {
-    return { stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false, farmer: '', notes: '' };
+    return {
+      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0,
+      supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false,
+      farmer: '', notes: '',
+      // Y-model new-Variety identity (#304) — populated when no stockItemId
+      type: '', colour: '', size: '', cultivar: '',
+    };
   }
 
   function updateFormLine(idx, patch) {
@@ -153,16 +159,22 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
         notes: formNotes,
         driver: formDriver,
         plannedDate: formPlannedDate || null,
-        lines: formLines.filter(l => l.flowerName).map(l => {
+        lines: formLines.filter(l => l.flowerName || l.type).map(l => {
           const ls = Number(l.lotSize) || 0;
           const rawQty = Number(l.quantity) || 1;
           // Quantity field = number of lots; store actual stems
           const quantity = ls > 1 ? rawQty * ls : rawQty;
+          // Auto-compose Flower Name from Variety identity for legacy display.
+          const composedName = l.flowerName?.trim() || [
+            l.type, l.colour, l.size ? `${l.size}cm` : null, l.cultivar,
+          ].filter(Boolean).join(' ');
           return {
             ...l,
+            flowerName: composedName,
             quantity,
             costPrice: Number(l.costPrice) || 0,
             sellPrice: Number(l.sellPrice) || 0,
+            size: l.size ? Number(l.size) : null,
           };
         }),
       });
@@ -493,6 +505,28 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                       />
                     </div>
                   </div>
+                  {/* Variety identity row — only when no Stock Item link (Y-model #304) */}
+                  {!line.stockItemId && (
+                    <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5 mt-2">
+                      <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
+                        {t.newVariety ?? 'New variety'}
+                      </p>
+                      <div className="grid grid-cols-4 gap-2">
+                        <input type="text" value={line.type || ''}
+                          onChange={e => updateFormLine(line._idx, { type: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.varietyType ?? 'Type *'} />
+                        <input type="text" value={line.colour || ''}
+                          onChange={e => updateFormLine(line._idx, { colour: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.varietyColour ?? 'Colour'} />
+                        <input type="number" value={line.size || ''}
+                          onChange={e => updateFormLine(line._idx, { size: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.varietySize ?? 'Size (cm)'} />
+                        <input type="text" value={line.cultivar || ''}
+                          onChange={e => updateFormLine(line._idx, { cultivar: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.varietyCultivar ?? 'Cultivar'} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );})}
             </div>

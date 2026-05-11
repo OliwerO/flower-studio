@@ -72,7 +72,13 @@ export default function PurchaseOrderPage() {
   const negativeStock = stock.filter(s => (Number(s['Current Quantity']) || 0) < 0);
 
   function emptyLine() {
-    return { stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false, farmer: '', notes: '' };
+    return {
+      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0,
+      supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false,
+      farmer: '', notes: '',
+      // Y-model new-Variety identity (#304) — populated when no stockItemId
+      type: '', colour: '', size: '', cultivar: '',
+    };
   }
 
   function startNewPO() {
@@ -151,15 +157,22 @@ export default function PurchaseOrderPage() {
         // would store the raw stem count (e.g. 7) but the cost badge rendered
         // the lot-rounded value (10 stems at `Math.ceil(7/10)*10`), making
         // the persisted-PO total inconsistent with what the owner confirmed.
-        lines: formLines.filter(l => l.flowerName).map(l => {
+        lines: formLines.filter(l => l.flowerName || l.type).map(l => {
           const ls = Number(l.lotSize) || 0;
           const rawQty = Number(l.quantity) || 0;
           const quantity = ls > 1 ? Math.ceil(rawQty / ls) * ls : rawQty;
+          // Auto-compose Flower Name from Variety identity when user typed
+          // Type/Colour/Size/Cultivar rather than picking an existing Stock Item.
+          const composedName = l.flowerName?.trim() || [
+            l.type, l.colour, l.size ? `${l.size}cm` : null, l.cultivar,
+          ].filter(Boolean).join(' ');
           return {
             ...l,
+            flowerName: composedName,
             quantity,
             costPrice: Number(l.costPrice) || 0,
             sellPrice: Number(l.sellPrice) || 0,
+            size: l.size ? Number(l.size) : null,
           };
         }),
       });
@@ -424,6 +437,28 @@ export default function PurchaseOrderPage() {
                       onChange={e => updateFormLine(idx, { notes: e.target.value })}
                       className="field-input flex-1 text-sm" placeholder={t.po?.notes || 'Notes'} />
                   </div>
+                  {/* Variety identity row — only when no Stock Item link (Y-model #304) */}
+                  {!line.stockItemId && (
+                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
+                      <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
+                        {t.po?.newVariety ?? 'New variety'}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input type="text" value={line.type || ''}
+                          onChange={e => updateFormLine(idx, { type: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
+                        <input type="text" value={line.colour || ''}
+                          onChange={e => updateFormLine(idx, { colour: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
+                        <input type="number" value={line.size || ''}
+                          onChange={e => updateFormLine(idx, { size: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
+                        <input type="text" value={line.cultivar || ''}
+                          onChange={e => updateFormLine(idx, { cultivar: e.target.value })}
+                          className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })}
