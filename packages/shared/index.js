@@ -90,6 +90,11 @@ export { default as ShortfallSummary } from './components/ShortfallSummary.jsx';
 // (arrival-centric: "what came in when").
 export { default as BatchArrivalList } from './components/BatchArrivalList.jsx';
 
+// Y-native incoming-arrivals panel — pending PO lines grouped by Variety
+// 4-tuple with per-date pills. Replaces the legacy per-stockId Planned
+// table; matches the Y-model visual language of ShortfallSummary.
+export { default as PendingArrivalsPanel } from './components/PendingArrivalsPanel.jsx';
+
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
 

@@ -566,6 +566,8 @@ const en = {
 
   // Stock visibility overhaul
   pendingArrivals:          'Pending Arrivals',
+  pendingArrivalsVarieties: 'varieties incoming',
+  pendingArrivalsStems:     'stems incoming',
   ordered:                  'Ordered',
   committedToOrders:        'Committed',
   netQty:                   'Net',
@@ -1341,6 +1343,8 @@ const ru = {
 
   // Stock visibility overhaul
   pendingArrivals:          'Ожидаемые поставки',
+  pendingArrivalsVarieties: 'сортов поступит',
+  pendingArrivalsStems:     'стеблей поступит',
   ordered:                  'Заказано',
   committedToOrders:        'Зарезервировано',
   netQty:                   'Остаток',

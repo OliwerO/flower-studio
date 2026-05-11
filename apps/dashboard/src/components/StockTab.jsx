@@ -12,6 +12,7 @@ import {
   TypeGroupHeader,
   VarietyListItem,
   ShortfallSummary,
+  PendingArrivalsPanel,
   BatchArrivalList,
   BatchTracePanel,
   WriteOffBatchPicker,
@@ -91,15 +92,17 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     if (!silent) setLoading(true);
     try {
       if (stockYModelEnabled) {
-        // Y-model: fetch grouped stock + premade reservations in parallel.
-        // No pending-PO, committed, or repair-tools fetch needed for the Y-model path.
-        const [groupedRes, premadeRes, settingsRes] = await Promise.all([
+        // Y-model: fetch grouped stock + premade reservations + pending POs in parallel.
+        // pendingPO feeds the Y-native PendingArrivalsPanel.
+        const [groupedRes, premadeRes, pendingPoRes, settingsRes] = await Promise.all([
           client.get('/stock?grouped=true'),
           client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+          client.get('/stock/pending-po').catch(() => ({ data: {} })),
           cachedGet('/settings').catch(() => ({ data: { config: {} } })),
         ]);
         setGroups(groupedRes.data.groups || []);
         setPremadeMap(premadeRes.data || {});
+        setPendingPO(pendingPoRes.data || {});
         setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
       } else {
         // Legacy flat list
@@ -791,6 +794,14 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 const res = await client.get(`/stock/${stockId}/usage`);
                 return res.data?.trail || [];
               }}
+            />
+            <PendingArrivalsPanel
+              pendingPO={pendingPO}
+              stock={(groups || []).flatMap(g => (g.rows || []).map(r => ({
+                ...r,
+                Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
+              })))}
+              t={t}
             />
             {/* View toggle: Variety / Batch */}
             <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
