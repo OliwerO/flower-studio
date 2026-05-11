@@ -204,6 +204,11 @@ describe('listGroupedByVariety (issue #289)', () => {
       // rows are StockItem-shaped (wire format from pgToResponse)
       expect(g.rows[0]).toHaveProperty('Display Name');
       expect(g.rows[0]).toHaveProperty('Current Quantity', 7);
+      // …plus Y-model snake-case fields the frontend VarietyListItem +
+      // getVarietyTotals consume directly. Without these the per-Batch
+      // label rendered "NaN stems" and the On-hand bucket collapsed to 0.
+      expect(g.rows[0]).toHaveProperty('current_quantity', 7);
+      expect(g.rows[0]).toHaveProperty('date');
     });
   });
 });
