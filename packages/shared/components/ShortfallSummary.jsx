@@ -1,36 +1,37 @@
 /**
- * ShortfallSummary — date-grouped panel of every Variety that is short on stems.
+ * ShortfallSummary — collapsible date-grouped panel of Varieties whose net is < 0.
  *
- * Surfaces above the Variety list so the owner can answer the single most
- * important question without scrolling or clicking:
- *
- *   "Which flowers am I short on, and when do I need them?"
- *
- * Input: same `groups` array the Variety list consumes. We FIRST filter to
- * Varieties whose net bucket is < 0 (the row is red in the Variety list), THEN
- * inside each shortfall Variety bucket its Demand-Entry rows by row.date so the
- * owner can read "Pink 50cm — 7 stems on 2026-05-13".
- *
- * Varieties with positive Net (stems already cover total demand) are excluded
- * even if they have individual dated DEs — those are scheduled consumption, not
- * a shortfall. Filtering matches the red border in VarietyListItem.
+ * Each shortfall row expands to show which orders are driving the demand
+ * (lazy-fetched via the host-provided fetchUsage callback, which wraps
+ * GET /stock/:id/usage). The owner can see "Pink 50cm short 7 → driven by
+ * Order #202605-00018 (Jane Doe, 5 stems) + Order #...".
  *
  * Props:
- *   groups          — Variety groups [{ key, type_name, colour, size_cm,
- *                      cultivar, rows: [{ id, current_quantity, date }, ...] }]
- *   reservations    — Map<stockRowId, reservedQty> (drives net calculation;
- *                      same Map the Variety list consumes)
- *   t               — translations: stems, shortfallsTitle, noShortfalls,
- *                      shortfallsVarieties, shortfallsStems, today, tomorrow,
- *                      daysSuffix
- *   onVarietyClick  — optional callback(key) — host can expand/scroll to that row
- *   today           — optional ISO date override (defaults to today). Tests inject.
+ *   groups          — Variety groups
+ *   reservations    — Map<stockRowId, reservedQty> (drives net)
+ *   t               — translations
+ *   onVarietyClick  — optional (key) => void
+ *   fetchUsage      — optional async (stockId) => trail[]; when provided the
+ *                      shortfall row can be tapped to expand and lazy-load
+ *                      its order list. Trail format mirrors /stock/:id/usage.
+ *   today           — optional ISO date override
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { getVarietyTotals } from '../utils/stockMath.js';
 
-export default function ShortfallSummary({ groups, reservations = new Map(), t, onVarietyClick, today }) {
+export default function ShortfallSummary({
+  groups,
+  reservations = new Map(),
+  t,
+  onVarietyClick,
+  fetchUsage,
+  today,
+}) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
+  const [collapsed, setCollapsed] = useState(false);
+  const [openRow, setOpenRow] = useState(null); // stockId currently expanded
+  const [trails, setTrails] = useState(new Map()); // stockId → trail[]
+  const [loadingId, setLoadingId] = useState(null);
 
   const { byDate, totalStems, varietyCount } = useMemo(
     () => bucket(groups, reservations, today_),
@@ -39,39 +40,82 @@ export default function ShortfallSummary({ groups, reservations = new Map(), t, 
 
   if (byDate.length === 0) return null;
 
+  async function toggleRow(stockId) {
+    if (openRow === stockId) {
+      setOpenRow(null);
+      return;
+    }
+    setOpenRow(stockId);
+    if (!trails.has(stockId) && fetchUsage) {
+      setLoadingId(stockId);
+      try {
+        const trail = await fetchUsage(stockId);
+        setTrails(m => new Map(m).set(stockId, trail || []));
+      } finally {
+        setLoadingId(null);
+      }
+    }
+  }
+
   return (
     <section
       data-testid="shortfall-summary"
       className="mb-4 rounded-2xl border border-red-200 bg-red-50/60 overflow-hidden"
     >
-      <header className="flex items-center justify-between px-4 py-2.5 bg-red-100/60 border-b border-red-200">
+      <button
+        type="button"
+        data-testid="shortfall-header"
+        onClick={() => setCollapsed(c => !c)}
+        className="w-full flex items-center justify-between px-4 py-2.5 bg-red-100/60 border-b border-red-200 text-left"
+      >
         <div className="flex items-center gap-2">
           <span className="text-base">⚠</span>
           <span className="text-sm font-semibold text-red-800 uppercase tracking-wide">
             {t.shortfallsTitle ?? 'Shortfalls'}
           </span>
         </div>
-        <div className="text-xs text-red-700">
-          <span data-testid="shortfall-varieties" className="font-semibold tabular-nums">{varietyCount}</span>
-          <span className="mx-1">{t.shortfallsVarieties ?? 'varieties'}</span>
-          <span className="mx-1">·</span>
-          <span data-testid="shortfall-stems" className="font-semibold tabular-nums">{totalStems}</span>
-          <span className="ml-1">{t.shortfallsStems ?? 'stems'}</span>
+        <div className="flex items-center gap-3">
+          <div className="text-xs text-red-700">
+            <span data-testid="shortfall-varieties" className="font-semibold tabular-nums">{varietyCount}</span>
+            <span className="mx-1">{t.shortfallsVarieties ?? 'varieties'}</span>
+            <span className="mx-1">·</span>
+            <span data-testid="shortfall-stems" className="font-semibold tabular-nums">{totalStems}</span>
+            <span className="ml-1">{t.shortfallsStems ?? 'stems'}</span>
+          </div>
+          <span
+            data-testid="shortfall-chevron"
+            data-collapsed={String(collapsed)}
+            className={`text-red-500 text-xs transition-transform ${collapsed ? '' : 'rotate-180'}`}
+          >
+            ▾
+          </span>
         </div>
-      </header>
+      </button>
 
-      <ul className="divide-y divide-red-100">
-        {byDate.map(({ date, rows }) => (
-          <li key={date} data-testid={`shortfall-date-${date}`}>
-            <DateRow date={date} today={today_} rows={rows} t={t} onVarietyClick={onVarietyClick} />
-          </li>
-        ))}
-      </ul>
+      {!collapsed && (
+        <ul className="divide-y divide-red-100">
+          {byDate.map(({ date, rows }) => (
+            <li key={date} data-testid={`shortfall-date-${date}`}>
+              <DateRow
+                date={date}
+                today={today_}
+                rows={rows}
+                t={t}
+                openRow={openRow}
+                trails={trails}
+                loadingId={loadingId}
+                onToggleRow={toggleRow}
+                onVarietyClick={onVarietyClick}
+              />
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   );
 }
 
-function DateRow({ date, today, rows, t, onVarietyClick }) {
+function DateRow({ date, today, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick }) {
   const friendly = friendlyDate(date, today, t);
   const total = rows.reduce((s, r) => s + r.qty, 0);
 
@@ -85,34 +129,58 @@ function DateRow({ date, today, rows, t, onVarietyClick }) {
       </div>
       <ul className="space-y-1">
         {rows.map(r => {
-          const inner = (
-            <span className="flex items-baseline justify-between text-sm">
-              <span className="flex items-baseline gap-2 truncate">
-                {r.colour && <span className="font-medium text-gray-800">{r.colour}</span>}
-                {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
-                {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
-                {!r.colour && !r.size_cm && !r.cultivar && r.type_name && (
-                  <span className="font-medium text-gray-800">{r.type_name}</span>
-                )}
-              </span>
-              <span className="text-red-700 font-semibold tabular-nums ml-2">
-                −{r.qty} {t.stems}
-              </span>
-            </span>
-          );
+          const isOpen = openRow === r.stockId;
+          const trail = trails.get(r.stockId);
+          const isLoading = loadingId === r.stockId;
           return (
-            <li key={`${r.key}-${date}`}>
-              {onVarietyClick ? (
-                <button
-                  type="button"
-                  data-testid="shortfall-row"
-                  onClick={() => onVarietyClick(r.key)}
-                  className="w-full text-left px-2 py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
-                >
-                  {inner}
-                </button>
-              ) : (
-                <div data-testid="shortfall-row" className="px-2 py-1">{inner}</div>
+            <li key={`${r.key}-${date}-${r.stockId}`}>
+              <button
+                type="button"
+                data-testid="shortfall-row"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleRow(r.stockId);
+                }}
+                onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
+                className="w-full text-left px-2 py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
+              >
+                <span className="flex items-baseline justify-between text-sm">
+                  <span className="flex items-baseline gap-2 truncate">
+                    <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                    {r.colour && <span className="font-medium text-gray-800">{r.colour}</span>}
+                    {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
+                    {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
+                    {!r.colour && !r.size_cm && !r.cultivar && r.type_name && (
+                      <span className="font-medium text-gray-800">{r.type_name}</span>
+                    )}
+                  </span>
+                  <span className="text-red-700 font-semibold tabular-nums ml-2">
+                    −{r.qty} {t.stems}
+                  </span>
+                </span>
+              </button>
+              {isOpen && (
+                <div className="ml-6 mt-1 mb-2 text-xs">
+                  {isLoading && <p className="text-red-400 italic">{t.loading ?? 'Loading…'}</p>}
+                  {!isLoading && trail && trail.length === 0 && (
+                    <p className="text-red-400 italic">{t.traceEmpty ?? 'No linked orders'}</p>
+                  )}
+                  {!isLoading && trail && trail.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {trail.filter(e => e.type === 'order').map((e, i) => (
+                        <li key={i} className="flex items-baseline justify-between gap-2 py-0.5 px-2 rounded bg-white/50">
+                          <span className="truncate">
+                            <span className="text-gray-500 tabular-nums">{e.orderId ?? '#?'}</span>
+                            {e.customer && <span className="ml-2 text-gray-700">{e.customer}</span>}
+                          </span>
+                          <span className="text-red-700 font-semibold tabular-nums shrink-0">
+                            {Math.abs(e.quantity ?? e.qty ?? 0)} {t.stems}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               )}
             </li>
           );
@@ -128,9 +196,6 @@ function bucket(groups, reservations, today) {
   const varietyKeys = new Set();
 
   for (const g of groups ?? []) {
-    // Filter at the Variety level: only include groups whose net is < 0.
-    // Positive-net Varieties have stems to cover their total demand — their
-    // dated DEs are scheduled consumption, not shortfalls.
     const { net } = getVarietyTotals(g.rows ?? [], reservations);
     if (net >= 0) continue;
 
@@ -140,6 +205,7 @@ function bucket(groups, reservations, today) {
         const qty = Math.abs(row.current_quantity);
         const entry = {
           key:       g.key,
+          stockId:   row.id,
           type_name: g.type_name,
           colour:    g.colour,
           size_cm:   g.size_cm,

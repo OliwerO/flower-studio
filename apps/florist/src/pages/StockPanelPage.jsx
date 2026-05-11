@@ -67,7 +67,7 @@ export default function StockPanelPage() {
   const [collapsedTypes, setCollapsedTypes] = useState(new Set());
   // viewMode: 'variety' = Type→Variety grouped list (default), 'batch' = arrival-date list
   const [viewMode, setViewMode] = useState(
-    () => localStorage.getItem('blossom-stock-view') || 'variety',
+    () => localStorage.getItem('blossom-stock-view') || 'batch',
   );
   function setStockViewMode(v) {
     setViewMode(v);
@@ -471,6 +471,10 @@ export default function StockPanelPage() {
                 reservations={reservationsMap}
                 t={t}
                 onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
+                fetchUsage={async (stockId) => {
+                  const res = await client.get(`/stock/${stockId}/usage`);
+                  return res.data?.trail || [];
+                }}
               />
               {/* View toggle: Variety / Batch */}
               <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">

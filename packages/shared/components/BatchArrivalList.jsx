@@ -1,31 +1,55 @@
 /**
- * BatchArrivalList — flat list of Batches grouped by arrival date (newest first),
- * rendered as an aligned grid table with full per-Batch detail.
+ * BatchArrivalList — flat sortable Batch table.
  *
- * Columns: Type · Variety identity · Date tag · Available · Cost · Sell · Markup · Supplier.
- * Sibling to <VarietyListItem>; host toggles between the two views.
+ * One flat table (no date section headers); the Tag column carries the date
+ * pill, age-tinted to flag old stock. Column headers are clickable to sort.
  *
- * Visual goals (owner feedback):
- *   - Columns vertically aligned across rows (CSS grid, not flex).
- *   - All numbers tabular-nums + right-aligned.
- *   - Section header per arrival date + relative age; older sections amber-tinted.
+ * Columns: Type · Variety · Tag · Available · Cost · Sell · Markup · Supplier.
  *
  * Props:
  *   groups      — Variety groups (same shape consumed by VarietyListItem)
- *   t           — translations: stems, cost, sell, markup, supplier, batchTag,
- *                  available, today, etc.
- *   onRowClick  — optional callback(stockId) — host can open trace / detail
+ *   t           — translations
+ *   onRowClick  — callback(stockId) — host opens trace / detail
  *   today       — optional ISO date override
  */
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 
-const GRID_COLS = 'grid-cols-[7rem_minmax(0,1fr)_4rem_4rem_4rem_4rem_3.5rem_6rem]';
+const GRID_COLS = 'grid-cols-[7rem_minmax(0,1fr)_4.5rem_4rem_4rem_4rem_3.5rem_6rem]';
+
+const COLS = [
+  { key: 'type',       label: 'type',       align: 'left'   },
+  { key: 'variety',    label: 'variety',    align: 'left'   },
+  { key: 'date',       label: 'batchTag',   align: 'center' },
+  { key: 'qty',        label: 'available',  align: 'right'  },
+  { key: 'cost',       label: 'cost',       align: 'right'  },
+  { key: 'sell',       label: 'sell',       align: 'right'  },
+  { key: 'markup',     label: 'markup',     align: 'right'  },
+  { key: 'supplier',   label: 'supplier',   align: 'left'   },
+];
 
 export default function BatchArrivalList({ groups, t, onRowClick, today }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
-  const sections = useMemo(() => buildSections(groups, today_), [groups, today_]);
+  const [sortKey, setSortKey] = useState('date');
+  const [sortDir, setSortDir] = useState('desc');
 
-  if (sections.length === 0) {
+  const rows = useMemo(() => flatten(groups, today_), [groups, today_]);
+
+  const sortedRows = useMemo(() => {
+    const arr = [...rows];
+    const dir = sortDir === 'asc' ? 1 : -1;
+    arr.sort((a, b) => {
+      const av = a[sortKey];
+      const bv = b[sortKey];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+      return String(av).localeCompare(String(bv)) * dir;
+    });
+    return arr;
+  }, [rows, sortKey, sortDir]);
+
+  if (rows.length === 0) {
     return (
       <p data-testid="batch-arrival-empty" className="text-center text-sm text-gray-400 py-12">
         {t.noStockFound ?? 'No batches'}
@@ -33,46 +57,52 @@ export default function BatchArrivalList({ groups, t, onRowClick, today }) {
     );
   }
 
+  function clickHeader(key) {
+    if (sortKey === key) {
+      setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir(key === 'date' || key === 'qty' || key === 'cost' || key === 'sell' || key === 'markup' ? 'desc' : 'asc');
+    }
+  }
+
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
-      {/* Column header — rendered once at top, sticky-eligible */}
-      <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide text-gray-400 bg-gray-50 border-b border-gray-100`}>
-        <span>{t.type ?? 'Type'}</span>
-        <span>{t.variety ?? 'Variety'}</span>
-        <span className="text-center">{t.batchTag ?? 'Tag'}</span>
-        <span className="text-right">{t.available ?? 'Avail'}</span>
-        <span className="text-right">{t.cost ?? 'Cost'}</span>
-        <span className="text-right">{t.sell ?? 'Sell'}</span>
-        <span className="text-right">{t.markup ?? '×'}</span>
-        <span>{t.supplier ?? 'Supplier'}</span>
+      <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
+        {COLS.map(c => {
+          const active = sortKey === c.key;
+          const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
+          return (
+            <button
+              key={c.key}
+              type="button"
+              data-testid={`sort-${c.key}`}
+              onClick={() => clickHeader(c.key)}
+              className={`flex items-center gap-1 ${c.align === 'right' ? 'justify-end' : c.align === 'center' ? 'justify-center' : ''} ${active ? 'text-gray-700 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+            >
+              <span>{t[c.label] ?? c.label}</span>
+              {arrow && <span className="text-[9px]">{arrow}</span>}
+            </button>
+          );
+        })}
       </div>
 
-      {sections.map(({ date, rows, ageLabel, isOld }) => (
-        <section key={date} data-testid={`batch-arrival-date-${date}`}>
-          <header
-            className={`px-4 py-2 flex items-baseline justify-between border-b border-gray-100 ${
-              isOld ? 'bg-amber-50' : 'bg-gray-50/60'
-            }`}
-          >
-            <div className="flex items-baseline gap-2">
-              <span className="text-sm font-semibold text-gray-900 tabular-nums">{date}</span>
-              <span className={`text-xs ${isOld ? 'text-amber-700' : 'text-gray-500'}`}>{ageLabel}</span>
-            </div>
-            <span className="text-xs text-gray-400 tabular-nums">
-              {rows.reduce((s, r) => s + r.qty, 0)} {t.stems}
-            </span>
-          </header>
-          <ul className="divide-y divide-gray-100">
-            {rows.map(b => <BatchRow key={b.id} b={b} t={t} onRowClick={onRowClick} />)}
-          </ul>
-        </section>
-      ))}
+      <ul className="divide-y divide-gray-100">
+        {sortedRows.map(b => <BatchRow key={b.id} b={b} t={t} onRowClick={onRowClick} />)}
+      </ul>
     </div>
   );
 }
 
 function BatchRow({ b, t, onRowClick }) {
   const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
+  // Age-tint the tag pill: ≤3d gray, ≤7d gray, ≤14d amber, older = red.
+  const ageCls =
+    b.ageDays == null ? 'bg-gray-100 text-gray-500' :
+    b.ageDays <= 7    ? 'bg-gray-100 text-gray-700' :
+    b.ageDays <= 14   ? 'bg-amber-100 text-amber-800' :
+                         'bg-red-100 text-red-700';
+
   return (
     <li>
       <button
@@ -82,7 +112,7 @@ function BatchRow({ b, t, onRowClick }) {
         className={`w-full grid ${GRID_COLS} gap-3 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
       >
         <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate">
-          {b.type_name || '—'}
+          {b.type || '—'}
         </span>
         <span className="flex items-baseline gap-1.5 truncate min-w-0">
           {b.colour && <span className="font-semibold text-gray-900 truncate">{b.colour}</span>}
@@ -92,7 +122,7 @@ function BatchRow({ b, t, onRowClick }) {
         </span>
         <span className="text-center">
           {b.tag
-            ? <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium tabular-nums">{b.tag}</span>
+            ? <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums ${ageCls}`} title={b.date}>{b.tag}</span>
             : <span className="text-gray-300">—</span>}
         </span>
         <span className="text-right font-semibold tabular-nums text-gray-900">{b.qty}</span>
@@ -117,48 +147,39 @@ function BatchRow({ b, t, onRowClick }) {
   );
 }
 
-function buildSections(groups, today) {
-  const batches = [];
+function flatten(groups, today) {
+  const out = [];
   for (const g of groups ?? []) {
     for (const row of g.rows ?? []) {
       const qty = Number(row.current_quantity);
       if (qty >= 0) {
-        batches.push({
+        const date = row.date ?? null;
+        const ageDays = date ? Math.round((Date.parse(today) - Date.parse(date)) / 86400000) : null;
+        // Sortable variety key for column sort: stable concat of identity attrs.
+        const varietyKey = [g.colour, g.size_cm, g.cultivar].filter(v => v != null).join(' ');
+        out.push({
           id:        row.id,
-          date:      row.date ?? null,
-          type_name: g.type_name ?? '—',
+          date,
+          ageDays,
+          type:      g.type_name ?? '—',
           colour:    g.colour ?? null,
           size_cm:   g.size_cm ?? null,
           cultivar:  g.cultivar ?? null,
+          variety:   varietyKey,
           qty,
           cost:      readNum(row, 'Current Cost Price', 'current_cost_price'),
           sell:      readNum(row, 'Current Sell Price', 'current_sell_price'),
+          markup:    null,
           supplier:  row.Supplier ?? row.supplier ?? null,
-          tag:       row.date ? dateTag(row.date) : null,
+          tag:       date ? dateTag(date) : null,
         });
       }
     }
   }
-
-  const map = new Map();
-  for (const b of batches) {
-    const k = b.date ?? '—';
-    const list = map.get(k) ?? [];
-    list.push(b);
-    map.set(k, list);
+  for (const r of out) {
+    if (r.cost > 0 && r.sell > 0) r.markup = r.sell / r.cost;
   }
-
-  const sortedKeys = [...map.keys()].sort((a, b) => {
-    if (a === '—') return 1;
-    if (b === '—') return -1;
-    return b.localeCompare(a);
-  });
-
-  return sortedKeys.map(date => {
-    const rows = map.get(date).sort((a, b) => b.qty - a.qty);
-    const { ageLabel, isOld } = relativeAge(date, today);
-    return { date, rows, ageLabel, isOld };
-  });
+  return out;
 }
 
 function readNum(row, displayKey, snakeKey) {
@@ -175,15 +196,4 @@ function dateTag(d) {
   const month = dt.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
   const cap = month.charAt(0).toUpperCase() + month.slice(1);
   return `${day}.${cap}.`;
-}
-
-function relativeAge(date, today) {
-  if (date === '—' || !date) return { ageLabel: '', isOld: false };
-  const days = Math.round((Date.parse(today) - Date.parse(date)) / 86400000);
-  if (days === 0)   return { ageLabel: 'today',          isOld: false };
-  if (days === 1)   return { ageLabel: '1 day ago',      isOld: false };
-  if (days < 7)     return { ageLabel: `${days} days ago`, isOld: false };
-  if (days < 14)    return { ageLabel: '~1 week ago',    isOld: true };
-  if (days < 30)    return { ageLabel: `${Math.round(days / 7)} weeks ago`, isOld: true };
-  return { ageLabel: 'old', isOld: true };
 }

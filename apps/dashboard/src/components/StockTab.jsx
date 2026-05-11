@@ -55,7 +55,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [expandedKey, setExpandedKey]       = useState(null);   // which Variety row is expanded
   const [collapsedTypes, setCollapsedTypes] = useState(new Set()); // collapsed Type group keys
   const [viewMode, setViewMode] = useState(
-    () => localStorage.getItem('blossom-stock-view') || 'variety',
+    () => localStorage.getItem('blossom-stock-view') || 'batch',
   );
   function setStockViewMode(v) {
     setViewMode(v);
@@ -787,6 +787,10 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               reservations={reservationsMap}
               t={t}
               onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
+              fetchUsage={async (stockId) => {
+                const res = await client.get(`/stock/${stockId}/usage`);
+                return res.data?.trail || [];
+              }}
             />
             {/* View toggle: Variety / Batch */}
             <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
