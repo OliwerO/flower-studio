@@ -103,11 +103,17 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                 placeholder={t.flowerSearch}
                 className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
                 autoFocus />
-              <div className="flex items-center text-[10px] text-ios-tertiary uppercase tracking-wide px-2 pt-1">
-                <span className="flex-1">{t.flowers}</span>
-                <span className="w-14 text-right">{t.costPrice}</span>
-                <span className="w-14 text-right">{t.sellPrice}</span>
-                <span className="w-12 text-right">{t.quantity}</span>
+              {/* Grid: Type | Colour | Size | Cultivar | Tag | Cost | Sell | Qty.
+                  Aligned across all rows for at-a-glance scanning (#image 16). */}
+              <div className="grid grid-cols-[5rem_5rem_3rem_minmax(0,1fr)_3.5rem_3rem_3rem_2.5rem] gap-2 text-[10px] text-ios-tertiary uppercase tracking-wide px-2 pt-1">
+                <span>{t.varietyType ?? 'Type'}</span>
+                <span>{t.varietyColour ?? 'Colour'}</span>
+                <span>{t.varietySize ?? 'Size'}</span>
+                <span>{t.varietyCultivar ?? 'Cultivar'}</span>
+                <span className="text-right">{t.batchTag ?? 'Batch'}</span>
+                <span className="text-right">{t.costPrice}</span>
+                <span className="text-right">{t.sellPrice}</span>
+                <span className="text-right">{t.quantity}</span>
               </div>
               <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
                 {editing.getFilteredStock(flowerSearch)
@@ -117,6 +123,13 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     const cost = Number(s['Current Cost Price']) || 0;
                     const sell = Number(s['Current Sell Price']) || 0;
                     const { name: fn, batch: b } = parseBatchName(s['Display Name']);
+                    // Y-model fields if present; legacy items fall back to the
+                    // parsed Display Name in the Type column.
+                    const yType     = s.Type ?? null;
+                    const yColour   = s.Colour ?? null;
+                    const ySize     = s.Size != null ? s.Size : null;
+                    const yCultivar = s.Cultivar ?? null;
+                    const fallbackName = yType ? null : fn;
                     const poInfo = editing.pendingPO?.[s.id];
                     const poQty = poInfo?.ordered || 0;
                     const poDateLabel = formatPoDate(poInfo?.plannedDate);
@@ -139,19 +152,24 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                             }
                           }
                         }}
-                        className={`w-full flex flex-col px-2 py-1.5 text-sm hover:bg-gray-50 rounded ${poQty > 0 ? 'bg-blue-50/50' : qty <= 0 ? 'bg-amber-50/50' : ''}`}
+                        className={`w-full grid grid-cols-[5rem_5rem_3rem_minmax(0,1fr)_3.5rem_3rem_3rem_2.5rem] gap-2 items-baseline px-2 py-1.5 text-sm hover:bg-gray-50 rounded text-left ${poQty > 0 ? 'bg-blue-50/50' : qty <= 0 ? 'bg-amber-50/50' : ''}`}
                       >
-                        <div className="flex items-center w-full">
-                          <span className="flex-1 font-medium text-left truncate">
-                            {fn}
-                            {b && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{b}</span>}
-                          </span>
-                          <span className="w-14 text-right text-xs text-ios-tertiary">{cost > 0 ? cost.toFixed(0) : '—'}</span>
-                          <span className="w-14 text-right text-xs text-ios-secondary">{sell > 0 ? `${sell.toFixed(0)}` : '—'}</span>
-                          <span className={`w-12 text-right text-xs font-medium ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
-                        </div>
+                        <span className="text-xs font-semibold text-ios-label truncate">
+                          {yType ?? fallbackName ?? '—'}
+                        </span>
+                        <span className="text-xs text-ios-secondary truncate">{yColour ?? '—'}</span>
+                        <span className="text-xs text-ios-secondary tabular-nums">{ySize != null ? `${ySize}cm` : '—'}</span>
+                        <span className="text-xs italic text-ios-tertiary truncate">{yCultivar ?? '—'}</span>
+                        <span className="text-right">
+                          {b
+                            ? <span className="inline-block text-[10px] text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{b}</span>
+                            : <span className="text-ios-tertiary">—</span>}
+                        </span>
+                        <span className="text-right text-xs text-ios-tertiary tabular-nums">{cost > 0 ? cost.toFixed(0) : '—'}</span>
+                        <span className="text-right text-xs text-ios-secondary tabular-nums">{sell > 0 ? sell.toFixed(0) : '—'}</span>
+                        <span className={`text-right text-xs font-medium tabular-nums ${qty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{qty}</span>
                         {poQty > 0 && (
-                          <div className="text-[10px] text-blue-600 font-medium text-left mt-0.5">
+                          <div className="col-span-8 text-[10px] text-blue-600 font-medium mt-0.5">
                             +{poQty}{' '}
                             {poDateLabel ? `${t.arrivesOn || 'arrives'} ${poDateLabel}` : (t.onOrder || 'on order')}
                           </div>
