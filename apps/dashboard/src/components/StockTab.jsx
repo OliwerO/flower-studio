@@ -364,16 +364,31 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     return map;
   }, [groups]);
 
-  // ── Y-model: filter groups by hideZero toggle ──
+  // ── Y-model: filter groups by search + hideZero ──
   const filteredGroups = useMemo(() => {
     if (!stockYModelEnabled) return [];
-    if (!hideZero) return groups;
-    return groups.filter(g => {
-      const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
-      if (totalQty !== 0) return true;
-      return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
-    });
-  }, [groups, hideZero, stockYModelEnabled, reservationsMap]);
+    let list = groups;
+    const q = (search || '').trim().toLowerCase();
+    if (q) {
+      list = list.filter(g => {
+        const ident = [g.type_name, g.colour, g.size_cm != null ? `${g.size_cm}cm` : null, g.cultivar]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (ident.includes(q)) return true;
+        return (g.rows || []).some(r =>
+          ((r['Display Name'] || r.display_name || '') + ' ' + (r.Supplier || r.supplier || ''))
+            .toLowerCase().includes(q)
+        );
+      });
+    }
+    if (hideZero) {
+      list = list.filter(g => {
+        const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+        if (totalQty !== 0) return true;
+        return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
+      });
+    }
+    return list;
+  }, [groups, hideZero, stockYModelEnabled, reservationsMap, search]);
 
   // ── Y-model: batch trace fetch triggered by traceStockId ──
   useEffect(() => {

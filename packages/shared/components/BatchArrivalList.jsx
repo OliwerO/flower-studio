@@ -1,25 +1,28 @@
 /**
- * BatchArrivalList — flat list of Batches grouped by arrival date (newest first).
+ * BatchArrivalList — flat list of Batches grouped by arrival date (newest first),
+ * rendered as an aligned grid table with full per-Batch detail.
  *
- * Alternative view of the Stock list for owners who think in batches first
- * ("what came in on Monday?", "what's the oldest stock?"). Sibling to
- * <VarietyListItem> / <TypeGroupHeader> — the host toggles between the two.
+ * Columns: Type · Variety identity · Date tag · Available · Cost · Sell · Markup · Supplier.
+ * Sibling to <VarietyListItem>; host toggles between the two views.
  *
- * Each section header shows the absolute date plus a relative age label so the
- * owner can spot old stock at a glance.
+ * Visual goals (owner feedback):
+ *   - Columns vertically aligned across rows (CSS grid, not flex).
+ *   - All numbers tabular-nums + right-aligned.
+ *   - Section header per arrival date + relative age; older sections amber-tinted.
  *
  * Props:
  *   groups      — Variety groups (same shape consumed by VarietyListItem)
- *   t           — translations: stems, today, yesterday, daysAgoSuffix,
- *                  weekAgoLabel, olderLabel, weeksAgoSuffix, undatedLabel
+ *   t           — translations: stems, cost, sell, markup, supplier, batchTag,
+ *                  available, today, etc.
  *   onRowClick  — optional callback(stockId) — host can open trace / detail
- *   today       — optional ISO date override (defaults to current day)
+ *   today       — optional ISO date override
  */
 import { useMemo } from 'react';
 
+const GRID_COLS = 'grid-cols-[7rem_minmax(0,1fr)_4rem_4rem_4rem_4rem_3.5rem_6rem]';
+
 export default function BatchArrivalList({ groups, t, onRowClick, today }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
-
   const sections = useMemo(() => buildSections(groups, today_), [groups, today_]);
 
   if (sections.length === 0) {
@@ -32,11 +35,23 @@ export default function BatchArrivalList({ groups, t, onRowClick, today }) {
 
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
+      {/* Column header — rendered once at top, sticky-eligible */}
+      <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide text-gray-400 bg-gray-50 border-b border-gray-100`}>
+        <span>{t.type ?? 'Type'}</span>
+        <span>{t.variety ?? 'Variety'}</span>
+        <span className="text-center">{t.batchTag ?? 'Tag'}</span>
+        <span className="text-right">{t.available ?? 'Avail'}</span>
+        <span className="text-right">{t.cost ?? 'Cost'}</span>
+        <span className="text-right">{t.sell ?? 'Sell'}</span>
+        <span className="text-right">{t.markup ?? '×'}</span>
+        <span>{t.supplier ?? 'Supplier'}</span>
+      </div>
+
       {sections.map(({ date, rows, ageLabel, isOld }) => (
         <section key={date} data-testid={`batch-arrival-date-${date}`}>
           <header
             className={`px-4 py-2 flex items-baseline justify-between border-b border-gray-100 ${
-              isOld ? 'bg-amber-50' : 'bg-gray-50'
+              isOld ? 'bg-amber-50' : 'bg-gray-50/60'
             }`}
           >
             <div className="flex items-baseline gap-2">
@@ -48,38 +63,57 @@ export default function BatchArrivalList({ groups, t, onRowClick, today }) {
             </span>
           </header>
           <ul className="divide-y divide-gray-100">
-            {rows.map(b => (
-              <li key={b.id}>
-                <button
-                  type="button"
-                  data-testid="batch-arrival-row"
-                  onClick={() => onRowClick && onRowClick(b.id)}
-                  className="w-full flex items-baseline justify-between px-4 py-2 text-left active:bg-gray-50 transition-colors"
-                >
-                  <span className="flex items-baseline gap-2 truncate">
-                    <span className="text-[10px] uppercase tracking-wide text-gray-400 shrink-0">
-                      {b.type_name}
-                    </span>
-                    {b.colour && (
-                      <span className="text-sm font-semibold text-gray-900 truncate">{b.colour}</span>
-                    )}
-                    {b.size_cm != null && (
-                      <span className="text-xs text-gray-600 tabular-nums shrink-0">{b.size_cm}cm</span>
-                    )}
-                    {b.cultivar && (
-                      <span className="text-xs text-gray-400 italic truncate">{b.cultivar}</span>
-                    )}
-                  </span>
-                  <span className="text-sm tabular-nums font-semibold text-gray-800 ml-2 shrink-0">
-                    {b.qty} {t.stems}
-                  </span>
-                </button>
-              </li>
-            ))}
+            {rows.map(b => <BatchRow key={b.id} b={b} t={t} onRowClick={onRowClick} />)}
           </ul>
         </section>
       ))}
     </div>
+  );
+}
+
+function BatchRow({ b, t, onRowClick }) {
+  const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
+  return (
+    <li>
+      <button
+        type="button"
+        data-testid="batch-arrival-row"
+        onClick={() => onRowClick && onRowClick(b.id)}
+        className={`w-full grid ${GRID_COLS} gap-3 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
+      >
+        <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate">
+          {b.type_name || '—'}
+        </span>
+        <span className="flex items-baseline gap-1.5 truncate min-w-0">
+          {b.colour && <span className="font-semibold text-gray-900 truncate">{b.colour}</span>}
+          {b.size_cm != null && <span className="text-xs text-gray-600 tabular-nums shrink-0">{b.size_cm}cm</span>}
+          {b.cultivar && <span className="text-xs text-gray-400 italic truncate">{b.cultivar}</span>}
+          {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
+        </span>
+        <span className="text-center">
+          {b.tag
+            ? <span className="inline-block px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-[10px] font-medium tabular-nums">{b.tag}</span>
+            : <span className="text-gray-300">—</span>}
+        </span>
+        <span className="text-right font-semibold tabular-nums text-gray-900">{b.qty}</span>
+        <span className="text-right tabular-nums text-gray-700">
+          {b.cost != null ? b.cost.toFixed(2) : '—'}
+        </span>
+        <span className="text-right tabular-nums text-gray-700">
+          {b.sell != null ? b.sell.toFixed(2) : '—'}
+        </span>
+        <span className="text-right">
+          {markup ? (
+            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums ${
+              markup >= 2.5 ? 'bg-emerald-100 text-emerald-700' : markup >= 1.8 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+            }`}>
+              ×{markup.toFixed(1)}
+            </span>
+          ) : <span className="text-gray-300">—</span>}
+        </span>
+        <span className="text-xs text-gray-600 truncate">{b.supplier || '—'}</span>
+      </button>
+    </li>
   );
 }
 
@@ -88,23 +122,24 @@ function buildSections(groups, today) {
   for (const g of groups ?? []) {
     for (const row of g.rows ?? []) {
       const qty = Number(row.current_quantity);
-      // Only Batches: positive (or zero) qty. Demand Entries are excluded —
-      // they're not arrivals; they're commitments.
       if (qty >= 0) {
         batches.push({
-          id: row.id,
-          date: row.date ?? null,
+          id:        row.id,
+          date:      row.date ?? null,
           type_name: g.type_name ?? '—',
-          colour: g.colour ?? null,
-          size_cm: g.size_cm ?? null,
-          cultivar: g.cultivar ?? null,
+          colour:    g.colour ?? null,
+          size_cm:   g.size_cm ?? null,
+          cultivar:  g.cultivar ?? null,
           qty,
+          cost:      readNum(row, 'Current Cost Price', 'current_cost_price'),
+          sell:      readNum(row, 'Current Sell Price', 'current_sell_price'),
+          supplier:  row.Supplier ?? row.supplier ?? null,
+          tag:       row.date ? dateTag(row.date) : null,
         });
       }
     }
   }
 
-  // Group by date.
   const map = new Map();
   for (const b of batches) {
     const k = b.date ?? '—';
@@ -113,7 +148,6 @@ function buildSections(groups, today) {
     map.set(k, list);
   }
 
-  // Newest first; undated (`—`) sinks to bottom.
   const sortedKeys = [...map.keys()].sort((a, b) => {
     if (a === '—') return 1;
     if (b === '—') return -1;
@@ -125,6 +159,22 @@ function buildSections(groups, today) {
     const { ageLabel, isOld } = relativeAge(date, today);
     return { date, rows, ageLabel, isOld };
   });
+}
+
+function readNum(row, displayKey, snakeKey) {
+  const v = row[displayKey] ?? row[snakeKey];
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
+}
+
+function dateTag(d) {
+  const dt = new Date(d);
+  if (isNaN(dt)) return null;
+  const day = dt.getUTCDate();
+  const month = dt.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+  const cap = month.charAt(0).toUpperCase() + month.slice(1);
+  return `${day}.${cap}.`;
 }
 
 function relativeAge(date, today) {

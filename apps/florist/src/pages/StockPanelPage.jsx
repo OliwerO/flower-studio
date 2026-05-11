@@ -218,15 +218,29 @@ export default function StockPanelPage() {
   // Filtered group list for Y-model path
   const filteredGroups = useMemo(() => {
     if (!yEnabled) return [];
-    if (!hideZero) return groups;
-    return groups.filter(g => {
-      // Keep group if any row has non-zero qty or has premade reservations
-      const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
-      if (totalQty !== 0) return true;
-      // Check if any row has premade reservations
-      return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
-    });
-  }, [groups, hideZero, yEnabled, reservationsMap]);
+    let list = groups;
+    // Search across Variety identity + every row's display name + supplier.
+    const q = debouncedSearch.trim().toLowerCase();
+    if (q) {
+      list = list.filter(g => {
+        const ident = [g.type_name, g.colour, g.size_cm != null ? `${g.size_cm}cm` : null, g.cultivar]
+          .filter(Boolean).join(' ').toLowerCase();
+        if (ident.includes(q)) return true;
+        return (g.rows || []).some(r =>
+          ((r['Display Name'] || r.display_name || '') + ' ' + (r.Supplier || r.supplier || ''))
+            .toLowerCase().includes(q)
+        );
+      });
+    }
+    if (hideZero) {
+      list = list.filter(g => {
+        const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+        if (totalQty !== 0) return true;
+        return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
+      });
+    }
+    return list;
+  }, [groups, hideZero, yEnabled, reservationsMap, debouncedSearch]);
 
   // Filtered + sorted stock (legacy path)
   const filteredStock = useMemo(() => {
