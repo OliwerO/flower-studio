@@ -863,7 +863,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                         <VarietyListItem
                           variety={group}
                           reservations={reservationsMap}
-                          hideType={true}
+                          hideType={false}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}

@@ -555,7 +555,7 @@ export default function StockPanelPage() {
                         <VarietyListItem
                           variety={group}
                           reservations={reservationsMap}
-                          hideType={true}
+                          hideType={false}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(stockId)}

@@ -163,8 +163,8 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                 <div className="flex items-baseline gap-2 truncate min-w-0">
                   {g.type
                     ? <>
-                        <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold shrink-0">{g.type}</span>
-                        {g.colour && <span className="font-medium text-gray-800">{g.colour}</span>}
+                        <span className="text-sm font-semibold text-gray-900 shrink-0">{g.type}</span>
+                        {g.colour && <span className="text-sm font-semibold text-gray-900">{g.colour}</span>}
                         {g.size != null && <span className="text-xs text-gray-600 tabular-nums">{g.size}cm</span>}
                         {g.cultivar && <span className="text-xs text-gray-400 italic truncate">{g.cultivar}</span>}
                       </>
