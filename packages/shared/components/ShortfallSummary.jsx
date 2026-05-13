@@ -148,11 +148,9 @@ function DateRow({ date, today, rows, t, openRow, trails, loadingId, onToggleRow
                   <span className="flex items-baseline gap-2 truncate">
                     <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
                     {r.type_name && (
-                      <span className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold shrink-0">
-                        {r.type_name}
-                      </span>
+                      <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>
                     )}
-                    {r.colour && <span className="font-medium text-gray-800">{r.colour}</span>}
+                    {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
                     {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
                     {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
                     {!r.type_name && !r.colour && !r.size_cm && !r.cultivar && (

@@ -11,13 +11,19 @@ const variety = {
 };
 
 describe('VarietyListItem header', () => {
-  it('renders identity attrs stacked vertically (drops Type under TypeGroupHeader)', () => {
+  it('hides Type when hideType=true (under TypeGroupHeader)', () => {
     render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
       hideType={true} expanded={false} onToggle={() => {}} />);
-    // Colour and Size live on separate lines now — each scannable independently.
     expect(screen.getByText('Pink')).toBeInTheDocument();
     expect(screen.getByText('60cm')).toBeInTheDocument();
     expect(screen.queryByText('Rose')).not.toBeInTheDocument();
+  });
+
+  it('shows Type inline at same prominence as Colour when hideType=false (default)', () => {
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      expanded={false} onToggle={() => {}} />);
+    expect(screen.getByText('Rose')).toBeInTheDocument();
+    expect(screen.getByText('Pink')).toBeInTheDocument();
   });
 
   it('renders 4 buckets aligned right', () => {
@@ -42,6 +48,40 @@ describe('VarietyListItem header', () => {
       hideType={true} expanded={false} onToggle={onToggle} />);
     fireEvent.click(screen.getByTestId('variety-header'));
     expect(onToggle).toHaveBeenCalled();
+  });
+
+  it('header click also fires onRowClick(primaryRow.id) when expanding (opens trace)', () => {
+    const onRowClick = vi.fn();
+    const onToggle   = vi.fn();
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={onToggle} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByTestId('variety-header'));
+    expect(onToggle).toHaveBeenCalled();
+    expect(onRowClick).toHaveBeenCalledWith('b1');
+  });
+
+  it('header click does NOT fire onRowClick when collapsing', () => {
+    const onRowClick = vi.fn();
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByTestId('variety-header'));
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('header click prefers a positive-qty Batch over a Demand Entry for trace', () => {
+    const v = {
+      key: 'Rose|Pink|60|',
+      type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+      rows: [
+        { id: 'd1', current_quantity: -3, date: '2026-05-12' }, // Demand first
+        { id: 'b1', current_quantity: 10, date: '2026-05-10' }, // Batch second
+      ],
+    };
+    const onRowClick = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByTestId('variety-header'));
+    expect(onRowClick).toHaveBeenCalledWith('b1');
   });
 });
 

@@ -446,6 +446,12 @@ const en = {
     reassignDriver:  'Reassign',
     addLine:         'Add line',
     blankLineHint:   'Pick a flower or type a name before sending the PO.',
+    newVariety:      'New variety',
+    type:            'Type *',
+    colour:          'Colour',
+    size:            'Size (cm)',
+    cultivar:        'Cultivar',
+    totalLineCost:   'Total cost',
     draft:           'Draft',
     sent:            'Sent',
     shopping:        'Shopping',
@@ -560,6 +566,8 @@ const en = {
 
   // Stock visibility overhaul
   pendingArrivals:          'Pending Arrivals',
+  pendingArrivalsVarieties: 'varieties incoming',
+  pendingArrivalsStems:     'stems incoming',
   ordered:                  'Ordered',
   committedToOrders:        'Committed',
   netQty:                   'Net',
@@ -1215,6 +1223,12 @@ const ru = {
     reassignDriver:  'Переназначить',
     addLine:         'Добавить позицию',
     blankLineHint:   'Выберите цветок или введите название перед отправкой заявки.',
+    newVariety:      'Новый сорт',
+    type:            'Тип *',
+    colour:          'Цвет',
+    size:            'Длина (см)',
+    cultivar:        'Культивар',
+    totalLineCost:   'Итого за позицию',
     draft:           'Черновик',
     sent:            'Отправлен',
     shopping:        'Закупка',
@@ -1329,6 +1343,8 @@ const ru = {
 
   // Stock visibility overhaul
   pendingArrivals:          'Ожидаемые поставки',
+  pendingArrivalsVarieties: 'сортов поступит',
+  pendingArrivalsStems:     'стеблей поступит',
   ordered:                  'Заказано',
   committedToOrders:        'Зарезервировано',
   netQty:                   'Остаток',

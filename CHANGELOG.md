@@ -5,6 +5,25 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-11 — PO line Variety identity + clearer per-line totals (#304)
+
+### Schema
+- **Migration 0014** `0014_po_line_variety_attrs.sql` — adds `type_name`, `colour`, `size_cm`, `cultivar` to `stock_order_lines`. All nullable; legacy lines linked to an existing `stock_id` leave them NULL.
+
+### Backend
+- `backend/src/repos/stockOrderRepo.js` — `lineToWire` now emits `Type / Colour / Size / Cultivar`; `lineToPg` accepts them (empty string normalised to NULL; numeric `Size` parsed).
+- `backend/src/routes/stockOrders.js` — `PATCH /stock-orders/:id/lines/:lineId` allowlist extended with `Type / Colour / Size / Cultivar`. `POST /stock-orders/:id/lines` accepts the same shape; when a `type` is provided it **skips** the legacy `resolveOrCreateStockItem` auto-link (which created free-text-named Stock Items with no Variety identity). Evaluation now has the full 4-tuple available to create a Stock Item with proper Y-model identity at receive time.
+
+### Frontend
+- `apps/florist/src/pages/PurchaseOrderPage.jsx` + `apps/dashboard/src/components/StockOrderPanel.jsx` — Draft line editor surfaces a `New variety` form (Type / Colour / Size / Cultivar) when the line has no Stock Item link. `isBlank` warning relaxed to accept new-Variety identity.
+- Same files — replaces the ambiguous inline `= X zł` per-line total with a clearly-labeled `Total cost: X zł` separated from the price inputs (image #15 feedback).
+- Translations: `newVariety / varietyType / varietyColour / varietySize / varietyCultivar / totalLineCost` added in EN + RU on both apps.
+
+### Known limitation
+- This PR persists the Variety identity on the PO line but does **not** yet pipe it into the PO evaluation flow (creating a Stock Item from the line attrs at receive time). That's a follow-up — for now, evaluation falls back to the existing `resolveOrCreateStockItem` shape for lines without `stock_id`.
+
+---
+
 ## 2026-05-11 — Stock Y-model: migration script + lab regression gate (#290)
 
 ### Backend

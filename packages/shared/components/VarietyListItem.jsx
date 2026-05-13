@@ -30,7 +30,7 @@ import { getVarietyTotals } from '../utils/stockMath.js';
 export default function VarietyListItem({
   variety,
   reservations = new Map(),
-  hideType = true,
+  hideType = false,
   expanded = false,
   onToggle,
   onRowClick,
@@ -40,6 +40,21 @@ export default function VarietyListItem({
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
+
+  // Pick the row to surface for trace on header click: prefer the first Batch
+  // (positive qty) so the owner sees real stock history; fall back to first row.
+  const primaryRow =
+    (variety.rows || []).find((r) => Number(r.current_quantity) > 0) ??
+    (variety.rows || [])[0] ??
+    null;
+
+  function handleHeaderClick() {
+    const willExpand = !expanded;
+    onToggle && onToggle();
+    if (willExpand && primaryRow && handleRowClick) {
+      handleRowClick(primaryRow.id);
+    }
+  }
 
   const { onHand, planned, reservedForPremades, net } = getVarietyTotals(
     variety.rows,
@@ -80,7 +95,7 @@ export default function VarietyListItem({
   function handleHeaderKey(e) {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
-      onToggle && onToggle();
+      handleHeaderClick();
     }
   }
 
@@ -92,14 +107,14 @@ export default function VarietyListItem({
           role="button"
           tabIndex={0}
           data-testid="variety-header"
-          onClick={onToggle}
+          onClick={handleHeaderClick}
           onKeyDown={handleHeaderKey}
           className="flex-1 min-w-0 px-3 py-2 transition-colors active:bg-gray-50 cursor-pointer"
         >
           {/* Identity row */}
           <div className="flex items-baseline gap-2 truncate">
             {showType && (
-              <span className="text-[10px] uppercase tracking-wide text-gray-400 shrink-0">
+              <span className="text-sm font-semibold text-gray-900 shrink-0">
                 {variety.type_name}
               </span>
             )}

@@ -531,6 +531,14 @@ export const stockOrderLines = pgTable('stock_order_lines', {
   quantityAccepted:         integer('quantity_accepted').notNull().default(0),
   writeOffQty:              integer('write_off_qty').notNull().default(0),
   evalStatus:               text('eval_status').notNull().default(''),
+  // Y-model Variety identity for "Add new" lines (issue #304). NULL when
+  // line links to an existing stock_id; populated when user adds a brand-new
+  // Variety from the PO draft. Evaluation reads these to create the new
+  // Stock Item with full Y-model identity.
+  typeName:                 text('type_name'),
+  colour:                   text('colour'),
+  sizeCm:                   integer('size_cm'),
+  cultivar:                 text('cultivar'),
   createdAt:                timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   airtableIdx: uniqueIndex('stock_order_lines_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),

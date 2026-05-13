@@ -8,6 +8,7 @@ import {
   VarietyListItem,
   ShortfallSummary,
   BatchArrivalList,
+  PendingArrivalsPanel,
   BatchTraceModal,
   WriteOffBatchPicker,
   LOSS_REASONS,
@@ -57,6 +58,7 @@ export default function StockPanelPage() {
   const [editMode, setEditMode]       = useState(false);
   const [showHelp, setShowHelp]       = useState(false);
   const [committedMap, setCommittedMap] = useState({}); // stockId → { committed, orders }
+  const [pendingPO, setPendingPO] = useState({}); // stockId → { ordered, plannedDate, pos[] }
   // Premade-bouquet reservations: { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
   const [premadeMap, setPremadeMap] = useState({});
 
@@ -94,13 +96,15 @@ export default function StockPanelPage() {
     setLoading(true);
     try {
       if (yEnabled) {
-        // Y-model: fetch grouped stock + premade reservations in parallel.
-        const [groupedRes, premadeRes] = await Promise.all([
+        // Y-model: fetch grouped stock + premade reservations + pending POs.
+        const [groupedRes, premadeRes, pendingPoRes] = await Promise.all([
           client.get('/stock?grouped=true'),
           client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+          client.get('/stock/pending-po').catch(() => ({ data: {} })),
         ]);
         setGroups(groupedRes.data.groups || []);
         setPremadeMap(premadeRes.data || {});
+        setPendingPO(pendingPoRes.data || {});
       } else {
         // Legacy flat list
         const [stockRes, committedRes, premadeRes] = await Promise.all([
@@ -358,12 +362,23 @@ export default function StockPanelPage() {
           </button>
         )}
 
-        {/* Pending arrivals — PO overview */}
-        <PendingArrivalsSection
-          stock={stock}
-          committedMap={committedMap}
-          onOrderClick={(id) => navigate(`/orders/${id}`)}
-        />
+        {/* Pending arrivals — Y-native (Variety-grouped) when flag on,
+            legacy per-stockId table when flag off. */}
+        {yEnabled
+          ? <PendingArrivalsPanel
+              pendingPO={pendingPO}
+              stock={(groups || []).flatMap(g => (g.rows || []).map(r => ({
+                ...r,
+                Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
+              })))}
+              t={t}
+            />
+          : <PendingArrivalsSection
+              stock={stock}
+              committedMap={committedMap}
+              onOrderClick={(id) => navigate(`/orders/${id}`)}
+            />
+        }
 
         {/* Receive stock */}
         <button
@@ -540,7 +555,7 @@ export default function StockPanelPage() {
                         <VarietyListItem
                           variety={group}
                           reservations={reservationsMap}
-                          hideType={true}
+                          hideType={false}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(stockId)}
