@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import t from '../../translations.js';
 import {
   parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
+  groupByVariety, varietyDisplayName,
 } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -23,6 +24,37 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
   // Y-model picker state: show VarietyAllocationPicker when yEnabled
   const [yPickerOpen, setYPickerOpen] = useState(false);
   const [yPickerQty, setYPickerQty] = useState(1);
+  const [yPickerStockItems, setYPickerStockItems] = useState([]);
+
+  // Y-model: group the search-filtered stock by Variety 4-tuple.
+  const varGroups = useMemo(() => {
+    if (!yEnabled) return [];
+    const raw = editing.getFilteredStock(flowerSearch);
+    const adapted = raw.map(s => ({
+      ...s,
+      type_name: s.Type ?? null,
+      colour:    s.Colour ?? null,
+      size_cm:   s.Size ?? null,
+      cultivar:  s.Cultivar ?? null,
+      current_quantity: Number(s['Current Quantity']) || 0,
+    }));
+    return [...groupByVariety(adapted).values()].map(g => ({
+      key:         g.key,
+      displayName: varietyDisplayName(g),
+      type_name:   g.type_name,
+      colour:      g.colour,
+      size_cm:     g.size_cm,
+      cultivar:    g.cultivar,
+      rows:        g.rows,
+      totalQty:    g.rows.reduce((s, r) => s + (r.current_quantity || 0), 0),
+      sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+      cost:        Number(g.rows[0]?.['Current Cost Price']) || 0,
+      poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
+      poDate:      g.rows.map(r => editing.pendingPO?.[r.id]?.plannedDate).find(Boolean) ?? null,
+    }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [yEnabled, editing.stockItems, editing.pendingPO, flowerSearch]);
+
   if (!o.orderLines?.length) return null;
 
   return (
@@ -116,15 +148,39 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                 <span className="text-right">{t.quantity}</span>
               </div>
               <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
-                {editing.getFilteredStock(flowerSearch)
+                {yEnabled ? varGroups.slice(0, 20).map(v => {
+                    const { key, type_name, colour, size_cm, cultivar, totalQty, sell, cost, poQty, poDate } = v;
+                    const poDateLabel = formatPoDate(poDate);
+                    return (
+                      <button key={key} type="button"
+                        onClick={() => { setYPickerStockItems(v.rows); setYPickerOpen(true); setYPickerQty(1); }}
+                        className={`w-full grid grid-cols-[5rem_5rem_3rem_minmax(0,1fr)_3.5rem_3rem_3rem_2.5rem] gap-2 items-baseline px-2 py-1.5 text-sm hover:bg-gray-50 rounded text-left ${poQty > 0 ? 'bg-blue-50/50' : totalQty <= 0 ? 'bg-amber-50/50' : ''}`}
+                      >
+                        <span className="text-xs font-semibold text-ios-label truncate">{type_name ?? '—'}</span>
+                        <span className="text-xs text-ios-secondary truncate">{colour ?? '—'}</span>
+                        <span className="text-xs text-ios-secondary tabular-nums">{size_cm != null ? `${size_cm}cm` : '—'}</span>
+                        <span className="text-xs italic text-ios-tertiary truncate">{cultivar ?? '—'}</span>
+                        <span className="text-right text-ios-tertiary text-[10px]">
+                          {v.rows.length > 1 ? `×${v.rows.length}` : '—'}
+                        </span>
+                        <span className="text-right text-xs text-ios-tertiary tabular-nums">{cost > 0 ? cost.toFixed(0) : '—'}</span>
+                        <span className="text-right text-xs text-ios-secondary tabular-nums">{sell > 0 ? sell.toFixed(0) : '—'}</span>
+                        <span className={`text-right text-xs font-medium tabular-nums ${totalQty <= 0 ? 'text-amber-600' : 'text-ios-label'}`}>{totalQty}</span>
+                        {poQty > 0 && (
+                          <div className="col-span-8 text-[10px] text-blue-600 font-medium mt-0.5">
+                            +{poQty}{' '}
+                            {poDateLabel ? `${t.arrivesOn || 'arrives'} ${poDateLabel}` : (t.onOrder || 'on order')}
+                          </div>
+                        )}
+                      </button>
+                    );
+                }) : editing.getFilteredStock(flowerSearch)
                   .slice(0, 20)
                   .map(s => {
                     const qty = Number(s['Current Quantity']) || 0;
                     const cost = Number(s['Current Cost Price']) || 0;
                     const sell = Number(s['Current Sell Price']) || 0;
                     const { name: fn, batch: b } = parseBatchName(s['Display Name']);
-                    // Y-model fields if present; legacy items fall back to the
-                    // parsed Display Name in the Type column.
                     const yType     = s.Type ?? null;
                     const yColour   = s.Colour ?? null;
                     const ySize     = s.Size != null ? s.Size : null;
@@ -136,20 +192,13 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     return (
                       <button key={s.id} type="button"
                         onClick={() => {
-                          if (yEnabled) {
-                            // Y-model: open VarietyAllocationPicker for the full variety decision
-                            setYPickerOpen(true);
-                            setYPickerQty(1);
+                          const baseName = parseBatchName(s['Display Name'] || '').name;
+                          const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
+                          if (allMatches.length <= 1) {
+                            editing.addFlowerFromStock(s);
                           } else {
-                            // Legacy: disambiguate batches via BatchPickerModal
-                            const baseName = parseBatchName(s['Display Name'] || '').name;
-                            const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
-                            if (allMatches.length <= 1) {
-                              editing.addFlowerFromStock(s);
-                            } else {
-                              setPickerModalVariety(baseName);
-                              setPickerModalMatches(allMatches);
-                            }
+                            setPickerModalVariety(baseName);
+                            setPickerModalMatches(allMatches);
                           }
                         }}
                         className={`w-full grid grid-cols-[5rem_5rem_3rem_minmax(0,1fr)_3.5rem_3rem_3rem_2.5rem] gap-2 items-baseline px-2 py-1.5 text-sm hover:bg-gray-50 rounded text-left ${poQty > 0 ? 'bg-blue-50/50' : qty <= 0 ? 'bg-amber-50/50' : ''}`}
@@ -226,7 +275,7 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
           {/* Y-model picker — only rendered when flag is on */}
           {yEnabled && yPickerOpen && (
             <VarietyAllocationPicker
-              stockItems={editing.stockItems}
+              stockItems={yPickerStockItems}
               reservations={new Map(
                 Object.entries(editing.premadeMap || {}).map(([id, v]) => [id, v.qty || 0])
               )}

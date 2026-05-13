@@ -2,6 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   renderStockName, parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
+  groupByVariety, varietyDisplayName,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 
@@ -16,6 +17,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
   // Y-model picker state: show VarietyAllocationPicker when yEnabled
   const [yPickerOpen, setYPickerOpen] = useState(false);
   const [yPickerQty, setYPickerQty] = useState(1);
+  const [yPickerStockItems, setYPickerStockItems] = useState([]);
 
   const dateBatchPattern = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 
@@ -29,39 +31,62 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
     [editing.stockItems, editing.pendingPO]
   );
 
-  // Filtered catalog: search + in-stock toggle
-  // Always show items with pending PO quantities even at qty=0
+  // Filter by in-stock toggle (search handled after grouping for Y-model)
   const catalogItems = useMemo(() => {
-    let result = visibleStock;
     if (!showOutOfStock) {
-      result = result.filter(s =>
+      return visibleStock.filter(s =>
         (Number(s['Current Quantity']) || 0) > 0 || (editing.pendingPO?.[s.id]?.ordered || 0) > 0
       );
     }
-    const q = flowerSearch.toLowerCase().trim();
-    if (!q) return result;
-    return result.filter(s =>
-      (s['Display Name'] || '').toLowerCase().includes(q) ||
-      (s['Category'] || '').toLowerCase().includes(q)
-    );
-  }, [visibleStock, flowerSearch, showOutOfStock, editing.pendingPO]);
+    return visibleStock;
+  }, [visibleStock, showOutOfStock, editing.pendingPO]);
 
-  // Group by base variety name — one row per variety in the picker
+  // Group catalog: Y-model = one row per Variety 4-tuple; legacy = one row per base name
   const catalogVarieties = useMemo(() => {
+    const q = flowerSearch.toLowerCase().trim();
+    if (yEnabled) {
+      const adapted = catalogItems.map(s => ({
+        ...s,
+        type_name: s.Type ?? null,
+        colour:    s.Colour ?? null,
+        size_cm:   s.Size ?? null,
+        cultivar:  s.Cultivar ?? null,
+        current_quantity: Number(s['Current Quantity']) || 0,
+      }));
+      const groups = [...groupByVariety(adapted).values()].map(g => ({
+        key:         g.key,
+        displayName: varietyDisplayName(g),
+        type_name:   g.type_name,
+        colour:      g.colour,
+        size_cm:     g.size_cm,
+        cultivar:    g.cultivar,
+        rows:        g.rows,
+        totalQty:    g.rows.reduce((s, r) => s + (Number(r['Current Quantity']) || 0), 0),
+        sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+        poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
+        inCart:      g.rows.some(r => editing.editLines.some(l => l.stockItemId === r.id)),
+      }));
+      if (!q) return groups;
+      return groups.filter(g => g.displayName.toLowerCase().includes(q));
+    }
+    // Legacy: group by parseBatchName base name
     const map = new Map();
     for (const s of catalogItems) {
       const { name: base } = parseBatchName(s['Display Name'] || '');
       const key = base.toLowerCase();
-      if (!map.has(key)) {
-        map.set(key, { baseName: base, totalQty: 0, sell: Number(s['Current Sell Price']) || 0, poQty: 0, inCart: false });
+      if (!q || key.includes(q) || (s['Category'] || '').toLowerCase().includes(q)) {
+        if (!map.has(key)) {
+          map.set(key, { key, displayName: base, totalQty: 0, sell: Number(s['Current Sell Price']) || 0, poQty: 0, inCart: false, rows: [] });
+        }
+        const entry = map.get(key);
+        entry.totalQty += Number(s['Current Quantity']) || 0;
+        entry.poQty += editing.pendingPO?.[s.id]?.ordered || 0;
+        if (editing.editLines.find(l => l.stockItemId === s.id)) entry.inCart = true;
+        entry.rows.push(s);
       }
-      const entry = map.get(key);
-      entry.totalQty += Number(s['Current Quantity']) || 0;
-      entry.poQty += editing.pendingPO?.[s.id]?.ordered || 0;
-      if (editing.editLines.find(l => l.stockItemId === s.id)) entry.inCart = true;
     }
     return [...map.values()];
-  }, [catalogItems, editing.pendingPO, editing.editLines]);
+  }, [catalogItems, flowerSearch, yEnabled, editing.pendingPO, editing.editLines]);
 
   function addFromCatalog(s) {
     const existing = editing.editLines.findIndex(l => l.stockItemId === s.id);
@@ -170,22 +195,22 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               {catalogVarieties.length === 0 ? (
                 <p className="text-ios-tertiary text-sm text-center py-6">{t.noStockFound || 'No items found'}</p>
               ) : (
-                catalogVarieties.map(({ baseName, totalQty, sell, poQty, inCart }) => {
+                catalogVarieties.map((v) => {
+                  const { key, displayName, totalQty, sell, poQty, inCart } = v;
                   const low = totalQty > 0 && totalQty <= 5;
                   const out = totalQty <= 0;
                   return (
                     <button
-                      key={baseName}
+                      key={key}
                       type="button"
                       onClick={() => {
                         if (yEnabled) {
-                          // Y-model: open VarietyAllocationPicker for the full variety decision
+                          setYPickerStockItems(v.rows);
                           setYPickerOpen(true);
                           setYPickerQty(1);
                         } else {
-                          // Legacy: BatchPickerModal disambiguates between batches
-                          const allMatches = findAllMatchingVariety(editing.stockItems, baseName);
-                          setPickerModalVariety(baseName);
+                          const allMatches = findAllMatchingVariety(editing.stockItems, displayName);
+                          setPickerModalVariety(displayName);
                           setPickerModalMatches(allMatches);
                         }
                       }}
@@ -194,7 +219,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                     >
                       <div className="flex-1 min-w-0">
                         <div className={`text-sm font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                          {baseName}
+                          {displayName}
                         </div>
                         <div className="text-xs text-ios-tertiary">
                           <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
@@ -349,7 +374,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
           {/* Y-model picker — only rendered when flag is on */}
           {yEnabled && yPickerOpen && (
             <VarietyAllocationPicker
-              stockItems={editing.stockItems}
+              stockItems={yPickerStockItems}
               reservations={new Map(
                 Object.entries(editing.premadeMap || {}).map(([id, v]) => [id, v.qty || 0])
               )}
