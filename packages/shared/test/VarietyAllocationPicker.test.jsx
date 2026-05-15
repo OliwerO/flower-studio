@@ -41,7 +41,9 @@ describe('VarietyAllocationPicker — Stage 1 typeahead', () => {
       onSelectStock={() => {}} onClose={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'sarah' } });
     expect(screen.getAllByTestId('variety-row')).toHaveLength(1);
-    expect(screen.getByText(/Sarah Bernhardt/)).toBeInTheDocument();
+    // VarietyIdentity renders cultivar both as a visible italic span and inside the
+    // sr-only combined-name span, so multiple matches are expected (#311).
+    expect(screen.getAllByText(/Sarah Bernhardt/).length).toBeGreaterThan(0);
   });
 
   it('cross-field — "60" returns all 60cm Varieties', () => {

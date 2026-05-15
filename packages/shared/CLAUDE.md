@@ -23,6 +23,7 @@ components/
   FilterBar.jsx               → Search + filter chips composite
   BatchPickerModal.jsx        → Disambiguation modal shown when a flower variety has multiple Stock Items (Batches + Demand Entry). Used by BouquetEditor (florist) and BouquetSection (dashboard). Receives `t` prop for bilingual strings. DEPRECATED — see #288
   VarietyAllocationPicker.jsx → Hybrid two-stage Variety picker — Stage 1 typeahead, Stage 2 engine options, Owner-only "+ Create new Variety". Behind `STOCK_Y_MODEL` in BouquetEditor / BouquetSection / Step2Bouquet (florist + dashboard)
+  VarietyIdentity.jsx         → Single source of truth for Variety 4-tuple typography (#311). Prominent mode (Type + Colour bold, Size small, Cultivar italic) for picker; compact mode (Type as tiny caption when shown, same Colour/Size/Cultivar hierarchy) for Stock list rows under TypeGroupHeader.
   TypeGroupHeader.jsx         → Sticky collapsible Type header for the Y-model stock list. Renders Type label, aggregate bucket totals, and expand/collapse chevron.
   VarietyListItem.jsx         → Variety row with 4-bucket header (onHand / planned / reserved / net), expand-to-Stock-Items, tap-on-reserved → premade list, tap-on-Batch → trace. Consumed by StockPanelPage (florist) and StockTab (dashboard) under `STOCK_Y_MODEL`.
   BatchTracePanel.jsx         → Inline per-Batch usage trace panel (florist uses this via BatchTraceModal; dashboard renders it directly as an inline panel).

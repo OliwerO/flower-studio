@@ -26,6 +26,7 @@
  */
 import { useState } from 'react';
 import { getVarietyTotals } from '../utils/stockMath.js';
+import VarietyIdentity from './VarietyIdentity.jsx';
 
 export default function VarietyListItem({
   variety,
@@ -73,13 +74,6 @@ export default function VarietyListItem({
       ? (t.statusTight ?? 'tight')
       : (t.statusFree ?? 'free');
 
-  // Identity attrs.
-  const showType    = !hideType && !!variety.type_name;
-  const hasColour   = !!variety.colour;
-  const hasSize     = variety.size_cm != null;
-  const hasCultivar = !!variety.cultivar;
-  const hasAnyIdentity = hasColour || hasSize || hasCultivar || showType;
-
   // Reserved-bucket interactivity.
   const [premadeOpen, setPremadeOpen] = useState(false);
   const reservedInteractive = reservedForPremades > 0 && !!premadesByStockId;
@@ -111,32 +105,8 @@ export default function VarietyListItem({
           onKeyDown={handleHeaderKey}
           className="flex-1 min-w-0 px-3 py-2 transition-colors active:bg-gray-50 cursor-pointer"
         >
-          {/* Identity row */}
-          <div className="flex items-baseline gap-2 truncate">
-            {showType && (
-              <span className="text-sm font-semibold text-gray-900 shrink-0">
-                {variety.type_name}
-              </span>
-            )}
-            {hasColour && (
-              <span className="text-sm font-semibold text-gray-900 truncate">
-                {variety.colour}
-              </span>
-            )}
-            {hasSize && (
-              <span className="text-xs text-gray-600 tabular-nums shrink-0">
-                {variety.size_cm}cm
-              </span>
-            )}
-            {hasCultivar && (
-              <span className="text-xs text-gray-400 italic truncate">
-                {variety.cultivar}
-              </span>
-            )}
-            {!hasAnyIdentity && (
-              <span className="text-sm text-gray-400">—</span>
-            )}
-          </div>
+          {/* Identity row — shared hierarchy via VarietyIdentity (#311). */}
+          <VarietyIdentity variety={variety} showType={!hideType} />
 
           {/* Narrative bucket line. Zero buckets render sr-only so testids stay queryable. */}
           <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
