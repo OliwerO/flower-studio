@@ -27,9 +27,11 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
   const [yPickerStockItems, setYPickerStockItems] = useState([]);
 
   // Y-model: group the search-filtered stock by Variety 4-tuple.
+  // `editing.flowerSearch` is the hook-owned search state — destructuring it as
+  // a local would only work inside the editing-mode IIFE further down.
   const varGroups = useMemo(() => {
     if (!yEnabled) return [];
-    const raw = editing.getFilteredStock(flowerSearch);
+    const raw = editing.getFilteredStock(editing.flowerSearch);
     const adapted = raw.map(s => ({
       ...s,
       type_name: s.Type ?? null,
@@ -53,7 +55,7 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
       poDate:      g.rows.map(r => editing.pendingPO?.[r.id]?.plannedDate).find(Boolean) ?? null,
     }));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [yEnabled, editing.stockItems, editing.pendingPO, flowerSearch]);
+  }, [yEnabled, editing.stockItems, editing.pendingPO, editing.flowerSearch]);
 
   if (!o.orderLines?.length) return null;
 
