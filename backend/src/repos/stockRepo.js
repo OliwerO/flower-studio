@@ -339,6 +339,11 @@ async function listFromPg(options = {}) {
   if (pg.includeEmpty !== true)    filters.push(gt(stock.currentQuantity, 0));
   if (pg.category)                 filters.push(eq(stock.category, String(pg.category)));
   if (pg.displayName)              filters.push(ilike(stock.displayName, String(pg.displayName)));
+  // Variety 4-tuple filter — used by PO evaluation to find existing Stock Items by identity.
+  if (pg.typeName)                 filters.push(eq(stock.typeName, String(pg.typeName)));
+  if ('colour' in pg)              filters.push(pg.colour ? eq(stock.colour, String(pg.colour)) : isNull(stock.colour));
+  if ('sizeCm' in pg)              filters.push(pg.sizeCm != null ? eq(stock.sizeCm, Number(pg.sizeCm)) : isNull(stock.sizeCm));
+  if ('cultivar' in pg)            filters.push(pg.cultivar ? eq(stock.cultivar, String(pg.cultivar)) : isNull(stock.cultivar));
   if (Array.isArray(pg.ids) && pg.ids.length) {
     // Accept either airtable ids or uuids in the same array.
     const recs = pg.ids.filter(x => typeof x === 'string' && x.startsWith('rec'));

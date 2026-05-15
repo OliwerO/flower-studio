@@ -679,42 +679,86 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           }
         }
 
-        // Auto-resolve: if PO line has no Stock Item but has Flower Name,
-        // find a matching stock record and link it. This handles lines created
-        // from freetext input (no stock item selected in the PO form).
+        // Auto-resolve: if PO line has no Stock Item, find or create one.
+        // Y-model lines carry Variety attrs (Type/Colour/Size/Cultivar) —
+        // use the 4-tuple for exact matching before falling back to name.
         if (!stockItemId && (accepted > 0 || writeOff > 0)) {
           const flowerName = String(line['Flower Name'] || '').trim();
-          if (!flowerName) {
+          const lineType     = line['Type']    ? String(line['Type']).trim()    : null;
+          const lineColour   = line['Colour']  ? String(line['Colour']).trim()  : null;
+          const lineSizeCm   = line['Size'] != null && Number.isFinite(Number(line['Size'])) ? Number(line['Size']) : null;
+          const lineCultivar = line['Cultivar'] ? String(line['Cultivar']).trim() : null;
+
+          if (!flowerName && !lineType) {
             throw new Error(
-              `Line "${evalLine.lineId}" has no Stock Item and no Flower Name — cannot resolve.`,
+              `Line "${evalLine.lineId}" has no Stock Item, no Flower Name, and no Variety attrs — cannot resolve.`,
             );
           }
-          const matches = await stockRepo.list({
-            pg: { displayName: flowerName, active: true, includeEmpty: true },
-            maxRecords: 1,
-          });
-          if (matches.length > 0) {
-            stockItemId = matches[0].id;
-            await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
-            console.log(`[STOCK-ORDER] Auto-linked "${flowerName}" → stock item ${stockItemId}`);
-          } else {
-            // Create a new stock item so the line can be received
-            const markup = Number(getConfig('targetMarkup')) || 1;
-            const autoSell = sellPrice || Math.round(costPrice * markup * 100) / 100;
-            const created = await stockRepo.create({
-              'Display Name':       flowerName,
-              'Purchase Name':      flowerName,
-              Category:             'Other',
-              'Current Quantity':   0,
-              'Current Cost Price': costPrice,
-              'Current Sell Price': autoSell,
-              Supplier:             supplier,
-              Unit:                 'Stems',
-              Active:               true,
+
+          const markup = Number(getConfig('targetMarkup')) || 1;
+          const autoSell = sellPrice || Math.round(costPrice * markup * 100) / 100;
+
+          if (lineType) {
+            // Y-model path: resolve by exact Variety 4-tuple.
+            const matches = await stockRepo.list({
+              pg: { typeName: lineType, colour: lineColour, sizeCm: lineSizeCm, cultivar: lineCultivar, includeEmpty: true },
+              maxRecords: 1,
             });
-            stockItemId = created.id;
-            await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
-            console.log(`[STOCK-ORDER] Created & linked stock item for "${flowerName}" (${stockItemId})`);
+            if (matches.length > 0) {
+              stockItemId = matches[0].id;
+              await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
+              console.log(`[STOCK-ORDER] Auto-linked Y-model variety "${lineType}" → stock item ${stockItemId}`);
+            } else {
+              const parts = [lineType];
+              if (lineColour)  parts.push(lineColour);
+              if (lineSizeCm != null) parts.push(`${lineSizeCm}cm`);
+              if (lineCultivar) parts.push(lineCultivar);
+              const displayName = flowerName || parts.join(' ');
+              const created = await stockRepo.create({
+                'Display Name':       displayName,
+                'Purchase Name':      displayName,
+                Type:                 lineType,
+                Colour:               lineColour,
+                Size:                 lineSizeCm,
+                Cultivar:             lineCultivar,
+                Category:             'Other',
+                'Current Quantity':   0,
+                'Current Cost Price': costPrice,
+                'Current Sell Price': autoSell,
+                Supplier:             supplier,
+                Unit:                 'Stems',
+                Active:               true,
+              });
+              stockItemId = created.id;
+              await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
+              console.log(`[STOCK-ORDER] Created Y-model stock item for variety "${lineType}" (${stockItemId})`);
+            }
+          } else {
+            // Legacy path: resolve by Flower Name.
+            const matches = await stockRepo.list({
+              pg: { displayName: flowerName, includeEmpty: true },
+              maxRecords: 1,
+            });
+            if (matches.length > 0) {
+              stockItemId = matches[0].id;
+              await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
+              console.log(`[STOCK-ORDER] Auto-linked "${flowerName}" → stock item ${stockItemId}`);
+            } else {
+              const created = await stockRepo.create({
+                'Display Name':       flowerName,
+                'Purchase Name':      flowerName,
+                Category:             'Other',
+                'Current Quantity':   0,
+                'Current Cost Price': costPrice,
+                'Current Sell Price': autoSell,
+                Supplier:             supplier,
+                Unit:                 'Stems',
+                Active:               true,
+              });
+              stockItemId = created.id;
+              await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
+              console.log(`[STOCK-ORDER] Created & linked stock item for "${flowerName}" (${stockItemId})`);
+            }
           }
         }
 

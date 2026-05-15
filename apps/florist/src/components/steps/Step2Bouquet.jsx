@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -321,6 +321,28 @@ export default function Step2Bouquet({
     );
   }, [visibleStock, flowerQuery, showOutOfStock, pendingPO]);
 
+  // Y-model: group filteredStock by Variety 4-tuple for the catalog list.
+  const varGroups = useMemo(() => {
+    if (!yEnabled) return [];
+    const groups = [...groupByVariety(adaptedStock.filter(a =>
+      filteredStock.some(s => s.id === a.id)
+    )).values()];
+    const q = flowerQuery.toLowerCase().trim();
+    const filtered = q
+      ? groups.filter(g => varietyDisplayName(g).toLowerCase().includes(q))
+      : groups;
+    return filtered.map(g => ({
+      key:         g.key,
+      displayName: varietyDisplayName(g),
+      rows:        g.rows,
+      totalQty:    g.rows.reduce((s, r) => s + (r.current_quantity || 0), 0),
+      sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+      poQty:       g.rows.reduce((s, r) => s + (pendingPO[r.id]?.ordered || 0), 0),
+      poDate:      g.rows.map(r => pendingPO[r.id]?.plannedDate).find(Boolean) ?? null,
+      inCart:      g.rows.some(r => orderLines.some(l => l.stockItemId === r.id)),
+    }));
+  }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines]);
+
   function addOne(stockItem) {
     onLinesChange(lines => {
       const exists = lines.find(l => l.stockItemId === stockItem.id);
@@ -533,8 +555,45 @@ export default function Step2Bouquet({
               <span className="text-sm font-medium text-indigo-700">+ {t.addNewFlower || 'Add new'} "{flowerQuery}"</span>
             </button>
           )}
-          {filteredStock.length === 0 && !showCustomFlower ? (
+          {(yEnabled ? varGroups.length === 0 : filteredStock.length === 0) && !showCustomFlower ? (
             <p className="text-ios-tertiary text-sm text-center py-8">{t.noStockFound}</p>
+          ) : yEnabled ? (
+            varGroups.map(v => {
+              const { key, displayName, totalQty, sell, poQty, poDate, inCart } = v;
+              const low = totalQty > 0 && totalQty <= 5;
+              const out = totalQty <= 0;
+              const poDateLabel = poDate ? formatPoDate(poDate) : null;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => {
+                    setYPickerStockItems(v.rows);
+                    setYPickerOpen(true);
+                  }}
+                  className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors active-scale
+                              ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
+                      {displayName}
+                    </div>
+                    <div className="text-sm text-ios-tertiary">
+                      <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
+                      <span> · {totalQty} pcs</span>
+                      {low && !out && <span className="text-ios-orange"> · low</span>}
+                      {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
+                      {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
+                    </div>
+                  </div>
+                  {inCart && (
+                    <span className="min-w-[24px] h-[24px] px-1.5 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              );
+            })
           ) : (
             filteredStock.map(s => {
               const qty    = Number(s['Current Quantity']) || 0;
@@ -549,20 +608,7 @@ export default function Step2Bouquet({
                 <button
                   key={s.id}
                   type="button"
-                  onClick={() => {
-                    if (yEnabled) {
-                      // Y-model: group by 4-tuple to detect multi-row varieties
-                      const adapted = adaptedStock.find(a => a.id === s.id);
-                      const key = adapted ? [adapted.type_name ?? '', adapted.colour ?? '', adapted.size_cm ?? '', adapted.cultivar ?? ''].join('|') : null;
-                      const sameVariety = key ? adaptedStock.filter(a => [a.type_name ?? '', a.colour ?? '', a.size_cm ?? '', a.cultivar ?? ''].join('|') === key) : [adapted || s];
-                      if (sameVariety.length > 1) {
-                        setYPickerStockItems(sameVariety);
-                        setYPickerOpen(true);
-                        return;
-                      }
-                    }
-                    addOne(s);
-                  }}
+                  onClick={() => addOne(s)}
                   className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors active-scale
                               ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
                 >
@@ -575,8 +621,6 @@ export default function Step2Bouquet({
                       {isOwner && <span> · {(Number(s['Current Cost Price']) || 0).toFixed(0)} zł {t.costPrice}</span>}
                       <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {/* qty < 0 → will roll into next PO; label it clearly so the
-                          owner knows she's adding to pre-existing demand, not a bug. */}
                       {qty < 0 && !poQty && (
                         <span className="text-orange-600 font-medium"> · {t.addsToNextPO || 'next PO'}</span>
                       )}
