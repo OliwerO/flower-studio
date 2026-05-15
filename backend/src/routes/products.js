@@ -154,6 +154,17 @@ router.patch('/:id', async (req, res, next) => {
     }
     if (Object.keys(updates).length === 0)
       return res.status(400).json({ error: 'No valid fields to update.' });
+
+    // Invariant: a variant tagged "Available Today" must have Lead Time Days = 0.
+    // The storefront same-day shelf requires both the tag AND LT=0 (see
+    // wixProductSync.js isAvailableToday). Owner toggling the category chip
+    // from the florist app shouldn't also have to remember to zero the lead
+    // time. One-direction only — removing the tag leaves LT alone, since LT
+    // still drives the earliest-delivery picker for non-same-day bouquets.
+    if (Array.isArray(updates['Category']) && updates['Category'].includes('Available Today')) {
+      updates['Lead Time Days'] = 0;
+    }
+
     const updated = await productConfigRepo.update(req.params.id, updates);
     res.json(updated);
   } catch (err) { next(err); }
