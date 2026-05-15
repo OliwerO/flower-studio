@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { groupByVariety, varietyDisplayName } from '../utils/varietyKey.js';
 import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
+import VarietyIdentity from './VarietyIdentity.jsx';
 
 /**
  * Hybrid two-stage Variety picker — replaces BatchPickerModal under STOCK_Y_MODEL.
@@ -204,10 +205,11 @@ export default function VarietyAllocationPicker({
                 type="button"
                 data-testid="variety-row"
                 onClick={() => handleRowClick(g.key)}
+                aria-label={g.displayName}
                 className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
               >
-                <div className="text-sm font-medium text-gray-900">{g.displayName}</div>
-                <div className="text-xs text-gray-500 mt-0.5">
+                <VarietyIdentity variety={g} showType srOnlyFullName />
+                <div className="text-xs text-gray-500 mt-1">
                   {g.totalQty} {t.stems}
                 </div>
               </button>
