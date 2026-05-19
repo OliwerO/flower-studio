@@ -207,6 +207,50 @@ export async function updateDemandEntryDate(orderLineId, newDate, tx, actor = { 
   return { demandEntryId: newDe._pgId, action: 'split' };
 }
 
+/**
+ * FEFO router: resolve a Variety to the oldest non-negative Batch that can
+ * fully cover `lineQty`. Falls back to the oldest Batch (will go negative)
+ * if none has enough cover. Returns null when no Batches exist.
+ *
+ * Demand Entries (`current_quantity < 0`) are intentionally excluded —
+ * order_line FK rerouting to a DE is handled separately by step 3b in
+ * `orderRepo.createOrder` via `getOrCreateDemandEntry`.
+ *
+ * Pglite limitation: no `SELECT FOR UPDATE`. Production PG gets row-level
+ * lock isolation on the subsequent UPDATE in `stockRepo.adjustQuantity`.
+ * The small read-modify race window is acceptable for single-studio use.
+ *
+ * @param {{ typeName: string, colour?: string|null, sizeCm?: number|null, cultivar?: string|null }} varietyKey
+ * @param {number} lineQty - quantity the order line will consume
+ * @param {object} tx      - Drizzle transaction handle (required)
+ * @returns {Promise<string|null>} chosen stock_items.id (uuid), or null
+ */
+export async function resolveBatchByFEFO(varietyKey, lineQty, tx) {
+  const { typeName, colour = null, sizeCm = null, cultivar = null } = varietyKey ?? {};
+  if (!typeName) return null;
+
+  const varietyWhere = and(
+    eq(stock.typeName, typeName),
+    colour   ? eq(stock.colour, colour)     : isNull(stock.colour),
+    sizeCm   ? eq(stock.sizeCm, sizeCm)     : isNull(stock.sizeCm),
+    cultivar ? eq(stock.cultivar, cultivar) : isNull(stock.cultivar),
+    sql`${stock.currentQuantity} >= 0`,
+    isNull(stock.deletedAt),
+  );
+
+  const candidates = await tx.select({
+    id:              stock.id,
+    currentQuantity: stock.currentQuantity,
+  }).from(stock)
+    .where(varietyWhere)
+    .orderBy(sql`${stock.date} ASC NULLS LAST`, sql`${stock.createdAt} ASC`);
+
+  if (candidates.length === 0) return null;
+
+  const fullCover = candidates.find(c => Number(c.currentQuantity) >= Number(lineQty));
+  return (fullCover ?? candidates[0]).id;
+}
+
 // ── Backend mode stub ──
 // getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
 // remove the callers in orderService.js and wix.js.
