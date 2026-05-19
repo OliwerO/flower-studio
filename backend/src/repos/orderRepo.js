@@ -10,7 +10,7 @@
 //     bookkeeping, no half-torn-down state.
 
 import * as stockRepo from './stockRepo.js';
-import { getOrCreateDemandEntry, computeDemandDate, updateDemandEntryDate } from './stockRepo.js';
+import { getOrCreateDemandEntry, computeDemandDate, updateDemandEntryDate, resolveBatchByFEFO } from './stockRepo.js';
 import * as stockLossRepo from './stockLossRepo.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries, stock } from '../db/schema.js';
@@ -594,6 +594,49 @@ export async function createOrder(params, config, opts = {}) {
         stockDeferred:     line.stockDeferred === true,
       }).returning();
       createdLines.push(lineRow);
+    }
+
+    // 3a. Flag-on: FEFO routing for Batch-bound lines (#319).
+    //
+    //     When the picker passes a Variety's representative stockItemId but
+    //     siblings exist, reroute to the oldest non-negative Batch that
+    //     fully covers (falls back to oldest period if none does). Skips
+    //     DEs (qty < 0) — those are handled by step 3b below.
+    if (getStockYModelEnabled() && !skipStockDeduction) {
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
+        if (!line.stockItemId || line.stockDeferred) continue;
+
+        const [stockRow] = await tx.select({
+          typeName:        stock.typeName,
+          colour:          stock.colour,
+          sizeCm:          stock.sizeCm,
+          cultivar:        stock.cultivar,
+          currentQuantity: stock.currentQuantity,
+        }).from(stock)
+          .where(and(eq(stock.id, line.stockItemId), isNull(stock.deletedAt)))
+          .limit(1);
+
+        if (!stockRow?.typeName || Number(stockRow.currentQuantity) < 0) continue;
+
+        const targetId = await resolveBatchByFEFO(
+          {
+            typeName: stockRow.typeName,
+            colour:   stockRow.colour,
+            sizeCm:   stockRow.sizeCm,
+            cultivar: stockRow.cultivar,
+          },
+          Number(line.quantity),
+          tx,
+        );
+        if (targetId && targetId !== line.stockItemId) {
+          await tx.update(orderLines)
+            .set({ stockItemId: targetId, updatedAt: new Date() })
+            .where(eq(orderLines.id, createdLines[i].id));
+          createdLines[i] = { ...createdLines[i], stockItemId: targetId };
+          line.stockItemId = targetId;
+        }
+      }
     }
 
     // 3b. Flag-on: create/deepen Demand Entry for each line whose linked
