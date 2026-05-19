@@ -48,4 +48,57 @@ describe('appConfigRepo', () => {
     expect(may).toBe('202605-001');
     expect(jun).toBe('202606-001');
   });
+
+  // Regression: prod incident 2026-05-19. Counter drifted behind MAX(app_order_id)
+  // — every nextOrderId returned an ID that already existed in orders, blowing
+  // the unique index. Self-healing: counter must jump past any existing IDs for
+  // that month, never return one that already exists.
+  it('nextOrderId skips past existing app_order_ids that are ahead of the counter', async () => {
+    const { orders } = await import('../db/schema.js');
+    // Counter sits at 2 (committed by these two calls).
+    await appConfigRepo.nextOrderId('202605');
+    await appConfigRepo.nextOrderId('202605');
+
+    // Seed an order whose appOrderId is far ahead of the counter — exactly
+    // the prod drift scenario (backfilled/imported orders past the counter).
+    await harness.db.insert(orders).values({
+      airtableId:    null,
+      appOrderId:    '202605-010',
+      customerId:    'recDRIFT',
+      deliveryType:  'Pickup',
+      status:        'New',
+    });
+
+    const next = await appConfigRepo.nextOrderId('202605');
+    expect(next).toBe('202605-011');
+  });
+
+  it('nextOrderId ignores other months when self-healing', async () => {
+    const { orders } = await import('../db/schema.js');
+    // June order should NOT pull the May counter forward.
+    await harness.db.insert(orders).values({
+      airtableId:   null,
+      appOrderId:   '202606-050',
+      customerId:   'recOTHERMONTH',
+      deliveryType: 'Pickup',
+      status:       'New',
+    });
+    const may = await appConfigRepo.nextOrderId('202605');
+    expect(may).toBe('202605-001');
+  });
+
+  it('nextOrderId ignores non-numeric-suffix app_order_ids (legacy / fallback shape)', async () => {
+    const { orders } = await import('../db/schema.js');
+    // generateOrderId() fallback shape is "YYYYMM-T<digits>" — must not poison
+    // the counter via regex match.
+    await harness.db.insert(orders).values({
+      airtableId:   null,
+      appOrderId:   '202605-T99999',
+      customerId:   'recFALLBACK',
+      deliveryType: 'Pickup',
+      status:       'New',
+    });
+    const next = await appConfigRepo.nextOrderId('202605');
+    expect(next).toBe('202605-001');
+  });
 });
