@@ -1033,6 +1033,37 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
           await tx.update(orderLines).set({ quantity: line.quantity, updatedAt: new Date() }).where(where);
         }
       } else {
+        // FEFO routing for new lines added during edit (#319). Mirrors step 3a
+        // in createOrder. Existing-line quantity changes intentionally skip
+        // FEFO — preserves the line's original audit trail.
+        if (getStockYModelEnabled() && line.stockItemId && !line.stockDeferred) {
+          const [stockRow] = await tx.select({
+            typeName:        stock.typeName,
+            colour:          stock.colour,
+            sizeCm:          stock.sizeCm,
+            cultivar:        stock.cultivar,
+            currentQuantity: stock.currentQuantity,
+          }).from(stock)
+            .where(and(eq(stock.id, line.stockItemId), isNull(stock.deletedAt)))
+            .limit(1);
+
+          if (stockRow?.typeName && Number(stockRow.currentQuantity) >= 0) {
+            const targetId = await resolveBatchByFEFO(
+              {
+                typeName: stockRow.typeName,
+                colour:   stockRow.colour,
+                sizeCm:   stockRow.sizeCm,
+                cultivar: stockRow.cultivar,
+              },
+              Number(line.quantity),
+              tx,
+            );
+            if (targetId && targetId !== line.stockItemId) {
+              line.stockItemId = targetId;
+            }
+          }
+        }
+
         const [created] = await tx.insert(orderLines).values({
           orderId:          order.id,
           stockItemId:      line.stockItemId || null,

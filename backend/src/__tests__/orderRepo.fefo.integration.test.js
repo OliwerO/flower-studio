@@ -203,3 +203,70 @@ describe('createOrder FEFO routing (#319)', () => {
     expect(newestAfter.currentQuantity).toBe(2);   // untouched
   });
 });
+
+describe('editBouquetLines FEFO routing (#319)', () => {
+  it('reroutes a NEW line added during edit to the older Batch', async () => {
+    const oldBatch = await seedBatch({ qty: 5, date: '2026-05-16' });
+    const newBatch = await seedBatch({ qty: 8, date: '2026-05-18' });
+
+    // Seed an order via createOrder with an unrelated Variety so we can edit it.
+    const filler = await seedBatch({ qty: 20, date: '2026-05-10', typeName: 'Rose', colour: 'Red' });
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      deliveryType: 'Pickup',
+      orderLines: [
+        { stockItemId: filler.id, flowerName: 'Red Rose', quantity: 2 },
+      ],
+      paymentStatus: 'Unpaid',
+      paymentMethod: 'Cash',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Now edit-add a Hydrangea line; picker passes the NEW Batch.
+    await orderRepo.editBouquetLines(order.id, {
+      lines: [
+        { stockItemId: newBatch.id, flowerName: 'Hydrangea White', quantity: 3 },
+      ],
+      removedLines: [],
+    }, /* isOwner */ false, { actor: { actorRole: 'florist' } });
+
+    const [oldAfter] = await harness.db.select().from(stock).where(eq(stock.id, oldBatch.id));
+    const [newAfter] = await harness.db.select().from(stock).where(eq(stock.id, newBatch.id));
+    expect(oldAfter.currentQuantity).toBe(2);  // 5 - 3 (FEFO)
+    expect(newAfter.currentQuantity).toBe(8);  // untouched
+  });
+
+  it('does NOT reroute existing-line quantity changes (preserves audit trail)', async () => {
+    const oldBatch = await seedBatch({ qty: 10, date: '2026-05-16' });
+    const newBatch = await seedBatch({ qty: 10, date: '2026-05-18' });
+
+    // Create order against newBatch — FEFO routes to oldBatch at create time.
+    const { order, orderLines: created } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      deliveryType: 'Pickup',
+      orderLines: [
+        { stockItemId: newBatch.id, flowerName: 'Hydrangea White', quantity: 2 },
+      ],
+      paymentStatus: 'Unpaid',
+      paymentMethod: 'Cash',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Confirm create-time FEFO landed on oldBatch.
+    expect((await harness.db.select().from(stock).where(eq(stock.id, oldBatch.id)))[0].currentQuantity).toBe(8);
+
+    // Edit increases qty on the existing line. Should adjust against same batch the line already points at — NOT reroute.
+    await orderRepo.editBouquetLines(order.id, {
+      lines: [
+        { id: created[0].id, stockItemId: oldBatch.id, flowerName: 'Hydrangea White', quantity: 4, _originalQty: 2 },
+      ],
+      removedLines: [],
+    }, false, { actor: { actorRole: 'florist' } });
+
+    const [oldAfter] = await harness.db.select().from(stock).where(eq(stock.id, oldBatch.id));
+    const [newAfter] = await harness.db.select().from(stock).where(eq(stock.id, newBatch.id));
+    // _originalQty=2, new qty=4 → delta = 2-4 = -2; adjust by -2 on oldBatch → 8 - 2 = 6.
+    expect(oldAfter.currentQuantity).toBe(6);
+    expect(newAfter.currentQuantity).toBe(10); // untouched
+  });
+});
