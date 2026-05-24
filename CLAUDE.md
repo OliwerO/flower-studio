@@ -219,13 +219,14 @@ Every script in `scripts/` and `backend/scripts/` carries one category in a head
 | STALE | Pending deletion — kept only because removal isn't free. Never run. | `scripts/create-dev-base.js`, `scripts/setup-dev-base.js` (dev-base path was abandoned) |
 
 ## Change Summaries (IMPORTANT)
-After completing each logical step of work (not just at the end), write a short **owner-friendly summary** explaining:
-1. **What changed** — which files, what was added/removed/moved
-2. **Why** — the problem it solves or the reason behind the approach
-3. **How it connects** — how it fits into the existing architecture
-4. **What to watch for** — any trade-offs, things that could break, or areas the owner should understand for future decisions
+After completing each logical step of work (not just at the end), write summaries for the two distinct audiences:
 
-Keep it concise but educational. The goal is for the owner to build a mental model of the codebase over time, not just approve changes blindly. Use concrete file paths and line references, not abstract descriptions.
+**`dev-summary` — for Oliwer (technical).** Four sections (What changed / Why / How it connects / What to watch for) with concrete file paths and line refs. Builds Oliwer's mental model of the codebase over time. The artifact for PR descriptions and future-session context. See `.claude/skills/dev-summary/SKILL.md`.
+
+**`owner-summary` — for the business owner (non-technical).** Four sections (What's new for you / Why this helps / How to use it / Watch out for). Zero jargon, no file paths, only language she'd see on her phone or dashboard. Write this **only when the change has an owner-visible effect** — internal refactors and CI work do not need it. See `.claude/skills/owner-summary/SKILL.md`.
+
+Internal refactor, schema migration with no UI effect, dev tooling → `dev-summary` only.
+UI change, behavior change, new option, removed workaround → both `dev-summary` *and* `owner-summary`.
 
 ## Agent skills
 

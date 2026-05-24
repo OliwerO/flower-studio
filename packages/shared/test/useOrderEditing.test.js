@@ -242,3 +242,109 @@ describe('createDemandEntry', () => {
     );
   });
 });
+
+// ── Batch quantity cap (#311 AC3) ──────────────────────────────────────────
+// incrementQty must refuse to push a Batch-linked line past the Stock Item's
+// freeQty (current_quantity − premade reservations). Demand-Entry-linked lines
+// (negative current_quantity) and unlinked lines remain uncapped — demand is
+// allowed to grow.
+
+function makeHookWithStock(stock, premadeMap = {}, lines = []) {
+  const props = {
+    orderId: 'ord-cap',
+    apiClient: {
+      get:  vi.fn((path) => {
+        if (path === '/stock/premade-committed') return Promise.resolve({ data: premadeMap });
+        if (path.startsWith('/stock')) return Promise.resolve({ data: stock });
+        return Promise.resolve({ data: {} });
+      }),
+      post: vi.fn(),
+    },
+    showToast: vi.fn(),
+    t: { batchCapReached: 'Batch only has {n} available' },
+  };
+  const { result } = renderHook(() => useOrderEditing(props));
+  // Force editLines without going through fetchStock so we can drive the API
+  // synchronously. The hook exposes startEditing — we use it to enter edit
+  // mode, then overwrite editLines via the same setter chain.
+  act(() => {
+    result.current.startEditing(lines.map((l, i) => ({
+      id: `line-${i}`,
+      'Stock Item': l.stockItemId ? [l.stockItemId] : [],
+      'Flower Name': l.flowerName ?? 'X',
+      Quantity: l.quantity,
+      'Cost Price Per Unit': 0,
+      'Sell Price Per Unit': 0,
+    })));
+  });
+  // Hack stockItems + premadeMap by calling fetchStock-like internal setters
+  // — startEditing kicks off async fetches; we await them.
+  return { props, result };
+}
+
+describe('getLineCap + incrementQty cap (#311 AC3)', () => {
+  it('uncapped when line has no stockItemId', () => {
+    const { result } = makeHookWithStock(
+      [],
+      {},
+      [{ stockItemId: null, quantity: 5, flowerName: 'Custom' }],
+    );
+    const cap = result.current.getLineCap(result.current.editLines[0]);
+    expect(cap).toBe(Infinity);
+  });
+
+  it('uncapped when linked Stock Item is a Demand Entry (current_quantity < 0)', async () => {
+    const stock = [{ id: 'de-1', 'Display Name': 'Rose DE', 'Current Quantity': -10 }];
+    const { result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'de-1', quantity: 4, flowerName: 'Rose' },
+    ]);
+    // Wait one tick for stockItems to populate
+    await act(async () => { await Promise.resolve(); });
+    const cap = result.current.getLineCap(result.current.editLines[0]);
+    expect(cap).toBe(Infinity);
+  });
+
+  it('caps at current_quantity for a Batch-linked line (no reservations)', async () => {
+    const stock = [{ id: 'b-1', 'Display Name': 'Rose Batch', 'Current Quantity': 8 }];
+    const { result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'b-1', quantity: 3, flowerName: 'Rose' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.getLineCap(result.current.editLines[0])).toBe(8);
+  });
+
+  it('subtracts premade reservations from the Batch cap', async () => {
+    const stock = [{ id: 'b-2', 'Display Name': 'Rose Batch', 'Current Quantity': 10 }];
+    const premadeMap = { 'b-2': { qty: 3, bouquets: [] } };
+    const { result } = makeHookWithStock(stock, premadeMap, [
+      { stockItemId: 'b-2', quantity: 1, flowerName: 'Rose' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    expect(result.current.getLineCap(result.current.editLines[0])).toBe(7);
+  });
+
+  it('incrementQty refuses past cap and fires toast with cap number', async () => {
+    const stock = [{ id: 'b-3', 'Display Name': 'Rose Batch', 'Current Quantity': 5 }];
+    const { props, result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'b-3', quantity: 5, flowerName: 'Rose' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+
+    act(() => { result.current.incrementQty(0); });
+    expect(result.current.editLines[0].quantity).toBe(5);
+    expect(props.showToast).toHaveBeenCalledWith(
+      'Batch only has 5 available',
+      'error',
+    );
+  });
+
+  it('incrementQty allows growth past Stock Item current_quantity for a Demand Entry', async () => {
+    const stock = [{ id: 'de-2', 'Display Name': 'Rose DE', 'Current Quantity': -10 }];
+    const { result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'de-2', quantity: 50, flowerName: 'Rose' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    act(() => { result.current.incrementQty(0); });
+    expect(result.current.editLines[0].quantity).toBe(51);
+  });
+});

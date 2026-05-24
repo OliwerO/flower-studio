@@ -83,6 +83,8 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
           {editLines.map((line, idx) => {
             const lineSell = Number(line.sellPricePerUnit || 0) * Number(line.quantity || 0);
             const { name: parsedName, batch } = parseBatchName(line.flowerName);
+            const lineCap = editing.getLineCap(line);
+            const atCap = Number(line.quantity || 0) >= lineCap;
             return (
             <div key={line.id || idx} className="bg-gray-50 rounded-lg px-3 py-2">
               <div className="flex items-center gap-2">
@@ -104,7 +106,10 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     onFocus={e => e.target.select()}
                     className="w-10 text-center text-sm font-bold border border-gray-200 rounded-lg py-1" />
                   <button onClick={() => editing.incrementQty(idx)}
-                    className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold flex items-center justify-center">+</button>
+                    disabled={atCap}
+                    className={`w-7 h-7 rounded-full text-lg font-bold flex items-center justify-center ${
+                      atCap ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-brand-100 text-brand-700'
+                    }`}>+</button>
                 </div>
                 <button onClick={() => editing.setRemoveDialogIdx(idx)}
                   className="text-red-400 hover:text-red-600 text-sm px-1">✕</button>

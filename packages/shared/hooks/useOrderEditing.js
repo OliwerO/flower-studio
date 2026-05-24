@@ -104,6 +104,19 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   }
 
   // ── Line quantity manipulation ─────────────────────────────────
+  // Cap for a line drawing from a Batch (positive current_quantity Stock Item):
+  // current_quantity minus premade reservations. Demand Entries (negative qty
+  // Stock Items) and unlinked lines have no cap — demand grows freely.
+  function getLineCap(line) {
+    if (!line?.stockItemId) return Infinity;
+    const si = stockItems.find(s => s.id === line.stockItemId);
+    if (!si) return Infinity;
+    const qty = Number(si['Current Quantity']) || 0;
+    if (qty <= 0) return Infinity;
+    const reserved = Number(premadeMap?.[si.id]?.qty) || 0;
+    return Math.max(0, qty - reserved);
+  }
+
   function updateLineQty(idx, rawValue) {
     setEditLines(prev => prev.map((l, i) =>
       i === idx ? { ...l, quantity: rawValue === '' ? '' : (Number(rawValue) || 0) } : l
@@ -111,15 +124,36 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   }
 
   function commitLineQty(idx) {
-    setEditLines(prev => prev.map((l, i) =>
-      i === idx && (!l.quantity || Number(l.quantity) < 1) ? { ...l, quantity: 1 } : l
-    ));
+    setEditLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const cap = getLineCap(l);
+      const n = Number(l.quantity);
+      if (!l.quantity || n < 1) return { ...l, quantity: 1 };
+      if (n > cap) {
+        showToast?.(
+          (t?.batchCapReached ?? 'Batch only has {n} available').replace('{n}', String(cap)),
+          'error',
+        );
+        return { ...l, quantity: cap };
+      }
+      return l;
+    }));
   }
 
   function incrementQty(idx) {
-    setEditLines(prev => prev.map((l, i) =>
-      i === idx ? { ...l, quantity: (Number(l.quantity) || 0) + 1 } : l
-    ));
+    setEditLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const cap = getLineCap(l);
+      const next = (Number(l.quantity) || 0) + 1;
+      if (next > cap) {
+        showToast?.(
+          (t?.batchCapReached ?? 'Batch only has {n} available').replace('{n}', String(cap)),
+          'error',
+        );
+        return l;
+      }
+      return { ...l, quantity: next };
+    }));
   }
 
   function decrementQty(idx) {
@@ -521,6 +555,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
 
     // Actions
     startEditing,
+    getLineCap,
     updateLineQty,
     commitLineQty,
     incrementQty,
