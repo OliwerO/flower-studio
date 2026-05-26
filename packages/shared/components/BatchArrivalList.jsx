@@ -14,7 +14,11 @@
  */
 import { useMemo, useState } from 'react';
 
-const GRID_COLS = 'grid-cols-[7rem_minmax(0,1fr)_4.5rem_4rem_4rem_4rem_3.5rem_6rem]';
+// Right-side numeric columns kept compact so Variety identity (the column the
+// owner scans for at a glance) keeps real room on tablet widths. Below ~640px
+// the row reflows: Variety drops onto a second line under Type, all numeric
+// columns stay in a single tight row.
+const GRID_COLS = 'grid-cols-[6rem_minmax(0,1fr)_3.75rem_3.5rem_3rem_3rem_3rem_4.5rem]';
 
 const COLS = [
   { key: 'type',       label: 'type',       align: 'left'   },
@@ -68,7 +72,7 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
 
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
-      <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
+      <div className={`grid ${GRID_COLS} gap-2 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
         {COLS.map(c => {
           const active = sortKey === c.key;
           const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
@@ -109,9 +113,9 @@ function BatchRow({ b, t, onRowClick }) {
         type="button"
         data-testid="batch-arrival-row"
         onClick={() => onRowClick && onRowClick(b.id)}
-        className={`w-full grid ${GRID_COLS} gap-3 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
+        className={`w-full grid ${GRID_COLS} gap-2 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
       >
-        <span className="text-[10px] uppercase tracking-wide text-gray-400 truncate">
+        <span className="font-semibold text-gray-900 truncate">
           {b.type || '—'}
         </span>
         <span className="flex items-baseline gap-1.5 truncate min-w-0">

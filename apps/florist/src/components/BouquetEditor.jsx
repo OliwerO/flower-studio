@@ -253,6 +253,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                   const lineSell = liveSell * Number(line.quantity || 0);
                   const overStock = line.stockItemId && line.quantity > availableQty;
                   const linePoQty = line.stockItemId ? (editing.pendingPO?.[line.stockItemId]?.ordered || 0) : 0;
+                  const lineCap = editing.getLineCap(line);
+                  const atCap = Number(line.quantity || 0) >= lineCap;
                   return (
                     <div key={line.id || idx} className="flex flex-col px-3 py-2">
                       <div className="flex items-center gap-2">
@@ -275,7 +277,10 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                           />
                           <button
                             onClick={() => editing.incrementQty(idx)}
-                            className="w-7 h-7 rounded-full bg-brand-100 text-brand-700 text-lg font-bold flex items-center justify-center active-scale"
+                            disabled={atCap}
+                            className={`w-7 h-7 rounded-full text-lg font-bold flex items-center justify-center active-scale ${
+                              atCap ? 'bg-gray-100 text-gray-300 cursor-not-allowed' : 'bg-brand-100 text-brand-700'
+                            }`}
                           >+</button>
                         </div>
                         <button onClick={() => editing.setRemoveDialogIdx(idx)} className="text-red-400 active:text-red-600 text-sm px-1">✕</button>

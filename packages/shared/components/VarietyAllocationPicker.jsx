@@ -416,28 +416,42 @@ function AllocationPanel({ options, onBatch, onMerge, onFresh, premadesByStockId
  * BatchOptionButton — renders a single Batch option with free/total/reserved breakdown.
  */
 function BatchOptionButton({ option, onClick, premades, t }) {
+  // #311 AC3: insufficient batches (freeQty < qty needed, or reservations
+  // overshoot) are visible but not clickable — the user must pick a different
+  // batch or "Order fresh." Engine sets `sufficient` per option.
+  const unusable = !option.sufficient;
   return (
     <button
       type="button"
       data-testid="option-batch"
       data-default={String(option.isDefault)}
+      data-sufficient={String(option.sufficient)}
       onClick={onClick}
+      disabled={unusable}
+      aria-disabled={unusable}
       className={[
         'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
-        option.isDefault
-          ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
-          : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
+        unusable
+          ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
+          : option.isDefault
+            ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
+            : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
       ].join(' ')}
     >
       <div className="flex items-center justify-between">
         <span className="font-medium">{option.date}</span>
         <span className="text-xs text-gray-500">
-          <span className="font-semibold text-gray-800">{option.freeQty}</span>
+          <span className={`font-semibold ${unusable ? 'text-gray-400' : 'text-gray-800'}`}>{option.freeQty}</span>
           {' / '}
           <span>{option.total}</span>
           {option.reservedQty > 0 && (
             <span className="ml-1 text-amber-600">
               ({option.reservedQty} {t.reserved ?? 'reserved'})
+            </span>
+          )}
+          {unusable && (
+            <span className="ml-2 text-[10px] uppercase tracking-wide text-red-500">
+              {t.batchInsufficient ?? 'insufficient'}
             </span>
           )}
         </span>

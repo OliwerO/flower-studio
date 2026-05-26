@@ -94,6 +94,14 @@ _Avoid_: placeholder, open order, pre-order
 The unit of quantity for a Stock Item. "We have 15 stems of pink peonies."
 _Avoid_: Unit, piece, flower (too generic)
 
+**Consumption**:
+One row in the `order_line_consumptions` ledger representing N Stems drawn from one Stock Item (Batch or Demand Entry) against one Order Line. An Order Line has one or more Consumptions; a single-source line has exactly one (mirrors pre-2026-05 behaviour); a multi-Batch split has two or more. The sum of `Consumption.qty` across an Order Line equals `OrderLine.quantity`. The Stock Item FK on Consumption is the authoritative trace link — supersedes the prior `order_line.stockItemId` link from ADR-0007.
+_Avoid_: Allocation (Allocation is the engine's *proposed* plan in the picker; Consumption is the *persisted* ledger row after the Florist confirms)
+
+**Allocation**:
+The engine's proposed plan in the order-line picker before the Florist confirms — a ranked option emitted by `stockAllocationEngine` of kind `batch`, `merge`, `fresh`, or `split`. A `split` Allocation carries two or more sub-allocations covering one Order Line from multiple Stock Items. Once the Florist confirms, the Allocation crystallises into one or more Consumptions in the ledger.
+_Avoid_: Reservation (premade bouquets reserve; orders consume), Plan
+
 **Stock Order**:
 A procurement order to replenish inventory. Lifecycle: Draft → Sent → Shopping → Reviewing → Evaluating → Complete. Owner creates and plans the order; Driver shops and collects flowers; Owner enters actual quantities and substitutes (Reviewing); Florist marks damaged stems to reconcile incoming stock (Evaluating).
 _Avoid_: Purchase Order, PO, supply order
@@ -157,6 +165,7 @@ _Avoid_: Receiver, delivery target
 - A **Delivery** has one **Recipient** (Recipient Name/Phone fields), which may or may not correspond to a **Key Person** on the Customer
 - A **Customer** has zero or more **Key People**
 - A **Variety** is identified by the four-tuple (Type, Colour, Size, Cultivar), where Type is required and the others are optional. Two **Stock Items** belong to the same Variety when all four fields match exactly (including matching null values).
+- An **Order Line** has one or more **Consumptions**; each Consumption references exactly one **Stock Item** (Batch or Demand Entry). The sum of Consumption qty equals the Order Line quantity.
 - A **Stock Order** has one or more lines, each referencing a **Stock Item** by name
 - A **Premade Bouquet** consumes **Stock Items** (stems) immediately on creation
 - A **Product** (Wix) is a bouquet for sale online — it is not directly tied to a specific **Stock Item**; the mapping is implicit through the bouquet's composition
