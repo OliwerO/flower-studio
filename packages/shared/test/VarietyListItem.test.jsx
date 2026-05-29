@@ -108,10 +108,10 @@ describe('VarietyListItem expansion', () => {
     expect(screen.queryAllByTestId('stock-item-row')).toHaveLength(0);
   });
 
-  it('row label includes (date) suffix per ADR-0006', () => {
+  it('row label includes (date) suffix per ADR-0006, formatted DD.MM.YYYY', () => {
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} />);
-    expect(screen.getByText(/2026-05-10/)).toBeInTheDocument();
+    expect(screen.getByText(/10\.05\.2026/)).toBeInTheDocument();
   });
 
   it('Demand Entry rows are visually distinct (data-row-kind="demand")', () => {
@@ -150,6 +150,51 @@ describe('VarietyListItem expansion', () => {
     const batches = screen.getAllByTestId('stock-item-row').filter(r => r.getAttribute('data-row-kind') === 'batch');
     fireEvent.click(batches[0]);
     expect(onBatchClick).toHaveBeenCalledWith('b1');
+  });
+});
+
+describe('VarietyListItem per-Batch quick-adjust', () => {
+  const v = {
+    key: 'Rose|Pink|60|',
+    type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+    rows: [
+      { id: 'b1', current_quantity: 10, date: '2026-05-10' },
+      { id: 'b2', current_quantity:  5, date: '2026-05-11' },
+      { id: 'd1', current_quantity: -3, date: '2026-05-12' },
+    ],
+  };
+
+  it('renders no +/- controls when onAdjust is absent', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    expect(screen.queryAllByTestId('variety-adjust-inc')).toHaveLength(0);
+    expect(screen.queryAllByTestId('variety-adjust-dec')).toHaveLength(0);
+  });
+
+  it('renders +/- on Batch rows only, never on Demand rows', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onAdjust={() => {}} />);
+    // 2 Batch rows → 2 inc + 2 dec; the Demand row gets none.
+    expect(screen.getAllByTestId('variety-adjust-inc')).toHaveLength(2);
+    expect(screen.getAllByTestId('variety-adjust-dec')).toHaveLength(2);
+  });
+
+  it('clicking + fires onAdjust(stockId, +1) without firing onRowClick', () => {
+    const onAdjust = vi.fn();
+    const onRowClick = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onAdjust={onAdjust} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getAllByTestId('variety-adjust-inc')[0]);
+    expect(onAdjust).toHaveBeenCalledWith('b1', 1);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('clicking - fires onAdjust(stockId, -1)', () => {
+    const onAdjust = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onAdjust={onAdjust} />);
+    fireEvent.click(screen.getAllByTestId('variety-adjust-dec')[0]);
+    expect(onAdjust).toHaveBeenCalledWith('b1', -1);
   });
 });
 

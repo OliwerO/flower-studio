@@ -1,3 +1,5 @@
+import { formatDateDMY } from '../utils/formatDate.js';
+
 /**
  * BatchTracePanel — presentational component rendering the per-batch usage trail.
  * Used directly by dashboard (inline). Mounted inside BatchTraceModal by florist.
@@ -6,6 +8,10 @@
  *   trail  — array of trace events from /stock/:id/usage response
  *   t      — translation strings (traceTypeOrder, traceTypeWriteoff, traceTypePurchase,
  *             traceTypePremade, traceEmpty, stems)
+ *
+ * Sort: chronological oldest → newest so the column reads top-to-bottom as
+ * time progresses. Undated events (e.g. ongoing premade reservations) sort to
+ * the bottom as "current". Dates render day-month-year (formatDateDMY).
  */
 export default function BatchTracePanel({ trail = [], t }) {
   if (!trail || trail.length === 0) {
@@ -14,9 +20,17 @@ export default function BatchTracePanel({ trail = [], t }) {
     );
   }
 
+  const sorted = [...trail].sort((a, b) => {
+    // Undated entries last; otherwise ascending by ISO date string.
+    if (!a.date && !b.date) return 0;
+    if (!a.date) return 1;
+    if (!b.date) return -1;
+    return a.date.localeCompare(b.date);
+  });
+
   return (
     <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
-      {trail.map((entry, i) => (
+      {sorted.map((entry, i) => (
         <TraceRow key={i} entry={entry} t={t} />
       ))}
     </ul>
@@ -80,7 +94,7 @@ function TraceRow({ entry, t }) {
       </div>
       <div className="flex items-center gap-2 shrink-0 ml-2">
         {entry.date && (
-          <span className="text-[10px] text-gray-400">{entry.date}</span>
+          <span className="text-[10px] text-gray-400">{formatDateDMY(entry.date)}</span>
         )}
         <span className={`text-xs font-semibold tabular-nums ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
           {qty > 0 ? '+' : ''}{qty} {t.stems}

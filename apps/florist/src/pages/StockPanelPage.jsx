@@ -129,6 +129,22 @@ export default function StockPanelPage() {
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
+  // Y-model quick-adjust: qty lives on the per-Batch row inside `groups`.
+  // Optimistically bump current_quantity, POST the delta, revert on failure.
+  async function handleAdjustGroup(id, delta) {
+    const bump = (rows, d) =>
+      (rows || []).map(r =>
+        r.id === id ? { ...r, current_quantity: (Number(r.current_quantity) || 0) + d } : r
+      );
+    setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, delta) })));
+    try {
+      await client.post(`/stock/${id}/adjust`, { delta });
+    } catch (err) {
+      setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, -delta) })));
+      showToast(err.response?.data?.error || t.adjustError, 'error');
+    }
+  }
+
   async function handleWriteOff(id, quantity, reason) {
     try {
       const res = await client.post(`/stock/${id}/write-off`, { quantity, reason: reason || undefined });
@@ -560,6 +576,7 @@ export default function StockPanelPage() {
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(stockId)}
                           onWriteOff={(v) => setWriteOffVariety(v)}
+                          onAdjust={handleAdjustGroup}
                           premadesByStockId={premadesByStockId}
                           t={t}
                         />

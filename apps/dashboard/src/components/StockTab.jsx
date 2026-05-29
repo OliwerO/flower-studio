@@ -215,6 +215,23 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     }
   }
 
+  // Y-model quick-adjust: qty lives on the per-Batch row inside `groups`, not the
+  // legacy flat `stock` array. Optimistically bump the matching row's
+  // current_quantity, POST the delta, revert on failure.
+  async function adjustGroupQty(id, delta) {
+    const bump = (rows, d) =>
+      (rows || []).map(r =>
+        r.id === id ? { ...r, current_quantity: (Number(r.current_quantity) || 0) + d } : r
+      );
+    setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, delta) })));
+    try {
+      await client.post(`/stock/${id}/adjust`, { delta });
+    } catch {
+      setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, -delta) })));
+      showToast(t.error, 'error');
+    }
+  }
+
   async function patchStock(id, fields) {
     try {
       await client.patch(`/stock/${id}`, fields);
@@ -827,12 +844,37 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               </button>
             </div>
             {viewMode === 'batch' ? (
-              <BatchArrivalList
-                groups={filteredGroups}
-                reservations={reservationsMap}
-                t={t}
-                onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
-              />
+              <div className="glass-card overflow-hidden">
+                <BatchArrivalList
+                  groups={filteredGroups}
+                  reservations={reservationsMap}
+                  t={t}
+                  onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+                />
+                {/* Inline trace panel — By Batch view sets traceStockId on row
+                    click; render the same panel here (it previously only existed
+                    in the By Variety branch, so batch-view clicks showed nothing). */}
+                {traceStockId && (
+                  <div className="px-4 py-3 bg-blue-50/60 border-t border-blue-100">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+                        {t.batchTraceTitle}
+                      </span>
+                      <button
+                        onClick={() => { setTraceStockId(null); setTraceTrail(null); }}
+                        className="text-xs text-blue-400 hover:text-blue-600"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                    {traceLoading ? (
+                      <p className="text-xs text-ios-tertiary">{t.loading}</p>
+                    ) : (
+                      <BatchTracePanel trail={traceTrail || []} t={t} />
+                    )}
+                  </div>
+                )}
+              </div>
             ) : (
             <div className="glass-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
@@ -868,6 +910,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
                           onWriteOff={(v) => setWriteOffVariety(v)}
+                          onAdjust={adjustGroupQty}
                           premadesByStockId={premadesByStockId}
                           t={t}
                         />
