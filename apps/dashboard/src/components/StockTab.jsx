@@ -215,6 +215,23 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     }
   }
 
+  // Y-model quick-adjust: qty lives on the per-Batch row inside `groups`, not the
+  // legacy flat `stock` array. Optimistically bump the matching row's
+  // current_quantity, POST the delta, revert on failure.
+  async function adjustGroupQty(id, delta) {
+    const bump = (rows, d) =>
+      (rows || []).map(r =>
+        r.id === id ? { ...r, current_quantity: (Number(r.current_quantity) || 0) + d } : r
+      );
+    setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, delta) })));
+    try {
+      await client.post(`/stock/${id}/adjust`, { delta });
+    } catch {
+      setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, -delta) })));
+      showToast(t.error, 'error');
+    }
+  }
+
   async function patchStock(id, fields) {
     try {
       await client.patch(`/stock/${id}`, fields);
@@ -893,6 +910,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
                           onWriteOff={(v) => setWriteOffVariety(v)}
+                          onAdjust={adjustGroupQty}
                           premadesByStockId={premadesByStockId}
                           t={t}
                         />

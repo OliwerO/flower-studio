@@ -48,7 +48,20 @@ describe('BatchTracePanel', () => {
     ];
     render(<BatchTracePanel trail={trail} t={t} />);
     const rows = screen.getAllByTestId('trace-row');
-    expect(rows[0]).toHaveAttribute('data-trace-kind', 'order');
-    expect(rows[1]).toHaveAttribute('data-trace-kind', 'writeoff');
+    // Sorted chronologically oldest → newest, so the 05-09 writeoff precedes
+    // the 05-10 order regardless of input order.
+    expect(rows[0]).toHaveAttribute('data-trace-kind', 'writeoff');
+    expect(rows[1]).toHaveAttribute('data-trace-kind', 'order');
+  });
+
+  it('sorts events chronologically oldest → newest, undated last', () => {
+    const trail = [
+      { type: 'order',    date: '2026-05-10', qty: 5 },
+      { type: 'premade',  date: null,         qty: 3 },
+      { type: 'purchase', date: '2026-05-08', qty: 30 },
+    ];
+    render(<BatchTracePanel trail={trail} t={t} />);
+    const kinds = screen.getAllByTestId('trace-row').map(r => r.getAttribute('data-trace-kind'));
+    expect(kinds).toEqual(['purchase', 'order', 'premade']);
   });
 });
