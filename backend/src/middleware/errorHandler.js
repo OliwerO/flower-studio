@@ -2,8 +2,20 @@
 // All unhandled errors land here and get a consistent JSON response.
 // Express identifies this as an error handler because it takes 4 arguments.
 
+import multer from 'multer';
+
 export function errorHandler(err, req, res, next) {
   console.error(`[ERROR] ${req.method} ${req.path}`, err);
+
+  // Multipart upload errors are safe to surface (no secrets) and must NOT be
+  // masked as a generic 500 — an opaque 500 here is what left the owner unable
+  // to file a report (oversized desktop screenshot, 2026-05-29) with no clue why.
+  if (err instanceof multer.MulterError) {
+    const message = err.code === 'LIMIT_FILE_SIZE'
+      ? 'Image too large — please attach a smaller screenshot (max 5MB).'
+      : `Upload error: ${err.message}`;
+    return res.status(413).json({ error: message });
+  }
 
   // Airtable API errors carry a statusCode
   const status = err.statusCode || err.status || 500;

@@ -7,6 +7,7 @@ Cross-app utilities shared by all three frontend apps. Anything used by 2+ apps 
 api/
   client.js                   → Axios instance with auto-attached PIN header + opt-in cachedGet/in-flight GET dedupe helper
   uploadImage.js              → uploadBouquetImage / removeBouquetImage (products) + uploadOrderImage / removeOrderImage (per-order override) — multipart wrappers
+  feedback.js                 → publishFeedback({ sessionId, imageFile }) — multipart POST /feedback/publish. Resizes the screenshot client-side first (5MB multer cap) like uploadImage.js. Consumed by FeedbackModal.
 context/
   AuthContext.jsx             → PIN, role, login/logout — wraps all apps
   ToastContext.jsx            → showToast(msg, type) — success/error toasts
@@ -33,7 +34,7 @@ components/
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
   BouquetImageView.jsx        → Read-only thumbnail with tap-to-zoom fullscreen modal for the driver delivery card
-  FeedbackModal.jsx           → AI-assisted bug/feature report modal. Drives /feedback/start → /feedback/continue → /feedback/preview → /feedback/publish conversation. Props: t, apiClient, reporterRole, reporterName, appArea, onClose. Uses inline SVG icons (no lucide-react dep).
+  FeedbackModal.jsx           → AI-assisted bug/feature report modal. Drives /feedback/start → /feedback/continue → /feedback/preview conversation, then publishes via the shared `publishFeedback` wrapper (api/feedback.js — resizes the screenshot before upload). Props: t, reporterRole, reporterName, appArea, onClose. Surfaces the backend error message on failure. Uses inline SVG icons (no lucide-react dep).
 hooks/
   useOrderEditing.js          → Shared bouquet editing logic (stock filtering, line management)
   useOrderPatching.js         → Shared order/delivery PATCH helpers (patchOrder, patchDelivery)
