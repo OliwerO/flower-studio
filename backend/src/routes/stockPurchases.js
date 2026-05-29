@@ -35,6 +35,12 @@ router.post('/', async (req, res, next) => {
         await stockRepo.update(stockItemId, { 'Current Quantity': 0 });
       }
 
+      // Propagate Variety attrs from orig Stock Item to the new dated Batch so
+      // /stock?grouped=true (Y-model) keeps the new Batch in its Variety bucket
+      // and FEFO routing can compute its Variety key (#327 / PRD #324 line 150).
+      // This endpoint has no PO-line context, so the orig is the only source —
+      // when orig itself has NULL attrs the new Batch inherits NULL (the orig
+      // backfill happens via the PO evaluation path or the Variety Backfill UI).
       finalItem = await stockRepo.create({
         'Display Name':       `${baseName} (${batchLabel})`,
         'Purchase Name':      stockItem['Purchase Name'] || baseName,
@@ -47,6 +53,10 @@ router.post('/', async (req, res, next) => {
         'Reorder Threshold':  stockItem['Reorder Threshold'] || 0,
         Active:               true,
         'Last Restocked':     today,
+        Type:                 stockItem['Type']     ?? null,
+        Colour:               stockItem['Colour']   ?? null,
+        Size:                 stockItem['Size']     ?? null,
+        Cultivar:             stockItem['Cultivar'] ?? null,
       });
       console.log(`[STOCK] New batch created: ${finalItem['Display Name']}`);
 

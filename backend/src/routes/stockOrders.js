@@ -572,9 +572,15 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
 // zeroed out. This way order-line links stay valid and the florist doesn't see
 // a confusing negative number next to fresh flowers.
 //
+// Variety attrs (Type/Colour/Size/Cultivar) flow from the PO line context
+// onto the new dated Batch, and backfill the orig Stock Item when it has
+// no Variety identity yet (PRD #324 line 150 — issue #327). Without this,
+// the new Batch is invisible in /stock?grouped=true (Y-model) and FEFO
+// routing cannot compute its Variety key.
+//
 // Returns the new batch's stock item ID.
 const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
-async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today) {
+async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today, varietyAttrs = null) {
   const stockItem = await stockRepo.getById(stockItemId);
   const existingQty = Number(stockItem['Current Quantity']) || 0;
 
@@ -585,6 +591,17 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
   // Strip any existing date suffix to avoid "Rose (14.Apr.) (15.Apr.)" names
   const rawName = stockItem['Display Name'] || '';
   const baseName = (rawName.match(DATE_BATCH_RE)?.[1] || rawName).trim();
+
+  // Effective Variety attrs: prefer values passed from the PO line, fall back
+  // to whatever the orig Stock Item already carries. The new Batch needs them
+  // so Y-model grouping + FEFO routing work; the orig Demand Entry needs them
+  // backfilled so it stays visible as the absorption audit marker (ADR-0002).
+  const effectiveAttrs = {
+    Type:     varietyAttrs?.Type     ?? stockItem['Type']     ?? null,
+    Colour:   varietyAttrs?.Colour   ?? stockItem['Colour']   ?? null,
+    Size:     varietyAttrs?.Size     ?? stockItem['Size']     ?? null,
+    Cultivar: varietyAttrs?.Cultivar ?? stockItem['Cultivar'] ?? null,
+  };
 
   // When the original record has negative qty (pre-sold stems), absorb
   // the deficit into this new batch and zero out the original.
@@ -607,14 +624,37 @@ async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier
     'Reorder Threshold':  stockItem['Reorder Threshold'] || 0,
     Active:               true,
     'Last Restocked':     today,
+    Type:                 effectiveAttrs.Type,
+    Colour:               effectiveAttrs.Colour,
+    Size:                 effectiveAttrs.Size,
+    Cultivar:             effectiveAttrs.Cultivar,
   });
 
-  // Update prices on the original record too so the "template" stays current
-  await stockRepo.update(stockItemId, {
+  // Update prices on the original record too so the "template" stays current.
+  // Backfill Variety attrs onto orig when it currently has none and the PO
+  // line supplied them — restores the orig DE as a visible audit marker.
+  const templateUpdate = {
     'Current Cost Price': costPrice || stockItem['Current Cost Price'],
     'Current Sell Price': sellPrice || stockItem['Current Sell Price'],
-    'Last Restocked': today,
-  });
+    'Last Restocked':     today,
+  };
+  const origHasNoVarietyAttrs =
+    stockItem['Type']     == null &&
+    stockItem['Colour']   == null &&
+    stockItem['Size']     == null &&
+    stockItem['Cultivar'] == null;
+  const lineCarriesAttrs =
+    varietyAttrs &&
+    (varietyAttrs.Type != null || varietyAttrs.Colour != null ||
+     varietyAttrs.Size != null || varietyAttrs.Cultivar != null);
+  if (origHasNoVarietyAttrs && lineCarriesAttrs) {
+    templateUpdate.Type     = effectiveAttrs.Type;
+    templateUpdate.Colour   = effectiveAttrs.Colour;
+    templateUpdate.Size     = effectiveAttrs.Size;
+    templateUpdate.Cultivar = effectiveAttrs.Cultivar;
+    console.log(`[STOCK-ORDER] Backfilled Variety attrs on orig "${stockItem['Display Name']}" (${stockItemId})`);
+  }
+  await stockRepo.update(stockItemId, templateUpdate);
 
   return newBatch.id;
 }
@@ -679,16 +719,20 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           }
         }
 
-        // Auto-resolve: if PO line has no Stock Item, find or create one.
-        // Y-model lines carry Variety attrs (Type/Colour/Size/Cultivar) —
-        // use the 4-tuple for exact matching before falling back to name.
-        if (!stockItemId && (accepted > 0 || writeOff > 0)) {
-          const flowerName = String(line['Flower Name'] || '').trim();
-          const lineType     = line['Type']    ? String(line['Type']).trim()    : null;
-          const lineColour   = line['Colour']  ? String(line['Colour']).trim()  : null;
-          const lineSizeCm   = line['Size'] != null && Number.isFinite(Number(line['Size'])) ? Number(line['Size']) : null;
-          const lineCultivar = line['Cultivar'] ? String(line['Cultivar']).trim() : null;
+        // Variety attrs (4-tuple, ADR-0006) extracted once at the line scope —
+        // used by the auto-resolve block AND threaded into receiveIntoStock so
+        // the new dated Batch carries Variety identity (#327 / PRD #324 line 150).
+        const flowerName   = String(line['Flower Name'] || '').trim();
+        const lineType     = line['Type']    ? String(line['Type']).trim()    : null;
+        const lineColour   = line['Colour']  ? String(line['Colour']).trim()  : null;
+        const lineSizeCm   = line['Size'] != null && Number.isFinite(Number(line['Size'])) ? Number(line['Size']) : null;
+        const lineCultivar = line['Cultivar'] ? String(line['Cultivar']).trim() : null;
+        const lineVarietyAttrs = { Type: lineType, Colour: lineColour, Size: lineSizeCm, Cultivar: lineCultivar };
 
+        // Auto-resolve: if PO line has no Stock Item, find or create one.
+        // Y-model lines carry Variety attrs — use the 4-tuple for exact matching
+        // before falling back to name.
+        if (!stockItemId && (accepted > 0 || writeOff > 0)) {
           if (!flowerName && !lineType) {
             throw new Error(
               `Line "${evalLine.lineId}" has no Stock Item, no Flower Name, and no Variety attrs — cannot resolve.`,
@@ -778,7 +822,7 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
           const primaryMarker = `PO #${poDisplayId} L#${line._pgId || evalLine.lineId} primary`;
           const already = await purchaseAlreadyRecorded(primaryMarker);
           if (!already) {
-            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate);
+            const finalItemId = await receiveIntoStock(stockItemId, accepted, costPrice, sellPrice, supplier, evalDate, lineVarietyAttrs);
             const batchItem = await stockRepo.getById(finalItemId).catch(() => null);
             await stockPurchasesRepo.create({
               purchaseDate:      evalDate,
@@ -957,3 +1001,9 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
 });
 
 export default router;
+
+// Exported for integration tests only. The receiveIntoStock helper is the
+// seam where #327 (PRD #324 line 150) Variety attrs propagation is enforced.
+// Direct callers in the route exercise it via POST /stock-orders/:id/evaluate;
+// tests assert its behaviour by calling this seam directly against pglite.
+export const __testing = { receiveIntoStock };
