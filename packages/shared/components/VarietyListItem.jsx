@@ -26,6 +26,7 @@
  */
 import { useState } from 'react';
 import { getVarietyTotals } from '../utils/stockMath.js';
+import { formatDateDMY } from '../utils/formatDate.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
 
 export default function VarietyListItem({
@@ -170,7 +171,7 @@ export default function VarietyListItem({
               const kind = row.current_quantity < 0 ? 'demand' : 'batch';
               const absQty = Math.abs(row.current_quantity);
               const kindLabel = kind === 'batch' ? (t.batchKind ?? 'Batch') : (t.demandKind ?? 'Demand');
-              const dateLabel = row.date ?? '—';
+              const dateLabel = row.date ? formatDateDMY(row.date) : '—';
 
               const isDemand = kind === 'demand';
               const rowClass = isDemand
