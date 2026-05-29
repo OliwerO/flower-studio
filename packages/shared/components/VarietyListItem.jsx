@@ -38,6 +38,7 @@ export default function VarietyListItem({
   onRowClick,
   onBatchClick, // legacy alias
   onWriteOff,
+  onAdjust, // (stockId, delta) — per-Batch quick-adjust; only rendered on Batch rows
   premadesByStockId,
   t,
 }) {
@@ -175,32 +176,57 @@ export default function VarietyListItem({
 
               const isDemand = kind === 'demand';
               const rowClass = isDemand
-                ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50 hover:bg-red-100 transition-colors active:bg-red-100'
-                : 'w-full flex items-center justify-between px-6 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors active:bg-gray-100';
+                ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50'
+                : 'w-full flex items-center justify-between px-6 py-2 text-sm text-gray-700';
+              const showAdjust = !!onAdjust && !isDemand;
 
               return (
-                <li key={row.id}>
+                <li key={row.id} className={rowClass} data-row-kind={kind}>
                   <button
                     type="button"
                     data-testid="stock-item-row"
                     data-row-kind={kind}
                     onClick={() => handleRowClick && handleRowClick(row.id)}
-                    className={rowClass}
+                    className={`flex items-center gap-2 min-w-0 flex-1 text-left rounded transition-colors ${
+                      isDemand ? 'hover:bg-red-100 active:bg-red-100' : 'hover:bg-gray-100 active:bg-gray-100'
+                    }`}
                   >
-                    <span className="flex items-center gap-2">
-                      <span
-                        className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                          isDemand ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'
-                        }`}
-                      >
-                        {kindLabel}
-                      </span>
-                      <span className="text-gray-500">{dateLabel}</span>
+                    <span
+                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                        isDemand ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'
+                      }`}
+                    >
+                      {kindLabel}
                     </span>
+                    <span className="text-gray-500">{dateLabel}</span>
+                  </button>
+                  <span className="flex items-center gap-2 shrink-0 ml-2">
+                    {showAdjust && (
+                      <span className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          data-testid="variety-adjust-dec"
+                          onClick={(e) => { e.stopPropagation(); onAdjust(row.id, -1); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
+                          aria-label={t.decrease ?? 'Remove one stem'}
+                        >
+                          −
+                        </button>
+                        <button
+                          type="button"
+                          data-testid="variety-adjust-inc"
+                          onClick={(e) => { e.stopPropagation(); onAdjust(row.id, 1); }}
+                          className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
+                          aria-label={t.increase ?? 'Add one stem'}
+                        >
+                          +
+                        </button>
+                      </span>
+                    )}
                     <span className="tabular-nums">
                       {absQty} {t.stems} ›
                     </span>
-                  </button>
+                  </span>
                 </li>
               );
             })}

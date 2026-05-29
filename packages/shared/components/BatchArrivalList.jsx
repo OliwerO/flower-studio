@@ -14,11 +14,12 @@
  */
 import { useMemo, useState } from 'react';
 
-// Right-side numeric columns kept compact so Variety identity (the column the
-// owner scans for at a glance) keeps real room on tablet widths. Below ~640px
-// the row reflows: Variety drops onto a second line under Type, all numeric
-// columns stay in a single tight row.
-const GRID_COLS = 'grid-cols-[6rem_minmax(0,1fr)_3.75rem_3.5rem_3rem_3rem_3rem_4.5rem]';
+// Variety identity is BOUNDED (not 1fr): a greedy 1fr left a wide empty cell
+// between the variety name and the batch tag, so the eye couldn't connect a
+// flower to its batch/cost/sell at a glance. Bounding Variety lets identity →
+// tag → cost → sell cluster tightly on the left; the flexible slack goes to
+// Supplier (rightmost, least-scanned), which truncates.
+const GRID_COLS = 'grid-cols-[5rem_minmax(6rem,12rem)_3.5rem_3.25rem_3rem_3rem_3rem_minmax(4rem,1fr)]';
 
 const COLS = [
   { key: 'type',       label: 'type',       align: 'left'   },
@@ -72,7 +73,7 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
 
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
-      <div className={`grid ${GRID_COLS} gap-2 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
+      <div className={`grid ${GRID_COLS} gap-1.5 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
         {COLS.map(c => {
           const active = sortKey === c.key;
           const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
@@ -113,7 +114,7 @@ function BatchRow({ b, t, onRowClick }) {
         type="button"
         data-testid="batch-arrival-row"
         onClick={() => onRowClick && onRowClick(b.id)}
-        className={`w-full grid ${GRID_COLS} gap-2 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
+        className={`w-full grid ${GRID_COLS} gap-1.5 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
       >
         <span className="font-semibold text-gray-900 truncate">
           {b.type || '—'}
