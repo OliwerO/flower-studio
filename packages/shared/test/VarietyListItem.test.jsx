@@ -60,6 +60,18 @@ describe('VarietyListItem header', () => {
     expect(onRowClick).toHaveBeenCalledWith('b1');
   });
 
+  it('when onVarietyTrace is provided, header expand calls onVarietyTrace(variety.key) and NOT onRowClick', () => {
+    const onVarietyTrace = vi.fn();
+    const onRowClick     = vi.fn();
+    const onToggle       = vi.fn();
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={onToggle}
+      onRowClick={onRowClick} onVarietyTrace={onVarietyTrace} />);
+    fireEvent.click(screen.getByTestId('variety-header'));
+    expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
   it('header click does NOT fire onRowClick when collapsing', () => {
     const onRowClick = vi.fn();
     render(<VarietyListItem variety={variety} reservations={new Map()} t={t}

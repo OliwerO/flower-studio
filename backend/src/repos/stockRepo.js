@@ -1013,6 +1013,24 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
   const allStockIds = [...groupMap.values()].flatMap(g => g._pgIds);
   const reservations = await getPremadeReservations(allStockIds);
 
+  // T5.3 — Fetch which stock IDs have at least one active order-line consumer
+  // (non-deleted order_lines.stock_item_id reference). Used to keep qty=0
+  // Varieties visible when they still have live demand (audit-marker case, #323).
+  //
+  // order_lines.stock_item_id is TEXT; UUIDs are stored as their string form.
+  // One batched IN query for all group stock ids.
+  const allStockIdStrings = allStockIds.map(id => String(id));
+  const activeConsumerRows = allStockIdStrings.length > 0
+    ? await db
+        .selectDistinct({ stockItemId: orderLines.stockItemId })
+        .from(orderLines)
+        .where(and(
+          inArray(orderLines.stockItemId, allStockIdStrings),
+          isNull(orderLines.deletedAt),
+        ))
+    : [];
+  const activeConsumerIds = new Set(activeConsumerRows.map(r => r.stockItemId));
+
   // Build final output.
   const result = [];
   for (const g of groupMap.values()) {
@@ -1024,8 +1042,10 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
       0,
     );
 
-    // Apply includeEmpty filter.
-    if (!includeEmpty && totalQty === 0 && reservedForPremades === 0) continue;
+    // Apply includeEmpty filter — relax to keep groups that still have active
+    // order-line consumers (T5.3 / audit-marker case, issue #323).
+    const hasActiveConsumer = g._pgIds.some(id => activeConsumerIds.has(String(id)));
+    if (!includeEmpty && totalQty === 0 && reservedForPremades === 0 && !hasActiveConsumer) continue;
 
     result.push({
       key:                g.key,
@@ -1195,6 +1215,97 @@ export async function getUsageByExactId(stockItemId) {
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
   return trail;
+}
+
+// ── getUsageByVarietyKey (T5.2 — Per-Variety trace, ADR-0007 / PRD #324) ──
+//
+// Returns the union of all usage events across every non-deleted Stock row
+// whose 4-tuple (type_name, colour, size_cm, cultivar) matches the given
+// pipe-separated key.  Includes qty=0 Demand-Entry rows so the trace is
+// complete even before physical stock arrives.
+//
+// Key format: "Type|Colour|SizeCm|Cultivar" — empty segment means NULL.
+// This mirrors _varietyKey() and the shared packages/shared/utils/varietyKey.js.
+//
+// Return shape:
+//   {
+//     variety: { key, type_name, colour, size_cm, cultivar },
+//     events:  TrailEvent[],  // sorted date ASC, null-dated last
+//     unaccountedStems: number, // signed sum; non-zero = drift
+//   }
+//
+// unaccountedStems = Σ purchase.quantity + Σ (order|writeoff|premade).quantity
+// (order/writeoff/premade are already stored as negative; purchases positive).
+// Absorption events are deferred — un-paired absorptions surface as drift.
+export async function getUsageByVarietyKey(key) {
+  if (!db) throw new Error('getUsageByVarietyKey: postgres backend not configured');
+  if (!key) throw new Error('getUsageByVarietyKey: key is required');
+
+  // Parse the 4-tuple from the pipe-separated key.
+  const [typeName, colour, sizeCmStr, cultivar] = key.split('|');
+  const sizeCm = sizeCmStr !== '' ? Number(sizeCmStr) : null;
+
+  // Resolve all non-deleted rows in this Variety (including qty=0 DEs).
+  const rows = await db
+    .select()
+    .from(stock)
+    .where(and(
+      isNull(stock.deletedAt),
+      // Match 4-tuple with NULL-aware equality — NULL segment ↔ empty string in key.
+      typeName  ? eq(stock.typeName, typeName)   : isNull(stock.typeName),
+      colour    ? eq(stock.colour, colour)        : isNull(stock.colour),
+      cultivar  ? eq(stock.cultivar, cultivar)   : isNull(stock.cultivar),
+      sizeCm != null ? eq(stock.sizeCm, sizeCm)  : isNull(stock.sizeCm),
+    ));
+
+  // Variety metadata — use first row if any; fall back to parsed segments.
+  const meta = rows[0] ?? null;
+
+  if (rows.length === 0) {
+    return {
+      variety: {
+        key,
+        type_name: typeName || null,
+        colour:    colour   || null,
+        size_cm:   sizeCm,
+        cultivar:  cultivar || null,
+      },
+      events:           [],
+      unaccountedStems: 0,
+    };
+  }
+
+  // Collect usage events from all rows, reusing the existing per-row mapper.
+  let allEvents = [];
+  for (const row of rows) {
+    const trail = await getUsageByExactId(row.id);
+    allEvents = allEvents.concat(trail);
+  }
+
+  // Sort ascending by date, null-dated last.
+  // getUsageByExactId returns newest-first; we invert here.
+  // null ↔ '' — empty string sorts before real dates in locale compare,
+  // so we push null-dated events to the END by treating null as '9999-99-99'.
+  allEvents.sort((a, b) => {
+    const da = a.date || '9999-99-99';
+    const db = b.date || '9999-99-99';
+    return da.localeCompare(db);
+  });
+
+  // Compute drift: signed sum across all events.
+  const unaccountedStems = allEvents.reduce((sum, e) => sum + (Number(e.quantity) || 0), 0);
+
+  return {
+    variety: {
+      key,
+      type_name: meta.typeName ?? null,
+      colour:    meta.colour   ?? null,
+      size_cm:   meta.sizeCm  ?? null,
+      cultivar:  meta.cultivar ?? null,
+    },
+    events:  allEvents,
+    unaccountedStems,
+  };
 }
 
 // ── Internal exports for tests ──

@@ -5,6 +5,30 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-29 — Per-Variety trace surface (#346, PRD #324 T5)
+
+Read-only trace spanning every Batch + Demand Entry in a Variety. No schema change.
+
+### Backend
+- `backend/src/repos/stockRepo.js` — new `getUsageByVarietyKey(key)`: resolves all non-deleted Stock rows matching the 4-tuple key, unions the existing per-row `getUsageByExactId` trails, returns `{ variety, events (date-asc, undated last), unaccountedStems }`. `unaccountedStems` is the signed sum of all event quantities (drift signal). Absorption events deferred — `audit_log` has no `transaction_id` to pair them; un-paired absorptions surface as drift (ADR-0008).
+- `backend/src/routes/stock.js` — new `GET /stock/varieties/:key/usage` (registered before `/:id/usage` so `varieties` isn't captured as an id). Key is URL-encoded `Type|Colour|Size|Cultivar`.
+- `listGroupedByVariety` — qty=0 Variety groups with an active order consumer stay visible under `includeEmpty=false` (keeps the #323 absorption-anchor DE reachable).
+
+### Frontend
+- `packages/shared/components/VarietyTracePanel.jsx` (NEW) — presenter for the union trail + an "unaccounted stems" footer (renders only when non-zero).
+- `apps/dashboard/src/components/StockTab.jsx` — Variety-header tap fetches the endpoint and renders the panel inline (sibling to the per-Batch BatchTracePanel).
+- `apps/florist/src/pages/StockPanelPage.jsx` — same, presented in a modal (matches the florist Batch-trace convention).
+- `packages/shared/components/VarietyListItem.jsx` — new opt-in `onVarietyTrace(key)` prop fired on header-expand; back-compat preserved when absent.
+- Translations: `varietyTraceTitle`, `unaccountedStems` (EN + RU) on both apps.
+
+### Why
+Answers "where did all my Peony Pink go?" in one tap instead of inspecting each Batch. Behind `STOCK_Y_MODEL` (off in prod). New ADR-0008.
+
+### Verification
+- `backend/src/__tests__/varietyUsageTrace.integration.test.js` (4 pglite tests) + `packages/shared/test/VarietyTracePanel.test.jsx` (6) + a VarietyListItem opt-in test. Full backend + shared suites green; all 3 app builds green.
+
+---
+
 ## 2026-05-29 — receiveIntoStock propagates Variety attrs to new Batch (#327, fixes #323)
 
 Closes the "Known limitation" left by #304: Variety identity now flows from the PO line into the Stock Item created at receive time.

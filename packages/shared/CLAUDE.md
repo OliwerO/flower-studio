@@ -29,6 +29,7 @@ components/
   VarietyListItem.jsx         → Variety row with 4-bucket header (onHand / planned / reserved / net), expand-to-Stock-Items, tap-on-reserved → premade list, tap-on-Batch → trace. Consumed by StockPanelPage (florist) and StockTab (dashboard) under `STOCK_Y_MODEL`.
   BatchTracePanel.jsx         → Inline per-Batch usage trace panel (florist uses this via BatchTraceModal; dashboard renders it directly as an inline panel).
   BatchTraceModal.jsx         → Modal wrapper around BatchTracePanel. Used by the florist app where trace opens over a sheet.
+  VarietyTracePanel.jsx       → Per-Variety usage trail — unions events across every Batch + DE in a Variety (GET /stock/varieties/:key/usage). Renders the 4 event kinds + an "unaccounted stems" drift footer. Absorption events deferred (PRD #324 T5).
   WriteOffBatchPicker.jsx     → Batch-targeted write-off form. Excludes Demand Entries; defaults to oldest Batch by date. Behind `STOCK_Y_MODEL`.
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)

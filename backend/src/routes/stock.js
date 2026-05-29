@@ -516,6 +516,27 @@ router.patch('/:id/variety-attrs', authorize('stock', ['owner']), async (req, re
   }
 });
 
+// GET /api/stock/varieties/:key/usage — per-Variety trace (T5.2, PRD #324).
+//
+// :key is the URL-encoded pipe-separated 4-tuple "Type|Colour|SizeCm|Cultivar"
+// (same serialization as _varietyKey() / the shared varietyKey util; empty
+// segment = NULL).
+//
+// IMPORTANT: this route is registered BEFORE /:id/usage so the literal
+// segment "varieties" is not captured as the `:id` parameter.
+//
+// Returns: { variety: { key, type_name, colour, size_cm, cultivar },
+//            events: TrailEvent[], unaccountedStems: number }
+router.get('/varieties/:key/usage', async (req, res, next) => {
+  try {
+    const key = decodeURIComponent(req.params.key);
+    const result = await stockRepo.getUsageByVarietyKey(key);
+    return res.json(result);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/stock/:id/usage — trace where flowers went: orders that used this stock item,
 // write-offs, PO receipts, and stems locked in active premade bouquets.
 //

@@ -17,7 +17,7 @@
  *
  * Props:
  *   variety, reservations, hideType, expanded, onToggle, onRowClick,
- *   onBatchClick (legacy), onWriteOff, premadesByStockId, t.
+ *   onBatchClick (legacy), onWriteOff, onVarietyTrace, premadesByStockId, t.
  *
  *   Required translation keys: onHand, planned, reserved, net, stems, writeOff,
  *     batchKind, demandKind, statusFree, statusShort, statusTight.
@@ -38,6 +38,7 @@ export default function VarietyListItem({
   onRowClick,
   onBatchClick, // legacy alias
   onWriteOff,
+  onVarietyTrace, // (varietyKey) — called on header expand instead of onRowClick when provided
   onAdjust, // (stockId, delta) — per-Batch quick-adjust; only rendered on Batch rows
   premadesByStockId,
   t,
@@ -54,8 +55,14 @@ export default function VarietyListItem({
   function handleHeaderClick() {
     const willExpand = !expanded;
     onToggle && onToggle();
-    if (willExpand && primaryRow && handleRowClick) {
-      handleRowClick(primaryRow.id);
+    if (willExpand) {
+      if (onVarietyTrace) {
+        // Variety-level trace: caller handles fetch + panel. Skip per-Batch trace.
+        onVarietyTrace(variety.key);
+      } else if (primaryRow && handleRowClick) {
+        // Back-compat: open the per-Batch trace for the first positive Batch.
+        handleRowClick(primaryRow.id);
+      }
     }
   }
 

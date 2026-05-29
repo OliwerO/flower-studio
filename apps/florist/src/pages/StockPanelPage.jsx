@@ -10,6 +10,7 @@ import {
   BatchArrivalList,
   PendingArrivalsPanel,
   BatchTraceModal,
+  VarietyTracePanel,
   WriteOffBatchPicker,
   LOSS_REASONS,
   reasonLabel,
@@ -79,6 +80,11 @@ export default function StockPanelPage() {
   const [traceStockId, setTraceStockId] = useState(null);
   const [traceTrail, setTraceTrail] = useState(null);
   const [traceLoading, setTraceLoading] = useState(false);
+  // Variety-level trace modal state (mirror of per-Batch trace, but at Variety scope)
+  const [varietyTraceKey, setVarietyTraceKey]         = useState(null);
+  const [varietyTrail, setVarietyTrail]               = useState([]);
+  const [varietyUnaccounted, setVarietyUnaccounted]   = useState(0);
+  const [varietyTraceLoading, setVarietyTraceLoading] = useState(false);
   // Write-off modal state
   const [writeOffVariety, setWriteOffVariety] = useState(null);
 
@@ -575,6 +581,21 @@ export default function StockPanelPage() {
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(stockId)}
+                          onVarietyTrace={async (key) => {
+                            setVarietyTraceKey(key);
+                            setVarietyTrail([]);
+                            setVarietyUnaccounted(0);
+                            setVarietyTraceLoading(true);
+                            try {
+                              const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                              setVarietyTrail(res.data.events || []);
+                              setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
+                            } catch {
+                              setVarietyTrail([]);
+                            } finally {
+                              setVarietyTraceLoading(false);
+                            }
+                          }}
                           onWriteOff={(v) => setWriteOffVariety(v)}
                           onAdjust={handleAdjustGroup}
                           premadesByStockId={premadesByStockId}
@@ -657,6 +678,41 @@ export default function StockPanelPage() {
           t={t}
           onClose={() => { setTraceStockId(null); setTraceTrail(null); }}
         />
+      )}
+
+      {/* ── Y-model: Variety trace modal — mirrors BatchTraceModal UX ── */}
+      {yEnabled && varietyTraceKey && (
+        <div
+          data-testid="variety-trace-modal-backdrop"
+          className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
+          onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); }}
+        >
+          <div
+            data-testid="variety-trace-modal-content"
+            className="bg-white rounded-2xl shadow-xl w-full max-w-sm flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 pt-4 pb-2 border-b border-gray-100">
+              <h2 className="text-sm font-semibold text-gray-800">{t.varietyTraceTitle ?? 'Variety history'}</h2>
+            </div>
+            <div className="px-4 py-3">
+              {varietyTraceLoading ? (
+                <p className="text-xs text-ios-tertiary">{t.loading}</p>
+              ) : (
+                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} />
+              )}
+            </div>
+            <div className="px-4 pb-4 pt-1 border-t border-gray-50">
+              <button
+                type="button"
+                onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); }}
+                className="w-full py-2 text-sm text-gray-500 hover:text-gray-700"
+              >
+                {t.close}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
