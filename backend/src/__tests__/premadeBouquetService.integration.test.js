@@ -271,3 +271,94 @@ describe('createPremadeBouquet flag-on (STOCK_Y_MODEL=true) — issue #285', () 
     expect(after.currentQuantity).toBe(5);
   });
 });
+
+// ── #330: editPremadeBouquetLines under flag-on must NOT touch Batch qty ──
+import { editPremadeBouquetLines } from '../services/premadeBouquetService.js';
+
+describe('editPremadeBouquetLines flag-on (STOCK_Y_MODEL=true) — issue #330', () => {
+  let flagSpy;
+  beforeEach(() => { flagSpy = vi.spyOn(configService, 'getStockYModelEnabled').mockReturnValue(true); });
+  afterEach(() => { flagSpy.mockRestore(); });
+
+  async function seedBouquetWithLine(stockId, qty) {
+    const [bq] = await harness.db.insert(premadeBouquets).values({ name: 'Edit-test' }).returning();
+    const [ln] = await harness.db.insert(premadeBouquetLines).values({
+      bouquetId: bq.id, stockId, flowerName: 'X', quantity: qty,
+      costPricePerUnit: '1', sellPricePerUnit: '5',
+    }).returning();
+    return { bouquet: bq, line: ln };
+  }
+
+  it('adding a new line leaves Batch qty unchanged + writes the reservation row', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 10, typeName: 'Rose' }).returning();
+    const [bq] = await harness.db.insert(premadeBouquets).values({ name: 'B' }).returning();
+    await editPremadeBouquetLines(bq.id, {
+      lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 3, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+    });
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(10);
+    const lines = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.bouquetId, bq.id));
+    expect(lines).toHaveLength(1);
+    expect(lines[0].quantity).toBe(3);
+  });
+
+  it('increasing line qty leaves Batch qty unchanged + updates the reservation row', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 10, typeName: 'Rose' }).returning();
+    const { bouquet, line } = await seedBouquetWithLine(rose.id, 3);
+    await editPremadeBouquetLines(bouquet.id, {
+      lines: [{ id: line.id, stockItemId: rose.id, flowerName: 'X', quantity: 5, _originalQty: 3 }],
+    });
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(10);
+    const [updatedLine] = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.id, line.id));
+    expect(updatedLine.quantity).toBe(5);
+  });
+
+  it('decreasing line qty leaves Batch qty unchanged + updates the reservation row', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 10, typeName: 'Rose' }).returning();
+    const { bouquet, line } = await seedBouquetWithLine(rose.id, 5);
+    await editPremadeBouquetLines(bouquet.id, {
+      lines: [{ id: line.id, stockItemId: rose.id, flowerName: 'X', quantity: 2, _originalQty: 5 }],
+    });
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(10);
+    const [updatedLine] = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.id, line.id));
+    expect(updatedLine.quantity).toBe(2);
+  });
+
+  it('removing a line leaves Batch qty unchanged + deletes the reservation row', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 10, typeName: 'Rose' }).returning();
+    const { bouquet, line } = await seedBouquetWithLine(rose.id, 3);
+    await editPremadeBouquetLines(bouquet.id, {
+      removedLines: [{ lineId: line.id, stockItemId: rose.id, quantity: 3 }],
+    });
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(10);
+    const lines = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.bouquetId, bouquet.id));
+    expect(lines).toHaveLength(0);
+  });
+
+  it('adding a line that exceeds free qty throws + Batch + lines unchanged', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 5, typeName: 'Rose' }).returning();
+    const { bouquet } = await seedBouquetWithLine(rose.id, 4);
+    await expect(editPremadeBouquetLines(bouquet.id, {
+      lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 3, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+    })).rejects.toThrow(/Insufficient free stems/);
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(5);
+    const lines = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.bouquetId, bouquet.id));
+    expect(lines).toHaveLength(1);
+  });
+
+  it('increasing qty past free qty throws + Batch unchanged', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 5, typeName: 'Rose' }).returning();
+    const { bouquet, line } = await seedBouquetWithLine(rose.id, 4);
+    await expect(editPremadeBouquetLines(bouquet.id, {
+      lines: [{ id: line.id, stockItemId: rose.id, flowerName: 'X', quantity: 10, _originalQty: 4 }],
+    })).rejects.toThrow(/Insufficient free stems/);
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
+    expect(after.currentQuantity).toBe(5);
+    const [unchanged] = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.id, line.id));
+    expect(unchanged.quantity).toBe(4);
+  });
+});

@@ -23,6 +23,7 @@ import { autoMatchStock, createOrder } from './orderService.js';
 import { getStockYModelEnabled } from './configService.js';
 import { db } from '../db/index.js';
 import { premadeBouquets, premadeBouquetLines } from '../db/schema.js';
+import { eq } from 'drizzle-orm';
 
 export async function getPremadeBouquet(id) {
   const bouquet = await premadeBouquetRepo.getById(id);
@@ -210,7 +211,85 @@ export async function updatePremadeBouquet(id, patch) {
   return await getPremadeBouquet(id);
 }
 
-export async function editPremadeBouquetLines(id, { lines = [], removedLines = [] }) {
+export async function editPremadeBouquetLines(id, payload) {
+  if (getStockYModelEnabled()) return await _editPremadeBouquetLinesYModel(id, payload);
+  return await _editPremadeBouquetLinesLegacy(id, payload);
+}
+
+// ── Y-model edit path (STOCK_Y_MODEL=true) — issue #330 ──
+// Reservation ledger lives in premade_bouquet_lines; editing lines mutates
+// the reservation only, NEVER Batch qty. validateFreeQty gates new lines and
+// qty increases (delta only) so reservations stay coherent; decreases skip
+// validation (they release reservation back to free qty).
+async function _editPremadeBouquetLinesYModel(id, { lines = [], removedLines = [] }) {
+  const bouquet = await premadeBouquetRepo.getById(id);
+
+  // Removed lines: drop the row only. No credit to Batch qty (nothing was
+  // deducted at build time under the reservation model).
+  for (const rem of removedLines) {
+    if (rem.lineId) {
+      await premadeBouquetRepo.deleteLineById(rem.lineId).catch(err =>
+        console.error(`[PREMADE] Failed to delete removed line ${rem.lineId}:`, err.message),
+      );
+    }
+  }
+
+  const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
+  if (newUnmatched.length > 0) await autoMatchStock(newUnmatched);
+
+  const orphans = lines.filter(l => !l.id && !l.stockItemId);
+  if (orphans.length > 0) {
+    const names = orphans.map(o => o.flowerName || '(unnamed)').join(', ');
+    const err = new Error(
+      `Bouquet line(s) without a Stock Item are not allowed: ${names}. ` +
+      `Create the flower in Stock first.`,
+    );
+    err.statusCode = 400;
+    throw err;
+  }
+
+  // All inserts/updates run on the same tx so validateFreeQty's row-lock
+  // (production PG) covers each line and the reservation row write atomically.
+  // Bypass the repo here (repo methods use their own connection, which would
+  // deadlock against this open tx in pglite).
+  const createdLines = [];
+  await db.transaction(async (tx) => {
+    for (const line of lines) {
+      if (line.id) {
+        if (line._originalQty != null && line.quantity !== line._originalQty) {
+          const newQty = Number(line.quantity);
+          const oldQty = Number(line._originalQty);
+          if (line.stockItemId && newQty > oldQty) {
+            await stockRepo.validateFreeQty(line.stockItemId, newQty - oldQty, tx);
+          }
+          await tx.update(premadeBouquetLines)
+            .set({ quantity: newQty })
+            .where(eq(premadeBouquetLines.id, line.id));
+          // NO stockRepo.adjustQuantity — reservation ledger only.
+        }
+      } else {
+        if (line.stockItemId) {
+          await stockRepo.validateFreeQty(line.stockItemId, Number(line.quantity), tx);
+        }
+        const [created] = await tx.insert(premadeBouquetLines).values({
+          bouquetId:        bouquet._pgId,
+          stockId:          line.stockItemId || null,
+          flowerName:       line.flowerName,
+          quantity:         Number(line.quantity),
+          costPricePerUnit: String(Number(line.costPricePerUnit) || 0),
+          sellPricePerUnit: String(Number(line.sellPricePerUnit) || 0),
+        }).returning();
+        createdLines.push(created);
+        // NO stockRepo.adjustQuantity — reservation ledger only.
+      }
+    }
+  });
+
+  return { updated: true, createdLines };
+}
+
+// ── Legacy edit path (STOCK_Y_MODEL=false) — byte-for-byte unchanged ──
+async function _editPremadeBouquetLinesLegacy(id, { lines = [], removedLines = [] }) {
   const bouquet = await premadeBouquetRepo.getById(id);
 
   for (const rem of removedLines) {
