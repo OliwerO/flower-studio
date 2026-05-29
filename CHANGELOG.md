@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-29 — receiveIntoStock propagates Variety attrs to new Batch (#327, fixes #323)
+
+Closes the "Known limitation" left by #304: Variety identity now flows from the PO line into the Stock Item created at receive time.
+
+### Backend
+- `backend/src/routes/stockOrders.js` — `receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today, varietyAttrs = null)` now writes `Type / Colour / Size / Cultivar` onto the new dated Batch's `stockRepo.create()`. Attrs resolve from the PO line (`varietyAttrs`) and fall back to the orig Stock Item's fields. When the orig Demand Entry has `type_name = NULL` (pre-Y-model row) and the line carries attrs, the orig is back-filled in the same transaction so the absorption anchor stays visible in the Y-model grouped view.
+- `backend/src/routes/stockPurchases.js` — same attr propagation applied to the sibling absorption site.
+
+### Why
+Under `STOCK_Y_MODEL=true`, `/stock?grouped=true` filters `type_name IS NOT NULL`. A new Batch created without Variety attrs was invisible in the grouped Stock list, FEFO could not compute its Variety key, and the legacy picker preferred the undated orig — the three downstream symptoms of #323 (Peony Pink "disappeared" after a PO evaluation). Flag is **off in prod** today, so this is a precondition for the #291 cutover, not a live-visible change yet.
+
+### Verification
+- `backend/src/__tests__/stockOrders.receiveIntoStock.integration.test.js` — 7 pglite tests (new Batch carries attrs, orig back-filled, orig-already-set untouched, absorption math preserved at qty=4 from −46+50, grouped-view visibility, fallback-to-orig, no-attrs back-compat).
+- Full backend suite 456 pass; API E2E suite 180 pass.
+
+---
+
 ## 2026-05-11 — PO line Variety identity + clearer per-line totals (#304)
 
 ### Schema
