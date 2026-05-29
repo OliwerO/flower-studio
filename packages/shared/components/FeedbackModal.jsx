@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import client from '../api/client.js';
+import { publishFeedback } from '../api/feedback.js';
 
 /*
  * FeedbackModal — drives the full AI-assisted Report conversation.
@@ -71,6 +72,7 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
   const [sessionId, setSessionId] = useState(null);
   const [summary, setSummary]   = useState('');
   const [issueUrl, setIssueUrl] = useState('');
+  const [errorMsg, setErrorMsg] = useState('');
   const [loading, setLoading]   = useState(false);
   const [imageFile, setImageFile] = useState(null);
   const fileRef = useRef();
@@ -136,16 +138,11 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
   async function handlePublish() {
     setLoading(true);
     try {
-      const form = new FormData();
-      form.append('sessionId', sessionId);
-      if (imageFile) form.append('image', imageFile, imageFile.name);
-
-      await client.post('/feedback/publish', form, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
+      await publishFeedback({ sessionId, imageFile });
       setPhase('done');
     } catch (err) {
       console.error('[FeedbackModal] publish error', err);
+      setErrorMsg(err.response?.data?.error || '');
       setPhase('error');
     } finally {
       setLoading(false);
@@ -269,9 +266,9 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
           {/* Phase: error */}
           {phase === 'error' && (
             <div className="space-y-3">
-              <p className="text-sm text-red-500 dark:text-red-400">{t.reportError}</p>
+              <p className="text-sm text-red-500 dark:text-red-400">{errorMsg || t.reportError}</p>
               <button
-                onClick={() => { setPhase('input'); setSessionId(null); setQuestion(''); setAnswer(''); setSummary(''); setIssueUrl(''); }}
+                onClick={() => { setPhase('input'); setSessionId(null); setQuestion(''); setAnswer(''); setSummary(''); setIssueUrl(''); setErrorMsg(''); }}
                 className={btnSecondary + ' w-full'}>
                 {t.reportRetry}
               </button>
