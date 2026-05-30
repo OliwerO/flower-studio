@@ -90,6 +90,7 @@ const en = {
   updated:              'Updated!',
   updateError:          'Failed to update.',
   loadError:            'Failed to load details.',
+  stockUpdated:         'Stock updated',
 
   // New order wizard
   newOrderTitle:    'New Order',
@@ -869,6 +870,7 @@ const ru = {
   updated:              'Обновлено!',
   updateError:          'Не удалось обновить.',
   loadError:            'Не удалось загрузить детали.',
+  stockUpdated:         'Склад обновлён',
 
   // New order wizard
   newOrderTitle:    'Новый заказ',

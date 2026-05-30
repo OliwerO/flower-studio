@@ -6,6 +6,61 @@ import { stockBaseName, renderDateTag, LOSS_REASONS, reasonLabel, getEffectiveSt
 import fmtDate from '../utils/formatDate.js';
 
 /**
+ * PriceField — inline-editable number field for owner-only price editing.
+ * Shows a styled number; tapping switches to a text input, blur saves.
+ */
+function PriceField({ label, value, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit(e) {
+    e.stopPropagation();
+    setDraft(value != null && value > 0 ? String(value) : '');
+    setEditing(true);
+  }
+
+  function commitSave(e) {
+    e.stopPropagation();
+    setEditing(false);
+    const num = parseFloat(draft);
+    const next = isNaN(num) ? 0 : num;
+    if (next !== value) onSave(next);
+  }
+
+  if (editing) {
+    return (
+      <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+        <span className="text-[10px] text-ios-tertiary shrink-0">{label}</span>
+        <input
+          type="number"
+          inputMode="decimal"
+          value={draft}
+          autoFocus
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commitSave}
+          onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') { setEditing(false); } }}
+          className="w-16 text-right text-[11px] font-semibold border border-brand-300 rounded-lg px-1.5 py-0.5 bg-white outline-none"
+        />
+        <span className="text-[10px] text-ios-tertiary">zł</span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={startEdit}
+      className="flex items-center gap-1 active-scale"
+      title={`${t.edit || 'Edit'} ${label}`}
+    >
+      <span className="text-[10px] text-ios-tertiary">{label}:</span>
+      <span className="text-[11px] font-semibold text-ios-label underline decoration-dotted underline-offset-2">
+        {value != null && value > 0 ? `${Number(value).toFixed(0)}zł` : '—'}
+      </span>
+    </button>
+  );
+}
+
+/**
  * StockItem — a single compact row in the stock panel.
  *
  * Two modes controlled by the `editMode` prop:
@@ -14,7 +69,7 @@ import fmtDate from '../utils/formatDate.js';
  *
  * Tapping the row expands it to show which orders consume this flower.
  */
-export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatch, committedData, premadeData }) {
+export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatch, onPatchPrice, committedData, premadeData, role }) {
   const navigate = useNavigate();
   const qty       = item['Current Quantity'] || 0;
   const dead      = item['Dead/Unsold Stems'] || 0;
@@ -67,6 +122,11 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
       setWriteOffQty(1);
       setReason('');
     }
+  }
+
+  function handlePriceSave(field, value) {
+    // onPatchPrice handles PATCH + success/error toasts in StockPanelPage.
+    if (onPatchPrice) onPatchPrice({ [field]: value });
   }
 
   const isNeg = qty < 0;
@@ -226,6 +286,22 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
       {expanded && !editMode && committed === 0 && (
         <div className="px-3 pb-2 ml-4">
           <p className="text-[10px] text-ios-tertiary">{t.noCommitments}</p>
+        </div>
+      )}
+
+      {/* Owner-only: cost + sell price inline editors */}
+      {expanded && !editMode && role === 'owner' && (
+        <div className="px-3 pb-2 ml-4 flex items-center gap-4" onClick={e => e.stopPropagation()}>
+          <PriceField
+            label={t.costPrice}
+            value={item['Current Cost Price']}
+            onSave={v => handlePriceSave('Current Cost Price', v)}
+          />
+          <PriceField
+            label={t.sellPrice}
+            value={item['Current Sell Price']}
+            onSave={v => handlePriceSave('Current Sell Price', v)}
+          />
         </div>
       )}
 
