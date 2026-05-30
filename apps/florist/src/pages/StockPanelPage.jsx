@@ -175,6 +175,14 @@ export default function StockPanelPage() {
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
+  async function handlePatchPrice(id, fields) {
+    try {
+      const res = await client.patch(`/stock/${id}`, fields);
+      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
+      showToast(t.stockUpdated, 'success');
+    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortAsc(v => !v);
     else { setSortKey(key); setSortAsc(true); }
@@ -636,8 +644,10 @@ export default function StockPanelPage() {
                   onAdjust={delta => handleAdjust(item.id, delta)}
                   onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
                   onPatch={fields => handlePatch(item.id, fields)}
+                  onPatchPrice={fields => handlePatchPrice(item.id, fields)}
                   committedData={committedMap[item.id]}
                   premadeData={premadeMap[item.id]}
+                  role={role}
                 />
               ))}
             </div>
