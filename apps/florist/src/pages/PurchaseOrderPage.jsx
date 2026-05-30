@@ -64,7 +64,7 @@ export default function PurchaseOrderPage() {
 
   useEffect(() => {
     fetchOrders();
-    client.get('/stock').then(r => setStock(r.data)).catch(() => {});
+    client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(() => {});
     client.get('/settings').then(r => setDrivers(r.data.drivers || [])).catch(() => {});
   }, [fetchOrders]);
 
