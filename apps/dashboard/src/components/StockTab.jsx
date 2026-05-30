@@ -15,6 +15,7 @@ import {
   PendingArrivalsPanel,
   BatchArrivalList,
   BatchTracePanel,
+  VarietyTracePanel,
   WriteOffBatchPicker,
 } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
@@ -65,6 +66,11 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [traceStockId, setTraceStockId]     = useState(null);   // inline trace: stock item id
   const [traceTrail, setTraceTrail]         = useState(null);
   const [traceLoading, setTraceLoading]     = useState(false);
+  // Variety-level trace (inline, independent of per-Batch trace above)
+  const [varietyTraceKey, setVarietyTraceKey]           = useState(null);
+  const [varietyTrail, setVarietyTrail]                 = useState([]);
+  const [varietyUnaccounted, setVarietyUnaccounted]     = useState(0);
+  const [varietyTraceLoading, setVarietyTraceLoading]   = useState(false);
   const [writeOffVariety, setWriteOffVariety] = useState(null); // write-off picker (modal)
   // Per-row "Reconcile" button on premade chips. Gated on a backend setting
   // (Settings → Stock → Stock repair tools) so it syncs across devices and
@@ -909,11 +915,54 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
+                          onVarietyTrace={async (key) => {
+                            if (varietyTraceKey === key) {
+                              // Toggle off
+                              setVarietyTraceKey(null);
+                              setVarietyTrail([]);
+                              setVarietyUnaccounted(0);
+                              return;
+                            }
+                            setVarietyTraceKey(key);
+                            setVarietyTrail([]);
+                            setVarietyUnaccounted(0);
+                            setVarietyTraceLoading(true);
+                            try {
+                              const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                              setVarietyTrail(res.data.events || []);
+                              setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
+                            } catch {
+                              setVarietyTrail([]);
+                            } finally {
+                              setVarietyTraceLoading(false);
+                            }
+                          }}
                           onWriteOff={(v) => setWriteOffVariety(v)}
                           onAdjust={adjustGroupQty}
                           premadesByStockId={premadesByStockId}
                           t={t}
                         />
+                        {/* Inline VarietyTracePanel — renders below the Variety row when active. */}
+                        {varietyTraceKey === group.key && (
+                          <div className="px-4 py-3 bg-indigo-50/60 border-t border-indigo-100">
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                                {t.varietyTraceTitle ?? 'Variety history'}
+                              </span>
+                              <button
+                                onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); }}
+                                className="text-xs text-indigo-400 hover:text-indigo-600"
+                              >
+                                ✕
+                              </button>
+                            </div>
+                            {varietyTraceLoading ? (
+                              <p className="text-xs text-ios-tertiary">{t.loading}</p>
+                            ) : (
+                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} />
+                            )}
+                          </div>
+                        )}
                         {/* Inline BatchTracePanel — renders below the Variety row when active.
                             Dashboard UX: inline (not modal), per Q5b spec. */}
                         {traceStockId && (group.rows || []).some(r => r.id === traceStockId) && (

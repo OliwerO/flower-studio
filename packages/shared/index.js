@@ -107,5 +107,9 @@ export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
 export { default as BatchTracePanel } from './components/BatchTracePanel.jsx';
 export { default as BatchTraceModal } from './components/BatchTraceModal.jsx';
 
+// Per-Variety trace panel — unions usage across every Batch + DE in a Variety,
+// surfaces drift via an "unaccounted stems" footer (PRD #324 T5).
+export { default as VarietyTracePanel } from './components/VarietyTracePanel.jsx';
+
 // Write-off Batch picker — Demand Entries excluded, default oldest, FIFO (issue #289)
 export { default as WriteOffBatchPicker } from './components/WriteOffBatchPicker.jsx';
