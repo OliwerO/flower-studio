@@ -47,7 +47,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | File | Purpose |
 |------|---------|
 | orderService.js | Order state machine, auto-match stock, create with rollback, cancel with stock return, edit bouquet lines. All paths via orderRepo (Postgres). |
-| premadeBouquetService.js | Build / dissolve / sell Premade Bouquets. Flag-on path (STOCK_Y_MODEL=true, issue #285) uses reservation model — `premade_bouquet_lines` are the ledger; Batch quantity is touched only at sale via standard allocation. Legacy path preserved under `_*Legacy` functions. Persistence via `premadeBouquetRepo` (Postgres, Phase 7). |
+| premadeBouquetService.js | Build / edit / dissolve / sell Premade Bouquets. Flag-on path (STOCK_Y_MODEL=true, issue #285 + #330) uses reservation model — `premade_bouquet_lines` are the ledger; Batch quantity is touched only at sale via standard allocation. Legacy path preserved under `_*Legacy` functions. Persistence via `premadeBouquetRepo` (Postgres, Phase 7). |
 | notifications.js | SSE broadcast to all connected clients (heartbeat every 30s). No catch-up buffer yet — clients miss events while disconnected. |
 | wix.js | Wix webhook processor — parses payload, creates order + lines + delivery. |
 | wixProductSync.js | Bidirectional Wix product pull/push with sync logging. `runPush` accepts `onProgress(entry)` and parallelizes Wix API calls per phase via `p-queue` (concurrency 8) so the full push lands in 10–20s. Pull mirrors Wix prices and descriptions into the local product_config table (the 2026-04-22 lockout was specific to the legacy `runSync` flow, which the UI no longer calls). (1200+ L — split candidate.) |

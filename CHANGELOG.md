@@ -5,6 +5,19 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-05-30 — Premade edit path joins the Y-model reservation model (#330)
+
+Closes the last unsplit flag-off/flag-on path in `premadeBouquetService`. `editPremadeBouquetLines` was unconditionally calling `stockRepo.adjustQuantity` on add / qty-change / remove — under `STOCK_Y_MODEL=true` that double-counts on top of the reservation ledger. Cutover-blocker fix.
+
+### Backend
+- `backend/src/services/premadeBouquetService.js` — split `editPremadeBouquetLines` into `_editPremadeBouquetLinesYModel` and `_editPremadeBouquetLinesLegacy`. Y-model path: removed lines drop the row only; added lines run through `validateFreeQty` then `tx.insert(premadeBouquetLines)`; qty changes update the line and only validate the delta when increasing. NEVER touches `stockRepo.adjustQuantity`. All under one `db.transaction` so `validateFreeQty`'s row-lock (production PG) covers each line atomically. Legacy path byte-for-byte preserved.
+
+### Verification
+- `backend/src/__tests__/premadeBouquetService.integration.test.js` — 6 new flag-on tests (add / increase / decrease / remove / over-subscribe new line / over-subscribe increase) all assert `stock.currentQuantity` unchanged and `premade_bouquet_lines` reflect the intended state. 14/14 in the file pass.
+- Full backend suite green.
+
+---
+
 ## 2026-05-29 — Per-Variety trace surface (#346, PRD #324 T5)
 
 Read-only trace spanning every Batch + Demand Entry in a Variety. No schema change.
