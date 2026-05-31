@@ -1,7 +1,7 @@
 // PurchaseOrderPage — mobile-optimized PO management for the owner in the florist app.
 // Full lifecycle: create POs, edit drafts, send to driver, track status, manage payments.
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -71,6 +71,27 @@ export default function PurchaseOrderPage() {
   // Negative stock items for pre-filling new POs
   const negativeStock = stock.filter(s => (Number(s['Current Quantity']) || 0) < 0);
 
+  // Owner ask 2026-05-31: suggest existing Type / Colour / Cultivar / Farmer
+  // values when typing on a new-Variety PO line, to prevent duplicates from
+  // misspellings ("Peon" vs "Peony"). Sourced from current Stock; refreshed
+  // when /stock fetch lands.
+  const typeSuggestions = useMemo(
+    () => Array.from(new Set(stock.map(s => s['Type'] ?? s.type_name).filter(Boolean))).sort(),
+    [stock],
+  );
+  const colourSuggestions = useMemo(
+    () => Array.from(new Set(stock.map(s => s['Colour'] ?? s.colour).filter(Boolean))).sort(),
+    [stock],
+  );
+  const cultivarSuggestions = useMemo(
+    () => Array.from(new Set(stock.map(s => s['Cultivar'] ?? s.cultivar).filter(Boolean))).sort(),
+    [stock],
+  );
+  const farmerSuggestions = useMemo(
+    () => Array.from(new Set(stock.map(s => s['Farmer'] ?? s.farmer).filter(Boolean))).sort(),
+    [stock],
+  );
+
   function emptyLine() {
     return {
       stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, packages: 0,
@@ -112,7 +133,21 @@ export default function PurchaseOrderPage() {
   }
 
   function updateFormLine(idx, patch) {
-    setFormLines(prev => prev.map((l, i) => i === idx ? { ...l, ...patch } : l));
+    setFormLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      const merged = { ...l, ...patch };
+      // Owner ask 2026-05-31: when both Pkgs and LotSize are set, Qty reflects
+      // the total stems that will actually be ordered (pkgs * lotSize). Owner
+      // can still type Qty manually; only Pkgs / LotSize edits trigger the
+      // auto-sync.
+      const touchedPkgsOrLot = 'packages' in patch || 'lotSize' in patch;
+      if (touchedPkgsOrLot) {
+        const pkgs = Number(merged.packages) || 0;
+        const ls = Number(merged.lotSize) || 0;
+        if (pkgs > 0 && ls > 0) merged.quantity = pkgs * ls;
+      }
+      return merged;
+    }));
   }
 
   function removeFormLine(idx) {
@@ -339,6 +374,21 @@ export default function PurchaseOrderPage() {
 
   return (
     <div className="min-h-screen">
+      {/* Typeahead suggestion sources for new-variety + farmer inputs (issue: dup
+          spellings like "Peon" vs "Peony"). datalist is HTML5-native; the
+          browser handles substring filtering as the user types. */}
+      <datalist id="po-type-suggestions">
+        {typeSuggestions.map(s => <option key={s} value={s} />)}
+      </datalist>
+      <datalist id="po-colour-suggestions">
+        {colourSuggestions.map(s => <option key={s} value={s} />)}
+      </datalist>
+      <datalist id="po-cultivar-suggestions">
+        {cultivarSuggestions.map(s => <option key={s} value={s} />)}
+      </datalist>
+      <datalist id="po-farmer-suggestions">
+        {farmerSuggestions.map(s => <option key={s} value={s} />)}
+      </datalist>
       <header className="glass-nav px-4 py-3 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <button onClick={() => navigate('/stock')} className="text-brand-600 font-medium text-base active-scale">
@@ -446,6 +496,7 @@ export default function PurchaseOrderPage() {
                   {/* Farmer + Notes */}
                   <div className="flex items-center gap-2">
                     <input type="text" value={line.farmer || ''}
+                      list="po-farmer-suggestions"
                       onChange={e => updateFormLine(idx, { farmer: e.target.value })}
                       className="field-input flex-1 text-sm" placeholder={t.farmer || 'Farmer'} />
                     <input type="text" value={line.notes || ''}
@@ -460,15 +511,18 @@ export default function PurchaseOrderPage() {
                       </p>
                       <div className="grid grid-cols-2 gap-2">
                         <input type="text" value={line.type || ''}
+                          list="po-type-suggestions"
                           onChange={e => updateFormLine(idx, { type: e.target.value })}
                           className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
                         <input type="text" value={line.colour || ''}
+                          list="po-colour-suggestions"
                           onChange={e => updateFormLine(idx, { colour: e.target.value })}
                           className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
                         <input type="number" value={line.size || ''}
                           onChange={e => updateFormLine(idx, { size: e.target.value })}
                           className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
                         <input type="text" value={line.cultivar || ''}
+                          list="po-cultivar-suggestions"
                           onChange={e => updateFormLine(idx, { cultivar: e.target.value })}
                           className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
                       </div>
