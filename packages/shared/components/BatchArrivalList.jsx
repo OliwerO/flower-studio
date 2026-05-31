@@ -23,7 +23,7 @@ import { useMemo, useState } from 'react';
 // Coral", "Sarah Bernhardt") render in full; long names wrap a second line
 // rather than truncating. `arrived` shows the newest receive date of the
 // merged row — visible label + sortable, even though Tag-per-Batch is gone.
-const GRID_COLS = 'grid-cols-[4.5rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
+const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
 
 const COLS = [
   { key: 'type',       label: 'type',       align: 'left'   },
@@ -147,7 +147,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           className="absolute inset-0 z-0"
           aria-label={t.batchTraceTitle || 'Open trace'}
         />
-        <span className="relative z-10 font-semibold text-gray-900 truncate pointer-events-none">
+        <span className="relative z-10 font-semibold text-gray-900 break-words pointer-events-none">
           {b.type || '—'}
         </span>
         <span className="relative z-10 flex flex-wrap items-baseline gap-x-1.5 gap-y-0 min-w-0 pointer-events-none">
