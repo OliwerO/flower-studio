@@ -673,6 +673,25 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                     <p className="text-xs text-ios-secondary">{order.Notes}</p>
                   )}
 
+                  {['Draft', 'Sent', 'Shopping'].includes(order.Status) && (
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-ios-tertiary shrink-0">{t.plannedDate || 'Planned date'}</label>
+                      <input
+                        type="date"
+                        value={order['Planned Date'] || ''}
+                        onChange={e => setOrders(prev => prev.map(o => o.id === order.id ? { ...o, 'Planned Date': e.target.value } : o))}
+                        onBlur={async e => {
+                          try {
+                            await client.patch(`/stock-orders/${order.id}`, { 'Planned Date': e.target.value || null });
+                          } catch (err) {
+                            showToast(err.response?.data?.error || t.error, 'error');
+                          }
+                        }}
+                        className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 flex-1"
+                      />
+                    </div>
+                  )}
+
                   {/* Editable POs: Draft + Sent + Shopping. Reviewing/Evaluating/Complete stay read-only. */}
                   {['Draft', 'Sent', 'Shopping'].includes(order.Status) ? (
                     <>
