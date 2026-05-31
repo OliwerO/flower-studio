@@ -73,7 +73,7 @@ export default function PurchaseOrderPage() {
 
   function emptyLine() {
     return {
-      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0,
+      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, packages: 0,
       supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false,
       farmer: '', notes: '',
       // Y-model new-Variety identity (#304) — populated when no stockItemId
@@ -81,11 +81,13 @@ export default function PurchaseOrderPage() {
     };
   }
 
+  // Pre-fill from negative stock: Qty = raw shortfall in stems (matches
+  // owner's demand reading). Pkgs stays 0 — owner decides how many lots she
+  // actually wants to buy. Stored Quantity Needed = pkgs > 0 ? pkgs*lot : qty.
   function startNewPO() {
     const lines = negativeStock.map(item => {
       const lotSize = Number(item['Lot Size']) || 0;
-      const rawQty = Math.abs(Number(item['Current Quantity']) || 0);
-      const quantity = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
+      const quantity = Math.abs(Number(item['Current Quantity']) || 0);
       const cost = Number(item['Current Cost Price']) || 0;
       const sell = Number(item['Current Sell Price']) || 0;
       return {
@@ -93,6 +95,7 @@ export default function PurchaseOrderPage() {
         flowerName: item['Display Name'],
         quantity,
         lotSize,
+        packages: 0,
         supplier: item.Supplier || '',
         costPrice: cost > 0 ? String(cost) : '',
         sellPrice: sell > 0 ? String(sell) : '',
@@ -152,15 +155,15 @@ export default function PurchaseOrderPage() {
         notes: formNotes,
         driver: formDriver,
         plannedDate: formPlannedDate || null,
-        // Lot-round the stored quantity so it matches what the create-form's
-        // grandCost math showed the owner. Without this, `Quantity Needed`
-        // would store the raw stem count (e.g. 7) but the cost badge rendered
-        // the lot-rounded value (10 stems at `Math.ceil(7/10)*10`), making
-        // the persisted-PO total inconsistent with what the owner confirmed.
+        // Stored Quantity Needed = total stems. If owner filled Packages,
+        // that overrides raw Qty: totalStems = pkgs * lotSize. Otherwise the
+        // raw stem demand from the Qty field is stored as-is. Mirrors the
+        // dashboard StockOrderPanel new-PO form.
         lines: formLines.filter(l => l.flowerName || l.type).map(l => {
           const ls = Number(l.lotSize) || 0;
+          const pkgs = Number(l.packages) || 0;
           const rawQty = Number(l.quantity) || 0;
-          const quantity = ls > 1 ? Math.ceil(rawQty / ls) * ls : rawQty;
+          const quantity = pkgs > 0 && ls > 0 ? pkgs * ls : rawQty;
           // Auto-compose Flower Name from Variety identity when user typed
           // Type/Colour/Size/Cultivar rather than picking an existing Stock Item.
           const composedName = l.flowerName?.trim() || [
@@ -322,12 +325,14 @@ export default function PurchaseOrderPage() {
     }
   }
 
-  // Grand total for form
+  // Grand total — pkgs overrides qty when filled (totalStems = pkgs × lotSize),
+  // else Qty is taken as raw stems.
   const grandCost = formLines.reduce((sum, l) => {
     const qty = Number(l.quantity) || 0;
     const ls = Number(l.lotSize) || 0;
-    const effectiveQty = ls > 1 ? Math.ceil(qty / ls) * ls : qty;
-    return sum + effectiveQty * (Number(l.costPrice) || 0);
+    const pkgs = Number(l.packages) || 0;
+    const totalStems = pkgs > 0 && ls > 0 ? pkgs * ls : qty;
+    return sum + totalStems * (Number(l.costPrice) || 0);
   }, 0);
 
   const allDrivers = drivers.length > 0 ? drivers : configDrivers.length > 0 ? configDrivers : ['Nikita'];
@@ -365,7 +370,9 @@ export default function PurchaseOrderPage() {
             {/* Lines */}
             {formLines.map((line, idx) => {
               const ls = Number(line.lotSize) || 0;
-              const lotsNeeded = ls > 1 ? Math.ceil((line.quantity || 0) / ls) : 0;
+              const lineQty = Number(line.quantity) || 0;
+              const linePkgs = Number(line.packages) || 0;
+              const totalStems = linePkgs > 0 && ls > 0 ? linePkgs * ls : lineQty;
               const lineCost = Number(line.costPrice) || 0;
               const lineSell = Number(line.sellPrice) || 0;
               const lineMarkup = lineCost > 0 && lineSell > 0 ? (lineSell / lineCost).toFixed(1) : null;
@@ -383,7 +390,7 @@ export default function PurchaseOrderPage() {
                     </div>
                     <button onClick={() => removeFormLine(idx)} className="text-ios-red text-sm px-1">✕</button>
                   </div>
-                  {/* Qty + Lot + Supplier */}
+                  {/* Qty (stem demand) + Lot + Pkgs (lots override) + Supplier */}
                   <div className="flex items-center gap-2 flex-wrap">
                     <div className="flex items-center gap-1">
                       <span className="text-[10px] text-ios-tertiary">{t.quantity || 'Qty'}:</span>
@@ -397,8 +404,18 @@ export default function PurchaseOrderPage() {
                         onChange={e => updateFormLine(idx, { lotSize: Number(e.target.value) || 0 })}
                         className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
                     </div>
-                    {lotsNeeded > 0 && (
-                      <span className="text-xs text-ios-secondary font-medium">= {lotsNeeded} × {ls}</span>
+                    {ls > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-ios-tertiary">{t.po?.packages || 'Pkgs'}:</span>
+                        <input type="number" value={line.packages || ''}
+                          onChange={e => updateFormLine(idx, { packages: Number(e.target.value) || 0 })}
+                          className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
+                      </div>
+                    )}
+                    {linePkgs > 0 && ls > 0 && (
+                      <span className="text-xs text-ios-secondary font-medium">
+                        = {linePkgs} × {ls} = {totalStems}
+                      </span>
                     )}
                     <select value={line.supplier}
                       onChange={e => updateFormLine(idx, { supplier: e.target.value })}

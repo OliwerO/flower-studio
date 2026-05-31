@@ -1,49 +1,73 @@
 import { useMemo, useState } from 'react';
 
 /**
- * WriteOffBatchPicker — form-card for writing off stems from a specific Batch.
+ * WriteOffBatchPicker — form-card for writing off stems from a Variety's
+ * physical buckets. Stems with the same Sell price collapse into one tier
+ * option (matches the Stock-list merge rule, 2026-05-31). Demand Entries
+ * are excluded.
  *
- * Demand Entries (current_quantity < 0) are excluded from the picker.
- * Default selection = oldest Batch by date (FIFO).
- * Owner can override by clicking a different Batch option.
+ * Default selection = the cheapest tier (lowest sell price); the host then
+ * spreads the write-off across underlying stock_ids in FEFO order (oldest
+ * first) by iterating the `stockIds` array.
  *
  * Props:
- *   variety   — { rows: [{ id, current_quantity, date }], ... }
+ *   variety   — { rows: [{ id, current_quantity, date, current_sell_price }], ... }
  *   reasons   — [{ value, label }]
  *   t         — { writeOffPickerTitle, writeOffQty, writeOffReason, writeOffBatch,
- *                 writeOffConfirm, cancel, stems }
- *   onConfirm — ({ stockId, qty, reason }) => void
+ *                 writeOffConfirm, cancel, stems, currency }
+ *   onConfirm — ({ stockIds, qty, reason }) => void  — stockIds in FEFO order
  *   onCancel  — () => void
  */
 export default function WriteOffBatchPicker({ variety, reasons, t, onConfirm, onCancel }) {
-  // Sort batches ascending by date; exclude Demand Entries (qty < 0).
-  const batches = useMemo(() => {
-    const rows = (variety?.rows ?? []).filter(
-      (r) => (Number(r.current_quantity) || 0) >= 0,
+  // Merge stems by sell price; track FEFO-ordered underlying ids per tier.
+  const tiers = useMemo(() => {
+    const positiveRows = (variety?.rows ?? []).filter(
+      (r) => (Number(r.current_quantity) || 0) > 0,
     );
-    return [...rows].sort((a, b) => {
-      if (a.date < b.date) return -1;
-      if (a.date > b.date) return 1;
-      return 0;
-    });
+    const byTier = new Map();
+    for (const r of positiveRows) {
+      const sellRaw = r['Current Sell Price'] ?? r.current_sell_price;
+      const sell = sellRaw != null && sellRaw !== '' ? Number(sellRaw) : null;
+      const tierKey = sell != null && isFinite(sell) ? sell.toFixed(2) : 'null';
+      let m = byTier.get(tierKey);
+      if (!m) {
+        m = { key: tierKey, sell, rows: [], totalQty: 0 };
+        byTier.set(tierKey, m);
+      }
+      m.rows.push(r);
+      m.totalQty += Number(r.current_quantity) || 0;
+    }
+    // FEFO-sort rows inside each tier; sort tiers by sell asc.
+    for (const m of byTier.values()) {
+      m.rows.sort((a, b) => {
+        if (!a.date && !b.date) return 0;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return a.date.localeCompare(b.date);
+      });
+    }
+    return [...byTier.values()].sort((a, b) => (a.sell ?? 0) - (b.sell ?? 0));
   }, [variety]);
 
-  // Default = oldest batch (first after asc sort).
-  const [selectedId, setSelectedId] = useState(() => batches[0]?.id ?? null);
+  const [selectedKey, setSelectedKey] = useState(() => tiers[0]?.key ?? null);
   const [qty, setQty] = useState('');
   const [reason, setReason] = useState('');
 
-  const selectedBatch = batches.find((r) => r.id === selectedId) ?? null;
+  const selectedTier = tiers.find((m) => m.key === selectedKey) ?? null;
   const qtyNum = parseInt(qty, 10);
   const isValid =
     qtyNum > 0 &&
     !!reason &&
-    selectedBatch !== null &&
-    qtyNum <= (Number(selectedBatch?.current_quantity) || 0);
+    selectedTier !== null &&
+    qtyNum <= (selectedTier?.totalQty || 0);
 
   function handleConfirm() {
     if (!isValid) return;
-    onConfirm({ stockId: selectedId, qty: qtyNum, reason });
+    onConfirm({
+      stockIds: selectedTier.rows.map(r => r.id),
+      qty:      qtyNum,
+      reason,
+    });
   }
 
   return (
@@ -51,19 +75,23 @@ export default function WriteOffBatchPicker({ variety, reasons, t, onConfirm, on
       {/* Title */}
       <h3 className="text-sm font-semibold text-gray-900">{t.writeOffPickerTitle}</h3>
 
-      {/* Batch selector */}
+      {/* Tier selector — one chip per sell price */}
       <div className="space-y-1">
         <span className="block text-xs font-medium text-gray-700">{t.writeOffBatch}</span>
         <div className="flex flex-wrap gap-2">
-          {batches.map((row) => {
-            const isSelected = row.id === selectedId;
+          {tiers.map((tier) => {
+            const isSelected = tier.key === selectedKey;
+            const sellLabel = tier.sell != null
+              ? `${tier.sell.toFixed(2)} ${t.currency ?? 'zł'}`
+              : '—';
             return (
               <button
-                key={row.id}
+                key={tier.key}
                 type="button"
                 data-testid="writeoff-batch-option"
-                data-stock-id={row.id}
-                onClick={() => setSelectedId(row.id)}
+                data-tier-key={tier.key}
+                data-stock-ids={tier.rows.map(r => r.id).join(',')}
+                onClick={() => setSelectedKey(tier.key)}
                 className={[
                   'px-3 py-1.5 rounded-lg border text-xs transition-colors',
                   isSelected
@@ -74,11 +102,11 @@ export default function WriteOffBatchPicker({ variety, reasons, t, onConfirm, on
                 {isSelected && (
                   <span
                     data-testid="writeoff-batch-option-selected"
-                    data-stock-id={row.id}
+                    data-tier-key={tier.key}
                     className="sr-only"
                   />
                 )}
-                ({row.date}) {Number(row.current_quantity)} {t.stems}
+                {sellLabel} · {tier.totalQty} {t.stems}
               </button>
             );
           })}

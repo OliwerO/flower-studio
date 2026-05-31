@@ -173,27 +173,28 @@ export default function VarietyListItem({
       {/* ── Expansion body ── */}
       {expanded && (
         <ul className="bg-gray-50 border-t border-gray-100">
-          {[...variety.rows]
-            .sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''))
-            .map((row) => {
-              const kind = row.current_quantity < 0 ? 'demand' : 'batch';
-              const absQty = Math.abs(row.current_quantity);
-              const kindLabel = kind === 'batch' ? (t.batchKind ?? 'Batch') : (t.demandKind ?? 'Demand');
-              const dateLabel = row.date ? formatDateDMY(row.date) : '—';
-
+          {mergeExpansionRows(variety.rows).map((row) => {
+              const kind = row.kind;
               const isDemand = kind === 'demand';
+              const kindLabel = isDemand ? (t.demandKind ?? 'Demand') : (t.batchKind ?? 'Batch');
+              const dateLabel = isDemand && row.date ? formatDateDMY(row.date) : null;
+
               const rowClass = isDemand
                 ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50'
                 : 'w-full flex items-center justify-between px-6 py-2 text-sm text-gray-700';
               const showAdjust = !!onAdjust && !isDemand;
+              // For merged Batch rows: adjust acts on the FEFO-oldest underlying
+              // stock_id so positive +/- credits/debits the row that'll be consumed next.
+              const adjustTargetId = row.stockIds[0];
 
               return (
-                <li key={row.id} className={rowClass} data-row-kind={kind}>
+                <li key={row.key} className={rowClass} data-row-kind={kind}>
                   <button
                     type="button"
                     data-testid="stock-item-row"
                     data-row-kind={kind}
-                    onClick={() => handleRowClick && handleRowClick(row.id)}
+                    data-stock-ids={row.stockIds.join(',')}
+                    onClick={() => handleRowClick && handleRowClick(row.stockIds[0])}
                     className={`flex items-center gap-2 min-w-0 flex-1 text-left rounded transition-colors ${
                       isDemand ? 'hover:bg-red-100 active:bg-red-100' : 'hover:bg-gray-100 active:bg-gray-100'
                     }`}
@@ -205,7 +206,10 @@ export default function VarietyListItem({
                     >
                       {kindLabel}
                     </span>
-                    <span className="text-gray-500">{dateLabel}</span>
+                    {dateLabel && <span className="text-gray-500">{dateLabel}</span>}
+                    {!isDemand && row.sell != null && (
+                      <span className="text-gray-500 tabular-nums">{row.sell.toFixed(2)} {t.currency ?? 'zł'}</span>
+                    )}
                   </button>
                   <span className="flex items-center gap-2 shrink-0 ml-2">
                     {showAdjust && (
@@ -213,7 +217,7 @@ export default function VarietyListItem({
                         <button
                           type="button"
                           data-testid="variety-adjust-dec"
-                          onClick={(e) => { e.stopPropagation(); onAdjust(row.id, -1); }}
+                          onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, -1); }}
                           className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
                           aria-label={t.decrease ?? 'Remove one stem'}
                         >
@@ -222,7 +226,7 @@ export default function VarietyListItem({
                         <button
                           type="button"
                           data-testid="variety-adjust-inc"
-                          onClick={(e) => { e.stopPropagation(); onAdjust(row.id, 1); }}
+                          onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, 1); }}
                           className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
                           aria-label={t.increase ?? 'Add one stem'}
                         >
@@ -231,7 +235,7 @@ export default function VarietyListItem({
                       </span>
                     )}
                     <span className="tabular-nums">
-                      {absQty} {t.stems} ›
+                      {row.absQty} {t.stems} ›
                     </span>
                   </span>
                 </li>
@@ -241,6 +245,74 @@ export default function VarietyListItem({
       )}
     </div>
   );
+}
+
+// Merge Batch rows (positive qty) by sell price; keep Demand rows (negative
+// qty) split by date — each is a distinct requirement date.
+// Owner design 2026-05-31: stems with the same Variety + Sell price are
+// fungible regardless of arrival date or supplier; show one merged Batch row.
+function mergeExpansionRows(rows) {
+  const batches = new Map(); // sellKey → merged Batch row
+  const demands = [];
+  // Track the receive-date of each underlying stock_id so we can sort the
+  // merged row's `stockIds` by date asc (FEFO-oldest at index 0). Adjust +/-
+  // and trace-open use `stockIds[0]`, so this ordering matters.
+  const stockIdDates = new Map();
+  for (const r of rows ?? []) {
+    const qty = Number(r.current_quantity) || 0;
+    if (qty < 0) {
+      demands.push({
+        kind:     'demand',
+        key:      `d-${r.id}`,
+        stockIds: [r.id],
+        date:     r.date ?? null,
+        absQty:   Math.abs(qty),
+        sell:     null,
+      });
+      continue;
+    }
+    stockIdDates.set(r.id, r.date ?? null);
+    const sell = readSellPrice(r);
+    const sellKey = sell != null ? sell.toFixed(2) : 'null';
+    const k = `b-${sellKey}`;
+    let m = batches.get(k);
+    if (!m) {
+      m = {
+        kind:       'batch',
+        key:        k,
+        stockIds:   [],
+        date:       null, // not displayed for merged batches
+        absQty:     0,
+        sell,
+      };
+      batches.set(k, m);
+    }
+    m.stockIds.push(r.id);
+    m.absQty += qty;
+  }
+  // Sort underlying stockIds by date asc (NULL last) so [0] = FEFO oldest.
+  for (const m of batches.values()) {
+    m.stockIds.sort((a, b) => {
+      const da = stockIdDates.get(a);
+      const db = stockIdDates.get(b);
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da.localeCompare(db);
+    });
+  }
+  // Sort: demands by date asc (earliest requirement first), then batches by
+  // sell price asc (cheapest tier first).
+  demands.sort((a, b) => (a.date ?? '').localeCompare(b.date ?? ''));
+  const batchList = [...batches.values()].sort((a, b) => (a.sell ?? 0) - (b.sell ?? 0));
+  return [...demands, ...batchList];
+}
+
+function readSellPrice(row) {
+  const v = row['Current Sell Price'] ?? row.current_sell_price;
+  if (v == null || v === '') return null;
+  const n = Number(v);
+  return isFinite(n) ? n : null;
 }
 
 function BucketChip({ testid, value, label, tone, onClick }) {

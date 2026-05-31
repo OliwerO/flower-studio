@@ -108,10 +108,12 @@ describe('VarietyListItem expansion', () => {
     ],
   };
 
-  it('shows one nested row per Stock Item when expanded', () => {
+  it('merges Batch rows with same sell price; Demand rows stay distinct (merge rule, 2026-05-31)', () => {
+    // b1 + b2 both have current_sell_price unset → both collapse into one
+    // merged Batch row. d1 is a Demand Entry, stays separate. Total: 2 rows.
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} />);
-    expect(screen.getAllByTestId('stock-item-row')).toHaveLength(3);
+    expect(screen.getAllByTestId('stock-item-row')).toHaveLength(2);
   });
 
   it('hides nested rows when collapsed', () => {
@@ -120,10 +122,11 @@ describe('VarietyListItem expansion', () => {
     expect(screen.queryAllByTestId('stock-item-row')).toHaveLength(0);
   });
 
-  it('row label includes (date) suffix per ADR-0006, formatted DD.MM.YYYY', () => {
+  it('Demand rows surface their requirement date; Batch rows hide arrival date after merge', () => {
+    // 2026-05-12 is the Demand requirement date — should render.
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} />);
-    expect(screen.getByText(/10\.05\.2026/)).toBeInTheDocument();
+    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument();
   });
 
   it('Demand Entry rows are visually distinct (data-row-kind="demand")', () => {
@@ -131,7 +134,8 @@ describe('VarietyListItem expansion', () => {
       hideType={true} expanded={true} onToggle={() => {}} />);
     const rows = screen.getAllByTestId('stock-item-row');
     const kinds = rows.map(r => r.getAttribute('data-row-kind'));
-    expect(kinds.filter(k => k === 'batch')).toHaveLength(2);
+    // After merge: 1 merged Batch row + 1 Demand row.
+    expect(kinds.filter(k => k === 'batch')).toHaveLength(1);
     expect(kinds.filter(k => k === 'demand')).toHaveLength(1);
   });
 
@@ -186,9 +190,9 @@ describe('VarietyListItem per-Batch quick-adjust', () => {
   it('renders +/- on Batch rows only, never on Demand rows', () => {
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} onAdjust={() => {}} />);
-    // 2 Batch rows → 2 inc + 2 dec; the Demand row gets none.
-    expect(screen.getAllByTestId('variety-adjust-inc')).toHaveLength(2);
-    expect(screen.getAllByTestId('variety-adjust-dec')).toHaveLength(2);
+    // After merge: 1 merged Batch row → 1 inc + 1 dec; the Demand row gets none.
+    expect(screen.getAllByTestId('variety-adjust-inc')).toHaveLength(1);
+    expect(screen.getAllByTestId('variety-adjust-dec')).toHaveLength(1);
   });
 
   it('clicking + fires onAdjust(stockId, +1) without firing onRowClick', () => {
