@@ -167,6 +167,35 @@ describe('VarietyListItem expansion', () => {
     fireEvent.click(batches[0]);
     expect(onBatchClick).toHaveBeenCalledWith('b1');
   });
+
+  it('hides sell-price label when only one Batch tier is expanded', () => {
+    // Single tier (all batches collapse) → label is redundant; drop it.
+    const oneTier = {
+      ...v,
+      rows: [
+        { id: 'b1', current_quantity: 10, current_sell_price: 25, date: '2026-05-10' },
+        { id: 'b2', current_quantity:  5, current_sell_price: 25, date: '2026-05-11' },
+      ],
+    };
+    render(<VarietyListItem variety={oneTier} reservations={new Map()} t={{ ...t, currency: 'zł' }}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    expect(screen.queryByText(/25\.00 zł/)).not.toBeInTheDocument();
+  });
+
+  it('shows sell-price label on each tier when multiple tiers are expanded', () => {
+    // Two tiers (25 and 30) → owner needs to know which is which.
+    const twoTiers = {
+      ...v,
+      rows: [
+        { id: 'b1', current_quantity: 10, current_sell_price: 25, date: '2026-05-10' },
+        { id: 'b3', current_quantity:  7, current_sell_price: 30, date: '2026-05-11' },
+      ],
+    };
+    render(<VarietyListItem variety={twoTiers} reservations={new Map()} t={{ ...t, currency: 'zł' }}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    expect(screen.getByText(/25\.00 zł/)).toBeInTheDocument();
+    expect(screen.getByText(/30\.00 zł/)).toBeInTheDocument();
+  });
 });
 
 describe('VarietyListItem per-Batch quick-adjust', () => {
