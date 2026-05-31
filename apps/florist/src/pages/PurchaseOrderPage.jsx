@@ -567,6 +567,25 @@ export default function PurchaseOrderPage() {
                   <div className="border-t border-gray-100 px-4 py-3 space-y-3">
                     {order.Notes && <p className="text-xs text-ios-secondary">{order.Notes}</p>}
 
+                    {['Draft', 'Sent', 'Shopping'].includes(order.Status) && (
+                      <div className="flex items-center gap-2">
+                        <label className="text-xs text-ios-tertiary shrink-0">{t.po?.plannedDate || 'Planned date'}</label>
+                        <input
+                          type="date"
+                          value={order['Planned Date'] || ''}
+                          onChange={e => setOrders(prev => prev.map(o => o.id === order.id ? { ...o, 'Planned Date': e.target.value } : o))}
+                          onBlur={async e => {
+                            try {
+                              await client.patch(`/stock-orders/${order.id}`, { 'Planned Date': e.target.value || null });
+                            } catch (err) {
+                              showToast(err.response?.data?.error || t.error, 'error');
+                            }
+                          }}
+                          className="field-input text-sm flex-1"
+                        />
+                      </div>
+                    )}
+
                     {['Draft', 'Sent', 'Shopping'].includes(order.Status) ? (
                       /* ── Editable PO: Draft + Sent + Shopping ── */
                       <>
