@@ -7,11 +7,13 @@ import { formatDateDMY } from '../utils/formatDate.js';
  * Props:
  *   trail  — array of trace events from /stock/:id/usage response
  *   t      — translation strings (traceTypeOrder, traceTypeWriteoff, traceTypePurchase,
- *             traceTypePremade, traceEmpty, stems)
+ *             traceTypePremade, traceEmpty, traceReservations, traceBalance, stems)
  *
- * Sort: chronological oldest → newest so the column reads top-to-bottom as
- * time progresses. Undated events (e.g. ongoing premade reservations) sort to
- * the bottom as "current". Dates render day-month-year (formatDateDMY).
+ * Dated events render chronologically (oldest → newest) with a running balance
+ * column so the operator can see the Batch's stem count after each event.
+ * Undated premade reservations group at the bottom under a "Reserved" header —
+ * reservations don't change the Batch's `current_quantity` under the Y-model
+ * reservation model (issue #285), so they're excluded from the running balance.
  */
 export default function BatchTracePanel({ trail = [], t }) {
   if (!trail || trail.length === 0) {
@@ -20,20 +22,41 @@ export default function BatchTracePanel({ trail = [], t }) {
     );
   }
 
-  const sorted = [...trail].sort((a, b) => {
-    // Undated entries last; otherwise ascending by ISO date string.
-    if (!a.date && !b.date) return 0;
-    if (!a.date) return 1;
-    if (!b.date) return -1;
-    return a.date.localeCompare(b.date);
+  const dated = [];
+  const reserved = [];
+  for (const e of trail) {
+    if (e.type === 'premade' || !e.date) reserved.push(e);
+    else dated.push(e);
+  }
+  dated.sort((a, b) => a.date.localeCompare(b.date));
+
+  let balance = 0;
+  const withBalance = dated.map((entry) => {
+    const qty = entry.qty ?? entry.quantity ?? 0;
+    balance += qty;
+    return { entry, balance };
   });
 
   return (
-    <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
-      {sorted.map((entry, i) => (
-        <TraceRow key={i} entry={entry} t={t} />
-      ))}
-    </ul>
+    <div className="bg-white rounded-lg border border-gray-100 overflow-hidden max-h-72 overflow-y-auto">
+      <ul className="divide-y divide-gray-50">
+        {withBalance.map(({ entry, balance: bal }, i) => (
+          <TraceRow key={`d-${i}`} entry={entry} balance={bal} t={t} />
+        ))}
+      </ul>
+      {reserved.length > 0 && (
+        <>
+          <div className="px-3 py-1.5 bg-indigo-50/60 border-t border-indigo-100 text-[10px] font-semibold uppercase tracking-wide text-indigo-700">
+            {t.traceReservations ?? 'Reserved (no date)'}
+          </div>
+          <ul className="divide-y divide-gray-50">
+            {reserved.map((entry, i) => (
+              <TraceRow key={`r-${i}`} entry={entry} balance={null} t={t} />
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -74,7 +97,7 @@ function trailDetail(entry) {
   }
 }
 
-function TraceRow({ entry, t }) {
+function TraceRow({ entry, balance, t }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
   const detail = trailDetail(entry);
 
@@ -92,13 +115,22 @@ function TraceRow({ entry, t }) {
           <span className="text-xs text-gray-700 truncate">{detail}</span>
         )}
       </div>
-      <div className="flex items-center gap-2 shrink-0 ml-2">
+      <div className="flex items-center gap-3 shrink-0 ml-2">
         {entry.date && (
-          <span className="text-[10px] text-gray-400">{formatDateDMY(entry.date)}</span>
+          <span className="text-[10px] text-gray-400 tabular-nums">{formatDateDMY(entry.date)}</span>
         )}
-        <span className={`text-xs font-semibold tabular-nums ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+        <span className={`text-xs font-semibold tabular-nums w-16 text-right ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
           {qty > 0 ? '+' : ''}{qty} {t.stems}
         </span>
+        {balance != null && (
+          <span
+            data-testid="trace-balance"
+            className={`text-[10px] tabular-nums w-14 text-right ${balance < 0 ? 'text-red-500 font-medium' : 'text-gray-500'}`}
+            title={t.traceBalance ?? 'Balance after this event'}
+          >
+            = {balance}
+          </span>
+        )}
       </div>
     </li>
   );

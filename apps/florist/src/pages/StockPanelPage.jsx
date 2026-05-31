@@ -183,6 +183,21 @@ export default function StockPanelPage() {
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
+  // Bulk price patch for the Y-model merged Stock row — patches every
+  // underlying stock_id so the whole physical bucket re-prices in one tap.
+  // `fields` keys: `cost` and/or `sell` (raw numbers; mapped to backend keys).
+  async function handlePatchPriceBulk(stockIds, fields) {
+    const body = {};
+    if (fields.cost != null) body['Current Cost Price'] = Number(fields.cost);
+    if (fields.sell != null) body['Current Sell Price'] = Number(fields.sell);
+    if (Object.keys(body).length === 0) return;
+    try {
+      await Promise.all(stockIds.map(id => client.patch(`/stock/${id}`, body)));
+      showToast(`${t.stockUpdated} (${stockIds.length})`, 'success');
+      fetchStock();
+    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
+  }
+
   function toggleSort(key) {
     if (sortKey === key) setSortAsc(v => !v);
     else { setSortKey(key); setSortAsc(true); }
@@ -220,20 +235,41 @@ export default function StockPanelPage() {
   }, [groups]);
 
   // ── Y-model: batch trace fetch ──
+  // traceStockId can be a single id (string) for the legacy By Variety expand
+  // path, or a comma-separated list when the By Batch view (now merged across
+  // arrival date / supplier) wants the union trace across multiple stock_ids.
   useEffect(() => {
     if (!traceStockId) return;
     setTraceTrail(null);
     setTraceLoading(true);
-    client.get(`/stock/${traceStockId}/usage`)
-      .then(r => setTraceTrail(r.data.trail || []))
-      .catch(() => setTraceTrail([]))
+    const ids = String(traceStockId).split(',').filter(Boolean);
+    Promise.all(ids.map(id => client.get(`/stock/${id}/usage`).then(r => r.data.trail || []).catch(() => [])))
+      .then(trails => setTraceTrail(trails.flat()))
       .finally(() => setTraceLoading(false));
   }, [traceStockId]);
 
   // ── Y-model: write-off handler ──
-  async function handleWriteOffY({ stockId, qty, reason }) {
+  // Write-off spread across a merged sell tier in FEFO order. `stockIds` is
+  // pre-sorted oldest → newest by WriteOffBatchPicker; we drain from the head
+  // until the requested qty is exhausted, allowing one tap to clear stems
+  // that span multiple underlying receives.
+  async function handleWriteOffY({ stockIds, stockId, qty, reason }) {
+    // Back-compat: hosts that still pass a single stockId continue to work.
+    const ids = Array.isArray(stockIds) && stockIds.length ? stockIds : (stockId ? [stockId] : []);
+    if (!ids.length) return;
     try {
-      await client.post(`/stock/${stockId}/write-off`, { quantity: qty, reason: reason || undefined });
+      let remaining = qty;
+      // Build a stock-id → currentQty lookup to size each POST.
+      const allRows = (groups ?? []).flatMap(g => g.rows ?? []);
+      const qtyById = new Map(allRows.map(r => [r.id, Number(r.current_quantity) || 0]));
+      for (const id of ids) {
+        if (remaining <= 0) break;
+        const avail = Math.max(0, qtyById.get(id) ?? 0);
+        if (avail === 0) continue;
+        const chunk = Math.min(remaining, avail);
+        await client.post(`/stock/${id}/write-off`, { quantity: chunk, reason: reason || undefined });
+        remaining -= chunk;
+      }
       showToast(`${qty} ${t.stems} — ${t.writeOff}`, 'success');
       setWriteOffVariety(null);
       fetchStock();
@@ -549,7 +585,8 @@ export default function StockPanelPage() {
                   groups={filteredGroups}
                   reservations={reservationsMap}
                   t={t}
-                  onRowClick={(stockId) => setTraceStockId(stockId)}
+                  onRowClick={(stockIds) => setTraceStockId(stockIds.join(','))}
+                  onPatchPriceBulk={role === 'owner' ? handlePatchPriceBulk : undefined}
                 />
               ) : (
             <div className="ios-card overflow-hidden">

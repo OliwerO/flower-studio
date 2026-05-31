@@ -72,14 +72,15 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
     }
   }, [autoCreate, stock]);
 
-  // Pre-fill form from negative stock items
-  // Quantity defaults to full lots (rounded up) so the driver buys in pack multiples.
+  // Pre-fill form from negative stock items.
+  // Qty = raw stem demand (matches owner's reading). Pkgs stays 0 — owner
+  // fills it if she wants to order whole batches; createPO then stores
+  // Quantity Needed = pkgs * lotSize, else raw qty.
   function startNewPO() {
     const lines = (negativeStock || []).map(item => {
       const si = (stock || []).find(s => s.id === item.id);
       const lotSize = Number(si?.['Lot Size']) || 0;
-      const rawQty = Math.abs(item.qty);
-      const quantity = lotSize > 1 ? Math.ceil(rawQty / lotSize) * lotSize : rawQty;
+      const quantity = Math.abs(item.qty);
       const cost = si ? (Number(si['Current Cost Price']) || 0) : 0;
       const sell = si ? (Number(si['Current Sell Price']) || 0) : 0;
       return {
@@ -87,6 +88,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
         flowerName: item.name,
         quantity,
         lotSize,
+        packages: 0,
         supplier: item.supplier || si?.Supplier || '',
         costPrice: cost > 0 ? String(cost) : '',
         sellPrice: sell > 0 ? String(sell) : '',
@@ -105,7 +107,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
 
   function emptyLine() {
     return {
-      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0,
+      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, packages: 0,
       supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false,
       farmer: '', notes: '',
       // Y-model new-Variety identity (#304) — populated when no stockItemId
@@ -162,8 +164,10 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
         lines: formLines.filter(l => l.flowerName || l.type).map(l => {
           const ls = Number(l.lotSize) || 0;
           const rawQty = Number(l.quantity) || 1;
-          // Quantity field = number of lots; store actual stems
-          const quantity = ls > 1 ? rawQty * ls : rawQty;
+          const pkgs = Number(l.packages) || 0;
+          // Pkgs overrides Qty when filled: stored Quantity Needed = pkgs * lotSize.
+          // Else raw stem demand from Qty is stored as-is.
+          const quantity = pkgs > 0 && ls > 0 ? pkgs * ls : rawQty;
           // Auto-compose Flower Name from Variety identity for legacy display.
           const composedName = l.flowerName?.trim() || [
             l.type, l.colour, l.size ? `${l.size}cm` : null, l.cultivar,
@@ -388,8 +392,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
               {lines.map(line => {
                 const ls = Number(line.lotSize) || 0;
                 const lineQty = Number(line.quantity) || 0;
-                // qty field = lots; total stems = qty × lotSize
-                const totalStems = ls > 1 ? lineQty * ls : lineQty;
+                const linePkgs = Number(line.packages) || 0;
+                // Pkgs overrides Qty when filled — totalStems = pkgs × lotSize.
+                const totalStems = linePkgs > 0 && ls > 0 ? linePkgs * ls : lineQty;
                 const lineCost = Number(line.costPrice) || 0;
                 const lineSell = Number(line.sellPrice) || 0;
                 const lineMarkup = lineCost > 0 && lineSell > 0 ? (lineSell / lineCost).toFixed(1) : null;
@@ -425,9 +430,22 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         placeholder="—"
                       />
                     </div>
-                    {ls > 1 && lineQty > 0 && (
+                    {ls > 0 && (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] text-ios-tertiary">{t.packages || 'Pkgs'}:</span>
+                        <input
+                          type="number"
+                          value={line.packages || ''}
+                          onChange={e => updateFormLine(line._idx, { packages: Number(e.target.value) || 0 })}
+                          className="field-input w-14 text-center text-xs"
+                          min="0"
+                          placeholder="—"
+                        />
+                      </div>
+                    )}
+                    {linePkgs > 0 && ls > 0 && (
                       <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
-                        = {lineQty} × {ls} = {totalStems}
+                        = {linePkgs} × {ls} = {totalStems}
                       </span>
                     )}
                     <select
@@ -474,13 +492,13 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         ×{lineMarkup}
                       </span>
                     )}
-                    {lineQty > 0 && lineCost > 0 && (
+                    {totalStems > 0 && lineCost > 0 && (
                       <span className="inline-flex items-baseline gap-1 px-2 py-0.5 rounded-md bg-gray-100 border border-gray-200 whitespace-nowrap">
                         <span className="text-[10px] uppercase tracking-wide text-ios-tertiary">
                           {t.totalLineCost ?? t.totalCost ?? 'Total cost'}
                         </span>
                         <span className="text-xs font-semibold tabular-nums text-ios-label">
-                          {((ls > 1 ? Math.ceil(lineQty / ls) * ls : lineQty) * lineCost).toFixed(0)} {t.zl}
+                          {(totalStems * lineCost).toFixed(0)} {t.zl}
                         </span>
                       </span>
                     )}
@@ -539,25 +557,17 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
             + {t.addLine}
           </button>
 
-          {/* Grand total — qty = lots, total stems = qty × lotSize */}
+          {/* Grand total — Pkgs overrides Qty when filled (totalStems = pkgs × lotSize). */}
           {(() => {
-            const grandCost = formLines.reduce((sum, l) => {
+            const stemsOf = (l) => {
               const qty = Number(l.quantity) || 0;
               const ls = Number(l.lotSize) || 0;
-              const totalStems = ls > 1 ? qty * ls : qty;
-              return sum + totalStems * (Number(l.costPrice) || 0);
-            }, 0);
-            const grandSell = formLines.reduce((sum, l) => {
-              const qty = Number(l.quantity) || 0;
-              const ls = Number(l.lotSize) || 0;
-              const totalStems = ls > 1 ? qty * ls : qty;
-              return sum + totalStems * (Number(l.sellPrice) || 0);
-            }, 0);
-            const grandStems = formLines.reduce((sum, l) => {
-              const qty = Number(l.quantity) || 0;
-              const ls = Number(l.lotSize) || 0;
-              return sum + (ls > 1 ? qty * ls : qty);
-            }, 0);
+              const pkgs = Number(l.packages) || 0;
+              return pkgs > 0 && ls > 0 ? pkgs * ls : qty;
+            };
+            const grandCost = formLines.reduce((sum, l) => sum + stemsOf(l) * (Number(l.costPrice) || 0), 0);
+            const grandSell = formLines.reduce((sum, l) => sum + stemsOf(l) * (Number(l.sellPrice) || 0), 0);
+            const grandStems = formLines.reduce((sum, l) => sum + stemsOf(l), 0);
             return grandCost > 0 ? (
               <div className="flex items-center gap-4 text-sm px-1">
                 <span className="text-ios-tertiary">{t.totalStems || 'Stems'}: <span className="font-semibold text-ios-label">{grandStems}</span></span>
