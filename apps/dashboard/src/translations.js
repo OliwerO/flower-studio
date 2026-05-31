@@ -500,6 +500,7 @@ const en = {
 
   // Misc
   zl:               'zł',
+  switchTier:       'Switch sell tier',
 
   // Dashboard redesign — consultant insights
   revenueGapCard:     'Revenue Gap (target 2.2×)',
@@ -1509,6 +1510,7 @@ const ru = {
 
   // Misc
   zl:               'zł',
+  switchTier:       'Сменить цену',
 
   // Dashboard redesign — consultant insights
   revenueGapCard:     'Разрыв выручки (цель 2.2×)',

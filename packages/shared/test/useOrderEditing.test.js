@@ -348,3 +348,73 @@ describe('getLineCap + incrementQty cap (#311 AC3)', () => {
     expect(result.current.editLines[0].quantity).toBe(51);
   });
 });
+
+describe('getLineTiers + switchLineTier (sell-tier switch, 2026-05-31)', () => {
+  // Same Variety, three sibling sell tiers (25, 30) — qty>0 inclusion;
+  // a fourth row at the same sell as one of the tiers gets folded in.
+  // A different-Variety row is excluded.
+  const variety = (id, qty, sell, date) => ({
+    id, 'Display Name': `Rose Pink 60 (${date})`,
+    'Type': 'Rose', 'Colour': 'Pink', 'Size Cm': 60, 'Cultivar': null,
+    'Current Quantity': qty, 'Current Sell Price': sell, 'Current Cost Price': 10,
+    date,
+  });
+
+  it('groups same-Variety positive-qty rows by sell price, FEFO order inside each tier', async () => {
+    const stock = [
+      variety('b1', 10, 25, '2026-05-10'),
+      variety('b2',  5, 25, '2026-05-12'),
+      variety('b3',  7, 30, '2026-05-11'),
+      // Different Variety — must NOT appear in the result.
+      { id: 'x1', 'Display Name': 'Peony', 'Type': 'Peony', 'Colour': 'Pink', 'Size Cm': 50, 'Cultivar': null,
+        'Current Quantity': 9, 'Current Sell Price': 25 },
+    ];
+    const { result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'b1', quantity: 4, flowerName: 'Rose' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    const tiers = result.current.getLineTiers(result.current.editLines[0]);
+    expect(tiers).toHaveLength(2);
+    // Sorted by sell asc; FEFO ordering inside tier 25 → b1 (May 10) before b2.
+    expect(tiers[0].key).toBe('25.00');
+    expect(tiers[0].totalQty).toBe(15);
+    expect(tiers[0].stockIds.map(s => s.id)).toEqual(['b1', 'b2']);
+    expect(tiers[1].key).toBe('30.00');
+    expect(tiers[1].totalQty).toBe(7);
+  });
+
+  it('switchLineTier rebinds the line to the picked stock id and refreshes sell/cost/name', async () => {
+    const stock = [
+      variety('b1', 10, 25, '2026-05-10'),
+      variety('b3',  7, 30, '2026-05-11'),
+    ];
+    const { result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'b1', quantity: 4, flowerName: 'Rose Pink 60 (2026-05-10)' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    act(() => { result.current.switchLineTier(0, 'b3'); });
+    const line = result.current.editLines[0];
+    expect(line.stockItemId).toBe('b3');
+    expect(line.sellPricePerUnit).toBe(30);
+    expect(line.flowerName).toBe('Rose Pink 60 (2026-05-11)');
+    // Quantity preserved across the switch.
+    expect(line.quantity).toBe(4);
+  });
+
+  it('switchLineTier is a no-op when the target stock id is unknown', async () => {
+    const stock = [variety('b1', 10, 25, '2026-05-10')];
+    const { result } = makeHookWithStock(stock, {}, [
+      { stockItemId: 'b1', quantity: 3, flowerName: 'Rose' },
+    ]);
+    await act(async () => { await Promise.resolve(); });
+    act(() => { result.current.switchLineTier(0, 'does-not-exist'); });
+    expect(result.current.editLines[0].stockItemId).toBe('b1');
+  });
+
+  it('getLineTiers returns [] for a line with no stockItemId', () => {
+    const { result } = makeHookWithStock([], {}, [
+      { stockItemId: null, quantity: 1, flowerName: 'Custom' },
+    ]);
+    expect(result.current.getLineTiers(result.current.editLines[0])).toEqual([]);
+  });
+});
