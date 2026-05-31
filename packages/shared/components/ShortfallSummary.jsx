@@ -231,11 +231,15 @@ function bucket(groups, reservations, today) {
   return { byDate, totalStems, varietyCount: varietyKeys.size };
 }
 
+// Owner ask 2026-05-31: drop the parenthetical absolute date when the
+// relative label is already shown — "+3d (2026-06-03)" reads doubled-up.
+// Within 7 days = relative only ("Today", "Tomorrow", "+3d"). Beyond
+// that window the absolute date is more useful than counting days.
 function friendlyDate(date, today, t) {
   if (date === today) return t.today ?? 'Today';
   const diffDays = Math.round((Date.parse(date) - Date.parse(today)) / 86400000);
-  if (diffDays === 1) return `${t.tomorrow ?? 'Tomorrow'} (${date})`;
-  if (diffDays > 1)  return `+${diffDays}${t.daysSuffix ?? 'd'} (${date})`;
-  if (diffDays < 0)  return `${diffDays}${t.daysSuffix ?? 'd'} (${date})`;
+  if (diffDays === 1) return t.tomorrow ?? 'Tomorrow';
+  if (diffDays > 1 && diffDays <= 7) return `+${diffDays}${t.daysSuffix ?? 'd'}`;
+  if (diffDays < 0 && diffDays >= -7) return `${diffDays}${t.daysSuffix ?? 'd'}`;
   return date;
 }
