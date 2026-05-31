@@ -404,14 +404,12 @@ export default function PurchaseOrderPage() {
                         onChange={e => updateFormLine(idx, { lotSize: Number(e.target.value) || 0 })}
                         className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
                     </div>
-                    {ls > 0 && (
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-ios-tertiary">{t.po?.packages || 'Pkgs'}:</span>
-                        <input type="number" value={line.packages || ''}
-                          onChange={e => updateFormLine(idx, { packages: Number(e.target.value) || 0 })}
-                          className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-ios-tertiary">{t.po?.packages || 'Pkgs'}:</span>
+                      <input type="number" value={line.packages || ''}
+                        onChange={e => updateFormLine(idx, { packages: Number(e.target.value) || 0 })}
+                        className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
+                    </div>
                     {linePkgs > 0 && ls > 0 && (
                       <span className="text-xs text-ios-secondary font-medium">
                         = {linePkgs} × {ls} = {totalStems}

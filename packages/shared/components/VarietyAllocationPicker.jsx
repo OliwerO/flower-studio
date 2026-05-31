@@ -100,14 +100,15 @@ export default function VarietyAllocationPicker({
     return map;
   }, [stockItems]);
 
-  // When a Variety row is expanded, compute engine options for that group.
+  // When a Variety row is expanded, compute engine options for that group,
+  // then collapse Batch options by sell-price tier so the picker mirrors the
+  // Stock-list merge rule (2026-05-31). Demand-Entry and Fresh options are
+  // not collapsed — they remain per-date.
   const expandedOptions = useMemo(() => {
     if (!expandedKey) return null;
     const group = groups.find((g) => g.key === expandedKey);
     if (!group) return null;
 
-    // Adapt snake_case rows to engine's camelCase contract.
-    // isDemandEntry = currentQuantity < 0 per ADR-0005.
     const engineRows = group.rows.map((r) => ({
       id: r.id,
       currentQuantity: Number(r.current_quantity) || 0,
@@ -115,8 +116,9 @@ export default function VarietyAllocationPicker({
       isDemandEntry: (Number(r.current_quantity) || 0) < 0,
     }));
 
-    return stockAllocationEngine(engineRows, reservations, requiredBy, qty);
-  }, [expandedKey, groups, reservations, requiredBy, qty]);
+    const raw = stockAllocationEngine(engineRows, reservations, requiredBy, qty);
+    return collapseBatchTiers(raw, stockById, qty, t);
+  }, [expandedKey, groups, reservations, requiredBy, qty, stockById, t]);
 
   const isOwner = role === 'owner';
 
@@ -125,7 +127,9 @@ export default function VarietyAllocationPicker({
   }
 
   function handleBatchClick(option) {
-    const original = stockById.get(option.stockId);
+    // FEFO: oldest underlying stock_id drains first.
+    const targetId = option.stockIds?.[0] ?? option.stockId;
+    const original = stockById.get(targetId);
     if (original) onSelectStock(original);
   }
 
@@ -344,6 +348,83 @@ export default function VarietyAllocationPicker({
 }
 
 /**
+ * collapseBatchTiers — merges engine Batch options that share a sell price
+ * into one tier-row per price. stockIds[] inside each tier are FEFO-sorted
+ * (oldest date first) so the host drains oldest stems first. Demand-Entry
+ * (`merge`) and `fresh` options pass through untouched.
+ *
+ * When all batches share a single sell price (or no price is set on any
+ * row), the tier renders without a price label — the picker just shows
+ * "Use stock" so the florist isn't distracted by a single redundant chip.
+ */
+export function collapseBatchTiers(options, stockById, qty, t) {
+  const out = [];
+  const tiers = new Map(); // tierKey → { ...mergedOption }
+
+  for (const opt of options) {
+    if (opt.kind !== 'batch') {
+      out.push(opt);
+      continue;
+    }
+    const row = stockById.get(opt.stockId);
+    const sellRaw = row?.['Current Sell Price'] ?? row?.current_sell_price;
+    const sell =
+      sellRaw != null && sellRaw !== '' && isFinite(Number(sellRaw))
+        ? Number(sellRaw)
+        : null;
+    const tierKey = sell != null ? sell.toFixed(2) : 'null';
+
+    let m = tiers.get(tierKey);
+    if (!m) {
+      m = {
+        kind: 'batch',
+        tierKey,
+        sell,
+        stockIds: [],
+        stockIdDates: [],
+        freeQty: 0,
+        total: 0,
+        reservedQty: 0,
+        sufficient: false,
+        isDefault: false,
+      };
+      tiers.set(tierKey, m);
+      out.push(m);
+    }
+    m.stockIds.push(opt.stockId);
+    m.stockIdDates.push(opt.date);
+    m.freeQty += opt.freeQty;
+    m.total += opt.total;
+    m.reservedQty += opt.reservedQty;
+    if (opt.isDefault) m.isDefault = true;
+  }
+
+  // Finalise each tier: FEFO-sort underlying stockIds + recompute sufficient
+  // (sum may cross the qty threshold even when no individual batch did).
+  const onlyOneTier =
+    [...tiers.values()].filter((m) => m.stockIds.length > 0).length === 1;
+
+  for (const m of tiers.values()) {
+    const pairs = m.stockIds.map((id, i) => ({ id, date: m.stockIdDates[i] }));
+    pairs.sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return a.date.localeCompare(b.date);
+    });
+    m.stockIds = pairs.map((p) => p.id);
+    delete m.stockIdDates;
+    m.sufficient = m.freeQty > 0 && m.freeQty >= qty;
+    m.sellLabel =
+      onlyOneTier || m.sell == null
+        ? null
+        : `${m.sell.toFixed(2)} ${t?.currency ?? 'zł'}`;
+  }
+
+  return out;
+}
+
+/**
  * AllocationPanel — renders the engine options for one expanded Variety.
  * Renders inline below the Variety row header.
  */
@@ -354,13 +435,13 @@ function AllocationPanel({ options, onBatch, onMerge, onFresh, premadesByStockId
 
   return (
     <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 space-y-2">
-      {/* Batch options */}
+      {/* Batch options — one row per sell-price tier */}
       {batchOptions.map((opt) => (
         <BatchOptionButton
-          key={opt.stockId}
+          key={opt.tierKey ?? opt.stockId}
           option={opt}
           onClick={() => onBatch(opt)}
-          premades={premadesByStockId?.get(opt.stockId)}
+          premades={premadesByStockId?.get(opt.stockIds?.[0] ?? opt.stockId)}
           t={t}
         />
       ))}
@@ -426,6 +507,8 @@ function BatchOptionButton({ option, onClick, premades, t }) {
       data-testid="option-batch"
       data-default={String(option.isDefault)}
       data-sufficient={String(option.sufficient)}
+      data-tier-key={option.tierKey ?? ''}
+      data-stock-ids={(option.stockIds ?? [option.stockId]).join(',')}
       onClick={onClick}
       disabled={unusable}
       aria-disabled={unusable}
@@ -439,7 +522,9 @@ function BatchOptionButton({ option, onClick, premades, t }) {
       ].join(' ')}
     >
       <div className="flex items-center justify-between">
-        <span className="font-medium">{option.date}</span>
+        <span className="font-medium">
+          {option.sellLabel ?? (t.useStock ?? 'Use stock')}
+        </span>
         <span className="text-xs text-gray-500">
           <span className={`font-semibold ${unusable ? 'text-gray-400' : 'text-gray-800'}`}>{option.freeQty}</span>
           {' / '}

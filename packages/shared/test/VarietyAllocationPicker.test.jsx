@@ -171,6 +171,79 @@ describe('VarietyAllocationPicker — Create new Variety (Owner)', () => {
   });
 });
 
+describe('VarietyAllocationPicker — collapse Batch options by sell tier (2026-05-31)', () => {
+  // Two Rose Pink 60 batches at the same sell price → ONE Batch option.
+  // A third batch at a different sell price → its own Batch option (tier).
+  const tieredRows = [
+    { id: 'b1', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+      current_quantity: 10, date: '2026-05-10', current_sell_price: 25 },
+    { id: 'b2', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+      current_quantity: 5,  date: '2026-05-12', current_sell_price: 25 },
+    { id: 'b3', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+      current_quantity: 7,  date: '2026-05-11', current_sell_price: 30 },
+  ];
+  const tT = { ...t, currency: 'zł', useStock: 'Use stock' };
+
+  it('two batches at same sell price collapse into one tier row', () => {
+    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
+      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    const batches = screen.getAllByTestId('option-batch');
+    expect(batches).toHaveLength(2);
+    // FEFO ordering inside the 25 zł tier: b1 (May 10) before b2 (May 12).
+    const ids = batches.map(b => b.getAttribute('data-stock-ids'));
+    expect(ids).toContain('b1,b2');
+    expect(ids).toContain('b3');
+  });
+
+  it('renders sell-price label on each tier when multiple tiers exist', () => {
+    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
+      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    const batches = screen.getAllByTestId('option-batch');
+    const labels = batches.map(b => b.textContent);
+    expect(labels.some(l => l.includes('25.00 zł'))).toBe(true);
+    expect(labels.some(l => l.includes('30.00 zł'))).toBe(true);
+  });
+
+  it('hides sell-price label when only one tier exists (renders "Use stock")', () => {
+    const oneTier = tieredRows.filter(r => r.current_sell_price === 25);
+    render(<VarietyAllocationPicker stockItems={oneTier} reservations={new Map()}
+      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    const batch = screen.getByTestId('option-batch');
+    expect(batch).toHaveTextContent('Use stock');
+    expect(batch).not.toHaveTextContent('zł');
+  });
+
+  it('clicking a tier targets the FEFO-oldest underlying stock_id', () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
+      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    // Pick the 25 zł tier (b1+b2). Oldest = b1.
+    const tier25 = screen.getAllByTestId('option-batch')
+      .find(b => b.getAttribute('data-stock-ids') === 'b1,b2');
+    fireEvent.click(tier25);
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }));
+  });
+
+  it('tier freeQty is summed across underlying batches', () => {
+    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
+      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
+    const tier25 = screen.getAllByTestId('option-batch')
+      .find(b => b.getAttribute('data-stock-ids') === 'b1,b2');
+    // 10 + 5 = 15 free, 15 total.
+    expect(tier25).toHaveTextContent('15');
+  });
+});
+
 describe('VarietyAllocationPicker — Order fresh for all', () => {
   it('renders "Order fresh for all" CTA when host passes bulkCandidates', () => {
     const onBulkFresh = vi.fn();

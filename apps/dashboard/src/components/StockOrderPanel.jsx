@@ -430,19 +430,17 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                         placeholder="—"
                       />
                     </div>
-                    {ls > 0 && (
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] text-ios-tertiary">{t.packages || 'Pkgs'}:</span>
-                        <input
-                          type="number"
-                          value={line.packages || ''}
-                          onChange={e => updateFormLine(line._idx, { packages: Number(e.target.value) || 0 })}
-                          className="field-input w-14 text-center text-xs"
-                          min="0"
-                          placeholder="—"
-                        />
-                      </div>
-                    )}
+                    <div className="flex items-center gap-1">
+                      <span className="text-[10px] text-ios-tertiary">{t.packages || 'Pkgs'}:</span>
+                      <input
+                        type="number"
+                        value={line.packages || ''}
+                        onChange={e => updateFormLine(line._idx, { packages: Number(e.target.value) || 0 })}
+                        className="field-input w-14 text-center text-xs"
+                        min="0"
+                        placeholder="—"
+                      />
+                    </div>
                     {linePkgs > 0 && ls > 0 && (
                       <span className="text-xs text-ios-secondary whitespace-nowrap font-medium">
                         = {linePkgs} × {ls} = {totalStems}
