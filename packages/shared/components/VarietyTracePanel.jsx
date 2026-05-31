@@ -64,6 +64,7 @@ function typeLabel(entry, t) {
     case 'writeoff': return t.traceTypeWriteoff;
     case 'purchase': return t.traceTypePurchase;
     case 'premade':  return t.traceTypePremade;
+    case 'dissolve': return t.traceTypeDissolve ?? 'Dissolved';
     default:         return entry.type;
   }
 }
@@ -74,11 +75,12 @@ function typeBadgeClass(type) {
     case 'writeoff': return 'bg-red-100 text-red-700';
     case 'premade':  return 'bg-indigo-100 text-indigo-700';
     case 'purchase': return 'bg-green-100 text-green-700';
+    case 'dissolve': return 'bg-purple-100 text-purple-700';
     default:         return 'bg-gray-100 text-gray-700';
   }
 }
 
-function trailDetail(entry) {
+function trailDetail(entry, t) {
   switch (entry.type) {
     case 'order': {
       const oid = entry.orderId ?? null;
@@ -89,13 +91,17 @@ function trailDetail(entry) {
     case 'writeoff': return entry.reason ?? null;
     case 'purchase': return entry.supplier ?? null;
     case 'premade':  return entry.bouquetName ?? null;
+    case 'dissolve': {
+      const released = entry.releasedQty ? `+${entry.releasedQty} ${t?.stems ?? 'stems'} freed` : null;
+      return [entry.bouquetName, released].filter(Boolean).join(' · ');
+    }
     default:         return null;
   }
 }
 
 function TraceRow({ entry, t }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
-  const detail = trailDetail(entry);
+  const detail = trailDetail(entry, t);
 
   return (
     <li
@@ -115,9 +121,15 @@ function TraceRow({ entry, t }) {
         {entry.date && (
           <span className="text-[10px] text-gray-400">{formatDateDMY(entry.date)}</span>
         )}
-        <span className={`text-xs font-semibold tabular-nums ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
-          {qty > 0 ? '+' : ''}{qty} {t.stems}
-        </span>
+        {entry.type === 'dissolve' ? (
+          <span className="text-xs font-semibold tabular-nums text-purple-600">
+            +{Number(entry.releasedQty) || 0} {t.stems}
+          </span>
+        ) : (
+          <span className={`text-xs font-semibold tabular-nums ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {qty > 0 ? '+' : ''}{qty} {t.stems}
+          </span>
+        )}
       </div>
     </li>
   );

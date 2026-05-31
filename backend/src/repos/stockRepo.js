@@ -23,6 +23,7 @@ import {
   stockPurchases,
   premadeBouquets,
   premadeBouquetLines,
+  auditLog,
 } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { and, eq, ilike, isNull, inArray, gt, sql, desc } from 'drizzle-orm';
@@ -1210,8 +1211,37 @@ export async function getUsageByExactId(stockItemId) {
     flowerName:  l.flowerName  || '',
   }));
 
+  // 5. Dissolve events — audit_log rows from the Y-model dissolve path.
+  // Premade lines get CASCADE-deleted on dissolve so step 4 stops returning
+  // them; the audit row is the only surviving record. Reservations don't
+  // affect Batch qty under the Y-model, so qty=0 (event-only marker).
+  const dissolveRows = await db
+    .select({
+      createdAt:   auditLog.createdAt,
+      diff:        auditLog.diff,
+      actorRole:   auditLog.actorRole,
+    })
+    .from(auditLog)
+    .where(and(
+      eq(auditLog.entityType, 'stock'),
+      eq(auditLog.entityId,   stockItemId),
+      eq(auditLog.action,     'premade_dissolved'),
+    ));
+
+  const usageDissolves = dissolveRows.map(d => {
+    const after = d.diff?.after ?? {};
+    return {
+      type:        'dissolve',
+      date:        d.createdAt ? new Date(d.createdAt).toISOString().slice(0, 10) : null,
+      quantity:    0,
+      releasedQty: Number(after.qty) || 0,
+      bouquetId:   after.bouquet_id   || '',
+      bouquetName: after.bouquet_name || '',
+    };
+  });
+
   // Combine + sort: newest first, null dates sort to top (same as legacy).
-  const trail = [...usageOrders, ...usageLosses, ...usagePurchases, ...usagePremades]
+  const trail = [...usageOrders, ...usageLosses, ...usagePurchases, ...usagePremades, ...usageDissolves]
     .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
 
   return trail;
