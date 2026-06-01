@@ -72,3 +72,24 @@ export async function notifyDeliveryAssigned({ delivery, driverName, actorName }
     console.error('[DRIVER_NOTIFY] delivery-assigned failed:', err.message);
   }
 }
+
+export async function notifyDeliveryDigest({ driverName, deliveries }) {
+  try {
+    if (!driverName || !deliveries?.length) return;
+    const target = await resolveTarget(driverName);
+    if (!target) return;
+    const { lang } = target;
+    const lines = [];
+    for (let i = 0; i < deliveries.length; i++) {
+      const d = deliveries[i];
+      const orderNum = await orderNumberFor(d);
+      const time = d['Delivery Time'] || '';
+      const addr = d['Delivery Address'] || '';
+      lines.push(`${i + 1}. ${[orderNum, time, addr].filter(Boolean).join(' · ')}`);
+    }
+    const text = [M.digestHeader[lang](deliveries.length), ...lines].join('\n');
+    await sendToChat(target.chatId, text);
+  } catch (err) {
+    console.error('[DRIVER_NOTIFY] digest failed:', err.message);
+  }
+}

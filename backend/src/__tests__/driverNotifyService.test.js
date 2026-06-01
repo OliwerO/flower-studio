@@ -4,7 +4,7 @@ vi.mock('../repos/driverTelegramRepo.js', () => ({ getDriver: vi.fn() }));
 vi.mock('../services/telegram.js', () => ({ sendToChat: vi.fn() }));
 vi.mock('../repos/orderRepo.js', () => ({ getById: vi.fn() }));
 
-import { notifyDeliveryAssigned } from '../services/driverNotifyService.js';
+import { notifyDeliveryAssigned, notifyDeliveryDigest } from '../services/driverNotifyService.js';
 import { getDriver } from '../repos/driverTelegramRepo.js';
 import { sendToChat } from '../services/telegram.js';
 import * as orderRepo from '../repos/orderRepo.js';
@@ -78,5 +78,40 @@ describe('notifyDeliveryAssigned', () => {
     getDriver.mockResolvedValue({ chatId: '42', lang: 'ru' });
     sendToChat.mockRejectedValue(new Error('telegram down'));
     await expect(notifyDeliveryAssigned({ delivery, driverName: 'Nikita' })).resolves.toBeUndefined();
+  });
+});
+
+describe('notifyDeliveryDigest', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    orderRepo.getById.mockImplementation(async (id) => ({ 'App Order ID': `A-${id}` }));
+  });
+
+  it('sends ONE message summarising all assigned deliveries (driver lang)', async () => {
+    getDriver.mockResolvedValue({ chatId: '42', lang: 'en' });
+    const deliveries = [
+      { orderId: '1', 'Delivery Time': '10-12', 'Delivery Address': 'Addr 1' },
+      { orderId: '2', 'Delivery Time': '12-14', 'Delivery Address': 'Addr 2' },
+    ];
+    await notifyDeliveryDigest({ driverName: 'Bjorn', deliveries });
+    expect(sendToChat).toHaveBeenCalledTimes(1);
+    const text = sendToChat.mock.calls[0][1];
+    expect(text).toContain("today's driver");
+    expect(text).toContain('2');
+    expect(text).toContain('Addr 1');
+    expect(text).toContain('Addr 2');
+  });
+
+  it('sends nothing for an empty delivery list', async () => {
+    await notifyDeliveryDigest({ driverName: 'Nikita', deliveries: [] });
+    expect(sendToChat).not.toHaveBeenCalled();
+  });
+
+  it('skips an unregistered driver without throwing', async () => {
+    getDriver.mockResolvedValue({ chatId: null, lang: 'ru' });
+    await expect(
+      notifyDeliveryDigest({ driverName: 'Timur', deliveries: [{ orderId: '1' }] })
+    ).resolves.toBeUndefined();
+    expect(sendToChat).not.toHaveBeenCalled();
   });
 });
