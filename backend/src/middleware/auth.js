@@ -5,23 +5,13 @@
 // Drivers get individual PINs: PIN_DRIVER_TIMUR, PIN_DRIVER_NIKITA, etc.
 // The badge reader now knows *which* driver scanned in (req.driverName).
 
-import { getBackupDriverName } from '../services/driverState.js';
 import { safeEqual } from '../utils/auth.js';
+import { resolveDriverByPin } from '../utils/driverPins.js';
 
 const PINS = {
   owner:   process.env.PIN_OWNER,
   florist: process.env.PIN_FLORIST,
 };
-
-// Build driver PINs dynamically from env vars matching PIN_DRIVER_*
-// Each env var like PIN_DRIVER_TIMUR=1234 maps to { pin: '1234', name: 'Timur' }
-const DRIVER_PINS = Object.entries(process.env)
-  .filter(([key]) => key.startsWith('PIN_DRIVER_'))
-  .map(([key, value]) => ({
-    pin:  value,
-    name: key.replace('PIN_DRIVER_', '').charAt(0).toUpperCase()
-          + key.replace('PIN_DRIVER_', '').slice(1).toLowerCase(),
-  }));
 
 // Route access per role
 const ROLE_ACCESS = {
@@ -45,13 +35,10 @@ export function authenticate(req, res, next) {
   }
 
   // Check driver PINs — each driver has their own badge
-  const driver = DRIVER_PINS.find(d => safeEqual(d.pin, pin));
-  if (driver) {
+  const driverName = resolveDriverByPin(pin);
+  if (driverName) {
     req.role = 'driver';
-    // If this is the backup PIN and the owner set a name for today, use that instead
-    req.driverName = driver.name === 'Backup'
-      ? (getBackupDriverName() || driver.name)
-      : driver.name;
+    req.driverName = driverName;
     return next();
   }
 
