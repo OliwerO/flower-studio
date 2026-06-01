@@ -19,9 +19,11 @@
  */
 import { useMemo, useState } from 'react';
 
-// Variety identity gets more room now that the Tag column is gone. The flexible
-// slack still goes to Supplier (rightmost, least-scanned), which truncates.
-const GRID_COLS = 'grid-cols-[5rem_minmax(7rem,14rem)_3.5rem_3rem_3rem_3rem_minmax(4rem,1fr)]';
+// Variety identity gets the widest range so long cultivar names (e.g. "Hawaiian
+// Coral", "Sarah Bernhardt") render in full; long names wrap a second line
+// rather than truncating. `arrived` shows the newest receive date of the
+// merged row — visible label + sortable, even though Tag-per-Batch is gone.
+const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
 
 const COLS = [
   { key: 'type',       label: 'type',       align: 'left'   },
@@ -30,10 +32,11 @@ const COLS = [
   { key: 'cost',       label: 'cost',       align: 'right'  },
   { key: 'sell',       label: 'sell',       align: 'right'  },
   { key: 'markup',     label: 'markup',     align: 'right'  },
+  { key: 'arrived',    label: 'arrived',    align: 'right'  },
   { key: 'supplier',   label: 'supplier',   align: 'left'   },
 ];
 
-export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today }) {
+export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today, traceStockIds, traceNode }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [sortKey, setSortKey] = useState('type');
   const [sortDir, setSortDir] = useState('asc');
@@ -76,7 +79,7 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'qty' || key === 'cost' || key === 'sell' || key === 'markup' ? 'desc' : 'asc');
+      setSortDir(['qty', 'cost', 'sell', 'markup', 'arrived'].includes(key) ? 'desc' : 'asc');
     }
   }
 
@@ -102,15 +105,26 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
       </div>
 
       <ul className="divide-y divide-gray-100">
-        {sortedRows.map(b => (
-          <BatchRow key={b.id} b={b} t={t} onRowClick={onRowClick} onPatchPriceBulk={onPatchPriceBulk} />
-        ))}
+        {sortedRows.map(b => {
+          const joinedIds = b.stockIds.join(',');
+          const isTraceActive = traceStockIds && joinedIds === traceStockIds;
+          return (
+            <BatchRow
+              key={b.id}
+              b={b}
+              t={t}
+              onRowClick={onRowClick}
+              onPatchPriceBulk={onPatchPriceBulk}
+              traceNode={isTraceActive ? traceNode : null}
+            />
+          );
+        })}
       </ul>
     </div>
   );
 }
 
-function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
+function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
   const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
   const editable = !!onPatchPriceBulk;
   const expandable = b.underlying.length > 1;
@@ -152,13 +166,14 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
             <span className={`inline-block transition-transform text-xs ${expanded ? 'rotate-90' : ''}`}>›</span>
           </button>
         )}
-        <span className="relative z-10 font-semibold text-gray-900 truncate pointer-events-none">
+        <span className="relative z-10 font-semibold text-gray-900 break-words pointer-events-none">
+
           {b.type || '—'}
         </span>
-        <span className="relative z-10 flex items-baseline gap-1.5 truncate min-w-0 pointer-events-none">
-          {b.colour && <span className="font-semibold text-gray-900 truncate">{b.colour}</span>}
+        <span className="relative z-10 flex flex-wrap items-baseline gap-x-1.5 gap-y-0 min-w-0 pointer-events-none">
+          {b.colour && <span className="font-semibold text-gray-900">{b.colour}</span>}
           {b.size_cm != null && <span className="text-xs text-gray-600 tabular-nums shrink-0">{b.size_cm}cm</span>}
-          {b.cultivar && <span className="text-xs text-gray-400 italic truncate">{b.cultivar}</span>}
+          {b.cultivar && <span className="text-xs text-gray-400 italic break-words">{b.cultivar}</span>}
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
         </span>
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
@@ -188,12 +203,20 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
             </span>
           ) : <span className="text-gray-300">—</span>}
         </span>
+        <span className="relative z-10 text-right text-[10px] tabular-nums text-gray-500 pointer-events-none">
+          {formatArrived(b.arrived) || '—'}
+        </span>
         <span className="relative z-10 text-xs text-gray-600 truncate pointer-events-none" title={b.supplierAll && b.supplierAll.length > 1 ? b.supplierAll.join(', ') : undefined}>
           {b.supplier || '—'}
         </span>
       </div>
       {expandable && expanded && (
         <ExpandedDetails underlying={b.underlying} t={t} />
+      )}
+      {traceNode && (
+        <div data-testid="batch-row-trace" className="bg-blue-50/60 border-t border-blue-100">
+          {traceNode}
+        </div>
       )}
     </li>
   );
@@ -239,6 +262,12 @@ function formatDMY(iso) {
   if (!iso) return '';
   const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso);
+}
+
+function formatArrived(iso) {
+  if (!iso) return null;
+  const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}` : null;
 }
 
 // Tap-to-edit price (Cost or Sell). Bulk-saves: host patches every underlying
@@ -370,6 +399,7 @@ function flatten(groups, reservations, today) {
       costMixed: m.costsSeen.size > 1,
       sell:      m.sell,
       markup:    null,
+      arrived:   m.newestDate,
       supplier,
       supplierAll,
       underlying: m.underlying,
