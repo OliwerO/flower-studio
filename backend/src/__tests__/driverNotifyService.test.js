@@ -3,11 +3,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.mock('../repos/driverTelegramRepo.js', () => ({ getDriver: vi.fn() }));
 vi.mock('../services/telegram.js', () => ({ sendToChat: vi.fn() }));
 vi.mock('../repos/orderRepo.js', () => ({ getById: vi.fn() }));
+vi.mock('../repos/stockOrderRepo.js', () => ({
+  getById: vi.fn(),
+  getLinesByPoId: vi.fn(),
+}));
 
-import { notifyDeliveryAssigned, notifyDeliveryDigest } from '../services/driverNotifyService.js';
+import { notifyDeliveryAssigned, notifyDeliveryDigest, notifyPoAssigned } from '../services/driverNotifyService.js';
 import { getDriver } from '../repos/driverTelegramRepo.js';
 import { sendToChat } from '../services/telegram.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 
 const delivery = {
   orderId: 'o1',
@@ -112,6 +117,39 @@ describe('notifyDeliveryDigest', () => {
     await expect(
       notifyDeliveryDigest({ driverName: 'Timur', deliveries: [{ orderId: '1' }] })
     ).resolves.toBeUndefined();
+    expect(sendToChat).not.toHaveBeenCalled();
+  });
+});
+
+describe('notifyPoAssigned', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    stockOrderRepo.getById.mockResolvedValue({ _pgId: 'p1', 'Stock Order ID': 'PO-7', 'Planned Date': '2026-06-03' });
+    stockOrderRepo.getLinesByPoId.mockResolvedValue([
+      { 'Flower Name': 'Rose Red' }, { 'Flower Name': 'Peony Pink' },
+    ]);
+  });
+
+  it('sends a Russian pickup message with PO ref, date and flower list', async () => {
+    getDriver.mockResolvedValue({ chatId: '42', lang: 'ru' });
+    await notifyPoAssigned({ stockOrderId: 'PO-7', driverName: 'Nikita' });
+    const text = sendToChat.mock.calls[0][1];
+    expect(text).toContain('назначена закупка');
+    expect(text).toContain('PO-7');
+    expect(text).toContain('2026-06-03');
+    expect(text).toContain('Rose Red');
+    expect(text).toContain('Peony Pink');
+  });
+
+  it('sends an English pickup message to an en driver', async () => {
+    getDriver.mockResolvedValue({ chatId: '42', lang: 'en' });
+    await notifyPoAssigned({ stockOrderId: 'PO-7', driverName: 'Bjorn' });
+    expect(sendToChat.mock.calls[0][1]).toContain('purchase run');
+  });
+
+  it('skips an unregistered driver without throwing', async () => {
+    getDriver.mockResolvedValue({ chatId: null, lang: 'ru' });
+    await expect(notifyPoAssigned({ stockOrderId: 'PO-7', driverName: 'Timur' })).resolves.toBeUndefined();
     expect(sendToChat).not.toHaveBeenCalled();
   });
 });

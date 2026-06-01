@@ -6,6 +6,7 @@
 import { getDriver } from '../repos/driverTelegramRepo.js';
 import { sendToChat } from './telegram.js';
 import * as orderRepo from '../repos/orderRepo.js';
+import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 
 export const SUPPORTED_LANGS = ['ru', 'en', 'pl'];
 const pickLang = (lang) => (SUPPORTED_LANGS.includes(lang) ? lang : 'ru');
@@ -91,5 +92,29 @@ export async function notifyDeliveryDigest({ driverName, deliveries }) {
     await sendToChat(target.chatId, text);
   } catch (err) {
     console.error('[DRIVER_NOTIFY] digest failed:', err.message);
+  }
+}
+
+export async function notifyPoAssigned({ stockOrderId, driverName }) {
+  try {
+    if (!driverName) return;
+    const target = await resolveTarget(driverName);
+    if (!target) return;
+    const { lang } = target;
+    const po = await stockOrderRepo.getById(stockOrderId).catch(() => null);
+    if (!po) return;
+    const lines = await stockOrderRepo.getLinesByPoId(po._pgId).catch(() => []);
+    const flowers = lines.map(l => l['Flower Name']).filter(Boolean).join(', ');
+    const ref = po['Stock Order ID'] || '';
+    const date = po['Planned Date'] || '';
+    const text = [
+      M.poHeader[lang],
+      ref ? `${M.order[lang]}: ${ref}` : '',
+      date ? `${M.date[lang]}: ${date}` : '',
+      flowers ? `${M.buy[lang]}: ${flowers}` : '',
+    ].filter(Boolean).join('\n');
+    await sendToChat(target.chatId, text);
+  } catch (err) {
+    console.error('[DRIVER_NOTIFY] po-assigned failed:', err.message);
   }
 }
