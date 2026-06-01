@@ -65,7 +65,7 @@ export async function notifyDeliveryAssigned({ delivery, driverName, actorName }
     const text = [
       M.deliveryHeader[lang],
       orderNum ? `${M.order[lang]}: ${orderNum}` : '',
-      (date || time) ? `${M.date[lang]}: ${date} ${time}`.trim() : '',
+      (date || time) ? `${M.date[lang]}: ${[date, time].filter(Boolean).join(' ')}` : '',
       addr ? `${M.address[lang]}: ${addr}` : '',
     ].filter(Boolean).join('\n');
     await sendToChat(target.chatId, text);

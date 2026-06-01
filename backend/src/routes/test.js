@@ -25,7 +25,7 @@
 
 import { Router } from 'express';
 import { db, isPgliteMode } from '../db/index.js';
-import { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders, stockOrders, stockOrderLines, premadeBouquets, premadeBouquetLines } from '../db/schema.js';
+import { auditLog, parityLog, stock, orders, orderLines, deliveries, customers, keyPeople, legacyOrders, stockOrders, stockOrderLines, premadeBouquets, premadeBouquetLines, driverTelegramChats } from '../db/schema.js';
 import { sql } from 'drizzle-orm';
 import { seedAllFromFixture, loadFixture } from '../__tests__/helpers/phase7pr2a-seed.js';
 
@@ -53,6 +53,7 @@ router.get('/state', async (_req, res, next) => {
         auditLog, parityLog, stock, orders, orderLines, deliveries,
         customers, keyPeople, legacyOrders,
         stockOrders, stockOrderLines, premadeBouquets, premadeBouquetLines,
+        driverTelegramChats,
       };
       for (const [name, tbl] of Object.entries(tables)) {
         const rows = await db.select().from(tbl);
