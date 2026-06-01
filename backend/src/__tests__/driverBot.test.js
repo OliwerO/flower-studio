@@ -45,4 +45,20 @@ describe('handleDriverUpdate (/start registration)', () => {
     await handleDriverUpdate({ edited_message: {} });
     expect(repo.setChatId).not.toHaveBeenCalled();
   });
+
+  it('sends error message and does not confirm when setChatId rejects', async () => {
+    repo.setChatId.mockRejectedValue(new Error('DB connection failed'));
+    await handleDriverUpdate({ message: { chat: { id: 42 }, text: '/start 5678' } });
+    expect(sendToChat).toHaveBeenCalledTimes(1);
+    expect(sendToChat).toHaveBeenCalledWith('42', expect.stringContaining('зарегистрировать'));
+    // success confirmation must NOT be sent
+    expect(sendToChat.mock.calls[0][1]).not.toContain('Nikita');
+  });
+
+  it('registers successfully when /start has double space before PIN', async () => {
+    repo.setChatId.mockResolvedValue(undefined);
+    await handleDriverUpdate({ message: { chat: { id: 42 }, text: '/start  5678' } });
+    expect(repo.setChatId).toHaveBeenCalledWith('Nikita', '42');
+    expect(sendToChat).toHaveBeenCalledWith('42', expect.stringContaining('Nikita'));
+  });
 });

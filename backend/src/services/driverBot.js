@@ -21,6 +21,7 @@ const REGISTERED = {
 };
 const BAD_PIN = 'Неверный PIN. Попробуйте: /start <PIN>';
 const HINT = 'Чтобы получать уведомления, отправьте: /start <ваш PIN>';
+const REG_ERROR = 'Не удалось зарегистрировать. Попробуйте ещё раз позже.';
 
 export async function handleDriverUpdate(update) {
   const msg = update.message;
@@ -29,13 +30,15 @@ export async function handleDriverUpdate(update) {
   const text = msg.text.trim();
 
   if (text.startsWith('/start')) {
-    const pin = text.split(' ')[1];
+    const pin = text.split(/\s+/)[1];
     const driverName = resolveDriverByPin(pin);
     if (driverName) {
       try {
         await setChatId(driverName, chatId);
       } catch (err) {
         console.error('[DRIVER_BOT] register error:', err.message);
+        await sendToChat(chatId, REG_ERROR);
+        return;
       }
       const row = await getDriver(driverName).catch(() => null);
       const lang = (REGISTERED[row?.lang]) ? row.lang : 'ru';
@@ -86,6 +89,8 @@ async function poll(token) {
         }
         await savePollOffset();
       }
+    } else {
+      console.error('[DRIVER_BOT] getUpdates non-ok:', res.status);
     }
   } catch (err) {
     console.error('[DRIVER_BOT] poll error:', err.message);
