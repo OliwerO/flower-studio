@@ -190,6 +190,18 @@ Tracks advertising costs and flowers used for marketing purposes (social media, 
 Time-tracking records for payroll. Florists log their working hours; the Owner reviews them to calculate wages.
 _Avoid_: Shifts, timesheets, schedule
 
+**Driver of the Day**:
+The Driver the Owner designates as responsible for today's runs. Setting it bulk-assigns every still-unassigned Delivery dated today to that Driver, and is the fallback assignee for new delivery Orders. Resets automatically at midnight.
+_Avoid_: Default driver, on-call driver
+
+**Assignment Notification**:
+A Telegram message sent to a Driver the moment a Delivery or Stock Order becomes their responsibility. Targeted to that one Driver only (never broadcast), and only after the Driver has registered their Telegram chat with the bot. Sent in the Driver's **Notification Language**. A Driver who self-claims a Delivery (by advancing its status) is not notified of their own action.
+_Avoid_: Alert, push (Push is a generic web/SSE concept; this is Telegram-specific)
+
+**Notification Language**:
+The language a Driver's Assignment Notifications are written in — `ru`, `en`, or `pl`, defaulting to `ru`. Set by the Owner per Driver (a Driver does not choose their own). Can be set before the Driver has registered.
+_Avoid_: Locale (no regional formatting is implied — only the message strings change)
+
 ## Apps
 
 **Blossom app** (or just "Blossom"):
