@@ -48,6 +48,8 @@ import { createHmac } from 'node:crypto';
 //   23. Auth gates — driver blocked from /orders, florist blocked from /admin
 //   24. Wix webhook replay — HMAC verification + async order processing
 //   25. Bouquet image upload — POST + DELETE auth + happy path (HARNESS_MOCK_WIX=1)
+//   26. Customer CRUD via PG (Phase 5)
+//   27. Driver assignment notification — HTTP contracts (PATCH Assigned Driver + driver-language endpoint)
 
 const PORT = process.env.HARNESS_PORT || '3002';
 const BASE = `http://localhost:${PORT}/api`;
@@ -1454,6 +1456,129 @@ async function section26CustomerCrudPg() {
   eq('26.8 Driver blocked from /customers', r.status, 403);
 }
 
+// ──────────── 27. DRIVER ASSIGNMENT NOTIFICATION — HTTP CONTRACTS ────────────
+//
+// Telegram observability: TELEGRAM_BOT_TOKEN is set to a non-empty fake value
+// in the harness ('test-mock-telegram'), so sendToChat's token guard passes.
+// However the driver_telegram_chats table starts empty (not seeded by
+// POST /test/reset), so resolveTarget() returns null → notifyDeliveryAssigned
+// is a no-op fire-and-forget with no network call. There is no Telegram spy
+// endpoint or HARNESS_MOCK_TELEGRAM shim — side-effect observability is
+// structurally unavailable in the E2E harness.
+//
+// The primary assertions here are the HTTP contracts that remain fully
+// verifiable:
+//   a) PATCH /deliveries/:id with "Assigned Driver" → 200, field persists
+//   b) PUT  /api/settings/driver-language (owner) → 200, correct echo
+//   c) PUT  /api/settings/driver-language (bad lang) → 400
+//   d) PUT  /api/settings/driver-language (non-owner) → 403
+//
+// The Telegram side-effect (notifyDeliveryAssigned fires → sendToChat) is
+// verified by the unit/integration test suite:
+//   backend/src/__tests__/driverNotifyService.test.js
+//   backend/src/__tests__/deliveries.assign-notify.integration.test.js
+
+async function section27DriverAssignmentNotification() {
+  startSection('27. Driver assignment notification — HTTP contracts');
+  await reset();
+
+  // ── 27.1 Seed an order with a delivery ──
+  const created = await api('POST', '/orders', {
+    pin: PIN_OWNER,
+    body: buildOrderBody({
+      customer: FIXTURE.customers.maria,
+      deliveryType: 'Delivery',
+      lines: [line(FIXTURE.stock.redRose, 2)],
+      delivery: {
+        address: 'ul. Testowa 1, Kraków',
+        recipientName: 'Test Recipient',
+        recipientPhone: '+48 600 000 000',
+        date: tomorrow(),
+        time: '10-12',
+        fee: 15,
+      },
+    }),
+  });
+  assert('27.1 Delivery order created (201)', created.status === 201);
+  assert('27.1 Delivery sub-record returned', !!created.body?.delivery?.id);
+  const deliveryId = created.body.delivery.id;
+
+  // ── 27.2 PATCH Assigned Driver → 200, field persists ──
+  // notifyDeliveryAssigned fires as a fire-and-forget side-effect;
+  // with an empty driver_telegram_chats table it silently no-ops.
+  let r = await api('PATCH', `/deliveries/${deliveryId}`, {
+    pin: PIN_OWNER,
+    body: { 'Assigned Driver': 'Nikita' },
+  });
+  eq('27.2 PATCH Assigned Driver → 200', r.status, 200);
+  eq('27.2 Assigned Driver persisted', r.body?.['Assigned Driver'], 'Nikita');
+
+  // ── 27.3 GET deliveries — assignment survives a round-trip ──
+  const list = await api('GET', `/deliveries?from=${tomorrow()}`, { pin: PIN_OWNER });
+  eq('27.3 GET /deliveries → 200', list.status, 200);
+  const found = list.body?.find(d => d.id === deliveryId);
+  assert('27.3 Delivery in list', !!found);
+  eq('27.3 Assigned Driver in list response', found?.['Assigned Driver'], 'Nikita');
+
+  // ── 27.4 Re-PATCH with the same driver — no-op, still 200 ──
+  r = await api('PATCH', `/deliveries/${deliveryId}`, {
+    pin: PIN_OWNER,
+    body: { 'Assigned Driver': 'Nikita' },
+  });
+  eq('27.4 No-op re-assign → 200', r.status, 200);
+  eq('27.4 Assigned Driver unchanged', r.body?.['Assigned Driver'], 'Nikita');
+
+  // ── 27.5 PUT /settings/driver-language (owner, valid lang) → 200 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_OWNER,
+    body: { driverName: 'Nikita', lang: 'en' },
+  });
+  eq('27.5 PUT driver-language (en) → 200', r.status, 200);
+  eq('27.5 driverName echoed', r.body?.driverName, 'Nikita');
+  eq('27.5 lang echoed', r.body?.lang, 'en');
+
+  // ── 27.6 PUT /settings/driver-language — unsupported lang → 400 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_OWNER,
+    body: { driverName: 'Nikita', lang: 'de' },
+  });
+  eq('27.6 Unsupported lang → 400', r.status, 400);
+  assert('27.6 Error mentions supported langs', /ru|en|pl/i.test(r.body?.error || ''));
+
+  // ── 27.7 PUT /settings/driver-language — missing driverName → 400 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_OWNER,
+    body: { lang: 'ru' },
+  });
+  eq('27.7 Missing driverName → 400', r.status, 400);
+
+  // ── 27.8 PUT /settings/driver-language — florist (non-owner) → 403 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_FLORIST,
+    body: { driverName: 'Nikita', lang: 'pl' },
+  });
+  eq('27.8 Florist blocked from driver-language → 403', r.status, 403);
+
+  // ── 27.9 PUT /settings/driver-language — driver PIN (non-owner) → 403 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_NIKITA,
+    body: { driverName: 'Nikita', lang: 'pl' },
+  });
+  eq('27.9 Driver blocked from driver-language → 403', r.status, 403);
+
+  // ── 27.10 Language persists: GET /settings shows no lang field directly,
+  //          but a second successful PUT (idempotent upsert) confirms
+  //          the endpoint accepts all three supported langs ──
+  for (const lang of ['ru', 'en', 'pl']) {
+    r = await api('PUT', '/settings/driver-language', {
+      pin: PIN_OWNER,
+      body: { driverName: 'Timur', lang },
+    });
+    eq(`27.10 lang='${lang}' round-trip → 200`, r.status, 200);
+    eq(`27.10 lang='${lang}' echoed`, r.body?.lang, lang);
+  }
+}
+
 async function main() {
   const startedAt = Date.now();
   console.log(`\n\x1b[36m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
@@ -1498,6 +1623,7 @@ async function main() {
     section24WixWebhook,
     section25BouquetImageUpload,
     section26CustomerCrudPg,
+    section27DriverAssignmentNotification,
   ];
 
   for (const section of sections) {
