@@ -714,6 +714,7 @@ const en = {
   otherFields:               'Other fields',
   openInOrdersTab:           'Open order',
   zl:                        'zł',
+  switchTier:                'Switch sell tier',
 
   // List pane
   searchAnyField:            'Search any field…',
@@ -1502,6 +1503,7 @@ const ru = {
   otherFields:               'Другие поля',
   openInOrdersTab:           'Открыть заказ',
   zl:                        'zł',
+  switchTier:                'Сменить цену',
 
   // List pane
   searchAnyField:            'Поиск по всем полям…',
