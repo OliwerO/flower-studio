@@ -5,6 +5,27 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-01 — Driver Assignment Telegram Notifications (PRD #368, driver half of #336)
+
+Drivers now receive targeted Telegram messages (ru/en/pl) when a delivery or PO shopping run is assigned to them, and a daily digest when they are driver-of-day. Drivers self-register by sending `/start <PIN>` to the alerts bot.
+
+### Schema
+- **Migration 0015** — new `driver_telegram_chats` table: `driver_name` (PK), `chat_id`, `lang` (ru/en/pl, default ru), `registered_at`.
+
+### Backend
+- `backend/src/services/driverNotifyService.js` (NEW) — single seam for all driver assignment notifications. Chat-id + lang resolution via `driverTelegramRepo`, suppress-self and skip-unregistered guards, per-language message builders for `notifyDeliveryAssigned`, `notifyDeliveryDigest`, and `notifyPoAssigned`.
+- `backend/src/services/driverBot.js` (NEW) — inbound getUpdates loop on `TELEGRAM_BOT_TOKEN` (the alerts bot). Handles `/start <PIN>` registration; persists chat-id; sends language-matched confirmation. Uses a distinct `driver_bot_poll_offset` key in `system_meta` so it never collides with the feedback bot's poll loop.
+- `backend/src/repos/driverTelegramRepo.js` (NEW) — `getDriver(name)`, `setChatId(name, chatId)`, `setLang(name, lang)` CRUD over `driver_telegram_chats`.
+- `backend/src/utils/driverPins.js` (NEW) — `resolveDriverByPin(pin)`: maps a PIN to a driver name by scanning `PIN_DRIVER_*` env vars.
+- `backend/src/services/telegram.js` — `escapeHtml` exported; dynamic user fields (address, flower names, driver name, order ID, date/time) are now HTML-escaped in all driver notification messages to prevent Telegram 400 rejections on `<`, `>`, `&`.
+- `backend/src/routes/settings.js` — new `PUT /settings/driver-language` (owner-only): sets a driver's notification language (ru/en/pl) in `driver_telegram_chats`.
+- `backend/src/routes/deliveries.js` + `backend/src/routes/stockOrders.js` — call `notifyDeliveryAssigned` / `notifyPoAssigned` on assignment.
+
+### Deploy note
+`TELEGRAM_BOT_TOKEN` now also drives an inbound getUpdates poll loop for driver registration in addition to the existing outbound alert sends. No new env var required. Drivers register once by sending `/start <PIN>` to the bot; the owner can override their language via `PUT /settings/driver-language`.
+
+---
+
 ## 2026-05-30 — Premade edit path joins the Y-model reservation model (#330)
 
 Closes the last unsplit flag-off/flag-on path in `premadeBouquetService`. `editPremadeBouquetLines` was unconditionally calling `stockRepo.adjustQuantity` on add / qty-change / remove — under `STOCK_Y_MODEL=true` that double-counts on top of the reservation ledger. Cutover-blocker fix.

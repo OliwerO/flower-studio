@@ -98,7 +98,7 @@ export async function notifyNewOrder({ source, customerName, request, deliveryTy
 // Telegram parses HTML in message bodies (parse_mode: 'HTML'), so raw
 // angle brackets in user-controlled fields would confuse the parser.
 // Coerce-with-?? keeps undefined / null safe.
-function escapeHtml(s) {
+export function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

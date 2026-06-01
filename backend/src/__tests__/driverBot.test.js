@@ -4,7 +4,10 @@ vi.mock('../repos/driverTelegramRepo.js', () => ({
   setChatId: vi.fn(),
   getDriver: vi.fn(),
 }));
-vi.mock('../services/telegram.js', () => ({ sendToChat: vi.fn() }));
+vi.mock('../services/telegram.js', () => ({
+  sendToChat: vi.fn(),
+  escapeHtml: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+}));
 
 import { handleDriverUpdate } from '../services/driverBot.js';
 import * as repo from '../repos/driverTelegramRepo.js';

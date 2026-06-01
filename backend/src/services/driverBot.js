@@ -7,7 +7,7 @@ import { db } from '../db/index.js';
 import { systemMeta } from '../db/schema.js';
 import { resolveDriverByPin } from '../utils/driverPins.js';
 import { setChatId, getDriver } from '../repos/driverTelegramRepo.js';
-import { sendToChat } from './telegram.js';
+import { sendToChat, escapeHtml } from './telegram.js';
 
 const BASE = 'https://api.telegram.org/bot';
 const POLL_OFFSET_KEY = 'driver_bot_poll_offset';
@@ -42,7 +42,7 @@ export async function handleDriverUpdate(update) {
       }
       const row = await getDriver(driverName).catch(() => null);
       const lang = (REGISTERED[row?.lang]) ? row.lang : 'ru';
-      await sendToChat(chatId, REGISTERED[lang](driverName));
+      await sendToChat(chatId, REGISTERED[lang](escapeHtml(driverName)));
     } else {
       await sendToChat(chatId, BAD_PIN);
     }

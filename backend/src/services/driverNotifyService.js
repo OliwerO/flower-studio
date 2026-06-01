@@ -4,7 +4,7 @@
 // and dispatch. Never throws into the caller — assignment must succeed even if
 // Telegram is down.
 import { getDriver } from '../repos/driverTelegramRepo.js';
-import { sendToChat } from './telegram.js';
+import { sendToChat, escapeHtml } from './telegram.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 
@@ -64,9 +64,9 @@ export async function notifyDeliveryAssigned({ delivery, driverName, actorName }
     const addr = delivery['Delivery Address'] || '';
     const text = [
       M.deliveryHeader[lang],
-      orderNum ? `${M.order[lang]}: ${orderNum}` : '',
-      (date || time) ? `${M.date[lang]}: ${[date, time].filter(Boolean).join(' ')}` : '',
-      addr ? `${M.address[lang]}: ${addr}` : '',
+      orderNum ? `${M.order[lang]}: ${escapeHtml(orderNum)}` : '',
+      (date || time) ? `${M.date[lang]}: ${[escapeHtml(date), escapeHtml(time)].filter(Boolean).join(' ')}` : '',
+      addr ? `${M.address[lang]}: ${escapeHtml(addr)}` : '',
     ].filter(Boolean).join('\n');
     await sendToChat(target.chatId, text);
   } catch (err) {
@@ -86,7 +86,7 @@ export async function notifyDeliveryDigest({ driverName, deliveries }) {
       const orderNum = await orderNumberFor(d);
       const time = d['Delivery Time'] || '';
       const addr = d['Delivery Address'] || '';
-      lines.push(`${i + 1}. ${[orderNum, time, addr].filter(Boolean).join(' · ')}`);
+      lines.push(`${i + 1}. ${[escapeHtml(orderNum), escapeHtml(time), escapeHtml(addr)].filter(Boolean).join(' · ')}`);
     }
     const text = [M.digestHeader[lang](deliveries.length), ...lines].join('\n');
     await sendToChat(target.chatId, text);
@@ -109,9 +109,9 @@ export async function notifyPoAssigned({ stockOrderId, driverName }) {
     const date = po['Planned Date'] || '';
     const text = [
       M.poHeader[lang],
-      ref ? `${M.order[lang]}: ${ref}` : '',
-      date ? `${M.date[lang]}: ${date}` : '',
-      flowers ? `${M.buy[lang]}: ${flowers}` : '',
+      ref ? `${M.order[lang]}: ${escapeHtml(ref)}` : '',
+      date ? `${M.date[lang]}: ${escapeHtml(date)}` : '',
+      flowers ? `${M.buy[lang]}: ${escapeHtml(flowers)}` : '',
     ].filter(Boolean).join('\n');
     await sendToChat(target.chatId, text);
   } catch (err) {

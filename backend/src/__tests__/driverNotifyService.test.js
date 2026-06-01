@@ -1,7 +1,10 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../repos/driverTelegramRepo.js', () => ({ getDriver: vi.fn() }));
-vi.mock('../services/telegram.js', () => ({ sendToChat: vi.fn() }));
+vi.mock('../services/telegram.js', () => ({
+  sendToChat: vi.fn(),
+  escapeHtml: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
+}));
 vi.mock('../repos/orderRepo.js', () => ({ getById: vi.fn() }));
 vi.mock('../repos/stockOrderRepo.js', () => ({
   getById: vi.fn(),
@@ -83,6 +86,16 @@ describe('notifyDeliveryAssigned', () => {
     getDriver.mockResolvedValue({ chatId: '42', lang: 'ru' });
     sendToChat.mockRejectedValue(new Error('telegram down'));
     await expect(notifyDeliveryAssigned({ delivery, driverName: 'Nikita' })).resolves.toBeUndefined();
+  });
+
+  it('HTML-escapes special chars in address so Telegram does not reject with 400', async () => {
+    getDriver.mockResolvedValue({ chatId: '42', lang: 'en' });
+    orderRepo.getById.mockResolvedValue({ 'App Order ID': 'A-100' });
+    const badAddr = { ...delivery, 'Delivery Address': 'A & B <1>' };
+    await notifyDeliveryAssigned({ delivery: badAddr, driverName: 'Nikita' });
+    const text = sendToChat.mock.calls[0][1];
+    expect(text).toContain('A &amp; B &lt;1&gt;');
+    expect(text).not.toContain('A & B <1>');
   });
 });
 
