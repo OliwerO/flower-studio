@@ -227,6 +227,37 @@ describe('createPremadeBouquet flag-on (STOCK_Y_MODEL=true) — issue #285', () 
     expect(linesAfter).toHaveLength(0);
   });
 
+  it('dissolve writes a premade_dissolved audit_log row per affected Batch (F2, 2026-05-31)', async () => {
+    const { auditLog } = await import('../db/schema.js');
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Rose', currentQuantity: 10, typeName: 'Rose',
+    }).returning();
+    const [peony] = await harness.db.insert(stock).values({
+      displayName: 'Peony', currentQuantity: 8, typeName: 'Peony',
+    }).returning();
+    const built = await createPremadeBouquet({
+      name: 'Mixed',
+      lines: [
+        { stockItemId: rose.id,  flowerName: 'Rose',  quantity: 3, costPricePerUnit: 1, sellPricePerUnit: 5 },
+        { stockItemId: peony.id, flowerName: 'Peony', quantity: 2, costPricePerUnit: 2, sellPricePerUnit: 9 },
+      ],
+      createdBy: 'F',
+    });
+    await returnPremadeBouquetToStock(built.id, { req: { role: 'owner' } });
+    const audits = await harness.db.select()
+      .from(auditLog)
+      .where(eq(auditLog.action, 'premade_dissolved'));
+    expect(audits).toHaveLength(2);
+    const byStock = Object.fromEntries(audits.map(a => [a.entityId, a]));
+    expect(byStock[rose.id].diff.after).toEqual(expect.objectContaining({
+      bouquet_name: 'Mixed', qty: 3,
+    }));
+    expect(byStock[peony.id].diff.after).toEqual(expect.objectContaining({
+      bouquet_name: 'Mixed', qty: 2,
+    }));
+    expect(byStock[rose.id].actorRole).toBe('owner');
+  });
+
   it('sale routes through standard createOrder (no skipDeduction)', async () => {
     const [rose] = await harness.db.insert(stock).values({
       displayName: 'Rose', currentQuantity: 10, typeName: 'Rose',
