@@ -16,6 +16,7 @@ import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 import { getConfig, getDriverOfDay } from '../services/configService.js';
+import { notifyPoAssigned } from '../services/driverNotifyService.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
@@ -241,6 +242,10 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
         stockOrderId: req.params.id,
         driverName: fields['Assigned Driver'] || '',
       });
+      if (fields['Assigned Driver']) {
+        notifyPoAssigned({ stockOrderId: req.params.id, driverName: fields['Assigned Driver'] })
+          .catch(err => console.error('[DRIVER_NOTIFY] po patch hook failed:', err.message));
+      }
     }
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id });
 
@@ -443,6 +448,11 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
 
     // SSE notification to driver
     broadcast({ type: 'stock_pickup_assigned', stockOrderId: req.params.id, driverName: resolvedDriver });
+
+    if (resolvedDriver) {
+      notifyPoAssigned({ stockOrderId: req.params.id, driverName: resolvedDriver })
+        .catch(err => console.error('[DRIVER_NOTIFY] po send hook failed:', err.message));
+    }
 
     res.json(updated);
   } catch (err) {

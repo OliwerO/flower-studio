@@ -11,6 +11,8 @@ import {
   driverNames, autoClearIfNewDay,
   getStockYModelEnabled,
 } from '../services/configService.js';
+import { notifyDeliveryDigest, SUPPORTED_LANGS } from '../services/driverNotifyService.js';
+import { setLang } from '../repos/driverTelegramRepo.js';
 
 const router = Router();
 
@@ -40,6 +42,7 @@ router.put('/driver-of-day', authorize('admin'), async (req, res, next) => {
     setDailyDriver(driverName);
 
     let assignedCount = 0;
+    const assigned = [];
     if (driverName) {
       const today = new Date().toISOString().split('T')[0];
       const allToday = await orderRepo.listDeliveries({ pg: { date: today } });
@@ -48,7 +51,12 @@ router.put('/driver-of-day', authorize('admin'), async (req, res, next) => {
       );
       for (const d of unassigned) {
         await orderRepo.updateDelivery(d.id, { 'Assigned Driver': driverName });
+        assigned.push(d);
         assignedCount++;
+      }
+      if (assigned.length) {
+        notifyDeliveryDigest({ driverName, deliveries: assigned })
+          .catch(err => console.error('[DRIVER_NOTIFY] digest hook failed:', err.message));
       }
     }
 
@@ -82,6 +90,23 @@ router.get('/lists', authorize('orders'), (req, res) => {
     rateTypes:      getConfig('rateTypes'),
     floristRates:   getConfig('floristRates'),
   });
+});
+
+// ── PUT /api/settings/driver-language ──
+// Owner sets the Telegram notification language for a Driver. Default is 'ru'.
+router.put('/driver-language', authorize('admin'), async (req, res, next) => {
+  try {
+    const { driverName, lang } = req.body;
+    if (!driverName || !SUPPORTED_LANGS.includes(lang)) {
+      return res.status(400).json({
+        error: `driverName required and lang must be one of: ${SUPPORTED_LANGS.join(', ')}`,
+      });
+    }
+    await setLang(driverName, lang);
+    res.json({ driverName, lang });
+  } catch (err) {
+    next(err);
+  }
 });
 
 export default router;

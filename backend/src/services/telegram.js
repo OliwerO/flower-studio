@@ -72,6 +72,16 @@ export async function broadcastAlert(text) {
 }
 
 /**
+ * Send a message to one specific chat on the alerts bot. Used for targeted
+ * Driver Assignment Notifications (ADR-0009) — never broadcasts.
+ */
+export async function sendToChat(chatId, text) {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token || !chatId) return;
+  await sendTo(token, chatId, text);
+}
+
+/**
  * Send a new-order notification to all team members.
  */
 export async function notifyNewOrder({ source, customerName, request, deliveryType, price }) {
@@ -88,7 +98,7 @@ export async function notifyNewOrder({ source, customerName, request, deliveryTy
 // Telegram parses HTML in message bodies (parse_mode: 'HTML'), so raw
 // angle brackets in user-controlled fields would confuse the parser.
 // Coerce-with-?? keeps undefined / null safe.
-function escapeHtml(s) {
+export function escapeHtml(s) {
   return String(s ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

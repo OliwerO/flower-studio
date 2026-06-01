@@ -17,6 +17,7 @@ import {
   editBouquetLines,
 } from '../services/orderService.js';
 import { broadcast } from '../services/notifications.js';
+import { notifyDeliveryAssigned } from '../services/driverNotifyService.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -370,6 +371,15 @@ router.post('/', async (req, res, next) => {
         isOwner: req.role === 'owner',
       }, { getConfig, getDriverOfDay, generateOrderId });
 
+      // Notify the assigned driver if this new delivery-type order already has one.
+      const createdDelivery = result.delivery;
+      if (createdDelivery?.['Assigned Driver']) {
+        notifyDeliveryAssigned({
+          delivery: createdDelivery,
+          driverName: createdDelivery['Assigned Driver'],
+        }).catch(err => console.error('[DRIVER_NOTIFY] create hook failed:', err.message));
+      }
+
       res.status(201).json(result);
     } catch (creationErr) {
       // Validation errors (e.g. orphan lines) — surface message verbatim
@@ -521,6 +531,13 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
       Status:             DELIVERY_STATUS.PENDING,
     }, { actor: actorFromReq(req) });
+
+    // Notify the assigned driver — delivery already carries all needed fields.
+    const assignedDriver = delivery['Assigned Driver'];
+    if (assignedDriver) {
+      notifyDeliveryAssigned({ delivery, driverName: assignedDriver })
+        .catch(err => console.error('[DRIVER_NOTIFY] convert hook failed:', err.message));
+    }
 
     res.status(201).json(delivery);
   } catch (err) {
