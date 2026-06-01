@@ -113,10 +113,17 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
 function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
   const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
   const editable = !!onPatchPriceBulk;
+  const expandable = b.underlying.length > 1;
+  const [expanded, setExpanded] = useState(false);
 
   function save(field, next) {
     if (next === b[field]) return;
     onPatchPriceBulk(b.stockIds, { [field]: next });
+  }
+
+  function toggleExpand(e) {
+    e.stopPropagation();
+    setExpanded(v => !v);
   }
 
   return (
@@ -124,7 +131,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
       <div
         className={`relative w-full grid ${GRID_COLS} gap-1.5 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
       >
-        {/* Background tap-target opens trace; price cells live above it via z-stacking */}
+        {/* Background tap-target opens trace; price + chevron live above it via z-stacking */}
         <button
           type="button"
           data-testid="batch-arrival-row"
@@ -133,6 +140,18 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
           className="absolute inset-0 z-0"
           aria-label={t.batchTraceTitle || 'Open trace'}
         />
+        {expandable && (
+          <button
+            type="button"
+            data-testid="batch-row-expand"
+            data-expanded={String(expanded)}
+            onClick={toggleExpand}
+            aria-label={expanded ? (t.collapse ?? 'Collapse') : (t.expand ?? 'Expand')}
+            className="absolute left-0 top-0 bottom-0 w-6 z-10 flex items-center justify-center text-gray-400 hover:text-gray-700"
+          >
+            <span className={`inline-block transition-transform text-xs ${expanded ? 'rotate-90' : ''}`}>›</span>
+          </button>
+        )}
         <span className="relative z-10 font-semibold text-gray-900 truncate pointer-events-none">
           {b.type || '—'}
         </span>
@@ -173,8 +192,53 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk }) {
           {b.supplier || '—'}
         </span>
       </div>
+      {expandable && expanded && (
+        <ExpandedDetails underlying={b.underlying} t={t} />
+      )}
     </li>
   );
+}
+
+function ExpandedDetails({ underlying, t }) {
+  const sorted = useMemo(
+    () => [...underlying].sort((a, b) => {
+      if (!a.date && !b.date) return 0;
+      if (!a.date) return 1;
+      if (!b.date) return -1;
+      return b.date.localeCompare(a.date); // newest first
+    }),
+    [underlying],
+  );
+
+  return (
+    <div data-testid="batch-row-detail" className="bg-gray-50 border-t border-gray-100 px-4 py-2">
+      <div className="grid grid-cols-[5rem_3rem_3.5rem_minmax(4rem,1fr)] gap-2 text-[10px] uppercase tracking-wide text-gray-400 pb-1">
+        <span>{t.arrived ?? 'arrived'}</span>
+        <span className="text-right">{t.qty ?? 'qty'}</span>
+        <span className="text-right">{t.cost ?? 'cost'}</span>
+        <span className="truncate">{t.supplier ?? 'supplier'}</span>
+      </div>
+      <ul className="divide-y divide-gray-100">
+        {sorted.map(u => (
+          <li
+            key={u.id}
+            className="grid grid-cols-[5rem_3rem_3.5rem_minmax(4rem,1fr)] gap-2 py-1.5 text-xs text-gray-700"
+          >
+            <span className="tabular-nums">{formatDMY(u.date) || '—'}</span>
+            <span className="text-right tabular-nums">{u.qty}</span>
+            <span className="text-right tabular-nums">{u.cost != null ? u.cost.toFixed(2) : '—'}</span>
+            <span className="truncate" title={u.supplier ?? undefined}>{u.supplier || '—'}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function formatDMY(iso) {
+  if (!iso) return '';
+  const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso);
 }
 
 // Tap-to-edit price (Cost or Sell). Bulk-saves: host patches every underlying
@@ -262,6 +326,7 @@ function flatten(groups, reservations, today) {
           newestCost: null,
           costsSeen: new Set(),
           suppliersSeen: new Set(),
+          underlying: [],
           sell,
         };
         merged.set(key, m);
@@ -269,6 +334,7 @@ function flatten(groups, reservations, today) {
       m.stockIds.push(row.id);
       m.qty += qty;
       m.reserved += reservations.get(row.id) ?? 0;
+      m.underlying.push({ id: row.id, qty, cost, supplier, date });
       if (cost != null) m.costsSeen.add(cost.toFixed(2));
       if (supplier) m.suppliersSeen.add(supplier);
       // Track the newest receive — its cost wins as the displayed cost.
@@ -306,6 +372,7 @@ function flatten(groups, reservations, today) {
       markup:    null,
       supplier,
       supplierAll,
+      underlying: m.underlying,
     });
   }
   for (const r of out) {
