@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
 describe('resolveDriverByPin', () => {
   beforeEach(() => {
@@ -18,5 +18,24 @@ describe('resolveDriverByPin', () => {
     expect(resolveDriverByPin('0000')).toBeNull();
     expect(resolveDriverByPin('')).toBeNull();
     expect(resolveDriverByPin(undefined)).toBeNull();
+  });
+});
+
+import { resolveFloristByPin } from '../utils/driverPins.js';
+
+describe('resolveFloristByPin', () => {
+  const orig = process.env.PIN_FLORIST;
+  beforeEach(() => { process.env.PIN_FLORIST = '2580'; });
+  afterEach(() => { process.env.PIN_FLORIST = orig; });
+
+  it('resolves the florist PIN to "florist"', () => {
+    expect(resolveFloristByPin('2580')).toBe('florist');
+  });
+  it('returns null for a wrong PIN', () => {
+    expect(resolveFloristByPin('0000')).toBeNull();
+  });
+  it('returns null for empty input', () => {
+    expect(resolveFloristByPin('')).toBeNull();
+    expect(resolveFloristByPin(undefined)).toBeNull();
   });
 });
