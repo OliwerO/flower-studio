@@ -50,6 +50,7 @@ import { createHmac } from 'node:crypto';
 //   25. Bouquet image upload — POST + DELETE auth + happy path (HARNESS_MOCK_WIX=1)
 //   26. Customer CRUD via PG (Phase 5)
 //   27. Driver assignment notification — HTTP contracts (PATCH Assigned Driver + driver-language endpoint)
+//   28. Florist new-order notification — HTTP contracts (PUT /settings/florist-language + order create regression)
 
 const PORT = process.env.HARNESS_PORT || '3002';
 const BASE = `http://localhost:${PORT}/api`;
@@ -1579,6 +1580,75 @@ async function section27DriverAssignmentNotification() {
   }
 }
 
+// ──────────── 28. FLORIST NEW-ORDER NOTIFICATION — HTTP CONTRACTS ────────────
+//
+// Mirrors the driver-notification section (27) for the florist extension.
+// The florist-notify side-effect (notifyFloristNewOrder fires → sendToChat) is
+// verified by the unit/integration test suite:
+//   backend/src/__tests__/floristTelegramRepo.integration.test.js
+//   backend/src/__tests__/floristNotifyService.test.js
+//   backend/src/__tests__/settings.florist-language.integration.test.js
+//
+// The primary assertions here are the HTTP contracts:
+//   a) PUT  /api/settings/florist-language (owner, valid lang) → 200, lang echoed
+//   b) PUT  /api/settings/florist-language (bad lang) → 400
+//   c) PUT  /api/settings/florist-language (florist PIN, non-owner) → 403
+//   d) POST /orders (pickup) → 201 regression guard — order creation still works
+//
+// All three supported langs (ru/en/pl) are round-tripped in 28.4 to confirm the
+// endpoint accepts each without hitting a validation error.
+
+async function section28FloristNewOrderNotification() {
+  startSection('28. Florist new-order notification — HTTP contracts');
+  await reset();
+
+  // ── 28.1 PUT /settings/florist-language (owner, valid lang) → 200 ──
+  let r = await api('PUT', '/settings/florist-language', {
+    pin: PIN_OWNER,
+    body: { lang: 'en' },
+  });
+  eq('28.1 PUT florist-language (en) → 200', r.status, 200);
+  eq('28.1 lang echoed', r.body?.lang, 'en');
+
+  // ── 28.2 PUT /settings/florist-language — unsupported lang → 400 ──
+  r = await api('PUT', '/settings/florist-language', {
+    pin: PIN_OWNER,
+    body: { lang: 'de' },
+  });
+  eq('28.2 Unsupported lang → 400', r.status, 400);
+  assert('28.2 Error mentions supported langs', /ru|en|pl/i.test(r.body?.error || ''));
+
+  // ── 28.3 PUT /settings/florist-language — florist PIN (non-owner) → 403 ──
+  r = await api('PUT', '/settings/florist-language', {
+    pin: PIN_FLORIST,
+    body: { lang: 'en' },
+  });
+  eq('28.3 Florist PIN blocked → 403', r.status, 403);
+
+  // ── 28.4 All three supported langs round-trip without error ──
+  for (const lang of ['ru', 'en', 'pl']) {
+    r = await api('PUT', '/settings/florist-language', {
+      pin: PIN_OWNER,
+      body: { lang },
+    });
+    eq(`28.4 lang='${lang}' round-trip → 200`, r.status, 200);
+    eq(`28.4 lang='${lang}' echoed`, r.body?.lang, lang);
+  }
+
+  // ── 28.5 Order creation regression — POST /orders still returns 201 ──
+  // notifyFloristNewOrder fires as a fire-and-forget side-effect; with no
+  // florist chat_id registered in system_meta it silently no-ops (logs once).
+  r = await api('POST', '/orders', {
+    pin: PIN_OWNER,
+    body: buildOrderBody({
+      customer: FIXTURE.customers.anna,
+      lines: [line(FIXTURE.stock.pinkTulip, 2)],
+    }),
+  });
+  eq('28.5 POST /orders still returns 201 (regression)', r.status, 201);
+  assert('28.5 Order id returned', !!r.body?.order?.id);
+}
+
 async function main() {
   const startedAt = Date.now();
   console.log(`\n\x1b[36m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
@@ -1624,6 +1694,7 @@ async function main() {
     section25BouquetImageUpload,
     section26CustomerCrudPg,
     section27DriverAssignmentNotification,
+    section28FloristNewOrderNotification,
   ];
 
   for (const section of sections) {

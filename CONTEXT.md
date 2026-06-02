@@ -198,8 +198,12 @@ _Avoid_: Default driver, on-call driver
 A Telegram message sent to a Driver the moment a Delivery or Stock Order becomes their responsibility. Targeted to that one Driver only (never broadcast), and only after the Driver has registered their Telegram chat with the bot. Sent in the Driver's **Notification Language**. A Driver who self-claims a Delivery (by advancing its status) is not notified of their own action.
 _Avoid_: Alert, push (Push is a generic web/SSE concept; this is Telegram-specific)
 
+**Florist New-Order Notification**:
+A Telegram message sent to the shared florist phone every time a new Order is created — regardless of source (In-store, Wix, Flowwow, AI-intake, premade conversion). The florists share one PIN and one phone; they register that phone once by sending `/start <PIN_FLORIST>` to the alerts bot. The message is written in the **Notification Language** configured for the florist group (one language for all florists, set by the Owner). If the florist phone has not been registered, the ping is silently skipped and order creation is unaffected.
+_Avoid_: Florist alert, new-order alert (these are informal; "Florist New-Order Notification" is the canonical term)
+
 **Notification Language**:
-The language a Driver's Assignment Notifications are written in — `ru`, `en`, or `pl`, defaulting to `ru`. Set by the Owner per Driver (a Driver does not choose their own). Can be set before the Driver has registered.
+The language a Driver's Assignment Notifications are written in — `ru`, `en`, or `pl`, defaulting to `ru`. Set by the Owner per Driver (a Driver does not choose their own). Can be set before the Driver has registered. Also applies to the shared florist group, where a single language is set for all florists (not per-florist).
 _Avoid_: Locale (no regional formatting is implied — only the message strings change)
 
 ## Apps

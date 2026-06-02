@@ -22,3 +22,10 @@ export function resolveDriverByPin(pin) {
     ? (getBackupDriverName() || driver.name)
     : driver.name;
 }
+
+// Florists share a single PIN_FLORIST (no per-florist identity). Resolves to the
+// reserved key 'florist' used by the registration loop + notify seam.
+export function resolveFloristByPin(pin) {
+  if (!pin) return null;
+  return safeEqual(process.env.PIN_FLORIST, pin) ? 'florist' : null;
+}

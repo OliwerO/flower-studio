@@ -5,8 +5,9 @@
 import { eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { systemMeta } from '../db/schema.js';
-import { resolveDriverByPin } from '../utils/driverPins.js';
+import { resolveDriverByPin, resolveFloristByPin } from '../utils/driverPins.js';
 import { setChatId, getDriver } from '../repos/driverTelegramRepo.js';
+import { setFloristChatId, getFloristLang } from '../repos/floristTelegramRepo.js';
 import { sendToChat, escapeHtml } from './telegram.js';
 
 const BASE = 'https://api.telegram.org/bot';
@@ -18,6 +19,11 @@ const REGISTERED = {
   ru: (name) => `Привет, ${name}! 👋 Вы подключены к уведомлениям о доставках и закупках.`,
   en: (name) => `Hi ${name}! 👋 You're now connected to delivery and purchase notifications.`,
   pl: (name) => `Cześć ${name}! 👋 Połączono Cię z powiadomieniami o dostawach i zakupach.`,
+};
+const FLORIST_REGISTERED = {
+  ru: '🌸 Готово! Вы будете получать уведомления о новых заказах.',
+  en: "🌸 Done! You'll receive notifications about new orders.",
+  pl: '🌸 Gotowe! Będziesz otrzymywać powiadomienia o nowych zamówieniach.',
 };
 const BAD_PIN = 'Неверный PIN. Попробуйте: /start <PIN>';
 const HINT = 'Чтобы получать уведомления, отправьте: /start <ваш PIN>';
@@ -43,9 +49,21 @@ export async function handleDriverUpdate(update) {
       const row = await getDriver(driverName).catch(() => null);
       const lang = (REGISTERED[row?.lang]) ? row.lang : 'ru';
       await sendToChat(chatId, REGISTERED[lang](escapeHtml(driverName)));
-    } else {
-      await sendToChat(chatId, BAD_PIN);
+      return;
     }
+    if (resolveFloristByPin(pin)) {
+      try {
+        await setFloristChatId(chatId);
+      } catch (err) {
+        console.error('[DRIVER_BOT] florist register error:', err.message);
+        await sendToChat(chatId, REG_ERROR);
+        return;
+      }
+      const lang = await getFloristLang().catch(() => 'ru');
+      await sendToChat(chatId, FLORIST_REGISTERED[lang] || FLORIST_REGISTERED.ru);
+      return;
+    }
+    await sendToChat(chatId, BAD_PIN);
     return;
   }
   await sendToChat(chatId, HINT);

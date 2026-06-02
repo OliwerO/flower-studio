@@ -8,16 +8,28 @@ vi.mock('../services/telegram.js', () => ({
   sendToChat: vi.fn(),
   escapeHtml: (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'),
 }));
+vi.mock('../utils/driverPins.js', () => ({
+  resolveDriverByPin: vi.fn(),
+  resolveFloristByPin: vi.fn(),
+}));
+vi.mock('../repos/floristTelegramRepo.js', () => ({
+  setFloristChatId: vi.fn(),
+  getFloristLang: vi.fn(),
+}));
 
 import { handleDriverUpdate } from '../services/driverBot.js';
 import * as repo from '../repos/driverTelegramRepo.js';
 import { sendToChat } from '../services/telegram.js';
+import { resolveDriverByPin, resolveFloristByPin } from '../utils/driverPins.js';
+import { setFloristChatId, getFloristLang } from '../repos/floristTelegramRepo.js';
 
 describe('handleDriverUpdate (/start registration)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    process.env.PIN_DRIVER_NIKITA = '5678';
+    resolveDriverByPin.mockReturnValue('Nikita');
+    resolveFloristByPin.mockReturnValue(null);
     repo.getDriver.mockResolvedValue({ chatId: '42', lang: 'ru' });
+    getFloristLang.mockResolvedValue('ru');
   });
 
   it('registers a valid PIN and confirms in the stored language', async () => {
@@ -34,6 +46,8 @@ describe('handleDriverUpdate (/start registration)', () => {
   });
 
   it('rejects a wrong PIN without storing anything', async () => {
+    resolveDriverByPin.mockReturnValue(null);
+    resolveFloristByPin.mockReturnValue(null);
     await handleDriverUpdate({ message: { chat: { id: 42 }, text: '/start 0000' } });
     expect(repo.setChatId).not.toHaveBeenCalled();
     expect(sendToChat).toHaveBeenCalledWith('42', expect.stringContaining('PIN'));
@@ -63,5 +77,23 @@ describe('handleDriverUpdate (/start registration)', () => {
     await handleDriverUpdate({ message: { chat: { id: 42 }, text: '/start  5678' } });
     expect(repo.setChatId).toHaveBeenCalledWith('Nikita', '42');
     expect(sendToChat).toHaveBeenCalledWith('42', expect.stringContaining('Nikita'));
+  });
+
+  // florist branch
+  it('registers the florist phone on /start <PIN_FLORIST> and confirms', async () => {
+    resolveDriverByPin.mockReturnValue(null);
+    resolveFloristByPin.mockReturnValue('florist');
+    getFloristLang.mockResolvedValue('ru');
+    await handleDriverUpdate({ message: { chat: { id: 555 }, text: '/start 2580' } });
+    expect(setFloristChatId).toHaveBeenCalledWith('555');
+    expect(sendToChat).toHaveBeenCalledWith('555', expect.stringContaining('🌸'));
+  });
+
+  it('does not register florist when neither driver nor florist PIN matches', async () => {
+    resolveDriverByPin.mockReturnValue(null);
+    resolveFloristByPin.mockReturnValue(null);
+    await handleDriverUpdate({ message: { chat: { id: 555 }, text: '/start nope' } });
+    expect(setFloristChatId).not.toHaveBeenCalled();
+    expect(sendToChat).toHaveBeenCalledWith('555', expect.stringContaining('PIN'));
   });
 });

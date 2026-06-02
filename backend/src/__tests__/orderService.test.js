@@ -1,6 +1,42 @@
-import { describe, it, expect } from 'vitest';
-import { ALLOWED_TRANSITIONS } from '../services/orderService.js';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// ── Mocks for createOrder side-effect dependencies ──
+vi.mock('../repos/orderRepo.js', () => ({
+  createOrder: vi.fn(),
+  transitionStatus: vi.fn(),
+  getById: vi.fn(),
+  getDeliveryById: vi.fn(),
+  getLinesByIds: vi.fn(),
+  getLinesForOrders: vi.fn(),
+  cancelWithStockReturn: vi.fn(),
+  deleteOrder: vi.fn(),
+  editBouquetLines: vi.fn(),
+  findByWixOrderId: vi.fn(),
+  list: vi.fn(),
+}));
+vi.mock('../repos/customerRepo.js', () => ({
+  update: vi.fn().mockResolvedValue(undefined),
+  findMany: vi.fn().mockResolvedValue([]),
+}));
+vi.mock('../repos/stockRepo.js', () => ({
+  list: vi.fn(),
+  adjustQuantity: vi.fn(),
+}));
+vi.mock('../services/notifications.js', () => ({
+  broadcast: vi.fn(),
+}));
+vi.mock('../services/telegram.js', () => ({
+  notifyNewOrder: vi.fn().mockResolvedValue(undefined),
+  notifyDeliveryComplete: vi.fn().mockResolvedValue(undefined),
+}));
+vi.mock('../services/floristNotifyService.js', () => ({
+  notifyFloristNewOrder: vi.fn().mockResolvedValue(undefined),
+}));
+
+import { ALLOWED_TRANSITIONS, createOrder } from '../services/orderService.js';
 import { ORDER_STATUS } from '../constants/statuses.js';
+import { notifyFloristNewOrder } from '../services/floristNotifyService.js';
+import * as orderRepo from '../repos/orderRepo.js';
 
 // ── ALLOWED_TRANSITIONS state machine ──
 
@@ -82,5 +118,37 @@ describe('ORDER_STATUS', () => {
     expect(ORDER_STATUS.PICKED_UP).toBe('Picked Up');
     expect(ORDER_STATUS.CANCELLED).toBe('Cancelled');
     expect(ORDER_STATUS.OUT_FOR_DELIVERY).toBe('Out for Delivery');
+  });
+});
+
+// ── createOrder fires florist notification seam ──
+
+describe('createOrder — florist notification seam', () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  it('calls notifyFloristNewOrder once with the created App Order ID', async () => {
+    const fakeOrder = {
+      id: 'uuid-1',
+      'App Order ID': 'TEST-001',
+      'Required By': '2026-06-05',
+      'Delivery Time': '10:00-12:00',
+      'Customer Request': 'Пионы',
+    };
+    orderRepo.createOrder.mockResolvedValue({ order: fakeOrder, orderLines: [], delivery: null });
+
+    const params = {
+      customer: 'cust-1',
+      source: 'In-store',
+      customerRequest: 'Пионы',
+      deliveryType: 'Pickup',
+      lines: [],
+    };
+    const config = { generateOrderId: () => 'TEST-001', getConfig: () => ({}), getDriverOfDay: () => null };
+
+    await createOrder(params, config);
+
+    expect(notifyFloristNewOrder).toHaveBeenCalledTimes(1);
+    const callArg = notifyFloristNewOrder.mock.calls[0][0];
+    expect(callArg.order['App Order ID']).toBe('TEST-001');
   });
 });

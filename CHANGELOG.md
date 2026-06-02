@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-02 — Florist New-Order Telegram Notifications (florist half of #336)
+
+Every new Order (In-store, Wix, Flowwow, AI-intake, premade conversion) now sends a Telegram ping to the shared florist phone. Florists register once by sending `/start <PIN_FLORIST>` to the existing alerts bot. Reuses the driver notification infra (ADR-0009) — same bot, same `/start` loop, no new bot token.
+
+### Backend
+- `backend/src/repos/floristTelegramRepo.js` (NEW) — singleton `get`/`set` for `florist_chat_id` and `florist_notify_lang` in `system_meta` kv. No new table — florists share one PIN and one phone.
+- `backend/src/services/floristNotifyService.js` (NEW) — `notifyFloristNewOrder({ order, deliveryType, source })`: resolves chat_id + group lang, composes a per-language message (ru/en/pl), HTML-escapes user fields, sends via `sendToChat`. Skips silently if unregistered; never throws into callers.
+- `backend/src/services/driverBot.js` — extended `/start` loop: on a florist PIN (`PIN_FLORIST`), stores chat_id via `floristTelegramRepo` and confirms in the current florist group language.
+- `backend/src/utils/driverPins.js` — added `resolveFloristByPin(pin)`: maps `PIN_FLORIST` env var → `'florist'`.
+- `backend/src/services/orderService.js` + `backend/src/services/wix.js` — fire `notifyFloristNewOrder` at both creation seams (fire-and-forget, alongside `notifyNewOrder`).
+- `backend/src/routes/settings.js` — new `PUT /settings/florist-language` (owner-only): sets the group notification language (ru/en/pl) in `system_meta`.
+
+### No schema migration
+All florist storage uses existing `system_meta` kv — keys `florist_chat_id` and `florist_notify_lang`. No new table, no migration file.
+
+### Deploy note
+No new env vars required. Florists register once by sending `/start <PIN_FLORIST>` to the alerts bot (same bot as drivers). The owner can set the group language via `PUT /settings/florist-language`.
+
+---
+
 ## 2026-06-01 — Driver Assignment Telegram Notifications (PRD #368, driver half of #336)
 
 Drivers now receive targeted Telegram messages (ru/en/pl) when a delivery or PO shopping run is assigned to them, and a daily digest when they are driver-of-day. Drivers self-register by sending `/start <PIN>` to the alerts bot.

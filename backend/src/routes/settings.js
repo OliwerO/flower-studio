@@ -13,6 +13,7 @@ import {
 } from '../services/configService.js';
 import { notifyDeliveryDigest, SUPPORTED_LANGS } from '../services/driverNotifyService.js';
 import { setLang } from '../repos/driverTelegramRepo.js';
+import { setFloristLang } from '../repos/floristTelegramRepo.js';
 
 const router = Router();
 
@@ -107,6 +108,19 @@ router.put('/driver-language', authorize('admin'), async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+// ── PUT /api/settings/florist-language ──
+// Owner sets the Telegram notification language for the shared florist phone.
+router.put('/florist-language', authorize('admin'), async (req, res, next) => {
+  try {
+    const { lang } = req.body;
+    if (!SUPPORTED_LANGS.includes(lang)) {
+      return res.status(400).json({ error: `lang must be one of: ${SUPPORTED_LANGS.join(', ')}` });
+    }
+    await setFloristLang(lang);
+    res.json({ lang });
+  } catch (err) { next(err); }
 });
 
 export default router;
