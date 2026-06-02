@@ -12,6 +12,7 @@ import * as customerRepo from '../repos/customerRepo.js';
 import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder } from './telegram.js';
+import { notifyFloristNewOrder } from './floristNotifyService.js';
 import { logEvent as logWebhookEvent } from '../repos/webhookLogRepo.js';
 import { generateOrderId } from './configService.js';
 import { PAYMENT_STATUS } from '../constants/statuses.js';
@@ -434,6 +435,9 @@ export async function processWixOrder(payload) {
       deliveryType: 'Delivery',
       price: totalPrice || null,
     }).catch(err => console.error('[TELEGRAM] Wix notification error:', err.message));
+
+    notifyFloristNewOrder({ order, deliveryType: 'Delivery', source: 'Wix' })
+      .catch(err => console.error('[FLORIST_NOTIFY] Wix error:', err.message));
 
     return order;
   } catch (err) {

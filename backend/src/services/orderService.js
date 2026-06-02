@@ -6,6 +6,7 @@ import * as orderRepo from '../repos/orderRepo.js';
 import * as customerRepo from '../repos/customerRepo.js';
 import { broadcast } from './notifications.js';
 import { notifyNewOrder, notifyDeliveryComplete } from './telegram.js';
+import { notifyFloristNewOrder } from './floristNotifyService.js';
 import { ORDER_STATUS } from '../constants/statuses.js';
 
 // ── Side-effect helpers ──
@@ -43,6 +44,9 @@ function runPostCreateSideEffects({ order }, params) {
     deliveryType,
     price: priceOverride || null,
   }).catch(err => console.error('[TELEGRAM] Notification error:', err.message));
+
+  notifyFloristNewOrder({ order, deliveryType, source: source || 'In-store' })
+    .catch(err => console.error('[FLORIST_NOTIFY] error:', err.message));
 }
 
 function runPostTransitionSideEffects(order, newStatus, orderId) {
