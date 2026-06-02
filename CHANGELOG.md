@@ -5,6 +5,16 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-02 — PO assignment notification: diff-detection
+
+`PATCH /api/stock-orders/:id` now only sends the driver a Telegram PO-assignment ping when the Assigned Driver genuinely changes. Previously, re-saving a PO with the same driver re-pinged on every save. Mirrors the diff-detection already in the delivery PATCH path. SSE broadcast is unchanged (still fires on every save). Follow-up to PR #369.
+
+### Backend
+- `backend/src/routes/stockOrders.js` — capture prior `Assigned Driver` before the update; gate `notifyPoAssigned` on `newDriver && newDriver !== priorDriver`.
+- `backend/src/__tests__/stockOrders.assign-notify.integration.test.js` (NEW) — proves notify fires on empty→driver and driver→driver changes, and does NOT fire on same-driver re-save.
+
+---
+
 ## 2026-06-02 — Florist New-Order Telegram Notifications (florist half of #336)
 
 Every new Order (In-store, Wix, Flowwow, AI-intake, premade conversion) now sends a Telegram ping to the shared florist phone. Florists register once by sending `/start <PIN_FLORIST>` to the existing alerts bot. Reuses the driver notification infra (ADR-0009) — same bot, same `/start` loop, no new bot token.

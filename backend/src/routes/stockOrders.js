@@ -234,16 +234,23 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
       }
     }
 
+    // Capture the prior driver so we only notify on a genuine assignment change
+    // (mirrors deliveries.js — re-saving a PO with the same driver must not re-ping).
+    const priorDriver = ('Assigned Driver' in fields)
+      ? ((await stockOrderRepo.getById(req.params.id).catch(() => null))?.['Assigned Driver'] || '')
+      : '';
+
     const updated = await stockOrderRepo.update(req.params.id, fields);
 
     if ('Assigned Driver' in fields) {
+      const newDriver = fields['Assigned Driver'] || '';
       broadcast({
         type: 'stock_pickup_assigned',
         stockOrderId: req.params.id,
-        driverName: fields['Assigned Driver'] || '',
+        driverName: newDriver,
       });
-      if (fields['Assigned Driver']) {
-        notifyPoAssigned({ stockOrderId: req.params.id, driverName: fields['Assigned Driver'] })
+      if (newDriver && newDriver !== priorDriver) {
+        notifyPoAssigned({ stockOrderId: req.params.id, driverName: newDriver })
           .catch(err => console.error('[DRIVER_NOTIFY] po patch hook failed:', err.message));
       }
     }
