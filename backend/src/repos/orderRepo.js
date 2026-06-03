@@ -13,7 +13,7 @@ import * as stockRepo from './stockRepo.js';
 import { getOrCreateDemandEntry, computeDemandDate, updateDemandEntryDate, resolveBatchByFEFO } from './stockRepo.js';
 import * as stockLossRepo from './stockLossRepo.js';
 import { db } from '../db/index.js';
-import { orders, orderLines, deliveries, stock } from '../db/schema.js';
+import { orders, orderLines, deliveries, stock, auditLog } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import { getStockYModelEnabled } from '../services/configService.js';
@@ -742,6 +742,10 @@ export async function createOrder(params, config, opts = {}) {
 
 // ── transitionStatus ──
 
+// Forward state machine — the linear happy path a florist drives an order
+// through. Backward moves are NOT encoded here; they are granted two other
+// ways (see transitionStatus): the owner gets any→any, and a florist gets to
+// *revert* to any status the order genuinely passed through (audit history).
 const ALLOWED_TRANSITIONS = {
   [ORDER_STATUS.NEW]:              [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED],
   [ORDER_STATUS.IN_PROGRESS]:      [ORDER_STATUS.READY, ORDER_STATUS.CANCELLED],
@@ -751,6 +755,68 @@ const ALLOWED_TRANSITIONS = {
   [ORDER_STATUS.PICKED_UP]:        [],
   [ORDER_STATUS.CANCELLED]:        [ORDER_STATUS.NEW],
 };
+
+// Every order status the owner may switch between (god-mode any→any). Legacy
+// In Progress / In Preparation included so an owner can park an order there.
+const ALL_ORDER_STATUSES = Object.values(ORDER_STATUS);
+
+// Map an order status to the delivery status that must mirror it. Drives both
+// the forward cascade (Ready → … → Delivered) and the reverse cascade
+// (reverting Delivered → Ready pulls the delivery back to Pending). Picked Up
+// returns null — pickup orders carry no delivery record to cascade onto.
+function desiredDeliveryStatus(orderStatus) {
+  switch (orderStatus) {
+    case ORDER_STATUS.OUT_FOR_DELIVERY: return DELIVERY_STATUS.OUT_FOR_DELIVERY;
+    case ORDER_STATUS.DELIVERED:        return DELIVERY_STATUS.DELIVERED;
+    case ORDER_STATUS.CANCELLED:        return DELIVERY_STATUS.CANCELLED;
+    case ORDER_STATUS.NEW:
+    case ORDER_STATUS.IN_PROGRESS:
+    case ORDER_STATUS.IN_PREPARATION:
+    case ORDER_STATUS.READY:            return DELIVERY_STATUS.PENDING;
+    default:                            return null; // Picked Up
+  }
+}
+
+// Every status this order has ever been in, recovered from the audit trail
+// (create + each transition writes before/after Status). This is the source of
+// truth for a florist's revert options — it lets them step back to a state the
+// order genuinely passed through, without granting owner-style any→any.
+async function previouslyHeldStatuses(orderRow, runner) {
+  const rows = await runner.select({ diff: auditLog.diff })
+    .from(auditLog)
+    .where(and(eq(auditLog.entityType, 'order'), eq(auditLog.entityId, orderRow.id)));
+  const held = new Set();
+  for (const r of rows) {
+    const b = r.diff?.before?.Status;
+    const a = r.diff?.after?.Status;
+    if (typeof b === 'string') held.add(b);
+    if (typeof a === 'string') held.add(a);
+  }
+  return held;
+}
+
+/**
+ * Status-history summary for an order: its current status plus the distinct
+ * set of statuses it has previously held (from the audit trail). The florist
+ * apps use `previousStatuses` to render "revert to …" buttons on terminal
+ * orders. Read-only — never mutates.
+ */
+export async function getOrderStatusHistory(orderId, runner = db) {
+  if (!db) throw new Error('orderRepo.getOrderStatusHistory: postgres backend not configured');
+  const order = await findOrderById(orderId, runner);
+  if (!order) {
+    const err = new Error(`Order not found: ${orderId}`);
+    err.statusCode = 404;
+    throw err;
+  }
+  const held = await previouslyHeldStatuses(order, runner);
+  const current = order.status || ORDER_STATUS.NEW;
+  held.add(current);
+  return {
+    current,
+    previousStatuses: [...held].filter(s => s !== current),
+  };
+}
 
 export async function transitionStatus(orderId, newStatus, otherFields = {}, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
@@ -765,13 +831,26 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
       throw err;
     }
     const currentStatus = before.status || ORDER_STATUS.NEW;
-    const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
-    if (newStatus !== currentStatus && !allowed.includes(newStatus)) {
-      const err = new Error(
-        `Cannot move from "${currentStatus}" to "${newStatus}". Allowed: ${allowed.join(', ') || 'none (terminal)'}`,
-      );
-      err.statusCode = 400;
-      throw err;
+
+    if (newStatus !== currentStatus) {
+      // Owner: any → any. Everyone else: forward map ∪ previously-held statuses
+      // (so a florist can undo a mistaken advance, but only to a real prior state).
+      let allowed;
+      if (actor.actorRole === 'owner') {
+        allowed = ALL_ORDER_STATUSES;
+      } else {
+        const forward = ALLOWED_TRANSITIONS[currentStatus] || [];
+        const reverts = await previouslyHeldStatuses(before, tx);
+        allowed = [...new Set([...forward, ...reverts])];
+      }
+      if (!allowed.includes(newStatus)) {
+        const offer = allowed.filter(s => s !== currentStatus);
+        const err = new Error(
+          `Cannot move from "${currentStatus}" to "${newStatus}". Allowed: ${offer.join(', ') || 'none (terminal)'}`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
     }
 
     const orderPatch = orderResponseToPg({ Status: newStatus, ...otherFields });
@@ -786,36 +865,32 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
       ...actor,
     });
 
-    // Cascade order status → delivery status. Mirrors routes/orders.js rule.
-    if (
-      newStatus === ORDER_STATUS.OUT_FOR_DELIVERY ||
-      newStatus === ORDER_STATUS.DELIVERED ||
-      newStatus === ORDER_STATUS.CANCELLED
-    ) {
+    // Cascade order status → delivery status. Bidirectional: the forward path
+    // (Ready → … → Delivered) and the reverse path (revert Delivered → Ready
+    // pulls the delivery back to Pending and clears Delivered At) both flow
+    // through desiredDeliveryStatus(). Stock is never touched here.
+    const desired = desiredDeliveryStatus(newStatus);
+    if (desired) {
       const [delivery] = await tx.select().from(deliveries)
         .where(and(eq(deliveries.orderId, after.id), isNull(deliveries.deletedAt)))
         .limit(1);
-      if (delivery) {
-        const cascadeStatus = newStatus === ORDER_STATUS.OUT_FOR_DELIVERY
-          ? DELIVERY_STATUS.OUT_FOR_DELIVERY
-          : newStatus === ORDER_STATUS.DELIVERED
-            ? DELIVERY_STATUS.DELIVERED
-            : DELIVERY_STATUS.CANCELLED;
-        if (delivery.status !== cascadeStatus) {
-          const cascadePatch = { status: cascadeStatus, updatedAt: new Date() };
-          if (cascadeStatus === DELIVERY_STATUS.DELIVERED) {
-            cascadePatch.deliveredAt = new Date();
-          }
-          const [updatedDelivery] = await tx.update(deliveries)
-            .set(cascadePatch)
-            .where(eq(deliveries.id, delivery.id))
-            .returning();
-          await tryAudit(tx, {
-            entityType: 'delivery', entityId: updatedDelivery.id, action: 'update',
-            before: { Status: delivery.status }, after: { Status: updatedDelivery.status },
-            ...actor,
-          });
+      if (delivery && delivery.status !== desired) {
+        const cascadePatch = { status: desired, updatedAt: new Date() };
+        if (desired === DELIVERY_STATUS.DELIVERED) {
+          cascadePatch.deliveredAt = new Date();
+        } else if (delivery.status === DELIVERY_STATUS.DELIVERED) {
+          // Reverting away from Delivered — drop the stale delivered timestamp.
+          cascadePatch.deliveredAt = null;
         }
+        const [updatedDelivery] = await tx.update(deliveries)
+          .set(cascadePatch)
+          .where(eq(deliveries.id, delivery.id))
+          .returning();
+        await tryAudit(tx, {
+          entityType: 'delivery', entityId: updatedDelivery.id, action: 'update',
+          before: { Status: delivery.status }, after: { Status: updatedDelivery.status },
+          ...actor,
+        });
       }
     }
 

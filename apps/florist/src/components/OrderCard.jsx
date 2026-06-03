@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -35,7 +35,10 @@ const STATUS_LABELS = {
   'Cancelled':        () => t.statusCancelled,
 };
 
-// Florist doesn't trigger "Out for Delivery" — that's the driver's job.
+// Forward shortcut map for the collapsed-card "Mark Ready / Delivered" button
+// only. The expanded status controls use the shared getStatusOptions util
+// (role-aware + history-driven revert). Florist doesn't trigger "Out for
+// Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
   'New':              ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],
@@ -105,6 +108,9 @@ function OrderCard({
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
+  // Statuses this order has previously held — powers the florist "revert"
+  // buttons in the expanded status controls (GET /orders/:id/status-history).
+  const [prevStatuses, setPrevStatuses] = useState([]);
 
   const navigate   = useNavigate();
   // Customer linked record from Airtable — array of IDs, take the first.
@@ -125,6 +131,12 @@ function OrderCard({
   // Wix orders without a composed bouquet — florist needs to select actual flowers
   const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
 
+  function loadStatusHistory() {
+    client.get(`/orders/${order.id}/status-history`)
+      .then(r => setPrevStatuses(r.data.previousStatuses || []))
+      .catch(() => {});
+  }
+
   function toggle() {
     if (expanded) {
       setExpanded(false);
@@ -138,6 +150,7 @@ function OrderCard({
         .then(r => setDetail(r.data))
         .catch(() => showToast(t.loadError, 'error'))
         .finally(() => setLoading(false));
+      loadStatusHistory();
     }
   }
 
@@ -167,6 +180,9 @@ function OrderCard({
       setDetail(prev => prev ? { ...prev, ...res.data } : res.data);
       onOrderUpdated?.(order.id, res.data);
       showToast(t.updated, 'success');
+      // A status change rewrites the "previously held" set — refresh so the
+      // revert buttons stay accurate after stepping forward or back.
+      if (fields.Status) loadStatusHistory();
     } catch (err) {
       const msg = err.response?.data?.error || t.updateError;
       showToast(msg, 'error');
@@ -187,6 +203,7 @@ function OrderCard({
     onSuccess: ({ withStockReturn }) => {
       setDetail(prev => prev ? { ...prev, Status: 'Cancelled' } : prev);
       onOrderUpdated?.(order.id, { Status: 'Cancelled' });
+      loadStatusHistory();
       if (!withStockReturn) {
         // cancelOnly path — hook skips toast; show the generic "updated" toast here
         // so the user sees confirmation (mirrors old patch() success toast).
@@ -819,23 +836,46 @@ function OrderCard({
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelStatus}</p>
                 {(() => {
-                  const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
-                  const visible = [currentStatus, ...allowed];
+                  const { forward, revert } = getStatusOptions({
+                    role: isOwner ? 'owner' : 'florist',
+                    currentStatus,
+                    previousStatuses: prevStatuses,
+                  });
+                  // Intercept the Cancelled pill — show inline confirm so the
+                  // user picks return-stock vs status-only cancel.
+                  const onPick = val => {
+                    if (val === 'Cancelled' && currentStatus !== 'Cancelled') {
+                      term.requestCancel();
+                    } else {
+                      patch({ 'Status': val });
+                    }
+                  };
                   return (
-                    <Pills
-                      value={currentStatus}
-                      onChange={val => {
-                        // Intercept the Cancelled pill — show inline confirm
-                        // so user picks return-stock vs status-only cancel.
-                        if (val === 'Cancelled' && currentStatus !== 'Cancelled') {
-                          term.requestCancel();
-                        } else {
-                          patch({ 'Status': val });
-                        }
-                      }}
-                      disabled={saving}
-                      options={visible.map(s => ({ value: s, label: statusLabel(s) }))}
-                    />
+                    <>
+                      <Pills
+                        value={currentStatus}
+                        onChange={onPick}
+                        disabled={saving}
+                        options={[currentStatus, ...forward].map(s => ({ value: s, label: statusLabel(s) }))}
+                      />
+                      {revert.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <p className="text-xs text-ios-tertiary mb-1.5">{t.revertTo}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {revert.map(s => (
+                              <button
+                                key={s}
+                                onClick={e => { e.stopPropagation(); onPick(s); }}
+                                disabled={saving}
+                                className="px-3 py-1.5 rounded-full text-sm font-medium border border-amber-300 bg-amber-50 text-amber-700 active-scale disabled:opacity-40"
+                              >
+                                ↩ {statusLabel(s)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
                 {/* Inline cancel confirm — fires from the Cancelled pill (non-terminal)

@@ -5,6 +5,32 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-03 — Revert order status (owner any→any, florist history-undo)
+
+A florist who marked the wrong bouquet **Delivered** (or **Picked Up**) had no way back — the order state machine had zero exits from terminal states, so reverting was hard-blocked at the backend (the owner's dashboard `Status` pills returned `400 Cannot move from "Delivered" to "Ready". Allowed: none (terminal)`).
+
+Status transitions are now **role-aware**:
+- **Owner → any → any.** The owner can switch an order to any status, including reverting terminal states. The dashboard already rendered all status pills; they now succeed instead of erroring.
+- **Florist/driver → forward map ∪ previously-held statuses.** A florist can *revert* to any status the order genuinely passed through (read from the audit trail), but cannot invent a status the order never held. New "↩ revert" buttons appear in the florist app's expanded order status controls.
+
+Reverting also **reverse-cascades the linked delivery** (e.g. Delivered → Ready pulls the delivery back to Pending and clears its `Delivered At`). Stock is never touched by a status revert — only the explicit cancel-with-return flow moves stems.
+
+### Backend
+- `backend/src/repos/orderRepo.js` — `transitionStatus` is role-aware (`opts.actor.actorRole === 'owner'` → any→any; else forward map ∪ `previouslyHeldStatuses()` from `audit_log`). Generalised the delivery cascade via `desiredDeliveryStatus()` so it runs forward **and** in reverse (clears `deliveredAt` on the way back). New exported `getOrderStatusHistory(orderId)`. The forward `ALLOWED_TRANSITIONS` map is unchanged.
+- `backend/src/services/orderService.js` — `transitionStatus` forwards `opts` (actor) to the repo.
+- `backend/src/routes/orders.js` — PATCH passes `{ actor: actorFromReq(req) }`; new `GET /orders/:id/status-history`.
+- Tests: `orderRepo.integration.test.js` (+6 — owner any→any + reverse cascade, florist revert to held / reject never-held, `getOrderStatusHistory`); E2E `scripts/e2e-test.js` section 5 rewritten for the new semantics.
+
+### Shared + frontend
+- `packages/shared/utils/orderStatusOptions.js` (new, +test) — `getStatusOptions({role, currentStatus, previousStatuses})`, single source of truth mirroring the backend. Replaces the forward map that was copy-pasted into the florist app.
+- `apps/florist/OrderCard.jsx` + `OrderDetailPage.jsx` — fetch `/status-history`, render forward pills + a role-aware "↩ revert" row; new `revertTo` translation key (ru/en).
+- Dashboard `OrderDetailPanel.jsx` unchanged — it is owner-only and already renders all status pills, so the backend change alone restores the reported flow.
+
+### No schema migration
+New read-only endpoint + behaviour change. No env vars, no tables. Reuses the existing `audit_log`.
+
+---
+
 ## 2026-06-03 — PIN-resolution dedup + driver-bot `/start` brute-force guard (#369 follow-ups)
 
 Two security/maintenance follow-ups to the driver/florist Telegram work.

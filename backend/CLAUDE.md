@@ -20,7 +20,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | File | Endpoints | Purpose |
 |------|-----------|---------|
 | auth.js | POST /auth/verify | PIN validation with rate limiting (5 attempts/15min). Resolves via the shared `resolveRoleByPin` seam in `utils/driverPins.js`. |
-| orders.js | GET/POST/PATCH/DELETE /orders | Order CRUD + status transitions + delivery cascade. All reads/writes via orderRepo. |
+| orders.js | GET/POST/PATCH/DELETE /orders, GET /orders/:id/status-history | Order CRUD + status transitions + delivery cascade. PATCH status is role-aware: owner = any→any, florist/driver = forward map ∪ previously-held statuses (revert). `status-history` returns those previously-held statuses for the florist apps' revert buttons. All reads/writes via orderRepo. |
 | customers.js | GET/POST/PATCH /customers, GET /customers/insights | CRM + RFM segmentation |
 | stock.js | GET/POST/PATCH /stock, GET /stock/velocity, GET /stock/committed, GET /stock/pending-po, POST /stock, GET /stock/:id/usage, GET /stock/varieties/:key/usage, PATCH /stock/:id, POST /stock/:id/adjust, POST /stock/:id/write-off, GET /stock/reconciliation, GET /stock/needs-backfill, GET /stock/distinct/:column, PATCH /stock/:id/variety-attrs, PATCH /stock/variety-attrs/bulk (Owner-only) | Inventory + velocity + variety backfill + per-Variety trace (T5) |
 | deliveries.js | GET/PATCH /deliveries | Driver assignments + status cascade to orders |
