@@ -253,6 +253,86 @@ describe('transitionStatus', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
+// transitionStatus — status revert (owner any→any, florist history-undo)
+// Regression for "florist marked the wrong bouquet Delivered, can't undo".
+// ─────────────────────────────────────────────────────────────────────
+
+describe('transitionStatus — revert + role', () => {
+  const owner   = { actor: { actorRole: 'owner',   actorPinLabel: null } };
+  const florist = { actor: { actorRole: 'florist', actorPinLabel: null } };
+
+  async function seedDeliveryOrder() {
+    return await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Revert me', deliveryType: 'Delivery',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 3 }],
+      delivery: { address: 'X', date: '2026-05-01', driver: 'Timur', fee: 25 },
+      paymentStatus: 'Paid', paymentMethod: 'Cash', createdBy: 'florist',
+    }, config);
+  }
+
+  it('owner may move Delivered → Ready (any→any) and reverse-cascades the delivery to Pending', async () => {
+    const { order, delivery } = await seedDeliveryOrder();
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, owner);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.DELIVERED, {}, owner);
+
+    const reverted = await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, owner);
+    expect(reverted.Status).toBe(ORDER_STATUS.READY);
+
+    const [d] = await harness.db.select().from(deliveries).where(eq(deliveries.id, delivery._pgId));
+    expect(d.status).toBe(DELIVERY_STATUS.PENDING);
+    expect(d.deliveredAt).toBeNull();
+  });
+
+  it('owner may do an arbitrary forward jump a florist cannot (New → Delivered)', async () => {
+    const { order } = await seedDeliveryOrder();
+    const jumped = await orderRepo.transitionStatus(order.id, ORDER_STATUS.DELIVERED, {}, owner);
+    expect(jumped.Status).toBe(ORDER_STATUS.DELIVERED);
+  });
+
+  it('florist may revert Delivered → a status the order previously held (Ready)', async () => {
+    const { order } = await seedDeliveryOrder();
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, florist);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.DELIVERED, {}, florist);
+
+    const reverted = await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, florist);
+    expect(reverted.Status).toBe(ORDER_STATUS.READY);
+  });
+
+  it('florist may revert Delivered → New (also previously held)', async () => {
+    const { order } = await seedDeliveryOrder();
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, florist);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.DELIVERED, {}, florist);
+
+    const reverted = await orderRepo.transitionStatus(order.id, ORDER_STATUS.NEW, {}, florist);
+    expect(reverted.Status).toBe(ORDER_STATUS.NEW);
+  });
+
+  it('florist may NOT revert to a status the order never held (skipped Out for Delivery)', async () => {
+    const { order } = await seedDeliveryOrder();
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, florist);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.DELIVERED, {}, florist); // Ready → Delivered, OOD skipped
+
+    await expect(
+      orderRepo.transitionStatus(order.id, ORDER_STATUS.OUT_FOR_DELIVERY, {}, florist),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  it('getOrderStatusHistory lists distinct previously-held statuses, excluding current', async () => {
+    const { order } = await seedDeliveryOrder();
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, florist);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.OUT_FOR_DELIVERY, {}, florist);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.DELIVERED, {}, florist);
+
+    const hist = await orderRepo.getOrderStatusHistory(order.id);
+    expect(hist.current).toBe(ORDER_STATUS.DELIVERED);
+    expect(hist.previousStatuses).toEqual(
+      expect.arrayContaining([ORDER_STATUS.NEW, ORDER_STATUS.READY, ORDER_STATUS.OUT_FOR_DELIVERY]),
+    );
+    expect(hist.previousStatuses).not.toContain(ORDER_STATUS.DELIVERED);
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
 // cancelWithStockReturn — cancel + N stock returns + delivery cascade
 // ─────────────────────────────────────────────────────────────────────
 

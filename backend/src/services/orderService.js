@@ -124,8 +124,8 @@ export async function createOrder(params, config, opts = {}) {
  * Delegates to orderRepo (PG transaction). Side effects fire after success.
  * @returns {Object} updated order record
  */
-export async function transitionStatus(orderId, newStatus, otherFields = {}) {
-  const order = await orderRepo.transitionStatus(orderId, newStatus, otherFields);
+export async function transitionStatus(orderId, newStatus, otherFields = {}, opts = {}) {
+  const order = await orderRepo.transitionStatus(orderId, newStatus, otherFields, opts);
   runPostTransitionSideEffects(order, newStatus, orderId);
   return order;
 }

@@ -477,37 +477,63 @@ async function section4DeliveryHappyPath() {
 // ──────────── 5. INVALID TRANSITIONS BLOCKED ────────────
 
 async function section5InvalidTransitions() {
-  startSection('5. Invalid status transitions blocked (FSM enforcement)');
+  startSection('5. Status transitions — FSM enforcement + owner god-mode + florist revert');
   await reset();
 
-  const created = await api('POST', '/orders', {
-    pin: PIN_OWNER,
-    body: buildOrderBody({
-      customer: FIXTURE.customers.iwona,
-      lines: [line(FIXTURE.stock.babysBreath || FIXTURE.stock.eucalyptus, 1)],
-    }),
-  });
-  const id = created.body.order.id;
+  const mkOrder = async () => {
+    const r = await api('POST', '/orders', {
+      pin: PIN_OWNER,
+      body: buildOrderBody({
+        customer: FIXTURE.customers.iwona,
+        lines: [line(FIXTURE.stock.babysBreath || FIXTURE.stock.eucalyptus, 1)],
+      }),
+    });
+    return r.body.order.id;
+  };
 
-  // From New: cannot go to Delivered, Picked Up, Out for Delivery
+  // ── Florist cannot skip the forward chain to a never-held status ──
+  const id1 = await mkOrder();
   for (const target of ['Delivered', 'Picked Up', 'Out for Delivery']) {
-    const r = await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: target } });
-    eq(`New → ${target} BLOCKED`, r.status, 400);
+    const r = await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: target } });
+    eq(`Florist New → ${target} BLOCKED`, r.status, 400);
   }
+  // Forward step is fine; In Progress was never held → still blocked.
+  await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: 'Ready' } });
+  const inProg = await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: 'In Progress' } });
+  eq('Florist Ready → In Progress (never held) BLOCKED', inProg.status, 400);
 
-  // Move to Ready, then test
-  await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: 'Ready' } });
-  for (const target of ['New', 'In Progress']) {
-    const r = await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: target } });
-    eq(`Ready → ${target} BLOCKED`, r.status, 400);
-  }
+  // ── Florist CAN revert to a status the order genuinely held ──
+  // id1 path so far: New → Ready. Reverting Ready → New is allowed (New was held).
+  const revToNew = await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: 'New' } });
+  eq('Florist Ready → New (revert, previously held) → 200', revToNew.status, 200);
+  eq('  status is New after revert', revToNew.body?.Status, 'New');
 
-  // Take to terminal Picked Up, no further moves allowed
-  await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: 'Picked Up' } });
-  for (const target of ['New', 'Ready', 'Cancelled', 'Delivered']) {
-    const r = await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: target } });
-    eq(`Picked Up → ${target} BLOCKED`, r.status, 400);
+  // ── Owner god-mode: any → any, including jumps a florist cannot make ──
+  const id2 = await mkOrder();
+  const ownerJump = await api('PATCH', `/orders/${id2}`, { pin: PIN_OWNER, body: { Status: 'Delivered' } });
+  eq('Owner New → Delivered (god-mode) → 200', ownerJump.status, 200);
+  const ownerBack = await api('PATCH', `/orders/${id2}`, { pin: PIN_OWNER, body: { Status: 'Ready' } });
+  eq('Owner Delivered → Ready (god-mode revert) → 200', ownerBack.status, 200);
+
+  // ── Florist revert from a terminal state (the headline bug fix) ──
+  // Build New → Ready → Picked Up (pickup is the default), then undo.
+  const id3 = await mkOrder();
+  await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Ready' } });
+  await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Picked Up' } });
+
+  const undo = await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Ready' } });
+  eq('Florist Picked Up → Ready (revert, previously held) → 200', undo.status, 200);
+  eq('  status is Ready after undo', undo.body?.Status, 'Ready');
+
+  // Back to Picked Up; never-held targets stay blocked for the florist.
+  await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Picked Up' } });
+  for (const target of ['Cancelled', 'Delivered']) {
+    const r = await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: target } });
+    eq(`Florist Picked Up → ${target} (never held) BLOCKED`, r.status, 400);
   }
+  // …but the owner can. Picked Up → Cancelled via god-mode.
+  const ownerTerminal = await api('PATCH', `/orders/${id3}`, { pin: PIN_OWNER, body: { Status: 'Cancelled' } });
+  eq('Owner Picked Up → Cancelled (god-mode) → 200', ownerTerminal.status, 200);
 }
 
 // ──────────── 6. PLAIN CANCEL — STATUS ONLY, NO STOCK RETURN ────────────

@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -17,17 +17,9 @@ function parseBatchName(displayName) {
   return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
 }
 
-// Florist flow: New → Ready → Delivered/Picked Up.
-// "Out for Delivery" is set automatically by drivers — florists don't need that button.
-const ALLOWED_TRANSITIONS = {
-  'New':              ['Ready', 'Cancelled'],
-  'In Progress':      ['Ready', 'Cancelled'],
-  'Ready':            ['Delivered', 'Picked Up', 'Cancelled'],
-  'Out for Delivery': ['Delivered', 'Cancelled'],   // can still advance if driver started it
-  'Delivered':        [],
-  'Picked Up':        [],
-  'Cancelled':        ['New'],
-};
+// Status options (forward map + role-aware revert) come from the shared
+// getStatusOptions util — single source of truth shared with OrderCard and the
+// dashboard, kept in lock-step with the backend state machine.
 
 function Pills({ options, value, onChange, disabled }) {
   return (
@@ -160,6 +152,15 @@ export default function OrderDetailPage() {
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
+  // Statuses this order has previously held — powers the florist's "revert"
+  // buttons. Fetched from the audit trail (GET /orders/:id/status-history).
+  const [prevStatuses, setPrevStatuses] = useState([]);
+
+  function loadStatusHistory() {
+    client.get(`/orders/${id}/status-history`)
+      .then(r => setPrevStatuses(r.data.previousStatuses || []))
+      .catch(() => {});
+  }
 
   useEffect(() => {
     if (!id) return;
@@ -172,6 +173,7 @@ export default function OrderDetailPage() {
         showToast('Failed to load order.', 'error');
       })
       .finally(() => setLoading(false));
+    loadStatusHistory();
   }, [id]);
 
   async function patch(fields) {
@@ -180,6 +182,9 @@ export default function OrderDetailPage() {
       const res = await client.patch(`/orders/${id}`, fields);
       setOrder(prev => ({ ...prev, ...res.data }));
       showToast('Updated!', 'success');
+      // A status change rewrites the "previously held" set (the old status is
+      // now a revert target) — refresh so the revert row stays accurate.
+      if (fields.Status) loadStatusHistory();
     } catch (err) {
       const msg = err.response?.data?.error || 'Failed to update order.';
       showToast(msg, 'error');
@@ -205,6 +210,7 @@ export default function OrderDetailPage() {
       }
       const res = await client.get(`/orders/${id}`);
       setOrder(res.data);
+      loadStatusHistory();
       if (!withStockReturn) {
         // cancelOnly path — hook skips toast; show the generic "updated" toast here
         // so the user sees confirmation (mirrors old patch() success toast).
@@ -601,24 +607,47 @@ export default function OrderDetailPage() {
               <div className="ios-card p-4">
                 {(() => {
                   const current = order['Status'] || 'New';
-                  const allowed = ALLOWED_TRANSITIONS[current] || [];
-                  const visible = [current, ...allowed];
+                  const { forward, revert } = getStatusOptions({
+                    role,
+                    currentStatus: current,
+                    previousStatuses: prevStatuses,
+                  });
+                  // Intercept Cancelled — show inline confirm so user picks
+                  // return-stock vs status-only cancel. Same pattern as
+                  // OrderCard + dashboard OrderDetailPanel.
+                  const onPick = val => {
+                    if (val === 'Cancelled' && current !== 'Cancelled') {
+                      term.requestCancel();
+                    } else {
+                      patch({ 'Status': val });
+                    }
+                  };
                   return (
-                    <Pills
-                      value={current}
-                      onChange={val => {
-                        // Intercept Cancelled — show inline confirm so user
-                        // picks return-stock vs status-only cancel. Same
-                        // pattern as OrderCard + dashboard OrderDetailPanel.
-                        if (val === 'Cancelled' && current !== 'Cancelled') {
-                          term.requestCancel();
-                        } else {
-                          patch({ 'Status': val });
-                        }
-                      }}
-                      disabled={saving}
-                      options={visible.map(s => ({ value: s, label: s }))}
-                    />
+                    <>
+                      <Pills
+                        value={current}
+                        onChange={onPick}
+                        disabled={saving}
+                        options={[current, ...forward].map(s => ({ value: s, label: s }))}
+                      />
+                      {revert.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <p className="text-xs text-ios-tertiary mb-1.5">{t.revertTo}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {revert.map(s => (
+                              <button
+                                key={s}
+                                onClick={() => onPick(s)}
+                                disabled={saving}
+                                className="px-3 py-1.5 rounded-full text-sm font-medium border border-amber-300 bg-amber-50 text-amber-700 active-scale disabled:opacity-40"
+                              >
+                                ↩ {s}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
                 {term.confirmOpen && term.pendingKind === 'cancel' && (

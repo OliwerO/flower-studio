@@ -315,6 +315,20 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// GET /api/orders/:id/status-history — the order's current status plus the
+// distinct set of statuses it has previously held (from the audit trail). The
+// florist apps use `previousStatuses` to offer "revert to a prior state"
+// buttons on terminal orders.
+router.get('/:id/status-history', async (req, res, next) => {
+  try {
+    const history = await orderRepo.getOrderStatusHistory(req.params.id);
+    res.json(history);
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
+    next(err);
+  }
+});
+
 // POST /api/orders — creates order + order lines + delivery atomically
 router.post('/', async (req, res, next) => {
   try {
@@ -422,7 +436,7 @@ router.patch('/:id', async (req, res, next) => {
 
     if (newStatus) {
       try {
-        const order = await transitionStatus(req.params.id, newStatus, otherFields);
+        const order = await transitionStatus(req.params.id, newStatus, otherFields, { actor: actorFromReq(req) });
         return res.json(order);
       } catch (transErr) {
         if (transErr.statusCode === 400) {

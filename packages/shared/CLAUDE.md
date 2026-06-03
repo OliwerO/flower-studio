@@ -46,6 +46,7 @@ utils/
   parseBatchName.js           → Extracts date from batch names like "Rose (14.Mar.)"
   stockName.jsx               → Formats stock display names with age/date labels
   stockMath.js                → getEffectiveStock(qty), hasStockShortfall — LOAD-BEARING per root pitfall #7
+  orderStatusOptions.js       → getStatusOptions({role, currentStatus, previousStatuses}) — single source of truth for which status pills a user may pick. Owner = any→any; florist/driver = forward map ∪ previously-held statuses (revert). Mirrors backend orderRepo.transitionStatus.
   stockAllocationEngine.js    → stockAllocationEngine(rows, reservations, requiredBy, qty) — Y-model ranked allocation options for one order line (issue #287, PRD #283)
   varietyKey.js               → 4-tuple identity helpers — `varietyKey`, `groupByVariety`, `varietyDisplayName`. NULL-aware per ADR-0006.
   timeSlots.js                → Time slot generation with lead-time filtering
