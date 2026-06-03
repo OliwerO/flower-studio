@@ -1,6 +1,8 @@
-// Driver PIN resolution, shared by the auth middleware and the driver Telegram
-// bot. Each PIN_DRIVER_<NAME> env var maps to a capitalised driver name; the
-// Backup PIN resolves to the owner-set backup name when present.
+// PIN resolution — the single source of truth for mapping a PIN to a role.
+// Shared by the auth middleware, the /auth/verify route, the SSE handshake, and
+// the Telegram registration bot. Each PIN_DRIVER_<NAME> env var maps to a
+// capitalised driver name; the Backup PIN resolves to the owner-set backup name
+// when present. Owner/Florist PINs come from PIN_OWNER / PIN_FLORIST.
 import { getBackupDriverName } from '../services/driverState.js';
 import { safeEqual } from './auth.js';
 
@@ -28,4 +30,24 @@ export function resolveDriverByPin(pin) {
 export function resolveFloristByPin(pin) {
   if (!pin) return null;
   return safeEqual(process.env.PIN_FLORIST, pin) ? 'florist' : null;
+}
+
+// Resolve any PIN to a role descriptor: { role, driverName? } | null. Owner wins
+// over Florist on a PIN collision (preserves the legacy owner-first precedence).
+// The single seam the auth middleware + /auth/verify route both consume, so the
+// Backup-name resolution can never drift between them again.
+export function resolveRoleByPin(pin) {
+  if (!pin) return null;
+  if (safeEqual(process.env.PIN_OWNER, pin)) return { role: 'owner' };
+  if (resolveFloristByPin(pin)) return { role: 'florist' };
+  const driverName = resolveDriverByPin(pin);
+  if (driverName) return { role: 'driver', driverName };
+  return null;
+}
+
+// Truthy iff the PIN belongs to any known role. Used by the SSE route, which
+// only needs a yes/no (EventSource can't send the X-Auth-PIN header, so the PIN
+// arrives as a query param).
+export function isValidPin(pin) {
+  return resolveRoleByPin(pin) !== null;
 }
