@@ -5,6 +5,25 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-03 — PIN-resolution dedup + driver-bot `/start` brute-force guard (#369 follow-ups)
+
+Two security/maintenance follow-ups to the driver/florist Telegram work.
+
+1. **Single PIN→role seam.** PIN-to-role resolution was duplicated across four places (`middleware/auth.js`, `routes/auth.js`, `routes/events.js`, `configService.js`), and `routes/auth.js` diverged — it skipped Backup-driver name resolution, so `POST /auth/verify` returned the literal name `"Backup"` while the middleware returned the owner-set backup name. All four now route through one `resolveRoleByPin` / `isValidPin` / `listDriverPins` seam in `utils/driverPins.js`. **Behavior change:** `/auth/verify` now resolves a Backup-driver PIN to the owner-set backup name (matching the middleware) instead of `"Backup"`.
+2. **Driver-bot `/start` rate limit.** The Telegram `/start <PIN>` registration had no brute-force guard (the HTTP `/auth/verify` endpoint has 5/15min per IP; the bot has no IP). Added a per-chat_id in-memory limiter: 5 failed PINs in 15 min locks that chat out with a Russian "too many attempts" reply; a successful registration clears the counter.
+
+### Backend
+- `backend/src/utils/driverPins.js` — added `resolveRoleByPin(pin)` (`{ role, driverName? } | null`, owner-first precedence) and `isValidPin(pin)`. Now the single source of PIN→role resolution.
+- `backend/src/middleware/auth.js`, `backend/src/routes/auth.js`, `backend/src/routes/events.js` — dropped local PIN tables; resolve via the shared seam.
+- `backend/src/services/configService.js` — `driverNames` now derives from `listDriverPins()`.
+- `backend/src/services/driverBot.js` — per-chat `/start` brute-force guard (`isRateLimited` / `recordPinFailure`, cleared on success); `_resetRateLimit` test seam.
+- Tests: `driverPins.test.js` (+`resolveRoleByPin`/`isValidPin`, incl. Backup-name), `driverBot.test.js` (+rate-limit lockout/per-chat/reset/window-expiry).
+
+### No schema migration
+Pure code change — no env vars, no tables.
+
+---
+
 ## 2026-06-02 — PO assignment notification: diff-detection
 
 `PATCH /api/stock-orders/:id` now only sends the driver a Telegram PO-assignment ping when the Assigned Driver genuinely changes. Previously, re-saving a PO with the same driver re-pinged on every save. Mirrors the diff-detection already in the delivery PATCH path. SSE broadcast is unchanged (still fires on every save). Follow-up to PR #369.

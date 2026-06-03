@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 vi.mock('../repos/driverTelegramRepo.js', () => ({
   setChatId: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('../repos/floristTelegramRepo.js', () => ({
   getFloristLang: vi.fn(),
 }));
 
-import { handleDriverUpdate } from '../services/driverBot.js';
+import { handleDriverUpdate, _resetRateLimit } from '../services/driverBot.js';
 import * as repo from '../repos/driverTelegramRepo.js';
 import { sendToChat } from '../services/telegram.js';
 import { resolveDriverByPin, resolveFloristByPin } from '../utils/driverPins.js';
@@ -26,6 +26,7 @@ import { setFloristChatId, getFloristLang } from '../repos/floristTelegramRepo.j
 describe('handleDriverUpdate (/start registration)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    _resetRateLimit();
     resolveDriverByPin.mockReturnValue('Nikita');
     resolveFloristByPin.mockReturnValue(null);
     repo.getDriver.mockResolvedValue({ chatId: '42', lang: 'ru' });
@@ -95,5 +96,66 @@ describe('handleDriverUpdate (/start registration)', () => {
     await handleDriverUpdate({ message: { chat: { id: 555 }, text: '/start nope' } });
     expect(setFloristChatId).not.toHaveBeenCalled();
     expect(sendToChat).toHaveBeenCalledWith('555', expect.stringContaining('PIN'));
+  });
+});
+
+describe('handleDriverUpdate (/start rate limiting)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.useRealTimers();
+    _resetRateLimit();
+    resolveDriverByPin.mockReturnValue(null); // every attempt is a bad PIN by default
+    resolveFloristByPin.mockReturnValue(null);
+  });
+  afterEach(() => { vi.useRealTimers(); });
+
+  it('blocks further /start attempts after 5 failures from the same chat', async () => {
+    for (let i = 0; i < 5; i++) {
+      await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 0000' } });
+    }
+    expect(resolveDriverByPin).toHaveBeenCalledTimes(5);
+    resolveDriverByPin.mockClear();
+    sendToChat.mockClear();
+    // 6th attempt is rate-limited: PIN never resolved, lockout message returned
+    await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 1234' } });
+    expect(resolveDriverByPin).not.toHaveBeenCalled();
+    expect(sendToChat).toHaveBeenCalledWith('77', expect.stringMatching(/попыток|15 мин/i));
+  });
+
+  it('tracks attempts per chat independently', async () => {
+    for (let i = 0; i < 5; i++) {
+      await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 0000' } });
+    }
+    resolveDriverByPin.mockClear();
+    // a different chat is unaffected by chat 77's lockout
+    await handleDriverUpdate({ message: { chat: { id: 88 }, text: '/start 0000' } });
+    expect(resolveDriverByPin).toHaveBeenCalledTimes(1);
+  });
+
+  it('a successful registration clears the failure count', async () => {
+    for (let i = 0; i < 4; i++) {
+      await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 0000' } });
+    }
+    resolveDriverByPin.mockReturnValue('Nikita'); // 5th attempt succeeds
+    repo.getDriver.mockResolvedValue({ chatId: '77', lang: 'ru' });
+    await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 5678' } });
+    expect(repo.setChatId).toHaveBeenCalledWith('Nikita', '77');
+    // counter reset → next bad attempt still reaches resolution (not locked)
+    resolveDriverByPin.mockReturnValue(null);
+    resolveDriverByPin.mockClear();
+    await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 0000' } });
+    expect(resolveDriverByPin).toHaveBeenCalledTimes(1);
+  });
+
+  it('resets the lockout after the attempt window elapses', async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-06-03T10:00:00Z'));
+    for (let i = 0; i < 5; i++) {
+      await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 0000' } });
+    }
+    vi.setSystemTime(new Date('2026-06-03T10:16:00Z')); // past the 15-minute window
+    resolveDriverByPin.mockClear();
+    await handleDriverUpdate({ message: { chat: { id: 77 }, text: '/start 0000' } });
+    expect(resolveDriverByPin).toHaveBeenCalledTimes(1); // window fresh → not locked
   });
 });

@@ -4,25 +4,13 @@
 
 import { Router } from 'express';
 import { addClient, removeClient } from '../services/notifications.js';
-import { safeEqual } from '../utils/auth.js';
+import { isValidPin } from '../utils/driverPins.js';
 
 const router = Router();
 
-// PIN validation for SSE — EventSource doesn't support custom headers,
-// so we accept the PIN as a query parameter: /api/events?pin=XXXX
-const PINS = {
-  owner:   process.env.PIN_OWNER,
-  florist: process.env.PIN_FLORIST,
-};
-const DRIVER_PINS = Object.entries(process.env)
-  .filter(([key]) => key.startsWith('PIN_DRIVER_'))
-  .map(([, value]) => value);
-
-function isValidPin(pin) {
-  if (!pin) return false;
-  const allPins = [...Object.values(PINS), ...DRIVER_PINS].filter(Boolean);
-  return allPins.some(p => safeEqual(p, pin));
-}
+// PIN validation for SSE — EventSource doesn't support custom headers, so we
+// accept the PIN as a query parameter (/api/events?pin=XXXX) and validate it
+// against the same PIN→role seam the auth middleware uses.
 
 router.get('/', (req, res) => {
   if (!isValidPin(req.query.pin)) {

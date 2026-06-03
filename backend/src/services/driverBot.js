@@ -28,6 +28,41 @@ const FLORIST_REGISTERED = {
 const BAD_PIN = 'Неверный PIN. Попробуйте: /start <PIN>';
 const HINT = 'Чтобы получать уведомления, отправьте: /start <ваш PIN>';
 const REG_ERROR = 'Не удалось зарегистрировать. Попробуйте ещё раз позже.';
+const LOCKED = 'Слишком много попыток. Попробуйте через 15 мин.';
+
+// Per-chat brute-force guard for /start <PIN>. The HTTP /auth/verify endpoint is
+// rate-limited (5/15min per IP); the bot has no IP, so we throttle per chat_id.
+// In-memory only — a restart clears it, fine for a tiny PIN space already behind
+// Telegram's own inbound rate limits.
+const MAX_PIN_ATTEMPTS = 5;
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const pinAttempts = new Map(); // chatId -> { count, first }
+
+function isRateLimited(chatId, now) {
+  const rec = pinAttempts.get(chatId);
+  if (!rec || now - rec.first > ATTEMPT_WINDOW_MS) return false;
+  return rec.count >= MAX_PIN_ATTEMPTS;
+}
+
+function recordPinFailure(chatId, now) {
+  // Opportunistically prune expired entries so the Map can't grow unbounded.
+  if (pinAttempts.size > 50) {
+    for (const [id, rec] of pinAttempts) {
+      if (now - rec.first > ATTEMPT_WINDOW_MS) pinAttempts.delete(id);
+    }
+  }
+  const rec = pinAttempts.get(chatId);
+  if (!rec || now - rec.first > ATTEMPT_WINDOW_MS) {
+    pinAttempts.set(chatId, { count: 1, first: now });
+  } else {
+    rec.count += 1;
+  }
+}
+
+// Test seam: clear the in-memory brute-force counters between cases.
+export function _resetRateLimit() {
+  pinAttempts.clear();
+}
 
 export async function handleDriverUpdate(update) {
   const msg = update.message;
@@ -36,9 +71,14 @@ export async function handleDriverUpdate(update) {
   const text = msg.text.trim();
 
   if (text.startsWith('/start')) {
+    if (isRateLimited(chatId, Date.now())) {
+      await sendToChat(chatId, LOCKED);
+      return;
+    }
     const pin = text.split(/\s+/)[1];
     const driverName = resolveDriverByPin(pin);
     if (driverName) {
+      pinAttempts.delete(chatId); // valid PIN — reset the brute-force counter
       try {
         await setChatId(driverName, chatId);
       } catch (err) {
@@ -52,6 +92,7 @@ export async function handleDriverUpdate(update) {
       return;
     }
     if (resolveFloristByPin(pin)) {
+      pinAttempts.delete(chatId); // valid PIN — reset the brute-force counter
       try {
         await setFloristChatId(chatId);
       } catch (err) {
@@ -63,6 +104,7 @@ export async function handleDriverUpdate(update) {
       await sendToChat(chatId, FLORIST_REGISTERED[lang] || FLORIST_REGISTERED.ru);
       return;
     }
+    recordPinFailure(chatId, Date.now()); // bad PIN — count toward the lockout
     await sendToChat(chatId, BAD_PIN);
     return;
   }

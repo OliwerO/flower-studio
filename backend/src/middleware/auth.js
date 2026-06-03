@@ -5,13 +5,7 @@
 // Drivers get individual PINs: PIN_DRIVER_TIMUR, PIN_DRIVER_NIKITA, etc.
 // The badge reader now knows *which* driver scanned in (req.driverName).
 
-import { safeEqual } from '../utils/auth.js';
-import { resolveDriverByPin } from '../utils/driverPins.js';
-
-const PINS = {
-  owner:   process.env.PIN_OWNER,
-  florist: process.env.PIN_FLORIST,
-};
+import { resolveRoleByPin } from '../utils/driverPins.js';
 
 // Route access per role
 const ROLE_ACCESS = {
@@ -27,22 +21,14 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ error: 'PIN required. Send X-Auth-PIN header.' });
   }
 
-  // Check owner/florist PINs first (constant-time comparison prevents timing attacks)
-  const role = Object.keys(PINS).find((r) => safeEqual(PINS[r], pin));
-  if (role) {
-    req.role = role;
-    return next();
+  // Single source of PIN→role resolution (constant-time comparison inside).
+  const resolved = resolveRoleByPin(pin);
+  if (!resolved) {
+    return res.status(401).json({ error: 'Invalid PIN.' });
   }
-
-  // Check driver PINs — each driver has their own badge
-  const driverName = resolveDriverByPin(pin);
-  if (driverName) {
-    req.role = 'driver';
-    req.driverName = driverName;
-    return next();
-  }
-
-  return res.status(401).json({ error: 'Invalid PIN.' });
+  req.role = resolved.role;
+  if (resolved.driverName) req.driverName = resolved.driverName;
+  return next();
 }
 
 // Route guard — checks that the role has access to the resource.
