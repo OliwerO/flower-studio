@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-04 — PO new-Variety fields gated behind STOCK_Y_MODEL + send-identity fix
+
+The new-PO form showed the Y-model **"New variety"** identity row (`Type *` / Colour / Size / Cultivar, issue #304) for any off-plan line **regardless of the `STOCK_Y_MODEL` flag** — so it "crept into" prod where the flag is off. The prominent `Type *` lured the owner into filling Type instead of the Flower Name, and the PO then **could not be sent to the driver**: the line persisted with an empty Flower Name + a Type, which `POST /stock-orders/:id/send` rejected as a blank line (`Fill flower name on N blank line(s) before sending`) even though `POST /:id/lines` had accepted Type as valid identity.
+
+### Frontend (gate the Y-model UI)
+- `apps/florist/src/pages/PurchaseOrderPage.jsx` + `apps/dashboard/src/components/StockOrderPanel.jsx` — the Variety identity row (new-PO form **and** inline `DraftLineEditor`) now renders only when `useStockYModelFlag()` is true. Flag off (prod) → the form reverts to the plain Flower Name flow; the Variety fields never appear.
+
+### Backend (consistency / hardening — `backend/src/routes/stockOrders.js`)
+- New `composeFlowerName()` helper. PO line persistence (create, add-line, and Variety-attr PATCH) now composes a driver-readable Flower Name from `Type/Colour/Size/Cultivar` when no explicit name was given — mirrors the frontend wizard compose, so every new-Variety line carries a name.
+- `POST /:id/send` blank-check now counts a line's `Type` as valid identity (matches the line-add rule), so a line accepted on creation can never be rejected on send. This also unblocks any Type-only line already stuck in prod.
+- Regression test: `backend/src/__tests__/stockOrders.sendIdentity.integration.test.js` (create-composes-and-sends, inline-PATCH-composes, genuinely-blank-still-blocks).
+
+### No schema migration
+Behaviour + UI-gating change only. No env vars, no tables. Y-model stays off in prod (`STOCK_Y_MODEL` unset).
+
+---
+
 ## 2026-06-03 — Revert order status (owner any→any, florist history-undo)
 
 A florist who marked the wrong bouquet **Delivered** (or **Picked Up**) had no way back — the order state machine had zero exits from terminal states, so reverting was hard-blocked at the backend (the owner's dashboard `Status` pills returned `400 Cannot move from "Delivered" to "Ready". Allowed: none (terminal)`).
