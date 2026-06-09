@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveHourlyRate, computeEarnings, buildPayroll } from '../services/floristHoursService.js';
+import { resolveHourlyRate, computeEarnings, buildPayroll, extractWorkWindows } from '../services/floristHoursService.js';
 
 // Wire-format record (matches hoursRepo.toWire output)
 function rec(over = {}) {
@@ -49,6 +49,28 @@ describe('computeEarnings', () => {
   });
 });
 
+describe('extractWorkWindows', () => {
+  it('pulls a single HH:MM-HH:MM window from the notes prefix', () => {
+    expect(extractWorkWindows('10:30-15:30')).toBe('10:30-15:30');
+  });
+
+  it('pulls multiple windows in order', () => {
+    expect(extractWorkWindows('10:30-15:30, 16:30-18:30')).toBe('10:30-15:30, 16:30-18:30');
+  });
+
+  it('ignores the freeform note appended after the windows', () => {
+    expect(extractWorkWindows('09:00-17:00 | covered for Daria')).toBe('09:00-17:00');
+  });
+
+  it('returns empty string when no canonical window is present', () => {
+    expect(extractWorkWindows('10-18')).toBe('');       // imported/freeform short form
+    expect(extractWorkWindows('day off')).toBe('');
+    expect(extractWorkWindows('')).toBe('');
+    expect(extractWorkWindows(null)).toBe('');
+    expect(extractWorkWindows(undefined)).toBe('');
+  });
+});
+
 describe('buildPayroll', () => {
   it('returns daily rows sorted ascending by date with resolved rate + earnings', () => {
     const records = [
@@ -84,5 +106,14 @@ describe('buildPayroll', () => {
   it('carries name, rate type, notes and delivery count through to each row', () => {
     const { days } = buildPayroll([rec({ Name: 'Daria', 'Rate Type': 'Holidays', Notes: '10-18', 'Delivery Count': 4 })], {});
     expect(days[0]).toMatchObject({ name: 'Daria', rateType: 'Holidays', notes: '10-18', deliveryCount: 4 });
+  });
+
+  it('derives the work-window string from notes onto each row', () => {
+    const { days } = buildPayroll([
+      rec({ id: 'a', Date: '2026-05-01', Notes: '10:30-15:30, 16:30-18:30 | extra note' }),
+      rec({ id: 'b', Date: '2026-05-02', Notes: 'sick day' }),
+    ], {});
+    expect(days[0].windows).toBe('10:30-15:30, 16:30-18:30');
+    expect(days[1].windows).toBe('');
   });
 });

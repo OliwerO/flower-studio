@@ -21,6 +21,21 @@ export function resolveHourlyRate(record, configuredRates = {}) {
   return 0;
 }
 
+// Extract the canonical "HH:MM-HH:MM[, HH:MM-HH:MM]" work-window string that the
+// hour-logging form prepends to Notes (see FloristHoursPage `windowsToString`).
+// Returns '' when notes carry no recognisable window (freeform / imported rows),
+// so the payroll table can show a "—" placeholder instead of a mangled note.
+const WORK_WINDOW_RE = /(\d{1,2}:\d{2})\s*-\s*(\d{1,2}:\d{2})/g;
+export function extractWorkWindows(notes) {
+  const out = [];
+  const re = new RegExp(WORK_WINDOW_RE);   // own lastIndex, safe to reuse
+  let m;
+  while ((m = re.exec(String(notes ?? ''))) !== null) {
+    out.push(`${m[1]}-${m[2]}`);
+  }
+  return out.join(', ');
+}
+
 // Daily earnings = hours * rate + bonus - deduction.
 export function computeEarnings(record, rate) {
   return (Number(record.Hours || 0) * rate)
@@ -46,6 +61,7 @@ export function buildPayroll(records = [], configuredRates = {}) {
       earnings: computeEarnings(r, hourlyRate),
       deliveryCount: Number(r['Delivery Count'] || 0),
       notes: r.Notes || '',
+      windows: extractWorkWindows(r.Notes),
     };
   }).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
 

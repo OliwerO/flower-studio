@@ -384,6 +384,7 @@ function OwnerHoursSummary() {
                   <tr className="text-[11px] text-ios-tertiary border-b border-gray-100 dark:border-gray-700">
                     <th className="text-left py-2 font-medium">{t.labelDate}</th>
                     {payrollName === '__all' && <th className="text-left py-2 font-medium">{t.selectName}</th>}
+                    <th className="text-left py-2 font-medium">{t.worktime}</th>
                     <th className="text-right py-2 font-medium">{t.hours}</th>
                     <th className="text-right py-2 font-medium">{t.hourlyRate}</th>
                     <th className="text-right py-2 font-medium">{t.earnings}</th>
@@ -394,6 +395,7 @@ function OwnerHoursSummary() {
                     <tr key={d.id} className="border-b border-gray-50 dark:border-gray-800">
                       <td className="py-2 text-ios-label dark:text-dark-label">{d.date}</td>
                       {payrollName === '__all' && <td className="py-2 text-ios-secondary">{d.name}</td>}
+                      <td className="py-2 text-ios-secondary tabular-nums">{d.windows || '—'}</td>
                       <td className="py-2 text-right text-ios-secondary">{d.hours.toFixed(1)}</td>
                       <td className="py-2 text-right text-ios-secondary">{d.hourlyRate.toFixed(0)} zł</td>
                       <td className="py-2 text-right font-semibold text-brand-600">{d.earnings.toFixed(0)} zł</td>
@@ -404,6 +406,7 @@ function OwnerHoursSummary() {
                   <tr className="border-t-2 border-gray-200 dark:border-gray-700 font-semibold">
                     <td className="py-2 text-ios-label dark:text-dark-label">{t.payrollTotal}</td>
                     {payrollName === '__all' && <td />}
+                    <td />
                     <td className="py-2 text-right text-ios-label dark:text-dark-label">{payroll.totals.hours.toFixed(1)}</td>
                     <td />
                     <td className="py-2 text-right text-brand-600">{payroll.totals.earnings.toFixed(0)} zł</td>
