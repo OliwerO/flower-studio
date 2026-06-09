@@ -18,7 +18,7 @@ function toWire(row) {
   };
 }
 
-export async function list({ month, name } = {}) {
+export async function list({ month, name, dateFrom, dateTo } = {}) {
   const conditions = [isNull(floristHours.deletedAt)];
   if (month) {
     const [year, mon] = month.split('-');
@@ -28,6 +28,9 @@ export async function list({ month, name } = {}) {
     conditions.push(gte(floristHours.date, start));
     conditions.push(lte(floristHours.date, end));
   }
+  // Custom date range (YYYY-MM-DD) — used by the per-florist payroll breakdown.
+  if (dateFrom) conditions.push(gte(floristHours.date, dateFrom));
+  if (dateTo)   conditions.push(lte(floristHours.date, dateTo));
   if (name) conditions.push(eq(floristHours.name, name));
   const rows = await db.select().from(floristHours).where(and(...conditions)).orderBy(desc(floristHours.date));
   return rows.map(toWire);

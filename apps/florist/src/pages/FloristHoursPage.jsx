@@ -265,12 +265,33 @@ function FloristHoursForm() {
 // ── Owner view: monthly summary + full list with edit/delete ──
 function OwnerHoursSummary() {
   const { showToast } = useToast();
+  const lists = useConfigLists();
+  const names = lists.floristNames || ['Anya', 'Daria'];
   const [month, setMonth] = useState(currentMonth());
   const [summary, setSummary] = useState(null);
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
+  // Per-florist payroll breakdown over a custom date range.
+  const [payrollName, setPayrollName] = useState('');   // '' = none, '__all' = every florist
+  const [from, setFrom] = useState(`${currentMonth()}-01`);
+  const [to, setTo] = useState(todayISO());
+  const [payroll, setPayroll] = useState(null);
+
+  const fetchPayroll = useCallback(async () => {
+    if (!payrollName) { setPayroll(null); return; }
+    try {
+      const res = await client.get('/florist-hours/payroll', {
+        params: { dateFrom: from, dateTo: to, name: payrollName === '__all' ? undefined : payrollName },
+      });
+      setPayroll(res.data);
+    } catch {
+      setPayroll(null);
+    }
+  }, [payrollName, from, to]);
+
+  useEffect(() => { fetchPayroll(); }, [fetchPayroll]);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -328,6 +349,72 @@ function OwnerHoursSummary() {
           onChange={e => setMonth(e.target.value)}
           className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm"
         />
+      </div>
+
+      {/* Per-florist payroll details — custom date range, daily breakdown */}
+      <div className="bg-white dark:bg-dark-elevated rounded-2xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 space-y-3">
+        <h3 className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.payrollDetails}</h3>
+        <select
+          value={payrollName}
+          onChange={e => setPayrollName(e.target.value)}
+          className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 text-sm bg-white dark:bg-dark-elevated"
+        >
+          <option value="">{t.selectFlorist}…</option>
+          {names.map(n => <option key={n} value={n}>{n}</option>)}
+          <option value="__all">{t.allFlorists}</option>
+        </select>
+        <div className="flex items-center gap-2">
+          <div className="flex-1">
+            <label className="text-[10px] font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.rangeFrom}</label>
+            <input type="date" value={from} onChange={e => setFrom(e.target.value)}
+              className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm" />
+          </div>
+          <div className="flex-1">
+            <label className="text-[10px] font-semibold text-ios-tertiary uppercase tracking-wide mb-1 block">{t.rangeTo}</label>
+            <input type="date" value={to} onChange={e => setTo(e.target.value)}
+              className="w-full border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2 text-sm" />
+          </div>
+        </div>
+
+        {payrollName && payroll && (
+          payroll.days.length > 0 ? (
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-[11px] text-ios-tertiary border-b border-gray-100 dark:border-gray-700">
+                    <th className="text-left py-2 font-medium">{t.labelDate}</th>
+                    {payrollName === '__all' && <th className="text-left py-2 font-medium">{t.selectName}</th>}
+                    <th className="text-right py-2 font-medium">{t.hours}</th>
+                    <th className="text-right py-2 font-medium">{t.hourlyRate}</th>
+                    <th className="text-right py-2 font-medium">{t.earnings}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {payroll.days.map(d => (
+                    <tr key={d.id} className="border-b border-gray-50 dark:border-gray-800">
+                      <td className="py-2 text-ios-label dark:text-dark-label">{d.date}</td>
+                      {payrollName === '__all' && <td className="py-2 text-ios-secondary">{d.name}</td>}
+                      <td className="py-2 text-right text-ios-secondary">{d.hours.toFixed(1)}</td>
+                      <td className="py-2 text-right text-ios-secondary">{d.hourlyRate.toFixed(0)} zł</td>
+                      <td className="py-2 text-right font-semibold text-brand-600">{d.earnings.toFixed(0)} zł</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t-2 border-gray-200 dark:border-gray-700 font-semibold">
+                    <td className="py-2 text-ios-label dark:text-dark-label">{t.payrollTotal}</td>
+                    {payrollName === '__all' && <td />}
+                    <td className="py-2 text-right text-ios-label dark:text-dark-label">{payroll.totals.hours.toFixed(1)}</td>
+                    <td />
+                    <td className="py-2 text-right text-brand-600">{payroll.totals.earnings.toFixed(0)} zł</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          ) : (
+            <p className="text-sm text-ios-tertiary text-center py-4">{t.noEntries}</p>
+          )
+        )}
       </div>
 
       {loading ? (

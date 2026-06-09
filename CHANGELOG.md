@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-09 — Per-florist payroll breakdown by custom date range (#378)
+
+The owner could only see florist hours as **per-florist monthly totals** (dashboard FinancialTab merged `/summary` across months; florist-app owner view used a month picker). There was no way to pick one florist + an arbitrary date range and see a **day-by-day** breakdown of hours, hourly rate, and earnings — the detail the owner asked for in #378.
+
+### Backend (`backend/src/`)
+- **New service `services/floristHoursService.js`** (pure, unit-tested) — `resolveHourlyRate` (record rate wins; falls back to config rate keyed by Rate Type, or a flat numeric config rate), `computeEarnings` (`hours*rate + bonus − deduction`), and `buildPayroll(records, configuredRates)` → `{ days[] (sorted asc by date, each with resolved rate + earnings), totals }`. Extracted so the rate-fallback logic lives in ONE place.
+- `routes/floristHours.js` — **new `GET /florist-hours/payroll?dateFrom&dateTo&name`** (defined before `/:id`, like `/summary`). `name` optional → all florists when omitted. `/summary` refactored onto `resolveHourlyRate` so its rate math can't drift from payroll.
+- `repos/hoursRepo.js` — `list()` now accepts `dateFrom`/`dateTo` (YYYY-MM-DD) in addition to `month`.
+- Tests: `__tests__/floristHoursService.test.js` (10 unit) + new date-range cases in `__tests__/hoursRepo.integration.test.js`.
+
+### Frontend (cross-app parity)
+- **Dashboard** `components/FinancialTab.jsx` — Florist Hours section gains a florist selector (+ "All florists") that renders a daily table (Date · Hours · Rate · Bonus · Deduction · Earnings + totals) for the date range already selected at the top.
+- **Florist app** `pages/FloristHoursPage.jsx` (owner view) — new "Payroll details" card: florist selector + From/To date inputs + daily table (Date · Hours · Rate · Earnings + totals).
+- New translation keys in both apps (`payrollDetails`, `selectFlorist`, `allFlorists`, `earnings`, `hours`, `payrollTotal`, `rangeFrom`, `rangeTo`; florist also `hourlyRate`).
+
+### No schema migration
+All fields (`date`, `hours`, `hourlyRate`, `bonus`, `deduction`, `rateType`) already exist on `florist_hours`. Read-only feature — no env vars, no tables, no writes.
+
+---
+
 ## 2026-06-04 — PO new-Variety fields gated behind STOCK_Y_MODEL + send-identity fix
 
 The new-PO form showed the Y-model **"New variety"** identity row (`Type *` / Colour / Size / Cultivar, issue #304) for any off-plan line **regardless of the `STOCK_Y_MODEL` flag** — so it "crept into" prod where the flag is off. The prominent `Type *` lured the owner into filling Type instead of the Flower Name, and the PO then **could not be sent to the driver**: the line persisted with an empty Flower Name + a Type, which `POST /stock-orders/:id/send` rejected as a blank line (`Fill flower name on N blank line(s) before sending`) even though `POST /:id/lines` had accepted Type as valid identity.

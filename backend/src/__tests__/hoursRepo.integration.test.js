@@ -39,6 +39,23 @@ describe('hoursRepo', () => {
     expect(anya[0].Name).toBe('Anya');
   });
 
+  it('filters by a custom date range (dateFrom/dateTo)', async () => {
+    await hoursRepo.create({ Name: 'Anya', Date: '2026-05-01', Hours: 8, 'Hourly Rate': 30, Bonus: 0, Deduction: 0, Notes: '', 'Delivery Count': 0 });
+    await hoursRepo.create({ Name: 'Anya', Date: '2026-05-15', Hours: 6, 'Hourly Rate': 30, Bonus: 0, Deduction: 0, Notes: '', 'Delivery Count': 0 });
+    await hoursRepo.create({ Name: 'Anya', Date: '2026-06-02', Hours: 5, 'Hourly Rate': 30, Bonus: 0, Deduction: 0, Notes: '', 'Delivery Count': 0 });
+    const inRange = await hoursRepo.list({ dateFrom: '2026-05-10', dateTo: '2026-05-31' });
+    expect(inRange).toHaveLength(1);
+    expect(inRange[0].Date).toBe('2026-05-15');
+  });
+
+  it('combines a date range with a name filter', async () => {
+    await hoursRepo.create({ Name: 'Anya',  Date: '2026-05-05', Hours: 8, 'Hourly Rate': 30, Bonus: 0, Deduction: 0, Notes: '', 'Delivery Count': 0 });
+    await hoursRepo.create({ Name: 'Daria', Date: '2026-05-06', Hours: 7, 'Hourly Rate': 30, Bonus: 0, Deduction: 0, Notes: '', 'Delivery Count': 0 });
+    const anya = await hoursRepo.list({ dateFrom: '2026-05-01', dateTo: '2026-05-31', name: 'Anya' });
+    expect(anya).toHaveLength(1);
+    expect(anya[0].Name).toBe('Anya');
+  });
+
   it('updates an entry', async () => {
     const entry = await hoursRepo.create({ Name: 'Anya', Date: '2026-05-01', Hours: 6, 'Hourly Rate': 30, Bonus: 0, Deduction: 0, Notes: '', 'Delivery Count': 0 });
     const updated = await hoursRepo.update(entry.id, { Hours: 8, Bonus: 50 });

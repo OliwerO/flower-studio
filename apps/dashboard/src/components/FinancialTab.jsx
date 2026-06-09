@@ -63,6 +63,8 @@ export default function FinancialTab({ onNavigate }) {
   const [data, setData]           = useState(null);
   const [loading, setLoading]     = useState(true);
   const [hoursSummary, setHoursSummary] = useState(null);
+  const [payrollName, setPayrollName] = useState('');   // '' = none, '__all' = every florist
+  const [payroll, setPayroll] = useState(null);
   // Default most sections collapsed — only Revenue & Costs expand on load.
   // Prevents information overload (40+ KPIs visible at once).
   const [collapsed, setCollapsed] = useState({
@@ -141,8 +143,26 @@ export default function FinancialTab({ onNavigate }) {
     }
   }, [range]);
 
+  // Per-florist daily payroll breakdown for the selected date range.
+  const fetchPayroll = useCallback(async () => {
+    if (!payrollName) { setPayroll(null); return; }
+    try {
+      const res = await client.get('/florist-hours/payroll', {
+        params: {
+          dateFrom: range.from,
+          dateTo: range.to,
+          name: payrollName === '__all' ? undefined : payrollName,
+        },
+      });
+      setPayroll(res.data);
+    } catch {
+      setPayroll(null);
+    }
+  }, [payrollName, range]);
+
   useEffect(() => { fetchData(); }, [fetchData]);
   useEffect(() => { fetchHours(); }, [fetchHours]);
+  useEffect(() => { fetchPayroll(); }, [fetchPayroll]);
 
   if (loading) return <DashboardSkeleton />;
 
@@ -452,6 +472,68 @@ export default function FinancialTab({ onNavigate }) {
                   ))}
                 </tbody>
               </table>
+            </div>
+
+            {/* ── Per-florist daily payroll breakdown (uses the date range above) ── */}
+            <div className="mt-6 pt-4 border-t border-gray-100">
+              <div className="flex flex-wrap items-center gap-2 mb-3">
+                <span className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.payrollDetails}</span>
+                <select
+                  value={payrollName}
+                  onChange={e => setPayrollName(e.target.value)}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1 bg-white"
+                >
+                  <option value="">{t.selectFlorist}…</option>
+                  {hoursSummary.map(f => <option key={f.name} value={f.name}>{f.name}</option>)}
+                  <option value="__all">{t.allFlorists}</option>
+                </select>
+              </div>
+
+              {payrollName && payroll && (
+                payroll.days.length > 0 ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-xs text-ios-tertiary border-b border-gray-100">
+                          <th className="text-left px-3 py-2 font-medium">{t.date}</th>
+                          {payrollName === '__all' && <th className="text-left px-3 py-2 font-medium">{t.floristNames}</th>}
+                          <th className="text-right px-3 py-2 font-medium">{t.hours}</th>
+                          <th className="text-right px-3 py-2 font-medium">{t.hourlyRate}</th>
+                          <th className="text-right px-3 py-2 font-medium">{t.bonus}</th>
+                          <th className="text-right px-3 py-2 font-medium">{t.deduction}</th>
+                          <th className="text-right px-3 py-2 font-medium">{t.earnings}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {payroll.days.map(d => (
+                          <tr key={d.id} className="border-b border-gray-50">
+                            <td className="px-3 py-2 text-ios-label">{d.date}</td>
+                            {payrollName === '__all' && <td className="px-3 py-2 text-ios-secondary">{d.name}</td>}
+                            <td className="px-3 py-2 text-right text-ios-secondary">{d.hours.toFixed(1)}</td>
+                            <td className="px-3 py-2 text-right text-ios-secondary">{d.hourlyRate.toFixed(0)} {t.zl}</td>
+                            <td className="px-3 py-2 text-right text-ios-secondary">{d.bonus > 0 ? `+${d.bonus.toFixed(0)}` : '—'}</td>
+                            <td className="px-3 py-2 text-right text-ios-secondary">{d.deduction > 0 ? `-${d.deduction.toFixed(0)}` : '—'}</td>
+                            <td className="px-3 py-2 text-right font-medium text-brand-700">{d.earnings.toFixed(0)} {t.zl}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200 font-semibold">
+                          <td className="px-3 py-2 text-ios-label">{t.payrollTotal}</td>
+                          {payrollName === '__all' && <td />}
+                          <td className="px-3 py-2 text-right text-ios-label">{payroll.totals.hours.toFixed(1)}</td>
+                          <td />
+                          <td className="px-3 py-2 text-right text-ios-secondary">{payroll.totals.bonus > 0 ? `+${payroll.totals.bonus.toFixed(0)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right text-ios-secondary">{payroll.totals.deduction > 0 ? `-${payroll.totals.deduction.toFixed(0)}` : '—'}</td>
+                          <td className="px-3 py-2 text-right text-brand-700">{payroll.totals.earnings.toFixed(0)} {t.zl}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                ) : (
+                  <p className="text-ios-tertiary text-sm italic">{t.noHoursData}</p>
+                )
+              )}
             </div>
           </>
         ) : (

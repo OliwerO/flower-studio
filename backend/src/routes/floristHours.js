@@ -4,6 +4,7 @@ import { authorize } from '../middleware/auth.js';
 import { pickAllowed } from '../utils/fields.js';
 import { getConfig } from '../services/configService.js';
 import * as hoursRepo from '../repos/hoursRepo.js';
+import { resolveHourlyRate, buildPayroll } from '../services/floristHoursService.js';
 
 const router = Router();
 
@@ -34,12 +35,7 @@ router.get('/summary', authorize('orders'), async (req, res, next) => {
       const hours    = Number(r.Hours || 0);
       const rateType = r['Rate Type'] || '';
       byName[n].totalHours += hours;
-      const recordRate   = Number(r['Hourly Rate'] || 0);
-      const floristRates = configuredRates[n];
-      const fallbackRate = typeof floristRates === 'object' && rateType
-        ? (floristRates[rateType] || 0)
-        : (typeof floristRates === 'number' ? floristRates : 0);
-      const rate = recordRate > 0 ? recordRate : fallbackRate;
+      const rate = resolveHourlyRate(r, configuredRates);
       const pay  = (hours * rate) + Number(r.Bonus || 0) - Number(r.Deduction || 0);
       byName[n].totalPay       += pay;
       byName[n].totalBonus     += Number(r.Bonus || 0);
@@ -53,6 +49,21 @@ router.get('/summary', authorize('orders'), async (req, res, next) => {
       }
     }
     res.json({ month, florists: Object.values(byName), totalRecords: records.length });
+  } catch (err) { next(err); }
+});
+
+// GET /api/florist-hours/payroll?dateFrom=2026-05-01&dateTo=2026-05-31&name=Anya
+// Per-florist (or all-florist when name omitted) daily payroll breakdown over a
+// custom date range. Returns day rows with resolved hourly rate + earnings, plus
+// a totals row. Must be defined BEFORE /:id (same reason as /summary).
+router.get('/payroll', authorize('orders'), async (req, res, next) => {
+  try {
+    const { dateFrom, dateTo, name } = req.query;
+    if (!dateFrom || !dateTo) return res.status(400).json({ error: 'dateFrom and dateTo params required (YYYY-MM-DD)' });
+    const records = await hoursRepo.list({ dateFrom, dateTo, name: name || undefined });
+    const configuredRates = getConfig('floristRates') || {};
+    const { days, totals } = buildPayroll(records, configuredRates);
+    res.json({ dateFrom, dateTo, name: name || null, days, totals });
   } catch (err) { next(err); }
 });
 
