@@ -47,6 +47,7 @@ export {
 export { getEffectiveStock, hasStockShortfall, getVarietyTotals } from './utils/stockMath.js';
 export { resolveStockLinePrice } from './utils/stockLinePrice.js';
 export { getStatusOptions, ALL_ORDER_STATUSES } from './utils/orderStatusOptions.js';
+export { parseShiftWindows, formatShiftWindows, shiftWindowsLabel } from './utils/parseShiftWindows.js';
 export {
   matchesSearch,
   matchesFilters,

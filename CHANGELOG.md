@@ -5,6 +5,19 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-09 — Owner sees florist shift windows (from→till), not just total hours
+
+Follow-up to the payroll breakdown below. When a florist logs hours, the FROM→TO windows they enter (e.g. `10:30–15:30, 16:30–18:30`) were collapsed into a total and persisted only as a string inside the entry's `Notes`. The owner could see *how many* hours someone worked on a day, but not *when*. The owner asked to see the actual worked windows per day.
+
+### Frontend only (cross-app parity)
+- **New shared util `packages/shared/utils/parseShiftWindows.js`** (+ `test/parseShiftWindows.test.js`, 12 cases) — `parseShiftWindows(notes)` → `{ windows:[{from,to}], note }`, `formatShiftWindows`, and `shiftWindowsLabel(notes)` → `"10:30–15:30, 16:30–18:30"`. The leading `|`-segment is treated as windows only when *every* comma token is a valid `HH:MM-HH:MM`, so manually-entered notes with no windows pass through untouched.
+- **Florist app** `pages/FloristHoursPage.jsx` (owner view) + **Dashboard** `components/FinancialTab.jsx` — the per-day payroll table now shows the worked windows as a secondary line under each date.
+
+### No schema migration, no new translation keys
+Windows are read out of the existing `Notes` already returned by `GET /florist-hours/payroll`. Pure display change — no backend, no DB, no env. Windows are bare times, so no Russian strings were needed.
+
+---
+
 ## 2026-06-09 — Per-florist payroll breakdown by custom date range (#378)
 
 The owner could only see florist hours as **per-florist monthly totals** (dashboard FinancialTab merged `/summary` across months; florist-app owner view used a month picker). There was no way to pick one florist + an arbitrary date range and see a **day-by-day** breakdown of hours, hourly rate, and earnings — the detail the owner asked for in #378.
