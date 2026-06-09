@@ -497,6 +497,7 @@ export default function FinancialTab({ onNavigate }) {
                         <tr className="text-xs text-ios-tertiary border-b border-gray-100">
                           <th className="text-left px-3 py-2 font-medium">{t.date}</th>
                           {payrollName === '__all' && <th className="text-left px-3 py-2 font-medium">{t.floristNames}</th>}
+                          <th className="text-left px-3 py-2 font-medium">{t.worktime}</th>
                           <th className="text-right px-3 py-2 font-medium">{t.hours}</th>
                           <th className="text-right px-3 py-2 font-medium">{t.hourlyRate}</th>
                           <th className="text-right px-3 py-2 font-medium">{t.bonus}</th>
@@ -509,6 +510,7 @@ export default function FinancialTab({ onNavigate }) {
                           <tr key={d.id} className="border-b border-gray-50">
                             <td className="px-3 py-2 text-ios-label">{d.date}</td>
                             {payrollName === '__all' && <td className="px-3 py-2 text-ios-secondary">{d.name}</td>}
+                            <td className="px-3 py-2 text-ios-secondary tabular-nums">{d.windows || '—'}</td>
                             <td className="px-3 py-2 text-right text-ios-secondary">{d.hours.toFixed(1)}</td>
                             <td className="px-3 py-2 text-right text-ios-secondary">{d.hourlyRate.toFixed(0)} {t.zl}</td>
                             <td className="px-3 py-2 text-right text-ios-secondary">{d.bonus > 0 ? `+${d.bonus.toFixed(0)}` : '—'}</td>
@@ -521,6 +523,7 @@ export default function FinancialTab({ onNavigate }) {
                         <tr className="border-t-2 border-gray-200 font-semibold">
                           <td className="px-3 py-2 text-ios-label">{t.payrollTotal}</td>
                           {payrollName === '__all' && <td />}
+                          <td />
                           <td className="px-3 py-2 text-right text-ios-label">{payroll.totals.hours.toFixed(1)}</td>
                           <td />
                           <td className="px-3 py-2 text-right text-ios-secondary">{payroll.totals.bonus > 0 ? `+${payroll.totals.bonus.toFixed(0)}` : '—'}</td>
