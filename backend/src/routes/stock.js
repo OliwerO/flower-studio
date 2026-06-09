@@ -336,7 +336,7 @@ router.get('/pending-po', async (req, res, next) => {
         ? rawQty * lotSize   // old format: qty is lot count
         : rawQty;            // new format: qty is already stems
 
-      if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [], flowerName: '' };
+      if (!result[stockId]) result[stockId] = { ordered: 0, plannedDate: null, pos: [], flowerName: '', sell: 0, cost: 0 };
       result[stockId].ordered += qty;
       if (!result[stockId].flowerName && line['Flower Name']) {
         result[stockId].flowerName = String(line['Flower Name']);
@@ -344,11 +344,28 @@ router.get('/pending-po', async (req, res, next) => {
 
       const poInfo = poMap[line._poPgId];
       if (poInfo) {
-        result[stockId].pos.push({ id: poInfo.id, number: poInfo.number, quantity: qty, plannedDate: poInfo.plannedDate });
+        // Carry the line's own price so bouquet builders can price a not-yet-arrived
+        // flower off its pending PO rather than the stock card's last-received sell (#377).
+        result[stockId].pos.push({
+          id: poInfo.id, number: poInfo.number, quantity: qty, plannedDate: poInfo.plannedDate,
+          sell: Number(line['Sell Price']) || 0, cost: Number(line['Cost Price']) || 0,
+        });
         if (poInfo.plannedDate && (!result[stockId].plannedDate || poInfo.plannedDate < result[stockId].plannedDate)) {
           result[stockId].plannedDate = poInfo.plannedDate;
         }
       }
+    }
+
+    // Per stock item, expose the sell/cost of the soonest-arriving priced PO
+    // (fall back to the first priced line). This is the price the owner just set
+    // in the pending Stock Order — what a bouquet should use until the PO is
+    // evaluated and the stock card's Current Sell Price catches up (#377).
+    for (const entry of Object.values(result)) {
+      const priced = entry.pos.filter(p => p.sell > 0);
+      if (priced.length === 0) continue;
+      priced.sort((a, b) => String(a.plannedDate || '9999-12-31').localeCompare(String(b.plannedDate || '9999-12-31')));
+      entry.sell = priced[0].sell;
+      entry.cost = priced[0].cost;
     }
 
     // Backfill missing prices: find stock items in the result that have zero

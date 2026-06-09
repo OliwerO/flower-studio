@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   renderStockName, parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
-  groupByVariety, varietyDisplayName,
+  groupByVariety, varietyDisplayName, resolveStockLinePrice,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 
@@ -249,7 +249,9 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                 {editing.editLines.map((line, idx) => {
                   const si = editing.stockItems.find(s => s.id === line.stockItemId);
                   const availableQty = Number(si?.['Current Quantity']) || 0;
-                  const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+                  // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                  const liveSell = resolveStockLinePrice(si, editing.pendingPO?.[line.stockItemId]).sellPricePerUnit
+                    || Number(line.sellPricePerUnit) || 0;
                   const lineSell = liveSell * Number(line.quantity || 0);
                   const overStock = line.stockItemId && line.quantity > availableQty;
                   const linePoQty = line.stockItemId ? (editing.pendingPO?.[line.stockItemId]?.ordered || 0) : 0;

@@ -46,6 +46,7 @@ utils/
   parseBatchName.js           → Extracts date from batch names like "Rose (14.Mar.)"
   stockName.jsx               → Formats stock display names with age/date labels
   stockMath.js                → getEffectiveStock(qty), hasStockShortfall — LOAD-BEARING per root pitfall #7
+  stockLinePrice.js           → resolveStockLinePrice(stockItem, pendingEntry) → {costPricePerUnit, sellPricePerUnit}. A not-yet-arrived flower (qty ≤ 0) prices off its pending Stock Order, not the stale card sell; physical stock keeps the card price (#377). Single rule shared by every bouquet add/display surface (Step2, useOrderEditing, OrderCard, OrderDetailPanel, BouquetEditor).
   orderStatusOptions.js       → getStatusOptions({role, currentStatus, previousStatuses}) — single source of truth for which status pills a user may pick. Owner = any→any; florist/driver = forward map ∪ previously-held statuses (revert). Mirrors backend orderRepo.transitionStatus.
   stockAllocationEngine.js    → stockAllocationEngine(rows, reservations, requiredBy, qty) — Y-model ranked allocation options for one order line (issue #287, PRD #283)
   varietyKey.js               → 4-tuple identity helpers — `varietyKey`, `groupByVariety`, `varietyDisplayName`. NULL-aware per ADR-0006.

@@ -108,6 +108,9 @@ export default function OrderListPage() {
   // owner may still want to reference (prevents duplicate-row creation).
   const [editorStockItems, setEditorStockItems] = useState([]);
   const [editorPremadeMap, setEditorPremadeMap] = useState({});
+  // Pending POs per stock item — lets the card price a not-yet-arrived flower
+  // off its Stock Order instead of the stale card sell (#377).
+  const [editorPendingPO, setEditorPendingPO] = useState({});
 
   // Stock evaluation pending count (florist) / shopping POs count (owner)
   const [evalCount, setEvalCount] = useState(0);
@@ -243,12 +246,14 @@ export default function OrderListPage() {
   // (e.g. after dissolving a premade during save).
   const refreshEditorStock = useCallback(async () => {
     try {
-      const [stockRes, premadeRes] = await Promise.all([
+      const [stockRes, premadeRes, poRes] = await Promise.all([
         cachedGet('/stock?includeEmpty=true&includeInactive=true'),
         cachedGet('/stock/premade-committed').catch(() => ({ data: {} })),
+        cachedGet('/stock/pending-po').catch(() => ({ data: {} })),
       ]);
       setEditorStockItems(stockRes.data);
       setEditorPremadeMap(premadeRes.data || {});
+      setEditorPendingPO(poRes.data || {});
     } catch {
       // non-critical — cards fall back to stale-or-empty; the edit save itself
       // will surface a backend error if something is genuinely wrong.
@@ -575,6 +580,7 @@ export default function OrderListPage() {
                 stockShortfalls={stockShortfalls}
                 editorStockItems={editorStockItems}
                 editorPremadeMap={editorPremadeMap}
+                editorPendingPO={editorPendingPO}
                 onStockRefresh={refreshEditorStock}
                 onOrderUpdated={handleOrderUpdated}
                 onOrderDeleted={handleOrderDeleted}

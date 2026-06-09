@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -131,19 +131,22 @@ export default function Step2Bouquet({
     return l.stockItemId === key || (!l.stockItemId && l.flowerName === key);
   }
 
+  // Pending-PO flowers price off their PO, not the stale card sell (#377).
   const costTotal = useMemo(
     () => orderLines.reduce((s, l) => {
       const si = stock.find(x => x.id === l.stockItemId);
-      return s + Number(si?.['Current Cost Price'] ?? l.costPricePerUnit) * Number(l.quantity);
+      const cost = resolveStockLinePrice(si, pendingPO[l.stockItemId]).costPricePerUnit || Number(l.costPricePerUnit) || 0;
+      return s + cost * Number(l.quantity);
     }, 0),
-    [orderLines, stock]
+    [orderLines, stock, pendingPO]
   );
   const sellTotal = useMemo(
     () => orderLines.reduce((s, l) => {
       const si = stock.find(x => x.id === l.stockItemId);
-      return s + Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit) * Number(l.quantity);
+      const sell = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
+      return s + sell * Number(l.quantity);
     }, 0),
-    [orderLines, stock]
+    [orderLines, stock, pendingPO]
   );
   const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
@@ -212,12 +215,14 @@ export default function Step2Bouquet({
           l.stockItemId === stockItem.id ? { ...l, quantity: l.quantity + 1 } : l
         );
       }
+      // Pending-PO flower prices off its PO, not the stale card sell (#377).
+      const { costPricePerUnit, sellPricePerUnit } = resolveStockLinePrice(stockItem, pendingPO[stockItem.id]);
       return [...lines, {
         stockItemId:      stockItem.id,
         flowerName:       stockItem['Display Name'],
         quantity:         1,
-        costPricePerUnit: Number(stockItem['Current Cost Price']) || 0,
-        sellPricePerUnit: Number(stockItem['Current Sell Price']) || 0,
+        costPricePerUnit,
+        sellPricePerUnit,
         stockDeferred:    isFutureOrder,
       }];
     });
@@ -574,7 +579,9 @@ export default function Step2Bouquet({
               const stockItem = stock.find(s => s.id === l.stockItemId);
               const availableQty = Number(stockItem?.['Current Quantity']) || 0;
               const overStock = l.stockItemId && !l.stockDeferred && l.quantity > availableQty;
-              const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
+              // Pending-PO flowers price off their PO, not the stale card sell (#377).
+              const sellPrice = resolveStockLinePrice(stockItem, pendingPO[l.stockItemId]).sellPricePerUnit
+                || Number(l.sellPricePerUnit) || 0;
               const lineSell  = sellPrice * Number(l.quantity);
               return (
               <div key={key} className="px-4 py-3">
