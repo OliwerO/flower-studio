@@ -11,6 +11,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import { DashboardSkeleton } from './Skeleton.jsx';
+import { shiftWindowsLabel } from '@flower-studio/shared';
 
 // ── Date range presets ──
 function getPresetRange(preset) {
@@ -505,17 +506,23 @@ export default function FinancialTab({ onNavigate }) {
                         </tr>
                       </thead>
                       <tbody>
-                        {payroll.days.map(d => (
+                        {payroll.days.map(d => {
+                          const windows = shiftWindowsLabel(d.notes);
+                          return (
                           <tr key={d.id} className="border-b border-gray-50">
-                            <td className="px-3 py-2 text-ios-label">{d.date}</td>
-                            {payrollName === '__all' && <td className="px-3 py-2 text-ios-secondary">{d.name}</td>}
-                            <td className="px-3 py-2 text-right text-ios-secondary">{d.hours.toFixed(1)}</td>
-                            <td className="px-3 py-2 text-right text-ios-secondary">{d.hourlyRate.toFixed(0)} {t.zl}</td>
-                            <td className="px-3 py-2 text-right text-ios-secondary">{d.bonus > 0 ? `+${d.bonus.toFixed(0)}` : '—'}</td>
-                            <td className="px-3 py-2 text-right text-ios-secondary">{d.deduction > 0 ? `-${d.deduction.toFixed(0)}` : '—'}</td>
-                            <td className="px-3 py-2 text-right font-medium text-brand-700">{d.earnings.toFixed(0)} {t.zl}</td>
+                            <td className="px-3 py-2 text-ios-label align-top">
+                              {d.date}
+                              {windows && <span className="block text-[11px] text-ios-tertiary">{windows}</span>}
+                            </td>
+                            {payrollName === '__all' && <td className="px-3 py-2 text-ios-secondary align-top">{d.name}</td>}
+                            <td className="px-3 py-2 text-right text-ios-secondary align-top">{d.hours.toFixed(1)}</td>
+                            <td className="px-3 py-2 text-right text-ios-secondary align-top">{d.hourlyRate.toFixed(0)} {t.zl}</td>
+                            <td className="px-3 py-2 text-right text-ios-secondary align-top">{d.bonus > 0 ? `+${d.bonus.toFixed(0)}` : '—'}</td>
+                            <td className="px-3 py-2 text-right text-ios-secondary align-top">{d.deduction > 0 ? `-${d.deduction.toFixed(0)}` : '—'}</td>
+                            <td className="px-3 py-2 text-right font-medium text-brand-700 align-top">{d.earnings.toFixed(0)} {t.zl}</td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                       <tfoot>
                         <tr className="border-t-2 border-gray-200 font-semibold">

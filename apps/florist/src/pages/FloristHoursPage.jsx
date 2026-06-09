@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 import client from '../api/client.js';
 import t from '../translations.js';
+import { shiftWindowsLabel } from '@flower-studio/shared';
 
 function todayISO() {
   return new Date().toISOString().split('T')[0];
@@ -390,15 +391,20 @@ function OwnerHoursSummary() {
                   </tr>
                 </thead>
                 <tbody>
-                  {payroll.days.map(d => (
+                  {payroll.days.map(d => {
+                    const windows = shiftWindowsLabel(d.notes);
+                    return (
                     <tr key={d.id} className="border-b border-gray-50 dark:border-gray-800">
-                      <td className="py-2 text-ios-label dark:text-dark-label">{d.date}</td>
-                      {payrollName === '__all' && <td className="py-2 text-ios-secondary">{d.name}</td>}
-                      <td className="py-2 text-right text-ios-secondary">{d.hours.toFixed(1)}</td>
-                      <td className="py-2 text-right text-ios-secondary">{d.hourlyRate.toFixed(0)} zł</td>
-                      <td className="py-2 text-right font-semibold text-brand-600">{d.earnings.toFixed(0)} zł</td>
+                      <td className="py-2 text-ios-label dark:text-dark-label align-top">
+                        {d.date}
+                        {windows && <span className="block text-[11px] font-normal text-ios-tertiary">{windows}</span>}
+                      </td>
+                      {payrollName === '__all' && <td className="py-2 text-ios-secondary align-top">{d.name}</td>}
+                      <td className="py-2 text-right text-ios-secondary align-top">{d.hours.toFixed(1)}</td>
+                      <td className="py-2 text-right text-ios-secondary align-top">{d.hourlyRate.toFixed(0)} zł</td>
+                      <td className="py-2 text-right font-semibold text-brand-600 align-top">{d.earnings.toFixed(0)} zł</td>
                     </tr>
-                  ))}
+                  );})}
                 </tbody>
                 <tfoot>
                   <tr className="border-t-2 border-gray-200 dark:border-gray-700 font-semibold">
