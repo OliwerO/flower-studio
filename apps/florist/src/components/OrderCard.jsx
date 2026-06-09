@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -91,6 +91,7 @@ function OrderCard({
   isOwner,
   editorStockItems: stockItems = [],
   editorPremadeMap: premadeMap = {},
+  editorPendingPO: pendingPO = {},
   onStockRefresh,
 }) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
@@ -320,7 +321,8 @@ function OrderCard({
   const editingLineTotal = editingBouquet
     ? editLines.reduce((sum, l) => {
         const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
-        const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+        // Pending-PO flowers price off their PO, not the stale card sell (#377).
+        const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
         return sum + price * Number(l.quantity || 0);
       }, 0)
     : null;
@@ -509,7 +511,9 @@ function OrderCard({
                     <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-2">
                       {editLines.map((line, idx) => {
                         const si = line.stockItemId ? stockItems.find(s => s.id === line.stockItemId) : null;
-                        const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+                        // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                        const liveSell = resolveStockLinePrice(si, pendingPO[line.stockItemId]).sellPricePerUnit
+                          || Number(line.sellPricePerUnit) || 0;
                         const qtyNum = Number(line.quantity || 0);
                         const lineTotal = liveSell * qtyNum;
                         return (
@@ -539,7 +543,8 @@ function OrderCard({
                       {editLines.length > 0 && (() => {
                         const liveSellTotal = editLines.reduce((sum, l) => {
                           const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
-                          const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+                          // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                          const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
                           return sum + price * Number(l.quantity || 0);
                         }, 0);
                         const originalTotal = Number(detail?.['Sell Total'] || 0);
@@ -591,7 +596,9 @@ function OrderCard({
                               .slice(0, 6)
                               .map(s => {
                                 const stockQty = Number(s['Current Quantity']) || 0;
-                                const stockSell = Number(s['Current Sell Price']) || 0;
+                                // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                                const addPrice = resolveStockLinePrice(s, pendingPO[s.id]);
+                                const stockSell = addPrice.sellPricePerUnit;
                                 return (
                                   <div key={s.id}
                                     onPointerDown={e => {
@@ -601,7 +608,7 @@ function OrderCard({
                                         id: null, stockItemId: s.id,
                                         flowerName: s['Display Name'],
                                         quantity: 1, _originalQty: 0,
-                                        costPricePerUnit: Number(s['Current Cost Price']) || 0,
+                                        costPricePerUnit: addPrice.costPricePerUnit,
                                         sellPricePerUnit: stockSell,
                                       }]);
                                       setFlowerSearch('');
@@ -1344,6 +1351,7 @@ function arePropsEqual(prev, next) {
   if (prev.isOwner !== next.isOwner) return false;
   if (prev.editorStockItems !== next.editorStockItems) return false;
   if (prev.editorPremadeMap !== next.editorPremadeMap) return false;
+  if (prev.editorPendingPO !== next.editorPendingPO) return false;
   if (prev.onStockRefresh !== next.onStockRefresh) return false;
   if (prev.onOrderUpdated !== next.onOrderUpdated) return false;
   if (prev.onOrderDeleted !== next.onOrderDeleted) return false;

@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -32,7 +32,9 @@ const CONFIDENCE_STYLES = {
 function CartLine({ line: l, stock, onChangeQty, onCommitQty, onCommitPrices, onRemove, isFutureOrder, onToggleDeferred, pendingPO, isOwner }) {
   const stockItem = stock.find(s => s.id === l.stockItemId);
   const availableQty = Number(stockItem?.['Current Quantity']) || 0;
-  const sellPrice = Number(stockItem?.['Current Sell Price'] ?? l.sellPricePerUnit);
+  // Pending-PO flowers price off their PO, not the stale card sell (#377).
+  const sellPrice = resolveStockLinePrice(stockItem, pendingPO?.[l.stockItemId]).sellPricePerUnit
+    || Number(l.sellPricePerUnit) || 0;
   const lineSell  = sellPrice * Number(l.quantity);
   const confidence = l.confidence; // 'high' | 'low' | 'none' | undefined
   // Don't show over-stock warning for deferred lines (they don't pull from inventory)
@@ -251,8 +253,10 @@ export default function Step2Bouquet({
       if (!l.stockItemId) return l;
       const si = stock.find(x => x.id === l.stockItemId);
       if (!si) return l;
-      const newCost = Number(si['Current Cost Price']) || 0;
-      const newSell = Number(si['Current Sell Price']) || 0;
+      // Keep the pending-PO price for not-yet-arrived flowers; only physical
+      // stock re-syncs to the card sell (#377).
+      const { costPricePerUnit: newCost, sellPricePerUnit: newSell } =
+        resolveStockLinePrice(si, pendingPO[l.stockItemId]);
       if (newCost !== l.costPricePerUnit || newSell !== l.sellPricePerUnit) {
         changed = true;
         return { ...l, costPricePerUnit: newCost, sellPricePerUnit: newSell };
@@ -260,22 +264,25 @@ export default function Step2Bouquet({
       return l;
     });
     if (changed) onLinesChange(() => updated);
-  }, [stock, orderLines, onLinesChange]);
+  }, [stock, orderLines, onLinesChange, pendingPO]);
 
-  // Use current stock prices for display totals (snapshot happens at submit)
+  // Use current stock prices for display totals (snapshot happens at submit).
+  // Pending-PO flowers price off their PO, not the stale card sell (#377).
   const costTotal = useMemo(
     () => orderLines.reduce((s, l) => {
       const si = stock.find(x => x.id === l.stockItemId);
-      return s + Number(si?.['Current Cost Price'] ?? l.costPricePerUnit) * Number(l.quantity);
+      const cost = resolveStockLinePrice(si, pendingPO[l.stockItemId]).costPricePerUnit || Number(l.costPricePerUnit) || 0;
+      return s + cost * Number(l.quantity);
     }, 0),
-    [orderLines, stock]
+    [orderLines, stock, pendingPO]
   );
   const sellTotal = useMemo(
     () => orderLines.reduce((s, l) => {
       const si = stock.find(x => x.id === l.stockItemId);
-      return s + Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit) * Number(l.quantity);
+      const sell = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
+      return s + sell * Number(l.quantity);
     }, 0),
-    [orderLines, stock]
+    [orderLines, stock, pendingPO]
   );
   const margin = sellTotal > 0 ? Math.round(((sellTotal - costTotal) / sellTotal) * 100) : 0;
 
@@ -351,12 +358,14 @@ export default function Step2Bouquet({
           l.stockItemId === stockItem.id ? { ...l, quantity: l.quantity + 1 } : l
         );
       }
+      // Pending-PO flower prices off its PO, not the stale card sell (#377).
+      const { costPricePerUnit, sellPricePerUnit } = resolveStockLinePrice(stockItem, pendingPO[stockItem.id]);
       return [...lines, {
         stockItemId:      stockItem.id,
         flowerName:       stockItem['Display Name'],
         quantity:         1,
-        costPricePerUnit: Number(stockItem['Current Cost Price']) || 0,
-        sellPricePerUnit: Number(stockItem['Current Sell Price']) || 0,
+        costPricePerUnit,
+        sellPricePerUnit,
         stockDeferred:    isFutureOrder,
       }];
     });

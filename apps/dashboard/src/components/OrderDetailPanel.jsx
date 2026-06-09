@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -234,7 +234,8 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   const editingLineTotal = editingBouquet
     ? editLines.reduce((sum, l) => {
         const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
-        const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+        // Pending-PO flowers price off their PO, not the stale card sell (#377).
+        const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
         return sum + price * Number(l.quantity || 0);
       }, 0)
     : null;
@@ -595,7 +596,8 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
             const editCostTotal = editLines.reduce((s, l) => s + Number(l.costPricePerUnit || 0) * Number(l.quantity || 0), 0);
             const editSellTotal = editLines.reduce((sum, l) => {
               const si = l.stockItemId ? stockItems.find(x => x.id === l.stockItemId) : null;
-              const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+              // Pending-PO flowers price off their PO, not the stale card sell (#377).
+              const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
               return sum + price * Number(l.quantity || 0);
             }, 0);
             const editMargin = editSellTotal > 0 ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;
@@ -706,8 +708,8 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                       .slice(0, 20)
                       .map(s => {
                         const qty = Number(s['Current Quantity']) || 0;
-                        const cost = Number(s['Current Cost Price']) || 0;
-                        const sell = Number(s['Current Sell Price']) || 0;
+                        // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                        const { costPricePerUnit: cost, sellPricePerUnit: sell } = resolveStockLinePrice(s, pendingPO[s.id]);
                         const poQty = pendingPO[s.id]?.ordered || 0;
                         const { name: fn, batch } = parseBatchName(s['Display Name']);
                         return (

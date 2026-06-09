@@ -8,6 +8,7 @@
 import { useState } from 'react';
 import parseBatchName from '../utils/parseBatchName.js';
 import { varietyDisplayName } from '../utils/varietyKey.js';
+import { resolveStockLinePrice } from '../utils/stockLinePrice.js';
 
 const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 
@@ -179,14 +180,16 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
 
   // ── Add flower from existing stock ─────────────────────────────
   function addFlowerFromStock(stockItem) {
+    // Price a not-yet-arrived flower off its pending PO, not the stale card sell (#377).
+    const { costPricePerUnit, sellPricePerUnit } = resolveStockLinePrice(stockItem, pendingPO[stockItem.id]);
     setEditLines(prev => [...prev, {
       id: null,
       stockItemId: stockItem.id,
       flowerName: stockItem['Display Name'],
       quantity: 1,
       _originalQty: 0,
-      costPricePerUnit: Number(stockItem['Current Cost Price']) || 0,
-      sellPricePerUnit: Number(stockItem['Current Sell Price']) || 0,
+      costPricePerUnit,
+      sellPricePerUnit,
     }]);
     setFlowerSearch('');
     setAddingFlower(false);
