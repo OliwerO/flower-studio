@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -200,7 +200,8 @@ export default function Step2Bouquet({
       displayName: varietyDisplayName(g),
       rows:        g.rows,
       totalQty:    g.rows.reduce((s, r) => s + (r.current_quantity || 0), 0),
-      sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+      // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+      sell:        resolveVarietySell(g.rows, pendingPO),
       poQty:       g.rows.reduce((s, r) => s + (pendingPO[r.id]?.ordered || 0), 0),
       poDate:      g.rows.map(r => pendingPO[r.id]?.plannedDate).find(Boolean) ?? null,
       inCart:      g.rows.some(r => orderLines.some(l => l.stockItemId === r.id)),
@@ -421,6 +422,10 @@ export default function Step2Bouquet({
               const poInfo = pendingPO[s.id];
               const poQty  = poInfo?.ordered || 0;
               const poDateLabel = formatPoDate(poInfo?.plannedDate);
+              // Pending-PO flowers show their PO price, not the stale card sell (#377).
+              const rowPrice = resolveStockLinePrice(s, poInfo);
+              const rowSell = rowPrice.sellPricePerUnit || Number(s['Current Sell Price']) || 0;
+              const rowCost = rowPrice.costPricePerUnit || Number(s['Current Cost Price']) || 0;
 
               return (
                 <button
@@ -435,7 +440,7 @@ export default function Step2Bouquet({
                       {renderStockName(s['Display Name'], s['Last Restocked'])}
                     </div>
                     <div className="text-xs text-ios-tertiary">
-                      {Number(s['Current Sell Price']).toFixed(0)} zł sell · {Number(s['Current Cost Price']).toFixed(0)} zł cost · {qty} pcs
+                      {rowSell.toFixed(0)} zł sell · {rowCost.toFixed(0)} zł cost · {qty} pcs
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
                       {poQty > 0 && (

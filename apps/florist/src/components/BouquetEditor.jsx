@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   renderStockName, parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
-  groupByVariety, varietyDisplayName, resolveStockLinePrice,
+  groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 
@@ -62,7 +62,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
         cultivar:    g.cultivar,
         rows:        g.rows,
         totalQty:    g.rows.reduce((s, r) => s + (Number(r['Current Quantity']) || 0), 0),
-        sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+        // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+        sell:        resolveVarietySell(g.rows, editing.pendingPO),
         poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
         inCart:      g.rows.some(r => editing.editLines.some(l => l.stockItemId === r.id)),
       }));
@@ -85,7 +86,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
         entry.rows.push(s);
       }
     }
-    return [...map.values()];
+    // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+    return [...map.values()].map(e => ({ ...e, sell: resolveVarietySell(e.rows, editing.pendingPO) }));
   }, [catalogItems, flowerSearch, yEnabled, editing.pendingPO, editing.editLines]);
 
   function addFromCatalog(s) {

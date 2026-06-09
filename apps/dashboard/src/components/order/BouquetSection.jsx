@@ -3,7 +3,7 @@ import t from '../../translations.js';
 import {
   parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
-  groupByVariety, varietyDisplayName,
+  groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
 } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -49,7 +49,8 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
       cultivar:    g.cultivar,
       rows:        g.rows,
       totalQty:    g.rows.reduce((s, r) => s + (r.current_quantity || 0), 0),
-      sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+      // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+      sell:        resolveVarietySell(g.rows, editing.pendingPO),
       cost:        Number(g.rows[0]?.['Current Cost Price']) || 0,
       poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
       poDate:      g.rows.map(r => editing.pendingPO?.[r.id]?.plannedDate).find(Boolean) ?? null,
@@ -185,8 +186,10 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                   .slice(0, 20)
                   .map(s => {
                     const qty = Number(s['Current Quantity']) || 0;
-                    const cost = Number(s['Current Cost Price']) || 0;
-                    const sell = Number(s['Current Sell Price']) || 0;
+                    // Pending-PO flowers show their PO price, not the stale card sell (#377).
+                    const _p = resolveStockLinePrice(s, editing.pendingPO?.[s.id]);
+                    const cost = _p.costPricePerUnit || Number(s['Current Cost Price']) || 0;
+                    const sell = _p.sellPricePerUnit || Number(s['Current Sell Price']) || 0;
                     const { name: fn, batch: b } = parseBatchName(s['Display Name']);
                     const yType     = s.Type ?? null;
                     const yColour   = s.Colour ?? null;
