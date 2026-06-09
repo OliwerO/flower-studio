@@ -25,3 +25,16 @@ export function resolveStockLinePrice(stockItem, pendingEntry) {
   }
   return { costPricePerUnit: cardCost, sellPricePerUnit: cardSell };
 }
+
+// Representative sell price for a grouped Variety row in the bouquet pickers.
+// A Variety can span several batches; if any out-of-stock batch is arriving via a
+// pending Stock Order, show that PO sell (the price the owner just set) instead of
+// the first batch's stale card sell (#377). Otherwise the first batch's card sell.
+export function resolveVarietySell(rows = [], pendingMap = {}) {
+  for (const r of rows) {
+    const physQty = Number(r?.['Current Quantity']) || 0;
+    const poSell  = Number(pendingMap?.[r?.id]?.sell) || 0;
+    if (physQty <= 0 && poSell > 0) return poSell;
+  }
+  return Number(rows?.[0]?.['Current Sell Price']) || 0;
+}

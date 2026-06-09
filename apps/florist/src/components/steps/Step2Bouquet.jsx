@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -343,7 +343,8 @@ export default function Step2Bouquet({
       displayName: varietyDisplayName(g),
       rows:        g.rows,
       totalQty:    g.rows.reduce((s, r) => s + (r.current_quantity || 0), 0),
-      sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+      // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+      sell:        resolveVarietySell(g.rows, pendingPO),
       poQty:       g.rows.reduce((s, r) => s + (pendingPO[r.id]?.ordered || 0), 0),
       poDate:      g.rows.map(r => pendingPO[r.id]?.plannedDate).find(Boolean) ?? null,
       inCart:      g.rows.some(r => orderLines.some(l => l.stockItemId === r.id)),
@@ -612,6 +613,10 @@ export default function Step2Bouquet({
               const poQty  = pendingPO[s.id]?.ordered || 0;
               const poDate = pendingPO[s.id]?.plannedDate || null;
               const poDateLabel = poDate ? formatPoDate(poDate) : null;
+              // Pending-PO flowers show their PO price, not the stale card sell (#377).
+              const rowPrice = resolveStockLinePrice(s, pendingPO[s.id]);
+              const rowSell = rowPrice.sellPricePerUnit || Number(s['Current Sell Price']) || 0;
+              const rowCost = rowPrice.costPricePerUnit || Number(s['Current Cost Price']) || 0;
 
               return (
                 <button
@@ -626,8 +631,8 @@ export default function Step2Bouquet({
                       {renderStockName(s['Display Name'], qty > 0 ? s['Last Restocked'] : null)}
                     </div>
                     <div className="text-sm text-ios-tertiary">
-                      <span className="font-bold text-brand-700">{(Number(s['Current Sell Price']) || 0).toFixed(0)} zł</span>
-                      {isOwner && <span> · {(Number(s['Current Cost Price']) || 0).toFixed(0)} zł {t.costPrice}</span>}
+                      <span className="font-bold text-brand-700">{rowSell.toFixed(0)} zł</span>
+                      {isOwner && <span> · {rowCost.toFixed(0)} zł {t.costPrice}</span>}
                       <span> · {qty} pcs</span>
                       {low && !out && <span className="text-ios-orange"> · low</span>}
                       {qty < 0 && !poQty && (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { resolveStockLinePrice } from '../utils/stockLinePrice.js';
+import { resolveStockLinePrice, resolveVarietySell } from '../utils/stockLinePrice.js';
 
 const card = (qty, cost, sell) => ({
   'Current Quantity': qty,
@@ -50,5 +50,33 @@ describe('resolveStockLinePrice (#377)', () => {
     );
     expect(out.sellPricePerUnit).toBe(60);
     expect(resolveStockLinePrice(null, null)).toEqual({ costPricePerUnit: 0, sellPricePerUnit: 0 });
+  });
+});
+
+describe('resolveVarietySell (#377 picker row)', () => {
+  // Variety with two zero-stock batches both carded at 65; a pending PO on the
+  // second batch reprices it to 60. The picker row must show 60, not the first
+  // batch's stale 65.
+  const rows = [
+    { id: 'a', 'Current Quantity': 0, 'Current Sell Price': 65 },
+    { id: 'b', 'Current Quantity': 0, 'Current Sell Price': 65 },
+  ];
+
+  it('uses a pending-PO batch sell even when it is not the first batch', () => {
+    expect(resolveVarietySell(rows, { b: { sell: 60 } })).toBe(60);
+  });
+
+  it('falls back to the first batch card sell when no batch has a pending PO', () => {
+    expect(resolveVarietySell(rows, {})).toBe(65);
+  });
+
+  it('ignores a pending PO on a batch that still has physical stock', () => {
+    const onHand = [{ id: 'a', 'Current Quantity': 30, 'Current Sell Price': 65 }];
+    expect(resolveVarietySell(onHand, { a: { sell: 60 } })).toBe(65);
+  });
+
+  it('tolerates empty rows / missing map', () => {
+    expect(resolveVarietySell([], {})).toBe(0);
+    expect(resolveVarietySell()).toBe(0);
   });
 });
