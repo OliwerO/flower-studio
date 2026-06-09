@@ -821,6 +821,14 @@ const en = {
   bonus:                    'Bonus',
   deduction:                'Deduction',
   deliveries:               'Deliveries',
+  payrollDetails:           'Payroll details',
+  selectFlorist:            'Select florist',
+  allFlorists:              'All florists',
+  earnings:                 'Earnings',
+  hours:                    'Hours',
+  payrollTotal:             'Total',
+  rangeFrom:                'From',
+  rangeTo:                  'To',
 
   // Block 4 — Today/Tomorrow
   tomorrow:                 'Tomorrow',
@@ -1830,6 +1838,14 @@ const ru = {
   bonus:                    'Бонус',
   deduction:                'Вычет',
   deliveries:               'Доставки',
+  payrollDetails:           'Детализация зарплаты',
+  selectFlorist:            'Выберите флориста',
+  allFlorists:              'Все флористы',
+  earnings:                 'Начислено',
+  hours:                    'Часы',
+  payrollTotal:             'Итого',
+  rangeFrom:                'С',
+  rangeTo:                  'По',
 
   // Block 4 — Today/Tomorrow
   tomorrow:                 'Завтра',
