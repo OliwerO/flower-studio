@@ -17,6 +17,7 @@ import {
   editBouquetLines,
 } from '../services/orderService.js';
 import { broadcast } from '../services/notifications.js';
+import { notifyDeliveryAssigned } from '../services/driverNotifyService.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -314,6 +315,20 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// GET /api/orders/:id/status-history — the order's current status plus the
+// distinct set of statuses it has previously held (from the audit trail). The
+// florist apps use `previousStatuses` to offer "revert to a prior state"
+// buttons on terminal orders.
+router.get('/:id/status-history', async (req, res, next) => {
+  try {
+    const history = await orderRepo.getOrderStatusHistory(req.params.id);
+    res.json(history);
+  } catch (err) {
+    if (err.statusCode === 404) return res.status(404).json({ error: err.message });
+    next(err);
+  }
+});
+
 // POST /api/orders — creates order + order lines + delivery atomically
 router.post('/', async (req, res, next) => {
   try {
@@ -370,6 +385,15 @@ router.post('/', async (req, res, next) => {
         isOwner: req.role === 'owner',
       }, { getConfig, getDriverOfDay, generateOrderId });
 
+      // Notify the assigned driver if this new delivery-type order already has one.
+      const createdDelivery = result.delivery;
+      if (createdDelivery?.['Assigned Driver']) {
+        notifyDeliveryAssigned({
+          delivery: createdDelivery,
+          driverName: createdDelivery['Assigned Driver'],
+        }).catch(err => console.error('[DRIVER_NOTIFY] create hook failed:', err.message));
+      }
+
       res.status(201).json(result);
     } catch (creationErr) {
       // Validation errors (e.g. orphan lines) — surface message verbatim
@@ -412,7 +436,7 @@ router.patch('/:id', async (req, res, next) => {
 
     if (newStatus) {
       try {
-        const order = await transitionStatus(req.params.id, newStatus, otherFields);
+        const order = await transitionStatus(req.params.id, newStatus, otherFields, { actor: actorFromReq(req) });
         return res.json(order);
       } catch (transErr) {
         if (transErr.statusCode === 400) {
@@ -521,6 +545,13 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
       Status:             DELIVERY_STATUS.PENDING,
     }, { actor: actorFromReq(req) });
+
+    // Notify the assigned driver — delivery already carries all needed fields.
+    const assignedDriver = delivery['Assigned Driver'];
+    if (assignedDriver) {
+      notifyDeliveryAssigned({ delivery, driverName: assignedDriver })
+        .catch(err => console.error('[DRIVER_NOTIFY] convert hook failed:', err.message));
+    }
 
     res.status(201).json(delivery);
   } catch (err) {

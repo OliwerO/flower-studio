@@ -8,6 +8,7 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
 import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
 import { sendDeliveryCompleteAlert } from '../services/orderService.js';
+import { notifyDeliveryAssigned } from '../services/driverNotifyService.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -149,11 +150,18 @@ router.patch('/:id', async (req, res, next) => {
       });
     }
 
+    // Capture the prior driver so we only notify on a genuine assignment change.
+    const before = await orderRepo.getDeliveryById(req.params.id).catch(() => null);
+    const priorDriver = before?.['Assigned Driver'] || '';
+
+    // Self-claim: a driver advancing status stamps their own name (no notify).
     // When a driver changes status, stamp their name on the delivery.
     // Like signing a work order — whoever completes it gets credited.
+    let selfClaim = false;
     if (fields.Status === DELIVERY_STATUS.OUT_FOR_DELIVERY || fields.Status === DELIVERY_STATUS.DELIVERED) {
       if (req.driverName) {
         fields['Assigned Driver'] = req.driverName;
+        selfClaim = true;
       }
     }
 
@@ -173,6 +181,18 @@ router.patch('/:id', async (req, res, next) => {
         console.error('[TELEGRAM] delivery-complete alert failed:', err.message),
       );
     }
+
+    // Notify driver on genuine assignment change (diff-detect + suppress self-claim).
+    // Fire-and-forget: never blocks the response.
+    const newDriver = updated['Assigned Driver'] || '';
+    if (newDriver && newDriver !== priorDriver && !selfClaim) {
+      notifyDeliveryAssigned({
+        delivery: updated,
+        driverName: newDriver,
+        actorName: req.driverName || '',
+      }).catch(err => console.error('[DRIVER_NOTIFY] patch hook failed:', err.message));
+    }
+
     res.json(updated);
   } catch (err) {
     next(err);

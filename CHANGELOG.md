@@ -5,6 +5,139 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-09 — Per-florist payroll breakdown by custom date range (#378)
+
+The owner could only see florist hours as **per-florist monthly totals** (dashboard FinancialTab merged `/summary` across months; florist-app owner view used a month picker). There was no way to pick one florist + an arbitrary date range and see a **day-by-day** breakdown of hours, hourly rate, and earnings — the detail the owner asked for in #378.
+
+### Backend (`backend/src/`)
+- **New service `services/floristHoursService.js`** (pure, unit-tested) — `resolveHourlyRate` (record rate wins; falls back to config rate keyed by Rate Type, or a flat numeric config rate), `computeEarnings` (`hours*rate + bonus − deduction`), and `buildPayroll(records, configuredRates)` → `{ days[] (sorted asc by date, each with resolved rate + earnings), totals }`. Extracted so the rate-fallback logic lives in ONE place.
+- `routes/floristHours.js` — **new `GET /florist-hours/payroll?dateFrom&dateTo&name`** (defined before `/:id`, like `/summary`). `name` optional → all florists when omitted. `/summary` refactored onto `resolveHourlyRate` so its rate math can't drift from payroll.
+- `repos/hoursRepo.js` — `list()` now accepts `dateFrom`/`dateTo` (YYYY-MM-DD) in addition to `month`.
+- Tests: `__tests__/floristHoursService.test.js` (10 unit) + new date-range cases in `__tests__/hoursRepo.integration.test.js`.
+
+### Frontend (cross-app parity)
+- **Dashboard** `components/FinancialTab.jsx` — Florist Hours section gains a florist selector (+ "All florists") that renders a daily table (Date · Hours · Rate · Bonus · Deduction · Earnings + totals) for the date range already selected at the top.
+- **Florist app** `pages/FloristHoursPage.jsx` (owner view) — new "Payroll details" card: florist selector + From/To date inputs + daily table (Date · Hours · Rate · Earnings + totals).
+- New translation keys in both apps (`payrollDetails`, `selectFlorist`, `allFlorists`, `earnings`, `hours`, `payrollTotal`, `rangeFrom`, `rangeTo`; florist also `hourlyRate`).
+
+### No schema migration
+All fields (`date`, `hours`, `hourlyRate`, `bonus`, `deduction`, `rateType`) already exist on `florist_hours`. Read-only feature — no env vars, no tables, no writes.
+
+---
+
+## 2026-06-04 — PO new-Variety fields gated behind STOCK_Y_MODEL + send-identity fix
+
+The new-PO form showed the Y-model **"New variety"** identity row (`Type *` / Colour / Size / Cultivar, issue #304) for any off-plan line **regardless of the `STOCK_Y_MODEL` flag** — so it "crept into" prod where the flag is off. The prominent `Type *` lured the owner into filling Type instead of the Flower Name, and the PO then **could not be sent to the driver**: the line persisted with an empty Flower Name + a Type, which `POST /stock-orders/:id/send` rejected as a blank line (`Fill flower name on N blank line(s) before sending`) even though `POST /:id/lines` had accepted Type as valid identity.
+
+### Frontend (gate the Y-model UI)
+- `apps/florist/src/pages/PurchaseOrderPage.jsx` + `apps/dashboard/src/components/StockOrderPanel.jsx` — the Variety identity row (new-PO form **and** inline `DraftLineEditor`) now renders only when `useStockYModelFlag()` is true. Flag off (prod) → the form reverts to the plain Flower Name flow; the Variety fields never appear.
+
+### Backend (consistency / hardening — `backend/src/routes/stockOrders.js`)
+- New `composeFlowerName()` helper. PO line persistence (create, add-line, and Variety-attr PATCH) now composes a driver-readable Flower Name from `Type/Colour/Size/Cultivar` when no explicit name was given — mirrors the frontend wizard compose, so every new-Variety line carries a name.
+- `POST /:id/send` blank-check now counts a line's `Type` as valid identity (matches the line-add rule), so a line accepted on creation can never be rejected on send. This also unblocks any Type-only line already stuck in prod.
+- Regression test: `backend/src/__tests__/stockOrders.sendIdentity.integration.test.js` (create-composes-and-sends, inline-PATCH-composes, genuinely-blank-still-blocks).
+
+### No schema migration
+Behaviour + UI-gating change only. No env vars, no tables. Y-model stays off in prod (`STOCK_Y_MODEL` unset).
+
+---
+
+## 2026-06-03 — Revert order status (owner any→any, florist history-undo)
+
+A florist who marked the wrong bouquet **Delivered** (or **Picked Up**) had no way back — the order state machine had zero exits from terminal states, so reverting was hard-blocked at the backend (the owner's dashboard `Status` pills returned `400 Cannot move from "Delivered" to "Ready". Allowed: none (terminal)`).
+
+Status transitions are now **role-aware**:
+- **Owner → any → any.** The owner can switch an order to any status, including reverting terminal states. The dashboard already rendered all status pills; they now succeed instead of erroring.
+- **Florist/driver → forward map ∪ previously-held statuses.** A florist can *revert* to any status the order genuinely passed through (read from the audit trail), but cannot invent a status the order never held. New "↩ revert" buttons appear in the florist app's expanded order status controls.
+
+Reverting also **reverse-cascades the linked delivery** (e.g. Delivered → Ready pulls the delivery back to Pending and clears its `Delivered At`). Stock is never touched by a status revert — only the explicit cancel-with-return flow moves stems.
+
+### Backend
+- `backend/src/repos/orderRepo.js` — `transitionStatus` is role-aware (`opts.actor.actorRole === 'owner'` → any→any; else forward map ∪ `previouslyHeldStatuses()` from `audit_log`). Generalised the delivery cascade via `desiredDeliveryStatus()` so it runs forward **and** in reverse (clears `deliveredAt` on the way back). New exported `getOrderStatusHistory(orderId)`. The forward `ALLOWED_TRANSITIONS` map is unchanged.
+- `backend/src/services/orderService.js` — `transitionStatus` forwards `opts` (actor) to the repo.
+- `backend/src/routes/orders.js` — PATCH passes `{ actor: actorFromReq(req) }`; new `GET /orders/:id/status-history`.
+- Tests: `orderRepo.integration.test.js` (+6 — owner any→any + reverse cascade, florist revert to held / reject never-held, `getOrderStatusHistory`); E2E `scripts/e2e-test.js` section 5 rewritten for the new semantics.
+
+### Shared + frontend
+- `packages/shared/utils/orderStatusOptions.js` (new, +test) — `getStatusOptions({role, currentStatus, previousStatuses})`, single source of truth mirroring the backend. Replaces the forward map that was copy-pasted into the florist app.
+- `apps/florist/OrderCard.jsx` + `OrderDetailPage.jsx` — fetch `/status-history`, render forward pills + a role-aware "↩ revert" row; new `revertTo` translation key (ru/en).
+- Dashboard `OrderDetailPanel.jsx` unchanged — it is owner-only and already renders all status pills, so the backend change alone restores the reported flow.
+
+### No schema migration
+New read-only endpoint + behaviour change. No env vars, no tables. Reuses the existing `audit_log`.
+
+---
+
+## 2026-06-03 — PIN-resolution dedup + driver-bot `/start` brute-force guard (#369 follow-ups)
+
+Two security/maintenance follow-ups to the driver/florist Telegram work.
+
+1. **Single PIN→role seam.** PIN-to-role resolution was duplicated across four places (`middleware/auth.js`, `routes/auth.js`, `routes/events.js`, `configService.js`), and `routes/auth.js` diverged — it skipped Backup-driver name resolution, so `POST /auth/verify` returned the literal name `"Backup"` while the middleware returned the owner-set backup name. All four now route through one `resolveRoleByPin` / `isValidPin` / `listDriverPins` seam in `utils/driverPins.js`. **Behavior change:** `/auth/verify` now resolves a Backup-driver PIN to the owner-set backup name (matching the middleware) instead of `"Backup"`.
+2. **Driver-bot `/start` rate limit.** The Telegram `/start <PIN>` registration had no brute-force guard (the HTTP `/auth/verify` endpoint has 5/15min per IP; the bot has no IP). Added a per-chat_id in-memory limiter: 5 failed PINs in 15 min locks that chat out with a Russian "too many attempts" reply; a successful registration clears the counter.
+
+### Backend
+- `backend/src/utils/driverPins.js` — added `resolveRoleByPin(pin)` (`{ role, driverName? } | null`, owner-first precedence) and `isValidPin(pin)`. Now the single source of PIN→role resolution.
+- `backend/src/middleware/auth.js`, `backend/src/routes/auth.js`, `backend/src/routes/events.js` — dropped local PIN tables; resolve via the shared seam.
+- `backend/src/services/configService.js` — `driverNames` now derives from `listDriverPins()`.
+- `backend/src/services/driverBot.js` — per-chat `/start` brute-force guard (`isRateLimited` / `recordPinFailure`, cleared on success); `_resetRateLimit` test seam.
+- Tests: `driverPins.test.js` (+`resolveRoleByPin`/`isValidPin`, incl. Backup-name), `driverBot.test.js` (+rate-limit lockout/per-chat/reset/window-expiry).
+
+### No schema migration
+Pure code change — no env vars, no tables.
+
+---
+
+## 2026-06-02 — PO assignment notification: diff-detection
+
+`PATCH /api/stock-orders/:id` now only sends the driver a Telegram PO-assignment ping when the Assigned Driver genuinely changes. Previously, re-saving a PO with the same driver re-pinged on every save. Mirrors the diff-detection already in the delivery PATCH path. SSE broadcast is unchanged (still fires on every save). Follow-up to PR #369.
+
+### Backend
+- `backend/src/routes/stockOrders.js` — capture prior `Assigned Driver` before the update; gate `notifyPoAssigned` on `newDriver && newDriver !== priorDriver`.
+- `backend/src/__tests__/stockOrders.assign-notify.integration.test.js` (NEW) — proves notify fires on empty→driver and driver→driver changes, and does NOT fire on same-driver re-save.
+
+---
+
+## 2026-06-02 — Florist New-Order Telegram Notifications (florist half of #336)
+
+Every new Order (In-store, Wix, Flowwow, AI-intake, premade conversion) now sends a Telegram ping to the shared florist phone. Florists register once by sending `/start <PIN_FLORIST>` to the existing alerts bot. Reuses the driver notification infra (ADR-0009) — same bot, same `/start` loop, no new bot token.
+
+### Backend
+- `backend/src/repos/floristTelegramRepo.js` (NEW) — singleton `get`/`set` for `florist_chat_id` and `florist_notify_lang` in `system_meta` kv. No new table — florists share one PIN and one phone.
+- `backend/src/services/floristNotifyService.js` (NEW) — `notifyFloristNewOrder({ order, deliveryType, source })`: resolves chat_id + group lang, composes a per-language message (ru/en/pl), HTML-escapes user fields, sends via `sendToChat`. Skips silently if unregistered; never throws into callers.
+- `backend/src/services/driverBot.js` — extended `/start` loop: on a florist PIN (`PIN_FLORIST`), stores chat_id via `floristTelegramRepo` and confirms in the current florist group language.
+- `backend/src/utils/driverPins.js` — added `resolveFloristByPin(pin)`: maps `PIN_FLORIST` env var → `'florist'`.
+- `backend/src/services/orderService.js` + `backend/src/services/wix.js` — fire `notifyFloristNewOrder` at both creation seams (fire-and-forget, alongside `notifyNewOrder`).
+- `backend/src/routes/settings.js` — new `PUT /settings/florist-language` (owner-only): sets the group notification language (ru/en/pl) in `system_meta`.
+
+### No schema migration
+All florist storage uses existing `system_meta` kv — keys `florist_chat_id` and `florist_notify_lang`. No new table, no migration file.
+
+### Deploy note
+No new env vars required. Florists register once by sending `/start <PIN_FLORIST>` to the alerts bot (same bot as drivers). The owner can set the group language via `PUT /settings/florist-language`.
+
+---
+
+## 2026-06-01 — Driver Assignment Telegram Notifications (PRD #368, driver half of #336)
+
+Drivers now receive targeted Telegram messages (ru/en/pl) when a delivery or PO shopping run is assigned to them, and a daily digest when they are driver-of-day. Drivers self-register by sending `/start <PIN>` to the alerts bot.
+
+### Schema
+- **Migration 0015** — new `driver_telegram_chats` table: `driver_name` (PK), `chat_id`, `lang` (ru/en/pl, default ru), `registered_at`.
+
+### Backend
+- `backend/src/services/driverNotifyService.js` (NEW) — single seam for all driver assignment notifications. Chat-id + lang resolution via `driverTelegramRepo`, suppress-self and skip-unregistered guards, per-language message builders for `notifyDeliveryAssigned`, `notifyDeliveryDigest`, and `notifyPoAssigned`.
+- `backend/src/services/driverBot.js` (NEW) — inbound getUpdates loop on `TELEGRAM_BOT_TOKEN` (the alerts bot). Handles `/start <PIN>` registration; persists chat-id; sends language-matched confirmation. Uses a distinct `driver_bot_poll_offset` key in `system_meta` so it never collides with the feedback bot's poll loop.
+- `backend/src/repos/driverTelegramRepo.js` (NEW) — `getDriver(name)`, `setChatId(name, chatId)`, `setLang(name, lang)` CRUD over `driver_telegram_chats`.
+- `backend/src/utils/driverPins.js` (NEW) — `resolveDriverByPin(pin)`: maps a PIN to a driver name by scanning `PIN_DRIVER_*` env vars.
+- `backend/src/services/telegram.js` — `escapeHtml` exported; dynamic user fields (address, flower names, driver name, order ID, date/time) are now HTML-escaped in all driver notification messages to prevent Telegram 400 rejections on `<`, `>`, `&`.
+- `backend/src/routes/settings.js` — new `PUT /settings/driver-language` (owner-only): sets a driver's notification language (ru/en/pl) in `driver_telegram_chats`.
+- `backend/src/routes/deliveries.js` + `backend/src/routes/stockOrders.js` — call `notifyDeliveryAssigned` / `notifyPoAssigned` on assignment.
+
+### Deploy note
+`TELEGRAM_BOT_TOKEN` now also drives an inbound getUpdates poll loop for driver registration in addition to the existing outbound alert sends. No new env var required. Drivers register once by sending `/start <PIN>` to the bot; the owner can override their language via `PUT /settings/driver-language`.
+
+---
+
 ## 2026-05-30 — Premade edit path joins the Y-model reservation model (#330)
 
 Closes the last unsplit flag-off/flag-on path in `premadeBouquetService`. `editPremadeBouquetLines` was unconditionally calling `stockRepo.adjustQuantity` on add / qty-change / remove — under `STOCK_Y_MODEL=true` that double-counts on top of the reservation ledger. Cutover-blocker fix.

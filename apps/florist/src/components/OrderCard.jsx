@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -35,7 +35,10 @@ const STATUS_LABELS = {
   'Cancelled':        () => t.statusCancelled,
 };
 
-// Florist doesn't trigger "Out for Delivery" — that's the driver's job.
+// Forward shortcut map for the collapsed-card "Mark Ready / Delivered" button
+// only. The expanded status controls use the shared getStatusOptions util
+// (role-aware + history-driven revert). Florist doesn't trigger "Out for
+// Delivery" — that's the driver's job.
 const ALLOWED_TRANSITIONS = {
   'New':              ['Ready', 'Cancelled'],
   'In Progress':      ['Ready', 'Cancelled'],
@@ -88,6 +91,7 @@ function OrderCard({
   isOwner,
   editorStockItems: stockItems = [],
   editorPremadeMap: premadeMap = {},
+  editorPendingPO: pendingPO = {},
   onStockRefresh,
 }) {
   const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
@@ -105,6 +109,9 @@ function OrderCard({
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
+  // Statuses this order has previously held — powers the florist "revert"
+  // buttons in the expanded status controls (GET /orders/:id/status-history).
+  const [prevStatuses, setPrevStatuses] = useState([]);
 
   const navigate   = useNavigate();
   // Customer linked record from Airtable — array of IDs, take the first.
@@ -125,6 +132,12 @@ function OrderCard({
   // Wix orders without a composed bouquet — florist needs to select actual flowers
   const needsComposition = isWix && !order['Bouquet Summary'] && status === 'New';
 
+  function loadStatusHistory() {
+    client.get(`/orders/${order.id}/status-history`)
+      .then(r => setPrevStatuses(r.data.previousStatuses || []))
+      .catch(() => {});
+  }
+
   function toggle() {
     if (expanded) {
       setExpanded(false);
@@ -138,6 +151,7 @@ function OrderCard({
         .then(r => setDetail(r.data))
         .catch(() => showToast(t.loadError, 'error'))
         .finally(() => setLoading(false));
+      loadStatusHistory();
     }
   }
 
@@ -167,6 +181,9 @@ function OrderCard({
       setDetail(prev => prev ? { ...prev, ...res.data } : res.data);
       onOrderUpdated?.(order.id, res.data);
       showToast(t.updated, 'success');
+      // A status change rewrites the "previously held" set — refresh so the
+      // revert buttons stay accurate after stepping forward or back.
+      if (fields.Status) loadStatusHistory();
     } catch (err) {
       const msg = err.response?.data?.error || t.updateError;
       showToast(msg, 'error');
@@ -187,6 +204,7 @@ function OrderCard({
     onSuccess: ({ withStockReturn }) => {
       setDetail(prev => prev ? { ...prev, Status: 'Cancelled' } : prev);
       onOrderUpdated?.(order.id, { Status: 'Cancelled' });
+      loadStatusHistory();
       if (!withStockReturn) {
         // cancelOnly path — hook skips toast; show the generic "updated" toast here
         // so the user sees confirmation (mirrors old patch() success toast).
@@ -303,7 +321,8 @@ function OrderCard({
   const editingLineTotal = editingBouquet
     ? editLines.reduce((sum, l) => {
         const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
-        const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+        // Pending-PO flowers price off their PO, not the stale card sell (#377).
+        const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
         return sum + price * Number(l.quantity || 0);
       }, 0)
     : null;
@@ -492,7 +511,9 @@ function OrderCard({
                     <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-2">
                       {editLines.map((line, idx) => {
                         const si = line.stockItemId ? stockItems.find(s => s.id === line.stockItemId) : null;
-                        const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+                        // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                        const liveSell = resolveStockLinePrice(si, pendingPO[line.stockItemId]).sellPricePerUnit
+                          || Number(line.sellPricePerUnit) || 0;
                         const qtyNum = Number(line.quantity || 0);
                         const lineTotal = liveSell * qtyNum;
                         return (
@@ -522,7 +543,8 @@ function OrderCard({
                       {editLines.length > 0 && (() => {
                         const liveSellTotal = editLines.reduce((sum, l) => {
                           const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
-                          const price = Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0);
+                          // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                          const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
                           return sum + price * Number(l.quantity || 0);
                         }, 0);
                         const originalTotal = Number(detail?.['Sell Total'] || 0);
@@ -574,7 +596,9 @@ function OrderCard({
                               .slice(0, 6)
                               .map(s => {
                                 const stockQty = Number(s['Current Quantity']) || 0;
-                                const stockSell = Number(s['Current Sell Price']) || 0;
+                                // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                                const addPrice = resolveStockLinePrice(s, pendingPO[s.id]);
+                                const stockSell = addPrice.sellPricePerUnit;
                                 return (
                                   <div key={s.id}
                                     onPointerDown={e => {
@@ -584,7 +608,7 @@ function OrderCard({
                                         id: null, stockItemId: s.id,
                                         flowerName: s['Display Name'],
                                         quantity: 1, _originalQty: 0,
-                                        costPricePerUnit: Number(s['Current Cost Price']) || 0,
+                                        costPricePerUnit: addPrice.costPricePerUnit,
                                         sellPricePerUnit: stockSell,
                                       }]);
                                       setFlowerSearch('');
@@ -819,23 +843,46 @@ function OrderCard({
               <div>
                 <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.labelStatus}</p>
                 {(() => {
-                  const allowed = ALLOWED_TRANSITIONS[currentStatus] || [];
-                  const visible = [currentStatus, ...allowed];
+                  const { forward, revert } = getStatusOptions({
+                    role: isOwner ? 'owner' : 'florist',
+                    currentStatus,
+                    previousStatuses: prevStatuses,
+                  });
+                  // Intercept the Cancelled pill — show inline confirm so the
+                  // user picks return-stock vs status-only cancel.
+                  const onPick = val => {
+                    if (val === 'Cancelled' && currentStatus !== 'Cancelled') {
+                      term.requestCancel();
+                    } else {
+                      patch({ 'Status': val });
+                    }
+                  };
                   return (
-                    <Pills
-                      value={currentStatus}
-                      onChange={val => {
-                        // Intercept the Cancelled pill — show inline confirm
-                        // so user picks return-stock vs status-only cancel.
-                        if (val === 'Cancelled' && currentStatus !== 'Cancelled') {
-                          term.requestCancel();
-                        } else {
-                          patch({ 'Status': val });
-                        }
-                      }}
-                      disabled={saving}
-                      options={visible.map(s => ({ value: s, label: statusLabel(s) }))}
-                    />
+                    <>
+                      <Pills
+                        value={currentStatus}
+                        onChange={onPick}
+                        disabled={saving}
+                        options={[currentStatus, ...forward].map(s => ({ value: s, label: statusLabel(s) }))}
+                      />
+                      {revert.length > 0 && (
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <p className="text-xs text-ios-tertiary mb-1.5">{t.revertTo}</p>
+                          <div className="flex flex-wrap gap-2">
+                            {revert.map(s => (
+                              <button
+                                key={s}
+                                onClick={e => { e.stopPropagation(); onPick(s); }}
+                                disabled={saving}
+                                className="px-3 py-1.5 rounded-full text-sm font-medium border border-amber-300 bg-amber-50 text-amber-700 active-scale disabled:opacity-40"
+                              >
+                                ↩ {statusLabel(s)}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
                 {/* Inline cancel confirm — fires from the Cancelled pill (non-terminal)
@@ -1304,6 +1351,7 @@ function arePropsEqual(prev, next) {
   if (prev.isOwner !== next.isOwner) return false;
   if (prev.editorStockItems !== next.editorStockItems) return false;
   if (prev.editorPremadeMap !== next.editorPremadeMap) return false;
+  if (prev.editorPendingPO !== next.editorPendingPO) return false;
   if (prev.onStockRefresh !== next.onStockRefresh) return false;
   if (prev.onOrderUpdated !== next.onOrderUpdated) return false;
   if (prev.onOrderDeleted !== next.onOrderDeleted) return false;

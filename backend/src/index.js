@@ -32,6 +32,7 @@ import premadeBouquetRoutes from './routes/premadeBouquets.js';
 import adminRoutes         from './routes/admin.js';
 import feedbackRoutes      from './routes/feedback.js';
 import { startFeedbackBot } from './services/feedbackTelegramBot.js';
+import { startDriverBot } from './services/driverBot.js';
 
 // Validate required env vars on startup — fail early instead of silently breaking at runtime.
 const REQUIRED_ENV = ['DATABASE_URL', 'PIN_OWNER', 'PIN_FLORIST'];
@@ -141,6 +142,7 @@ const PORT = process.env.PORT || 3001;
 await connectPostgres();
 
 startFeedbackBot();
+startDriverBot();
 
 const server = app.listen(PORT, () => {
   console.log(`Flower Studio backend running on http://localhost:${PORT}`);

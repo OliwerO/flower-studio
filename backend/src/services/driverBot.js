@@ -1,0 +1,176 @@
+// Inbound Telegram loop for the alerts bot (TELEGRAM_BOT_TOKEN). Captures Driver
+// chat ids via `/start <PIN>` so Assignment Notifications can reach them
+// (ADR-0009). Mirrors feedbackTelegramBot.js, but on a different token and with
+// its own poll offset, so the two loops never collide.
+import { eq } from 'drizzle-orm';
+import { db } from '../db/index.js';
+import { systemMeta } from '../db/schema.js';
+import { resolveDriverByPin, resolveFloristByPin } from '../utils/driverPins.js';
+import { setChatId, getDriver } from '../repos/driverTelegramRepo.js';
+import { setFloristChatId, getFloristLang } from '../repos/floristTelegramRepo.js';
+import { sendToChat, escapeHtml } from './telegram.js';
+
+const BASE = 'https://api.telegram.org/bot';
+const POLL_OFFSET_KEY = 'driver_bot_poll_offset';
+
+// Registration confirmation per language. Bad-PIN / hint stay in ru (the driver
+// isn't resolved yet, so no language is known).
+const REGISTERED = {
+  ru: (name) => `Привет, ${name}! 👋 Вы подключены к уведомлениям о доставках и закупках.`,
+  en: (name) => `Hi ${name}! 👋 You're now connected to delivery and purchase notifications.`,
+  pl: (name) => `Cześć ${name}! 👋 Połączono Cię z powiadomieniami o dostawach i zakupach.`,
+};
+const FLORIST_REGISTERED = {
+  ru: '🌸 Готово! Вы будете получать уведомления о новых заказах.',
+  en: "🌸 Done! You'll receive notifications about new orders.",
+  pl: '🌸 Gotowe! Będziesz otrzymywać powiadomienia o nowych zamówieniach.',
+};
+const BAD_PIN = 'Неверный PIN. Попробуйте: /start <PIN>';
+const HINT = 'Чтобы получать уведомления, отправьте: /start <ваш PIN>';
+const REG_ERROR = 'Не удалось зарегистрировать. Попробуйте ещё раз позже.';
+const LOCKED = 'Слишком много попыток. Попробуйте через 15 мин.';
+
+// Per-chat brute-force guard for /start <PIN>. The HTTP /auth/verify endpoint is
+// rate-limited (5/15min per IP); the bot has no IP, so we throttle per chat_id.
+// In-memory only — a restart clears it, fine for a tiny PIN space already behind
+// Telegram's own inbound rate limits.
+const MAX_PIN_ATTEMPTS = 5;
+const ATTEMPT_WINDOW_MS = 15 * 60 * 1000;
+const pinAttempts = new Map(); // chatId -> { count, first }
+
+function isRateLimited(chatId, now) {
+  const rec = pinAttempts.get(chatId);
+  if (!rec || now - rec.first > ATTEMPT_WINDOW_MS) return false;
+  return rec.count >= MAX_PIN_ATTEMPTS;
+}
+
+function recordPinFailure(chatId, now) {
+  // Opportunistically prune expired entries so the Map can't grow unbounded.
+  if (pinAttempts.size > 50) {
+    for (const [id, rec] of pinAttempts) {
+      if (now - rec.first > ATTEMPT_WINDOW_MS) pinAttempts.delete(id);
+    }
+  }
+  const rec = pinAttempts.get(chatId);
+  if (!rec || now - rec.first > ATTEMPT_WINDOW_MS) {
+    pinAttempts.set(chatId, { count: 1, first: now });
+  } else {
+    rec.count += 1;
+  }
+}
+
+// Test seam: clear the in-memory brute-force counters between cases.
+export function _resetRateLimit() {
+  pinAttempts.clear();
+}
+
+export async function handleDriverUpdate(update) {
+  const msg = update.message;
+  if (!msg?.text) return;
+  const chatId = String(msg.chat.id);
+  const text = msg.text.trim();
+
+  if (text.startsWith('/start')) {
+    if (isRateLimited(chatId, Date.now())) {
+      await sendToChat(chatId, LOCKED);
+      return;
+    }
+    const pin = text.split(/\s+/)[1];
+    const driverName = resolveDriverByPin(pin);
+    if (driverName) {
+      pinAttempts.delete(chatId); // valid PIN — reset the brute-force counter
+      try {
+        await setChatId(driverName, chatId);
+      } catch (err) {
+        console.error('[DRIVER_BOT] register error:', err.message);
+        await sendToChat(chatId, REG_ERROR);
+        return;
+      }
+      const row = await getDriver(driverName).catch(() => null);
+      const lang = (REGISTERED[row?.lang]) ? row.lang : 'ru';
+      await sendToChat(chatId, REGISTERED[lang](escapeHtml(driverName)));
+      return;
+    }
+    if (resolveFloristByPin(pin)) {
+      pinAttempts.delete(chatId); // valid PIN — reset the brute-force counter
+      try {
+        await setFloristChatId(chatId);
+      } catch (err) {
+        console.error('[DRIVER_BOT] florist register error:', err.message);
+        await sendToChat(chatId, REG_ERROR);
+        return;
+      }
+      const lang = await getFloristLang().catch(() => 'ru');
+      await sendToChat(chatId, FLORIST_REGISTERED[lang] || FLORIST_REGISTERED.ru);
+      return;
+    }
+    recordPinFailure(chatId, Date.now()); // bad PIN — count toward the lockout
+    await sendToChat(chatId, BAD_PIN);
+    return;
+  }
+  await sendToChat(chatId, HINT);
+}
+
+let running = false;
+let pollOffset = 0;
+let pollTimer = null;
+
+async function savePollOffset() {
+  try {
+    await db.insert(systemMeta)
+      .values({ key: POLL_OFFSET_KEY, value: String(pollOffset) })
+      .onConflictDoUpdate({ target: systemMeta.key, set: { value: String(pollOffset) } });
+  } catch (err) {
+    console.error('[DRIVER_BOT] failed to save poll offset:', err.message);
+  }
+}
+
+async function loadPollOffset() {
+  try {
+    const [row] = await db.select({ value: systemMeta.value })
+      .from(systemMeta)
+      .where(eq(systemMeta.key, POLL_OFFSET_KEY));
+    if (row?.value) pollOffset = parseInt(row.value, 10) || 0;
+  } catch (err) {
+    console.error('[DRIVER_BOT] failed to load poll offset:', err.message);
+  }
+}
+
+async function poll(token) {
+  if (!running) return;
+  try {
+    const res = await fetch(`${BASE}${token}/getUpdates?offset=${pollOffset}&timeout=20`);
+    if (res.ok) {
+      const { result: updates } = await res.json();
+      if (updates?.length) {
+        for (const update of updates) {
+          pollOffset = update.update_id + 1;
+          await handleDriverUpdate(update);
+        }
+        await savePollOffset();
+      }
+    } else {
+      console.error('[DRIVER_BOT] getUpdates non-ok:', res.status);
+    }
+  } catch (err) {
+    console.error('[DRIVER_BOT] poll error:', err.message);
+  }
+  if (running) pollTimer = setTimeout(() => poll(token), 500);
+}
+
+export async function startDriverBot() {
+  const token = process.env.TELEGRAM_BOT_TOKEN;
+  if (!token) {
+    console.log('[DRIVER_BOT] TELEGRAM_BOT_TOKEN not set — driver registration bot disabled');
+    return;
+  }
+  await loadPollOffset();
+  running = true;
+  poll(token);
+  console.log('[DRIVER_BOT] Driver registration bot started');
+}
+
+export function stopDriverBot() {
+  running = false;
+  if (pollTimer) clearTimeout(pollTimer);
+}

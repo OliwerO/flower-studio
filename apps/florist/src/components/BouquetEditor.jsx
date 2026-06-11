@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import {
   renderStockName, parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
-  groupByVariety, varietyDisplayName,
+  groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 
@@ -62,7 +62,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
         cultivar:    g.cultivar,
         rows:        g.rows,
         totalQty:    g.rows.reduce((s, r) => s + (Number(r['Current Quantity']) || 0), 0),
-        sell:        Number(g.rows[0]?.['Current Sell Price']) || 0,
+        // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+        sell:        resolveVarietySell(g.rows, editing.pendingPO),
         poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
         inCart:      g.rows.some(r => editing.editLines.some(l => l.stockItemId === r.id)),
       }));
@@ -85,7 +86,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
         entry.rows.push(s);
       }
     }
-    return [...map.values()];
+    // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+    return [...map.values()].map(e => ({ ...e, sell: resolveVarietySell(e.rows, editing.pendingPO) }));
   }, [catalogItems, flowerSearch, yEnabled, editing.pendingPO, editing.editLines]);
 
   function addFromCatalog(s) {
@@ -249,7 +251,9 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                 {editing.editLines.map((line, idx) => {
                   const si = editing.stockItems.find(s => s.id === line.stockItemId);
                   const availableQty = Number(si?.['Current Quantity']) || 0;
-                  const liveSell = Number(si?.['Current Sell Price'] ?? line.sellPricePerUnit ?? 0);
+                  // Pending-PO flowers price off their PO, not the stale card sell (#377).
+                  const liveSell = resolveStockLinePrice(si, editing.pendingPO?.[line.stockItemId]).sellPricePerUnit
+                    || Number(line.sellPricePerUnit) || 0;
                   const lineSell = liveSell * Number(line.quantity || 0);
                   const overStock = line.stockItemId && line.quantity > availableQty;
                   const linePoQty = line.stockItemId ? (editing.pendingPO?.[line.stockItemId]?.ordered || 0) : 0;

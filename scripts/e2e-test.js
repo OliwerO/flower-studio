@@ -48,6 +48,9 @@ import { createHmac } from 'node:crypto';
 //   23. Auth gates — driver blocked from /orders, florist blocked from /admin
 //   24. Wix webhook replay — HMAC verification + async order processing
 //   25. Bouquet image upload — POST + DELETE auth + happy path (HARNESS_MOCK_WIX=1)
+//   26. Customer CRUD via PG (Phase 5)
+//   27. Driver assignment notification — HTTP contracts (PATCH Assigned Driver + driver-language endpoint)
+//   28. Florist new-order notification — HTTP contracts (PUT /settings/florist-language + order create regression)
 
 const PORT = process.env.HARNESS_PORT || '3002';
 const BASE = `http://localhost:${PORT}/api`;
@@ -474,37 +477,63 @@ async function section4DeliveryHappyPath() {
 // ──────────── 5. INVALID TRANSITIONS BLOCKED ────────────
 
 async function section5InvalidTransitions() {
-  startSection('5. Invalid status transitions blocked (FSM enforcement)');
+  startSection('5. Status transitions — FSM enforcement + owner god-mode + florist revert');
   await reset();
 
-  const created = await api('POST', '/orders', {
-    pin: PIN_OWNER,
-    body: buildOrderBody({
-      customer: FIXTURE.customers.iwona,
-      lines: [line(FIXTURE.stock.babysBreath || FIXTURE.stock.eucalyptus, 1)],
-    }),
-  });
-  const id = created.body.order.id;
+  const mkOrder = async () => {
+    const r = await api('POST', '/orders', {
+      pin: PIN_OWNER,
+      body: buildOrderBody({
+        customer: FIXTURE.customers.iwona,
+        lines: [line(FIXTURE.stock.babysBreath || FIXTURE.stock.eucalyptus, 1)],
+      }),
+    });
+    return r.body.order.id;
+  };
 
-  // From New: cannot go to Delivered, Picked Up, Out for Delivery
+  // ── Florist cannot skip the forward chain to a never-held status ──
+  const id1 = await mkOrder();
   for (const target of ['Delivered', 'Picked Up', 'Out for Delivery']) {
-    const r = await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: target } });
-    eq(`New → ${target} BLOCKED`, r.status, 400);
+    const r = await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: target } });
+    eq(`Florist New → ${target} BLOCKED`, r.status, 400);
   }
+  // Forward step is fine; In Progress was never held → still blocked.
+  await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: 'Ready' } });
+  const inProg = await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: 'In Progress' } });
+  eq('Florist Ready → In Progress (never held) BLOCKED', inProg.status, 400);
 
-  // Move to Ready, then test
-  await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: 'Ready' } });
-  for (const target of ['New', 'In Progress']) {
-    const r = await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: target } });
-    eq(`Ready → ${target} BLOCKED`, r.status, 400);
-  }
+  // ── Florist CAN revert to a status the order genuinely held ──
+  // id1 path so far: New → Ready. Reverting Ready → New is allowed (New was held).
+  const revToNew = await api('PATCH', `/orders/${id1}`, { pin: PIN_FLORIST, body: { Status: 'New' } });
+  eq('Florist Ready → New (revert, previously held) → 200', revToNew.status, 200);
+  eq('  status is New after revert', revToNew.body?.Status, 'New');
 
-  // Take to terminal Picked Up, no further moves allowed
-  await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: 'Picked Up' } });
-  for (const target of ['New', 'Ready', 'Cancelled', 'Delivered']) {
-    const r = await api('PATCH', `/orders/${id}`, { pin: PIN_OWNER, body: { Status: target } });
-    eq(`Picked Up → ${target} BLOCKED`, r.status, 400);
+  // ── Owner god-mode: any → any, including jumps a florist cannot make ──
+  const id2 = await mkOrder();
+  const ownerJump = await api('PATCH', `/orders/${id2}`, { pin: PIN_OWNER, body: { Status: 'Delivered' } });
+  eq('Owner New → Delivered (god-mode) → 200', ownerJump.status, 200);
+  const ownerBack = await api('PATCH', `/orders/${id2}`, { pin: PIN_OWNER, body: { Status: 'Ready' } });
+  eq('Owner Delivered → Ready (god-mode revert) → 200', ownerBack.status, 200);
+
+  // ── Florist revert from a terminal state (the headline bug fix) ──
+  // Build New → Ready → Picked Up (pickup is the default), then undo.
+  const id3 = await mkOrder();
+  await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Ready' } });
+  await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Picked Up' } });
+
+  const undo = await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Ready' } });
+  eq('Florist Picked Up → Ready (revert, previously held) → 200', undo.status, 200);
+  eq('  status is Ready after undo', undo.body?.Status, 'Ready');
+
+  // Back to Picked Up; never-held targets stay blocked for the florist.
+  await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: 'Picked Up' } });
+  for (const target of ['Cancelled', 'Delivered']) {
+    const r = await api('PATCH', `/orders/${id3}`, { pin: PIN_FLORIST, body: { Status: target } });
+    eq(`Florist Picked Up → ${target} (never held) BLOCKED`, r.status, 400);
   }
+  // …but the owner can. Picked Up → Cancelled via god-mode.
+  const ownerTerminal = await api('PATCH', `/orders/${id3}`, { pin: PIN_OWNER, body: { Status: 'Cancelled' } });
+  eq('Owner Picked Up → Cancelled (god-mode) → 200', ownerTerminal.status, 200);
 }
 
 // ──────────── 6. PLAIN CANCEL — STATUS ONLY, NO STOCK RETURN ────────────
@@ -1454,6 +1483,198 @@ async function section26CustomerCrudPg() {
   eq('26.8 Driver blocked from /customers', r.status, 403);
 }
 
+// ──────────── 27. DRIVER ASSIGNMENT NOTIFICATION — HTTP CONTRACTS ────────────
+//
+// Telegram observability: TELEGRAM_BOT_TOKEN is set to a non-empty fake value
+// in the harness ('test-mock-telegram'), so sendToChat's token guard passes.
+// However the driver_telegram_chats table starts empty (not seeded by
+// POST /test/reset), so resolveTarget() returns null → notifyDeliveryAssigned
+// is a no-op fire-and-forget with no network call. There is no Telegram spy
+// endpoint or HARNESS_MOCK_TELEGRAM shim — side-effect observability is
+// structurally unavailable in the E2E harness.
+//
+// The primary assertions here are the HTTP contracts that remain fully
+// verifiable:
+//   a) PATCH /deliveries/:id with "Assigned Driver" → 200, field persists
+//   b) PUT  /api/settings/driver-language (owner) → 200, correct echo
+//   c) PUT  /api/settings/driver-language (bad lang) → 400
+//   d) PUT  /api/settings/driver-language (non-owner) → 403
+//
+// The Telegram side-effect (notifyDeliveryAssigned fires → sendToChat) is
+// verified by the unit/integration test suite:
+//   backend/src/__tests__/driverNotifyService.test.js
+//   backend/src/__tests__/deliveries.assign-notify.integration.test.js
+
+async function section27DriverAssignmentNotification() {
+  startSection('27. Driver assignment notification — HTTP contracts');
+  await reset();
+
+  // ── 27.1 Seed an order with a delivery ──
+  const created = await api('POST', '/orders', {
+    pin: PIN_OWNER,
+    body: buildOrderBody({
+      customer: FIXTURE.customers.maria,
+      deliveryType: 'Delivery',
+      lines: [line(FIXTURE.stock.redRose, 2)],
+      delivery: {
+        address: 'ul. Testowa 1, Kraków',
+        recipientName: 'Test Recipient',
+        recipientPhone: '+48 600 000 000',
+        date: tomorrow(),
+        time: '10-12',
+        fee: 15,
+      },
+    }),
+  });
+  assert('27.1 Delivery order created (201)', created.status === 201);
+  assert('27.1 Delivery sub-record returned', !!created.body?.delivery?.id);
+  const deliveryId = created.body.delivery.id;
+
+  // ── 27.2 PATCH Assigned Driver → 200, field persists ──
+  // notifyDeliveryAssigned fires as a fire-and-forget side-effect;
+  // with an empty driver_telegram_chats table it silently no-ops.
+  let r = await api('PATCH', `/deliveries/${deliveryId}`, {
+    pin: PIN_OWNER,
+    body: { 'Assigned Driver': 'Nikita' },
+  });
+  eq('27.2 PATCH Assigned Driver → 200', r.status, 200);
+  eq('27.2 Assigned Driver persisted', r.body?.['Assigned Driver'], 'Nikita');
+
+  // ── 27.3 GET deliveries — assignment survives a round-trip ──
+  const list = await api('GET', `/deliveries?from=${tomorrow()}`, { pin: PIN_OWNER });
+  eq('27.3 GET /deliveries → 200', list.status, 200);
+  const found = list.body?.find(d => d.id === deliveryId);
+  assert('27.3 Delivery in list', !!found);
+  eq('27.3 Assigned Driver in list response', found?.['Assigned Driver'], 'Nikita');
+
+  // ── 27.4 Re-PATCH with the same driver — no-op, still 200 ──
+  r = await api('PATCH', `/deliveries/${deliveryId}`, {
+    pin: PIN_OWNER,
+    body: { 'Assigned Driver': 'Nikita' },
+  });
+  eq('27.4 No-op re-assign → 200', r.status, 200);
+  eq('27.4 Assigned Driver unchanged', r.body?.['Assigned Driver'], 'Nikita');
+
+  // ── 27.5 PUT /settings/driver-language (owner, valid lang) → 200 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_OWNER,
+    body: { driverName: 'Nikita', lang: 'en' },
+  });
+  eq('27.5 PUT driver-language (en) → 200', r.status, 200);
+  eq('27.5 driverName echoed', r.body?.driverName, 'Nikita');
+  eq('27.5 lang echoed', r.body?.lang, 'en');
+
+  // ── 27.6 PUT /settings/driver-language — unsupported lang → 400 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_OWNER,
+    body: { driverName: 'Nikita', lang: 'de' },
+  });
+  eq('27.6 Unsupported lang → 400', r.status, 400);
+  assert('27.6 Error mentions supported langs', /ru|en|pl/i.test(r.body?.error || ''));
+
+  // ── 27.7 PUT /settings/driver-language — missing driverName → 400 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_OWNER,
+    body: { lang: 'ru' },
+  });
+  eq('27.7 Missing driverName → 400', r.status, 400);
+
+  // ── 27.8 PUT /settings/driver-language — florist (non-owner) → 403 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_FLORIST,
+    body: { driverName: 'Nikita', lang: 'pl' },
+  });
+  eq('27.8 Florist blocked from driver-language → 403', r.status, 403);
+
+  // ── 27.9 PUT /settings/driver-language — driver PIN (non-owner) → 403 ──
+  r = await api('PUT', '/settings/driver-language', {
+    pin: PIN_NIKITA,
+    body: { driverName: 'Nikita', lang: 'pl' },
+  });
+  eq('27.9 Driver blocked from driver-language → 403', r.status, 403);
+
+  // ── 27.10 Language persists: GET /settings shows no lang field directly,
+  //          but a second successful PUT (idempotent upsert) confirms
+  //          the endpoint accepts all three supported langs ──
+  for (const lang of ['ru', 'en', 'pl']) {
+    r = await api('PUT', '/settings/driver-language', {
+      pin: PIN_OWNER,
+      body: { driverName: 'Timur', lang },
+    });
+    eq(`27.10 lang='${lang}' round-trip → 200`, r.status, 200);
+    eq(`27.10 lang='${lang}' echoed`, r.body?.lang, lang);
+  }
+}
+
+// ──────────── 28. FLORIST NEW-ORDER NOTIFICATION — HTTP CONTRACTS ────────────
+//
+// Mirrors the driver-notification section (27) for the florist extension.
+// The florist-notify side-effect (notifyFloristNewOrder fires → sendToChat) is
+// verified by the unit/integration test suite:
+//   backend/src/__tests__/floristTelegramRepo.integration.test.js
+//   backend/src/__tests__/floristNotifyService.test.js
+//   backend/src/__tests__/settings.florist-language.integration.test.js
+//
+// The primary assertions here are the HTTP contracts:
+//   a) PUT  /api/settings/florist-language (owner, valid lang) → 200, lang echoed
+//   b) PUT  /api/settings/florist-language (bad lang) → 400
+//   c) PUT  /api/settings/florist-language (florist PIN, non-owner) → 403
+//   d) POST /orders (pickup) → 201 regression guard — order creation still works
+//
+// All three supported langs (ru/en/pl) are round-tripped in 28.4 to confirm the
+// endpoint accepts each without hitting a validation error.
+
+async function section28FloristNewOrderNotification() {
+  startSection('28. Florist new-order notification — HTTP contracts');
+  await reset();
+
+  // ── 28.1 PUT /settings/florist-language (owner, valid lang) → 200 ──
+  let r = await api('PUT', '/settings/florist-language', {
+    pin: PIN_OWNER,
+    body: { lang: 'en' },
+  });
+  eq('28.1 PUT florist-language (en) → 200', r.status, 200);
+  eq('28.1 lang echoed', r.body?.lang, 'en');
+
+  // ── 28.2 PUT /settings/florist-language — unsupported lang → 400 ──
+  r = await api('PUT', '/settings/florist-language', {
+    pin: PIN_OWNER,
+    body: { lang: 'de' },
+  });
+  eq('28.2 Unsupported lang → 400', r.status, 400);
+  assert('28.2 Error mentions supported langs', /ru|en|pl/i.test(r.body?.error || ''));
+
+  // ── 28.3 PUT /settings/florist-language — florist PIN (non-owner) → 403 ──
+  r = await api('PUT', '/settings/florist-language', {
+    pin: PIN_FLORIST,
+    body: { lang: 'en' },
+  });
+  eq('28.3 Florist PIN blocked → 403', r.status, 403);
+
+  // ── 28.4 All three supported langs round-trip without error ──
+  for (const lang of ['ru', 'en', 'pl']) {
+    r = await api('PUT', '/settings/florist-language', {
+      pin: PIN_OWNER,
+      body: { lang },
+    });
+    eq(`28.4 lang='${lang}' round-trip → 200`, r.status, 200);
+    eq(`28.4 lang='${lang}' echoed`, r.body?.lang, lang);
+  }
+
+  // ── 28.5 Order creation regression — POST /orders still returns 201 ──
+  // notifyFloristNewOrder fires as a fire-and-forget side-effect; with no
+  // florist chat_id registered in system_meta it silently no-ops (logs once).
+  r = await api('POST', '/orders', {
+    pin: PIN_OWNER,
+    body: buildOrderBody({
+      customer: FIXTURE.customers.anna,
+      lines: [line(FIXTURE.stock.pinkTulip, 2)],
+    }),
+  });
+  eq('28.5 POST /orders still returns 201 (regression)', r.status, 201);
+  assert('28.5 Order id returned', !!r.body?.order?.id);
+}
+
 async function main() {
   const startedAt = Date.now();
   console.log(`\n\x1b[36m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
@@ -1498,6 +1719,8 @@ async function main() {
     section24WixWebhook,
     section25BouquetImageUpload,
     section26CustomerCrudPg,
+    section27DriverAssignmentNotification,
+    section28FloristNewOrderNotification,
   ];
 
   for (const section of sections) {

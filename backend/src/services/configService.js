@@ -7,6 +7,7 @@ import * as productConfigRepo from '../repos/productConfigRepo.js';
 import { sendAlert } from './telegram.js';
 import { db } from '../db/index.js';
 import { recordAudit } from '../db/audit.js';
+import { listDriverPins } from '../utils/driverPins.js';
 
 // ── Default configuration values ────────────────────────────
 // Used as fallback if config row doesn't exist yet or is empty.
@@ -370,13 +371,8 @@ const daily = {
   _lastSetDate: null,
 };
 
-// Build driver names from env vars (same pattern as auth.js)
-export const driverNames = Object.entries(process.env)
-  .filter(([key]) => key.startsWith('PIN_DRIVER_'))
-  .map(([key]) =>
-    key.replace('PIN_DRIVER_', '').charAt(0).toUpperCase()
-    + key.replace('PIN_DRIVER_', '').slice(1).toLowerCase()
-  );
+// Driver names from the shared PIN registry (single source — see driverPins.js).
+export const driverNames = listDriverPins().map((d) => d.name);
 
 export function autoClearIfNewDay() {
   const today = new Date().toISOString().split('T')[0];

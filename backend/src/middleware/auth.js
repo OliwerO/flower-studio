@@ -5,23 +5,7 @@
 // Drivers get individual PINs: PIN_DRIVER_TIMUR, PIN_DRIVER_NIKITA, etc.
 // The badge reader now knows *which* driver scanned in (req.driverName).
 
-import { getBackupDriverName } from '../services/driverState.js';
-import { safeEqual } from '../utils/auth.js';
-
-const PINS = {
-  owner:   process.env.PIN_OWNER,
-  florist: process.env.PIN_FLORIST,
-};
-
-// Build driver PINs dynamically from env vars matching PIN_DRIVER_*
-// Each env var like PIN_DRIVER_TIMUR=1234 maps to { pin: '1234', name: 'Timur' }
-const DRIVER_PINS = Object.entries(process.env)
-  .filter(([key]) => key.startsWith('PIN_DRIVER_'))
-  .map(([key, value]) => ({
-    pin:  value,
-    name: key.replace('PIN_DRIVER_', '').charAt(0).toUpperCase()
-          + key.replace('PIN_DRIVER_', '').slice(1).toLowerCase(),
-  }));
+import { resolveRoleByPin } from '../utils/driverPins.js';
 
 // Route access per role
 const ROLE_ACCESS = {
@@ -37,25 +21,14 @@ export function authenticate(req, res, next) {
     return res.status(401).json({ error: 'PIN required. Send X-Auth-PIN header.' });
   }
 
-  // Check owner/florist PINs first (constant-time comparison prevents timing attacks)
-  const role = Object.keys(PINS).find((r) => safeEqual(PINS[r], pin));
-  if (role) {
-    req.role = role;
-    return next();
+  // Single source of PIN→role resolution (constant-time comparison inside).
+  const resolved = resolveRoleByPin(pin);
+  if (!resolved) {
+    return res.status(401).json({ error: 'Invalid PIN.' });
   }
-
-  // Check driver PINs — each driver has their own badge
-  const driver = DRIVER_PINS.find(d => safeEqual(d.pin, pin));
-  if (driver) {
-    req.role = 'driver';
-    // If this is the backup PIN and the owner set a name for today, use that instead
-    req.driverName = driver.name === 'Backup'
-      ? (getBackupDriverName() || driver.name)
-      : driver.name;
-    return next();
-  }
-
-  return res.status(401).json({ error: 'Invalid PIN.' });
+  req.role = resolved.role;
+  if (resolved.driverName) req.driverName = resolved.driverName;
+  return next();
 }
 
 // Route guard — checks that the role has access to the resource.

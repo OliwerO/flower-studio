@@ -45,6 +45,8 @@ export {
   reasonBadgeClass,
 } from './utils/lossReasons.js';
 export { getEffectiveStock, hasStockShortfall, getVarietyTotals } from './utils/stockMath.js';
+export { resolveStockLinePrice, resolveVarietySell } from './utils/stockLinePrice.js';
+export { getStatusOptions, ALL_ORDER_STATUSES } from './utils/orderStatusOptions.js';
 export {
   matchesSearch,
   matchesFilters,

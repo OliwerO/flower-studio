@@ -20,6 +20,17 @@ export const systemMeta = pgTable('system_meta', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// Driver → Telegram chat_id + notification language, captured by /start <PIN>
+// on the alerts bot (ADR-0009). Kept separate from TELEGRAM_CHAT_IDS so Drivers
+// receive only Assignment Notifications. chat_id nullable so the Owner can set a
+// Driver's lang before they register.
+export const driverTelegramChats = pgTable('driver_telegram_chats', {
+  driverName:   text('driver_name').primaryKey(),
+  chatId:       text('chat_id'),
+  lang:         text('lang').notNull().default('ru'),
+  registeredAt: timestamp('registered_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 // Audit log — every PG-side write (create / update / delete / restore) lands
 // here. Repos call `recordAudit()` in the same transaction as the entity
 // write, so the log can never disagree with the data.

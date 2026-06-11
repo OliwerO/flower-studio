@@ -6,6 +6,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
+import { useStockYModelFlag } from '@flower-studio/shared';
 
 const STATUS_COLORS = {
   Draft:        'bg-gray-100 text-gray-700',
@@ -20,6 +21,9 @@ const STATUS_COLORS = {
 export default function StockOrderPanel({ negativeStock, stock, autoCreate, onClose }) {
   const { suppliers: SUPPLIERS, targetMarkup } = useConfigLists();
   const { showToast } = useToast();
+  // Y-model new-Variety fields (#304) only show when the flag is on. Off in prod
+  // → owner uses the plain Flower Name flow; the Variety row never "creeps in".
+  const yModelOn = useStockYModelFlag();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -570,8 +574,8 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                       />
                     </div>
                   </div>
-                  {/* Variety identity row — only when no Stock Item link (Y-model #304) */}
-                  {!line.stockItemId && (
+                  {/* Variety identity row — Y-model (#304), only when no Stock Item link */}
+                  {yModelOn && !line.stockItemId && (
                     <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5 mt-2">
                       <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
                         {t.newVariety ?? 'New variety'}
@@ -765,6 +769,7 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                           onRemove={(lineId) => removeDraftLine(order.id, lineId)}
                           targetMarkup={targetMarkup}
                           suppliers={SUPPLIERS}
+                          yModelOn={yModelOn}
                         />
                       ))}
                       {order.Status === 'Draft' ? (
@@ -1166,7 +1171,7 @@ function StockSearchInput({ stock, value, onChange, onSelect, onBlur: onBlurCb }
 
 // Inline editor for a single Draft PO line — flower search, qty, cost, sell, supplier, farmer, notes.
 // Auto-saves on blur so changes persist immediately without a "save" button.
-function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
+function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers, yModelOn }) {
   const storedLs = Number(line['Lot Size']) || 0;
   const storedQty = Number(line['Quantity Needed']) || 1;
   // Display qty as lots (user enters lots, not stems)
@@ -1355,8 +1360,8 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
         </div>
       </div>
 
-      {/* Variety identity row — only when no Stock Item link (Y-model, #304) */}
-      {!stockItemLinked && (
+      {/* Variety identity row — Y-model (#304), only when no Stock Item link */}
+      {yModelOn && !stockItemLinked && (
         <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
           <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
             {t.newVariety ?? 'New variety'}

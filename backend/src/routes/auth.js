@@ -1,23 +1,8 @@
 import { Router } from 'express';
 import rateLimit from 'express-rate-limit';
-import { safeEqual } from '../utils/auth.js';
+import { resolveRoleByPin } from '../utils/driverPins.js';
 
 const router = Router();
-
-const PINS = {
-  owner:   process.env.PIN_OWNER,
-  florist: process.env.PIN_FLORIST,
-};
-
-// Build driver PINs dynamically — same logic as middleware.
-// PIN_DRIVER_TIMUR=1234 → { pin: '1234', name: 'Timur' }
-const DRIVER_PINS = Object.entries(process.env)
-  .filter(([key]) => key.startsWith('PIN_DRIVER_'))
-  .map(([key, value]) => ({
-    pin:  value,
-    name: key.replace('PIN_DRIVER_', '').charAt(0).toUpperCase()
-          + key.replace('PIN_DRIVER_', '').slice(1).toLowerCase(),
-  }));
 
 // 5 attempts per 15 minutes per IP — prevents brute-forcing 4-digit PINs
 const pinLimiter = rateLimit({
@@ -36,21 +21,17 @@ router.post('/verify', pinLimiter, (req, res) => {
     return res.status(400).json({ error: 'PIN required.' });
   }
 
-  const pinStr = String(pin);
-
-  // Check owner/florist PINs (constant-time comparison)
-  const role = Object.keys(PINS).find((r) => safeEqual(PINS[r], pinStr));
-  if (role) {
-    return res.json({ role });
+  // Single source of PIN→role resolution — same seam the auth middleware uses,
+  // so the Backup-driver name is resolved identically here (no drift).
+  const resolved = resolveRoleByPin(String(pin));
+  if (!resolved) {
+    return res.status(401).json({ error: 'Invalid PIN.' });
   }
-
-  // Check individual driver PINs
-  const driver = DRIVER_PINS.find(d => safeEqual(d.pin, pinStr));
-  if (driver) {
-    return res.json({ role: 'driver', driverName: driver.name });
-  }
-
-  return res.status(401).json({ error: 'Invalid PIN.' });
+  return res.json(
+    resolved.role === 'driver'
+      ? { role: 'driver', driverName: resolved.driverName }
+      : { role: resolved.role }
+  );
 });
 
 export default router;

@@ -16,8 +16,24 @@ import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 import { getConfig, getDriverOfDay } from '../services/configService.js';
+import { notifyPoAssigned } from '../services/driverNotifyService.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
+
+// Compose a driver-readable Flower Name from Y-model Variety attrs (#304) when
+// a line carries a new-Variety Type but no explicit Flower Name. Mirrors the
+// frontend createPO compose so every Variety line has a name. Without it, a
+// Type-only line (the inline DraftLineEditor patches Type on its own) persisted
+// with an empty Flower Name and the /send identity check rejected it as blank
+// — the "cannot send PO to driver" bug.
+function composeFlowerName({ flowerName, type, colour, size, cultivar } = {}) {
+  const explicit = String(flowerName ?? '').trim();
+  if (explicit) return explicit;
+  return [type, colour, size != null && size !== '' ? `${size}cm` : null, cultivar]
+    .map(v => (v == null ? '' : String(v).trim()))
+    .filter(Boolean)
+    .join(' ');
+}
 
 // Resolve a flower name to an Airtable-safe stock item ID.
 // Uses stockRepo (Postgres) not Airtable — the stock table is frozen in AT.
@@ -178,7 +194,10 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       const lineFields = {
         'Stock Orders':    [order._pgId],
         ...(resolvedStockItemId ? { 'Stock Item': [resolvedStockItemId] } : {}),
-        'Flower Name':     line.flowerName || '',
+        'Flower Name':     composeFlowerName({
+          flowerName: line.flowerName, type: line.type,
+          colour: line.colour, size: line.size, cultivar: line.cultivar,
+        }),
         'Quantity Needed': Number(line.quantity) || 0,
         ...(lotSize > 0 ? { 'Lot Size': lotSize } : {}),
         'Driver Status':   PO_LINE_STATUS.PENDING,
@@ -233,14 +252,25 @@ router.patch('/:id', authorize('stock-orders'), async (req, res, next) => {
       }
     }
 
+    // Capture the prior driver so we only notify on a genuine assignment change
+    // (mirrors deliveries.js — re-saving a PO with the same driver must not re-ping).
+    const priorDriver = ('Assigned Driver' in fields)
+      ? ((await stockOrderRepo.getById(req.params.id).catch(() => null))?.['Assigned Driver'] || '')
+      : '';
+
     const updated = await stockOrderRepo.update(req.params.id, fields);
 
     if ('Assigned Driver' in fields) {
+      const newDriver = fields['Assigned Driver'] || '';
       broadcast({
         type: 'stock_pickup_assigned',
         stockOrderId: req.params.id,
-        driverName: fields['Assigned Driver'] || '',
+        driverName: newDriver,
       });
+      if (newDriver && newDriver !== priorDriver) {
+        notifyPoAssigned({ stockOrderId: req.params.id, driverName: newDriver })
+          .catch(err => console.error('[DRIVER_NOTIFY] po patch hook failed:', err.message));
+      }
     }
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id });
 
@@ -296,6 +326,25 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       if (hasStockItem && currentName.length >= 2) {
         delete fields['Flower Name'];
         if (Object.keys(fields).length === 0) return res.json(existing);
+      }
+    }
+
+    // When a Draft line gets a new-Variety Type/Colour/Size/Cultivar but no
+    // explicit Flower Name (the inline DraftLineEditor patches Type on its own),
+    // compose a name from the merged attrs so the row stays sendable and the
+    // driver sees what to buy. Without this the line is invisible to /send.
+    if (['Type', 'Colour', 'Size', 'Cultivar'].some(k => k in fields)) {
+      const existing = await stockOrderRepo.getLineById(req.params.lineId);
+      const merged = (k) => (k in fields ? fields[k] : existing[k]);
+      const mergedName = String(merged('Flower Name') ?? '').trim();
+      const mergedType = String(merged('Type') ?? '').trim();
+      if (!mergedName && mergedType) {
+        fields['Flower Name'] = composeFlowerName({
+          type:     merged('Type'),
+          colour:   merged('Colour'),
+          size:     merged('Size'),
+          cultivar: merged('Cultivar'),
+        });
       }
     }
 
@@ -357,7 +406,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     const line = await stockOrderRepo.createLine({
       'Stock Orders':    [po._pgId],
       ...(resolvedStockItemId ? { 'Stock Item': [resolvedStockItemId] } : {}),
-      'Flower Name':     flowerName || '',
+      'Flower Name':     composeFlowerName({ flowerName, type, colour, size, cultivar }),
       'Quantity Needed': Number(quantity) || 1,
       Supplier:          supplier || '',
       'Cost Price':      Number(costPrice) || 0,
@@ -428,7 +477,11 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
       const blankCount = lines.filter(l => {
         const hasStockItem = Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0;
         const hasFlowerName = String(l['Flower Name'] || '').trim() !== '';
-        return !hasStockItem && !hasFlowerName;
+        // A new-Variety line (Type set) is valid identity too — matches the
+        // line-add rule (hasNewVarietyIntent) so a line accepted on creation
+        // can't be rejected on send. Persistence composes its Flower Name.
+        const hasVariety = String(l['Type'] || '').trim() !== '';
+        return !hasStockItem && !hasFlowerName && !hasVariety;
       }).length;
       if (blankCount > 0) {
         return res.status(400).json({
@@ -443,6 +496,11 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
 
     // SSE notification to driver
     broadcast({ type: 'stock_pickup_assigned', stockOrderId: req.params.id, driverName: resolvedDriver });
+
+    if (resolvedDriver) {
+      notifyPoAssigned({ stockOrderId: req.params.id, driverName: resolvedDriver })
+        .catch(err => console.error('[DRIVER_NOTIFY] po send hook failed:', err.message));
+    }
 
     res.json(updated);
   } catch (err) {
