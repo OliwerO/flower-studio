@@ -50,37 +50,28 @@ describe('VarietyListItem header', () => {
     expect(onToggle).toHaveBeenCalled();
   });
 
-  it('header click also fires onRowClick(primaryRow.id) when expanding (opens trace)', () => {
+  it('header click toggles expand but does NOT auto-open trace (CR-37)', () => {
     const onRowClick = vi.fn();
-    const onToggle   = vi.fn();
-    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
-      hideType={true} expanded={false} onToggle={onToggle} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByTestId('variety-header'));
-    expect(onToggle).toHaveBeenCalled();
-    expect(onRowClick).toHaveBeenCalledWith('b1');
-  });
-
-  it('when onVarietyTrace is provided, header expand calls onVarietyTrace(variety.key) and NOT onRowClick', () => {
     const onVarietyTrace = vi.fn();
-    const onRowClick     = vi.fn();
-    const onToggle       = vi.fn();
+    const onToggle = vi.fn();
     render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
       hideType={true} expanded={false} onToggle={onToggle}
       onRowClick={onRowClick} onVarietyTrace={onVarietyTrace} />);
     fireEvent.click(screen.getByTestId('variety-header'));
-    expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
+    expect(onToggle).toHaveBeenCalled();
     expect(onRowClick).not.toHaveBeenCalled();
+    expect(onVarietyTrace).not.toHaveBeenCalled();
   });
 
-  it('header click does NOT fire onRowClick when collapsing', () => {
-    const onRowClick = vi.fn();
+  it('explicit Trace button calls onVarietyTrace(variety.key) (CR-37)', () => {
+    const onVarietyTrace = vi.fn();
     render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
-      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByTestId('variety-header'));
-    expect(onRowClick).not.toHaveBeenCalled();
+      hideType={true} expanded={true} onToggle={() => {}} onVarietyTrace={onVarietyTrace} />);
+    fireEvent.click(screen.getByTestId('variety-trace-btn'));
+    expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
   });
 
-  it('header click prefers a positive-qty Batch over a Demand Entry for trace', () => {
+  it('Trace button falls back to onRowClick(primary positive Batch) when no onVarietyTrace', () => {
     const v = {
       key: 'Rose|Pink|60|',
       type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
@@ -91,8 +82,8 @@ describe('VarietyListItem header', () => {
     };
     const onRowClick = vi.fn();
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
-      hideType={true} expanded={false} onToggle={() => {}} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByTestId('variety-header'));
+      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByTestId('variety-trace-btn'));
     expect(onRowClick).toHaveBeenCalledWith('b1');
   });
 });

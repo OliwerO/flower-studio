@@ -52,19 +52,19 @@ export default function VarietyListItem({
     (variety.rows || [])[0] ??
     null;
 
+  // CR-37: tapping the header just expands (to reveal detail). Trace is now an
+  // explicit button in the expand body — no more surprise trace-panel on every tap.
   function handleHeaderClick() {
-    const willExpand = !expanded;
     onToggle && onToggle();
-    if (willExpand) {
-      if (onVarietyTrace) {
-        // Variety-level trace: caller handles fetch + panel. Skip per-Batch trace.
-        onVarietyTrace(variety.key);
-      } else if (primaryRow && handleRowClick) {
-        // Back-compat: open the per-Batch trace for the first positive Batch.
-        handleRowClick(primaryRow.id);
-      }
-    }
   }
+
+  function handleTraceClick(e) {
+    e.stopPropagation();
+    if (onVarietyTrace) onVarietyTrace(variety.key);
+    else if (primaryRow && handleRowClick) handleRowClick(primaryRow.id);
+  }
+
+  const hasTrace = !!onVarietyTrace || (!!handleRowClick && !!primaryRow);
 
   const { onHand, planned, reservedForPremades, net } = getVarietyTotals(
     variety.rows,
@@ -246,6 +246,18 @@ export default function VarietyListItem({
                 </li>
               );
             })}
+          {hasTrace && (
+            <li className="px-6 py-2 border-t border-gray-100">
+              <button
+                type="button"
+                data-testid="variety-trace-btn"
+                onClick={handleTraceClick}
+                className="text-xs font-medium text-indigo-600 hover:text-indigo-800 active:text-indigo-900"
+              >
+                {t.trace ?? 'Trace ›'}
+              </button>
+            </li>
+          )}
         </ul>
         );
       })()}
