@@ -34,7 +34,7 @@ export default function ShortfallSummary({
   const [trails, setTrails] = useState(new Map()); // stockId → trail[]
   const [loadingId, setLoadingId] = useState(null);
 
-  const { byDate, totalStems, varietyCount } = useMemo(
+  const { byDate } = useMemo(
     () => bucket(groups, reservations, today_),
     [groups, reservations, today_],
   );
@@ -75,22 +75,15 @@ export default function ShortfallSummary({
             {t.shortfallsTitle ?? 'Shortfalls'}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-red-700">
-            <span data-testid="shortfall-varieties" className="font-semibold tabular-nums">{varietyCount}</span>
-            <span className="mx-1">{t.shortfallsVarieties ?? 'varieties'}</span>
-            <span className="mx-1">·</span>
-            <span data-testid="shortfall-stems" className="font-semibold tabular-nums">{totalStems}</span>
-            <span className="ml-1">{t.shortfallsStems ?? 'stems'}</span>
-          </div>
-          <span
-            data-testid="shortfall-chevron"
-            data-collapsed={String(collapsed)}
-            className={`text-red-500 text-xs transition-transform ${collapsed ? '' : 'rotate-180'}`}
-          >
-            ▾
-          </span>
-        </div>
+        {/* CR-38: dropped the "N varieties · N stems short" summary — the per-date
+            rows already carry the detail; the roll-up was noise (matches pending). */}
+        <span
+          data-testid="shortfall-chevron"
+          data-collapsed={String(collapsed)}
+          className={`text-red-500 text-xs transition-transform ${collapsed ? '' : 'rotate-180'}`}
+        >
+          ▾
+        </span>
       </button>
 
       {!collapsed && (
