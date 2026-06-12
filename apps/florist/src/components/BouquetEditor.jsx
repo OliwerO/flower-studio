@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
   renderStockName, parseBatchName, findAllMatchingVariety,
-  BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
+  BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
 } from '@flower-studio/shared';
 import t from '../translations.js';
@@ -264,8 +264,17 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                       <div className="flex items-center gap-2">
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-ios-label truncate block">{line.flowerName}</span>
-                          <span className="text-xs text-ios-tertiary">
-                            {liveSell.toFixed(0)} zł × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
+                          <span className="text-xs text-ios-tertiary inline-flex items-baseline gap-1">
+                            {yEnabled
+                              ? <TierSwitchChip
+                                  currentSell={liveSell}
+                                  tiers={editing.getLineTiers(line)}
+                                  onPick={(stockId) => editing.switchLineTier(idx, stockId)}
+                                  t={t}
+                                />
+                              : <span>{liveSell.toFixed(0)} zł</span>}
+                            <span>× {line.quantity} =</span>
+                            <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
                           </span>
                         </div>
                         <div className="flex items-center gap-1 shrink-0">

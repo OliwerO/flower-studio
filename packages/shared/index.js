@@ -63,6 +63,7 @@ export { resizeImageBlob }               from './utils/imageResize.js';
 export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
 export { publishFeedback } from './api/feedback.js';
 export { default as BatchPickerModal } from './components/BatchPickerModal.jsx';
+export { default as TierSwitchChip } from './components/TierSwitchChip.jsx';
 export { findAllMatchingVariety } from './hooks/useOrderEditing.js';
 export { default as FeedbackModal } from './components/FeedbackModal.jsx';
 

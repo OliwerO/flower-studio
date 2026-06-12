@@ -577,7 +577,7 @@ export default function StockPanelPage() {
                     viewMode === 'batch' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
                   }`}
                 >
-                  {t.viewBatch || 'By Batch'}
+                  {t.viewBatch || 'Flat table'}
                 </button>
               </div>
               {viewMode === 'batch' ? (

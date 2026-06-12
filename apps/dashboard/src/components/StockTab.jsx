@@ -878,7 +878,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                   viewMode === 'batch' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
                 }`}
               >
-                {t.viewBatch || 'By Batch'}
+                {t.viewBatch || 'Flat table'}
               </button>
             </div>
             {viewMode === 'batch' ? (
@@ -892,30 +892,28 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                     setTraceStockId(prev => prev === joined ? null : joined);
                   }}
                   onPatchPriceBulk={patchPriceBulk}
-                />
-                {/* Inline trace panel — By Batch view sets traceStockId on row
-                    click; render the same panel here (it previously only existed
-                    in the By Variety branch, so batch-view clicks showed nothing). */}
-                {traceStockId && (
-                  <div className="px-4 py-3 bg-blue-50/60 border-t border-blue-100">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
-                        {t.batchTraceTitle}
-                      </span>
-                      <button
-                        onClick={() => { setTraceStockId(null); setTraceTrail(null); }}
-                        className="text-xs text-blue-400 hover:text-blue-600"
-                      >
-                        ✕
-                      </button>
+                  traceStockIds={traceStockId}
+                  traceNode={traceStockId ? (
+                    <div className="px-4 py-3">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
+                          {t.batchTraceTitle}
+                        </span>
+                        <button
+                          onClick={() => { setTraceStockId(null); setTraceTrail(null); }}
+                          className="text-xs text-blue-400 hover:text-blue-600"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                      {traceLoading ? (
+                        <p className="text-xs text-ios-tertiary">{t.loading}</p>
+                      ) : (
+                        <BatchTracePanel trail={traceTrail || []} t={t} />
+                      )}
                     </div>
-                    {traceLoading ? (
-                      <p className="text-xs text-ios-tertiary">{t.loading}</p>
-                    ) : (
-                      <BatchTracePanel trail={traceTrail || []} t={t} />
-                    )}
-                  </div>
-                )}
+                  ) : null}
+                />
               </div>
             ) : (
             <div className="glass-card overflow-hidden">

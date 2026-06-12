@@ -171,9 +171,14 @@ export default function VarietyListItem({
       )}
 
       {/* ── Expansion body ── */}
-      {expanded && (
+      {expanded && (() => {
+        const expansionRows = mergeExpansionRows(variety.rows);
+        // Sell label is informative only when more than one Batch tier exists —
+        // a single tier is redundant noise next to the Batch chip.
+        const multiTier = expansionRows.filter((r) => r.kind === 'batch').length > 1;
+        return (
         <ul className="bg-gray-50 border-t border-gray-100">
-          {mergeExpansionRows(variety.rows).map((row) => {
+          {expansionRows.map((row) => {
               const kind = row.kind;
               const isDemand = kind === 'demand';
               const kindLabel = isDemand ? (t.demandKind ?? 'Demand') : (t.batchKind ?? 'Batch');
@@ -207,7 +212,7 @@ export default function VarietyListItem({
                       {kindLabel}
                     </span>
                     {dateLabel && <span className="text-gray-500">{dateLabel}</span>}
-                    {!isDemand && row.sell != null && (
+                    {!isDemand && row.sell != null && multiTier && (
                       <span className="text-gray-500 tabular-nums">{row.sell.toFixed(2)} {t.currency ?? 'zł'}</span>
                     )}
                   </button>
@@ -242,7 +247,8 @@ export default function VarietyListItem({
               );
             })}
         </ul>
-      )}
+        );
+      })()}
     </div>
   );
 }

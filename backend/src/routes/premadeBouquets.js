@@ -122,7 +122,7 @@ router.put('/:id/lines', async (req, res, next) => {
 // calling context.
 router.post(['/:id/return-to-stock', '/:id/dissolve'], async (req, res, next) => {
   try {
-    const result = await returnPremadeBouquetToStock(req.params.id);
+    const result = await returnPremadeBouquetToStock(req.params.id, { req });
     res.json(result);
   } catch (err) {
     next(err);

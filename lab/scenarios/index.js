@@ -4,6 +4,7 @@ import { buildStockBackfill } from './stockBackfill.js';
 import { buildPremadeReservation } from './premadeReservation.js';
 import { buildStockYMigration } from './stockYMigration.js';
 import { buildYModelDemo } from './yModelDemo.js';
+import { buildYModelGuide } from './yModelGuide.js';
 
 export const scenarios = {
   baseline: buildBaseline,
@@ -12,4 +13,5 @@ export const scenarios = {
   'premade-reservation': buildPremadeReservation,
   'stock-y-migration': buildStockYMigration,
   'y-model-demo': buildYModelDemo,
+  'y-model-guide': buildYModelGuide,
 };

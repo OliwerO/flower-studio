@@ -24,6 +24,8 @@ import { getStockYModelEnabled } from './configService.js';
 import { db } from '../db/index.js';
 import { premadeBouquets, premadeBouquetLines } from '../db/schema.js';
 import { eq } from 'drizzle-orm';
+import { recordAudit } from '../db/audit.js';
+import { actorFromReq } from '../utils/actor.js';
 
 export async function getPremadeBouquet(id) {
   const bouquet = await premadeBouquetRepo.getById(id);
@@ -346,23 +348,47 @@ async function _editPremadeBouquetLinesLegacy(id, { lines = [], removedLines = [
   return { updated: true, createdLines };
 }
 
-export async function returnPremadeBouquetToStock(id) {
-  if (getStockYModelEnabled()) return await _dissolvePremadeYModel(id);
+export async function returnPremadeBouquetToStock(id, { req } = {}) {
+  if (getStockYModelEnabled()) return await _dissolvePremadeYModel(id, req);
   return await _returnPremadeToStockLegacy(id);
 }
 
 // ── Y-model dissolve path (STOCK_Y_MODEL=true) ──
 // Deletes the bouquet header; CASCADE removes lines. Batch quantity
 // is intentionally unchanged — no credit because nothing was deducted at build.
-async function _dissolvePremadeYModel(id) {
+// One audit_log row per affected Batch records the freed reservation so
+// /stock/:id/usage and /stock/varieties/:key/usage can surface the dissolve
+// event downstream (owner ask 2026-05-31, F2).
+async function _dissolvePremadeYModel(id, req) {
   const bouquet = await premadeBouquetRepo.getById(id);
   if (!bouquet) {
     const err = new Error(`Premade bouquet not found: ${id}`);
     err.statusCode = 404;
     throw err;
   }
-  // CASCADE deletes the lines along with the bouquet header.
-  await premadeBouquetRepo.deleteById(bouquet._pgId);
+  const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
+  const actor = actorFromReq(req);
+  await db.transaction(async (tx) => {
+    for (const line of lines) {
+      const stockId = line['Stock Item']?.[0] ?? line.stockItemId ?? null;
+      const qty = Number(line.Quantity || line.quantity) || 0;
+      if (!stockId || qty <= 0) continue;
+      await recordAudit(tx, {
+        entityType: 'stock',
+        entityId:   stockId,
+        action:     'premade_dissolved',
+        before:     null,
+        after:      {
+          bouquet_id:   id,
+          bouquet_name: bouquet.Name || '',
+          qty,
+        },
+        ...actor,
+      });
+    }
+    await tx.delete(premadeBouquetLines).where(eq(premadeBouquetLines.bouquetId, bouquet._pgId));
+    await tx.delete(premadeBouquets).where(eq(premadeBouquets.id, bouquet._pgId));
+  });
   broadcast({ type: 'premade_bouquet_returned', bouquetId: id, name: bouquet.Name || '' });
   return { message: 'Premade bouquet dissolved. Reservations cleared; Batch quantity unchanged.' };
 }

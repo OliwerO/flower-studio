@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react';
 import t from '../../translations.js';
 import {
   parseBatchName, findAllMatchingVariety,
-  BatchPickerModal, VarietyAllocationPicker, useStockYModelFlag, useAuth,
+  BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
 } from '@flower-studio/shared';
 
@@ -94,8 +94,17 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                     {parsedName}
                     {batch && <span className="ml-1 text-[10px] font-normal text-ios-tertiary bg-gray-100 rounded px-1 py-0.5">{batch}</span>}
                   </span>
-                  <span className="text-xs text-ios-tertiary">
-                    {Number(line.sellPricePerUnit || 0).toFixed(0)} {t.zl} × {line.quantity} = <strong className="text-brand-700">{lineSell.toFixed(0)} {t.zl}</strong>
+                  <span className="text-xs text-ios-tertiary inline-flex items-baseline gap-1">
+                    {yEnabled
+                      ? <TierSwitchChip
+                          currentSell={Number(line.sellPricePerUnit || 0)}
+                          tiers={editing.getLineTiers(line)}
+                          onPick={(stockId) => editing.switchLineTier(idx, stockId)}
+                          t={{ ...t, currency: t.zl }}
+                        />
+                      : <span>{Number(line.sellPricePerUnit || 0).toFixed(0)} {t.zl}</span>}
+                    <span>× {line.quantity} =</span>
+                    <strong className="text-brand-700">{lineSell.toFixed(0)} {t.zl}</strong>
                   </span>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">

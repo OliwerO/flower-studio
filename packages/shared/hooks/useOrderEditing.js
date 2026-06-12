@@ -157,6 +157,65 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     }));
   }
 
+  // ── Sell-tier switch ───────────────────────────────────────────
+  // For a bouquet line bound to a stock item, list the other sibling sell
+  // tiers from the same Variety (4-tuple) that the owner / florist could
+  // switch to. A tier = one or more stock items with the same Sell Price.
+  // Empty array means there's only one tier (or none) — no switching needed.
+  function getLineTiers(line) {
+    if (!line?.stockItemId) return [];
+    const si = stockItems.find(s => s.id === line.stockItemId);
+    if (!si) return [];
+    const sameVariety = stockItems.filter(s =>
+      (s['Type'] ?? s.type_name) === (si['Type'] ?? si.type_name) &&
+      (s['Colour'] ?? s.colour) === (si['Colour'] ?? si.colour) &&
+      (s['Size Cm'] ?? s.size_cm) === (si['Size Cm'] ?? si.size_cm) &&
+      (s['Cultivar'] ?? s.cultivar) === (si['Cultivar'] ?? si.cultivar) &&
+      (Number(s['Current Quantity']) || 0) > 0
+    );
+    const tiers = new Map();
+    for (const s of sameVariety) {
+      const sell = Number(s['Current Sell Price']);
+      if (!isFinite(sell)) continue;
+      const key = sell.toFixed(2);
+      let m = tiers.get(key);
+      if (!m) {
+        m = { key, sell, stockIds: [], totalQty: 0 };
+        tiers.set(key, m);
+      }
+      m.stockIds.push({ id: s.id, qty: Number(s['Current Quantity']) || 0, date: s.date || s['Date'] || null });
+      m.totalQty += Number(s['Current Quantity']) || 0;
+    }
+    for (const m of tiers.values()) {
+      m.stockIds.sort((a, b) => {
+        if (!a.date && !b.date) return 0;
+        if (!a.date) return 1;
+        if (!b.date) return -1;
+        return String(a.date).localeCompare(String(b.date));
+      });
+    }
+    return [...tiers.values()].sort((a, b) => a.sell - b.sell);
+  }
+
+  // Switch a bouquet line to a different sell tier. `newStockId` should be
+  // the FEFO-oldest underlying stock_id of the target tier (callers pass
+  // tier.stockIds[0].id). The line's sell price + name update from the new
+  // stock item; quantity is preserved.
+  function switchLineTier(idx, newStockId) {
+    const target = stockItems.find(s => s.id === newStockId);
+    if (!target) return;
+    setEditLines(prev => prev.map((l, i) => {
+      if (i !== idx) return l;
+      return {
+        ...l,
+        stockItemId: target.id,
+        flowerName: target['Display Name'] ?? target.display_name ?? l.flowerName,
+        sellPricePerUnit: Number(target['Current Sell Price']) || 0,
+        costPricePerUnit: Number(target['Current Cost Price']) || 0,
+      };
+    }));
+  }
+
   function decrementQty(idx) {
     setEditLines(prev => prev.map((l, i) =>
       i === idx ? { ...l, quantity: Math.max(1, (Number(l.quantity) || 1) - 1) } : l
@@ -559,6 +618,8 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     // Actions
     startEditing,
     getLineCap,
+    getLineTiers,
+    switchLineTier,
     updateLineQty,
     commitLineQty,
     incrementQty,

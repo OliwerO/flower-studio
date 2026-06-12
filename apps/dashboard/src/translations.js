@@ -23,6 +23,9 @@ const en = {
   cancel:           'Cancel',
   change:           'Change',
   confirm:          'Confirm',
+  expand:           'Expand',
+  collapse:         'Collapse',
+  arrived:          'Arrived',
   close:            'Close',
   board:            'Board',
   todayBang:        'Today!',
@@ -306,8 +309,9 @@ const en = {
   today:               'Today',
   tomorrow:            'Tomorrow',
   daysSuffix:          'd',
+  undatedShort:        'TBD',
   viewVariety:         'By Variety',
-  viewBatch:           'By Batch',
+  viewBatch:           'Flat table',
   type:                'Type',
   variety:             'Variety',
   batchTag:            'Tag',
@@ -500,6 +504,7 @@ const en = {
 
   // Misc
   zl:               'zł',
+  switchTier:       'Switch sell tier',
 
   // Dashboard redesign — consultant insights
   revenueGapCard:     'Revenue Gap (target 2.2×)',
@@ -1003,6 +1008,7 @@ const en = {
   traceTypeWriteoff:            'Write-off',
   traceTypePurchase:            'Purchase',
   traceTypePremade:             'Premade',
+  traceTypeDissolve:            'Dissolved',
   traceEmpty:                   'No history yet',
   traceReservations:            'Reservations (no date)',
   traceBalance:                 'Balance after this event',
@@ -1039,6 +1045,9 @@ const ru = {
   save:             'Сохранить',
   saving:           'Сохранение...',
   cancel:           'Отмена',
+  expand:           'Развернуть',
+  collapse:         'Свернуть',
+  arrived:          'Пришло',
   change:           'Изменить',
   confirm:          'Подтвердить',
   close:            'Закрыть',
@@ -1324,8 +1333,9 @@ const ru = {
   today:               'Сегодня',
   tomorrow:            'Завтра',
   daysSuffix:          'д',
+  undatedShort:        'без даты',
   viewVariety:         'По сортам',
-  viewBatch:           'По партиям',
+  viewBatch:           'Таблица',
   type:                'Тип',
   variety:             'Сорт',
   batchTag:            'Метка',
@@ -1518,6 +1528,7 @@ const ru = {
 
   // Misc
   zl:               'zł',
+  switchTier:       'Сменить цену',
 
   // Dashboard redesign — consultant insights
   revenueGapCard:     'Разрыв выручки (цель 2.2×)',
@@ -2021,6 +2032,7 @@ const ru = {
   traceTypeWriteoff:            'Списание',
   traceTypePurchase:            'Закупка',
   traceTypePremade:             'Премейд',
+  traceTypeDissolve:            'Расформирован',
   traceEmpty:                   'Истории пока нет',
   traceReservations:            'Резервы (без даты)',
   traceBalance:                 'Остаток после события',

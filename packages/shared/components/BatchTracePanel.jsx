@@ -38,8 +38,9 @@ export default function BatchTracePanel({ trail = [], t }) {
   });
 
   return (
-    <div className="bg-white rounded-lg border border-gray-100 overflow-hidden max-h-72 overflow-y-auto">
-      <ul className="divide-y divide-gray-50">
+    <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
+      <BalanceSparkline points={withBalance} t={t} />
+      <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
         {withBalance.map(({ entry, balance: bal }, i) => (
           <TraceRow key={`d-${i}`} entry={entry} balance={bal} t={t} />
         ))}
@@ -60,12 +61,78 @@ export default function BatchTracePanel({ trail = [], t }) {
   );
 }
 
+/**
+ * BalanceSparkline — compact SVG line of the running balance after each dated
+ * event. Helps the operator see arrivals, drains, and crossings into negative
+ * at a glance. Width fluid via viewBox; height ~64px. Negative segments
+ * highlighted in red.
+ */
+function BalanceSparkline({ points, t }) {
+  if (!points || points.length < 1) return null;
+  const W = 320;
+  const H = 64;
+  const PAD = 6;
+  const xs = points.map((_, i) => i);
+  const ys = points.map((p) => p.balance);
+  const yMin = Math.min(0, ...ys);
+  const yMax = Math.max(0, ...ys);
+  const yRange = Math.max(1, yMax - yMin);
+  const xStep = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
+  const px = (i) => PAD + xStep * i;
+  const py = (v) => PAD + (1 - (v - yMin) / yRange) * (H - PAD * 2);
+  const path = points
+    .map((p, i) => `${i === 0 ? 'M' : 'L'} ${px(i).toFixed(1)} ${py(p.balance).toFixed(1)}`)
+    .join(' ');
+  const zeroY = py(0);
+  const lastBal = ys[ys.length - 1];
+
+  return (
+    <div
+      data-testid="trace-sparkline"
+      className="bg-gradient-to-b from-blue-50/40 to-white px-3 py-2 border-b border-gray-100"
+    >
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-gray-500 mb-1">
+        <span>{t.traceBalance ?? 'Balance'}</span>
+        <span className={`tabular-nums font-semibold ${lastBal < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+          {lastBal} {t.stems}
+        </span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-16" preserveAspectRatio="none">
+        {yMin < 0 && yMax >= 0 && (
+          <line
+            x1={PAD} x2={W - PAD} y1={zeroY} y2={zeroY}
+            stroke="#e5e7eb" strokeWidth="1" strokeDasharray="3 3"
+          />
+        )}
+        <path
+          d={path}
+          fill="none"
+          stroke={lastBal < 0 ? '#ef4444' : '#10b981'}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {points.map((p, i) => (
+          <circle
+            key={i}
+            cx={px(i)}
+            cy={py(p.balance)}
+            r="2"
+            fill={p.balance < 0 ? '#ef4444' : '#10b981'}
+          />
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 function typeLabel(entry, t) {
   switch (entry.type) {
     case 'order':    return t.traceTypeOrder;
     case 'writeoff': return t.traceTypeWriteoff;
     case 'purchase': return t.traceTypePurchase;
     case 'premade':  return t.traceTypePremade;
+    case 'dissolve': return t.traceTypeDissolve ?? 'Dissolved';
     default:         return entry.type;
   }
 }
@@ -76,11 +143,12 @@ function typeBadgeClass(type) {
     case 'writeoff': return 'bg-red-100 text-red-700';
     case 'premade':  return 'bg-indigo-100 text-indigo-700';
     case 'purchase': return 'bg-green-100 text-green-700';
+    case 'dissolve': return 'bg-purple-100 text-purple-700';
     default:         return 'bg-gray-100 text-gray-700';
   }
 }
 
-function trailDetail(entry) {
+function trailDetail(entry, t) {
   switch (entry.type) {
     case 'order': {
       // Show the human-readable order id alongside the customer so the operator
@@ -93,13 +161,17 @@ function trailDetail(entry) {
     case 'writeoff': return entry.reason ?? null;
     case 'purchase': return entry.supplier ?? null;
     case 'premade':  return entry.bouquetName ?? null;
+    case 'dissolve': {
+      const released = entry.releasedQty ? `+${entry.releasedQty} ${t?.stems ?? 'stems'} freed` : null;
+      return [entry.bouquetName, released].filter(Boolean).join(' · ');
+    }
     default:         return null;
   }
 }
 
 function TraceRow({ entry, balance, t }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
-  const detail = trailDetail(entry);
+  const detail = trailDetail(entry, t);
 
   return (
     <li
@@ -119,9 +191,15 @@ function TraceRow({ entry, balance, t }) {
         {entry.date && (
           <span className="text-[10px] text-gray-400 tabular-nums">{formatDateDMY(entry.date)}</span>
         )}
-        <span className={`text-xs font-semibold tabular-nums w-16 text-right ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
-          {qty > 0 ? '+' : ''}{qty} {t.stems}
-        </span>
+        {entry.type === 'dissolve' ? (
+          <span className="text-xs font-semibold tabular-nums w-16 text-right text-purple-600">
+            +{Number(entry.releasedQty) || 0} {t.stems}
+          </span>
+        ) : (
+          <span className={`text-xs font-semibold tabular-nums w-16 text-right ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
+            {qty > 0 ? '+' : ''}{qty} {t.stems}
+          </span>
+        )}
         {balance != null && (
           <span
             data-testid="trace-balance"
