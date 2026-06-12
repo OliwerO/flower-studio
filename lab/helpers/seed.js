@@ -2,12 +2,14 @@
 //
 // Insert a fixture (returned by a scenario builder) into Postgres.
 // Inserts in FK order:
-//   customers → stock → premade_bouquets → orders → order_lines
-//   → premade_bouquet_lines → deliveries
+//   customers → stock → stock_orders → stock_order_lines → premade_bouquets
+//   → orders → order_lines → premade_bouquet_lines → deliveries
 // Uses a single transaction so partial seeds don't leave the DB inconsistent.
 //
-// premadeBouquets and premadeBouquetLines are optional keys — older scenarios
-// without them seed fine (defaults to empty arrays).
+// premadeBouquets, premadeBouquetLines, stockOrders and stockOrderLines are
+// optional keys — older scenarios without them seed fine (default empty).
+// stockOrderLines.stock_id → stock and .po_id → stock_orders, so both parents
+// are inserted first.
 
 export async function seedFixture(pool, fixture) {
   const client = await pool.connect();
@@ -15,6 +17,8 @@ export async function seedFixture(pool, fixture) {
     await client.query('BEGIN');
     await insertMany(client, 'customers', fixture.customers ?? []);
     await insertMany(client, 'stock', fixture.stockItems ?? []);
+    await insertMany(client, 'stock_orders', fixture.stockOrders ?? []);
+    await insertMany(client, 'stock_order_lines', fixture.stockOrderLines ?? []);
     await insertMany(client, 'premade_bouquets', fixture.premadeBouquets ?? []);
     await insertMany(client, 'orders', fixture.orders ?? []);
     await insertMany(client, 'order_lines', fixture.orderLines ?? []);
