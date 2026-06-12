@@ -428,23 +428,16 @@ export default function StockPanelPage() {
           </button>
         )}
 
-        {/* Pending arrivals — Y-native (Variety-grouped) when flag on,
-            legacy per-stockId table when flag off. */}
-        {yEnabled
-          ? <PendingArrivalsPanel
-              pendingPO={pendingPO}
-              stock={(groups || []).flatMap(g => (g.rows || []).map(r => ({
-                ...r,
-                Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
-              })))}
-              t={t}
-            />
-          : <PendingArrivalsSection
-              stock={stock}
-              committedMap={committedMap}
-              onOrderClick={(id) => navigate(`/orders/${id}`)}
-            />
-        }
+        {/* Legacy per-stockId pending table (flag off). Under Y-model the
+            date-grouped PendingArrivalsPanel renders directly above the
+            ShortfallSummary instead — see below (CR-34). */}
+        {!yEnabled && (
+          <PendingArrivalsSection
+            stock={stock}
+            committedMap={committedMap}
+            onOrderClick={(id) => navigate(`/orders/${id}`)}
+          />
+        )}
 
         {/* Receive stock */}
         <button
@@ -547,6 +540,16 @@ export default function StockPanelPage() {
             <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
           ) : (
             <>
+              {/* Pending arrivals stacked directly above shortfalls — the two
+                  "coming / missing" signal panels read together (CR-34). */}
+              <PendingArrivalsPanel
+                pendingPO={pendingPO}
+                stock={(groups || []).flatMap(g => (g.rows || []).map(r => ({
+                  ...r,
+                  Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
+                })))}
+                t={t}
+              />
               <ShortfallSummary
                 groups={filteredGroups}
                 reservations={reservationsMap}

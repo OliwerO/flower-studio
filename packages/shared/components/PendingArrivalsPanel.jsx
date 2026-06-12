@@ -1,49 +1,28 @@
 /**
- * PendingArrivalsPanel — Y-model incoming arrivals grouped by Variety.
+ * PendingArrivalsPanel — Y-model incoming arrivals grouped by ARRIVAL DATE.
  *
  * Reads /stock/pending-po (keyed by stockId), joins each entry to its Stock
- * row's Variety attrs (type_name/colour/size_cm/cultivar), buckets by the
- * 4-tuple, then renders one row per Variety with a date strip showing
- * "+N stems → DD.Mon." for each planned arrival.
+ * row's Variety attrs, then buckets every PO line by its planned arrival date.
+ * Each date is headed by a DateTag (kind="arriving") and lists the flowers
+ * landing that day with their incoming quantity. (CR-33, decision D6.)
+ *
+ * Mirrors ShortfallSummary's date-grouped layout so "what's coming" and
+ * "what's missing" read the same way.
  *
  * Props:
  *   pendingPO  — { [stockId]: { ordered, plannedDate, pos[], flowerName } }
  *                 from GET /stock/pending-po
  *   stock      — full /stock list (Y-model rows carry Type/Colour/Size/Cultivar)
  *   t          — translations
- *   today      — optional ISO date override
+ *   today      — optional ISO date override (unused now; kept for API stability)
  */
 import { useMemo, useState } from 'react';
+import DateTag from './DateTag.jsx';
 
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** Bucket every pending PO line by its arrival date, then by Variety within a date. */
+function bucketByDate(pendingPO, stockById) {
+  const byDate = new Map(); // dateKey → { date, total, flowers: Map<varietyKey, row> }
 
-function dateTag(iso) {
-  if (!iso) return null;
-  const m = String(iso).match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if (!m) return null;
-  const day = Number(m[3]);
-  const month = MONTHS_SHORT[Number(m[2]) - 1] || m[2];
-  return `${day}.${month}.`;
-}
-
-function diffDays(iso, today) {
-  if (!iso) return null;
-  const a = Date.parse(today);
-  const b = Date.parse(iso);
-  if (isNaN(a) || isNaN(b)) return null;
-  return Math.round((b - a) / 86400000);
-}
-
-function ageCls(days) {
-  if (days == null) return 'bg-gray-100 text-gray-500';
-  if (days <= 2)  return 'bg-emerald-100 text-emerald-800';
-  if (days <= 7)  return 'bg-amber-100 text-amber-800';
-  return 'bg-gray-100 text-gray-700';
-}
-
-/** Bucket pendingPO entries by Variety 4-tuple. */
-function bucketByVariety(pendingPO, stockById) {
-  const map = new Map();
   for (const [stockId, po] of Object.entries(pendingPO || {})) {
     const stockRow = stockById.get(stockId);
     if (!stockRow) continue;
@@ -51,58 +30,38 @@ function bucketByVariety(pendingPO, stockById) {
     const colour = stockRow.Colour ?? stockRow.colour ?? null;
     const size = stockRow.Size ?? stockRow.size_cm ?? null;
     const cultivar = stockRow.Cultivar ?? stockRow.cultivar ?? null;
-    // Stock row without Type — surface under a generic bucket using its name
-    // so legacy stock items don't disappear from the panel.
     const key = type
       ? [type, colour ?? '', size ?? '', cultivar ?? ''].join('|')
       : `__legacy__|${po.flowerName || stockRow['Display Name'] || stockId}`;
-    if (!map.has(key)) {
-      map.set(key, {
-        key,
-        type,
-        colour,
-        size,
-        cultivar,
-        fallbackName: type ? null : (po.flowerName || stockRow['Display Name'] || '—'),
-        totalOrdered: 0,
-        // arrivals: array of { date: ISO, qty }
-        arrivals: [],
-        // pos: dedup by id so duplicate rows under the same Variety merge
-        poIds: new Set(),
-        pos: [],
-      });
-    }
-    const g = map.get(key);
-    g.totalOrdered += Number(po.ordered) || 0;
+    const fallbackName = type ? null : (po.flowerName || stockRow['Display Name'] || '—');
+
     for (const p of po.pos || []) {
-      const arrival = {
-        date: p.plannedDate || po.plannedDate || null,
-        qty: Number(p.quantity) || 0,
-        poNumber: p.number || `PO-${String(p.id || '').slice(-4)}`,
-      };
-      if (arrival.qty > 0) g.arrivals.push(arrival);
-      if (p.id && !g.poIds.has(p.id)) { g.poIds.add(p.id); g.pos.push(p); }
+      const qty = Number(p.quantity) || 0;
+      if (qty <= 0) continue;
+      const date = p.plannedDate || po.plannedDate || null;
+      const dKey = date ?? '__undated__';
+
+      if (!byDate.has(dKey)) byDate.set(dKey, { date, total: 0, flowers: new Map() });
+      const sec = byDate.get(dKey);
+      sec.total += qty;
+
+      const f = sec.flowers.get(key) ?? { key, type, colour, size, cultivar, fallbackName, qty: 0 };
+      f.qty += qty;
+      sec.flowers.set(key, f);
     }
   }
-  // Sort each group's arrivals by date (undated last)
-  for (const g of map.values()) {
-    g.arrivals.sort((a, b) => {
+
+  return [...byDate.values()]
+    .map(sec => ({ ...sec, flowers: [...sec.flowers.values()] }))
+    .sort((a, b) => {
       if (!a.date && !b.date) return 0;
-      if (!a.date) return 1;
+      if (!a.date) return 1;   // undated last
       if (!b.date) return -1;
-      return a.date.localeCompare(b.date);
+      return a.date.localeCompare(b.date); // earliest first
     });
-  }
-  // Sort groups by earliest arrival date (most urgent first)
-  return [...map.values()].sort((a, b) => {
-    const ad = a.arrivals[0]?.date ?? '9999';
-    const bd = b.arrivals[0]?.date ?? '9999';
-    return ad.localeCompare(bd);
-  });
 }
 
-export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, today }) {
-  const today_ = today ?? new Date().toISOString().slice(0, 10);
+export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {} }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const stockById = useMemo(() => {
@@ -111,14 +70,9 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
     return m;
   }, [stock]);
 
-  const groups = useMemo(
-    () => bucketByVariety(pendingPO, stockById),
-    [pendingPO, stockById],
-  );
+  const byDate = useMemo(() => bucketByDate(pendingPO, stockById), [pendingPO, stockById]);
 
-  if (groups.length === 0) return null;
-
-  const totalStems = groups.reduce((s, g) => s + g.totalOrdered, 0);
+  if (byDate.length === 0) return null;
 
   return (
     <section
@@ -137,67 +91,48 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
             {t.pendingArrivals ?? 'Incoming'}
           </span>
         </div>
-        <div className="flex items-center gap-3">
-          <div className="text-xs text-indigo-700">
-            <span data-testid="pending-arrivals-varieties" className="font-semibold tabular-nums">{groups.length}</span>
-            <span className="mx-1">{t.pendingArrivalsVarieties ?? t.shortfallsVarieties ?? 'varieties'}</span>
-            <span className="mx-1">·</span>
-            <span data-testid="pending-arrivals-stems" className="font-semibold tabular-nums">{totalStems}</span>
-            <span className="ml-1">{t.pendingArrivalsStems ?? 'stems incoming'}</span>
-          </div>
-          <span
-            data-testid="pending-arrivals-chevron"
-            data-collapsed={String(collapsed)}
-            className={`text-indigo-500 text-xs transition-transform ${collapsed ? '' : 'rotate-180'}`}
-          >
-            ▾
-          </span>
-        </div>
+        <span
+          data-testid="pending-arrivals-chevron"
+          data-collapsed={String(collapsed)}
+          className={`text-indigo-500 text-xs transition-transform ${collapsed ? '' : 'rotate-180'}`}
+        >
+          ▾
+        </span>
       </button>
 
       {!collapsed && (
         <ul className="divide-y divide-indigo-100">
-          {groups.map(g => (
-            <li key={g.key} data-testid="pending-arrivals-row" className="px-4 py-2">
-              <div className="flex items-baseline justify-between gap-2 mb-1">
-                <div className="flex items-baseline gap-2 truncate min-w-0">
-                  {g.type
-                    ? <>
-                        <span className="text-sm font-semibold text-gray-900 shrink-0">{g.type}</span>
-                        {g.colour && <span className="text-sm font-semibold text-gray-900">{g.colour}</span>}
-                        {g.size != null && <span className="text-xs text-gray-600 tabular-nums">{g.size}cm</span>}
-                        {g.cultivar && <span className="text-xs text-gray-400 italic truncate">{g.cultivar}</span>}
-                      </>
-                    : <span className="font-medium text-gray-700 truncate">{g.fallbackName}</span>}
-                </div>
-                <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0">
-                  +{g.totalOrdered} {t.stems ?? 'stems'}
+          {byDate.map(sec => (
+            <li key={sec.date ?? 'undated'} data-testid={`pending-arrival-date-${sec.date ?? 'undated'}`} className="px-4 py-2">
+              <div className="flex items-baseline justify-between mb-1">
+                <DateTag date={sec.date} kind="arriving" t={t} />
+                <span className="text-[10px] text-indigo-500 tabular-nums">
+                  +{sec.total} {t.stems ?? 'stems'}
                 </span>
               </div>
-              <div className="flex flex-wrap gap-1.5">
-                {g.arrivals.map((a, i) => {
-                  const tag = dateTag(a.date) ?? (t.undatedShort ?? '—');
-                  const days = diffDays(a.date, today_);
-                  const friendly = days == null
-                    ? tag
-                    : days === 0 ? (t.today ?? 'Today')
-                    : days === 1 ? (t.tomorrow ?? 'Tomorrow')
-                    : days > 0 ? `+${days}${t.daysSuffix ?? 'd'}`
-                    : `${days}${t.daysSuffix ?? 'd'}`;
-                  return (
-                    <span
-                      key={i}
-                      data-testid="pending-arrivals-arrival"
-                      title={a.date ?? ''}
-                      className={`inline-flex items-baseline gap-1 px-2 py-0.5 rounded text-[11px] font-medium tabular-nums ${ageCls(days)}`}
-                    >
-                      <span>+{a.qty}</span>
-                      <span className="opacity-70">·</span>
-                      <span>{friendly}</span>
+              <ul className="space-y-1">
+                {sec.flowers.map(f => (
+                  <li
+                    key={f.key}
+                    data-testid="pending-arrival-row"
+                    className="flex items-baseline justify-between text-sm px-2 py-1"
+                  >
+                    <span className="flex items-baseline gap-2 truncate min-w-0">
+                      {f.type
+                        ? <>
+                            <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
+                            {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
+                            {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
+                            {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
+                          </>
+                        : <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>}
                     </span>
-                  );
-                })}
-              </div>
+                    <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0 ml-2">
+                      +{f.qty}
+                    </span>
+                  </li>
+                ))}
+              </ul>
             </li>
           ))}
         </ul>

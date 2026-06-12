@@ -86,6 +86,9 @@ export { default as VarietyIdentity } from './components/VarietyIdentity.jsx';
 // Type group sticky collapsible header for Y-model Stock list (issue #289)
 export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
 
+// Single coloured date chip for every Y-model stock surface (decision D6, 2026-06-12)
+export { default as DateTag } from './components/DateTag.jsx';
+
 // Variety row with 4-bucket header for Y-model Stock list (issue #289, pitfall #8)
 export { default as VarietyListItem } from './components/VarietyListItem.jsx';
 

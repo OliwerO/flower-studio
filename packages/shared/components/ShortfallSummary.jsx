@@ -18,6 +18,7 @@
  */
 import { useMemo, useState } from 'react';
 import { getVarietyTotals } from '../utils/stockMath.js';
+import DateTag from './DateTag.jsx';
 
 export default function ShortfallSummary({
   groups,
@@ -98,7 +99,6 @@ export default function ShortfallSummary({
             <li key={date} data-testid={`shortfall-date-${date}`}>
               <DateRow
                 date={date}
-                today={today_}
                 rows={rows}
                 t={t}
                 openRow={openRow}
@@ -115,14 +115,13 @@ export default function ShortfallSummary({
   );
 }
 
-function DateRow({ date, today, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick }) {
-  const friendly = friendlyDate(date, today, t);
+function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick }) {
   const total = rows.reduce((s, r) => s + r.qty, 0);
 
   return (
     <div className="px-4 py-2">
       <div className="flex items-baseline justify-between mb-1">
-        <span className="text-xs font-semibold text-red-700 tabular-nums">{friendly}</span>
+        <DateTag date={date} kind="needed" t={t} />
         <span className="text-[10px] text-red-500 tabular-nums">
           {total} {t.stems}
         </span>
@@ -231,15 +230,3 @@ function bucket(groups, reservations, today) {
   return { byDate, totalStems, varietyCount: varietyKeys.size };
 }
 
-// Owner ask 2026-05-31: drop the parenthetical absolute date when the
-// relative label is already shown — "+3d (2026-06-03)" reads doubled-up.
-// Within 7 days = relative only ("Today", "Tomorrow", "+3d"). Beyond
-// that window the absolute date is more useful than counting days.
-function friendlyDate(date, today, t) {
-  if (date === today) return t.today ?? 'Today';
-  const diffDays = Math.round((Date.parse(date) - Date.parse(today)) / 86400000);
-  if (diffDays === 1) return t.tomorrow ?? 'Tomorrow';
-  if (diffDays > 1 && diffDays <= 7) return `+${diffDays}${t.daysSuffix ?? 'd'}`;
-  if (diffDays < 0 && diffDays >= -7) return `${diffDays}${t.daysSuffix ?? 'd'}`;
-  return date;
-}
