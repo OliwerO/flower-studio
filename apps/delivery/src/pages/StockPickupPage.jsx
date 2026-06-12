@@ -345,7 +345,11 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">
           <div className={`w-2.5 h-2.5 rounded-full ${statusColor}`} />
-          <span className="text-base font-medium text-ios-label">{line['Flower Name']}</span>
+          {/* CR-11: the driver doesn't need the needed-by date — strip the
+              trailing "(YYYY-MM-DD)" / "(DD.Mon.)" suffix, keep the identity. */}
+          <span className="text-base font-medium text-ios-label">
+            {String(line['Flower Name'] || '').replace(/\s*\([^)]*\)\s*$/, '').trim() || line['Flower Name']}
+          </span>
         </div>
         {isSaving && (
           <div className="w-4 h-4 border border-brand-300 border-t-brand-600 rounded-full animate-spin" />
