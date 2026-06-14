@@ -946,6 +946,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           variety={group}
                           reservations={reservationsMap}
                           hideType={false}
+                          isOwner={true}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
