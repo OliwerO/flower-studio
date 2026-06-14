@@ -86,6 +86,71 @@ export function getVarietyTotals(rows, reservations = new Map()) {
 }
 
 /**
+ * allocateVarietyCoverage — date-aware coverage of a Variety's dated demands by
+ * on-hand stock + pending PO arrivals (CR-39).
+ *
+ * On-hand batches are available any date; a pending arrival covers a demand only
+ * when arrival.date <= demand.date (in time). A LATER arrival is reported via
+ * `latePoQty` (signal that a PO exists) but does NOT reduce `shortQty` — owner
+ * decision 2026-06-14: a late arrival cannot fulfil a dated order, so it stays
+ * short. Earliest demand consumes the shared on-hand + arrival pools first
+ * (FEFO by needed-by date), so coverage isn't double-counted across demands.
+ *
+ * @param {Array<{id,current_quantity,date}>} rows  one Variety's stock rows
+ * @param {Map<string,number>} reservations         stockId → reserved (premades)
+ * @param {Array<{date,qty}>} arrivals              pending PO arrivals for this Variety
+ * @returns {{ demands: Array<{date, demandQty, shortQty, latePoQty}> }}
+ */
+export function allocateVarietyCoverage(rows = [], reservations = new Map(), arrivals = []) {
+  // On-hand pool = positive batch qty minus this Variety's premade reservations.
+  let onHandPool = 0;
+  for (const r of rows) {
+    const q = Number(r.current_quantity) || 0;
+    if (q > 0) onHandPool += q;
+    onHandPool -= Number(reservations.get(r.id)) || 0;
+  }
+  if (onHandPool < 0) onHandPool = 0; // over-reserved → nothing free to allocate
+
+  // Arrival pool, oldest first, each with a mutable remaining count.
+  const pool = (arrivals || [])
+    .map(a => ({ date: a.date, remaining: Number(a.qty) || 0 }))
+    .filter(a => a.remaining > 0)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  const demands = (rows || [])
+    .filter(r => (Number(r.current_quantity) || 0) < 0)
+    .map(r => ({ id: r.id, date: r.date, demandQty: -(Number(r.current_quantity) || 0) }))
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  for (const d of demands) {
+    let need = d.demandQty;
+
+    // 1) on-hand (available any date)
+    const fromOnHand = Math.min(need, onHandPool);
+    onHandPool -= fromOnHand;
+    need -= fromOnHand;
+
+    // 2) in-time arrivals (arrival.date <= demand.date), oldest first
+    for (const a of pool) {
+      if (need <= 0) break;
+      if (a.remaining <= 0) continue;
+      if (String(a.date) > String(d.date)) continue; // late — can't cover this demand
+      const take = Math.min(need, a.remaining);
+      a.remaining -= take;
+      need -= take;
+    }
+
+    d.shortQty = need;
+    // Signal: incoming that arrives AFTER this demand's needed date (late PO).
+    d.latePoQty = pool
+      .filter(a => String(a.date) > String(d.date))
+      .reduce((s, a) => s + a.remaining, 0);
+  }
+
+  return { demands };
+}
+
+/**
  * Effective stems available for new orders.
  *
  * Always returns `qty`. The `committed` parameter is accepted for backward

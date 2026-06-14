@@ -17,12 +17,13 @@
  *   today           — optional ISO date override
  */
 import { useMemo, useState } from 'react';
-import { getVarietyTotals } from '../utils/stockMath.js';
+import { allocateVarietyCoverage } from '../utils/stockMath.js';
 import DateTag from './DateTag.jsx';
 
 export default function ShortfallSummary({
   groups,
   reservations = new Map(),
+  pendingPO = {},
   t,
   onVarietyClick,
   fetchUsage,
@@ -35,8 +36,8 @@ export default function ShortfallSummary({
   const [loadingId, setLoadingId] = useState(null);
 
   const { byDate } = useMemo(
-    () => bucket(groups, reservations, today_),
-    [groups, reservations, today_],
+    () => bucket(groups, reservations, today_, pendingPO),
+    [groups, reservations, today_, pendingPO],
   );
 
   if (byDate.length === 0) return null;
@@ -149,8 +150,20 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                       <span className="font-medium text-gray-400 italic">—</span>
                     )}
                   </span>
-                  <span className="text-red-700 font-semibold tabular-nums ml-2">
-                    −{r.qty} {t.stems}
+                  <span className="flex items-baseline gap-2 ml-2 shrink-0">
+                    {/* CR-39: a late PO is signalled (amber) but does NOT clear the shortfall. */}
+                    {r.latePoQty > 0 && (
+                      <span
+                        data-testid="shortfall-late"
+                        className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"
+                        title={t.poLate ?? 'PO arriving after needed date'}
+                      >
+                        +{r.latePoQty} {t.poLateShort ?? 'late'}
+                      </span>
+                    )}
+                    <span className="text-red-700 font-semibold tabular-nums">
+                      −{r.qty} {t.stems}
+                    </span>
                   </span>
                 </span>
               </button>
@@ -185,34 +198,51 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
   );
 }
 
-function bucket(groups, reservations, today) {
+// Collect a Variety group's pending PO arrivals as [{date, qty}] from the
+// /stock/pending-po map (keyed by stockId).
+function arrivalsForGroup(group, pendingPO) {
+  const out = [];
+  for (const row of group.rows ?? []) {
+    const info = pendingPO?.[row.id];
+    if (!info) continue;
+    for (const p of info.pos ?? []) {
+      const qty = Number(p.quantity) || 0;
+      if (qty > 0) out.push({ date: p.plannedDate || info.plannedDate || null, qty });
+    }
+  }
+  return out;
+}
+
+function bucket(groups, reservations, today, pendingPO) {
   const byDateMap = new Map();
   let totalStems = 0;
   const varietyKeys = new Set();
 
   for (const g of groups ?? []) {
-    const { net } = getVarietyTotals(g.rows ?? [], reservations);
-    if (net >= 0) continue;
+    // CR-39: net each dated demand against IN-TIME pending arrivals. A demand
+    // covered before its needed-by date drops out; a late arrival leaves the
+    // shortfall but is surfaced via latePoQty.
+    const arrivals = arrivalsForGroup(g, pendingPO);
+    const { demands } = allocateVarietyCoverage(g.rows ?? [], reservations, arrivals);
 
-    for (const row of g.rows ?? []) {
-      if (typeof row.current_quantity === 'number' && row.current_quantity < 0) {
-        const date = row.date ?? today;
-        const qty = Math.abs(row.current_quantity);
-        const entry = {
-          key:       g.key,
-          stockId:   row.id,
-          type_name: g.type_name,
-          colour:    g.colour,
-          size_cm:   g.size_cm,
-          cultivar:  g.cultivar,
-          qty,
-        };
-        const list = byDateMap.get(date) ?? [];
-        list.push(entry);
-        byDateMap.set(date, list);
-        totalStems += qty;
-        varietyKeys.add(g.key);
-      }
+    for (const d of demands) {
+      if (d.shortQty <= 0) continue; // covered in time — not a shortfall
+      const date = d.date ?? today;
+      const entry = {
+        key:       g.key,
+        stockId:   d.id,
+        type_name: g.type_name,
+        colour:    g.colour,
+        size_cm:   g.size_cm,
+        cultivar:  g.cultivar,
+        qty:       d.shortQty,
+        latePoQty: d.latePoQty,
+      };
+      const list = byDateMap.get(date) ?? [];
+      list.push(entry);
+      byDateMap.set(date, list);
+      totalStems += d.shortQty;
+      varietyKeys.add(g.key);
     }
   }
 

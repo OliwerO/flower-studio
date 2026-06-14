@@ -553,6 +553,7 @@ export default function StockPanelPage() {
               <ShortfallSummary
                 groups={filteredGroups}
                 reservations={reservationsMap}
+                pendingPO={pendingPO}
                 t={t}
                 onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
                 fetchUsage={async (stockId) => {
