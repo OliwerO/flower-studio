@@ -41,6 +41,7 @@ export default function VarietyListItem({
   onVarietyTrace, // (varietyKey) — called on header expand instead of onRowClick when provided
   onAdjust, // (stockId, delta) — per-Batch quick-adjust; only rendered on Batch rows
   premadesByStockId,
+  isOwner = false, // CR-36: owner-only cost/sell/markup/supplier on expand
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
@@ -176,8 +177,24 @@ export default function VarietyListItem({
         // Sell label is informative only when more than one Batch tier exists —
         // a single tier is redundant noise next to the Batch chip.
         const multiTier = expansionRows.filter((r) => r.kind === 'batch').length > 1;
+        // CR-36: owner-only financials, representative from the primary Batch.
+        const cost = Number(primaryRow?.current_cost_price) || 0;
+        const sell = Number(primaryRow?.current_sell_price) || 0;
+        const supplier = primaryRow?.supplier || primaryRow?.Supplier || null;
+        const markup = cost > 0 ? (sell / cost).toFixed(1) : null;
         return (
         <ul className="bg-gray-50 border-t border-gray-100">
+          {isOwner && (sell > 0 || cost > 0 || supplier) && (
+            <li
+              data-testid="variety-owner-financials"
+              className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 py-2 text-xs text-gray-600 border-b border-gray-100"
+            >
+              <span>{t.costPrice ?? 'Cost'}: <span className="font-semibold tabular-nums text-gray-800">{cost.toFixed(2)}</span></span>
+              <span>{t.sellPrice ?? 'Sell'}: <span className="font-semibold tabular-nums text-gray-800">{sell.toFixed(2)}</span></span>
+              {markup && <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium tabular-nums">×{markup}</span>}
+              {supplier && <span>{t.supplier ?? 'Supplier'}: <span className="text-gray-800">{supplier}</span></span>}
+            </li>
+          )}
           {expansionRows.map((row) => {
               const kind = row.kind;
               const isDemand = kind === 'demand';

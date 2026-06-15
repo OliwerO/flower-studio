@@ -296,3 +296,33 @@ describe('VarietyListItem reserved-bucket tap', () => {
     expect(onToggle).not.toHaveBeenCalled();
   });
 });
+
+describe('VarietyListItem owner financials on expand (CR-36)', () => {
+  const v = {
+    key: 'Peony|Pink|60|', type_name: 'Peony', colour: 'Pink', size_cm: 60, cultivar: 'Sarah Bernhardt',
+    rows: [{ id: 'b1', current_quantity: 25, date: '2026-06-10',
+             current_cost_price: 12, current_sell_price: 42, supplier: 'Stojek' }],
+  };
+
+  it('shows cost / sell / markup / supplier on expand when isOwner', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} isOwner={true} onToggle={() => {}} />);
+    const fin = screen.getByTestId('variety-owner-financials');
+    expect(fin).toHaveTextContent('12');     // cost
+    expect(fin).toHaveTextContent('42');     // sell
+    expect(fin).toHaveTextContent('3.5');    // markup 42/12
+    expect(fin).toHaveTextContent('Stojek'); // supplier
+  });
+
+  it('hides owner financials for non-owner', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} isOwner={false} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-owner-financials')).toBeNull();
+  });
+
+  it('does not render financials when collapsed even for owner', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={false} isOwner={true} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-owner-financials')).toBeNull();
+  });
+});

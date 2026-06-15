@@ -7,7 +7,6 @@ import {
   TypeGroupHeader,
   VarietyListItem,
   ShortfallSummary,
-  BatchArrivalList,
   PendingArrivalsPanel,
   BatchTraceModal,
   VarietyTracePanel,
@@ -68,14 +67,8 @@ export default function StockPanelPage() {
   const [expandedKey, setExpandedKey] = useState(null);
   // collapsedTypes: Set of type_name strings that are collapsed
   const [collapsedTypes, setCollapsedTypes] = useState(new Set());
-  // viewMode: 'variety' = Type→Variety grouped list (default), 'batch' = arrival-date list
-  const [viewMode, setViewMode] = useState(
-    () => localStorage.getItem('blossom-stock-view') || 'batch',
-  );
-  function setStockViewMode(v) {
-    setViewMode(v);
-    localStorage.setItem('blossom-stock-view', v);
-  }
+  // CR-35: florist Stock is mobile-only (By-Variety). The desktop "Flat table"
+  // view was removed here; it lives on the dashboard. No view toggle to persist.
   // Trace modal state
   const [traceStockId, setTraceStockId] = useState(null);
   const [traceTrail, setTraceTrail] = useState(null);
@@ -553,6 +546,7 @@ export default function StockPanelPage() {
               <ShortfallSummary
                 groups={filteredGroups}
                 reservations={reservationsMap}
+                pendingPO={pendingPO}
                 t={t}
                 onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
                 fetchUsage={async (stockId) => {
@@ -560,38 +554,10 @@ export default function StockPanelPage() {
                   return res.data?.trail || [];
                 }}
               />
-              {/* View toggle: Variety / Batch */}
-              <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
-                <button
-                  type="button"
-                  data-testid="view-variety"
-                  onClick={() => setStockViewMode('variety')}
-                  className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                    viewMode === 'variety' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-                  }`}
-                >
-                  {t.viewVariety || 'By Variety'}
-                </button>
-                <button
-                  type="button"
-                  data-testid="view-batch"
-                  onClick={() => setStockViewMode('batch')}
-                  className={`px-3 py-1 text-xs font-medium rounded-full transition-colors ${
-                    viewMode === 'batch' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500'
-                  }`}
-                >
-                  {t.viewBatch || 'Flat table'}
-                </button>
-              </div>
-              {viewMode === 'batch' ? (
-                <BatchArrivalList
-                  groups={filteredGroups}
-                  reservations={reservationsMap}
-                  t={t}
-                  onRowClick={(stockIds) => setTraceStockId(stockIds.join(','))}
-                  onPatchPriceBulk={role === 'owner' ? handlePatchPriceBulk : undefined}
-                />
-              ) : (
+              {/* CR-35: florist is mobile-only — the wide Cost/Sell/Markup
+                  "Flat table" (dashboard format) is gone here; owner financials
+                  live in the By-Variety tap-to-expand (CR-36). Dashboard keeps
+                  the Flat table for desktop. */}
             <div className="ios-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
                 // Only show types that have at least one visible group after filtering
@@ -626,6 +592,7 @@ export default function StockPanelPage() {
                           variety={group}
                           reservations={reservationsMap}
                           hideType={false}
+                          isOwner={role === 'owner'}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(stockId)}
@@ -667,7 +634,6 @@ export default function StockPanelPage() {
                 );
               })}
             </div>
-              )}
             </>
           )
         ) : (

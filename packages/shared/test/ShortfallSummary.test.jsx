@@ -28,3 +28,44 @@ describe('ShortfallSummary date header (CR-32)', () => {
     expect(header).not.toMatch(/\+\d+d/);
   });
 });
+
+describe('ShortfallSummary date-aware netting (CR-39)', () => {
+  const tn = { ...t };
+
+  it('an IN-TIME pending arrival clears the shortfall (row drops)', () => {
+    const g = [{
+      key: 'Lisianthus|White|50|', type_name: 'Lisianthus', colour: 'White', size_cm: 50, cultivar: null,
+      rows: [{ id: 'd1', current_quantity: -12, date: '2026-06-18' }],
+    }];
+    const pendingPO = { d1: { ordered: 20, plannedDate: '2026-06-16',
+      pos: [{ quantity: 20, plannedDate: '2026-06-16' }] } };
+    const { container } = render(
+      <ShortfallSummary groups={g} pendingPO={pendingPO} t={tn} today="2026-06-12" />,
+    );
+    // Covered in time → the whole panel renders nothing.
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('a LATE pending arrival leaves the shortfall but signals it', () => {
+    const g = [{
+      key: 'Peony|Pink|50|', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null,
+      rows: [{ id: 'd1', current_quantity: -7, date: '2026-06-15' }],
+    }];
+    const pendingPO = { d1: { ordered: 7, plannedDate: '2026-06-16',
+      pos: [{ quantity: 7, plannedDate: '2026-06-16' }] } };
+    render(<ShortfallSummary groups={g} pendingPO={pendingPO} t={tn} today="2026-06-12" />);
+    const section = screen.getByTestId('shortfall-date-2026-06-15');
+    expect(within(section).getByTestId('shortfall-row')).toHaveTextContent('Peony');
+    expect(within(section).getByTestId('shortfall-late')).toHaveTextContent('7');
+  });
+
+  it('no PO → full shortfall, no late signal', () => {
+    const g = [{
+      key: 'Ranunculus|Orange|40|', type_name: 'Ranunculus', colour: 'Orange', size_cm: 40, cultivar: null,
+      rows: [{ id: 'd1', current_quantity: -5, date: '2026-06-20' }],
+    }];
+    render(<ShortfallSummary groups={g} t={tn} today="2026-06-12" />);
+    expect(screen.getByTestId('shortfall-date-2026-06-20')).toBeInTheDocument();
+    expect(screen.queryByTestId('shortfall-late')).toBeNull();
+  });
+});
