@@ -1,0 +1,165 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Blossom" [level=1] [ref=e5]
+    - navigation [ref=e6]:
+      - button "Сегодня" [ref=e7] [cursor=pointer]
+      - button "Заказы" [ref=e8] [cursor=pointer]
+      - button "Новый заказ" [ref=e9] [cursor=pointer]
+      - button "Склад" [ref=e10] [cursor=pointer]
+      - button "Клиенты" [ref=e11] [cursor=pointer]
+      - button "Финансы" [ref=e12] [cursor=pointer]
+      - button "Wix" [ref=e13] [cursor=pointer]
+      - button "⚠ Админ" [ref=e14] [cursor=pointer]
+      - button "Заполнение сортов" [ref=e15] [cursor=pointer]
+      - button "⚙ Настройки" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - button "↻" [ref=e18] [cursor=pointer]
+      - button "?" [ref=e19] [cursor=pointer]
+      - button "! Сообщить о проблеме" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: "!"
+        - generic [ref=e22]: Сообщить о проблеме
+      - button "EN" [ref=e23] [cursor=pointer]
+  - main [ref=e24]:
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - generic [ref=e28] [cursor=pointer]:
+          - paragraph [ref=e29]: Запланировано
+          - paragraph [ref=e30]: "1"
+          - paragraph [ref=e31]: Сегодня
+        - generic [ref=e32] [cursor=pointer]:
+          - paragraph [ref=e33]: Ожидающие доставки
+          - paragraph [ref=e34]: "0"
+          - paragraph [ref=e35]: Сегодня
+        - generic [ref=e36] [cursor=pointer]:
+          - paragraph [ref=e37]: Выручка
+          - paragraph [ref=e38]: 0 zł
+          - paragraph [ref=e39]: 0 orders
+        - generic [ref=e40] [cursor=pointer]:
+          - paragraph [ref=e41]: Не оплачен
+          - paragraph [ref=e42]: 1572 zł
+          - paragraph [ref=e43]: 10 orders
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - heading "Статус" [level=3] [ref=e46]
+          - button "▦ Доска" [ref=e47] [cursor=pointer]
+        - generic [ref=e48]:
+          - generic [ref=e49] [cursor=pointer]:
+            - generic [ref=e50]: "11"
+            - generic [ref=e51]: New
+          - generic [ref=e52] [cursor=pointer]:
+            - generic [ref=e53]: "4"
+            - generic [ref=e54]: Ready
+          - generic [ref=e55] [cursor=pointer]:
+            - generic [ref=e56]: "1"
+            - generic [ref=e57]: Out for Delivery
+          - generic [ref=e58] [cursor=pointer]:
+            - generic [ref=e59]: "2"
+            - generic [ref=e60]: Delivered
+          - generic [ref=e61] [cursor=pointer]:
+            - generic [ref=e62]: "1"
+            - generic [ref=e63]: Picked Up
+          - generic [ref=e64] [cursor=pointer]:
+            - generic [ref=e65]: "1"
+            - generic [ref=e66]: Cancelled
+      - generic [ref=e67]:
+        - heading "Просроченные платежи" [level=3] [ref=e68]
+        - generic [ref=e69]:
+          - generic [ref=e70] [cursor=pointer]:
+            - paragraph [ref=e71]: 3596 zł
+            - paragraph [ref=e72]: 19 orders
+            - paragraph [ref=e73]: Сегодня
+          - generic [ref=e74]:
+            - paragraph [ref=e75]: 0 zł
+            - paragraph [ref=e76]: 0 orders
+            - paragraph [ref=e77]: 1–7 дней
+          - generic [ref=e78]:
+            - paragraph [ref=e79]: 0 zł
+            - paragraph [ref=e80]: 0 orders
+            - paragraph [ref=e81]: 8–30 дней
+          - generic [ref=e82]:
+            - paragraph [ref=e83]: 0 zł
+            - paragraph [ref=e84]: 0 orders
+            - paragraph [ref=e85]: 30+ дней
+          - generic [ref=e86] [cursor=pointer]:
+            - paragraph [ref=e87]: 3596 zł
+            - paragraph [ref=e88]: 19 orders
+            - paragraph [ref=e89]: Итого задолженность
+      - generic [ref=e90]:
+        - heading "Wix — Доступно сегодня(0)" [level=3] [ref=e91]:
+          - text: Wix — Доступно сегодня
+          - generic [ref=e92]: (0)
+        - paragraph [ref=e93]: Нет доступных товаров на сегодня
+      - generic [ref=e94]:
+        - button "Завтра(3) ▲" [ref=e95] [cursor=pointer]:
+          - heading "Завтра(3)" [level=3] [ref=e96]:
+            - text: Завтра
+            - generic [ref=e97]: (3)
+          - generic [ref=e98]: ▲
+        - generic [ref=e100]:
+          - generic [ref=e101] [cursor=pointer]:
+            - generic [ref=e102]: 🚗
+            - generic [ref=e103]:
+              - generic [ref=e104]:
+                - generic [ref=e105]: Caden Price
+                - generic [ref=e106]: "#202605-00003"
+              - paragraph [ref=e107]: Hydrangea ×3, Anemone (06.May.) ×4
+            - generic [ref=e109]: 14:00
+          - generic [ref=e110] [cursor=pointer]:
+            - generic [ref=e111]: 🏪
+            - generic [ref=e112]:
+              - generic [ref=e113]:
+                - generic [ref=e114]: Hayley Abbott
+                - generic [ref=e115]: "#202605-00013"
+              - paragraph [ref=e116]: Peony Pink 60cm Sarah Bernhardt ×10
+            - generic [ref=e118]: 14:00
+          - generic [ref=e119] [cursor=pointer]:
+            - generic [ref=e120]: 🏪
+            - generic [ref=e121]:
+              - generic [ref=e122]:
+                - generic [ref=e123]: Hayley Abbott
+                - generic [ref=e124]: "#202605-00020"
+              - paragraph [ref=e125]: Hydrangea Pink 40cm (07.May.) ×3
+            - generic [ref=e127]: 14:00
+      - button "Водитель дня ▼" [ref=e129] [cursor=pointer]:
+        - heading "Водитель дня" [level=3] [ref=e130]
+        - generic [ref=e131]: ▼
+      - generic [ref=e132]:
+        - heading "Нужны цветы(8)" [level=3] [ref=e133]:
+          - text: Нужны цветы
+          - generic [ref=e134]: (8)
+        - generic [ref=e135]:
+          - generic [ref=e136] [cursor=pointer]:
+            - generic [ref=e137]: Peony Pink 60cm Sarah Bernhardt (2026-05-12)
+            - generic [ref=e138]:
+              - generic [ref=e139]: "-10"
+              - generic [ref=e140]: К дате 12 May
+          - generic [ref=e141] [cursor=pointer]:
+            - generic [ref=e142]: Tulip Yellow 40cm (2026-05-13)
+            - generic [ref=e143]:
+              - generic [ref=e144]: "-8"
+              - generic [ref=e145]: К дате 13 May
+          - generic [ref=e146] [cursor=pointer]:
+            - generic [ref=e147]: Peony Pink 60cm Sarah Bernhardt (2026-05-16)
+            - generic [ref=e148]:
+              - generic [ref=e149]: "-6"
+              - generic [ref=e150]: К дате 16 May
+          - generic [ref=e151] [cursor=pointer]:
+            - generic [ref=e152]: Rose White 60cm Avalanche (2026-05-18)
+            - generic [ref=e153]:
+              - generic [ref=e154]: "-8"
+              - generic [ref=e155]: К дате 18 May
+          - generic [ref=e156] [cursor=pointer]:
+            - generic [ref=e157]: Rose Pink 70cm Mondial (2026-05-25)
+            - generic [ref=e158]:
+              - generic [ref=e159]: "-12"
+              - generic [ref=e160]: К дате 25 May
+          - generic [ref=e161] [cursor=pointer]:
+            - generic [ref=e162]: Peony Pink 50cm (2026-05-13)
+            - generic [ref=e164]: "-7"
+          - generic [ref=e165] [cursor=pointer]:
+            - generic [ref=e166]: Tulip Red 40cm (2026-05-16)
+            - generic [ref=e168]: "-15"
+          - generic [ref=e169] [cursor=pointer]:
+            - generic [ref=e170]: Lisianthus Lilac 60cm (2026-05-18)
+            - generic [ref=e172]: "-9"
+        - button "Создать заказ поставщику" [ref=e173] [cursor=pointer]

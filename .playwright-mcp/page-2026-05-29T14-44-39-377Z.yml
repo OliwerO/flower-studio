@@ -1,0 +1,453 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Blossom" [level=1] [ref=e5]
+    - navigation [ref=e6]:
+      - button "Today" [ref=e7] [cursor=pointer]
+      - button "Orders" [ref=e8] [cursor=pointer]
+      - button "New Order" [ref=e9] [cursor=pointer]
+      - button "Stock" [ref=e10] [cursor=pointer]
+      - button "Customers" [ref=e11] [cursor=pointer]
+      - button "Financial" [ref=e12] [cursor=pointer]
+      - button "Wix" [ref=e13] [cursor=pointer]
+      - button "⚠ Admin" [ref=e14] [cursor=pointer]
+      - button "Variety Backfill" [ref=e15] [cursor=pointer]
+      - button "⚙ Settings" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - button "↻" [ref=e18] [cursor=pointer]
+      - button "?" [ref=e19] [cursor=pointer]
+      - button "! Report" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: "!"
+        - generic [ref=e22]: Report
+      - button "RU" [ref=e23] [cursor=pointer]
+  - main [ref=e24]:
+    - generic [ref=e28]:
+      - generic [ref=e29]:
+        - textbox "Search..." [ref=e30]
+        - generic [ref=e31]:
+          - button "All" [ref=e32] [cursor=pointer]
+          - button "Negative" [ref=e33] [cursor=pointer]
+          - button "Waste log" [ref=e34] [cursor=pointer]
+          - button "Slow movers" [ref=e35] [cursor=pointer]
+        - button "In stock" [ref=e36] [cursor=pointer]
+        - generic [ref=e37]:
+          - button "Purchase Orders" [ref=e38] [cursor=pointer]
+          - button "Reconcile" [ref=e39] [cursor=pointer]
+          - button "Receive stock" [ref=e40] [cursor=pointer]
+      - generic [ref=e41]:
+        - generic [ref=e42]: Estimated restock cost
+        - generic [ref=e43]: 1164 zł
+      - generic [ref=e44]:
+        - generic [ref=e45]:
+          - button "⚠ Shortfalls 4varieties·43stems short ▾" [ref=e46] [cursor=pointer]:
+            - generic [ref=e47]:
+              - generic [ref=e48]: ⚠
+              - generic [ref=e49]: Shortfalls
+            - generic [ref=e50]:
+              - generic [ref=e51]: 4varieties·43stems short
+              - generic [ref=e52]: ▾
+          - list [ref=e53]:
+            - listitem [ref=e54]:
+              - generic [ref=e55]:
+                - generic [ref=e56]:
+                  - generic [ref=e57]: "-16d (2026-05-13)"
+                  - generic [ref=e58]: 7 stems
+                - list [ref=e59]:
+                  - listitem [ref=e60]:
+                    - button "▸ Peony Pink 50cm −7 stems" [ref=e61] [cursor=pointer]:
+                      - generic [ref=e62]:
+                        - generic [ref=e63]:
+                          - generic [ref=e64]: ▸
+                          - generic [ref=e65]: Peony
+                          - generic [ref=e66]: Pink
+                          - generic [ref=e67]: 50cm
+                        - generic [ref=e68]: −7 stems
+            - listitem [ref=e69]:
+              - generic [ref=e70]:
+                - generic [ref=e71]:
+                  - generic [ref=e72]: "-13d (2026-05-16)"
+                  - generic [ref=e73]: 15 stems
+                - list [ref=e74]:
+                  - listitem [ref=e75]:
+                    - button "▸ Tulip Red 40cm −15 stems" [ref=e76] [cursor=pointer]:
+                      - generic [ref=e77]:
+                        - generic [ref=e78]:
+                          - generic [ref=e79]: ▸
+                          - generic [ref=e80]: Tulip
+                          - generic [ref=e81]: Red
+                          - generic [ref=e82]: 40cm
+                        - generic [ref=e83]: −15 stems
+            - listitem [ref=e84]:
+              - generic [ref=e85]:
+                - generic [ref=e86]:
+                  - generic [ref=e87]: "-11d (2026-05-18)"
+                  - generic [ref=e88]: 9 stems
+                - list [ref=e89]:
+                  - listitem [ref=e90]:
+                    - button "▸ Lisianthus Lilac 60cm −9 stems" [ref=e91] [cursor=pointer]:
+                      - generic [ref=e92]:
+                        - generic [ref=e93]:
+                          - generic [ref=e94]: ▸
+                          - generic [ref=e95]: Lisianthus
+                          - generic [ref=e96]: Lilac
+                          - generic [ref=e97]: 60cm
+                        - generic [ref=e98]: −9 stems
+            - listitem [ref=e99]:
+              - generic [ref=e100]:
+                - generic [ref=e101]:
+                  - generic [ref=e102]: "-4d (2026-05-25)"
+                  - generic [ref=e103]: 12 stems
+                - list [ref=e104]:
+                  - listitem [ref=e105]:
+                    - button "▸ Rose Pink 70cm Mondial −12 stems" [ref=e106] [cursor=pointer]:
+                      - generic [ref=e107]:
+                        - generic [ref=e108]:
+                          - generic [ref=e109]: ▸
+                          - generic [ref=e110]: Rose
+                          - generic [ref=e111]: Pink
+                          - generic [ref=e112]: 70cm
+                          - generic [ref=e113]: Mondial
+                        - generic [ref=e114]: −12 stems
+        - generic [ref=e115]:
+          - button "By Variety" [ref=e116] [cursor=pointer]
+          - button "By Batch" [ref=e117] [cursor=pointer]
+        - generic [ref=e118]:
+          - generic [ref=e119]:
+            - button "Peony 29 stems 3" [ref=e469] [cursor=pointer]:
+              - generic [ref=e121]: Peony
+              - generic [ref=e122]:
+                - generic [ref=e123]: 29 stems
+                - generic [ref=e124]: "3"
+              - img [ref=e125]
+            - generic [ref=e129]:
+              - button "Peony Pink 60cm Sarah Bernhardt 33 On hand 16 Planned 5 Reserved" [ref=e130] [cursor=pointer]:
+                - generic [ref=e131]:
+                  - generic [ref=e132]: Peony
+                  - generic [ref=e133]: Pink
+                  - generic [ref=e134]: 60cm
+                  - generic [ref=e135]: Sarah Bernhardt
+                - generic [ref=e136]:
+                  - generic [ref=e137]:
+                    - text: "33"
+                    - generic [ref=e138]: On hand
+                  - generic [ref=e139]:
+                    - text: "16"
+                    - generic [ref=e140]: Planned
+                  - button "5 Reserved" [ref=e141]:
+                    - text: "5"
+                    - generic [ref=e142]: Reserved
+              - generic [ref=e143]:
+                - generic [ref=e144]:
+                  - generic [ref=e145]: ✓
+                  - generic [ref=e146]: "12"
+                - generic [ref=e147]: free
+              - button "Write off" [ref=e148] [cursor=pointer]: 🗑
+            - generic [ref=e149]:
+              - generic [ref=e150]:
+                - generic [ref=e151]:
+                  - button "Peony Pink 60cm Coral Charm 19 On hand 0 0" [ref=e470] [cursor=pointer]:
+                    - generic [ref=e153]:
+                      - generic [ref=e154]: Peony
+                      - generic [ref=e155]: Pink
+                      - generic [ref=e156]: 60cm
+                      - generic [ref=e157]: Coral Charm
+                    - generic [ref=e158]:
+                      - generic [ref=e159]:
+                        - text: "19"
+                        - generic [ref=e160]: On hand
+                      - generic [ref=e161]: "0"
+                      - generic [ref=e162]: "0"
+                  - generic [ref=e163]:
+                    - generic [ref=e164]:
+                      - generic [ref=e165]: ✓
+                      - generic [ref=e166]: "19"
+                    - generic [ref=e167]: free
+                  - button "Write off" [ref=e168] [cursor=pointer]: 🗑
+                - list [ref=e454]:
+                  - listitem [ref=e455]:
+                    - button "Batch 10.05.2026" [ref=e456] [cursor=pointer]:
+                      - generic [ref=e457]: Batch
+                      - generic [ref=e458]: 10.05.2026
+                    - generic [ref=e459]:
+                      - generic [ref=e460]:
+                        - button "decrease" [ref=e461] [cursor=pointer]: −
+                        - button "increase" [active] [ref=e462] [cursor=pointer]: +
+                      - generic [ref=e463]: 19 stems ›
+              - generic [ref=e464]:
+                - generic [ref=e465]:
+                  - generic [ref=e466]: Batch history
+                  - button "✕" [ref=e467] [cursor=pointer]
+                - paragraph [ref=e468]: No history yet
+            - generic [ref=e171]:
+              - button "Peony Pink 50cm 0 7 Planned 0" [ref=e172] [cursor=pointer]:
+                - generic [ref=e173]:
+                  - generic [ref=e174]: Peony
+                  - generic [ref=e175]: Pink
+                  - generic [ref=e176]: 50cm
+                - generic [ref=e177]:
+                  - generic [ref=e178]: "0"
+                  - generic [ref=e179]:
+                    - text: "7"
+                    - generic [ref=e180]: Planned
+                  - generic [ref=e181]: "0"
+              - generic [ref=e182]:
+                - generic [ref=e183]:
+                  - generic [ref=e184]: ⚠
+                  - generic [ref=e185]: "-7"
+                - generic [ref=e186]: short
+              - button "Write off" [ref=e187] [cursor=pointer]: 🗑
+          - generic [ref=e188]:
+            - button "Rose 70 stems 3" [ref=e189] [cursor=pointer]:
+              - generic [ref=e190]: Rose
+              - generic [ref=e191]:
+                - generic [ref=e192]: 70 stems
+                - generic [ref=e193]: "3"
+              - img [ref=e194]
+            - generic [ref=e198]:
+              - button "Rose Red 50cm Naomi 60 On hand 0 0" [ref=e199] [cursor=pointer]:
+                - generic [ref=e200]:
+                  - generic [ref=e201]: Rose
+                  - generic [ref=e202]: Red
+                  - generic [ref=e203]: 50cm
+                  - generic [ref=e204]: Naomi
+                - generic [ref=e205]:
+                  - generic [ref=e206]:
+                    - text: "60"
+                    - generic [ref=e207]: On hand
+                  - generic [ref=e208]: "0"
+                  - generic [ref=e209]: "0"
+              - generic [ref=e210]:
+                - generic [ref=e211]:
+                  - generic [ref=e212]: ✓
+                  - generic [ref=e213]: "60"
+                - generic [ref=e214]: free
+              - button "Write off" [ref=e215] [cursor=pointer]: 🗑
+            - generic [ref=e218]:
+              - button "Rose White 60cm Avalanche 30 On hand 8 Planned 3 Reserved" [ref=e219] [cursor=pointer]:
+                - generic [ref=e220]:
+                  - generic [ref=e221]: Rose
+                  - generic [ref=e222]: White
+                  - generic [ref=e223]: 60cm
+                  - generic [ref=e224]: Avalanche
+                - generic [ref=e225]:
+                  - generic [ref=e226]:
+                    - text: "30"
+                    - generic [ref=e227]: On hand
+                  - generic [ref=e228]:
+                    - text: "8"
+                    - generic [ref=e229]: Planned
+                  - button "3 Reserved" [ref=e230]:
+                    - text: "3"
+                    - generic [ref=e231]: Reserved
+              - generic [ref=e232]:
+                - generic [ref=e233]:
+                  - generic [ref=e234]: ✓
+                  - generic [ref=e235]: "19"
+                - generic [ref=e236]: free
+              - button "Write off" [ref=e237] [cursor=pointer]: 🗑
+            - generic [ref=e240]:
+              - button "Rose Pink 70cm Mondial 0 12 Planned 0" [ref=e241] [cursor=pointer]:
+                - generic [ref=e242]:
+                  - generic [ref=e243]: Rose
+                  - generic [ref=e244]: Pink
+                  - generic [ref=e245]: 70cm
+                  - generic [ref=e246]: Mondial
+                - generic [ref=e247]:
+                  - generic [ref=e248]: "0"
+                  - generic [ref=e249]:
+                    - text: "12"
+                    - generic [ref=e250]: Planned
+                  - generic [ref=e251]: "0"
+              - generic [ref=e252]:
+                - generic [ref=e253]:
+                  - generic [ref=e254]: ⚠
+                  - generic [ref=e255]: "-12"
+                - generic [ref=e256]: short
+              - button "Write off" [ref=e257] [cursor=pointer]: 🗑
+          - generic [ref=e258]:
+            - button "Tulip 27 stems 2" [ref=e259] [cursor=pointer]:
+              - generic [ref=e260]: Tulip
+              - generic [ref=e261]:
+                - generic [ref=e262]: 27 stems
+                - generic [ref=e263]: "2"
+              - img [ref=e264]
+            - generic [ref=e268]:
+              - button "Tulip Yellow 40cm 50 On hand 8 Planned 5 Reserved" [ref=e269] [cursor=pointer]:
+                - generic [ref=e270]:
+                  - generic [ref=e271]: Tulip
+                  - generic [ref=e272]: Yellow
+                  - generic [ref=e273]: 40cm
+                - generic [ref=e274]:
+                  - generic [ref=e275]:
+                    - text: "50"
+                    - generic [ref=e276]: On hand
+                  - generic [ref=e277]:
+                    - text: "8"
+                    - generic [ref=e278]: Planned
+                  - button "5 Reserved" [ref=e279]:
+                    - text: "5"
+                    - generic [ref=e280]: Reserved
+              - generic [ref=e281]:
+                - generic [ref=e282]:
+                  - generic [ref=e283]: ✓
+                  - generic [ref=e284]: "37"
+                - generic [ref=e285]: free
+              - button "Write off" [ref=e286] [cursor=pointer]: 🗑
+            - generic [ref=e289]:
+              - button "Tulip Red 40cm 0 15 Planned 0" [ref=e290] [cursor=pointer]:
+                - generic [ref=e291]:
+                  - generic [ref=e292]: Tulip
+                  - generic [ref=e293]: Red
+                  - generic [ref=e294]: 40cm
+                - generic [ref=e295]:
+                  - generic [ref=e296]: "0"
+                  - generic [ref=e297]:
+                    - text: "15"
+                    - generic [ref=e298]: Planned
+                  - generic [ref=e299]: "0"
+              - generic [ref=e300]:
+                - generic [ref=e301]:
+                  - generic [ref=e302]: ⚠
+                  - generic [ref=e303]: "-15"
+                - generic [ref=e304]: short
+              - button "Write off" [ref=e305] [cursor=pointer]: 🗑
+          - generic [ref=e306]:
+            - button "Hydrangea 42 stems 2" [ref=e307] [cursor=pointer]:
+              - generic [ref=e308]: Hydrangea
+              - generic [ref=e309]:
+                - generic [ref=e310]: 42 stems
+                - generic [ref=e311]: "2"
+              - img [ref=e312]
+            - generic [ref=e316]:
+              - button "Hydrangea Blue 30cm 28 On hand 0 4 Reserved" [ref=e317] [cursor=pointer]:
+                - generic [ref=e318]:
+                  - generic [ref=e319]: Hydrangea
+                  - generic [ref=e320]: Blue
+                  - generic [ref=e321]: 30cm
+                - generic [ref=e322]:
+                  - generic [ref=e323]:
+                    - text: "28"
+                    - generic [ref=e324]: On hand
+                  - generic [ref=e325]: "0"
+                  - button "4 Reserved" [ref=e326]:
+                    - text: "4"
+                    - generic [ref=e327]: Reserved
+              - generic [ref=e328]:
+                - generic [ref=e329]:
+                  - generic [ref=e330]: ✓
+                  - generic [ref=e331]: "24"
+                - generic [ref=e332]: free
+              - button "Write off" [ref=e333] [cursor=pointer]: 🗑
+            - generic [ref=e336]:
+              - button "Hydrangea Pink 40cm 14 On hand 0 0" [ref=e337] [cursor=pointer]:
+                - generic [ref=e338]:
+                  - generic [ref=e339]: Hydrangea
+                  - generic [ref=e340]: Pink
+                  - generic [ref=e341]: 40cm
+                - generic [ref=e342]:
+                  - generic [ref=e343]:
+                    - text: "14"
+                    - generic [ref=e344]: On hand
+                  - generic [ref=e345]: "0"
+                  - generic [ref=e346]: "0"
+              - generic [ref=e347]:
+                - generic [ref=e348]:
+                  - generic [ref=e349]: ✓
+                  - generic [ref=e350]: "14"
+                - generic [ref=e351]: free
+              - button "Write off" [ref=e352] [cursor=pointer]: 🗑
+          - generic [ref=e353]:
+            - button "Lisianthus 27 stems 2" [ref=e354] [cursor=pointer]:
+              - generic [ref=e355]: Lisianthus
+              - generic [ref=e356]:
+                - generic [ref=e357]: 27 stems
+                - generic [ref=e358]: "2"
+              - img [ref=e359]
+            - generic [ref=e363]:
+              - button "Lisianthus White 50cm 36 On hand 0 3 Reserved" [ref=e364] [cursor=pointer]:
+                - generic [ref=e365]:
+                  - generic [ref=e366]: Lisianthus
+                  - generic [ref=e367]: White
+                  - generic [ref=e368]: 50cm
+                - generic [ref=e369]:
+                  - generic [ref=e370]:
+                    - text: "36"
+                    - generic [ref=e371]: On hand
+                  - generic [ref=e372]: "0"
+                  - button "3 Reserved" [ref=e373]:
+                    - text: "3"
+                    - generic [ref=e374]: Reserved
+              - generic [ref=e375]:
+                - generic [ref=e376]:
+                  - generic [ref=e377]: ✓
+                  - generic [ref=e378]: "33"
+                - generic [ref=e379]: free
+              - button "Write off" [ref=e380] [cursor=pointer]: 🗑
+            - generic [ref=e383]:
+              - button "Lisianthus Lilac 60cm 0 9 Planned 0" [ref=e384] [cursor=pointer]:
+                - generic [ref=e385]:
+                  - generic [ref=e386]: Lisianthus
+                  - generic [ref=e387]: Lilac
+                  - generic [ref=e388]: 60cm
+                - generic [ref=e389]:
+                  - generic [ref=e390]: "0"
+                  - generic [ref=e391]:
+                    - text: "9"
+                    - generic [ref=e392]: Planned
+                  - generic [ref=e393]: "0"
+              - generic [ref=e394]:
+                - generic [ref=e395]:
+                  - generic [ref=e396]: ⚠
+                  - generic [ref=e397]: "-9"
+                - generic [ref=e398]: short
+              - button "Write off" [ref=e399] [cursor=pointer]: 🗑
+          - generic [ref=e400]:
+            - button "Eucalyptus 80 stems 1" [ref=e401] [cursor=pointer]:
+              - generic [ref=e402]: Eucalyptus
+              - generic [ref=e403]:
+                - generic [ref=e404]: 80 stems
+                - generic [ref=e405]: "1"
+              - img [ref=e406]
+            - generic [ref=e410]:
+              - button "Eucalyptus 80 On hand 0 2 Reserved" [ref=e411] [cursor=pointer]:
+                - generic [ref=e413]: Eucalyptus
+                - generic [ref=e414]:
+                  - generic [ref=e415]:
+                    - text: "80"
+                    - generic [ref=e416]: On hand
+                  - generic [ref=e417]: "0"
+                  - button "2 Reserved" [ref=e418]:
+                    - text: "2"
+                    - generic [ref=e419]: Reserved
+              - generic [ref=e420]:
+                - generic [ref=e421]:
+                  - generic [ref=e422]: ✓
+                  - generic [ref=e423]: "78"
+                - generic [ref=e424]: free
+              - button "Write off" [ref=e425] [cursor=pointer]: 🗑
+          - generic [ref=e426]:
+            - button "Lily 20 stems 1" [ref=e427] [cursor=pointer]:
+              - generic [ref=e428]: Lily
+              - generic [ref=e429]:
+                - generic [ref=e430]: 20 stems
+                - generic [ref=e431]: "1"
+              - img [ref=e432]
+            - generic [ref=e436]:
+              - button "Lily White 70cm 20 On hand 0 2 Reserved" [ref=e437] [cursor=pointer]:
+                - generic [ref=e438]:
+                  - generic [ref=e439]: Lily
+                  - generic [ref=e440]: White
+                  - generic [ref=e441]: 70cm
+                - generic [ref=e442]:
+                  - generic [ref=e443]:
+                    - text: "20"
+                    - generic [ref=e444]: On hand
+                  - generic [ref=e445]: "0"
+                  - button "2 Reserved" [ref=e446]:
+                    - text: "2"
+                    - generic [ref=e447]: Reserved
+              - generic [ref=e448]:
+                - generic [ref=e449]:
+                  - generic [ref=e450]: ✓
+                  - generic [ref=e451]: "18"
+                - generic [ref=e452]: free
+              - button "Write off" [ref=e453] [cursor=pointer]: 🗑

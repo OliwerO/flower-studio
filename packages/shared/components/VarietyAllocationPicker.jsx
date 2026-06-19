@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react';
 import { groupByVariety, varietyDisplayName } from '../utils/varietyKey.js';
 import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
+import { getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
+import { formatDateDMY } from '../utils/formatDate.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
+import VarietyAvailabilityLine from './VarietyAvailabilityLine.jsx';
 
 /**
  * Hybrid two-stage Variety picker — replaces BatchPickerModal under STOCK_Y_MODEL.
@@ -41,6 +44,7 @@ import VarietyIdentity from './VarietyIdentity.jsx';
 export default function VarietyAllocationPicker({
   stockItems = [],
   reservations = new Map(),
+  pendingPO = {},
   requiredBy,
   qty = 1,
   role,
@@ -53,7 +57,17 @@ export default function VarietyAllocationPicker({
   onBulkFreshForAll,
 }) {
   const [search, setSearch] = useState('');
-  const [expandedKey, setExpandedKey] = useState(null);
+
+  // CR-24: when the host opens the picker on a SINGLE pre-chosen Variety (the
+  // common path — tapping a catalog row passes just that Variety's rows), skip
+  // the redundant Stage-1 search/list and open straight at the allocation form.
+  // groupByVariety is stable per mount and the picker remounts on every open,
+  // so the initializer runs fresh each time.
+  const allVarieties = useMemo(() => groupByVariety(stockItems), [stockItems]);
+  const singleVariety = allVarieties.size === 1;
+  const [expandedKey, setExpandedKey] = useState(
+    () => (singleVariety ? [...allVarieties.keys()][0] : null),
+  );
 
   // Task 4: Create new Variety form state
   const [creating, setCreating] = useState(false);
@@ -66,14 +80,19 @@ export default function VarietyAllocationPicker({
     const all = groupByVariety(stockItems);
     const visible = [];
     for (const [, group] of all) {
-      const totalQty = group.rows.reduce(
-        (sum, r) => sum + (Number(r.current_quantity) || 0),
-        0,
+      // S3.2-i: one labelled availability model per Variety. The hide rule is
+      // effective ≤ 0 (D3) — net free now plus incoming PO — so a Variety
+      // reserved/committed down to nothing drops out, while a negative-stock
+      // Variety that an incoming PO lifts back above zero reappears (CR-22).
+      const availability = getVarietyAvailability(
+        group.rows,
+        reservations,
+        arrivalsForVariety(group.rows, pendingPO),
       );
       const displayName = varietyDisplayName(group);
 
       if (!needle) {
-        if (totalQty <= 0) continue;
+        if (availability.effective <= 0) continue;
       } else {
         const haystack = [
           group.type_name,
@@ -88,10 +107,10 @@ export default function VarietyAllocationPicker({
         if (!haystack.includes(needle)) continue;
       }
 
-      visible.push({ ...group, displayName, totalQty });
+      visible.push({ ...group, displayName, availability, totalQty: availability.net });
     }
     return visible;
-  }, [stockItems, needle]);
+  }, [stockItems, reservations, pendingPO, needle]);
 
   // Build a lookup map from id → original stockItem row for click handlers.
   const stockById = useMemo(() => {
@@ -100,14 +119,22 @@ export default function VarietyAllocationPicker({
     return map;
   }, [stockItems]);
 
-  // When a Variety row is expanded, compute engine options for that group,
-  // then collapse Batch options by sell-price tier so the picker mirrors the
-  // Stock-list merge rule (2026-05-31). Demand-Entry and Fresh options are
-  // not collapsed — they remain per-date.
-  const expandedOptions = useMemo(() => {
+  // When a Variety is active (expanded row, or the single pre-chosen Variety),
+  // compute its availability + engine allocation options. Batch options are
+  // collapsed by sell-price tier (2026-05-31) so the source dropdown mirrors the
+  // Stock-list merge rule; Demand-Entry and Fresh options stay per-date. We read
+  // the group from the UNFILTERED set so a fully-committed Variety the host
+  // explicitly opened still resolves (the hide rule only governs the list).
+  const expandedData = useMemo(() => {
     if (!expandedKey) return null;
-    const group = groups.find((g) => g.key === expandedKey);
+    const group = allVarieties.get(expandedKey);
     if (!group) return null;
+
+    const availability = getVarietyAvailability(
+      group.rows,
+      reservations,
+      arrivalsForVariety(group.rows, pendingPO),
+    );
 
     const engineRows = group.rows.map((r) => ({
       id: r.id,
@@ -117,8 +144,9 @@ export default function VarietyAllocationPicker({
     }));
 
     const raw = stockAllocationEngine(engineRows, reservations, requiredBy, qty);
-    return collapseBatchTiers(raw, stockById, qty, t);
-  }, [expandedKey, groups, reservations, requiredBy, qty, stockById, t]);
+    const options = collapseBatchTiers(raw, stockById, qty, t);
+    return { group, availability, options };
+  }, [expandedKey, allVarieties, reservations, pendingPO, requiredBy, qty, stockById, t]);
 
   const isOwner = role === 'owner';
 
@@ -126,30 +154,33 @@ export default function VarietyAllocationPicker({
     setExpandedKey((prev) => (prev === key ? null : key));
   }
 
-  function handleBatchClick(option) {
-    // FEFO: oldest underlying stock_id drains first.
-    const targetId = option.stockIds?.[0] ?? option.stockId;
+  // CR-25/26: the allocation form resolves the chosen source to a concrete
+  // selection, then adds it to the order with the amount the owner typed.
+  function handleAdd(selection, amount) {
+    const qtyToAdd = Math.max(1, Number(amount) || 1);
+    if (selection?.kind === 'fresh') {
+      const group = expandedData?.group;
+      onSelectStock(
+        {
+          kind: 'fresh',
+          date: requiredBy,
+          variety: group ? {
+            type_name: group.type_name,
+            colour: group.colour,
+            size_cm: group.size_cm,
+            cultivar: group.cultivar,
+          } : null,
+        },
+        qtyToAdd,
+      );
+      return;
+    }
+    // batch (FEFO oldest underlying stock_id) or merge (the demand entry row).
+    const targetId = selection?.kind === 'batch'
+      ? (selection.stockIds?.[0] ?? selection.stockId)
+      : selection?.stockId;
     const original = stockById.get(targetId);
-    if (original) onSelectStock(original);
-  }
-
-  function handleMergeClick(option) {
-    const original = stockById.get(option.stockId);
-    if (original) onSelectStock(original);
-  }
-
-  function handleFreshClick() {
-    const group = groups.find((g) => g.key === expandedKey);
-    onSelectStock({
-      kind: 'fresh',
-      date: requiredBy,
-      variety: group ? {
-        type_name: group.type_name,
-        colour: group.colour,
-        size_cm: group.size_cm,
-        cultivar: group.cultivar,
-      } : null,
-    });
+    if (original) onSelectStock(original, qtyToAdd);
   }
 
   function handleDraftChange(field, value) {
@@ -186,52 +217,74 @@ export default function VarietyAllocationPicker({
         className="bg-white rounded-2xl shadow-xl w-full max-w-md max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="px-4 pt-4 pb-2 border-b border-gray-100">
-          <input
-            autoFocus
-            type="search"
-            placeholder={t.pickerSearchPlaceholder}
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
-          />
-        </div>
+        {/* Stage 1 — search only when more than one Variety is in play. A single
+            pre-chosen Variety (CR-24) skips straight to the allocation form. */}
+        {!singleVariety && (
+          <div className="px-4 pt-4 pb-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="search"
+              placeholder={t.pickerSearchPlaceholder}
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+            />
+          </div>
+        )}
 
-        <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
-          {groups.length === 0 && (
-            <p className="px-4 py-6 text-center text-sm text-gray-400">
-              {t.pickerNoResults}
-            </p>
-          )}
-          {groups.map((g) => (
-            <div key={g.key}>
-              <button
-                type="button"
-                data-testid="variety-row"
-                onClick={() => handleRowClick(g.key)}
-                aria-label={g.displayName}
-                className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
-              >
-                <VarietyIdentity variety={g} showType srOnlyFullName />
-                <div className="text-xs text-gray-500 mt-1">
-                  {g.totalQty} {t.stems}
-                </div>
-              </button>
-
-              {/* Stage 2: inline allocation panel */}
-              {expandedKey === g.key && expandedOptions && (
-                <AllocationPanel
-                  options={expandedOptions}
-                  onBatch={handleBatchClick}
-                  onMerge={handleMergeClick}
-                  onFresh={handleFreshClick}
-                  premadesByStockId={premadesByStockId}
-                  t={t}
-                />
-              )}
+        {singleVariety && expandedData ? (
+          /* CR-24: single Variety — header + allocation form, no list. */
+          <div className="flex-1 overflow-y-auto">
+            <div className="px-4 pt-4 pb-2">
+              <VarietyIdentity variety={expandedData.group} showType srOnlyFullName />
+              <div className="mt-1">
+                <VarietyAvailabilityLine availability={expandedData.availability} t={t} />
+              </div>
             </div>
-          ))}
-        </div>
+            <AllocationForm
+              options={expandedData.options}
+              availability={expandedData.availability}
+              defaultQty={qty}
+              t={t}
+              onAdd={handleAdd}
+            />
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto divide-y divide-gray-50">
+            {groups.length === 0 && (
+              <p className="px-4 py-6 text-center text-sm text-gray-400">
+                {t.pickerNoResults}
+              </p>
+            )}
+            {groups.map((g) => (
+              <div key={g.key}>
+                <button
+                  type="button"
+                  data-testid="variety-row"
+                  onClick={() => handleRowClick(g.key)}
+                  aria-label={g.displayName}
+                  className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
+                >
+                  <VarietyIdentity variety={g} showType srOnlyFullName />
+                  <div className="mt-1">
+                    <VarietyAvailabilityLine availability={g.availability} t={t} />
+                  </div>
+                </button>
+
+                {/* Stage 2: inline allocation form for the expanded Variety */}
+                {expandedKey === g.key && expandedData && (
+                  <AllocationForm
+                    options={expandedData.options}
+                    availability={expandedData.availability}
+                    defaultQty={qty}
+                    t={t}
+                    onAdd={handleAdd}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        )}
 
         {isOwner && !creating && (
           <div className="px-4 py-2 border-t border-gray-100">
@@ -425,137 +478,119 @@ export function collapseBatchTiers(options, stockById, qty, t) {
 }
 
 /**
- * AllocationPanel — renders the engine options for one expanded Variety.
- * Renders inline below the Variety row header.
+ * buildSources — turns engine options + Variety availability into the owner's
+ * mental model of allocation sources (CR-26): one dropdown of
+ *   { From stock [· sell tier] · Into committed <date> · From incoming PO · New demand }.
+ * Each source carries an `available` cap (null = uncapped) and the concrete
+ * `selection` the host resolves on Add. Exported for unit testing.
  */
-function AllocationPanel({ options, onBatch, onMerge, onFresh, premadesByStockId, t }) {
-  const batchOptions = options.filter((o) => o.kind === 'batch');
-  const mergeOptions = options.filter((o) => o.kind === 'merge');
-  const freshOption = options.find((o) => o.kind === 'fresh');
-
-  return (
-    <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 space-y-2">
-      {/* Batch options — one row per sell-price tier */}
-      {batchOptions.map((opt) => (
-        <BatchOptionButton
-          key={opt.tierKey ?? opt.stockId}
-          option={opt}
-          onClick={() => onBatch(opt)}
-          premades={premadesByStockId?.get(opt.stockIds?.[0] ?? opt.stockId)}
-          t={t}
-        />
-      ))}
-
-      {/* Merge (Demand Entry) options */}
-      {mergeOptions.map((opt) => (
-        <button
-          key={opt.stockId}
-          type="button"
-          data-testid="option-merge"
-          data-default={String(opt.isDefault)}
-          onClick={() => onMerge(opt)}
-          className={[
-            'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
-            opt.isPastDate
-              ? 'text-gray-400 border-gray-200 bg-white'
-              : opt.isDefault
-                ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
-                : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
-          ].join(' ')}
-        >
-          <span className="font-medium">{opt.date}</span>
-          {' · '}
-          <span>{Math.abs(opt.currentQty)} {t.planned ?? 'planned'}</span>
-          {opt.isPastDate && (
-            <span className="ml-2 text-xs text-gray-400">(past)</span>
-          )}
-        </button>
-      ))}
-
-      {/* Fresh option */}
-      {freshOption && (
-        <button
-          type="button"
-          data-testid="option-fresh"
-          data-default={String(freshOption.isDefault)}
-          onClick={onFresh}
-          className={[
-            'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
-            freshOption.isDefault
-              ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
-              : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
-          ].join(' ')}
-        >
-          {t.orderFresh ?? 'Order fresh'}
-        </button>
-      )}
-    </div>
-  );
+export function buildSources(options, availability, t = {}) {
+  const list = [];
+  for (const o of options) {
+    if (o.kind === 'batch') {
+      const priceLabel = o.sellLabel ? ` · ${o.sellLabel}` : '';
+      list.push({
+        value: `batch:${o.tierKey ?? o.stockId}`,
+        label: `${t.srcStock ?? 'From stock'}${priceLabel}`,
+        available: o.freeQty,
+        selection: o,
+        isDefault: o.isDefault,
+      });
+    } else if (o.kind === 'merge') {
+      list.push({
+        value: `merge:${o.stockId}`,
+        label: `${t.srcCommitted ?? 'Into committed'} ${formatDateDMY(o.date)}`,
+        available: null,
+        selection: o,
+        isDefault: o.isDefault,
+      });
+    }
+  }
+  if ((availability?.incoming ?? 0) > 0) {
+    const d = availability.arrivals?.[0]?.date;
+    list.push({
+      value: 'incoming',
+      label: `${t.srcIncoming ?? 'From incoming PO'} +${availability.incoming}${d ? ` → ${formatDateDMY(d)}` : ''}`,
+      available: availability.incoming,
+      // A PO already covers this demand → still create a fresh demand entry at
+      // the order's needed-by date; the coverage engine matches it to the PO.
+      selection: { kind: 'fresh' },
+    });
+  }
+  list.push({
+    value: 'fresh',
+    label: t.srcFresh ?? 'New demand',
+    available: null,
+    selection: { kind: 'fresh' },
+  });
+  return list;
 }
 
 /**
- * BatchOptionButton — renders a single Batch option with free/total/reserved breakdown.
+ * AllocationForm — CR-25/26 single-screen allocation for one Variety. The owner
+ * picks a source from a dropdown, sees that source's available count, types the
+ * amount, and watches the remaining (available − amount) update live — then Add
+ * commits the line with the typed amount. No window-hopping to the cart.
  */
-function BatchOptionButton({ option, onClick, premades, t }) {
-  // #311 AC3: insufficient batches (freeQty < qty needed, or reservations
-  // overshoot) are visible but not clickable — the user must pick a different
-  // batch or "Order fresh." Engine sets `sufficient` per option.
-  const unusable = !option.sufficient;
+function AllocationForm({ options, availability, defaultQty, t, onAdd }) {
+  const sources = useMemo(() => buildSources(options, availability, t), [options, availability, t]);
+
+  const initialValue = (sources.find((s) => s.isDefault) ?? sources[0])?.value ?? 'fresh';
+  const [value, setValue] = useState(initialValue);
+  const [amount, setAmount] = useState(String(Math.max(1, defaultQty || 1)));
+
+  const selected = sources.find((s) => s.value === value) ?? sources[sources.length - 1];
+  const amt = Math.max(0, parseInt(amount, 10) || 0);
+  const remaining = selected?.available != null ? selected.available - amt : null;
+
   return (
-    <button
-      type="button"
-      data-testid="option-batch"
-      data-default={String(option.isDefault)}
-      data-sufficient={String(option.sufficient)}
-      data-tier-key={option.tierKey ?? ''}
-      data-stock-ids={(option.stockIds ?? [option.stockId]).join(',')}
-      onClick={onClick}
-      disabled={unusable}
-      aria-disabled={unusable}
-      className={[
-        'w-full text-left px-3 py-2 rounded-lg border text-sm transition-colors',
-        unusable
-          ? 'border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed'
-          : option.isDefault
-            ? 'border-indigo-400 bg-indigo-50 text-indigo-900'
-            : 'border-gray-200 bg-white text-gray-800 hover:bg-gray-100',
-      ].join(' ')}
-    >
-      <div className="flex items-center justify-between">
-        <span className="font-medium">
-          {option.sellLabel ?? (t.useStock ?? 'Use stock')}
-        </span>
-        <span className="text-xs text-gray-500">
-          <span className={`font-semibold ${unusable ? 'text-gray-400' : 'text-gray-800'}`}>{option.freeQty}</span>
-          {' / '}
-          <span>{option.total}</span>
-          {option.reservedQty > 0 && (
-            <span className="ml-1 text-amber-600">
-              ({option.reservedQty} {t.reserved ?? 'reserved'})
-            </span>
-          )}
-          {unusable && (
-            <span className="ml-2 text-[10px] uppercase tracking-wide text-red-500">
-              {t.batchInsufficient ?? 'insufficient'}
-            </span>
-          )}
-        </span>
+    <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 space-y-2">
+      <label className="block">
+        <span className="block text-xs font-medium text-gray-500 mb-1">{t.allocSource ?? 'Source'}</span>
+        <select
+          data-testid="alloc-source"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-indigo-400"
+        >
+          {sources.map((s) => (
+            <option key={s.value} value={s.value}>
+              {s.label}{s.available != null ? ` (${s.available} ${t.free ?? 'free'})` : ''}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <div className="flex items-center gap-3">
+        <label className="flex items-center gap-2">
+          <span className="text-xs font-medium text-gray-500">{t.allocQty ?? 'Amount'}</span>
+          <input
+            data-testid="alloc-qty"
+            type="number"
+            min="1"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            className="w-20 text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+          />
+        </label>
+        {remaining != null && (
+          <span
+            data-testid="alloc-remaining"
+            className={`text-xs ${remaining < 0 ? 'text-amber-600 font-medium' : 'text-gray-500'}`}
+          >
+            {t.allocRemaining ?? 'remaining'}: {remaining}
+          </span>
+        )}
       </div>
-      {/* Reserved premade list — deferred to lab Playwright test (Task 3 note) */}
-      {option.reservedQty > 0 && premades && premades.length > 0 && (
-        <details className="mt-1">
-          <summary className="text-xs text-gray-400 cursor-pointer">
-            {t.reserved ?? 'reserved'} ({option.reservedQty})
-          </summary>
-          <ul className="mt-1 space-y-0.5">
-            {premades.map((p) => (
-              <li key={p.id} className="text-xs text-gray-500">
-                {p.name} × {p.qty}
-              </li>
-            ))}
-          </ul>
-        </details>
-      )}
-    </button>
+
+      <button
+        type="button"
+        data-testid="alloc-add"
+        onClick={() => onAdd(selected.selection, Math.max(1, amt))}
+        className="w-full py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
+      >
+        {t.allocAdd ?? 'Add'}
+      </button>
+    </div>
   );
 }

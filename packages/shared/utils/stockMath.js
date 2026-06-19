@@ -151,6 +151,69 @@ export function allocateVarietyCoverage(rows = [], reservations = new Map(), arr
 }
 
 /**
+ * getVarietyAvailability — the single labelled availability model for the
+ * bouquet picker (CR-23/28). One Variety in → all buckets out, each named, so
+ * the numbers visibly add up: onHand − committed − reserved = net, and
+ * net + incoming = effective.
+ *
+ *   onHand    — physical stems on shelf (Σ positive batch qty)
+ *   committed — stems already promised to customer orders (Σ |demand entries|)
+ *               [D5: the word is "committed", never "planned"]
+ *   reserved  — stems locked into premade bouquets
+ *   incoming  — stems arriving on a pending PO (Σ arrivals.qty)
+ *   net       — onHand − committed − reserved   (free to allocate right now)
+ *   effective — net + incoming                  (free once the POs land)
+ *   arrivals  — [{date, qty}] pending arrivals, oldest first (for DateTag)
+ *
+ * Picker hide rule (D3): hide when effective ≤ 0 by default; deliberate
+ * over-promising (reachable via search) still creates a buy signal. Unlike the
+ * stock-panel shortfall (allocateVarietyCoverage), this is date-agnostic on
+ * purpose — the picker asks "could this Variety supply a new line at all", and
+ * a late PO that over-promises is an intentional demand signal.
+ *
+ * @param {Array<{id, current_quantity}>} rows  one Variety's stock rows
+ * @param {Map<string,number>} [reservations]   stockId → reserved (premades)
+ * @param {Array<{date, qty}>} [arrivals]       pending PO arrivals for the Variety
+ * @returns {{ onHand, committed, reserved, incoming, net, effective, arrivals }}
+ */
+export function getVarietyAvailability(rows = [], reservations = new Map(), arrivals = []) {
+  const { onHand, planned: committed, reservedForPremades: reserved, net } =
+    getVarietyTotals(rows, reservations);
+
+  const sortedArrivals = (arrivals || [])
+    .map((a) => ({ date: a.date, qty: Number(a.qty) || 0 }))
+    .filter((a) => a.qty > 0)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+
+  const incoming = sortedArrivals.reduce((s, a) => s + a.qty, 0);
+
+  return { onHand, committed, reserved, incoming, net, effective: net + incoming, arrivals: sortedArrivals };
+}
+
+/**
+ * arrivalsForVariety — collect a Variety's pending PO arrivals as [{date, qty}]
+ * from the /stock/pending-po map (keyed by stockId). Mirrors the shape consumed
+ * by getVarietyAvailability + allocateVarietyCoverage so the picker and the
+ * stock-panel shortfall read incoming supply the same way.
+ *
+ * @param {Array<{id}>} rows                one Variety's stock rows
+ * @param {Object} pendingPO               { stockId: { ordered, plannedDate, pos: [...] } }
+ * @returns {Array<{date, qty}>}
+ */
+export function arrivalsForVariety(rows = [], pendingPO = {}) {
+  const out = [];
+  for (const row of rows || []) {
+    const info = pendingPO?.[row.id];
+    if (!info) continue;
+    for (const p of info.pos ?? []) {
+      const qty = Number(p.quantity) || 0;
+      if (qty > 0) out.push({ date: p.plannedDate || info.plannedDate || null, qty });
+    }
+  }
+  return out;
+}
+
+/**
  * Effective stems available for new orders.
  *
  * Always returns `qty`. The `committed` parameter is accepted for backward

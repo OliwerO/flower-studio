@@ -1,0 +1,24 @@
+- generic [ref=e3]:
+  - banner "Project Inbox status" [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: Project Inbox
+      - generic [ref=e7]: 0/10
+    - generic [ref=e8]:
+      - img [ref=e10]
+      - searchbox "Filter projects by name or summary" [active] [ref=e13]: stock
+    - generic [ref=e14]:
+      - generic [ref=e15]: $0.22 / $2.00
+      - button "Pause synth" [ref=e16] [cursor=pointer]: Pause
+      - generic [ref=e17]: synced 2m ago
+  - region "Next moves across all projects" [ref=e25]:
+    - generic [ref=e26]:
+      - heading "Logical" [level=3] [ref=e27]
+      - generic [ref=e28]: No logical follow-ups queued.
+    - generic [ref=e29]:
+      - heading "Advantageous" [level=3] [ref=e30]
+      - generic [ref=e31]: No advantageous moves today.
+  - main [ref=e18]:
+    - generic [ref=e1104]:
+      - text: No projects match
+      - generic [ref=e1105]: "\"stock\""
+      - text: .
