@@ -46,6 +46,7 @@ export {
 } from './utils/lossReasons.js';
 export { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateVarietyCoverage } from './utils/stockMath.js';
 export { resolveStockLinePrice, resolveVarietySell } from './utils/stockLinePrice.js';
+export { shouldShowBouquetSection } from './utils/bouquetVisibility.js';
 export { getStatusOptions, ALL_ORDER_STATUSES } from './utils/orderStatusOptions.js';
 export {
   matchesSearch,

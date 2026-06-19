@@ -3,6 +3,7 @@ import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import BouquetEditor from './BouquetEditor.jsx';
 import { ALLOWED_TRANSITIONS, STATUS_LABELS } from './OrderCardSummary.jsx';
+import { shouldShowBouquetSection } from '@flower-studio/shared';
 
 function Pills({ options, value, onChange, disabled }) {
   return (
@@ -56,8 +57,10 @@ export default function OrderCardExpanded({
         <p className="text-xs text-ios-tertiary text-center py-4">{t.errorLoadDetails}</p>
       ) : (
         <>
-          {/* Order lines — bouquet editor */}
-          {detail.orderLines?.length > 0 && (
+          {/* Order lines — bouquet editor. Render even with zero lines (when the
+              bouquet is still editable) so an emptied order keeps its add-flower
+              entry point (Pitfall #4). */}
+          {shouldShowBouquetSection({ hasLines: detail.orderLines?.length > 0, isTerminal, isOwner }) && (
             <BouquetEditor
               editing={editing}
               saving={saving}

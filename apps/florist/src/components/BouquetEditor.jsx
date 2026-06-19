@@ -113,8 +113,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
     <div>
       <div className="flex items-center justify-between mb-1">
         <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
-        {!isTerminal && !editing.editingBouquet && (
-          <button onClick={() => editing.startEditing(detail.orderLines)}
+        {(!isTerminal || isOwner) && !editing.editingBouquet && (
+          <button onClick={() => editing.startEditing(detail.orderLines || [])}
             className="text-xs text-brand-600 font-medium">{t.edit || 'Edit'}</button>
         )}
       </div>
@@ -461,6 +461,10 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm active-scale"
             >{t.cancel}</button>
           </div>
+        </div>
+      ) : !(detail.orderLines?.length > 0) ? (
+        <div className="bg-gray-50 rounded-xl px-3 py-4 text-center text-sm text-ios-tertiary">
+          {t.bouquetEmpty}
         </div>
       ) : (
         <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">

@@ -567,6 +567,7 @@ const en = {
 
   // Order detail panel
   bouquetComposition: 'Bouquet composition',
+  bouquetEmpty:       'No flowers yet — tap "Edit bouquet" to add.',
   methodMbank:        'Mbank',
   methodMonobank:     'Monobank',
   methodRevolut:      'Revolut',
@@ -1606,6 +1607,7 @@ const ru = {
 
   // Order detail panel
   bouquetComposition: 'Состав букета',
+  bouquetEmpty:       'Цветов пока нет — нажмите «Изменить букет», чтобы добавить.',
   methodMbank:        'Mbank',
   methodMonobank:     'Monobank',
   methodRevolut:      'Revolut',
