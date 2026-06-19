@@ -40,3 +40,13 @@ playwright-report/
 test-results/
 coverage/
 .claude/worktrees/
+
+# Scratch test/diagnostic artifacts (scrubbed 2026-06-19)
+.playwright-mcp/
+/*.png
+/*.yml
+backend/scripts/check_*.mjs
+backend/scripts/dump_*.mjs
+backend/scripts/bump_*.mjs
+lab/scripts/seed-*.mjs
+!docker-compose.lab.yml
