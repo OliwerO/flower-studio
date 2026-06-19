@@ -44,7 +44,7 @@ export {
   REASON_COLORS,
   reasonBadgeClass,
 } from './utils/lossReasons.js';
-export { getEffectiveStock, hasStockShortfall, getVarietyTotals } from './utils/stockMath.js';
+export { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateVarietyCoverage } from './utils/stockMath.js';
 export { resolveStockLinePrice, resolveVarietySell } from './utils/stockLinePrice.js';
 export { getStatusOptions, ALL_ORDER_STATUSES } from './utils/orderStatusOptions.js';
 export {
@@ -88,6 +88,7 @@ export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
 
 // Single coloured date chip for every Y-model stock surface (decision D6, 2026-06-12)
 export { default as DateTag } from './components/DateTag.jsx';
+export { default as VarietyAvailabilityLine } from './components/VarietyAvailabilityLine.jsx';
 
 // Variety row with 4-bucket header for Y-model Stock list (issue #289, pitfall #8)
 export { default as VarietyListItem } from './components/VarietyListItem.jsx';

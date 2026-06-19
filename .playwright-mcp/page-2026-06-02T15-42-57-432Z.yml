@@ -1,0 +1,416 @@
+- generic [ref=e3]:
+  - banner "Project Inbox status" [ref=e4]:
+    - generic [ref=e5]:
+      - generic [ref=e6]: Project Inbox
+      - generic [ref=e7]: 10 projects
+    - generic [ref=e8]:
+      - img [ref=e10]
+      - searchbox "Filter projects by name or summary" [ref=e13]
+    - generic [ref=e14]:
+      - generic [ref=e15]: $0.00 / $2.00
+      - button "Pause synth" [ref=e16] [cursor=pointer]: Pause
+      - generic [ref=e17]: synced 0s ago
+  - region "Next moves across all projects" [ref=e25]:
+    - generic [ref=e26]:
+      - heading "Logical" [level=3] [ref=e27]
+      - generic [ref=e28]: No logical follow-ups queued.
+    - generic [ref=e29]:
+      - heading "Advantageous" [level=3] [ref=e30]
+      - generic [ref=e31]: No advantageous moves today.
+  - main [ref=e18]:
+    - generic [ref=e19]:
+      - generic [ref=e20]:
+        - heading "Needs attention" [level=2] [ref=e21]
+        - generic [ref=e22]: "4"
+        - generic [ref=e23]: blockers, synth errors, attention score ≥ 0.6
+      - generic [ref=e24]:
+        - article [ref=e32]:
+          - generic [ref=e34]:
+            - generic [ref=e35]:
+              - button "flower-studio" [ref=e37] [cursor=pointer]
+              - generic [ref=e38]:
+                - generic "attention 0.76" [ref=e39]:
+                  - generic [ref=e40]: now · 76
+                - button "Open project in VS Code" [ref=e41] [cursor=pointer]:
+                  - img [ref=e42]
+                  - generic [ref=e45]: open
+                - button "Start new Claude session" [ref=e46] [cursor=pointer]:
+                  - img [ref=e47]
+                  - generic [ref=e48]: new
+                - button "Hide this project" [ref=e49] [cursor=pointer]:
+                  - img [ref=e50]
+            - generic [ref=e56]:
+              - 'generic "Goal source: PR #364" [ref=e57]':
+                - generic [ref=e59]:
+                  - generic [ref=e60]:
+                    - generic [ref=e61]: Goal
+                    - generic [ref=e62]: "from PR #364"
+                    - generic [ref=e63]: "1"
+                  - generic [ref=e64]: "feat(stock): inline trace + balance sparkline + sort-by-arrived (Flat table polish)"
+              - generic [ref=e66]:
+                - generic [ref=e67]:
+                  - generic "dirty" [ref=e71]
+                  - generic [ref=e72]:
+                    - generic [ref=e73]:
+                      - generic "integration/y-model-polish-2026-05-31" [ref=e74]
+                      - generic [ref=e75]: dirty
+                    - generic [ref=e76]:
+                      - generic [ref=e77]: current
+                      - generic [ref=e78]: ●10
+                  - generic [ref=e79]:
+                    - generic [ref=e80]: Now
+                    - 'generic "6 open PRs (#353, #358, #360-363) consolidating stock refactoring and…" [ref=e81]'
+                  - generic [ref=e82]:
+                    - generic [ref=e83]: Next
+                    - generic "Review and merge the 6 open PRs to consolidate Y-model and stock refa…" [ref=e84]: → Review and merge the 6 open PRs to consolidate Y-model and stock refa…
+                  - generic [ref=e85]:
+                    - button "Open work briefing" [expanded] [active] [ref=e86] [cursor=pointer]:
+                      - img [ref=e87]
+                    - button "Resume Claude in this branch" [ref=e90] [cursor=pointer]:
+                      - img [ref=e91]
+                    - button "Open Terminal in this branch" [ref=e93] [cursor=pointer]:
+                      - img [ref=e94]
+                    - button "Copy resume command" [ref=e97] [cursor=pointer]:
+                      - img [ref=e98]
+                - generic [ref=e571]:
+                  - generic [ref=e572]:
+                    - generic [ref=e573]: What you're working on
+                    - generic [ref=e574]: "feat(stock): inline trace + balance sparkline + sort-by-arrived (Flat table polish) (integration/y-model-polish-2026-05-31)"
+                  - generic [ref=e575]:
+                    - generic [ref=e576]: What's going on currently
+                    - generic [ref=e577]: "6 open PRs (#353, #358, #360-363) consolidating stock refactoring and Y-model UX work. Plan tasks for Issue #323 hotfix (receiveIntoStock propagation) and stock Y-model foundation not yet started."
+                  - generic [ref=e578]:
+                    - generic [ref=e579]: Why we do this
+                    - generic [ref=e580]: Post-implementation on feat/tier-switch-on-bouquet-line with Y-model tier-switch UX; 6 related PRs in review
+                    - generic [ref=e581]: "source: PR #364"
+                  - generic [ref=e582]:
+                    - generic [ref=e583]: Next steps
+                    - list [ref=e584]:
+                      - listitem [ref=e585]:
+                        - generic [ref=e586]: →
+                        - generic [ref=e587]: Review and merge the 6 open PRs to consolidate Y-model and stock refa…
+                      - listitem [ref=e588]:
+                        - generic [ref=e589]: •
+                        - generic [ref=e590]: "Execute Issue #323 hotfix: implement receiveIntoStock attribute propagation with integration tests against pglite"
+                      - listitem [ref=e591]:
+                        - generic [ref=e592]: •
+                        - generic [ref=e593]: "Execute stock Y-model foundation: add 5 nullable columns, SQL migration, Drizzle schema updates, integration test"
+                      - listitem [ref=e594]:
+                        - generic [ref=e595]: •
+                        - generic [ref=e596]: Commit 10 untracked skill definitions and verify 20 loose test/component files are staged
+                  - generic [ref=e597]:
+                    - generic [ref=e598]: Action needed
+                    - generic [ref=e599]: "10 uncommitted changes — review with `git status` then commit"
+            - generic [ref=e101]:
+              - generic [ref=e102]: "Synth failed: Executable not found in $PATH: \"claude\""
+              - button "Retry" [ref=e103] [cursor=pointer]
+            - button "911 open tasks" [ref=e105] [cursor=pointer]:
+              - generic [ref=e106]: ▸
+              - generic [ref=e107]: 911 open tasks
+        - article [ref=e108]:
+          - generic [ref=e110]:
+            - generic [ref=e111]:
+              - button "project-inbox" [ref=e113] [cursor=pointer]
+              - generic [ref=e114]:
+                - generic "attention 0.87" [ref=e115]:
+                  - generic [ref=e116]: now · 87
+                - button "Open project in VS Code" [ref=e117] [cursor=pointer]:
+                  - img [ref=e118]
+                  - generic [ref=e121]: open
+                - button "Start new Claude session" [ref=e122] [cursor=pointer]:
+                  - img [ref=e123]
+                  - generic [ref=e124]: new
+                - button "Hide this project" [ref=e125] [cursor=pointer]:
+                  - img [ref=e126]
+            - generic [ref=e132]:
+              - generic [ref=e135]:
+                - generic [ref=e136]:
+                  - generic [ref=e137]: Goal
+                  - generic [ref=e138]: unassigned
+                  - generic [ref=e139]: "1"
+                - generic [ref=e140]: Other work
+              - generic [ref=e143]:
+                - generic "working" [ref=e147]
+                - generic [ref=e148]:
+                  - generic [ref=e149]:
+                    - generic "main" [ref=e150]
+                    - generic [ref=e151]: working
+                  - generic [ref=e153]: current
+                - generic [ref=e154]:
+                  - generic [ref=e155]: Now
+                  - generic "Window 1 feature development with 168 open tasks spanning types, sche…" [ref=e156]
+                - generic [ref=e157]:
+                  - generic [ref=e158]: Next
+                  - generic "Add types for summary, edges, runs to src/types.ts (Task 1 Step 1)." [ref=e159]: → Add types for summary, edges, runs to src/types.ts (Task 1 Step 1).
+                - generic [ref=e160]:
+                  - button "Open work briefing" [ref=e161] [cursor=pointer]:
+                    - img [ref=e162]
+                  - button "Resume Claude in this branch" [ref=e165] [cursor=pointer]:
+                    - img [ref=e166]
+                  - button "Open Terminal in this branch" [ref=e168] [cursor=pointer]:
+                    - img [ref=e169]
+                  - button "Copy resume command" [ref=e172] [cursor=pointer]:
+                    - img [ref=e173]
+            - generic [ref=e176]:
+              - generic [ref=e177]: "Synth failed: Executable not found in $PATH: \"claude\""
+              - button "Retry" [ref=e178] [cursor=pointer]
+            - button "282 open tasks" [ref=e180] [cursor=pointer]:
+              - generic [ref=e181]: ▸
+              - generic [ref=e182]: 282 open tasks
+        - article [ref=e183]:
+          - generic [ref=e185]:
+            - generic [ref=e186]:
+              - button "YNAB Dashboard" [ref=e188] [cursor=pointer]
+              - generic [ref=e189]:
+                - button "Open project in VS Code" [ref=e190] [cursor=pointer]:
+                  - img [ref=e191]
+                  - generic [ref=e194]: open
+                - button "Start new Claude session" [ref=e195] [cursor=pointer]:
+                  - img [ref=e196]
+                  - generic [ref=e197]: new
+                - button "Hide this project" [ref=e198] [cursor=pointer]:
+                  - img [ref=e199]
+            - generic [ref=e205]:
+              - generic [ref=e208]:
+                - generic [ref=e209]:
+                  - generic [ref=e210]: Goal
+                  - generic [ref=e211]: unassigned
+                  - generic [ref=e212]: "1"
+                - generic [ref=e213]: Other work
+              - generic [ref=e216]:
+                - generic "dirty" [ref=e220]
+                - generic [ref=e221]:
+                  - generic [ref=e222]:
+                    - generic "main" [ref=e223]
+                    - generic [ref=e224]: dirty
+                  - generic [ref=e225]:
+                    - generic [ref=e226]: current
+                    - generic [ref=e227]: ●11
+                - generic [ref=e228]:
+                  - generic [ref=e229]: Now
+                  - generic "11 dirty" [ref=e230]
+                - generic [ref=e231]:
+                  - generic [ref=e232]: Next
+                  - generic "commit changes" [ref=e233]: → commit changes
+                - generic [ref=e234]:
+                  - button "Open work briefing" [ref=e235] [cursor=pointer]:
+                    - img [ref=e236]
+                  - button "Resume Claude in this branch" [ref=e239] [cursor=pointer]:
+                    - img [ref=e240]
+                  - button "Open Terminal in this branch" [ref=e242] [cursor=pointer]:
+                    - img [ref=e243]
+                  - button "Copy resume command" [ref=e246] [cursor=pointer]:
+                    - img [ref=e247]
+            - generic [ref=e250]:
+              - generic [ref=e251]: "Synth failed: Executable not found in $PATH: \"claude\""
+              - button "Retry" [ref=e252] [cursor=pointer]
+            - paragraph [ref=e253]: No open tasks.
+        - article [ref=e254]:
+          - generic [ref=e256]:
+            - generic [ref=e257]:
+              - button "claude-setup" [ref=e259] [cursor=pointer]
+              - generic [ref=e260]:
+                - generic "Blocker" [ref=e261]:
+                  - img [ref=e263]
+                  - generic [ref=e266]: blocker
+                - button "Open project in VS Code" [ref=e267] [cursor=pointer]:
+                  - img [ref=e268]
+                  - generic [ref=e271]: open
+                - button "Start new Claude session" [ref=e272] [cursor=pointer]:
+                  - img [ref=e273]
+                  - generic [ref=e274]: new
+                - button "Hide this project" [ref=e275] [cursor=pointer]:
+                  - img [ref=e276]
+            - generic [ref=e282]:
+              - generic [ref=e285]:
+                - generic [ref=e286]:
+                  - generic [ref=e287]: Goal
+                  - generic [ref=e288]: unassigned
+                  - generic [ref=e289]: "1"
+                - generic [ref=e290]: Other work
+              - generic [ref=e293]:
+                - generic "dirty" [ref=e297]
+                - generic [ref=e298]:
+                  - generic [ref=e299]:
+                    - generic "main" [ref=e300]
+                    - generic [ref=e301]: dirty
+                  - generic [ref=e302]:
+                    - generic [ref=e303]: current
+                    - generic [ref=e304]: ●12
+                - generic [ref=e305]:
+                  - generic [ref=e306]: Now
+                  - 'generic "Skill integration WIP: 3 untracked shell scripts added to diagnose, s…" [ref=e307]'
+                - generic [ref=e308]:
+                  - generic [ref=e309]: Next
+                  - 'generic "unblock: Untracked scripts + dirty working tree block pr…" [ref=e310]': "→ unblock: Untracked scripts + dirty working tree block pr…"
+                - generic [ref=e311]:
+                  - button "Open work briefing" [ref=e312] [cursor=pointer]:
+                    - img [ref=e313]
+                  - button "Resume Claude in this branch" [ref=e316] [cursor=pointer]:
+                    - img [ref=e317]
+                  - button "Open Terminal in this branch" [ref=e319] [cursor=pointer]:
+                    - img [ref=e320]
+                  - button "Copy resume command" [ref=e323] [cursor=pointer]:
+                    - img [ref=e324]
+            - paragraph [ref=e327]: No open tasks.
+    - generic [ref=e328]:
+      - generic [ref=e329]:
+        - heading "Active" [level=2] [ref=e330]
+        - generic [ref=e331]: "1"
+        - generic [ref=e332]: in-flight work or recent activity
+      - article [ref=e334]:
+        - generic [ref=e336]:
+          - generic [ref=e337]:
+            - button "Ascent" [ref=e339] [cursor=pointer]
+            - generic [ref=e340]:
+              - button "Open project in VS Code" [ref=e341] [cursor=pointer]:
+                - img [ref=e342]
+                - generic [ref=e345]: open
+              - button "Start new Claude session" [ref=e346] [cursor=pointer]:
+                - img [ref=e347]
+                - generic [ref=e348]: new
+              - button "Hide this project" [ref=e349] [cursor=pointer]:
+                - img [ref=e350]
+          - generic [ref=e356]:
+            - generic [ref=e359]:
+              - generic [ref=e360]:
+                - generic [ref=e361]: Goal
+                - generic [ref=e362]: unassigned
+                - generic [ref=e363]: "1"
+              - generic [ref=e364]: Other work
+            - generic [ref=e367]:
+              - generic "dirty" [ref=e371]
+              - generic [ref=e372]:
+                - generic [ref=e373]:
+                  - generic "main" [ref=e374]
+                  - generic [ref=e375]: dirty
+                - generic [ref=e376]:
+                  - generic [ref=e377]: current
+                  - generic [ref=e378]: ●5
+              - generic [ref=e379]:
+                - generic [ref=e380]: Now
+                - generic "None. Architecture friction scan completed 2026-05-10 but documentati…" [ref=e381]
+              - generic [ref=e382]:
+                - generic [ref=e383]: Next
+                - generic "Commit or discard the dirty file and 4 untracked docs/agents/* files…" [ref=e384]: → Commit or discard the dirty file and 4 untracked docs/agents/* files…
+              - generic [ref=e385]:
+                - button "Open work briefing" [ref=e386] [cursor=pointer]:
+                  - img [ref=e387]
+                - button "Resume Claude in this branch" [ref=e390] [cursor=pointer]:
+                  - img [ref=e391]
+                - button "Open Terminal in this branch" [ref=e393] [cursor=pointer]:
+                  - img [ref=e394]
+                - button "Copy resume command" [ref=e397] [cursor=pointer]:
+                  - img [ref=e398]
+          - button "20 open tasks" [ref=e402] [cursor=pointer]:
+            - generic [ref=e403]: ▸
+            - generic [ref=e404]: 20 open tasks
+    - generic [ref=e405]:
+      - generic [ref=e406]:
+        - heading "Idle" [level=2] [ref=e407]
+        - generic [ref=e408]: "5"
+        - generic [ref=e409]: clean, low signal
+      - generic [ref=e410]:
+        - article [ref=e411]:
+          - generic [ref=e413]:
+            - generic [ref=e414]:
+              - button "blossom-wix" [ref=e416] [cursor=pointer]
+              - generic [ref=e417]:
+                - button "Open project in VS Code" [ref=e418] [cursor=pointer]:
+                  - img [ref=e419]
+                  - generic [ref=e422]: open
+                - button "Start new Claude session" [ref=e423] [cursor=pointer]:
+                  - img [ref=e424]
+                  - generic [ref=e425]: new
+                - button "Hide this project" [ref=e426] [cursor=pointer]:
+                  - img [ref=e427]
+            - generic [ref=e433]:
+              - generic [ref=e436]:
+                - generic [ref=e437]:
+                  - generic [ref=e438]: Goal
+                  - generic [ref=e439]: unassigned
+                  - generic [ref=e440]: "1"
+                - generic [ref=e441]: Other work
+              - generic [ref=e444]:
+                - generic "working" [ref=e448]
+                - generic [ref=e449]:
+                  - generic [ref=e450]:
+                    - generic "Master" [ref=e451]
+                    - generic [ref=e452]: working
+                  - generic [ref=e454]: current
+                - generic [ref=e455]:
+                  - generic [ref=e456]: Now
+                  - generic "idle" [ref=e457]
+                - generic [ref=e458]:
+                  - generic [ref=e459]: Next
+                  - generic "No pending work in bundle. Check issue tracker for intended follow-up." [ref=e460]: → No pending work in bundle. Check issue tracker for intended follow-up.
+                - generic [ref=e461]:
+                  - button "Open work briefing" [ref=e462] [cursor=pointer]:
+                    - img [ref=e463]
+                  - button "Resume Claude in this branch" [ref=e466] [cursor=pointer]:
+                    - img [ref=e467]
+                  - button "Open Terminal in this branch" [ref=e469] [cursor=pointer]:
+                    - img [ref=e470]
+                  - button "Copy resume command" [ref=e473] [cursor=pointer]:
+                    - img [ref=e474]
+            - paragraph [ref=e477]: No open tasks.
+        - article [ref=e478]:
+          - generic [ref=e480]:
+            - generic [ref=e481]:
+              - button "JobHound" [ref=e483] [cursor=pointer]
+              - generic [ref=e484]:
+                - button "Open project in VS Code" [ref=e485] [cursor=pointer]:
+                  - img [ref=e486]
+                  - generic [ref=e489]: open
+                - button "Start new Claude session" [ref=e490] [cursor=pointer]:
+                  - img [ref=e491]
+                  - generic [ref=e492]: new
+                - button "Hide this project" [ref=e493] [cursor=pointer]:
+                  - img [ref=e494]
+            - generic [ref=e499]: No goals or workstreams detected — repository is idle.
+            - paragraph [ref=e500]: No open tasks.
+        - article [ref=e501]:
+          - generic [ref=e503]:
+            - generic [ref=e504]:
+              - button "Presentation Roman" [ref=e506] [cursor=pointer]
+              - generic [ref=e507]:
+                - button "Open project in VS Code" [ref=e508] [cursor=pointer]:
+                  - img [ref=e509]
+                  - generic [ref=e512]: open
+                - button "Start new Claude session" [ref=e513] [cursor=pointer]:
+                  - img [ref=e514]
+                  - generic [ref=e515]: new
+                - button "Hide this project" [ref=e516] [cursor=pointer]:
+                  - img [ref=e517]
+            - generic [ref=e522]: No goals or workstreams detected — repository is idle.
+            - paragraph [ref=e523]: No open tasks.
+        - article [ref=e524]:
+          - generic [ref=e526]:
+            - generic [ref=e527]:
+              - button "ProfessionalKids - Website" [ref=e529] [cursor=pointer]
+              - generic [ref=e530]:
+                - button "Open project in VS Code" [ref=e531] [cursor=pointer]:
+                  - img [ref=e532]
+                  - generic [ref=e535]: open
+                - button "Start new Claude session" [ref=e536] [cursor=pointer]:
+                  - img [ref=e537]
+                  - generic [ref=e538]: new
+                - button "Hide this project" [ref=e539] [cursor=pointer]:
+                  - img [ref=e540]
+            - generic [ref=e545]: No goals or workstreams detected — repository is idle.
+            - paragraph [ref=e546]: No open tasks.
+        - article [ref=e547]:
+          - generic [ref=e549]:
+            - generic [ref=e550]:
+              - button "Sidehustle" [ref=e552] [cursor=pointer]
+              - generic [ref=e553]:
+                - button "Open project in VS Code" [ref=e554] [cursor=pointer]:
+                  - img [ref=e555]
+                  - generic [ref=e558]: open
+                - button "Start new Claude session" [ref=e559] [cursor=pointer]:
+                  - img [ref=e560]
+                  - generic [ref=e561]: new
+                - button "Hide this project" [ref=e562] [cursor=pointer]:
+                  - img [ref=e563]
+            - generic [ref=e568]: No goals or workstreams detected — repository is idle.
+            - paragraph [ref=e569]: No open tasks.

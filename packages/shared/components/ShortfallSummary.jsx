@@ -17,7 +17,7 @@
  *   today           — optional ISO date override
  */
 import { useMemo, useState } from 'react';
-import { allocateVarietyCoverage } from '../utils/stockMath.js';
+import { allocateVarietyCoverage, arrivalsForVariety } from '../utils/stockMath.js';
 import DateTag from './DateTag.jsx';
 
 export default function ShortfallSummary({
@@ -198,21 +198,6 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
   );
 }
 
-// Collect a Variety group's pending PO arrivals as [{date, qty}] from the
-// /stock/pending-po map (keyed by stockId).
-function arrivalsForGroup(group, pendingPO) {
-  const out = [];
-  for (const row of group.rows ?? []) {
-    const info = pendingPO?.[row.id];
-    if (!info) continue;
-    for (const p of info.pos ?? []) {
-      const qty = Number(p.quantity) || 0;
-      if (qty > 0) out.push({ date: p.plannedDate || info.plannedDate || null, qty });
-    }
-  }
-  return out;
-}
-
 function bucket(groups, reservations, today, pendingPO) {
   const byDateMap = new Map();
   let totalStems = 0;
@@ -222,7 +207,7 @@ function bucket(groups, reservations, today, pendingPO) {
     // CR-39: net each dated demand against IN-TIME pending arrivals. A demand
     // covered before its needed-by date drops out; a late arrival leaves the
     // shortfall but is surfaced via latePoQty.
-    const arrivals = arrivalsForGroup(g, pendingPO);
+    const arrivals = arrivalsForVariety(g.rows, pendingPO);
     const { demands } = allocateVarietyCoverage(g.rows ?? [], reservations, arrivals);
 
     for (const d of demands) {

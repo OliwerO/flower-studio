@@ -1,7 +1,9 @@
 import { useMemo, useState } from 'react';
 import { groupByVariety, varietyDisplayName } from '../utils/varietyKey.js';
 import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
+import { getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
+import VarietyAvailabilityLine from './VarietyAvailabilityLine.jsx';
 
 /**
  * Hybrid two-stage Variety picker — replaces BatchPickerModal under STOCK_Y_MODEL.
@@ -41,6 +43,7 @@ import VarietyIdentity from './VarietyIdentity.jsx';
 export default function VarietyAllocationPicker({
   stockItems = [],
   reservations = new Map(),
+  pendingPO = {},
   requiredBy,
   qty = 1,
   role,
@@ -66,14 +69,19 @@ export default function VarietyAllocationPicker({
     const all = groupByVariety(stockItems);
     const visible = [];
     for (const [, group] of all) {
-      const totalQty = group.rows.reduce(
-        (sum, r) => sum + (Number(r.current_quantity) || 0),
-        0,
+      // S3.2-i: one labelled availability model per Variety. The hide rule is
+      // effective ≤ 0 (D3) — net free now plus incoming PO — so a Variety
+      // reserved/committed down to nothing drops out, while a negative-stock
+      // Variety that an incoming PO lifts back above zero reappears (CR-22).
+      const availability = getVarietyAvailability(
+        group.rows,
+        reservations,
+        arrivalsForVariety(group.rows, pendingPO),
       );
       const displayName = varietyDisplayName(group);
 
       if (!needle) {
-        if (totalQty <= 0) continue;
+        if (availability.effective <= 0) continue;
       } else {
         const haystack = [
           group.type_name,
@@ -88,10 +96,10 @@ export default function VarietyAllocationPicker({
         if (!haystack.includes(needle)) continue;
       }
 
-      visible.push({ ...group, displayName, totalQty });
+      visible.push({ ...group, displayName, availability, totalQty: availability.net });
     }
     return visible;
-  }, [stockItems, needle]);
+  }, [stockItems, reservations, pendingPO, needle]);
 
   // Build a lookup map from id → original stockItem row for click handlers.
   const stockById = useMemo(() => {
@@ -213,8 +221,8 @@ export default function VarietyAllocationPicker({
                 className="w-full text-left px-4 py-3 hover:bg-gray-50 active:bg-gray-100 transition-colors"
               >
                 <VarietyIdentity variety={g} showType srOnlyFullName />
-                <div className="text-xs text-gray-500 mt-1">
-                  {g.totalQty} {t.stems}
+                <div className="mt-1">
+                  <VarietyAvailabilityLine availability={g.availability} t={t} />
                 </div>
               </button>
 

@@ -39,3 +39,4 @@ lab/.tmp/
 playwright-report/
 test-results/
 coverage/
+.claude/worktrees/

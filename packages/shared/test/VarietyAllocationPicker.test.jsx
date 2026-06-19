@@ -76,6 +76,48 @@ describe('VarietyAllocationPicker — Stage 1 typeahead', () => {
   });
 });
 
+describe('VarietyAllocationPicker — availability + hide net-zero (S3.2-i)', () => {
+  // Lily White 60: 5 on hand, all 5 reserved by premades → net 0, effective 0.
+  // Old rule (totalQty 5 > 0) showed it; new rule (effective ≤ 0) hides it (D3).
+  const lilyRows = [
+    { id: 'x', type_name: 'Lily', colour: 'White', size_cm: 60, cultivar: null, current_quantity: 5, date: '2026-05-10' },
+  ];
+
+  it('hides a Variety reserved down to effective ≤ 0 by default', () => {
+    render(<VarietyAllocationPicker stockItems={lilyRows} reservations={new Map([['x', 5]])}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    expect(screen.queryByText(/Lily/)).not.toBeInTheDocument();
+  });
+
+  it('reveals the hidden Variety when searched (deliberate over-promise — D3)', () => {
+    render(<VarietyAllocationPicker stockItems={lilyRows} reservations={new Map([['x', 5]])}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'lily' } });
+    expect(screen.getAllByTestId('variety-row')).toHaveLength(1);
+  });
+
+  it('surfaces a negative-stock Variety when incoming PO makes effective > 0 (CR-22 surplus)', () => {
+    const peony = [
+      { id: 'p1', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null, current_quantity: -7, date: '2026-05-13' },
+    ];
+    const pendingPO = { p1: { plannedDate: '2026-06-16', pos: [{ quantity: 10, plannedDate: '2026-06-16' }] } };
+    render(<VarietyAllocationPicker stockItems={peony} reservations={new Map()} pendingPO={pendingPO}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    expect(screen.getAllByTestId('variety-row')).toHaveLength(1);
+    expect(screen.getByTestId('avail-incoming').textContent).toContain('+10');
+  });
+
+  it('renders the labelled availability line on each visible row', () => {
+    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    expect(screen.getAllByTestId('variety-availability').length).toBe(2);
+  });
+});
+
 describe('VarietyAllocationPicker — Stage 2 allocation panel', () => {
   it('renders engine options when a Variety row is expanded', () => {
     render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}

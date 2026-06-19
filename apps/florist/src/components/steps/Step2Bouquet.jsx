@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -338,17 +338,24 @@ export default function Step2Bouquet({
     const filtered = q
       ? groups.filter(g => varietyDisplayName(g).toLowerCase().includes(q))
       : groups;
-    return filtered.map(g => ({
-      key:         g.key,
-      displayName: varietyDisplayName(g),
-      rows:        g.rows,
-      totalQty:    g.rows.reduce((s, r) => s + (r.current_quantity || 0), 0),
-      // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
-      sell:        resolveVarietySell(g.rows, pendingPO),
-      poQty:       g.rows.reduce((s, r) => s + (pendingPO[r.id]?.ordered || 0), 0),
-      poDate:      g.rows.map(r => pendingPO[r.id]?.plannedDate).find(Boolean) ?? null,
-      inCart:      g.rows.some(r => orderLines.some(l => l.stockItemId === r.id)),
-    }));
+    return filtered.map(g => {
+      const inCart = g.rows.some(r => orderLines.some(l => l.stockItemId === r.id));
+      return {
+        key:         g.key,
+        displayName: varietyDisplayName(g),
+        rows:        g.rows,
+        // S3.2-i: one labelled availability model (CR-23/28) — onHand/committed/
+        // reserved/net + incoming/effective; the catalog hides effective ≤ 0 (D3).
+        availability: getVarietyAvailability(g.rows, new Map(), arrivalsForVariety(g.rows, pendingPO)),
+        // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+        sell:        resolveVarietySell(g.rows, pendingPO),
+        inCart,
+      };
+    })
+    // Hide fully-committed Varieties (effective ≤ 0) by default; a name search
+    // (q) still reaches them so deliberate over-promising creates a buy signal.
+    // A Variety already in the cart always stays visible so it can be adjusted.
+    .filter(g => !!q || g.inCart || g.availability.effective > 0);
   }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines]);
 
   function addOne(stockItem) {
@@ -569,10 +576,8 @@ export default function Step2Bouquet({
             <p className="text-ios-tertiary text-sm text-center py-8">{t.noStockFound}</p>
           ) : yEnabled ? (
             varGroups.map(v => {
-              const { key, displayName, totalQty, sell, poQty, poDate, inCart } = v;
-              const low = totalQty > 0 && totalQty <= 5;
-              const out = totalQty <= 0;
-              const poDateLabel = poDate ? formatPoDate(poDate) : null;
+              const { key, displayName, availability, sell, inCart } = v;
+              const out = availability.net <= 0;
               return (
                 <button
                   key={key}
@@ -585,15 +590,14 @@ export default function Step2Bouquet({
                               ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <div className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                      {displayName}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
+                        {displayName}
+                      </span>
+                      <span className="font-bold text-brand-700 text-sm whitespace-nowrap">{sell.toFixed(0)} zł</span>
                     </div>
-                    <div className="text-sm text-ios-tertiary">
-                      <span className="font-bold text-brand-700">{sell.toFixed(0)} zł</span>
-                      <span> · {totalQty} pcs</span>
-                      {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {out && !poQty && <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>}
-                      {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
+                    <div className="mt-0.5">
+                      <VarietyAvailabilityLine availability={availability} t={t} />
                     </div>
                   </div>
                   {inCart && (
@@ -869,6 +873,7 @@ export default function Step2Bouquet({
         <VarietyAllocationPicker
           stockItems={yPickerStockItems}
           reservations={new Map()}
+          pendingPO={pendingPO}
           requiredBy={requiredBy || null}
           qty={1}
           role={role}
@@ -880,6 +885,13 @@ export default function Step2Bouquet({
             pickerOrderFreshAll:     t.pickerOrderFreshAll,
             stems:                   t.stems,
             cancel:                  t.cancel,
+            onHand:                  t.onHand,
+            committed:               t.committed,
+            reserved:                t.reserved,
+            net:                     t.net,
+            incoming:                t.incoming,
+            effective:               t.effective,
+            undatedShort:            t.undatedShort,
           }}
           onSelectStock={picked => {
             if (picked?.kind === 'fresh') {

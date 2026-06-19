@@ -1,0 +1,319 @@
+- generic [ref=e3]:
+  - banner [ref=e4]:
+    - heading "Blossom" [level=1] [ref=e5]
+    - navigation [ref=e6]:
+      - button "Today" [ref=e7] [cursor=pointer]
+      - button "Orders" [ref=e8] [cursor=pointer]
+      - button "New Order" [ref=e9] [cursor=pointer]
+      - button "Stock" [ref=e10] [cursor=pointer]
+      - button "Customers" [ref=e11] [cursor=pointer]
+      - button "Financial" [ref=e12] [cursor=pointer]
+      - button "Wix" [ref=e13] [cursor=pointer]
+      - button "⚠ Admin" [ref=e14] [cursor=pointer]
+      - button "Variety Backfill" [ref=e15] [cursor=pointer]
+      - button "⚙ Settings" [ref=e16] [cursor=pointer]
+    - generic [ref=e17]:
+      - button "↻" [ref=e18] [cursor=pointer]
+      - button "?" [ref=e19] [cursor=pointer]
+      - button "! Report" [ref=e20] [cursor=pointer]:
+        - generic [ref=e21]: "!"
+        - generic [ref=e22]: Report
+      - button "RU" [ref=e23] [cursor=pointer]
+  - main [ref=e24]:
+    - generic [ref=e26]:
+      - generic [ref=e27]:
+        - textbox "Search..." [ref=e28]
+        - generic [ref=e29]:
+          - button "All" [ref=e30] [cursor=pointer]
+          - button "Negative" [ref=e31] [cursor=pointer]
+          - button "Waste log" [ref=e32] [cursor=pointer]
+          - button "Slow movers" [ref=e33] [cursor=pointer]
+        - button "In stock" [ref=e34] [cursor=pointer]
+        - generic [ref=e35]:
+          - button "Purchase Orders" [ref=e36] [cursor=pointer]
+          - button "Reconcile" [ref=e37] [cursor=pointer]
+          - button "Receive stock" [ref=e38] [cursor=pointer]
+      - generic [ref=e39]:
+        - generic [ref=e40]: Estimated restock cost
+        - generic [ref=e41]: 1164 zł
+      - generic [ref=e42]:
+        - generic [ref=e43]:
+          - button "⚠ Shortfalls 4varieties·43stems short ▾" [ref=e44] [cursor=pointer]:
+            - generic [ref=e45]:
+              - generic [ref=e46]: ⚠
+              - generic [ref=e47]: Shortfalls
+            - generic [ref=e48]:
+              - generic [ref=e49]: 4varieties·43stems short
+              - generic [ref=e50]: ▾
+          - list [ref=e51]:
+            - listitem [ref=e52]:
+              - generic [ref=e53]:
+                - generic [ref=e54]:
+                  - generic [ref=e55]: "-16d (2026-05-13)"
+                  - generic [ref=e56]: 7 stems
+                - list [ref=e57]:
+                  - listitem [ref=e58]:
+                    - button "▸ Peony Pink 50cm −7 stems" [ref=e59] [cursor=pointer]:
+                      - generic [ref=e60]:
+                        - generic [ref=e61]:
+                          - generic [ref=e62]: ▸
+                          - generic [ref=e63]: Peony
+                          - generic [ref=e64]: Pink
+                          - generic [ref=e65]: 50cm
+                        - generic [ref=e66]: −7 stems
+            - listitem [ref=e67]:
+              - generic [ref=e68]:
+                - generic [ref=e69]:
+                  - generic [ref=e70]: "-13d (2026-05-16)"
+                  - generic [ref=e71]: 15 stems
+                - list [ref=e72]:
+                  - listitem [ref=e73]:
+                    - button "▸ Tulip Red 40cm −15 stems" [ref=e74] [cursor=pointer]:
+                      - generic [ref=e75]:
+                        - generic [ref=e76]:
+                          - generic [ref=e77]: ▸
+                          - generic [ref=e78]: Tulip
+                          - generic [ref=e79]: Red
+                          - generic [ref=e80]: 40cm
+                        - generic [ref=e81]: −15 stems
+            - listitem [ref=e82]:
+              - generic [ref=e83]:
+                - generic [ref=e84]:
+                  - generic [ref=e85]: "-11d (2026-05-18)"
+                  - generic [ref=e86]: 9 stems
+                - list [ref=e87]:
+                  - listitem [ref=e88]:
+                    - button "▸ Lisianthus Lilac 60cm −9 stems" [ref=e89] [cursor=pointer]:
+                      - generic [ref=e90]:
+                        - generic [ref=e91]:
+                          - generic [ref=e92]: ▸
+                          - generic [ref=e93]: Lisianthus
+                          - generic [ref=e94]: Lilac
+                          - generic [ref=e95]: 60cm
+                        - generic [ref=e96]: −9 stems
+            - listitem [ref=e97]:
+              - generic [ref=e98]:
+                - generic [ref=e99]:
+                  - generic [ref=e100]: "-4d (2026-05-25)"
+                  - generic [ref=e101]: 12 stems
+                - list [ref=e102]:
+                  - listitem [ref=e103]:
+                    - button "▸ Rose Pink 70cm Mondial −12 stems" [ref=e104] [cursor=pointer]:
+                      - generic [ref=e105]:
+                        - generic [ref=e106]:
+                          - generic [ref=e107]: ▸
+                          - generic [ref=e108]: Rose
+                          - generic [ref=e109]: Pink
+                          - generic [ref=e110]: 70cm
+                          - generic [ref=e111]: Mondial
+                        - generic [ref=e112]: −12 stems
+        - generic [ref=e113]:
+          - button "By Variety" [ref=e114] [cursor=pointer]
+          - button "By Batch" [ref=e115] [cursor=pointer]
+        - generic [ref=e116]:
+          - generic [ref=e117]:
+            - button "Type" [ref=e118] [cursor=pointer]:
+              - generic [ref=e119]: Type
+            - button "Variety" [ref=e120] [cursor=pointer]:
+              - generic [ref=e121]: Variety
+            - button "Tag ↓" [ref=e122] [cursor=pointer]:
+              - generic [ref=e123]: Tag
+              - generic [ref=e124]: ↓
+            - button "Available" [ref=e125] [cursor=pointer]:
+              - generic [ref=e126]: Available
+            - button "Cost" [ref=e127] [cursor=pointer]:
+              - generic [ref=e128]: Cost
+            - button "Sell" [ref=e129] [cursor=pointer]:
+              - generic [ref=e130]: Sell
+            - button "Markup" [ref=e131] [cursor=pointer]:
+              - generic [ref=e132]: Markup
+            - button "Supplier" [ref=e133] [cursor=pointer]:
+              - generic [ref=e134]: Supplier
+          - list [ref=e135]:
+            - listitem [ref=e136]:
+              - button "Peony Pink 60cm Sarah Bernhardt 10.May. 25 +5 Reserved 12.00 42.00 ×3.5 Stojek" [ref=e137] [cursor=pointer]:
+                - generic [ref=e138]: Peony
+                - generic [ref=e139]:
+                  - generic [ref=e140]: Pink
+                  - generic [ref=e141]: 60cm
+                  - generic [ref=e142]: Sarah Bernhardt
+                - generic "2026-05-10" [ref=e144]: 10.May.
+                - generic [ref=e145]:
+                  - generic [ref=e146]: "25"
+                  - generic [ref=e147]: +5 Reserved
+                - generic [ref=e148]: "12.00"
+                - generic [ref=e149]: "42.00"
+                - generic [ref=e151]: ×3.5
+                - generic [ref=e152]: Stojek
+            - listitem [ref=e153]:
+              - button "Peony Pink 60cm Coral Charm 10.May. 18 13.00 44.00 ×3.4 4f" [ref=e154] [cursor=pointer]:
+                - generic [ref=e155]: Peony
+                - generic [ref=e156]:
+                  - generic [ref=e157]: Pink
+                  - generic [ref=e158]: 60cm
+                  - generic [ref=e159]: Coral Charm
+                - generic "2026-05-10" [ref=e161]: 10.May.
+                - generic [ref=e163]: "18"
+                - generic [ref=e164]: "13.00"
+                - generic [ref=e165]: "44.00"
+                - generic [ref=e167]: ×3.4
+                - generic [ref=e168]: 4f
+            - listitem [ref=e169]:
+              - button "Rose Red 50cm Naomi 10.May. 40 5.00 18.00 ×3.6 4f" [ref=e170] [cursor=pointer]:
+                - generic [ref=e171]: Rose
+                - generic [ref=e172]:
+                  - generic [ref=e173]: Red
+                  - generic [ref=e174]: 50cm
+                  - generic [ref=e175]: Naomi
+                - generic "2026-05-10" [ref=e177]: 10.May.
+                - generic [ref=e179]: "40"
+                - generic [ref=e180]: "5.00"
+                - generic [ref=e181]: "18.00"
+                - generic [ref=e183]: ×3.6
+                - generic [ref=e184]: 4f
+            - listitem [ref=e185]:
+              - button "Rose White 60cm Avalanche 10.May. 30 +3 Reserved 7.00 24.00 ×3.4 Direct" [ref=e186] [cursor=pointer]:
+                - generic [ref=e187]: Rose
+                - generic [ref=e188]:
+                  - generic [ref=e189]: White
+                  - generic [ref=e190]: 60cm
+                  - generic [ref=e191]: Avalanche
+                - generic "2026-05-10" [ref=e193]: 10.May.
+                - generic [ref=e194]:
+                  - generic [ref=e195]: "30"
+                  - generic [ref=e196]: +3 Reserved
+                - generic [ref=e197]: "7.00"
+                - generic [ref=e198]: "24.00"
+                - generic [ref=e200]: ×3.4
+                - generic [ref=e201]: Direct
+            - listitem [ref=e202]:
+              - button "Tulip Yellow 40cm 10.May. 50 +5 Reserved 3.00 11.00 ×3.7 Direct" [ref=e203] [cursor=pointer]:
+                - generic [ref=e204]: Tulip
+                - generic [ref=e205]:
+                  - generic [ref=e206]: Yellow
+                  - generic [ref=e207]: 40cm
+                - generic "2026-05-10" [ref=e209]: 10.May.
+                - generic [ref=e210]:
+                  - generic [ref=e211]: "50"
+                  - generic [ref=e212]: +5 Reserved
+                - generic [ref=e213]: "3.00"
+                - generic [ref=e214]: "11.00"
+                - generic [ref=e216]: ×3.7
+                - generic [ref=e217]: Direct
+            - listitem [ref=e218]:
+              - button "Hydrangea Blue 30cm 10.May. 22 +4 Reserved 9.00 28.00 ×3.1 4f" [ref=e219] [cursor=pointer]:
+                - generic [ref=e220]: Hydrangea
+                - generic [ref=e221]:
+                  - generic [ref=e222]: Blue
+                  - generic [ref=e223]: 30cm
+                - generic "2026-05-10" [ref=e225]: 10.May.
+                - generic [ref=e226]:
+                  - generic [ref=e227]: "22"
+                  - generic [ref=e228]: +4 Reserved
+                - generic [ref=e229]: "9.00"
+                - generic [ref=e230]: "28.00"
+                - generic [ref=e232]: ×3.1
+                - generic [ref=e233]: 4f
+            - listitem [ref=e234]:
+              - button "Lisianthus White 50cm 10.May. 36 +3 Reserved 4.00 14.00 ×3.5 Stojek" [ref=e235] [cursor=pointer]:
+                - generic [ref=e236]: Lisianthus
+                - generic [ref=e237]:
+                  - generic [ref=e238]: White
+                  - generic [ref=e239]: 50cm
+                - generic "2026-05-10" [ref=e241]: 10.May.
+                - generic [ref=e242]:
+                  - generic [ref=e243]: "36"
+                  - generic [ref=e244]: +3 Reserved
+                - generic [ref=e245]: "4.00"
+                - generic [ref=e246]: "14.00"
+                - generic [ref=e248]: ×3.5
+                - generic [ref=e249]: Stojek
+            - listitem [ref=e250]:
+              - button "Eucalyptus — 10.May. 80 +2 Reserved 2.00 7.00 ×3.5 Stefan" [ref=e251] [cursor=pointer]:
+                - generic [ref=e252]: Eucalyptus
+                - generic [ref=e254]: —
+                - generic "2026-05-10" [ref=e256]: 10.May.
+                - generic [ref=e257]:
+                  - generic [ref=e258]: "80"
+                  - generic [ref=e259]: +2 Reserved
+                - generic [ref=e260]: "2.00"
+                - generic [ref=e261]: "7.00"
+                - generic [ref=e263]: ×3.5
+                - generic [ref=e264]: Stefan
+            - listitem [ref=e265]:
+              - button "Peony Pink 60cm Sarah Bernhardt 7.May. 8 11.00 42.00 ×3.8 Stefan" [ref=e266] [cursor=pointer]:
+                - generic [ref=e267]: Peony
+                - generic [ref=e268]:
+                  - generic [ref=e269]: Pink
+                  - generic [ref=e270]: 60cm
+                  - generic [ref=e271]: Sarah Bernhardt
+                - generic "2026-05-07" [ref=e273]: 7.May.
+                - generic [ref=e275]: "8"
+                - generic [ref=e276]: "11.00"
+                - generic [ref=e277]: "42.00"
+                - generic [ref=e279]: ×3.8
+                - generic [ref=e280]: Stefan
+            - listitem [ref=e281]:
+              - button "Rose Red 50cm Naomi 7.May. 20 5.00 18.00 ×3.6 Direct" [ref=e282] [cursor=pointer]:
+                - generic [ref=e283]: Rose
+                - generic [ref=e284]:
+                  - generic [ref=e285]: Red
+                  - generic [ref=e286]: 50cm
+                  - generic [ref=e287]: Naomi
+                - generic "2026-05-07" [ref=e289]: 7.May.
+                - generic [ref=e291]: "20"
+                - generic [ref=e292]: "5.00"
+                - generic [ref=e293]: "18.00"
+                - generic [ref=e295]: ×3.6
+                - generic [ref=e296]: Direct
+            - listitem [ref=e297]:
+              - button "Hydrangea Pink 40cm 7.May. 14 9.00 28.00 ×3.1 4f" [ref=e298] [cursor=pointer]:
+                - generic [ref=e299]: Hydrangea
+                - generic [ref=e300]:
+                  - generic [ref=e301]: Pink
+                  - generic [ref=e302]: 40cm
+                - generic "2026-05-07" [ref=e304]: 7.May.
+                - generic [ref=e306]: "14"
+                - generic [ref=e307]: "9.00"
+                - generic [ref=e308]: "28.00"
+                - generic [ref=e310]: ×3.1
+                - generic [ref=e311]: 4f
+            - listitem [ref=e312]:
+              - button "Lily White 70cm 7.May. 20 +2 Reserved 8.00 26.00 ×3.3 Stefan" [ref=e313] [cursor=pointer]:
+                - generic [ref=e314]: Lily
+                - generic [ref=e315]:
+                  - generic [ref=e316]: White
+                  - generic [ref=e317]: 70cm
+                - generic "2026-05-07" [ref=e319]: 7.May.
+                - generic [ref=e320]:
+                  - generic [ref=e321]: "20"
+                  - generic [ref=e322]: +2 Reserved
+                - generic [ref=e323]: "8.00"
+                - generic [ref=e324]: "26.00"
+                - generic [ref=e326]: ×3.3
+                - generic [ref=e327]: Stefan
+            - listitem [ref=e328]:
+              - button "Rose Red 50cm Naomi 4.May. 0 5.00 18.00 ×3.6 4f" [ref=e329] [cursor=pointer]:
+                - generic [ref=e330]: Rose
+                - generic [ref=e331]:
+                  - generic [ref=e332]: Red
+                  - generic [ref=e333]: 50cm
+                  - generic [ref=e334]: Naomi
+                - generic "2026-05-04" [ref=e336]: 4.May.
+                - generic [ref=e338]: "0"
+                - generic [ref=e339]: "5.00"
+                - generic [ref=e340]: "18.00"
+                - generic [ref=e342]: ×3.6
+                - generic [ref=e343]: 4f
+            - listitem [ref=e344]:
+              - button "Hydrangea Blue 30cm 4.May. 6 9.00 28.00 ×3.1 Stojek" [ref=e345] [cursor=pointer]:
+                - generic [ref=e346]: Hydrangea
+                - generic [ref=e347]:
+                  - generic [ref=e348]: Blue
+                  - generic [ref=e349]: 30cm
+                - generic "2026-05-04" [ref=e351]: 4.May.
+                - generic [ref=e353]: "6"
+                - generic [ref=e354]: "9.00"
+                - generic [ref=e355]: "28.00"
+                - generic [ref=e357]: ×3.1
+                - generic [ref=e358]: Stojek
