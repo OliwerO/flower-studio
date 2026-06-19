@@ -1222,6 +1222,25 @@ export async function updateOrder(id, fields, opts = {}) {
       }
     }
 
+    // Cascade: Delivery → Pickup conversion must cancel the linked delivery so
+    // the driver app stops showing it. Guard: only when the type genuinely
+    // transitions from Delivery to Pickup AND a non-cancelled delivery exists.
+    if (fields['Delivery Type'] === 'Pickup' && before.deliveryType === 'Delivery') {
+      const [delivery] = await tx.select().from(deliveries)
+        .where(and(eq(deliveries.orderId, after.id), isNull(deliveries.deletedAt)))
+        .limit(1);
+      if (delivery && delivery.status !== DELIVERY_STATUS.CANCELLED) {
+        await tx.update(deliveries)
+          .set({ status: DELIVERY_STATUS.CANCELLED, updatedAt: new Date() })
+          .where(eq(deliveries.id, delivery.id));
+        await tryAudit(tx, {
+          entityType: 'delivery', entityId: delivery.id, action: 'update',
+          before: { Status: delivery.status }, after: { Status: DELIVERY_STATUS.CANCELLED },
+          ...actor,
+        });
+      }
+    }
+
     // Flag-on Required By cascade → Demand Entry date update.
     if (getStockYModelEnabled() && 'Required By' in fields && fields['Required By']) {
       const newDate = fields['Required By'];
