@@ -77,21 +77,23 @@ describe('VarietyAllocationPicker — Stage 1 typeahead', () => {
 });
 
 describe('VarietyAllocationPicker — availability + hide net-zero (S3.2-i)', () => {
+  // A benign healthy Variety keeps the list (Stage-1) active so the hide rule
+  // is exercised on the LIST path (a lone Variety skips straight to the form).
+  const filler = { id: 'f', type_name: 'Tulip', colour: 'Red', size_cm: 40, cultivar: null, current_quantity: 20, date: '2026-05-10' };
   // Lily White 60: 5 on hand, all 5 reserved by premades → net 0, effective 0.
   // Old rule (totalQty 5 > 0) showed it; new rule (effective ≤ 0) hides it (D3).
-  const lilyRows = [
-    { id: 'x', type_name: 'Lily', colour: 'White', size_cm: 60, cultivar: null, current_quantity: 5, date: '2026-05-10' },
-  ];
+  const lily = { id: 'x', type_name: 'Lily', colour: 'White', size_cm: 60, cultivar: null, current_quantity: 5, date: '2026-05-10' };
 
   it('hides a Variety reserved down to effective ≤ 0 by default', () => {
-    render(<VarietyAllocationPicker stockItems={lilyRows} reservations={new Map([['x', 5]])}
+    render(<VarietyAllocationPicker stockItems={[filler, lily]} reservations={new Map([['x', 5]])}
       requiredBy="2026-05-12" qty={1} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
     expect(screen.queryByText(/Lily/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Tulip/).length).toBeGreaterThan(0);
   });
 
   it('reveals the hidden Variety when searched (deliberate over-promise — D3)', () => {
-    render(<VarietyAllocationPicker stockItems={lilyRows} reservations={new Map([['x', 5]])}
+    render(<VarietyAllocationPicker stockItems={[filler, lily]} reservations={new Map([['x', 5]])}
       requiredBy="2026-05-12" qty={1} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
     fireEvent.change(screen.getByPlaceholderText('Search…'), { target: { value: 'lily' } });
@@ -99,14 +101,12 @@ describe('VarietyAllocationPicker — availability + hide net-zero (S3.2-i)', ()
   });
 
   it('surfaces a negative-stock Variety when incoming PO makes effective > 0 (CR-22 surplus)', () => {
-    const peony = [
-      { id: 'p1', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null, current_quantity: -7, date: '2026-05-13' },
-    ];
+    const peony = { id: 'p1', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null, current_quantity: -7, date: '2026-05-13' };
     const pendingPO = { p1: { plannedDate: '2026-06-16', pos: [{ quantity: 10, plannedDate: '2026-06-16' }] } };
-    render(<VarietyAllocationPicker stockItems={peony} reservations={new Map()} pendingPO={pendingPO}
+    render(<VarietyAllocationPicker stockItems={[filler, peony]} reservations={new Map()} pendingPO={pendingPO}
       requiredBy="2026-05-12" qty={1} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
-    expect(screen.getAllByTestId('variety-row')).toHaveLength(1);
+    expect(screen.getAllByTestId('variety-row')).toHaveLength(2);
     expect(screen.getByTestId('avail-incoming').textContent).toContain('+10');
   });
 
@@ -118,59 +118,79 @@ describe('VarietyAllocationPicker — availability + hide net-zero (S3.2-i)', ()
   });
 });
 
-describe('VarietyAllocationPicker — Stage 2 allocation panel', () => {
-  it('renders engine options when a Variety row is expanded', () => {
+describe('VarietyAllocationPicker — allocation form (S3.2-ii)', () => {
+  // Single Rose Pink 60 batch, no demand → the engine default is the batch.
+  const oneBatch = [
+    { id: 'b1', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null, current_quantity: 10, date: '2026-05-10' },
+  ];
+
+  it('a single Variety opens straight at the allocation form — no Stage-1 search (CR-24)', () => {
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    expect(screen.queryByPlaceholderText('Search…')).toBeNull();
+    expect(screen.getByTestId('alloc-source')).toBeInTheDocument();
+    expect(screen.getByTestId('alloc-qty')).toBeInTheDocument();
+    expect(screen.getByTestId('alloc-add')).toBeInTheDocument();
+  });
+
+  it('multiple Varieties: Stage-1 search shows; tapping a row reveals the form', () => {
     render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
       requiredBy="2026-05-12" qty={2} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
+    expect(screen.getByPlaceholderText('Search…')).toBeInTheDocument();
     fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    expect(screen.getByTestId('option-batch')).toBeInTheDocument();
-    expect(screen.getByTestId('option-merge')).toBeInTheDocument();
-    expect(screen.getByTestId('option-fresh')).toBeInTheDocument();
+    expect(screen.getByTestId('alloc-source')).toBeInTheDocument();
   });
 
-  it('marks default option per smart-default rule (same-date Demand Entry)', () => {
-    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
-      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+  it('qty defaults to the order need; remaining = source available − qty (CR-25)', () => {
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    expect(screen.getByTestId('option-merge')).toHaveAttribute('data-default', 'true');
+    expect(screen.getByTestId('alloc-qty').value).toBe('4');
+    expect(screen.getByTestId('alloc-remaining').textContent).toContain('6'); // 10 - 4
   });
 
-  it('shows free/total/reserved breakdown per Batch', () => {
-    const reservations = new Map([['b1', 4]]);
-    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={reservations}
-      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+  it('changing qty updates the remaining counter live (CR-25)', () => {
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    const batch = screen.getByTestId('option-batch');
-    expect(batch).toHaveTextContent('6');  // freeQty = 10 - 4
-    expect(batch).toHaveTextContent('10'); // total
-    expect(batch).toHaveTextContent('4');  // reservedQty
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '7' } });
+    expect(screen.getByTestId('alloc-remaining').textContent).toContain('3'); // 10 - 7
   });
 
-  it('clicking a Batch option calls onSelectStock with the row', () => {
+  it('source dropdown surfaces "from incoming PO" when a PO is pending (CR-26)', () => {
+    const peony = [{ id: 'p1', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null, current_quantity: -7, date: '2026-05-13' }];
+    const pendingPO = { p1: { plannedDate: '2026-06-16', pos: [{ quantity: 10, plannedDate: '2026-06-16' }] } };
+    render(<VarietyAllocationPicker stockItems={peony} reservations={new Map()} pendingPO={pendingPO}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    const opts = [...screen.getByTestId('alloc-source').querySelectorAll('option')].map(o => o.value);
+    expect(opts).toContain('incoming');
+    expect(opts).toContain('fresh');
+  });
+
+  it('Add fires onSelectStock with the chosen stock row AND the typed amount (CR-25)', () => {
     const onSelectStock = vi.fn();
-    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
-      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
       onSelectStock={onSelectStock} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    fireEvent.click(screen.getByTestId('option-batch'));
-    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }));
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '5' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), 5);
   });
 
-  it('clicking fresh fires onSelectStock with kind:fresh + requiredBy', () => {
+  it('Add with "New demand" fires kind:fresh + requiredBy + amount', () => {
     const onSelectStock = vi.fn();
-    render(<VarietyAllocationPicker stockItems={makeRows()} reservations={new Map()}
-      requiredBy="2026-05-12" qty={2} role="florist" t={t}
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={2} role="florist" t={t}
       onSelectStock={onSelectStock} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    fireEvent.click(screen.getByTestId('option-fresh'));
-    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({
-      kind: 'fresh',
-      date: '2026-05-12',
-      variety: expect.objectContaining({ type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null }),
-    }));
+    fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'fresh' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(onSelectStock).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'fresh', date: '2026-06-01' }),
+      2,
+    );
   });
 });
 
@@ -226,63 +246,43 @@ describe('VarietyAllocationPicker — collapse Batch options by sell tier (2026-
   ];
   const tT = { ...t, currency: 'zł', useStock: 'Use stock' };
 
-  it('two batches at same sell price collapse into one tier row', () => {
+  it('lists each sell tier as a source option (label carries the price)', () => {
     render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
       requiredBy="2026-05-15" qty={1} role="florist" t={tT}
       onSelectStock={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    const batches = screen.getAllByTestId('option-batch');
-    expect(batches).toHaveLength(2);
-    // FEFO ordering inside the 25 zł tier: b1 (May 10) before b2 (May 12).
-    const ids = batches.map(b => b.getAttribute('data-stock-ids'));
-    expect(ids).toContain('b1,b2');
-    expect(ids).toContain('b3');
-  });
-
-  it('renders sell-price label on each tier when multiple tiers exist', () => {
-    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
-      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
-      onSelectStock={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    const batches = screen.getAllByTestId('option-batch');
-    const labels = batches.map(b => b.textContent);
+    const labels = [...screen.getByTestId('alloc-source').querySelectorAll('option')].map(o => o.textContent);
     expect(labels.some(l => l.includes('25.00 zł'))).toBe(true);
     expect(labels.some(l => l.includes('30.00 zł'))).toBe(true);
   });
 
-  it('hides sell-price label when only one tier exists (renders "Use stock")', () => {
-    const oneTier = tieredRows.filter(r => r.current_sell_price === 25);
-    render(<VarietyAllocationPicker stockItems={oneTier} reservations={new Map()}
-      requiredBy="2026-05-15" qty={1} role="florist" t={tT}
-      onSelectStock={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    const batch = screen.getByTestId('option-batch');
-    expect(batch).toHaveTextContent('Use stock');
-    expect(batch).not.toHaveTextContent('zł');
-  });
-
-  it('clicking a tier targets the FEFO-oldest underlying stock_id', () => {
+  it('picking a sell tier + Add targets the FEFO-oldest underlying stock_id', () => {
     const onSelectStock = vi.fn();
     render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
       requiredBy="2026-05-15" qty={1} role="florist" t={tT}
       onSelectStock={onSelectStock} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    // Pick the 25 zł tier (b1+b2). Oldest = b1.
-    const tier25 = screen.getAllByTestId('option-batch')
-      .find(b => b.getAttribute('data-stock-ids') === 'b1,b2');
-    fireEvent.click(tier25);
-    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }));
+    fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'batch:25.00' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), 1);
   });
 
-  it('tier freeQty is summed across underlying batches', () => {
-    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
+  it('single tier renders one "From stock" option without a price label', () => {
+    const oneTier = tieredRows.filter(r => r.current_sell_price === 25);
+    render(<VarietyAllocationPicker stockItems={oneTier} reservations={new Map()}
       requiredBy="2026-05-15" qty={1} role="florist" t={tT}
       onSelectStock={() => {}} onClose={() => {}} />);
-    fireEvent.click(screen.getAllByTestId('variety-row')[0]);
-    const tier25 = screen.getAllByTestId('option-batch')
-      .find(b => b.getAttribute('data-stock-ids') === 'b1,b2');
-    // 10 + 5 = 15 free, 15 total.
-    expect(tier25).toHaveTextContent('15');
+    const batchOpts = [...screen.getByTestId('alloc-source').querySelectorAll('option')]
+      .filter(o => o.value.startsWith('batch:'));
+    expect(batchOpts).toHaveLength(1);
+    expect(batchOpts[0].textContent).not.toContain('zł');
+  });
+
+  it('tier source available is summed across underlying batches (FEFO)', () => {
+    render(<VarietyAllocationPicker stockItems={tieredRows} reservations={new Map()}
+      requiredBy="2026-05-15" qty={5} role="florist" t={tT}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'batch:25.00' } });
+    // 10 + 5 = 15 free in the 25 zł tier; remaining = 15 − 5 = 10.
+    expect(screen.getByTestId('alloc-remaining').textContent).toContain('10');
   });
 });
 

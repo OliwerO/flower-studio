@@ -141,11 +141,12 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     }));
   }
 
-  function incrementQty(idx) {
+  function incrementQty(idx, by = 1) {
+    const step = Math.max(1, Number(by) || 1);
     setEditLines(prev => prev.map((l, i) => {
       if (i !== idx) return l;
       const cap = getLineCap(l);
-      const next = (Number(l.quantity) || 0) + 1;
+      const next = (Number(l.quantity) || 0) + step;
       if (next > cap) {
         showToast?.(
           (t?.batchCapReached ?? 'Batch only has {n} available').replace('{n}', String(cap)),
@@ -238,14 +239,14 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   }
 
   // ── Add flower from existing stock ─────────────────────────────
-  function addFlowerFromStock(stockItem) {
+  function addFlowerFromStock(stockItem, amount = 1) {
     // Price a not-yet-arrived flower off its pending PO, not the stale card sell (#377).
     const { costPricePerUnit, sellPricePerUnit } = resolveStockLinePrice(stockItem, pendingPO[stockItem.id]);
     setEditLines(prev => [...prev, {
       id: null,
       stockItemId: stockItem.id,
       flowerName: stockItem['Display Name'],
-      quantity: 1,
+      quantity: Math.max(1, Number(amount) || 1),
       _originalQty: 0,
       costPricePerUnit,
       sellPricePerUnit,
@@ -353,7 +354,8 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   // attrs (typeName/colour/sizeCm/cultivar) so the backend can persist them.
   // displayName is taken from baseName if given, otherwise auto-computed via
   // varietyDisplayName.
-  async function createDemandEntry(varietyDraft) {
+  async function createDemandEntry(varietyDraft, amount = 1) {
+    const add = Math.max(1, Number(amount) || 1);
     // Normalise to a resolved display name + optional 4-tuple fields.
     let displayName;
     let tupleFields = null; // null = legacy path (omit from POST body)
@@ -370,7 +372,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     const demandEntry = variety.find(s => parseBatchName(s['Display Name'] || '').batch === null);
 
     if (demandEntry) {
-      addFlowerFromStock(demandEntry);
+      addFlowerFromStock(demandEntry, add);
       return;
     }
 
@@ -409,7 +411,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
         id: null,
         stockItemId: res.data.id,
         flowerName: res.data['Display Name'],
-        quantity: 1,
+        quantity: add,
         _originalQty: 0,
         costPricePerUnit: costPrice,
         sellPricePerUnit: sellPrice,

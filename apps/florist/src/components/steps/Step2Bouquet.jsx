@@ -358,12 +358,13 @@ export default function Step2Bouquet({
     .filter(g => !!q || g.inCart || g.availability.effective > 0);
   }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines]);
 
-  function addOne(stockItem) {
+  function addOne(stockItem, amount = 1) {
+    const add = Math.max(1, Number(amount) || 1);
     onLinesChange(lines => {
       const exists = lines.find(l => l.stockItemId === stockItem.id);
       if (exists) {
         return lines.map(l =>
-          l.stockItemId === stockItem.id ? { ...l, quantity: l.quantity + 1 } : l
+          l.stockItemId === stockItem.id ? { ...l, quantity: l.quantity + add } : l
         );
       }
       // Pending-PO flower prices off its PO, not the stale card sell (#377).
@@ -371,7 +372,7 @@ export default function Step2Bouquet({
       return [...lines, {
         stockItemId:      stockItem.id,
         flowerName:       stockItem['Display Name'],
-        quantity:         1,
+        quantity:         add,
         costPricePerUnit,
         sellPricePerUnit,
         stockDeferred:    isFutureOrder,
@@ -892,19 +893,30 @@ export default function Step2Bouquet({
             incoming:                t.incoming,
             effective:               t.effective,
             undatedShort:            t.undatedShort,
+            allocSource:             t.allocSource,
+            allocQty:                t.allocQty,
+            allocRemaining:          t.allocRemaining,
+            allocAdd:                t.allocAdd,
+            free:                    t.free,
+            srcStock:                t.srcStock,
+            srcCommitted:            t.srcCommitted,
+            srcIncoming:             t.srcIncoming,
+            srcFresh:                t.srcFresh,
+            currency:                t.currency,
           }}
-          onSelectStock={picked => {
+          onSelectStock={(picked, amount = 1) => {
+            const add = Math.max(1, Number(amount) || 1);
             if (picked?.kind === 'fresh') {
               const v = picked.variety || {};
               const firstName = varietyDisplayName(v) || yPickerStockItems[0]?.['Display Name'] || picked.date || '';
               onLinesChange(lines => {
                 const exists = lines.find(l => !l.stockItemId && l.flowerName === firstName);
-                if (exists) return lines.map(l => !l.stockItemId && l.flowerName === firstName ? { ...l, quantity: l.quantity + 1 } : l);
-                return [...lines, { stockItemId: null, flowerName: firstName, quantity: 1, costPricePerUnit: 0, sellPricePerUnit: 0, stockDeferred: isFutureOrder }];
+                if (exists) return lines.map(l => !l.stockItemId && l.flowerName === firstName ? { ...l, quantity: l.quantity + add } : l);
+                return [...lines, { stockItemId: null, flowerName: firstName, quantity: add, costPricePerUnit: 0, sellPricePerUnit: 0, stockDeferred: isFutureOrder }];
               });
             } else if (picked) {
               const original = stock.find(s => s.id === picked.id) || picked;
-              addOne(original);
+              addOne(original, add);
             }
             setYPickerOpen(false);
             setFlowerQuery('');

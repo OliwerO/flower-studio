@@ -298,6 +298,7 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
               reservations={new Map(
                 Object.entries(editing.premadeMap || {}).map(([id, v]) => [id, v.qty || 0])
               )}
+              pendingPO={editing.pendingPO}
               requiredBy={o['Required By'] || null}
               qty={yPickerQty}
               role={role}
@@ -309,16 +310,34 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                 pickerOrderFreshAll:     t.pickerOrderFreshAll,
                 stems:                   t.stems,
                 cancel:                  t.cancel,
+                onHand:                  t.onHand,
+                committed:               t.committed,
+                reserved:                t.reserved,
+                net:                     t.net,
+                incoming:                t.incoming,
+                effective:               t.effective,
+                undatedShort:            t.undatedShort,
+                allocSource:             t.allocSource,
+                allocQty:                t.allocQty,
+                allocRemaining:          t.allocRemaining,
+                allocAdd:                t.allocAdd,
+                free:                    t.free,
+                srcStock:                t.srcStock,
+                srcCommitted:            t.srcCommitted,
+                srcIncoming:             t.srcIncoming,
+                srcFresh:                t.srcFresh,
+                currency:                t.currency,
               }}
-              onSelectStock={picked => {
+              onSelectStock={(picked, amount = 1) => {
+                const add = Math.max(1, Number(amount) || 1);
                 if (picked && picked.kind === 'fresh') {
-                  editing.createDemandEntry(picked.variety || picked.displayName || picked.date || '');
+                  editing.createDemandEntry(picked.variety || picked.displayName || picked.date || '', add);
                 } else if (picked) {
                   const existing = editing.editLines.findIndex(l => l.stockItemId === picked.id);
                   if (existing >= 0) {
-                    editing.incrementQty(existing);
+                    editing.incrementQty(existing, add);
                   } else {
-                    editing.addFlowerFromStock(picked);
+                    editing.addFlowerFromStock(picked, add);
                   }
                 }
                 setYPickerOpen(false);
