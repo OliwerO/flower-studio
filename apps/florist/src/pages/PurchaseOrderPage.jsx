@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { useStockYModelFlag } from '@flower-studio/shared';
+import { useStockYModelFlag, DateTag } from '@flower-studio/shared';
 import t from '../translations.js';
 
 const STATUS_COLORS = {
@@ -630,7 +630,7 @@ export default function PurchaseOrderPage() {
                       <span className="text-xs text-ios-secondary">{order['Assigned Driver']}</span>
                     )}
                     {order['Planned Date'] && (
-                      <span className="text-xs text-blue-600 font-medium">{order['Planned Date']}</span>
+                      <DateTag date={order['Planned Date']} kind="arriving" t={t} />
                     )}
                   </div>
                 </button>
