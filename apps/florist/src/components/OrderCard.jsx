@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -478,8 +478,11 @@ function OrderCard({
             <p className="text-xs text-ios-tertiary text-center py-4">{t.errorLoadDetails}</p>
           ) : (
             <>
-              {/* Order lines — with inline edit capability */}
-              {detail.orderLines?.length > 0 && (
+              {/* Order lines — with inline edit capability.
+                  Render whenever the bouquet is editable (non-terminal or
+                  owner) even with zero lines, so an emptied order still exposes
+                  the "Edit" entry point to add flowers back (Pitfall #4). */}
+              {shouldShowBouquetSection({ hasLines: detail.orderLines?.length > 0, isTerminal, isOwner }) && (
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
@@ -731,6 +734,10 @@ function OrderCard({
                           className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm"
                         >{t.cancel}</button>
                       </div>
+                    </div>
+                  ) : !(detail.orderLines?.length > 0) ? (
+                    <div className="bg-gray-50 rounded-xl px-3 py-4 text-center text-sm text-ios-tertiary">
+                      {t.bouquetEmpty}
                     </div>
                   ) : (
                     <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">

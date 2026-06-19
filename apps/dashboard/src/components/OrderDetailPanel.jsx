@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -549,8 +549,11 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
         />
       </Section>
 
-      {/* Order lines (bouquet composition) */}
-      {o.orderLines?.length > 0 && (
+      {/* Order lines (bouquet composition). Dashboard is owner-only and edits
+          orders in every status, so isOwner: true → the section always renders,
+          including for an emptied order so the "Edit Bouquet" entry point stays
+          reachable to add flowers back (Pitfall #4). */}
+      {shouldShowBouquetSection({ hasLines: o.orderLines?.length > 0, isTerminal, isOwner: true }) && (
         <div>
           <div className="flex items-center justify-between mb-2">
             <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">
@@ -910,7 +913,11 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
             </div>
             );
           })()
-          : (
+          : !(o.orderLines?.length > 0) ? (
+            <div className="bg-white rounded-xl border border-gray-100 px-3 py-4 text-center text-sm text-ios-tertiary">
+              {t.bouquetEmpty}
+            </div>
+          ) : (
             <div className="bg-white rounded-xl overflow-hidden border border-gray-100">
               <table className="w-full text-sm">
                 <thead>

@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -337,8 +337,10 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Order lines */}
-            {order.orderLines?.length > 0 && (
+            {/* Order lines. Render whenever the bouquet is editable (non-terminal
+                or owner) even with zero lines, so an emptied order still exposes
+                the "Edit bouquet" entry point to add flowers back (Pitfall #4). */}
+            {shouldShowBouquetSection({ hasLines: order.orderLines?.length > 0, isTerminal, isOwner }) && (
               <div>
                 <div className="flex items-center justify-between mb-1">
                   <p className="ios-label !mb-0">{t.bouquetContents || 'Bouquet'}</p>
@@ -494,6 +496,10 @@ export default function OrderDetailPage() {
                         className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm"
                       >{t.cancel}</button>
                     </div>
+                  </div>
+                ) : !(order.orderLines?.length > 0) ? (
+                  <div className="ios-card px-4 py-4 text-center text-sm text-ios-tertiary">
+                    {t.bouquetEmpty}
                   </div>
                 ) : (
                   <div className="ios-card overflow-hidden divide-y divide-gray-100">

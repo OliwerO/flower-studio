@@ -4,6 +4,7 @@ import {
   parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
+  shouldShowBouquetSection,
 } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -58,7 +59,9 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [yEnabled, editing.stockItems, editing.pendingPO, editing.flowerSearch]);
 
-  if (!o.orderLines?.length) return null;
+  // Dashboard is owner-only and edits in every status → always render, so an
+  // emptied order keeps its "Edit Bouquet" entry point (Pitfall #4).
+  if (!shouldShowBouquetSection({ hasLines: o.orderLines?.length > 0, isTerminal, isOwner: true })) return null;
 
   return (
     <div>
