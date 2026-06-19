@@ -5,10 +5,12 @@ import {
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
 } from '@flower-studio/shared';
 import t from '../translations.js';
+import useConfigLists from '../hooks/useConfigLists.js';
 
 export default function BouquetEditor({ editing, saving, detail, isTerminal, isOwner, originalPrice, onSaveClick, doSave }) {
   const yEnabled = useStockYModelFlag();
   const { role } = useAuth();
+  const { targetMarkup } = useConfigLists();
 
   const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
@@ -178,17 +180,14 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50 max-h-64 overflow-y-auto">
-              {/* Add unlisted flower option — only for truly new varieties */}
+              {/* Add unlisted flower option — opens full price form (cost + sell) */}
               {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
                 const { name } = parseBatchName(s['Display Name'] || '');
                 return name.toLowerCase() === flowerSearch.trim().toLowerCase();
               }) && (
                 <button
                   type="button"
-                  onClick={() => {
-                    editing.addNewFlowerQuick(flowerSearch);
-                    setFlowerSearch('');
-                  }}
+                  onClick={() => editing.openNewFlowerForm(flowerSearch.trim())}
                   className="w-full flex items-center px-3 py-2.5 gap-2 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
                 >
                   <span className="text-sm font-medium text-indigo-700">+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</span>
@@ -242,6 +241,69 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               )}
             </div>
           </div>
+
+          {/* New flower form — cost + sell price inputs, shown after openNewFlowerForm() */}
+          {editing.newFlowerForm && (
+            <div className="bg-indigo-50 rounded-xl px-3 py-3 space-y-2">
+              <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {editing.newFlowerForm.name}</p>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editing.newFlowerForm.costPrice}
+                  onChange={e => {
+                    const cost = e.target.value;
+                    editing.setNewFlowerForm(p => ({
+                      ...p,
+                      costPrice: cost,
+                      // Auto-suggest sell price from cost × targetMarkup if sell is still empty
+                      sellPrice: cost && targetMarkup && !p.sellPrice
+                        ? String(Math.round(Number(cost) * targetMarkup))
+                        : p.sellPrice,
+                    }));
+                  }}
+                  placeholder={t.costPrice}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                />
+                <input
+                  type="number"
+                  step="0.01"
+                  value={editing.newFlowerForm.sellPrice}
+                  onChange={e => editing.setNewFlowerForm(p => ({ ...p, sellPrice: e.target.value }))}
+                  placeholder={t.sellPrice}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <input
+                  type="number"
+                  value={editing.newFlowerForm.lotSize}
+                  onChange={e => editing.setNewFlowerForm(p => ({ ...p, lotSize: e.target.value }))}
+                  placeholder={t.lotSize}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                />
+                <input
+                  type="text"
+                  value={editing.newFlowerForm.supplier}
+                  onChange={e => editing.setNewFlowerForm(p => ({ ...p, supplier: e.target.value }))}
+                  placeholder={t.supplier}
+                  className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => editing.addNewFlower()}
+                  className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
+                >{t.addToCart}</button>
+                <button
+                  type="button"
+                  onClick={() => editing.setNewFlowerForm(null)}
+                  className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm active-scale"
+                >{t.cancel}</button>
+              </div>
+            </div>
+          )}
 
           {/* Cart — current bouquet lines with steppers */}
           {editing.editLines.length > 0 && (
