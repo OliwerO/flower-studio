@@ -462,7 +462,7 @@ export default function DayToDayTab({ onNavigate, isActive = true }) {
           <div className="bg-gray-50 rounded-xl overflow-hidden divide-y divide-gray-100">
             {data.keyDateReminders.map((r, i) => (
               <div key={i}
-                onClick={() => nav('customers', { search: r.customerName })}
+                onClick={() => nav('customers', { selectedId: r.customerId })}
                 className="flex items-center justify-between px-4 py-2.5 cursor-pointer hover:bg-gray-100 transition-colors">
                 <div>
                   <span className="text-sm font-medium text-ios-label">{r.customerName}</span>
