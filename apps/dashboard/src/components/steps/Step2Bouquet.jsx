@@ -214,6 +214,18 @@ export default function Step2Bouquet({
     .filter(g => !!q || g.inCart || g.availability.effective > 0);
   }, [yEnabled, adaptedStock, visibleStock, flowerQuery, pendingPO, orderLines]);
 
+  // CR-27: cart-line availability is the whole Variety's net, not the single
+  // bound sub-row — map every stock row id → its Variety availability.
+  const varietyAvailById = useMemo(() => {
+    if (!yEnabled) return {};
+    const map = {};
+    for (const [, group] of groupByVariety(adaptedStock)) {
+      const avail = getVarietyAvailability(group.rows, new Map(), arrivalsForVariety(group.rows, pendingPO));
+      for (const r of group.rows) map[r.id] = avail;
+    }
+    return map;
+  }, [yEnabled, adaptedStock, pendingPO]);
+
   function addOne(stockItem, amount = 1) {
     const add = Math.max(1, Number(amount) || 1);
     onLinesChange(lines => {
@@ -583,7 +595,11 @@ export default function Step2Bouquet({
             {!premadeLocked && orderLines.map(l => {
               const key = lineKey(l);
               const stockItem = stock.find(s => s.id === l.stockItemId);
-              const availableQty = Number(stockItem?.['Current Quantity']) || 0;
+              // CR-27: whole-Variety net under Y-model, not the single bound row.
+              const lineVarietyAvail = yEnabled ? varietyAvailById[l.stockItemId] : null;
+              const availableQty = lineVarietyAvail
+                ? lineVarietyAvail.net
+                : Number(stockItem?.['Current Quantity']) || 0;
               const overStock = l.stockItemId && !l.stockDeferred && l.quantity > availableQty;
               // Pending-PO flowers price off their PO, not the stale card sell (#377).
               const sellPrice = resolveStockLinePrice(stockItem, pendingPO[l.stockItemId]).sellPricePerUnit
@@ -628,11 +644,17 @@ export default function Step2Bouquet({
                     </button>
                   </div>
                 </div>
-                {overStock && (
-                  <div className="mt-1 text-xs text-amber-600 bg-amber-50 rounded-lg px-2 py-1">
-                    {l.quantity - availableQty} {t.notInStock || 'not in stock'}
-                  </div>
-                )}
+                {overStock && (() => {
+                  const linePoQty = lineVarietyAvail
+                    ? (lineVarietyAvail.incoming || 0)
+                    : (l.stockItemId ? (pendingPO?.[l.stockItemId]?.ordered || 0) : 0);
+                  return (
+                    <div className={`mt-1 text-xs rounded-lg px-2 py-1 ${linePoQty > 0 ? 'text-blue-700 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
+                      {l.quantity - availableQty} {t.notInStock || 'not in stock'}
+                      {linePoQty > 0 && <span> · +{linePoQty} {t.onOrder || 'on order'}</span>}
+                    </div>
+                  );
+                })()}
                 {/* Owner price override — only for flowers currently out of
                     stock. In-stock items were priced at what we actually paid,
                     so no override needed. Inputs cascade to the Stock row on

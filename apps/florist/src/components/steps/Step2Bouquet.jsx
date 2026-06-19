@@ -29,9 +29,14 @@ const CONFIDENCE_STYLES = {
   none: 'border-l-4 border-l-red-300',
 };
 
-function CartLine({ line: l, stock, onChangeQty, onCommitQty, onCommitPrices, onRemove, isFutureOrder, onToggleDeferred, pendingPO, isOwner }) {
+function CartLine({ line: l, stock, onChangeQty, onCommitQty, onCommitPrices, onRemove, isFutureOrder, onToggleDeferred, pendingPO, isOwner, varietyAvail }) {
   const stockItem = stock.find(s => s.id === l.stockItemId);
-  const availableQty = Number(stockItem?.['Current Quantity']) || 0;
+  // CR-27: under Y-model, availability is the whole Variety's net (free now), not
+  // the single bound sub-row — so binding to a Demand Entry no longer reads as a
+  // phantom shortfall while physical batches exist in the same Variety.
+  const availableQty = varietyAvail
+    ? varietyAvail.net
+    : Number(stockItem?.['Current Quantity']) || 0;
   // Pending-PO flowers price off their PO, not the stale card sell (#377).
   const sellPrice = resolveStockLinePrice(stockItem, pendingPO?.[l.stockItemId]).sellPricePerUnit
     || Number(l.sellPricePerUnit) || 0;
@@ -123,7 +128,9 @@ function CartLine({ line: l, stock, onChangeQty, onCommitQty, onCommitPrices, on
         </div>
       </div>
       {overStock && (() => {
-        const linePoQty = l.stockItemId ? (pendingPO?.[l.stockItemId]?.ordered || 0) : 0;
+        const linePoQty = varietyAvail
+          ? (varietyAvail.incoming || 0)
+          : (l.stockItemId ? (pendingPO?.[l.stockItemId]?.ordered || 0) : 0);
         return (
           <div className={`mt-1 text-xs rounded-lg px-2 py-1 ${linePoQty > 0 ? 'text-blue-700 bg-blue-50' : 'text-amber-600 bg-amber-50'}`}>
             {l.quantity - availableQty} {t.notInStock || 'not in stock'}
@@ -357,6 +364,21 @@ export default function Step2Bouquet({
     // A Variety already in the cart always stays visible so it can be adjusted.
     .filter(g => !!q || g.inCart || g.availability.effective > 0);
   }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines]);
+
+  // CR-27: a cart line bound to one sub-row (e.g. a −8 Demand Entry) must reflect
+  // the WHOLE Variety's availability, not that one row — otherwise it falsely
+  // reads "18 not in stock" while a 50-stem batch sits in the same Variety. Map
+  // every stock row id → its Variety availability (over ALL varieties, including
+  // ones hidden from the catalog).
+  const varietyAvailById = useMemo(() => {
+    if (!yEnabled) return {};
+    const map = {};
+    for (const [, group] of groupByVariety(adaptedStock)) {
+      const avail = getVarietyAvailability(group.rows, new Map(), arrivalsForVariety(group.rows, pendingPO));
+      for (const r of group.rows) map[r.id] = avail;
+    }
+    return map;
+  }, [yEnabled, adaptedStock, pendingPO]);
 
   function addOne(stockItem, amount = 1) {
     const add = Math.max(1, Number(amount) || 1);
@@ -828,6 +850,7 @@ export default function Step2Bouquet({
                   isFutureOrder={isFutureOrder}
                   onToggleDeferred={(key) => toggleDeferred(key)}
                   pendingPO={pendingPO}
+                  varietyAvail={yEnabled ? varietyAvailById[l.stockItemId] : null}
                 />
               ))
             )}
