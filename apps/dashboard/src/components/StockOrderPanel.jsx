@@ -6,7 +6,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { useStockYModelFlag } from '@flower-studio/shared';
+import { useStockYModelFlag, DateTag } from '@flower-studio/shared';
 
 const STATUS_COLORS = {
   Draft:        'bg-gray-100 text-gray-700',
@@ -722,8 +722,9 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
                     <span className="text-xs text-ios-secondary">{order['Assigned Driver']}</span>
                   )}
                   {order['Planned Date'] && (
-                    <span className="text-xs text-blue-600 font-medium">
-                      {t.plannedDate || 'Planned'}: {order['Planned Date']}
+                    <span className="inline-flex items-center gap-1 text-xs text-ios-secondary">
+                      {t.plannedDate || 'Planned'}:
+                      <DateTag date={order['Planned Date']} kind="arriving" t={t} />
                     </span>
                   )}
                 </div>
