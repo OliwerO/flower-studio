@@ -21,7 +21,7 @@ import VarietyAvailabilityLine from './VarietyAvailabilityLine.jsx';
  *   role             — 'owner' | 'florist' (gates "+ Create new Variety")
  *   t                — translation strings (pickerSearchPlaceholder, pickerCreateNew,
  *                      pickerNoResults, stems, onHand, planned, reserved, net, cancel)
- *   onSelectStock    — (stockItem | { kind: 'fresh', date, variety: { type_name, colour, size_cm, cultivar } | null }) => void
+ *   onSelectStock    — (stockItem | { kind: 'fresh', date, variety: { type_name, colour, size_cm, cultivar } | null }, amount, opts?: { sellPrice?, costPrice?, confirmNegative? }) => void
  *   onCreateVariety  — (varietyDraft) => Promise<stockItem>  (Owner-only, Task 4)
  *   premadesByStockId — Map<stockId, [{id, name, qty}]> — optional, for reserved expand
  *   onClose          — () => void
@@ -158,7 +158,8 @@ export default function VarietyAllocationPicker({
 
   // CR-25/26: the allocation form resolves the chosen source to a concrete
   // selection, then adds it to the order with the amount the owner typed.
-  function handleAdd(selection, amount) {
+  // opts: { sellPrice?, costPrice?, confirmNegative? } — forwarded from AllocationForm.
+  function handleAdd(selection, amount, opts) {
     const qtyToAdd = Math.max(1, Number(amount) || 1);
     if (selection?.kind === 'fresh') {
       const group = expandedData?.group;
@@ -174,6 +175,7 @@ export default function VarietyAllocationPicker({
           } : null,
         },
         qtyToAdd,
+        opts,
       );
       return;
     }
@@ -182,7 +184,7 @@ export default function VarietyAllocationPicker({
       ? (selection.stockIds?.[0] ?? selection.stockId)
       : selection?.stockId;
     const original = stockById.get(targetId);
-    if (original) onSelectStock(original, qtyToAdd);
+    if (original) onSelectStock(original, qtyToAdd, opts);
   }
 
   function handleDraftChange(field, value) {
@@ -535,6 +537,13 @@ export function buildSources(options, availability, t = {}) {
  * picks a source from a dropdown, sees that source's available count, types the
  * amount, and watches the remaining (available − amount) update live — then Add
  * commits the line with the typed amount. No window-hopping to the cart.
+ *
+ * CR-07: When the selected source is `fresh`, renders sell/cost price inputs
+ * (forwarded as opts.sellPrice / opts.costPrice to the onAdd callback).
+ *
+ * CR-01 (D-C inline confirm): When the typed amount exceeds a CAPPED source's
+ * available count, the first Add click surfaces an inline confirm row instead of
+ * proceeding. Uncapped sources (fresh / new demand) bypass the gate entirely.
  */
 function AllocationForm({ options, availability, defaultQty, t, onAdd }) {
   const sources = useMemo(() => buildSources(options, availability, t), [options, availability, t]);
@@ -543,9 +552,27 @@ function AllocationForm({ options, availability, defaultQty, t, onAdd }) {
   const [value, setValue] = useState(initialValue);
   const [amount, setAmount] = useState(String(Math.max(1, defaultQty || 1)));
 
+  // CR-07: price inputs for fresh/new-demand lines
+  const [sellPrice, setSellPrice] = useState('');
+  const [costPrice, setCostPrice] = useState('');
+
+  // CR-01: inline over-allocation confirm gate
+  const [pendingConfirm, setPendingConfirm] = useState(false);
+
   const selected = sources.find((s) => s.value === value) ?? sources[sources.length - 1];
   const amt = Math.max(0, parseInt(amount, 10) || 0);
   const remaining = selected?.available != null ? selected.available - amt : null;
+  const isFresh = selected?.selection?.kind === 'fresh';
+
+  function handleAddClick() {
+    const opts = isFresh
+      ? { sellPrice: sellPrice === '' ? 0 : Number(sellPrice), costPrice: costPrice === '' ? 0 : Number(costPrice) }
+      : {};
+    const over = selected?.available != null && amt > selected.available;
+    if (over && !pendingConfirm) { setPendingConfirm(true); return; }
+    onAdd(selected.selection, Math.max(1, amt), pendingConfirm ? { ...opts, confirmNegative: true } : opts);
+    setPendingConfirm(false);
+  }
 
   return (
     <div className="bg-gray-50 border-t border-gray-100 px-4 py-3 space-y-2">
@@ -554,7 +581,7 @@ function AllocationForm({ options, availability, defaultQty, t, onAdd }) {
         <select
           data-testid="alloc-source"
           value={value}
-          onChange={(e) => setValue(e.target.value)}
+          onChange={(e) => { setValue(e.target.value); setPendingConfirm(false); }}
           className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-indigo-400"
         >
           {sources.map((s) => (
@@ -573,7 +600,7 @@ function AllocationForm({ options, availability, defaultQty, t, onAdd }) {
             type="number"
             min="1"
             value={amount}
-            onChange={(e) => setAmount(e.target.value)}
+            onChange={(e) => { setAmount(e.target.value); setPendingConfirm(false); }}
             className="w-20 text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
           />
         </label>
@@ -587,10 +614,67 @@ function AllocationForm({ options, availability, defaultQty, t, onAdd }) {
         )}
       </div>
 
+      {/* CR-07: price inputs shown only for fresh/new-demand sources */}
+      {isFresh && (
+        <div className="flex items-center gap-3">
+          <label className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-500">{t.allocSellPrice ?? 'Sell price'}</span>
+            <input
+              data-testid="alloc-sell"
+              type="number"
+              min="0"
+              value={sellPrice}
+              onChange={(e) => setSellPrice(e.target.value)}
+              className="w-20 text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="text-xs font-medium text-gray-500">{t.allocCostPrice ?? 'Cost price'}</span>
+            <input
+              data-testid="alloc-cost"
+              type="number"
+              min="0"
+              value={costPrice}
+              onChange={(e) => setCostPrice(e.target.value)}
+              className="w-20 text-sm px-2 py-1.5 border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400"
+            />
+          </label>
+        </div>
+      )}
+
+      {/* CR-01: inline over-allocation confirm gate */}
+      {pendingConfirm && (
+        <div data-testid="alloc-confirm" className="bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 space-y-2">
+          <p className="text-xs text-amber-700">
+            {(t.allocShortConfirm ?? 'Only {n} available — create demand for {m} more?')
+              .replace('{n}', String(selected.available))
+              .replace('{m}', String(amt - selected.available))}
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              data-testid="alloc-confirm-yes"
+              onClick={handleAddClick}
+              className="flex-1 py-1.5 text-xs font-medium bg-amber-600 text-white rounded-lg hover:bg-amber-700"
+            >
+              {t.allocConfirmYes ?? 'Create demand'}
+            </button>
+            <button
+              type="button"
+              data-testid="alloc-confirm-no"
+              onClick={() => setPendingConfirm(false)}
+              className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
+            >
+              {t.allocConfirmNo ?? 'Cancel'}
+            </button>
+          </div>
+        </div>
+      )}
+
       <button
         type="button"
         data-testid="alloc-add"
-        onClick={() => onAdd(selected.selection, Math.max(1, amt))}
+        onClick={handleAddClick}
         className="w-full py-2 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700"
       >
         {t.allocAdd ?? 'Add'}
