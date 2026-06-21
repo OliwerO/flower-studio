@@ -28,3 +28,7 @@ PRD #324 specifies a fifth event kind, `absorption` (a PO receipt folding stems 
 - The trace surface is correct the moment Variety attrs are present (precondition #327, already landed).
 - When the consumption ledger (T1) lands, `getUsageByVarietyKey` switches its consumption source from `order_line.stockItemId` to the ledger without changing the response shape or the `VarietyTracePanel` contract.
 - ADR-0007's "`order_line.stockItemId` is the authoritative trace link" remains live; #324's ledger will eventually supersede it, but not in T5.
+
+## Mount surfaces extended (2026-06-21)
+
+The same `VarietyTracePanel` + `GET /stock/varieties/:key/usage` surface now also mounts under the **Shortfalls** and **Pending Arrivals** card rows (dashboard + florist), not only the stock-list Variety row. Tapping a row in either card expands the full per-Variety trace, keyed by the row's Variety 4-tuple. The expand state (one open row at a time, lazy-fetch + cache per Variety key) is owned by a shared hook `useVarietyTraceExpand`; both cards consume it via a `fetchVarietyUsage(key)` prop (replacing `ShortfallSummary`'s former ad-hoc orders-only `fetchUsage(stockId)` expand). Pending-Arrivals rows with a legacy/untyped key (`__legacy__|…`) stay non-expandable. No backend, endpoint, or schema change — pure UI reuse of this slice. Absorption still deferred (above); the drift footer is unchanged.
