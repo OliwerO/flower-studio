@@ -43,4 +43,23 @@ describe('DateTag', () => {
     expect(text).not.toMatch(/\d{4}-\d{2}-\d{2}/); // no ISO
     expect(text).not.toMatch(/\+\d+d/);            // no "+3d"
   });
+
+  it('overdue=true renders red regardless of kind (arriving normally = blue)', () => {
+    render(<DateTag date="2026-06-16" kind="arriving" overdue={true} t={t} />);
+    const tag = screen.getByTestId('date-tag');
+    expect(tag.className).toMatch(/red/);
+    expect(tag.className).not.toMatch(/blue/);
+  });
+
+  it('overdue=false keeps the kind colour (arriving = blue)', () => {
+    render(<DateTag date="2026-07-01" kind="arriving" overdue={false} t={t} />);
+    expect(screen.getByTestId('date-tag').className).toMatch(/blue/);
+  });
+
+  it('compact drops the year (DD.MM only)', () => {
+    render(<DateTag date="2026-07-15" kind="arrived" compact={true} t={t} />);
+    const tag = screen.getByTestId('date-tag');
+    expect(tag.textContent).toBe('15.07');
+    expect(tag.textContent).not.toContain('2026');
+  });
 });

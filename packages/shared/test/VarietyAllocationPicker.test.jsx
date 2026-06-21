@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
-import VarietyAllocationPicker from '../components/VarietyAllocationPicker.jsx';
+import VarietyAllocationPicker, { buildSources } from '../components/VarietyAllocationPicker.jsx';
 
 const t = {
   pickerSearchPlaceholder: 'Search…',
@@ -303,5 +303,26 @@ describe('VarietyAllocationPicker — Order fresh for all', () => {
       requiredBy="2026-05-12" qty={1} role="florist" t={t}
       onSelectStock={() => {}} onClose={() => {}} />);
     expect(screen.queryByText(t.pickerOrderFreshAll || 'Order fresh for all')).not.toBeInTheDocument();
+  });
+});
+
+describe('buildSources — S1.5 future-only PO + demand-netted free cap', () => {
+  it('incoming PO free cap nets existing demand', () => {
+    const avail = { incoming: 7, effective: 0, net: -7, arrivals: [{ date: '2026-07-01', qty: 7, overdue: false }] };
+    const src = buildSources([], avail, {}).find(s => s.value === 'incoming');
+    expect(src.available).toBe(0);            // demand eats the PO → 0 free
+  });
+
+  it('omits the incoming PO source when the PO is overdue', () => {
+    const avail = { incoming: 7, effective: 0, net: -7, arrivals: [{ date: '2026-06-16', qty: 7, overdue: true }] };
+    expect(buildSources([], avail, {}).find(s => s.value === 'incoming')).toBeUndefined();
+  });
+
+  it('incoming PO with free capacity surfaces the correct available count', () => {
+    // effective=3 means net(-7) + incoming(10) = 3 free stems
+    const avail = { incoming: 10, effective: 3, net: -7, arrivals: [{ date: '2026-07-01', qty: 10, overdue: false }] };
+    const src = buildSources([], avail, {}).find(s => s.value === 'incoming');
+    expect(src).toBeDefined();
+    expect(src.available).toBe(3);
   });
 });

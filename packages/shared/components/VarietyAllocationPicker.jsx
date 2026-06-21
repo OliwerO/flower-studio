@@ -502,12 +502,19 @@ export function buildSources(options, availability, t = {}) {
       });
     }
   }
-  if ((availability?.incoming ?? 0) > 0) {
-    const d = availability.arrivals?.[0]?.date;
+  const firstArr = availability?.arrivals?.[0];
+  // Only surface the incoming PO source when the first arrival is future-dated
+  // (D-D, 2026-06-21). Overdue arrivals still count in effective/incoming for
+  // informational purposes but cannot be offered as a source — the owner
+  // should create a new PO or new demand instead.
+  if ((availability?.incoming ?? 0) > 0 && firstArr && !firstArr.overdue) {
     list.push({
       value: 'incoming',
-      label: `${t.srcIncoming ?? 'From incoming PO'} +${availability.incoming}${d ? ` → ${formatDateDMY(d)}` : ''}`,
-      available: availability.incoming,
+      label: `${t.srcIncoming ?? 'From incoming PO'} +${availability.incoming}${firstArr.date ? ` → ${formatDateDMY(firstArr.date)}` : ''}`,
+      // Net the existing demand against the PO: free = min(incoming, effective).
+      // effective = net + incoming, and net can be negative when demand exceeds
+      // on-hand. Math.max(0,...) ensures we never show negative free capacity.
+      available: Math.max(0, Math.min(availability.incoming, availability.effective ?? 0)),
       // A PO already covers this demand → still create a fresh demand entry at
       // the order's needed-by date; the coverage engine matches it to the PO.
       selection: { kind: 'fresh' },
