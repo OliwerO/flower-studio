@@ -19,6 +19,7 @@
 import { useMemo, useState } from 'react';
 import { allocateVarietyCoverage, arrivalsForVariety } from '../utils/stockMath.js';
 import DateTag from './DateTag.jsx';
+import { STOCK_CARD_GRID_MOBILE } from './stockRowGrid.js';
 
 export default function ShortfallSummary({
   groups,
@@ -28,6 +29,8 @@ export default function ShortfallSummary({
   onVarietyClick,
   fetchUsage,
   today,
+  gridCols = STOCK_CARD_GRID_MOBILE,
+  splitType = false,
 }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [collapsed, setCollapsed] = useState(false);
@@ -100,6 +103,8 @@ export default function ShortfallSummary({
                 loadingId={loadingId}
                 onToggleRow={toggleRow}
                 onVarietyClick={onVarietyClick}
+                gridCols={gridCols}
+                splitType={splitType}
               />
             </li>
           ))}
@@ -109,7 +114,7 @@ export default function ShortfallSummary({
   );
 }
 
-function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick }) {
+function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick, gridCols, splitType }) {
   const total = rows.reduce((s, r) => s + r.qty, 0);
 
   return (
@@ -137,20 +142,50 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                 onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
                 className="w-full text-left px-2 py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
               >
-                <span className="flex items-baseline justify-between text-sm">
-                  <span className="flex items-baseline gap-2 truncate">
-                    <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
-                    {r.type_name && (
-                      <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>
-                    )}
-                    {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
-                    {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
-                    {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
-                    {!r.type_name && !r.colour && !r.size_cm && !r.cultivar && (
-                      <span className="font-medium text-gray-400 italic">—</span>
-                    )}
-                  </span>
-                  <span className="flex items-baseline gap-2 ml-2 shrink-0">
+                {/* CR-05: grid layout so Type / Variety / amount columns align with
+                    PendingArrivalsPanel and (on dashboard) BatchArrivalList flat table.
+                    col 1 = marker (▸ chevron), col 2 = Type or full identity,
+                    col 3 = rest-of-identity (splitType only), col 4 = amount, col 5 = filler. */}
+                <span
+                  className="grid items-baseline gap-1.5 text-sm"
+                  style={{ gridTemplateColumns: gridCols }}
+                >
+                  {/* col 1: marker — chevron */}
+                  <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+
+                  {splitType ? (
+                    <>
+                      {/* col 2: Type */}
+                      <span className="font-semibold text-gray-900 shrink-0 min-w-0">
+                        {r.type_name || '—'}
+                      </span>
+                      {/* col 3: Colour / Size / Cultivar */}
+                      <span className="flex items-baseline gap-1.5 min-w-0 truncate">
+                        {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
+                        {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
+                        {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
+                        {!r.colour && !r.size_cm && !r.cultivar && (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    /* col 2: full identity in one cell (mobile) */
+                    <span className="flex items-baseline gap-2 min-w-0 truncate">
+                      {r.type_name && (
+                        <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>
+                      )}
+                      {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
+                      {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
+                      {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
+                      {!r.type_name && !r.colour && !r.size_cm && !r.cultivar && (
+                        <span className="font-medium text-gray-400 italic">—</span>
+                      )}
+                    </span>
+                  )}
+
+                  {/* col 4 (dashboard) / col 3 (mobile): amount — right-aligned */}
+                  <span className="flex items-baseline justify-end gap-2 shrink-0 text-right">
                     {/* CR-39: a late PO is signalled (amber) but does NOT clear the shortfall. */}
                     {r.latePoQty > 0 && (
                       <span
@@ -165,6 +200,9 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                       −{r.qty} {t.stems}
                     </span>
                   </span>
+
+                  {/* col 5 (dashboard only): filler — keeps amount in the right column */}
+                  {splitType && <span aria-hidden="true" />}
                 </span>
               </button>
               {isOpen && (

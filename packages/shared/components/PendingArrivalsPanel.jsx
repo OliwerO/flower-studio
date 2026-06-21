@@ -19,6 +19,7 @@
 import { useMemo, useState } from 'react';
 import DateTag from './DateTag.jsx';
 import { byDateAsc } from '../utils/sortByDate.js';
+import { STOCK_CARD_GRID_MOBILE } from './stockRowGrid.js';
 
 /** Bucket every pending PO line by its arrival date, then by Variety within a date. */
 function bucketByDate(pendingPO, stockById) {
@@ -57,7 +58,7 @@ function bucketByDate(pendingPO, stockById) {
     .sort(byDateAsc);
 }
 
-export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {} }) {
+export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, gridCols = STOCK_CARD_GRID_MOBILE, splitType = false }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const stockById = useMemo(() => {
@@ -111,21 +112,49 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                   <li
                     key={f.key}
                     data-testid="pending-arrival-row"
-                    className="flex items-baseline justify-between text-sm px-2 py-1"
+                    className="grid items-baseline gap-1.5 text-sm px-2 py-1"
+                    style={{ gridTemplateColumns: gridCols }}
                   >
-                    <span className="flex items-baseline gap-2 truncate min-w-0">
-                      {f.type
-                        ? <>
-                            <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
+                    {/* CR-05: col 1 — marker (empty — aligns Type-edge with ShortfallSummary's ▸) */}
+                    <span aria-hidden="true" />
+
+                    {f.type ? (
+                      splitType ? (
+                        <>
+                          {/* col 2: Type */}
+                          <span className="font-semibold text-gray-900 shrink-0 min-w-0">{f.type}</span>
+                          {/* col 3: Colour / Size / Cultivar */}
+                          <span className="flex items-baseline gap-1.5 min-w-0 truncate">
                             {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
                             {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
                             {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
-                          </>
-                        : <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>}
-                    </span>
-                    <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0 ml-2">
+                            {!f.colour && !f.size && !f.cultivar && <span className="text-gray-400">—</span>}
+                          </span>
+                        </>
+                      ) : (
+                        /* col 2: full identity in one cell (mobile) */
+                        <span className="flex items-baseline gap-2 min-w-0 truncate">
+                          <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
+                          {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
+                          {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
+                          {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
+                        </span>
+                      )
+                    ) : (
+                      /* col 2 (+ col 3 when splitType): legacy fallback name */
+                      <>
+                        <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>
+                        {splitType && <span />}
+                      </>
+                    )}
+
+                    {/* col 4 (dashboard) / col 3 (mobile): amount — right-aligned */}
+                    <span className="text-indigo-700 font-semibold tabular-nums text-right">
                       +{f.qty}
                     </span>
+
+                    {/* col 5 (dashboard only): filler */}
+                    {splitType && <span aria-hidden="true" />}
                   </li>
                 ))}
               </ul>

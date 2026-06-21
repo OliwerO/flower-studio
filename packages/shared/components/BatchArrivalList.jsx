@@ -24,6 +24,12 @@ import { byDateDesc } from '../utils/sortByDate.js';
 // Coral", "Sarah Bernhardt") render in full; long names wrap a second line
 // rather than truncating. `arrived` shows the newest receive date of the
 // merged row — visible label + sortable, even though Tag-per-Batch is gone.
+//
+// CR-05 lock-step note: the FIRST THREE column tokens here (6rem, minmax(9rem,1.5fr),
+// 3.5rem) are mirrored as the Type / Variety / amount columns in
+// packages/shared/components/stockRowGrid.js (STOCK_CARD_GRID_DASHBOARD).
+// If you change these widths, update stockRowGrid.js in the same PR so the
+// ShortfallSummary and PendingArrivalsPanel cards stay aligned with this table.
 const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
 
 const COLS = [

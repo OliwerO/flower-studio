@@ -124,3 +124,10 @@ export { default as VarietyTracePanel } from './components/VarietyTracePanel.jsx
 
 // Write-off Batch picker — Demand Entries excluded, default oldest, FIFO (issue #289)
 export { default as WriteOffBatchPicker } from './components/WriteOffBatchPicker.jsx';
+
+// CR-05: shared column-grid constants for dashboard stock panel alignment.
+// Dashboard passes STOCK_CARD_GRID_DASHBOARD + splitType to ShortfallSummary
+// and PendingArrivalsPanel so their Type/Variety/amount columns align with
+// BatchArrivalList. Mobile layout uses the default (STOCK_CARD_GRID_MOBILE)
+// and no splitType prop.
+export { STOCK_CARD_GRID_DASHBOARD, STOCK_CARD_GRID_MOBILE } from './components/stockRowGrid.js';
