@@ -25,8 +25,15 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t
 
   const sorted = hasEvents ? [...events].sort(byDateAsc) : [];
 
+  const dated = sorted.filter((e) => e.date);
+  let running = 0;
+  const balancePts = dated.length
+    ? [{ balance: 0 }, ...dated.map((e) => { running += (e.qty ?? e.quantity ?? 0); return { balance: running }; })]
+    : [];
+
   return (
     <div>
+      <BalanceSparkline points={balancePts} t={t} />
       {hasEvents ? (
         <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
           {sorted.map((entry, i) => (
@@ -91,6 +98,34 @@ function trailDetail(entry, t) {
     }
     default:         return null;
   }
+}
+
+function BalanceSparkline({ points, t }) {
+  if (!points || points.length < 2) return null;
+  const W = 320, H = 64, PAD = 6;
+  const ys = points.map((p) => p.balance);
+  const yMin = Math.min(0, ...ys);
+  const yMax = Math.max(0, ...ys);
+  const yRange = Math.max(1, yMax - yMin);
+  const xStep = points.length > 1 ? (W - PAD * 2) / (points.length - 1) : 0;
+  const px = (i) => PAD + xStep * i;
+  const py = (v) => PAD + (1 - (v - yMin) / yRange) * (H - PAD * 2);
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${px(i).toFixed(1)} ${py(p.balance).toFixed(1)}`).join(' ');
+  const zeroY = py(0);
+  const lastBal = ys[ys.length - 1];
+  return (
+    <div data-testid="trace-sparkline" className="bg-gradient-to-b from-blue-50/40 to-white px-3 py-2 border-b border-gray-100">
+      <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-gray-500 mb-1">
+        <span>{t.traceBalance ?? 'Balance'}</span>
+        <span className={`tabular-nums font-semibold ${lastBal < 0 ? 'text-red-600' : 'text-gray-700'}`}>{lastBal} {t.stems}</span>
+      </div>
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-16" preserveAspectRatio="none">
+        {yMin < 0 && yMax >= 0 && (<line x1={PAD} x2={W - PAD} y1={zeroY} y2={zeroY} stroke="#e5e7eb" strokeWidth="1" strokeDasharray="3 3" />)}
+        <path d={path} fill="none" stroke={lastBal < 0 ? '#ef4444' : '#10b981'} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        {points.map((p, i) => (<circle key={i} cx={px(i)} cy={py(p.balance)} r="2" fill={p.balance < 0 ? '#ef4444' : '#10b981'} />))}
+      </svg>
+    </div>
+  );
 }
 
 function TraceRow({ entry, t }) {

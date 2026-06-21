@@ -61,4 +61,18 @@ describe('VarietyTracePanel', () => {
     render(<VarietyTracePanel events={[]} unaccountedStems={-4} t={t} />);
     expect(screen.getByTestId('unaccounted-footer')).toHaveTextContent('-4 stems');
   });
+
+  it('renders a balance sparkline when there is at least one dated event', () => {
+    const events = [
+      { type: 'purchase', qty: 25, date: '2026-06-18' },
+      { type: 'order', qty: -30, date: '2026-06-20' },
+    ];
+    render(<VarietyTracePanel events={events} unaccountedStems={-5} t={{ stems: 'stems', traceBalance: 'Balance', traceTypeOrder: 'Order', traceTypePurchase: 'Purchase' }} />);
+    expect(screen.getByTestId('trace-sparkline')).toBeInTheDocument();
+  });
+
+  it('omits the sparkline when no event is dated', () => {
+    render(<VarietyTracePanel events={[{ type: 'premade', qty: -6 }]} unaccountedStems={-6} t={{ stems: 'stems', traceTypePremade: 'Premade' }} />);
+    expect(screen.queryByTestId('trace-sparkline')).toBeNull();
+  });
 });
