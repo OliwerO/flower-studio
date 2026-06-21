@@ -220,6 +220,7 @@ git commit -m "feat(stock): shared useVarietyTraceExpand hook for card row-trace
 - [ ] **Step 1: Write the failing test**
 
 ```jsx
+// @vitest-environment jsdom
 // packages/shared/test/ShortfallSummary.test.jsx
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
@@ -380,6 +381,7 @@ git commit -m "feat(stock): shortfall row expands to full VarietyTracePanel (PRD
 - [ ] **Step 1: Write the failing test**
 
 ```jsx
+// @vitest-environment jsdom
 // packages/shared/test/PendingArrivalsPanel.test.jsx
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi } from 'vitest';
