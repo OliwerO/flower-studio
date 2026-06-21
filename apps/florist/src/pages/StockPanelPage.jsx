@@ -591,6 +591,7 @@ export default function StockPanelPage() {
                         <VarietyListItem
                           variety={group}
                           reservations={reservationsMap}
+                          pendingPO={pendingPO}
                           hideType={false}
                           isOwner={role === 'owner'}
                           expanded={expandedKey === group.key}

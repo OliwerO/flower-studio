@@ -181,33 +181,41 @@ export function getVarietyAvailability(rows = [], reservations = new Map(), arri
     getVarietyTotals(rows, reservations);
 
   const sortedArrivals = (arrivals || [])
-    .map((a) => ({ date: a.date, qty: Number(a.qty) || 0 }))
+    .map((a) => ({ date: a.date, qty: Number(a.qty) || 0, overdue: a.overdue ?? false }))
     .filter((a) => a.qty > 0)
     .sort((a, b) => String(a.date).localeCompare(String(b.date)));
 
   const incoming = sortedArrivals.reduce((s, a) => s + a.qty, 0);
 
-  return { onHand, committed, reserved, incoming, net, effective: net + incoming, arrivals: sortedArrivals };
+  return { onHand, committed, reserved, incoming, net, available: net + reserved, effective: net + incoming, arrivals: sortedArrivals };
 }
 
 /**
- * arrivalsForVariety — collect a Variety's pending PO arrivals as [{date, qty}]
+ * arrivalsForVariety — collect a Variety's pending PO arrivals as [{date, qty, overdue}]
  * from the /stock/pending-po map (keyed by stockId). Mirrors the shape consumed
  * by getVarietyAvailability + allocateVarietyCoverage so the picker and the
  * stock-panel shortfall read incoming supply the same way.
  *
  * @param {Array<{id}>} rows                one Variety's stock rows
  * @param {Object} pendingPO               { stockId: { ordered, plannedDate, pos: [...] } }
- * @returns {Array<{date, qty}>}
+ * @param {string} [todayIso]              ISO date string (YYYY-MM-DD) for overdue tagging.
+ *                                          When provided, arrivals with date < todayIso are
+ *                                          tagged overdue:true. Omit to keep overdue:false
+ *                                          (backward-compatible default).
+ * @returns {Array<{date, qty, overdue}>}
  */
-export function arrivalsForVariety(rows = [], pendingPO = {}) {
+export function arrivalsForVariety(rows = [], pendingPO = {}, todayIso) {
   const out = [];
   for (const row of rows || []) {
     const info = pendingPO?.[row.id];
     if (!info) continue;
     for (const p of info.pos ?? []) {
       const qty = Number(p.quantity) || 0;
-      if (qty > 0) out.push({ date: p.plannedDate || info.plannedDate || null, qty });
+      if (qty > 0) {
+        const date = p.plannedDate || info.plannedDate || null;
+        const overdue = todayIso ? String(date) < String(todayIso) : false;
+        out.push({ date, qty, overdue });
+      }
     }
   }
   return out;

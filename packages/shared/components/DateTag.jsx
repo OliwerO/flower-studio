@@ -8,12 +8,14 @@ import { formatDateDMY } from '../utils/formatDate.js';
  * Props:
  *   date    — ISO 'YYYY-MM-DD' (or null/'' → undated marker)
  *   kind    — 'arrived' | 'needed' | 'arriving' (drives the colour)
+ *   overdue — true → render red regardless of kind (D-E, 2026-06-21).
+ *             Overdue arrivals keep their semantic kind but signal urgency in red.
  *   compact — true → DD.MM (drop the year) for tight inline chips;
  *             default → DD.MM.YYYY
  *   t       — strings ({ undatedShort })
  *
  * Colour legend (D6): arrived = grey (batch), needed = red (demand),
- * arriving = blue (incoming PO).
+ * arriving = blue (incoming PO). When overdue=true, any kind renders red.
  */
 const KIND_CLASS = {
   arrived:  'bg-gray-100 text-gray-600',
@@ -21,7 +23,9 @@ const KIND_CLASS = {
   arriving: 'bg-blue-100 text-blue-700',
 };
 
-export default function DateTag({ date, kind = 'arrived', compact = false, t = {} }) {
+const OVERDUE_CLASS = 'bg-red-100 text-red-700';
+
+export default function DateTag({ date, kind = 'arrived', overdue = false, compact = false, t = {} }) {
   const full = formatDateDMY(date); // '' when no/invalid date
   const label = !full
     ? (t.undatedShort ?? '—')
@@ -29,7 +33,7 @@ export default function DateTag({ date, kind = 'arrived', compact = false, t = {
       ? full.slice(0, 5) // 'DD.MM'
       : full;            // 'DD.MM.YYYY'
 
-  const colour = KIND_CLASS[kind] ?? KIND_CLASS.arrived;
+  const colour = overdue ? OVERDUE_CLASS : (KIND_CLASS[kind] ?? KIND_CLASS.arrived);
 
   return (
     <span

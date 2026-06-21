@@ -90,10 +90,10 @@ export default function Step2Bouquet({
     : null;
   const yEnabled = useStockYModelFlag();
   // Determine if the order is for a future date (not today).
+  const todayIso = new Date().toISOString().split('T')[0];
   const isFutureOrder = (() => {
     if (!requiredBy) return false;
-    const today = new Date().toISOString().split('T')[0];
-    return requiredBy > today;
+    return requiredBy > todayIso;
   })();
   const { targetMarkup } = useConfigLists();
   const { showToast } = useToast();
@@ -105,8 +105,12 @@ export default function Step2Bouquet({
   // so the owner can grab a flower that's on order instead of typing it again
   // and creating a duplicate stock card.
   const [pendingPO, setPendingPO] = useState({});
+  const [reservations, setReservations] = useState(new Map());
   useEffect(() => {
     client.get('/stock/pending-po').then(r => setPendingPO(r.data || {})).catch(() => {});
+    client.get('/stock/premade-committed').then(r => {
+      setReservations(new Map(Object.entries(r.data || {}).map(([id, v]) => [id, v.qty || 0])));
+    }).catch(() => {});
   }, []);
   // Y-model picker state — opens when flag-on AND a Variety has >1 Stock Items
   const [yPickerOpen, setYPickerOpen] = useState(false);
@@ -203,7 +207,7 @@ export default function Step2Bouquet({
         rows:        g.rows,
         // S3.2-i: one labelled availability model (CR-23/28) — onHand/committed/
         // reserved/net + incoming/effective; the catalog hides effective ≤ 0 (D3).
-        availability: getVarietyAvailability(g.rows, new Map(), arrivalsForVariety(g.rows, pendingPO)),
+        availability: getVarietyAvailability(g.rows, reservations, arrivalsForVariety(g.rows, pendingPO, todayIso)),
         // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
         sell:        resolveVarietySell(g.rows, pendingPO),
         inCart,
@@ -212,7 +216,7 @@ export default function Step2Bouquet({
     // Hide fully-committed Varieties (effective ≤ 0) by default; name search (q)
     // still reaches them (deliberate over-promise → buy signal). Cart items stay.
     .filter(g => !!q || g.inCart || g.availability.effective > 0);
-  }, [yEnabled, adaptedStock, visibleStock, flowerQuery, pendingPO, orderLines]);
+  }, [yEnabled, adaptedStock, visibleStock, flowerQuery, pendingPO, orderLines, reservations, todayIso]);
 
   // CR-27: cart-line availability is the whole Variety's net, not the single
   // bound sub-row — map every stock row id → its Variety availability.
@@ -220,11 +224,11 @@ export default function Step2Bouquet({
     if (!yEnabled) return {};
     const map = {};
     for (const [, group] of groupByVariety(adaptedStock)) {
-      const avail = getVarietyAvailability(group.rows, new Map(), arrivalsForVariety(group.rows, pendingPO));
+      const avail = getVarietyAvailability(group.rows, reservations, arrivalsForVariety(group.rows, pendingPO, todayIso));
       for (const r of group.rows) map[r.id] = avail;
     }
     return map;
-  }, [yEnabled, adaptedStock, pendingPO]);
+  }, [yEnabled, adaptedStock, pendingPO, reservations, todayIso]);
 
   function addOne(stockItem, amount = 1) {
     const add = Math.max(1, Number(amount) || 1);
@@ -710,11 +714,12 @@ export default function Step2Bouquet({
       {yEnabled && yPickerOpen && (
         <VarietyAllocationPicker
           stockItems={yPickerStockItems}
-          reservations={new Map()}
+          reservations={reservations}
           pendingPO={pendingPO}
           requiredBy={requiredBy || null}
           qty={1}
           role="owner"
+          todayIso={todayIso}
           t={{
             pickerSearchPlaceholder: t.pickerSearchPlaceholder,
             pickerCreateNew:         t.pickerCreateNew,

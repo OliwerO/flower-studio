@@ -65,25 +65,25 @@ describe('getVarietyAvailability', () => {
     );
     expect(a.incoming).toBe(8);
     expect(a.arrivals).toEqual([
-      { date: '2026-06-16', qty: 3 },
-      { date: '2026-06-20', qty: 5 },
+      { date: '2026-06-16', qty: 3, overdue: false },
+      { date: '2026-06-20', qty: 5, overdue: false },
     ]);
   });
 });
 
 describe('arrivalsForVariety', () => {
-  it('flattens pending-PO pos rows into [{date, qty}]', () => {
+  it('flattens pending-PO pos rows into [{date, qty, overdue}]', () => {
     const rows = [{ id: 'a' }, { id: 'b' }];
     const pendingPO = {
       a: { ordered: 8, plannedDate: '2026-06-16', pos: [{ quantity: 8, plannedDate: '2026-06-16' }] },
     };
-    expect(arrivalsForVariety(rows, pendingPO)).toEqual([{ date: '2026-06-16', qty: 8 }]);
+    expect(arrivalsForVariety(rows, pendingPO)).toEqual([{ date: '2026-06-16', qty: 8, overdue: false }]);
   });
 
   it('falls back to info.plannedDate when a pos line has no plannedDate', () => {
     const rows = [{ id: 'a' }];
     const pendingPO = { a: { plannedDate: '2026-06-16', pos: [{ quantity: 5 }] } };
-    expect(arrivalsForVariety(rows, pendingPO)).toEqual([{ date: '2026-06-16', qty: 5 }]);
+    expect(arrivalsForVariety(rows, pendingPO)).toEqual([{ date: '2026-06-16', qty: 5, overdue: false }]);
   });
 
   it('skips rows with no pending PO and pos lines with qty <= 0', () => {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getEffectiveStock, hasStockShortfall, getVarietyTotals } from '../utils/stockMath.js';
+import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
 
 // Model (see stockMath.js header): stock is deducted at order creation, so
 // Current Quantity already reflects every pending order's demand. `committed`
@@ -131,5 +131,47 @@ describe('getVarietyTotals — Variety bucket aggregation per ADR-0005', () => {
   it('handles empty rows array', () => {
     expect(getVarietyTotals([], new Map()))
       .toEqual({ onHand: 0, planned: 0, reservedForPremades: 0, net: 0, reclaimable: 0 });
+  });
+});
+
+describe('getVarietyAvailability — S1.1 available bucket', () => {
+  it('getVarietyAvailability exposes available = net + reserved', () => {
+    const rows = [{ id: 'b', current_quantity: 28 }];
+    const reservations = new Map([['b', 6]]);
+    const a = getVarietyAvailability(rows, reservations, []);
+    expect(a.net).toBe(22);        // grabbable now (onHand 28 − reserved 6)
+    expect(a.reserved).toBe(6);
+    expect(a.available).toBe(28);  // net + reserved (reclaimable premade)
+  });
+});
+
+describe('arrivalsForVariety — S1.2 overdue tagging', () => {
+  it('arrivalsForVariety tags overdue when planned date is in the past', () => {
+    const rows = [{ id: 's' }];
+    const pendingPO = { s: { pos: [{ quantity: 20, plannedDate: '2026-06-16' }] } };
+    const [arr] = arrivalsForVariety(rows, pendingPO, '2026-06-21');
+    expect(arr).toMatchObject({ qty: 20, date: '2026-06-16', overdue: true });
+  });
+
+  it('arrivalsForVariety tags overdue:false for future dates', () => {
+    const rows = [{ id: 's' }];
+    const pendingPO = { s: { pos: [{ quantity: 10, plannedDate: '2026-07-01' }] } };
+    const [arr] = arrivalsForVariety(rows, pendingPO, '2026-06-21');
+    expect(arr).toMatchObject({ qty: 10, date: '2026-07-01', overdue: false });
+  });
+
+  it('arrivalsForVariety without todayIso keeps overdue:false (existing callers)', () => {
+    const rows = [{ id: 's' }];
+    const pendingPO = { s: { pos: [{ quantity: 5, plannedDate: '2026-01-01' }] } };
+    const [arr] = arrivalsForVariety(rows, pendingPO);
+    expect(arr.overdue).toBe(false);
+  });
+
+  it('getVarietyAvailability preserves overdue flag through arrivals map', () => {
+    const rows = [{ id: 's', current_quantity: -7 }];
+    const pendingPO = { s: { pos: [{ quantity: 7, plannedDate: '2026-06-16' }] } };
+    const rawArrivals = arrivalsForVariety(rows, pendingPO, '2026-06-21');
+    const a = getVarietyAvailability(rows, new Map(), rawArrivals);
+    expect(a.arrivals[0].overdue).toBe(true);
   });
 });

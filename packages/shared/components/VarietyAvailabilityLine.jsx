@@ -3,16 +3,19 @@ import DateTag from './DateTag.jsx';
 /**
  * VarietyAvailabilityLine — the ONE labelled availability line for a Variety,
  * shared by the bouquet catalog list (Step2Bouquet, florist + dashboard) and
- * the picker. Replaces the old "three unlabelled numbers" (42 net · 50 batch ·
- * 8 demand) with named buckets that visibly add up (CR-23/28):
+ * the picker. Shows the owner-decided availability model (D-A, D-B, 2026-06-21):
  *
- *   On hand X · Committed Y · Reserved Z · Net N   [ +I <DateTag arriving> · Effective E ]
+ *   On hand {net} [· {reserved} Premade · Available {available}] [· +{incoming} <DateTag> · Effective {effective}]
  *
- * onHand − committed − reserved = net (free now); net + incoming = effective
- * (free once POs land). Zero-value buckets (committed/reserved/incoming) hide to
- * cut clutter; On hand + Net always show. Effective shows only when incoming > 0
- * (otherwise it equals Net). A negative Net is amber — a genuine shortfall /
- * buy signal (D5: the word is "Committed", never "planned").
+ * Where:
+ *   On hand   = net = the grabbable-now value (onHand − committed − reserved)
+ *   Premade   = reserved stems locked in premade bouquets (reclaimable)
+ *   Available = net + reserved (full capacity if premades are dissolved)
+ *   Effective = net + incoming (once pending PO lands)
+ *
+ * Premade/Available shown only when reserved > 0 (cut clutter when no premades).
+ * Effective/incoming shown only when incoming > 0 (otherwise equals net).
+ * A negative On hand value is amber — a genuine shortfall / buy signal.
  *
  * Colours use the default Tailwind palette only (no app-specific tokens) since
  * this renders in both the florist and dashboard apps.
@@ -22,17 +25,16 @@ import DateTag from './DateTag.jsx';
  */
 export default function VarietyAvailabilityLine({ availability, t = {} }) {
   const {
-    onHand = 0,
-    committed = 0,
-    reserved = 0,
-    incoming = 0,
     net = 0,
+    reserved = 0,
+    available = 0,
+    incoming = 0,
     effective = 0,
     arrivals = [],
   } = availability || {};
 
-  const firstArrival = arrivals[0]?.date ?? null;
-  const netClass = net < 0 ? 'text-amber-600' : 'text-gray-900';
+  const firstArrival = arrivals[0] ?? null;
+  const onHandClass = net < 0 ? 'text-amber-600' : 'text-gray-900';
 
   return (
     <div
@@ -40,23 +42,19 @@ export default function VarietyAvailabilityLine({ availability, t = {} }) {
       className="text-sm text-gray-500 flex flex-wrap items-center gap-x-1.5"
     >
       <span>
-        <span className="font-medium text-gray-900">{onHand}</span> {t.onHand ?? 'On hand'}
+        <span data-testid="avail-onhand" className={`font-semibold ${onHandClass}`}>{net}</span>{' '}
+        {t.onHand ?? 'On hand'}
       </span>
-      {committed > 0 && (
-        <span>· {committed} {t.committed ?? 'Committed'}</span>
-      )}
       {reserved > 0 && (
-        <span>· {reserved} {t.reserved ?? 'Reserved'}</span>
+        <>
+          <span>· {reserved} {t.premade ?? 'Premade'}</span>
+          <span>· <span data-testid="avail-available" className="font-medium text-gray-900">{available}</span> {t.availTotal ?? 'Available'}</span>
+        </>
       )}
-      <span>
-        ·{' '}
-        <span data-testid="avail-net" className={`font-semibold ${netClass}`}>{net}</span>{' '}
-        {t.net ?? 'Net'}
-      </span>
       {incoming > 0 && (
         <span data-testid="avail-incoming" className="flex items-center gap-x-1">
           · <span className="text-blue-600 font-medium">+{incoming}</span>
-          {firstArrival && <DateTag date={firstArrival} kind="arriving" compact t={t} />}
+          {firstArrival?.date && <DateTag date={firstArrival.date} kind="arriving" overdue={firstArrival.overdue} compact t={t} />}
           · <span className="font-medium text-gray-900">{effective}</span> {t.effective ?? 'Effective'}
         </span>
       )}

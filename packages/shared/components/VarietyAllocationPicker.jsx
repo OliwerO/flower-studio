@@ -50,6 +50,7 @@ export default function VarietyAllocationPicker({
   qty = 1,
   role,
   t,
+  todayIso = new Date().toISOString().slice(0, 10),
   onSelectStock,
   onCreateVariety,
   premadesByStockId,
@@ -88,7 +89,7 @@ export default function VarietyAllocationPicker({
       const availability = getVarietyAvailability(
         group.rows,
         reservations,
-        arrivalsForVariety(group.rows, pendingPO),
+        arrivalsForVariety(group.rows, pendingPO, todayIso),
       );
       const displayName = varietyDisplayName(group);
 
@@ -111,7 +112,7 @@ export default function VarietyAllocationPicker({
       visible.push({ ...group, displayName, availability, totalQty: availability.net });
     }
     return visible;
-  }, [stockItems, reservations, pendingPO, needle]);
+  }, [stockItems, reservations, pendingPO, needle, todayIso]);
 
   // Build a lookup map from id → original stockItem row for click handlers.
   const stockById = useMemo(() => {
@@ -134,7 +135,7 @@ export default function VarietyAllocationPicker({
     const availability = getVarietyAvailability(
       group.rows,
       reservations,
-      arrivalsForVariety(group.rows, pendingPO),
+      arrivalsForVariety(group.rows, pendingPO, todayIso),
     );
 
     const engineRows = group.rows.map((r) => ({
@@ -147,7 +148,7 @@ export default function VarietyAllocationPicker({
     const raw = stockAllocationEngine(engineRows, reservations, requiredBy, qty);
     const options = collapseBatchTiers(raw, stockById, qty, t);
     return { group, availability, options };
-  }, [expandedKey, allVarieties, reservations, pendingPO, requiredBy, qty, stockById, t]);
+  }, [expandedKey, allVarieties, reservations, pendingPO, requiredBy, qty, stockById, t, todayIso]);
 
   const isOwner = role === 'owner';
 
@@ -502,12 +503,19 @@ export function buildSources(options, availability, t = {}) {
       });
     }
   }
-  if ((availability?.incoming ?? 0) > 0) {
-    const d = availability.arrivals?.[0]?.date;
+  const firstArr = availability?.arrivals?.[0];
+  // Only surface the incoming PO source when the first arrival is future-dated
+  // (D-D, 2026-06-21). Overdue arrivals still count in effective/incoming for
+  // informational purposes but cannot be offered as a source — the owner
+  // should create a new PO or new demand instead.
+  if ((availability?.incoming ?? 0) > 0 && firstArr && !firstArr.overdue) {
     list.push({
       value: 'incoming',
-      label: `${t.srcIncoming ?? 'From incoming PO'} +${availability.incoming}${d ? ` → ${formatDateDMY(d)}` : ''}`,
-      available: availability.incoming,
+      label: `${t.srcIncoming ?? 'From incoming PO'} +${availability.incoming}${firstArr.date ? ` → ${formatDateDMY(firstArr.date)}` : ''}`,
+      // Net the existing demand against the PO: free = min(incoming, effective).
+      // effective = net + incoming, and net can be negative when demand exceeds
+      // on-hand. Math.max(0,...) ensures we never show negative free capacity.
+      available: Math.max(0, Math.min(availability.incoming, availability.effective ?? 0)),
       // A PO already covers this demand → still create a fresh demand entry at
       // the order's needed-by date; the coverage engine matches it to the PO.
       selection: { kind: 'fresh' },

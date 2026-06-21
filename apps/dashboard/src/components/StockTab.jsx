@@ -945,6 +945,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                         <VarietyListItem
                           variety={group}
                           reservations={reservationsMap}
+                          pendingPO={pendingPO}
                           hideType={false}
                           isOwner={true}
                           expanded={expandedKey === group.key}

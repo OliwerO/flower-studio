@@ -789,6 +789,8 @@ const en = {
   planned:               'Planned',
   reserved:              'Reserved',
   net:                   'Net',
+  premade:               'Premade',
+  availTotal:            'Available',
   incoming:              'Incoming',
   effective:             'Effective',
   // Picker allocation form (S3.2-ii)
@@ -1607,8 +1609,10 @@ const ru = {
   planned:               'В планах',
   reserved:              'В премейдах',
   net:                   'Чистый',
+  premade:               'Премейд',
+  availTotal:            'Доступно',
   incoming:              'Поступает',
-  effective:             'Доступно',
+  effective:             'Будет',
   // Picker allocation form (S3.2-ii)
   allocSource:           'Источник',
   allocQty:              'Количество',

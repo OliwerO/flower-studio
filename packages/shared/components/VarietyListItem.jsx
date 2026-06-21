@@ -25,13 +25,16 @@
  * Pitfall #8: never inline qty − reserved subtraction; always use getVarietyTotals.
  */
 import { useState } from 'react';
-import { getVarietyTotals } from '../utils/stockMath.js';
+import { getVarietyTotals, getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
 import { formatDateDMY } from '../utils/formatDate.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
+import DateTag from './DateTag.jsx';
 
 export default function VarietyListItem({
   variety,
   reservations = new Map(),
+  pendingPO = {},
+  todayIso = new Date().toISOString().slice(0, 10),
   hideType = false,
   expanded = false,
   onToggle,
@@ -71,6 +74,14 @@ export default function VarietyListItem({
     variety.rows,
     reservations,
   );
+
+  // CR-03: incoming + effective for the stock panel header sub-line.
+  const availability = getVarietyAvailability(
+    variety.rows,
+    reservations,
+    arrivalsForVariety(variety.rows, pendingPO, todayIso),
+  );
+  const firstArrival = availability.arrivals[0] ?? null;
 
   // Status thresholds: shortfall > tight > free.
   const isShort = net < 0;
@@ -130,6 +141,26 @@ export default function VarietyListItem({
               onClick={reservedInteractive ? (e) => { e.stopPropagation(); setPremadeOpen(o => !o); } : null}
             />
           </div>
+
+          {/* CR-03: incoming PO sub-line — only when arrivals exist. */}
+          {availability.incoming > 0 && firstArrival && (
+            <div
+              data-testid="variety-incoming"
+              className="mt-1 flex flex-wrap items-center gap-x-1.5 text-xs"
+            >
+              <span className="text-blue-600 font-semibold tabular-nums">+{availability.incoming}</span>
+              <DateTag
+                date={firstArrival.date}
+                kind="arriving"
+                overdue={firstArrival.overdue}
+                compact
+                t={t}
+              />
+              <span className="text-gray-400">·</span>
+              <span className="text-gray-600 tabular-nums">{availability.effective}</span>
+              <span className="text-gray-400">{t.effective ?? 'Effective'}</span>
+            </div>
+          )}
         </div>
 
         {/* Net + status — primary signal */}
