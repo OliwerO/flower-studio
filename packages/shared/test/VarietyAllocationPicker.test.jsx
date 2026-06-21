@@ -178,7 +178,8 @@ describe('VarietyAllocationPicker — allocation form (S3.2-ii)', () => {
       onSelectStock={onSelectStock} onClose={() => {}} />);
     fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '5' } });
     fireEvent.click(screen.getByTestId('alloc-add'));
-    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), 5);
+    // 3rd arg is opts (empty object for non-fresh sources)
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), 5, {});
   });
 
   it('Add with "New demand" fires kind:fresh + requiredBy + amount', () => {
@@ -191,7 +192,100 @@ describe('VarietyAllocationPicker — allocation form (S3.2-ii)', () => {
     expect(onSelectStock).toHaveBeenCalledWith(
       expect.objectContaining({ kind: 'fresh', date: '2026-06-01' }),
       2,
+      expect.objectContaining({ sellPrice: 0, costPrice: 0 }),
     );
+  });
+
+  it('renders a sell-price input for a fresh/new-demand source and passes it to onSelectStock (CR-07)', async () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={2} role="florist" t={t}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    // Select the "New demand" / fresh source
+    fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'fresh' } });
+    // Price inputs should now be visible
+    expect(screen.getByTestId('alloc-sell')).toBeInTheDocument();
+    expect(screen.getByTestId('alloc-cost')).toBeInTheDocument();
+    // Type a sell price
+    fireEvent.change(screen.getByTestId('alloc-sell'), { target: { value: '12' } });
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '3' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(onSelectStock).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'fresh' }),
+      3,
+      expect.objectContaining({ sellPrice: 12 }),
+    );
+  });
+
+  it('price inputs are NOT rendered for a capped (batch) source', () => {
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    // Default is the batch source — no price inputs expected
+    expect(screen.queryByTestId('alloc-sell')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('alloc-cost')).not.toBeInTheDocument();
+  });
+
+  it('gates over-allocation on a capped source behind an inline confirm (CR-01)', () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    // oneBatch has 10 free — type an over-allocated amount
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '20' } });
+    // First click — should show confirm, NOT call onSelectStock
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(onSelectStock).not.toHaveBeenCalled();
+    expect(screen.getByTestId('alloc-confirm')).toBeInTheDocument();
+    // Second click (confirm-yes) — should call onSelectStock with confirmNegative: true
+    fireEvent.click(screen.getByTestId('alloc-confirm-yes'));
+    expect(onSelectStock).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'b1' }),
+      20,
+      expect.objectContaining({ confirmNegative: true }),
+    );
+  });
+
+  it('confirm cancel resets the gate (CR-01)', () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '20' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(screen.getByTestId('alloc-confirm')).toBeInTheDocument();
+    fireEvent.click(screen.getByTestId('alloc-confirm-no'));
+    expect(screen.queryByTestId('alloc-confirm')).not.toBeInTheDocument();
+    expect(onSelectStock).not.toHaveBeenCalled();
+  });
+
+  it('does not gate the uncapped New demand source (CR-01)', () => {
+    const onSelectStock = vi.fn();
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={2} role="florist" t={t}
+      onSelectStock={onSelectStock} onClose={() => {}} />);
+    fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'fresh' } });
+    // Type a large amount — uncapped source should not trigger confirm
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '99' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(screen.queryByTestId('alloc-confirm')).not.toBeInTheDocument();
+    expect(onSelectStock).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: 'fresh' }),
+      99,
+      expect.anything(),
+    );
+  });
+
+  it('changing source resets pending confirm (CR-01)', () => {
+    render(<VarietyAllocationPicker stockItems={oneBatch} reservations={new Map()}
+      requiredBy="2026-06-01" qty={4} role="florist" t={t}
+      onSelectStock={() => {}} onClose={() => {}} />);
+    fireEvent.change(screen.getByTestId('alloc-qty'), { target: { value: '20' } });
+    fireEvent.click(screen.getByTestId('alloc-add'));
+    expect(screen.getByTestId('alloc-confirm')).toBeInTheDocument();
+    // Change source — confirm should disappear
+    fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'fresh' } });
+    expect(screen.queryByTestId('alloc-confirm')).not.toBeInTheDocument();
   });
 });
 
@@ -263,7 +357,8 @@ describe('VarietyAllocationPicker — collapse Batch options by sell tier (2026-
       onSelectStock={onSelectStock} onClose={() => {}} />);
     fireEvent.change(screen.getByTestId('alloc-source'), { target: { value: 'batch:25.00' } });
     fireEvent.click(screen.getByTestId('alloc-add'));
-    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), 1);
+    // 3rd arg is opts (empty object for non-fresh sources)
+    expect(onSelectStock).toHaveBeenCalledWith(expect.objectContaining({ id: 'b1' }), 1, {});
   });
 
   it('single tier renders one "From stock" option without a price label', () => {

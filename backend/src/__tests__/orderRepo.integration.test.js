@@ -203,6 +203,45 @@ describe('createOrder', () => {
     expect(await harness.db.select().from(orders)).toHaveLength(1);
     expect(await harness.db.select().from(orderLines)).toHaveLength(1);
   });
+
+  it('(CR-08) accepts a demand-entry stock row (Y-model, qty 0) as a valid line stockItemId', async () => {
+    // Simulate the CR-08 fix: the New-Order wizard POSTs /stock to create a
+    // demand-entry row (qty=0, typed Variety), then binds the line to its id.
+    // orderRepo.createOrder must accept the line (no orphan rejection) and
+    // deepen the DE row's current_quantity by the ordered qty.
+    yModelFlag.enabled = true;
+
+    // Insert a demand-entry stock row (qty 0, typed Variety — the Y-model shape).
+    const [de] = await harness.db.insert(stock).values({
+      airtableId: 'recDE1', displayName: 'Peony Pink',
+      typeName: 'Peony', colour: 'Pink',
+      currentQuantity: 0, currentCostPrice: '8.00', currentSellPrice: '25.00', active: true,
+    }).returning();
+    const deId = de.id;
+
+    // (a) createOrder must NOT throw the orphan rejection
+    const { order, orderLines: createdLines } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Peony demand order',
+      deliveryType: 'Pickup',
+      orderLines: [
+        { stockItemId: deId, flowerName: 'Peony Pink', quantity: 3, sellPricePerUnit: 25, costPricePerUnit: 8 },
+      ],
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // (b) order + line are created
+    expect(order.Status).toBe(ORDER_STATUS.NEW);
+    expect(createdLines).toHaveLength(1);
+    expect(createdLines[0].Quantity).toBe(3);
+
+    // (c) DE row's current_quantity is deepened by the ordered quantity
+    const [deAfter] = await harness.db.select().from(stock).where(eq(stock.id, deId));
+    expect(deAfter.currentQuantity).toBe(-3); // 0 - 3
+
+    yModelFlag.enabled = false;
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
