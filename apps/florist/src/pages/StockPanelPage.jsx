@@ -542,6 +542,10 @@ export default function StockPanelPage() {
                   Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
                 })))}
                 t={t}
+                fetchVarietyUsage={async (key) => {
+                  const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                  return res.data; // { variety, events, unaccountedStems }
+                }}
               />
               <ShortfallSummary
                 groups={filteredGroups}
@@ -549,9 +553,9 @@ export default function StockPanelPage() {
                 pendingPO={pendingPO}
                 t={t}
                 onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
-                fetchUsage={async (stockId) => {
-                  const res = await client.get(`/stock/${stockId}/usage`);
-                  return res.data?.trail || [];
+                fetchVarietyUsage={async (key) => {
+                  const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                  return res.data; // { variety, events, unaccountedStems }
                 }}
               />
               {/* CR-35: florist is mobile-only — the wide Cost/Sell/Markup

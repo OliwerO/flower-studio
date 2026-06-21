@@ -845,9 +845,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               reservations={reservationsMap}
               t={t}
               onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
-              fetchUsage={async (stockId) => {
-                const res = await client.get(`/stock/${stockId}/usage`);
-                return res.data?.trail || [];
+              fetchVarietyUsage={async (key) => {
+                const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                return res.data; // { variety, events, unaccountedStems }
               }}
               splitType
               onPatchPriceBulk={patchPriceBulk}
@@ -861,6 +861,10 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               t={t}
               splitType
               onPatchPriceBulk={patchPriceBulk}
+              fetchVarietyUsage={async (key) => {
+                const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                return res.data; // { variety, events, unaccountedStems }
+              }}
             />
             {/* View toggle: Variety / Batch */}
             <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
