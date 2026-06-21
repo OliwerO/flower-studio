@@ -15,11 +15,15 @@
  *                      shortfall row can be tapped to expand and lazy-load
  *                      its order list. Trail format mirrors /stock/:id/usage.
  *   today           — optional ISO date override
+ *   splitType       — dashboard mode: grid layout matching BatchArrivalList.
+ *                      Mobile (default): flex layout with "stems" label.
  */
 import { useMemo, useState } from 'react';
 import { allocateVarietyCoverage, arrivalsForVariety } from '../utils/stockMath.js';
+import { varietyFinancials } from '../utils/varietyFinancials.js';
 import DateTag from './DateTag.jsx';
-import { STOCK_CARD_GRID_MOBILE } from './stockRowGrid.js';
+import { STOCK_GRID_FULL } from './stockRowGrid.js';
+import InlinePriceField from './InlinePriceField.jsx';
 
 export default function ShortfallSummary({
   groups,
@@ -29,8 +33,8 @@ export default function ShortfallSummary({
   onVarietyClick,
   fetchUsage,
   today,
-  gridCols = STOCK_CARD_GRID_MOBILE,
   splitType = false,
+  onPatchPriceBulk,
 }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [collapsed, setCollapsed] = useState(false);
@@ -42,6 +46,20 @@ export default function ShortfallSummary({
     () => bucket(groups, reservations, today_, pendingPO),
     [groups, reservations, today_, pendingPO],
   );
+
+  // CR-05 follow-on: per-Variety financials for dashboard column cells.
+  const finByKey = useMemo(() => {
+    const m = new Map();
+    for (const g of groups ?? []) m.set(g.key, varietyFinancials(g.rows ?? []));
+    return m;
+  }, [groups]);
+
+  // idsByKey: Variety key → array of all underlying stock row ids (for bulk price patch).
+  const idsByKey = useMemo(() => {
+    const m = new Map();
+    for (const g of groups ?? []) m.set(g.key, (g.rows ?? []).map(r => r.id).filter(Boolean));
+    return m;
+  }, [groups]);
 
   if (byDate.length === 0) return null;
 
@@ -103,8 +121,10 @@ export default function ShortfallSummary({
                 loadingId={loadingId}
                 onToggleRow={toggleRow}
                 onVarietyClick={onVarietyClick}
-                gridCols={gridCols}
                 splitType={splitType}
+                finByKey={finByKey}
+                idsByKey={idsByKey}
+                onPatchPriceBulk={onPatchPriceBulk}
               />
             </li>
           ))}
@@ -114,16 +134,11 @@ export default function ShortfallSummary({
   );
 }
 
-function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick, gridCols, splitType }) {
-  const total = rows.reduce((s, r) => s + r.qty, 0);
-
+function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick, splitType, finByKey = new Map(), idsByKey = new Map(), onPatchPriceBulk }) {
   return (
     <div className="px-4 py-2">
-      <div className="flex items-baseline justify-between mb-1">
+      <div className="mb-1">
         <DateTag date={date} kind="needed" t={t} />
-        <span className="text-[10px] text-red-500 tabular-nums">
-          {total} {t.stems}
-        </span>
       </div>
       <ul className="space-y-1">
         {rows.map(r => {
@@ -132,79 +147,143 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
           const isLoading = loadingId === r.stockId;
           return (
             <li key={`${r.key}-${date}-${r.stockId}`}>
-              <button
-                type="button"
-                data-testid="shortfall-row"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onToggleRow(r.stockId);
-                }}
-                onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
-                className="w-full text-left px-2 py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
-              >
-                {/* CR-05: grid layout so Type / Variety / amount columns align with
-                    PendingArrivalsPanel and (on dashboard) BatchArrivalList flat table.
-                    col 1 = marker (▸ chevron), col 2 = Type or full identity,
-                    col 3 = rest-of-identity (splitType only), col 4 = amount, col 5 = filler. */}
-                <span
-                  className="grid items-baseline gap-1.5 text-sm"
-                  style={{ gridTemplateColumns: gridCols }}
+              {splitType ? (
+                /* Dashboard: grid layout — chevron lives INSIDE the Type cell so it
+                   never shifts column boundaries. No leading marker column.
+                   The parent DateRow div already has px-4, so the grid starts at the
+                   same 16px inset as BatchArrivalList (no extra px on the button).
+                   Exactly 8 grid children in order:
+                     col1 Type(+chevron) · col2 Variety · col3 amount(+late badge inside)
+                     col4 Cost · col5 Sell · col6 Markup · col7 Arrived(empty) · col8 Supplier */
+                <button
+                  type="button"
+                  data-testid="shortfall-row"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleRow(r.stockId);
+                  }}
+                  onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
+                  className="relative w-full text-left py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
                 >
-                  {/* col 1: marker — chevron */}
-                  <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
-
-                  {splitType ? (
-                    <>
-                      {/* col 2: Type */}
-                      <span className="font-semibold text-gray-900 shrink-0 min-w-0">
-                        {r.type_name || '—'}
+                  {(() => {
+                    const fin = finByKey.get(r.key) ?? {};
+                    const ids = idsByKey.get(r.key) ?? [];
+                    return (
+                      <span
+                        className="grid items-baseline gap-1.5 text-sm"
+                        style={{ gridTemplateColumns: STOCK_GRID_FULL }}
+                      >
+                        {/* col 1: Type — chevron inside so it never shifts column boundaries */}
+                        <span className="flex items-baseline gap-1 min-w-0">
+                          <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                          <span className="font-semibold text-gray-900 truncate">{r.type_name || '—'}</span>
+                        </span>
+                        {/* col 2: Colour / Size / Cultivar */}
+                        <span className="flex items-baseline gap-1.5 min-w-0 truncate">
+                          {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
+                          {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
+                          {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
+                          {!r.colour && r.size_cm == null && !r.cultivar && <span className="text-gray-400">—</span>}
+                        </span>
+                        {/* col 3: amount (right-aligned) + late-PO badge INSIDE — keeps col count at 8 */}
+                        <span className="text-right">
+                          {r.latePoQty > 0 && (
+                            <span
+                              data-testid="shortfall-late"
+                              className="block text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded whitespace-nowrap mb-0.5"
+                              title={t.poLate ?? 'PO arriving after needed date'}
+                            >
+                              +{r.latePoQty} {t.poLateShort ?? 'late'}
+                            </span>
+                          )}
+                          <span className="text-red-700 font-semibold tabular-nums">−{r.qty}</span>
+                        </span>
+                        {/* col 4: Cost */}
+                        <span className="text-right tabular-nums text-gray-700">
+                          {onPatchPriceBulk && ids.length > 0 ? (
+                            <InlinePriceField
+                              value={fin.cost}
+                              testid="shortfall-edit-cost"
+                              onSave={(v) => onPatchPriceBulk(ids, { cost: v })}
+                            />
+                          ) : (
+                            fin.cost != null ? fin.cost.toFixed(2) : '—'
+                          )}
+                        </span>
+                        {/* col 5: Sell */}
+                        <span className="text-right tabular-nums text-gray-700">
+                          {onPatchPriceBulk && ids.length > 0 ? (
+                            <InlinePriceField
+                              value={fin.sell}
+                              testid="shortfall-edit-sell"
+                              onSave={(v) => onPatchPriceBulk(ids, { sell: v })}
+                            />
+                          ) : (
+                            fin.sell != null ? fin.sell.toFixed(2) : '—'
+                          )}
+                        </span>
+                        {/* col 6: Markup badge */}
+                        <span className="flex justify-end">
+                          {fin.markup ? (
+                            <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums ${
+                              fin.markup >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                              fin.markup >= 1.8 ? 'bg-amber-100 text-amber-700' :
+                              'bg-red-100 text-red-700'
+                            }`}>
+                              ×{fin.markup.toFixed(1)}
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
+                          )}
+                        </span>
+                        {/* col 7: Arrived — intentionally empty in cards */}
+                        <span aria-hidden="true" />
+                        {/* col 8: Supplier */}
+                        <span className="text-xs text-gray-600 truncate" title={fin.supplier ?? undefined}>
+                          {fin.supplier || '—'}
+                        </span>
                       </span>
-                      {/* col 3: Colour / Size / Cultivar */}
-                      <span className="flex items-baseline gap-1.5 min-w-0 truncate">
-                        {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
-                        {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
-                        {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
-                        {!r.colour && !r.size_cm && !r.cultivar && (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </span>
-                    </>
-                  ) : (
-                    /* col 2: full identity in one cell (mobile) */
-                    <span className="flex items-baseline gap-2 min-w-0 truncate">
-                      {r.type_name && (
-                        <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>
-                      )}
+                    );
+                  })()}
+                </button>
+              ) : (
+                /* Mobile: flex layout with "stems" label */
+                <button
+                  type="button"
+                  data-testid="shortfall-row"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onToggleRow(r.stockId);
+                  }}
+                  onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
+                  className="w-full text-left px-2 py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
+                >
+                  <span className="flex items-baseline justify-between text-sm">
+                    <span className="flex items-baseline gap-2 truncate">
+                      <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                      {r.type_name && <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>}
                       {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
                       {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
                       {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
-                      {!r.type_name && !r.colour && !r.size_cm && !r.cultivar && (
+                      {!r.type_name && !r.colour && r.size_cm == null && !r.cultivar && (
                         <span className="font-medium text-gray-400 italic">—</span>
                       )}
                     </span>
-                  )}
-
-                  {/* col 4 (dashboard) / col 3 (mobile): amount — right-aligned */}
-                  <span className="flex items-baseline justify-end gap-2 shrink-0 text-right">
-                    {/* CR-39: a late PO is signalled (amber) but does NOT clear the shortfall. */}
-                    {r.latePoQty > 0 && (
-                      <span
-                        data-testid="shortfall-late"
-                        className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"
-                        title={t.poLate ?? 'PO arriving after needed date'}
-                      >
-                        +{r.latePoQty} {t.poLateShort ?? 'late'}
-                      </span>
-                    )}
-                    <span className="text-red-700 font-semibold tabular-nums">
-                      −{r.qty} {t.stems}
+                    <span className="flex items-baseline gap-2 ml-2 shrink-0">
+                      {r.latePoQty > 0 && (
+                        <span
+                          data-testid="shortfall-late"
+                          className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"
+                          title={t.poLate ?? 'PO arriving after needed date'}
+                        >
+                          +{r.latePoQty} {t.poLateShort ?? 'late'}
+                        </span>
+                      )}
+                      <span className="text-red-700 font-semibold tabular-nums">−{r.qty} {t.stems}</span>
                     </span>
                   </span>
-
-                  {/* col 5 (dashboard only): filler — keeps amount in the right column */}
-                  {splitType && <span aria-hidden="true" />}
-                </span>
-              </button>
+                </button>
+              )}
               {isOpen && (
                 <div className="ml-6 mt-1 mb-2 text-xs">
                   {isLoading && <p className="text-red-400 italic">{t.loading ?? 'Loading…'}</p>}
@@ -275,4 +354,3 @@ function bucket(groups, reservations, today, pendingPO) {
 
   return { byDate, totalStems, varietyCount: varietyKeys.size };
 }
-

@@ -17,7 +17,6 @@ import {
   BatchTracePanel,
   VarietyTracePanel,
   WriteOffBatchPicker,
-  STOCK_CARD_GRID_DASHBOARD,
 } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
@@ -850,8 +849,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 const res = await client.get(`/stock/${stockId}/usage`);
                 return res.data?.trail || [];
               }}
-              gridCols={STOCK_CARD_GRID_DASHBOARD}
               splitType
+              onPatchPriceBulk={patchPriceBulk}
             />
             <PendingArrivalsPanel
               pendingPO={pendingPO}
@@ -860,8 +859,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
               })))}
               t={t}
-              gridCols={STOCK_CARD_GRID_DASHBOARD}
               splitType
+              onPatchPriceBulk={patchPriceBulk}
             />
             {/* View toggle: Variety / Batch */}
             <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">

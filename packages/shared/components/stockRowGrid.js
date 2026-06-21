@@ -1,25 +1,14 @@
 /**
- * Shared stock-row column grid (CR-05).
+ * Canonical Y-model stock-row grid (CR-05).
  *
- * The two summary cards (ShortfallSummary, PendingArrivalsPanel) accept an
- * optional `gridCols` prop so the dashboard can align their Type / Variety /
- * amount columns with the BatchArrivalList "Flat table".
+ * BatchArrivalList ("Flat table"), ShortfallSummary and PendingArrivalsPanel all
+ * render their dashboard rows on THIS exact template (same column tracks + same
+ * px-4 row inset) so Type, Variety and the stem-amount sit in one vertical column
+ * across all three sections. The amount lands in column 3 ("Available").
  *
- * The first three non-marker tokens MUST stay in lock-step with BatchArrivalList's
- * GRID_COLS prefix (6rem | minmax(9rem,1.5fr) | 3.5rem), so amounts land in the
- * same vertical column across all three sections.
+ * MUST stay byte-identical to BatchArrivalList's GRID_COLS tracks
+ * (grid-cols-[6rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]).
  *
- * Dashboard shape — 5 tokens:
- *   1.25rem  marker  (ShortfallSummary's ▸ chevron; PendingArrivalsPanel leaves blank)
- *   6rem     Type    (dedicated column — matches BatchArrivalList col 1)
- *   minmax(9rem,1.5fr)  Variety / rest-of-identity (matches col 2)
- *   3.5rem   amount  (right-aligned — matches col 3 "Available")
- *   1fr      filler  (where BatchArrivalList's Cost/Sell/Markup/… live — empty in cards)
- *
- * Mobile shape — 3 tokens:
- *   1.25rem  marker    (aligns the two mobile cards' Type-edge)
- *   1fr      identity  (Type + Colour + Size + Cultivar in one cell)
- *   auto     amount    (right-edge)
+ *   Type(6rem) · Variety(flex) · amount(3.5rem,right) · Cost · Sell · Markup · Arrived · Supplier
  */
-export const STOCK_CARD_GRID_DASHBOARD = '1.25rem 6rem minmax(9rem,1.5fr) 3.5rem 1fr';
-export const STOCK_CARD_GRID_MOBILE    = '1.25rem 1fr auto';
+export const STOCK_GRID_FULL = '6rem minmax(9rem,1.5fr) 3.5rem 3rem 3rem 3rem 3.5rem minmax(4rem,1fr)';
