@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { byDateAsc } from '../utils/sortByDate.js';
 
 /**
  * WriteOffBatchPicker — form-card for writing off stems from a Variety's
@@ -39,12 +40,7 @@ export default function WriteOffBatchPicker({ variety, reasons, t, onConfirm, on
     }
     // FEFO-sort rows inside each tier; sort tiers by sell asc.
     for (const m of byTier.values()) {
-      m.rows.sort((a, b) => {
-        if (!a.date && !b.date) return 0;
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return a.date.localeCompare(b.date);
-      });
+      m.rows.sort(byDateAsc);
     }
     return [...byTier.values()].sort((a, b) => (a.sell ?? 0) - (b.sell ?? 0));
   }, [variety]);

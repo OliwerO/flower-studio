@@ -18,6 +18,7 @@
  *   today       — optional ISO date override
  */
 import { useMemo, useState } from 'react';
+import { byDateDesc } from '../utils/sortByDate.js';
 
 // Variety identity gets the widest range so long cultivar names (e.g. "Hawaiian
 // Coral", "Sarah Bernhardt") render in full; long names wrap a second line
@@ -224,12 +225,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
 
 function ExpandedDetails({ underlying, t }) {
   const sorted = useMemo(
-    () => [...underlying].sort((a, b) => {
-      if (!a.date && !b.date) return 0;
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return b.date.localeCompare(a.date); // newest first
-    }),
+    () => [...underlying].sort(byDateDesc),
     [underlying],
   );
 

@@ -1,4 +1,5 @@
 import { formatDateDMY } from '../utils/formatDate.js';
+import { byDateAsc } from '../utils/sortByDate.js';
 
 /**
  * BatchTracePanel — presentational component rendering the per-batch usage trail.
@@ -28,7 +29,7 @@ export default function BatchTracePanel({ trail = [], t }) {
     if (e.type === 'premade' || !e.date) reserved.push(e);
     else dated.push(e);
   }
-  dated.sort((a, b) => a.date.localeCompare(b.date));
+  dated.sort(byDateAsc);
 
   let balance = 0;
   const withBalance = dated.map((entry) => {

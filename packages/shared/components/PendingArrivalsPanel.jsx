@@ -18,6 +18,7 @@
  */
 import { useMemo, useState } from 'react';
 import DateTag from './DateTag.jsx';
+import { byDateAsc } from '../utils/sortByDate.js';
 
 /** Bucket every pending PO line by its arrival date, then by Variety within a date. */
 function bucketByDate(pendingPO, stockById) {
@@ -53,12 +54,7 @@ function bucketByDate(pendingPO, stockById) {
 
   return [...byDate.values()]
     .map(sec => ({ ...sec, flowers: [...sec.flowers.values()] }))
-    .sort((a, b) => {
-      if (!a.date && !b.date) return 0;
-      if (!a.date) return 1;   // undated last
-      if (!b.date) return -1;
-      return a.date.localeCompare(b.date); // earliest first
-    });
+    .sort(byDateAsc);
 }
 
 export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {} }) {
