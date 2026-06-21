@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, fireEvent, within, waitFor } from '@testing-library/react';
 import PendingArrivalsPanel from '../components/PendingArrivalsPanel.jsx';
 
 // CR-33: pending arrivals are grouped BY ARRIVAL DATE (mirrors ShortfallSummary),
@@ -91,5 +91,50 @@ describe('PendingArrivalsPanel (date-grouped, CR-33)', () => {
     expect(screen.getAllByTestId(/^pending-arrival-date-/)).toHaveLength(1);
     fireEvent.click(screen.getByTestId('pending-arrivals-header'));
     expect(screen.queryByTestId(/^pending-arrival-date-/)).toBeNull();
+  });
+
+  describe('row-expand to VarietyTracePanel', () => {
+    const expandStock = [{ id: 's1', Type: 'Peony', Colour: 'Pink', Size: 60, Cultivar: 'Sarah' }];
+    const expandPendingPO = {
+      s1: { plannedDate: '2026-06-25', flowerName: 'Peony', pos: [{ quantity: 25, plannedDate: '2026-06-25' }] },
+    };
+
+    it('expands a pending row to VarietyTracePanel via fetchVarietyUsage', async () => {
+      const fetchVarietyUsage = vi.fn().mockResolvedValue({
+        events: [{ type: 'purchase', qty: 25, supplier: 'FarmCo', date: '2026-06-25' }],
+        unaccountedStems: 0,
+      });
+      render(
+        <PendingArrivalsPanel
+          pendingPO={expandPendingPO}
+          stock={expandStock}
+          t={{ ...t, traceTypeOrder: 'Order', traceTypePurchase: 'Purchase', traceEmpty: 'No events' }}
+          fetchVarietyUsage={fetchVarietyUsage}
+        />,
+      );
+
+      fireEvent.click(screen.getByTestId('pending-arrival-row'));
+      await waitFor(() => expect(fetchVarietyUsage).toHaveBeenCalledWith('Peony|Pink|60|Sarah'));
+      expect(await screen.findByTestId('trace-row')).toBeInTheDocument();
+    });
+
+    it('legacy rows (untyped) are not expandable and do not call fetchVarietyUsage', async () => {
+      const fetchVarietyUsage = vi.fn().mockResolvedValue({ events: [], unaccountedStems: 0 });
+      const legacyStock = [{ id: 'L1', 'Display Name': 'Filler', Type: null }];
+      const legacyPO = { L1: { plannedDate: '2026-06-25', flowerName: 'Filler', pos: [{ quantity: 5, plannedDate: '2026-06-25' }] } };
+      render(
+        <PendingArrivalsPanel
+          pendingPO={legacyPO}
+          stock={legacyStock}
+          t={{ ...t, traceEmpty: 'No events' }}
+          fetchVarietyUsage={fetchVarietyUsage}
+        />,
+      );
+      fireEvent.click(screen.getByTestId('pending-arrival-row'));
+      // Give any async work time to resolve
+      await new Promise((r) => setTimeout(r, 50));
+      expect(fetchVarietyUsage).not.toHaveBeenCalled();
+      expect(screen.queryByTestId('trace-row')).toBeNull();
+    });
   });
 });
