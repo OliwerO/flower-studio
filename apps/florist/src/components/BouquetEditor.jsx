@@ -419,6 +419,11 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                 allocQty:                t.allocQty,
                 allocRemaining:          t.allocRemaining,
                 allocAdd:                t.allocAdd,
+                allocSellPrice:          t.allocSellPrice,
+                allocCostPrice:          t.allocCostPrice,
+                allocShortConfirm:       t.allocShortConfirm,
+                allocConfirmYes:         t.allocConfirmYes,
+                allocConfirmNo:          t.allocConfirmNo,
                 free:                    t.free,
                 srcStock:                t.srcStock,
                 srcCommitted:            t.srcCommitted,
@@ -426,10 +431,10 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                 srcFresh:                t.srcFresh,
                 currency:                t.currency,
               }}
-              onSelectStock={(picked, amount = 1) => {
+              onSelectStock={(picked, amount = 1, opts) => {
                 const add = Math.max(1, Number(amount) || 1);
                 if (picked && picked.kind === 'fresh') {
-                  editing.createDemandEntry(picked.variety || picked.displayName || picked.date || '', add);
+                  editing.createDemandEntry(picked.variety || picked.displayName || picked.date || '', add, opts);
                 } else if (picked) {
                   const existing = editing.editLines.findIndex(l => l.stockItemId === picked.id);
                   if (existing >= 0) {

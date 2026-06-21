@@ -928,6 +928,11 @@ export default function Step2Bouquet({
             allocQty:                t.allocQty,
             allocRemaining:          t.allocRemaining,
             allocAdd:                t.allocAdd,
+            allocSellPrice:          t.allocSellPrice,
+            allocCostPrice:          t.allocCostPrice,
+            allocShortConfirm:       t.allocShortConfirm,
+            allocConfirmYes:         t.allocConfirmYes,
+            allocConfirmNo:          t.allocConfirmNo,
             free:                    t.free,
             srcStock:                t.srcStock,
             srcCommitted:            t.srcCommitted,
@@ -935,17 +940,25 @@ export default function Step2Bouquet({
             srcFresh:                t.srcFresh,
             currency:                t.currency,
           }}
-          onSelectStock={(picked, amount = 1) => {
+          onSelectStock={async (picked, amount = 1, opts) => {
             const add = Math.max(1, Number(amount) || 1);
             if (picked?.kind === 'fresh') {
               const v = picked.variety || {};
-              const firstName = varietyDisplayName(v) || yPickerStockItems[0]?.['Display Name'] || picked.date || '';
-              onLinesChange(lines => {
-                const exists = lines.find(l => !l.stockItemId && l.flowerName === firstName);
-                if (exists) return lines.map(l => !l.stockItemId && l.flowerName === firstName ? { ...l, quantity: l.quantity + add } : l);
-                return [...lines, { stockItemId: null, flowerName: firstName, quantity: add, costPricePerUnit: 0, sellPricePerUnit: 0, stockDeferred: isFutureOrder }];
-              });
-            } else if (picked) {
+              const displayName = varietyDisplayName(v) || yPickerStockItems[0]?.['Display Name'] || picked.date || '';
+              try {
+                const res = await client.post('/stock', {
+                  displayName,
+                  typeName: v.type_name ?? null, colour: v.colour ?? null,
+                  sizeCm: v.size_cm ?? null, cultivar: v.cultivar ?? null,
+                  costPrice: opts?.costPrice ?? 0, sellPrice: opts?.sellPrice ?? 0, quantity: 0,
+                });
+                onStockRefresh?.();
+                addOne({ id: res.data.id, 'Display Name': res.data['Display Name'],
+                         'Current Cost Price': opts?.costPrice ?? 0, 'Current Sell Price': opts?.sellPrice ?? 0 }, add);
+              } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+              setYPickerOpen(false); setFlowerQuery(''); return;
+            }
+            if (picked) {
               const original = stock.find(s => s.id === picked.id) || picked;
               addOne(original, add);
             }

@@ -354,7 +354,7 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   // attrs (typeName/colour/sizeCm/cultivar) so the backend can persist them.
   // displayName is taken from baseName if given, otherwise auto-computed via
   // varietyDisplayName.
-  async function createDemandEntry(varietyDraft, amount = 1) {
+  async function createDemandEntry(varietyDraft, amount = 1, opts = {}) {
     const add = Math.max(1, Number(amount) || 1);
     // Normalise to a resolved display name + optional 4-tuple fields.
     let displayName;
@@ -383,8 +383,8 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
       return d > new Date(best['Last Restocked'] || 0) ? s : best;
     }, null);
 
-    const costPrice = Number(mostRecentBatch?.['Current Cost Price']) || 0;
-    const sellPrice = Number(mostRecentBatch?.['Current Sell Price']) || 0;
+    const costPrice = opts.costPrice != null ? Number(opts.costPrice) : (Number(mostRecentBatch?.['Current Cost Price']) || 0);
+    const sellPrice = opts.sellPrice != null ? Number(opts.sellPrice) : (Number(mostRecentBatch?.['Current Sell Price']) || 0);
 
     const postBody = {
       displayName: displayName.trim(),
