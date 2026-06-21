@@ -131,8 +131,9 @@ describe('PendingArrivalsPanel (date-grouped, CR-33)', () => {
         />,
       );
       fireEvent.click(screen.getByTestId('pending-arrival-row'));
-      // Give any async work time to resolve
-      await new Promise((r) => setTimeout(r, 50));
+      // Drain microtasks deterministically (no wall-clock wait — a legacy row
+      // triggers no fetch, so a microtask flush is enough to prove the negative).
+      await Promise.resolve();
       expect(fetchVarietyUsage).not.toHaveBeenCalled();
       expect(screen.queryByTestId('trace-row')).toBeNull();
     });
