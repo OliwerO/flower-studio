@@ -51,6 +51,7 @@ utils/
   bouquetVisibility.js        → shouldShowBouquetSection({hasLines, isTerminal, isOwner}) — single gate for whether an order's bouquet-composition section renders. Shows when the order has lines OR is still editable (non-terminal / owner), so an emptied order keeps its "Edit bouquet" entry point (Pitfall #4). Consumed by florist OrderCard / OrderDetailPage / OrderCardExpanded(→BouquetEditor) and dashboard OrderDetailPanel / BouquetSection.
   orderStatusOptions.js       → getStatusOptions({role, currentStatus, previousStatuses}) — single source of truth for which status pills a user may pick. Owner = any→any; florist/driver = forward map ∪ previously-held statuses (revert). Mirrors backend orderRepo.transitionStatus.
   stockAllocationEngine.js    → stockAllocationEngine(rows, reservations, requiredBy, qty) — Y-model ranked allocation options for one order line (issue #287, PRD #283)
+  sortByDate.js               → byDateAsc / byDateDesc — null-safe date comparators for rows shaped { date: string|null }; undated rows sort LAST (CR-02)
   varietyKey.js               → 4-tuple identity helpers — `varietyKey`, `groupByVariety`, `varietyDisplayName`. NULL-aware per ADR-0006.
   timeSlots.js                → Time slot generation with lead-time filtering
   customerFilters.js          → Customer search + filter predicates (matchesSearch/Filters, EMPTY_FILTERS)

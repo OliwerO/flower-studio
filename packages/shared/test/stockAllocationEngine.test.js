@@ -337,3 +337,36 @@ describe('stockAllocationEngine — fixture 1: no rows', () => {
     expect(def.kind).toBe('fresh');
   });
 });
+
+// ─── Fixture 9: undated rows (null date) must not crash the FIFO sort ─────────
+// Regression: an undated orig Stock Item / undated Demand Entry (date == null)
+// previously crashed the comparator with `null.localeCompare` — the picker
+// threw "undefined is not an object (evaluating 'a.date.localeCompare')" and the
+// whole bouquet editor went to the error boundary. Undated rows must sort safely
+// (last) instead of throwing.
+describe('stockAllocationEngine — fixture 9: null-date rows', () => {
+  it('does not throw when a Batch has a null date', () => {
+    const rows = [batch('b-null', 15, null), batch('b1', 10, '2026-06-09')];
+    expect(() => stockAllocationEngine(rows, new Map(), '2026-06-21', 8)).not.toThrow();
+    const options = stockAllocationEngine(rows, new Map(), '2026-06-21', 8);
+    expect(options.filter((o) => o.kind === 'batch')).toHaveLength(2);
+  });
+
+  it('does not throw when a Demand Entry has a null date', () => {
+    const rows = [demandEntry('d-null', -5, null), demandEntry('d1', -2, '2026-06-17')];
+    expect(() => stockAllocationEngine(rows, new Map(), '2026-06-21', 8)).not.toThrow();
+    const options = stockAllocationEngine(rows, new Map(), '2026-06-21', 8);
+    expect(options.filter((o) => o.kind === 'merge')).toHaveLength(2);
+  });
+
+  it('sorts undated rows last so dated rows keep chronological order', () => {
+    const rows = [
+      batch('b-null', 15, null),
+      batch('b-late', 10, '2026-06-20'),
+      batch('b-early', 10, '2026-06-09'),
+    ];
+    const options = stockAllocationEngine(rows, new Map(), '2026-06-21', 8);
+    const batchIds = options.filter((o) => o.kind === 'batch').map((o) => o.stockId);
+    expect(batchIds).toEqual(['b-early', 'b-late', 'b-null']);
+  });
+});

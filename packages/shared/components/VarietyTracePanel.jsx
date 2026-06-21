@@ -1,4 +1,5 @@
 import { formatDateDMY } from '../utils/formatDate.js';
+import { byDateAsc } from '../utils/sortByDate.js';
 
 /**
  * VarietyTracePanel — presentational per-Variety usage trail (PRD #324 T5).
@@ -22,14 +23,7 @@ import { formatDateDMY } from '../utils/formatDate.js';
 export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t }) {
   const hasEvents = events && events.length > 0;
 
-  const sorted = hasEvents
-    ? [...events].sort((a, b) => {
-        if (!a.date && !b.date) return 0;
-        if (!a.date) return 1;
-        if (!b.date) return -1;
-        return a.date.localeCompare(b.date);
-      })
-    : [];
+  const sorted = hasEvents ? [...events].sort(byDateAsc) : [];
 
   return (
     <div>

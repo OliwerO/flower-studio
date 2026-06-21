@@ -48,13 +48,15 @@
  * Past-date merges (date < requiredBy) are NEVER the default — flagged
  * with isPastDate: true so the UI can grey them.
  */
+import { byDateAsc } from './sortByDate.js';
+
 export function stockAllocationEngine(rows, reservations, requiredBy, qty) {
   const batches = rows.filter((r) => !r.isDemandEntry);
   const demands = rows.filter((r) => r.isDemandEntry);
 
   // ── Batch options ────────────────────────────────────────────────────────
   // Sort FIFO (oldest first)
-  const sortedBatches = [...batches].sort((a, b) => a.date.localeCompare(b.date));
+  const sortedBatches = [...batches].sort(byDateAsc);
 
   const batchOptions = sortedBatches.map((row) => {
     const reservedQty = reservations.get(row.id) ?? 0;
@@ -76,7 +78,7 @@ export function stockAllocationEngine(rows, reservations, requiredBy, qty) {
 
   // ── Demand Entry (merge) options ─────────────────────────────────────────
   // Sort by date ascending so UI sees them in chronological order
-  const sortedDemands = [...demands].sort((a, b) => a.date.localeCompare(b.date));
+  const sortedDemands = [...demands].sort(byDateAsc);
 
   const mergeOptions = sortedDemands.map((row) => ({
     kind: 'merge',

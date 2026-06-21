@@ -3,6 +3,7 @@ import { groupByVariety, varietyDisplayName } from '../utils/varietyKey.js';
 import { stockAllocationEngine } from '../utils/stockAllocationEngine.js';
 import { getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
 import { formatDateDMY } from '../utils/formatDate.js';
+import { byDateAsc } from '../utils/sortByDate.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
 import VarietyAvailabilityLine from './VarietyAvailabilityLine.jsx';
 
@@ -459,12 +460,7 @@ export function collapseBatchTiers(options, stockById, qty, t) {
 
   for (const m of tiers.values()) {
     const pairs = m.stockIds.map((id, i) => ({ id, date: m.stockIdDates[i] }));
-    pairs.sort((a, b) => {
-      if (!a.date && !b.date) return 0;
-      if (!a.date) return 1;
-      if (!b.date) return -1;
-      return a.date.localeCompare(b.date);
-    });
+    pairs.sort(byDateAsc);
     m.stockIds = pairs.map((p) => p.id);
     delete m.stockIdDates;
     m.sufficient = m.freeQty > 0 && m.freeQty >= qty;

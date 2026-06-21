@@ -72,6 +72,9 @@ export { default as FeedbackModal } from './components/FeedbackModal.jsx';
 export { default as useOrderTerminationFlow } from './hooks/useOrderTerminationFlow.js';
 export { default as OrderTerminationConfirm } from './components/OrderTerminationConfirm.jsx';
 
+// Null-safe date comparators (CR-02 — never dereference null.localeCompare)
+export { byDateAsc, byDateDesc } from './utils/sortByDate.js';
+
 // Stock Y-model allocation engine (issue #287, PRD #283)
 export { stockAllocationEngine } from './utils/stockAllocationEngine.js';
 
