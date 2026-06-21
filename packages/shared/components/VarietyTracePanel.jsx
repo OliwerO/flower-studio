@@ -20,7 +20,7 @@ import { byDateAsc } from '../utils/sortByDate.js';
  * Absorption events are deferred (audit_log has no transaction_id) — they show
  * up inside `unaccountedStems` rather than as paired rows. See the T5 plan.
  */
-export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t }) {
+export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t, onOrderClick }) {
   const hasEvents = events && events.length > 0;
 
   const sorted = hasEvents ? [...events].sort(byDateAsc) : [];
@@ -37,7 +37,7 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t
       {hasEvents ? (
         <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
           {sorted.map((entry, i) => (
-            <TraceRow key={i} entry={entry} t={t} />
+            <TraceRow key={i} entry={entry} t={t} onOrderClick={onOrderClick} />
           ))}
         </ul>
       ) : (
@@ -128,15 +128,22 @@ function BalanceSparkline({ points, t }) {
   );
 }
 
-function TraceRow({ entry, t }) {
+function TraceRow({ entry, t, onOrderClick }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
   const detail = trailDetail(entry, t);
+  const clickable = entry.type === 'order' && !!onOrderClick && !!entry.orderRecordId;
 
   return (
     <li
       data-testid="trace-row"
       data-trace-kind={entry.type}
-      className="flex items-center justify-between px-3 py-2"
+      className={`flex items-center justify-between px-3 py-2 ${clickable ? 'cursor-pointer hover:bg-brand-50 transition-colors' : ''}`}
+      {...(clickable ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: (e) => { e.stopPropagation(); onOrderClick(entry.orderRecordId, entry); },
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOrderClick(entry.orderRecordId, entry); } },
+      } : {})}
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${typeBadgeClass(entry.type)}`}>

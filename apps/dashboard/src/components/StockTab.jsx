@@ -851,6 +851,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               }}
               splitType
               onPatchPriceBulk={patchPriceBulk}
+              onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })}
             />
             <PendingArrivalsPanel
               pendingPO={pendingPO}
@@ -865,6 +866,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
                 return res.data; // { variety, events, unaccountedStems }
               }}
+              onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })}
             />
             {/* View toggle: Variety / Batch */}
             <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
@@ -1003,7 +1005,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                             {varietyTraceLoading ? (
                               <p className="text-xs text-ios-tertiary">{t.loading}</p>
                             ) : (
-                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} />
+                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })} />
                             )}
                           </div>
                         )}

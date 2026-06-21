@@ -64,7 +64,7 @@ function bucketByDate(pendingPO, stockById) {
     .sort(byDateAsc);
 }
 
-export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, splitType = false, onPatchPriceBulk, fetchVarietyUsage }) {
+export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, splitType = false, onPatchPriceBulk, fetchVarietyUsage, onOrderClick }) {
   const [collapsed, setCollapsed] = useState(false);
   const { isOpen, toggle, getTrace } = useVarietyTraceExpand(fetchVarietyUsage);
 
@@ -235,7 +235,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                           <div className="ml-6 mt-1 mb-2">
                             {trace.loading && <p className="text-indigo-400 italic text-xs">{t.loading ?? 'Loading…'}</p>}
                             {!trace.loading && (
-                              <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} />
+                              <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} onOrderClick={onOrderClick} />
                             )}
                           </div>
                         )}
@@ -273,7 +273,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                         <div className="ml-6 mt-1 mb-2">
                           {trace.loading && <p className="text-indigo-400 italic text-xs">{t.loading ?? 'Loading…'}</p>}
                           {!trace.loading && (
-                            <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} />
+                            <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} onOrderClick={onOrderClick} />
                           )}
                         </div>
                       )}

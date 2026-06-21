@@ -37,6 +37,7 @@ export default function ShortfallSummary({
   today,
   splitType = false,
   onPatchPriceBulk,
+  onOrderClick,
 }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [collapsed, setCollapsed] = useState(false);
@@ -107,6 +108,7 @@ export default function ShortfallSummary({
                 finByKey={finByKey}
                 idsByKey={idsByKey}
                 onPatchPriceBulk={onPatchPriceBulk}
+                onOrderClick={onOrderClick}
               />
             </li>
           ))}
@@ -116,7 +118,7 @@ export default function ShortfallSummary({
   );
 }
 
-function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, splitType, finByKey = new Map(), idsByKey = new Map(), onPatchPriceBulk }) {
+function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, splitType, finByKey = new Map(), idsByKey = new Map(), onPatchPriceBulk, onOrderClick }) {
   return (
     <div className="px-4 py-2">
       <div className="mb-1">
@@ -275,6 +277,7 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                       events={getTrace(r.key).events}
                       unaccountedStems={getTrace(r.key).unaccountedStems}
                       t={t}
+                      onOrderClick={onOrderClick}
                     />
                   )}
                 </div>
