@@ -1037,9 +1037,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
     const writeoffsToLog = [];
     for (const rem of removedLines) {
       if (rem.stockItemId && rem.quantity > 0) {
-        if (rem.action === 'return') {
-          await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity, { tx, actor });
-        } else if (rem.action === 'writeoff') {
+        if (rem.action === 'writeoff') {
           // Buffer Stock Loss Log writes and run OUTSIDE the PG transaction so
           // a loss-log failure doesn't roll back the order edit. Loss is
           // non-critical reporting; order/line/stock updates are the business state.
@@ -1048,6 +1046,13 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
             quantity:    rem.quantity,
             reason:      rem.reason || 'Bouquet edit',
           });
+        } else {
+          // Default = RETURN the stems to inventory. Only an explicit 'writeoff'
+          // loses stock; a missing/unknown action MUST NOT silently delete the
+          // line and drop the stems on the floor (Pitfall #5). This guards the
+          // leak class where a UI path removed a line without tagging the action
+          // — the stock would vanish with no audit. Returning is the safe default.
+          await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity, { tx, actor });
         }
       }
       if (rem.lineId) {

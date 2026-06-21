@@ -480,6 +480,47 @@ describe('editBouquetLines', () => {
     expect(await harness.db.select().from(orderLines)).toHaveLength(0);
   });
 
+  it('removing a line WITHOUT an explicit action still returns stock (never silently lose stems)', async () => {
+    // Regression: a removedLine with lineId+stockItemId+quantity but no/unknown
+    // `action` used to delete the line while crediting nothing back — a silent
+    // stock leak. The safe default is RETURN; only an explicit 'writeoff' loses
+    // the stems. (Pitfall #5: silent state changes.)
+    const { order, orderLines: lines } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'X', deliveryType: 'Pickup',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 8 }],
+      paymentStatus: 'Paid', paymentMethod: 'Cash', createdBy: 'florist',
+    }, config);
+
+    await orderRepo.editBouquetLines(order.id, {
+      lines: [],
+      removedLines: [
+        { lineId: lines[0]._pgId, stockItemId: stockId1, quantity: 8 },  // NO action
+      ],
+    }, true);
+
+    const [s1] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(s1.currentQuantity).toBe(100);  // 92 + 8 returned, not leaked
+    expect(await harness.db.select().from(orderLines)).toHaveLength(0);
+  });
+
+  it('removing a line with action=writeoff does NOT return stock (explicit loss)', async () => {
+    const { order, orderLines: lines } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'X', deliveryType: 'Pickup',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 8 }],
+      paymentStatus: 'Paid', paymentMethod: 'Cash', createdBy: 'florist',
+    }, config);
+
+    await orderRepo.editBouquetLines(order.id, {
+      lines: [],
+      removedLines: [
+        { lineId: lines[0]._pgId, stockItemId: stockId1, quantity: 8, action: 'writeoff' },
+      ],
+    }, true);
+
+    const [s1] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(s1.currentQuantity).toBe(92);  // 100 - 8, stems written off (not returned)
+  });
+
   it('updating quantity adjusts stock by the delta', async () => {
     const { order, orderLines: lines } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'X', deliveryType: 'Pickup',
