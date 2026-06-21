@@ -61,6 +61,7 @@ utils/
   navigation.js               → googleMapsUrl, wazeUrl, appleMapsUrl
   phone.js                    → cleanPhone, telHref
   imageResize.js              → resizeImageBlob — canvas-based client-side downscale + JPEG re-encode for bouquet uploads
+  varietyFinancials.js        → varietyFinancials(rows) — per-Variety Cost/Sell/Markup/Supplier derivation for stock cards (CR-05 follow-on). Mirrors BatchArrivalList.flatten's newest-positive-batch rule.
 ```
 
 ## Rules

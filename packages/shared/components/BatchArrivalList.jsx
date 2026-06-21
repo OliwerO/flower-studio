@@ -19,11 +19,18 @@
  */
 import { useMemo, useState } from 'react';
 import { byDateDesc } from '../utils/sortByDate.js';
+import InlinePriceField from './InlinePriceField.jsx';
 
 // Variety identity gets the widest range so long cultivar names (e.g. "Hawaiian
 // Coral", "Sarah Bernhardt") render in full; long names wrap a second line
 // rather than truncating. `arrived` shows the newest receive date of the
 // merged row — visible label + sortable, even though Tag-per-Batch is gone.
+//
+// CR-05 lock-step note: the FIRST THREE column tokens here (6rem, minmax(9rem,1.5fr),
+// 3.5rem) are mirrored as the Type / Variety / amount columns in
+// packages/shared/components/stockRowGrid.js (STOCK_CARD_GRID_DASHBOARD).
+// If you change these widths, update stockRowGrid.js in the same PR so the
+// ShortfallSummary and PendingArrivalsPanel cards stay aligned with this table.
 const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
 
 const COLS = [
@@ -264,52 +271,6 @@ function formatArrived(iso) {
   if (!iso) return null;
   const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}.${m[2]}` : null;
-}
-
-// Tap-to-edit price (Cost or Sell). Bulk-saves: host patches every underlying
-// stock_id in the merged row when onSave fires.
-function InlinePriceField({ value, onSave, testid, suffix }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  function startEdit(e) {
-    e.stopPropagation();
-    setDraft(value != null ? String(value) : '');
-    setEditing(true);
-  }
-  function commit(e) {
-    e.stopPropagation();
-    setEditing(false);
-    const num = parseFloat(draft);
-    const next = isNaN(num) ? 0 : num;
-    onSave(next);
-  }
-  if (editing) {
-    return (
-      <input
-        type="number"
-        inputMode="decimal"
-        value={draft}
-        autoFocus
-        onClick={(e) => e.stopPropagation()}
-        onChange={(e) => setDraft(e.target.value)}
-        onBlur={commit}
-        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); if (e.key === 'Escape') setEditing(false); }}
-        className="w-14 text-right text-sm tabular-nums border border-brand-300 rounded px-1 py-0 bg-white outline-none"
-        data-testid={`${testid}-input`}
-      />
-    );
-  }
-  return (
-    <button
-      type="button"
-      data-testid={testid}
-      onClick={startEdit}
-      className="tabular-nums text-gray-700 underline decoration-dotted underline-offset-2 hover:text-gray-900"
-    >
-      {value != null ? value.toFixed(2) : '—'}{suffix}
-    </button>
-  );
 }
 
 // Merge rule (owner-confirmed 2026-05-31): rows collapse into one display row

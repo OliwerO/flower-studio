@@ -15,10 +15,15 @@
  *   stock      — full /stock list (Y-model rows carry Type/Colour/Size/Cultivar)
  *   t          — translations
  *   today      — optional ISO date override (unused now; kept for API stability)
+ *   splitType  — dashboard mode: grid layout matching BatchArrivalList.
+ *                Mobile (default): flex layout.
  */
 import { useMemo, useState } from 'react';
 import DateTag from './DateTag.jsx';
 import { byDateAsc } from '../utils/sortByDate.js';
+import { STOCK_GRID_FULL } from './stockRowGrid.js';
+import { varietyFinancials } from '../utils/varietyFinancials.js';
+import InlinePriceField from './InlinePriceField.jsx';
 
 /** Bucket every pending PO line by its arrival date, then by Variety within a date. */
 function bucketByDate(pendingPO, stockById) {
@@ -57,7 +62,7 @@ function bucketByDate(pendingPO, stockById) {
     .sort(byDateAsc);
 }
 
-export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {} }) {
+export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, splitType = false, onPatchPriceBulk }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const stockById = useMemo(() => {
@@ -67,6 +72,34 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
   }, [stock]);
 
   const byDate = useMemo(() => bucketByDate(pendingPO, stockById), [pendingPO, stockById]);
+
+  // CR-05 follow-on: group stock rows by the same Variety key bucketByDate uses,
+  // then derive per-Variety financials for dashboard column cells.
+  // Legacy (untyped) rows get the __legacy__ key and will show '—' for financials
+  // if no matching stock row carries price data — acceptable per spec.
+  // Also build idsByKey for bulk price patching.
+  const { finByKey, idsByKey } = useMemo(() => {
+    const groups = new Map(); // varietyKey → stock rows[]
+    for (const s of stock) {
+      const type = s.Type ?? s.type_name ?? null;
+      const colour = s.Colour ?? s.colour ?? null;
+      const size = s.Size ?? s.size_cm ?? null;
+      const cultivar = s.Cultivar ?? s.cultivar ?? null;
+      const key = type
+        ? [type, colour ?? '', size ?? '', cultivar ?? ''].join('|')
+        : `__legacy__|${s['Display Name'] || s.id}`;
+      const existing = groups.get(key) ?? [];
+      existing.push(s);
+      groups.set(key, existing);
+    }
+    const finMap = new Map();
+    const idsMap = new Map();
+    for (const [key, rows] of groups) {
+      finMap.set(key, varietyFinancials(rows));
+      idsMap.set(key, rows.map(r => r.id).filter(Boolean));
+    }
+    return { finByKey: finMap, idsByKey: idsMap };
+  }, [stock]);
 
   if (byDate.length === 0) return null;
 
@@ -100,33 +133,116 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
         <ul className="divide-y divide-indigo-100">
           {byDate.map(sec => (
             <li key={sec.date ?? 'undated'} data-testid={`pending-arrival-date-${sec.date ?? 'undated'}`} className="px-4 py-2">
-              <div className="flex items-baseline justify-between mb-1">
+              <div className="mb-1">
                 <DateTag date={sec.date} kind="arriving" t={t} />
-                <span className="text-[10px] text-indigo-500 tabular-nums">
-                  +{sec.total} {t.stems ?? 'stems'}
-                </span>
               </div>
               <ul className="space-y-1">
                 {sec.flowers.map(f => (
-                  <li
-                    key={f.key}
-                    data-testid="pending-arrival-row"
-                    className="flex items-baseline justify-between text-sm px-2 py-1"
-                  >
-                    <span className="flex items-baseline gap-2 truncate min-w-0">
-                      {f.type
-                        ? <>
+                  splitType ? (
+                    /* Dashboard: grid layout matching BatchArrivalList.
+                       Exactly 8 grid children:
+                         col1 Type · col2 Variety · col3 amount
+                         col4 Cost · col5 Sell · col6 Markup · col7 Arrived(empty) · col8 Supplier */
+                    (() => {
+                      const fin = finByKey.get(f.key) ?? {};
+                      const ids = idsByKey.get(f.key) ?? [];
+                      return (
+                        <li
+                          key={f.key}
+                          data-testid="pending-arrival-row"
+                          className="grid items-baseline gap-1.5 text-sm py-1"
+                          style={{ gridTemplateColumns: STOCK_GRID_FULL }}
+                        >
+                          {/* col 1: Type (or fallback name) */}
+                          {f.type ? (
+                            <span className="flex items-baseline gap-1 min-w-0">
+                              <span className="font-semibold text-gray-900 truncate">{f.type}</span>
+                            </span>
+                          ) : (
+                            <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>
+                          )}
+                          {/* col 2: Colour / Size / Cultivar (empty span when no type so amount stays in col 3) */}
+                          {f.type ? (
+                            <span className="flex items-baseline gap-1.5 min-w-0 truncate">
+                              {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
+                              {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
+                              {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
+                              {!f.colour && f.size == null && !f.cultivar && <span className="text-gray-400">—</span>}
+                            </span>
+                          ) : (
+                            <span />
+                          )}
+                          {/* col 3: amount — BARE number, right-aligned */}
+                          <span className="text-indigo-700 font-semibold tabular-nums text-right">+{f.qty}</span>
+                          {/* col 4: Cost */}
+                          <span className="text-right tabular-nums text-gray-700">
+                            {onPatchPriceBulk && ids.length > 0 ? (
+                              <InlinePriceField
+                                value={fin.cost}
+                                testid="pending-edit-cost"
+                                onSave={(v) => onPatchPriceBulk(ids, { cost: v })}
+                              />
+                            ) : (
+                              fin.cost != null ? fin.cost.toFixed(2) : '—'
+                            )}
+                          </span>
+                          {/* col 5: Sell */}
+                          <span className="text-right tabular-nums text-gray-700">
+                            {onPatchPriceBulk && ids.length > 0 ? (
+                              <InlinePriceField
+                                value={fin.sell}
+                                testid="pending-edit-sell"
+                                onSave={(v) => onPatchPriceBulk(ids, { sell: v })}
+                              />
+                            ) : (
+                              fin.sell != null ? fin.sell.toFixed(2) : '—'
+                            )}
+                          </span>
+                          {/* col 6: Markup badge */}
+                          <span className="flex justify-end">
+                            {fin.markup ? (
+                              <span className={`inline-block px-1.5 py-0.5 rounded text-[10px] font-medium tabular-nums ${
+                                fin.markup >= 2.5 ? 'bg-emerald-100 text-emerald-700' :
+                                fin.markup >= 1.8 ? 'bg-amber-100 text-amber-700' :
+                                'bg-red-100 text-red-700'
+                              }`}>
+                                ×{fin.markup.toFixed(1)}
+                              </span>
+                            ) : (
+                              <span className="text-gray-300">—</span>
+                            )}
+                          </span>
+                          {/* col 7: Arrived — intentionally empty in cards */}
+                          <span aria-hidden="true" />
+                          {/* col 8: Supplier */}
+                          <span className="text-xs text-gray-600 truncate" title={fin.supplier ?? undefined}>
+                            {fin.supplier || '—'}
+                          </span>
+                        </li>
+                      );
+                    })()
+                  ) : (
+                    /* Mobile: flex layout */
+                    <li
+                      key={f.key}
+                      data-testid="pending-arrival-row"
+                      className="flex items-baseline justify-between text-sm px-2 py-1"
+                    >
+                      <span className="flex items-baseline gap-2 truncate min-w-0">
+                        {f.type ? (
+                          <>
                             <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
                             {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
                             {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
                             {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
                           </>
-                        : <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>}
-                    </span>
-                    <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0 ml-2">
-                      +{f.qty}
-                    </span>
-                  </li>
+                        ) : (
+                          <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>
+                        )}
+                      </span>
+                      <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0 ml-2">+{f.qty}</span>
+                    </li>
+                  )
                 ))}
               </ul>
             </li>

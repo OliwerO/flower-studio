@@ -124,3 +124,12 @@ export { default as VarietyTracePanel } from './components/VarietyTracePanel.jsx
 
 // Write-off Batch picker — Demand Entries excluded, default oldest, FIFO (issue #289)
 export { default as WriteOffBatchPicker } from './components/WriteOffBatchPicker.jsx';
+
+// CR-05: canonical dashboard stock-row grid — identical track list to BatchArrivalList
+// so Type/Variety/amount land in the same column across all three sections.
+// Pass splitType to ShortfallSummary and PendingArrivalsPanel for dashboard mode;
+// omit for mobile (flex layout, no grid).
+export { STOCK_GRID_FULL } from './components/stockRowGrid.js';
+
+// CR-05 follow-on: per-Variety financials for stock cards (Cost/Sell/Markup/Supplier).
+export { varietyFinancials } from './utils/varietyFinancials.js';
