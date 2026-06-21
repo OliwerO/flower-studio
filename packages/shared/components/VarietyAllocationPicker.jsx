@@ -50,6 +50,7 @@ export default function VarietyAllocationPicker({
   qty = 1,
   role,
   t,
+  todayIso = new Date().toISOString().slice(0, 10),
   onSelectStock,
   onCreateVariety,
   premadesByStockId,
@@ -88,7 +89,7 @@ export default function VarietyAllocationPicker({
       const availability = getVarietyAvailability(
         group.rows,
         reservations,
-        arrivalsForVariety(group.rows, pendingPO),
+        arrivalsForVariety(group.rows, pendingPO, todayIso),
       );
       const displayName = varietyDisplayName(group);
 
@@ -111,7 +112,7 @@ export default function VarietyAllocationPicker({
       visible.push({ ...group, displayName, availability, totalQty: availability.net });
     }
     return visible;
-  }, [stockItems, reservations, pendingPO, needle]);
+  }, [stockItems, reservations, pendingPO, needle, todayIso]);
 
   // Build a lookup map from id → original stockItem row for click handlers.
   const stockById = useMemo(() => {
@@ -134,7 +135,7 @@ export default function VarietyAllocationPicker({
     const availability = getVarietyAvailability(
       group.rows,
       reservations,
-      arrivalsForVariety(group.rows, pendingPO),
+      arrivalsForVariety(group.rows, pendingPO, todayIso),
     );
 
     const engineRows = group.rows.map((r) => ({
@@ -147,7 +148,7 @@ export default function VarietyAllocationPicker({
     const raw = stockAllocationEngine(engineRows, reservations, requiredBy, qty);
     const options = collapseBatchTiers(raw, stockById, qty, t);
     return { group, availability, options };
-  }, [expandedKey, allVarieties, reservations, pendingPO, requiredBy, qty, stockById, t]);
+  }, [expandedKey, allVarieties, reservations, pendingPO, requiredBy, qty, stockById, t, todayIso]);
 
   const isOwner = role === 'owner';
 

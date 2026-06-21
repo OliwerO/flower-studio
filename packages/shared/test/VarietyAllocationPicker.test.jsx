@@ -162,8 +162,9 @@ describe('VarietyAllocationPicker — allocation form (S3.2-ii)', () => {
   it('source dropdown surfaces "from incoming PO" when a PO is pending (CR-26)', () => {
     const peony = [{ id: 'p1', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null, current_quantity: -7, date: '2026-05-13' }];
     const pendingPO = { p1: { plannedDate: '2026-06-16', pos: [{ quantity: 10, plannedDate: '2026-06-16' }] } };
+    // todayIso must be before the PO date so the arrival is NOT overdue
     render(<VarietyAllocationPicker stockItems={peony} reservations={new Map()} pendingPO={pendingPO}
-      requiredBy="2026-05-12" qty={1} role="florist" t={t}
+      requiredBy="2026-05-12" qty={1} role="florist" t={t} todayIso="2026-06-01"
       onSelectStock={() => {}} onClose={() => {}} />);
     const opts = [...screen.getByTestId('alloc-source').querySelectorAll('option')].map(o => o.value);
     expect(opts).toContain('incoming');

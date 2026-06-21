@@ -326,3 +326,115 @@ describe('VarietyListItem owner financials on expand (CR-36)', () => {
     expect(screen.queryByTestId('variety-owner-financials')).toBeNull();
   });
 });
+
+describe('VarietyListItem incoming PO sub-line (CR-03)', () => {
+  const variety = {
+    key: 'Rose|Pink|60|',
+    type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+    rows: [{ id: 'b1', current_quantity: 5, date: '2026-05-10' }],
+  };
+
+  // pendingPO shape mirrors the /stock/pending-po response:
+  // { stockId: { ordered, plannedDate, pos: [{ quantity, plannedDate }] } }
+  const pendingPO = {
+    b1: {
+      ordered: 20,
+      plannedDate: '2026-07-01',
+      pos: [{ quantity: 20, plannedDate: '2026-07-01' }],
+    },
+  };
+
+  it('shows data-testid="variety-incoming" with incoming qty when pendingPO supplies an arrival', () => {
+    render(
+      <VarietyListItem
+        variety={variety}
+        reservations={new Map()}
+        pendingPO={pendingPO}
+        todayIso="2026-06-21"
+        t={t}
+        hideType={true}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    const incoming = screen.getByTestId('variety-incoming');
+    expect(incoming).toBeInTheDocument();
+    expect(incoming).toHaveTextContent('+20');
+  });
+
+  it('shows effective (net + incoming) alongside the arrival', () => {
+    // net = 5 (onHand) - 0 (planned) - 0 (reserved) = 5; effective = 5 + 20 = 25
+    render(
+      <VarietyListItem
+        variety={variety}
+        reservations={new Map()}
+        pendingPO={pendingPO}
+        todayIso="2026-06-21"
+        t={t}
+        hideType={true}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    const incoming = screen.getByTestId('variety-incoming');
+    expect(incoming).toHaveTextContent('25');
+  });
+
+  it('hides the incoming sub-line when pendingPO is empty', () => {
+    render(
+      <VarietyListItem
+        variety={variety}
+        reservations={new Map()}
+        pendingPO={{}}
+        todayIso="2026-06-21"
+        t={t}
+        hideType={true}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    expect(screen.queryByTestId('variety-incoming')).toBeNull();
+  });
+
+  it('overdue arrival renders DateTag in red (bg-red-100 / text-red-700)', () => {
+    // todayIso AFTER the planned date → overdue
+    render(
+      <VarietyListItem
+        variety={variety}
+        reservations={new Map()}
+        pendingPO={pendingPO}
+        todayIso="2026-08-01"
+        t={t}
+        hideType={true}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    const dateTag = screen.getByTestId('date-tag');
+    // data-kind stays "arriving"
+    expect(dateTag).toHaveAttribute('data-kind', 'arriving');
+    // overdue=true → class includes bg-red-100 text-red-700
+    expect(dateTag.className).toMatch(/bg-red-100/);
+    expect(dateTag.className).toMatch(/text-red-700/);
+  });
+
+  it('future arrival renders DateTag in blue (bg-blue-100 / text-blue-700)', () => {
+    // todayIso BEFORE the planned date → not overdue
+    render(
+      <VarietyListItem
+        variety={variety}
+        reservations={new Map()}
+        pendingPO={pendingPO}
+        todayIso="2026-06-21"
+        t={t}
+        hideType={true}
+        expanded={false}
+        onToggle={() => {}}
+      />
+    );
+    const dateTag = screen.getByTestId('date-tag');
+    expect(dateTag).toHaveAttribute('data-kind', 'arriving');
+    expect(dateTag.className).toMatch(/bg-blue-100/);
+    expect(dateTag.className).toMatch(/text-blue-700/);
+  });
+});

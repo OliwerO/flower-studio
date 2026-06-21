@@ -212,10 +212,10 @@ export default function Step2Bouquet({
   const yEnabled = useStockYModelFlag();
   // Determine if the order is for a future date (not today).
   // Future orders allow toggling between "use current stock" and "order new" per line.
+  const todayIso = new Date().toISOString().split('T')[0];
   const isFutureOrder = (() => {
     if (!requiredBy) return false;
-    const today = new Date().toISOString().split('T')[0];
-    return requiredBy > today;
+    return requiredBy > todayIso;
   })();
   const { suppliers: configSuppliers, targetMarkup } = useConfigLists();
   const [flowerQuery, setFlowerQuery] = useState('');
@@ -224,6 +224,7 @@ export default function Step2Bouquet({
   const [showCustomFlower, setShowCustomFlower] = useState(false);
   const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
   const [pendingPO, setPendingPO]     = useState({});
+  const [reservations, setReservations] = useState(new Map());
   // Y-model picker state — opens when flag-on AND a Variety has >1 Stock Items
   const [yPickerOpen, setYPickerOpen] = useState(false);
   const [yPickerStockItems, setYPickerStockItems] = useState([]);
@@ -245,6 +246,9 @@ export default function Step2Bouquet({
   // Fetch pending PO quantities so florists can see what's coming
   useEffect(() => {
     client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+    client.get('/stock/premade-committed').then(r => {
+      setReservations(new Map(Object.entries(r.data || {}).map(([id, v]) => [id, v.qty || 0])));
+    }).catch(() => {});
   }, []);
 
   // Keep order line price snapshots in sync with current stock prices.
@@ -353,7 +357,7 @@ export default function Step2Bouquet({
         rows:        g.rows,
         // S3.2-i: one labelled availability model (CR-23/28) — onHand/committed/
         // reserved/net + incoming/effective; the catalog hides effective ≤ 0 (D3).
-        availability: getVarietyAvailability(g.rows, new Map(), arrivalsForVariety(g.rows, pendingPO)),
+        availability: getVarietyAvailability(g.rows, reservations, arrivalsForVariety(g.rows, pendingPO, todayIso)),
         // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
         sell:        resolveVarietySell(g.rows, pendingPO),
         inCart,
@@ -363,7 +367,7 @@ export default function Step2Bouquet({
     // (q) still reaches them so deliberate over-promising creates a buy signal.
     // A Variety already in the cart always stays visible so it can be adjusted.
     .filter(g => !!q || g.inCart || g.availability.effective > 0);
-  }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines]);
+  }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines, reservations, todayIso]);
 
   // CR-27: a cart line bound to one sub-row (e.g. a −8 Demand Entry) must reflect
   // the WHOLE Variety's availability, not that one row — otherwise it falsely
@@ -374,11 +378,11 @@ export default function Step2Bouquet({
     if (!yEnabled) return {};
     const map = {};
     for (const [, group] of groupByVariety(adaptedStock)) {
-      const avail = getVarietyAvailability(group.rows, new Map(), arrivalsForVariety(group.rows, pendingPO));
+      const avail = getVarietyAvailability(group.rows, reservations, arrivalsForVariety(group.rows, pendingPO, todayIso));
       for (const r of group.rows) map[r.id] = avail;
     }
     return map;
-  }, [yEnabled, adaptedStock, pendingPO]);
+  }, [yEnabled, adaptedStock, pendingPO, reservations, todayIso]);
 
   function addOne(stockItem, amount = 1) {
     const add = Math.max(1, Number(amount) || 1);
@@ -552,6 +556,9 @@ export default function Step2Bouquet({
             <button onClick={() => {
               onStockRefresh();
               client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
+              client.get('/stock/premade-committed').then(r => {
+                setReservations(new Map(Object.entries(r.data || {}).map(([id, v]) => [id, v.qty || 0])));
+              }).catch(() => {});
             }} className="text-xs text-brand-600 font-medium">
               ↻ {t.refreshStock}
             </button>
@@ -896,11 +903,12 @@ export default function Step2Bouquet({
       {yEnabled && yPickerOpen && (
         <VarietyAllocationPicker
           stockItems={yPickerStockItems}
-          reservations={new Map()}
+          reservations={reservations}
           pendingPO={pendingPO}
           requiredBy={requiredBy || null}
           qty={1}
           role={role}
+          todayIso={todayIso}
           t={{
             pickerSearchPlaceholder: t.pickerSearchPlaceholder,
             pickerCreateNew:         t.pickerCreateNew,
