@@ -18,7 +18,7 @@ const STATUS_COLORS = {
   Complete:     'bg-emerald-100 text-emerald-700',
 };
 
-export default function StockOrderPanel({ negativeStock, stock, autoCreate, onClose }) {
+export default function StockOrderPanel({ negativeStock, poSuggestions, stock, autoCreate, onClose }) {
   const { suppliers: SUPPLIERS, targetMarkup } = useConfigLists();
   const { showToast } = useToast();
   // Y-model new-Variety fields (#304) only show when the flag is on. Off in prod
@@ -90,18 +90,24 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
   // Like a kanban card automatically moving to the next station — no extra click needed.
   const autoCreated = useRef(false);
   useEffect(() => {
-    if (autoCreate && !autoCreated.current && stock?.length > 0) {
+    // Y-model has no flat `stock` (grouped fetch) — fire on poSuggestions instead.
+    if (autoCreate && !autoCreated.current && (stock?.length > 0 || poSuggestions?.length > 0)) {
       autoCreated.current = true;
       startNewPO();
     }
-  }, [autoCreate, stock]);
+  }, [autoCreate, stock, poSuggestions]);
 
   // Pre-fill form from negative stock items.
   // Qty = raw stem demand (matches owner's reading). Pkgs stays 0 — owner
   // fills it if she wants to order whole batches; createPO then stores
   // Quantity Needed = pkgs * lotSize, else raw qty.
   function startNewPO() {
-    const lines = (negativeStock || []).map(item => {
+    // Y-model: netted per-Variety shortfall suggestions from the parent (drops
+    // Varieties covered by stock or an open PO, incl. late ones). Legacy: one
+    // line per negative stock row (unchanged).
+    const lines = (yModelOn && poSuggestions)
+      ? poSuggestions
+      : (negativeStock || []).map(item => {
       const si = (stock || []).find(s => s.id === item.id);
       const lotSize = Number(si?.['Lot Size']) || 0;
       const quantity = Math.abs(item.qty);

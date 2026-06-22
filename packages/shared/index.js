@@ -134,3 +134,5 @@ export { STOCK_GRID_FULL } from './components/stockRowGrid.js';
 
 // CR-05 follow-on: per-Variety financials for stock cards (Cost/Sell/Markup/Supplier).
 export { varietyFinancials } from './utils/varietyFinancials.js';
+// Y-model New-PO-form pre-fill: netted per-Variety shortfall suggestions (nets all open POs).
+export { buildPoSuggestions } from './utils/buildPoSuggestions.js';
