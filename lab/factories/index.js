@@ -6,3 +6,4 @@ export { makeDelivery } from './delivery.js';
 export { makeDriverTelegramChat } from './driverTelegramChat.js';
 export { makeStockLoss, LOSS_REASON } from './stockLoss.js';
 export { makeStockPurchase } from './stockPurchase.js';
+export { makeAuditLog } from './auditLog.js';
