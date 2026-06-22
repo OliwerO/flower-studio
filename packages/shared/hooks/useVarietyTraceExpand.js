@@ -1,7 +1,7 @@
 // packages/shared/hooks/useVarietyTraceExpand.js
 import { useCallback, useState } from 'react';
 
-const EMPTY = { events: [], unaccountedStems: 0, loading: false, loaded: false };
+const EMPTY = { events: [], unaccountedStems: 0, drift: 0, loading: false, loaded: false };
 
 /**
  * useVarietyTraceExpand — expand state for date-grouped stock cards.
@@ -34,7 +34,7 @@ export function useVarietyTraceExpand(fetchVarietyUsage) {
       setCache((prev) => {
         if (prev.has(key)) return prev; // cache hit — no refetch
         const next = new Map(prev);
-        next.set(key, { events: [], unaccountedStems: 0, loading: true, loaded: false });
+        next.set(key, { events: [], unaccountedStems: 0, drift: 0, loading: true, loaded: false });
         return next;
       });
       if (!cache.has(key) && fetchVarietyUsage) {
@@ -44,6 +44,7 @@ export function useVarietyTraceExpand(fetchVarietyUsage) {
               new Map(prev).set(key, {
                 events: data?.events ?? [],
                 unaccountedStems: data?.unaccountedStems ?? 0,
+                drift: data?.drift ?? 0,
                 loading: false,
                 loaded: true,
               }),
@@ -51,7 +52,7 @@ export function useVarietyTraceExpand(fetchVarietyUsage) {
           )
           .catch(() =>
             setCache((prev) =>
-              new Map(prev).set(key, { events: [], unaccountedStems: 0, loading: false, loaded: true }),
+              new Map(prev).set(key, { events: [], unaccountedStems: 0, drift: 0, loading: false, loaded: true }),
             ),
           );
       }

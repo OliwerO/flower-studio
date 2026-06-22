@@ -1345,12 +1345,24 @@ export async function getUsageByExactId(stockItemId) {
 //   {
 //     variety: { key, type_name, colour, size_cm, cultivar },
 //     events:  TrailEvent[],  // sorted date ASC, null-dated last
-//     unaccountedStems: number, // signed sum; non-zero = drift
+//     unaccountedStems: number, // signed sum of ALL event quantities (kept for compat)
+//     reservedStems: number,   // stems tied up in premade reservations (positive)
+//     onHand: number,          // Σ current_quantity across all Variety rows
+//     drift: number,           // predicted − actual: (unaccountedStems + reservedStems − onHand)
+//                              // > 0 means stems vanished without a recorded event (real loss)
+//                              // ≤ 0 means reconciled or untraced opening balance → hidden
 //   }
 //
 // unaccountedStems = Σ purchase.quantity + Σ (order|writeoff|premade).quantity
 // (order/writeoff/premade are already stored as negative; purchases positive).
 // Absorption events are deferred — un-paired absorptions surface as drift.
+//
+// TRUE drift formula:
+//   reservedStems = −Σ(quantity) for premade events   (premades are negative; this is positive)
+//   onHand        = Σ(row.currentQuantity) across all Variety rows
+//   drift         = unaccountedStems + reservedStems − onHand
+// A healthy Variety (all stems accounted for) has drift === 0.
+// Only drift > 0 is actionable (stems missing with no event explaining them).
 export async function getUsageByVarietyKey(key) {
   if (!db) throw new Error('getUsageByVarietyKey: postgres backend not configured');
   if (!key) throw new Error('getUsageByVarietyKey: key is required');
@@ -1386,6 +1398,9 @@ export async function getUsageByVarietyKey(key) {
       },
       events:           [],
       unaccountedStems: 0,
+      reservedStems:    0,
+      onHand:           0,
+      drift:            0,
     };
   }
 
@@ -1413,8 +1428,23 @@ export async function getUsageByVarietyKey(key) {
   if (firstPoIdx    !== -1) allEvents[firstPoIdx].firstPo       = true;
   if (firstDemandIdx !== -1) allEvents[firstDemandIdx].firstDemand = true;
 
-  // Compute drift: signed sum across all events.
+  // Compute unaccountedStems: signed sum across all events (kept for compat).
   const unaccountedStems = allEvents.reduce((sum, e) => sum + (Number(e.quantity) || 0), 0);
+
+  // Compute TRUE drift:
+  //   reservedStems = stems locked in premade reservations (premade events are negative
+  //                   in the ledger but do NOT reduce physical stock under the Y-model).
+  //   onHand        = Σ current_quantity across all rows in this Variety.
+  //   drift         = unaccountedStems + reservedStems − onHand
+  //   drift > 0 → stems vanished without a recorded event (real loss, footer shown).
+  //   drift ≤ 0 → reconciled or untraced opening balance (footer hidden).
+  const reservedStems = allEvents
+    .filter(e => e.type === 'premade')
+    .reduce((sum, e) => sum + -(Number(e.quantity) || 0), 0); // premades are negative; negate → positive
+
+  const onHand = rows.reduce((sum, row) => sum + (Number(row.currentQuantity) || 0), 0);
+
+  const drift = unaccountedStems + reservedStems - onHand;
 
   return {
     variety: {
@@ -1426,6 +1456,9 @@ export async function getUsageByVarietyKey(key) {
     },
     events:  allEvents,
     unaccountedStems,
+    reservedStems,
+    onHand,
+    drift,
   };
 }
 
