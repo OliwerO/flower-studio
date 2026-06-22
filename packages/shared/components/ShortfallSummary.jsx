@@ -120,11 +120,11 @@ export default function ShortfallSummary({
 
 function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, splitType, finByKey = new Map(), idsByKey = new Map(), onPatchPriceBulk, onOrderClick }) {
   return (
-    <div className="px-4 py-2">
-      <div className="mb-1">
+    <div className="px-4 py-1">
+      <div className="mb-0.5">
         <DateTag date={date} kind="needed" t={t} />
       </div>
-      <ul className="space-y-1">
+      <ul className="space-y-0.5">
         {rows.map(r => {
           const rowId = `${r.key}@${date}`;
           const open = isOpen(rowId);
