@@ -173,6 +173,19 @@ export default function VarietyListItem({
           <span className="text-[10px] text-gray-400 mt-0.5">{statusLabel}</span>
         </div>
 
+        {/* Inline history (trace) button — always visible when hasTrace */}
+        {hasTrace && (
+          <button
+            type="button"
+            data-testid="variety-history-btn"
+            onClick={handleTraceClick}
+            className="shrink-0 self-center mr-2 text-[13px] px-2 py-1 rounded-full bg-indigo-50 active:bg-indigo-100"
+            aria-label={t.trace ?? 'Trace'}
+          >
+            📈
+          </button>
+        )}
+
         {/* Inline write-off */}
         {onWriteOff && (
           <button

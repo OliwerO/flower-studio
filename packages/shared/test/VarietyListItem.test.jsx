@@ -88,6 +88,32 @@ describe('VarietyListItem header', () => {
   });
 });
 
+describe('VarietyListItem history button (S2)', () => {
+  it('renders variety-history-btn when onVarietyTrace is provided', () => {
+    const onVarietyTrace = vi.fn();
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} onVarietyTrace={onVarietyTrace} />);
+    expect(screen.getByTestId('variety-history-btn')).toBeInTheDocument();
+  });
+
+  it('does NOT render variety-history-btn when neither onVarietyTrace nor onRowClick+row is provided', () => {
+    // No onVarietyTrace, no onRowClick → hasTrace is false → button absent.
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-history-btn')).toBeNull();
+  });
+
+  it('clicking history-btn calls onVarietyTrace(variety.key) AND does NOT call onToggle', () => {
+    const onVarietyTrace = vi.fn();
+    const onToggle = vi.fn();
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={onToggle} onVarietyTrace={onVarietyTrace} />);
+    fireEvent.click(screen.getByTestId('variety-history-btn'));
+    expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
+    expect(onToggle).not.toHaveBeenCalled();
+  });
+});
+
 describe('VarietyListItem expansion', () => {
   const v = {
     key: 'Rose|Pink|60|',
