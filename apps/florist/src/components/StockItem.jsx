@@ -111,13 +111,15 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
       .finally(() => setTraceLoading(false));
   }
 
-  const dotColor = isOut ? 'bg-ios-red' : isLow ? 'bg-ios-orange' : 'bg-ios-green';
-  const qtyColor = isOut ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label';
   // CR-17: premade stems are a SUBSET of physical qty, not extra. View-mode
-  // leads with FREE (grabbable) = qty − premade; colour tracks free.
+  // leads with FREE (grabbable) = qty − premade; the dot + number colour track
+  // free so a Variety fully tied up in premades reads as concerning (parity
+  // with the dashboard StockTab cell). Identical to physical when no premade.
   const freeQty = premadeQty > 0 ? qty - premadeQty : qty;
   const freeOut = freeQty <= 0;
   const freeLow = freeQty > 0 && freeQty <= threshold;
+  const dotColor = freeOut ? 'bg-ios-red' : freeLow ? 'bg-ios-orange' : 'bg-ios-green';
+  const qtyColor = isOut ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label';
   const freeColor = freeOut ? 'text-ios-red' : freeLow ? 'text-ios-orange' : 'text-ios-label';
 
   function handleWriteOff() {
