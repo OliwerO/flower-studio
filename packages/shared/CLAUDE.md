@@ -43,6 +43,7 @@ hooks/
   useDebouncedValue.js        → Standard debounce-state hook
   useLongPress.js             → Long-press gesture detection
   useStockYModelFlag.js       → Reads `stockYModelEnabled` from `/settings`. Single-flight cached.
+  useVarietyTraceExpand.js    → Expand state for date-grouped stock cards: opens one row at a time, lazy-fetches + caches each Variety's /stock/varieties/:key/usage trace. Used by ShortfallSummary + PendingArrivalsPanel.
 utils/
   parseBatchName.js           → Extracts date from batch names like "Rose (14.Mar.)"
   stockName.jsx               → Formats stock display names with age/date labels

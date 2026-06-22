@@ -542,6 +542,11 @@ export default function StockPanelPage() {
                   Type: g.type_name, Colour: g.colour, Size: g.size_cm, Cultivar: g.cultivar,
                 })))}
                 t={t}
+                fetchVarietyUsage={async (key) => {
+                  const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                  return res.data; // { variety, events, unaccountedStems }
+                }}
+                onOrderClick={(recordId) => navigate('/orders/' + recordId)}
               />
               <ShortfallSummary
                 groups={filteredGroups}
@@ -549,10 +554,11 @@ export default function StockPanelPage() {
                 pendingPO={pendingPO}
                 t={t}
                 onVarietyClick={(key) => setExpandedKey(k => k === key ? null : key)}
-                fetchUsage={async (stockId) => {
-                  const res = await client.get(`/stock/${stockId}/usage`);
-                  return res.data?.trail || [];
+                fetchVarietyUsage={async (key) => {
+                  const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+                  return res.data; // { variety, events, unaccountedStems }
                 }}
+                onOrderClick={(recordId) => navigate('/orders/' + recordId)}
               />
               {/* CR-35: florist is mobile-only — the wide Cost/Sell/Markup
                   "Flat table" (dashboard format) is gone here; owner financials
@@ -716,7 +722,7 @@ export default function StockPanelPage() {
               {varietyTraceLoading ? (
                 <p className="text-xs text-ios-tertiary">{t.loading}</p>
               ) : (
-                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} />
+                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} onOrderClick={(recordId) => navigate('/orders/' + recordId)} />
               )}
             </div>
             <div className="px-4 pb-4 pt-1 border-t border-gray-50">

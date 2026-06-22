@@ -113,6 +113,7 @@ export { default as PendingArrivalsPanel } from './components/PendingArrivalsPan
 
 // STOCK_Y_MODEL feature flag hook (Task 6)
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
+export { useVarietyTraceExpand } from './hooks/useVarietyTraceExpand.js';
 
 // Per-batch trace UX seam — panel (inline, dashboard) + modal wrapper (florist) (issue #289)
 export { default as BatchTracePanel } from './components/BatchTracePanel.jsx';

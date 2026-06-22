@@ -1,24 +1,26 @@
 /**
  * ShortfallSummary — collapsible date-grouped panel of Varieties whose net is < 0.
  *
- * Each shortfall row expands to show which orders are driving the demand
- * (lazy-fetched via the host-provided fetchUsage callback, which wraps
- * GET /stock/:id/usage). The owner can see "Pink 50cm short 7 → driven by
- * Order #202605-00018 (Jane Doe, 5 stems) + Order #...".
+ * Each shortfall row expands to the full VarietyTracePanel (lazy-fetched via
+ * the host-provided fetchVarietyUsage callback, which wraps
+ * GET /stock/varieties/:key/usage). The owner can see "Pink 50cm short 7 →
+ * driven by Order #202605-00018 (Jane Doe, 5 stems) + Purchase (FarmCo) + …".
  *
  * Props:
- *   groups          — Variety groups
- *   reservations    — Map<stockRowId, reservedQty> (drives net)
- *   t               — translations
- *   onVarietyClick  — optional (key) => void
- *   fetchUsage      — optional async (stockId) => trail[]; when provided the
- *                      shortfall row can be tapped to expand and lazy-load
- *                      its order list. Trail format mirrors /stock/:id/usage.
- *   today           — optional ISO date override
- *   splitType       — dashboard mode: grid layout matching BatchArrivalList.
- *                      Mobile (default): flex layout with "stems" label.
+ *   groups              — Variety groups
+ *   reservations        — Map<stockRowId, reservedQty> (drives net)
+ *   t                   — translations
+ *   onVarietyClick      — optional (key) => void
+ *   fetchVarietyUsage   — optional async (key) => { events, unaccountedStems };
+ *                          when provided the shortfall row can be tapped to
+ *                          expand and lazy-load its full Variety usage trace.
+ *   today               — optional ISO date override
+ *   splitType           — dashboard mode: grid layout matching BatchArrivalList.
+ *                          Mobile (default): flex layout with "stems" label.
  */
 import { useMemo, useState } from 'react';
+import { useVarietyTraceExpand } from '../hooks/useVarietyTraceExpand.js';
+import VarietyTracePanel from './VarietyTracePanel.jsx';
 import { allocateVarietyCoverage, arrivalsForVariety } from '../utils/stockMath.js';
 import { varietyFinancials } from '../utils/varietyFinancials.js';
 import DateTag from './DateTag.jsx';
@@ -31,16 +33,15 @@ export default function ShortfallSummary({
   pendingPO = {},
   t,
   onVarietyClick,
-  fetchUsage,
+  fetchVarietyUsage,
   today,
   splitType = false,
   onPatchPriceBulk,
+  onOrderClick,
 }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [collapsed, setCollapsed] = useState(false);
-  const [openRow, setOpenRow] = useState(null); // stockId currently expanded
-  const [trails, setTrails] = useState(new Map()); // stockId → trail[]
-  const [loadingId, setLoadingId] = useState(null);
+  const { isOpen, toggle, getTrace } = useVarietyTraceExpand(fetchVarietyUsage);
 
   const { byDate } = useMemo(
     () => bucket(groups, reservations, today_, pendingPO),
@@ -62,23 +63,6 @@ export default function ShortfallSummary({
   }, [groups]);
 
   if (byDate.length === 0) return null;
-
-  async function toggleRow(stockId) {
-    if (openRow === stockId) {
-      setOpenRow(null);
-      return;
-    }
-    setOpenRow(stockId);
-    if (!trails.has(stockId) && fetchUsage) {
-      setLoadingId(stockId);
-      try {
-        const trail = await fetchUsage(stockId);
-        setTrails(m => new Map(m).set(stockId, trail || []));
-      } finally {
-        setLoadingId(null);
-      }
-    }
-  }
 
   return (
     <section
@@ -116,15 +100,15 @@ export default function ShortfallSummary({
                 date={date}
                 rows={rows}
                 t={t}
-                openRow={openRow}
-                trails={trails}
-                loadingId={loadingId}
-                onToggleRow={toggleRow}
+                isOpen={isOpen}
+                toggle={toggle}
+                getTrace={getTrace}
                 onVarietyClick={onVarietyClick}
                 splitType={splitType}
                 finByKey={finByKey}
                 idsByKey={idsByKey}
                 onPatchPriceBulk={onPatchPriceBulk}
+                onOrderClick={onOrderClick}
               />
             </li>
           ))}
@@ -134,7 +118,7 @@ export default function ShortfallSummary({
   );
 }
 
-function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVarietyClick, splitType, finByKey = new Map(), idsByKey = new Map(), onPatchPriceBulk }) {
+function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, splitType, finByKey = new Map(), idsByKey = new Map(), onPatchPriceBulk, onOrderClick }) {
   return (
     <div className="px-4 py-2">
       <div className="mb-1">
@@ -142,9 +126,8 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
       </div>
       <ul className="space-y-1">
         {rows.map(r => {
-          const isOpen = openRow === r.stockId;
-          const trail = trails.get(r.stockId);
-          const isLoading = loadingId === r.stockId;
+          const rowId = `${r.key}@${date}`;
+          const open = isOpen(rowId);
           return (
             <li key={`${r.key}-${date}-${r.stockId}`}>
               {splitType ? (
@@ -160,7 +143,7 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                   data-testid="shortfall-row"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onToggleRow(r.stockId);
+                    toggle(rowId, r.key);
                   }}
                   onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
                   className="relative w-full text-left py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
@@ -175,7 +158,7 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                       >
                         {/* col 1: Type — chevron inside so it never shifts column boundaries */}
                         <span className="flex items-baseline gap-1 min-w-0">
-                          <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                          <span className={`text-red-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
                           <span className="font-semibold text-gray-900 truncate">{r.type_name || '—'}</span>
                         </span>
                         {/* col 2: Colour / Size / Cultivar */}
@@ -253,14 +236,14 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                   data-testid="shortfall-row"
                   onClick={(e) => {
                     e.stopPropagation();
-                    onToggleRow(r.stockId);
+                    toggle(rowId, r.key);
                   }}
                   onDoubleClick={() => onVarietyClick && onVarietyClick(r.key)}
                   className="w-full text-left px-2 py-1 rounded-md hover:bg-red-100/50 active:bg-red-100 transition-colors"
                 >
                   <span className="flex items-baseline justify-between text-sm">
                     <span className="flex items-baseline gap-2 truncate">
-                      <span className={`text-red-400 text-xs transition-transform ${isOpen ? 'rotate-90' : ''}`}>▸</span>
+                      <span className={`text-red-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
                       {r.type_name && <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>}
                       {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
                       {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
@@ -284,26 +267,18 @@ function DateRow({ date, rows, t, openRow, trails, loadingId, onToggleRow, onVar
                   </span>
                 </button>
               )}
-              {isOpen && (
-                <div className="ml-6 mt-1 mb-2 text-xs">
-                  {isLoading && <p className="text-red-400 italic">{t.loading ?? 'Loading…'}</p>}
-                  {!isLoading && trail && trail.length === 0 && (
-                    <p className="text-red-400 italic">{t.traceEmpty ?? 'No linked orders'}</p>
+              {open && (
+                <div className="ml-6 mt-1 mb-2">
+                  {getTrace(r.key).loading && (
+                    <p className="text-red-400 italic text-xs">{t.loading ?? 'Loading…'}</p>
                   )}
-                  {!isLoading && trail && trail.length > 0 && (
-                    <ul className="space-y-0.5">
-                      {trail.filter(e => e.type === 'order').map((e, i) => (
-                        <li key={i} className="flex items-baseline justify-between gap-2 py-0.5 px-2 rounded bg-white/50">
-                          <span className="truncate">
-                            <span className="text-gray-500 tabular-nums">{e.orderId ?? '#?'}</span>
-                            {e.customer && <span className="ml-2 text-gray-700">{e.customer}</span>}
-                          </span>
-                          <span className="text-red-700 font-semibold tabular-nums shrink-0">
-                            {Math.abs(e.quantity ?? e.qty ?? 0)} {t.stems}
-                          </span>
-                        </li>
-                      ))}
-                    </ul>
+                  {!getTrace(r.key).loading && (
+                    <VarietyTracePanel
+                      events={getTrace(r.key).events}
+                      unaccountedStems={getTrace(r.key).unaccountedStems}
+                      t={t}
+                      onOrderClick={onOrderClick}
+                    />
                   )}
                 </div>
               )}

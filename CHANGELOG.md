@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-21 — Trace under Shortfall + Pending-Arrivals rows (PRD #324 T5 extension)
+
+The per-Variety usage trace (built in T5) now expands directly under each **Shortfalls** and **Pending Arrivals** card row, in both the dashboard and florist apps. Tapping a row shows the full `VarietyTracePanel` — every order, purchase, write-off, and premade lock for that Variety, plus the "unaccounted stems" drift footer. Previously the Shortfalls card had only an ad-hoc orders-only expand, and Pending Arrivals had no expand at all.
+
+### Shared (`packages/shared/`)
+- **New hook `hooks/useVarietyTraceExpand.js`** (unit-tested) — owns the card row-expand state: opens one row at a time (by `key@date` row id), lazy-fetches + caches each Variety's trace by 4-tuple key (same Variety on two dates fetches once), graceful on fetch error (loaded-but-empty, no throw).
+- `components/ShortfallSummary.jsx` — row expand swapped from the orders-only `fetchUsage(stockId)` list to the full `VarietyTracePanel` via the hook; prop renamed `fetchUsage` → `fetchVarietyUsage(key)`.
+- `components/PendingArrivalsPanel.jsx` — typed rows gain the same expand; legacy/untyped (`__legacy__|…`) rows stay non-expandable.
+
+### Frontend (cross-app parity)
+- `apps/dashboard/.../StockTab.jsx` + `apps/florist/.../StockPanelPage.jsx` — both cards now receive `fetchVarietyUsage={key => GET /stock/varieties/:key/usage}` (the existing endpoint); old per-`stockId` fetcher removed.
+
+### No backend / schema / endpoint change
+Pure UI reuse of the existing `GET /stock/varieties/:key/usage` surface (ADR-0008). Consumption events still come from `order_line.stockItemId` (the `order_line_consumptions` ledger remains future work, PRD #324 T1). Absorption still surfaces as the drift footer.
+
+---
+
 ## 2026-06-09 — Per-florist payroll breakdown by custom date range (#378)
 
 The owner could only see florist hours as **per-florist monthly totals** (dashboard FinancialTab merged `/summary` across months; florist-app owner view used a month picker). There was no way to pick one florist + an arbitrary date range and see a **day-by-day** breakdown of hours, hourly rate, and earnings — the detail the owner asked for in #378.

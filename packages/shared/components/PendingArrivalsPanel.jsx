@@ -24,6 +24,8 @@ import { byDateAsc } from '../utils/sortByDate.js';
 import { STOCK_GRID_FULL } from './stockRowGrid.js';
 import { varietyFinancials } from '../utils/varietyFinancials.js';
 import InlinePriceField from './InlinePriceField.jsx';
+import { useVarietyTraceExpand } from '../hooks/useVarietyTraceExpand.js';
+import VarietyTracePanel from './VarietyTracePanel.jsx';
 
 /** Bucket every pending PO line by its arrival date, then by Variety within a date. */
 function bucketByDate(pendingPO, stockById) {
@@ -62,8 +64,9 @@ function bucketByDate(pendingPO, stockById) {
     .sort(byDateAsc);
 }
 
-export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, splitType = false, onPatchPriceBulk }) {
+export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {}, splitType = false, onPatchPriceBulk, fetchVarietyUsage, onOrderClick }) {
   const [collapsed, setCollapsed] = useState(false);
+  const { isOpen, toggle, getTrace } = useVarietyTraceExpand(fetchVarietyUsage);
 
   const stockById = useMemo(() => {
     const m = new Map();
@@ -137,25 +140,34 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                 <DateTag date={sec.date} kind="arriving" t={t} />
               </div>
               <ul className="space-y-1">
-                {sec.flowers.map(f => (
-                  splitType ? (
+                {sec.flowers.map(f => {
+                  const rowId = `${sec.date ?? 'undated'}@${f.key}`;
+                  const canTrace = !!fetchVarietyUsage && !f.key.startsWith('__legacy__');
+                  const open = canTrace && isOpen(rowId);
+                  const trace = getTrace(f.key);
+
+                  if (splitType) {
                     /* Dashboard: grid layout matching BatchArrivalList.
                        Exactly 8 grid children:
                          col1 Type · col2 Variety · col3 amount
                          col4 Cost · col5 Sell · col6 Markup · col7 Arrived(empty) · col8 Supplier */
-                    (() => {
-                      const fin = finByKey.get(f.key) ?? {};
-                      const ids = idsByKey.get(f.key) ?? [];
-                      return (
-                        <li
-                          key={f.key}
+                    const fin = finByKey.get(f.key) ?? {};
+                    const ids = idsByKey.get(f.key) ?? [];
+                    return (
+                      <li key={f.key}>
+                        <button
+                          type="button"
                           data-testid="pending-arrival-row"
-                          className="grid items-baseline gap-1.5 text-sm py-1"
+                          onClick={(e) => { e.stopPropagation(); if (canTrace) toggle(rowId, f.key); }}
+                          className={`w-full grid items-baseline gap-1.5 text-sm py-1 text-left ${canTrace ? 'cursor-pointer hover:bg-indigo-50/40' : 'cursor-default'}`}
                           style={{ gridTemplateColumns: STOCK_GRID_FULL }}
                         >
-                          {/* col 1: Type (or fallback name) */}
+                          {/* col 1: Type (or fallback name) — chevron inside col 1 for traceable rows */}
                           {f.type ? (
                             <span className="flex items-baseline gap-1 min-w-0">
+                              {canTrace && (
+                                <span className={`text-indigo-400 text-xs transition-transform ${open ? 'rotate-90' : ''}`}>▸</span>
+                              )}
                               <span className="font-semibold text-gray-900 truncate">{f.type}</span>
                             </span>
                           ) : (
@@ -218,32 +230,56 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                           <span className="text-xs text-gray-600 truncate" title={fin.supplier ?? undefined}>
                             {fin.supplier || '—'}
                           </span>
-                        </li>
-                      );
-                    })()
-                  ) : (
-                    /* Mobile: flex layout */
-                    <li
-                      key={f.key}
-                      data-testid="pending-arrival-row"
-                      className="flex items-baseline justify-between text-sm px-2 py-1"
-                    >
-                      <span className="flex items-baseline gap-2 truncate min-w-0">
-                        {f.type ? (
-                          <>
-                            <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
-                            {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
-                            {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
-                            {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
-                          </>
-                        ) : (
-                          <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>
+                        </button>
+                        {open && (
+                          <div className="ml-6 mt-1 mb-2">
+                            {trace.loading && <p className="text-indigo-400 italic text-xs">{t.loading ?? 'Loading…'}</p>}
+                            {!trace.loading && (
+                              <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} onOrderClick={onOrderClick} />
+                            )}
+                          </div>
                         )}
-                      </span>
-                      <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0 ml-2">+{f.qty}</span>
+                      </li>
+                    );
+                  }
+
+                  /* Mobile: flex layout */
+                  return (
+                    <li key={f.key}>
+                      <button
+                        type="button"
+                        data-testid="pending-arrival-row"
+                        onClick={(e) => { e.stopPropagation(); if (canTrace) toggle(rowId, f.key); }}
+                        className={`w-full flex items-baseline justify-between text-sm px-2 py-1 text-left ${canTrace ? 'cursor-pointer hover:bg-indigo-50/40' : 'cursor-default'}`}
+                      >
+                        <span className="flex items-baseline gap-2 truncate min-w-0">
+                          {canTrace && (
+                            <span className={`text-indigo-400 text-xs transition-transform shrink-0 ${open ? 'rotate-90' : ''}`}>▸</span>
+                          )}
+                          {f.type ? (
+                            <>
+                              <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
+                              {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
+                              {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
+                              {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
+                            </>
+                          ) : (
+                            <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>
+                          )}
+                        </span>
+                        <span className="text-sm text-indigo-700 font-semibold tabular-nums shrink-0 ml-2">+{f.qty}</span>
+                      </button>
+                      {open && (
+                        <div className="ml-6 mt-1 mb-2">
+                          {trace.loading && <p className="text-indigo-400 italic text-xs">{t.loading ?? 'Loading…'}</p>}
+                          {!trace.loading && (
+                            <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} onOrderClick={onOrderClick} />
+                          )}
+                        </div>
+                      )}
                     </li>
-                  )
-                ))}
+                  );
+                })}
               </ul>
             </li>
           ))}

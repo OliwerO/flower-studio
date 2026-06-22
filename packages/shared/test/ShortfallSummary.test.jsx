@@ -1,9 +1,15 @@
 // @vitest-environment jsdom
-import { describe, it, expect } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { describe, it, expect, vi } from 'vitest';
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react';
 import ShortfallSummary from '../components/ShortfallSummary.jsx';
 
-const t = { stems: 'stems', undatedShort: '—' };
+const t = {
+  stems: 'stems', undatedShort: '—',
+  shortfallsTitle: 'Shortfalls',
+  traceEmpty: 'No events',
+  traceTypeOrder: 'Order', traceTypeWriteoff: 'Write-off',
+  traceTypePurchase: 'Purchase', traceTypePremade: 'Premade',
+};
 
 // One short Variety (net < 0) with a dated Demand Entry.
 const groups = [{
@@ -68,4 +74,30 @@ describe('ShortfallSummary date-aware netting (CR-39)', () => {
     expect(screen.getByTestId('shortfall-date-2026-06-20')).toBeInTheDocument();
     expect(screen.queryByTestId('shortfall-late')).toBeNull();
   });
+});
+
+// ── Task 2: fetchVarietyUsage → VarietyTracePanel ──────────────────────────
+const groupsForTrace = [{
+  key: 'Peony|Pink|60|Sarah',
+  type_name: 'Peony', colour: 'Pink', size_cm: 60, cultivar: 'Sarah',
+  rows: [{ id: 'de1', date: '2026-06-22', current_quantity: -7 }],
+}];
+
+it('expands a shortfall row to the full VarietyTracePanel via fetchVarietyUsage', async () => {
+  const fetchVarietyUsage = vi.fn().mockResolvedValue({
+    events: [
+      { type: 'order', qty: -7, orderId: '#202605-1', customer: 'Jane', date: '2026-06-20' },
+      { type: 'purchase', qty: 25, supplier: 'FarmCo', date: '2026-06-18' },
+    ],
+    unaccountedStems: 0,
+  });
+
+  render(<ShortfallSummary groups={groupsForTrace} reservations={new Map()} t={t} fetchVarietyUsage={fetchVarietyUsage} today="2026-06-21" />);
+
+  fireEvent.click(screen.getByTestId('shortfall-row'));
+  await waitFor(() => expect(fetchVarietyUsage).toHaveBeenCalledWith('Peony|Pink|60|Sarah'));
+  // VarietyTracePanel renders trace-row entries (order + purchase), not just orders.
+  const rows = await screen.findAllByTestId('trace-row');
+  expect(rows.length).toBe(2);
+  expect(screen.getByText('Purchase')).toBeInTheDocument();
 });
