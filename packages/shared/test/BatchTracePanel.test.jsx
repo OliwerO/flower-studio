@@ -27,13 +27,14 @@ describe('BatchTracePanel', () => {
   it('order row shows customer name', () => {
     const trail = [{ type: 'order', date: '2026-05-10', qty: 5, customer: 'Anna' }];
     render(<BatchTracePanel trail={trail} t={t} />);
-    expect(screen.getByText('Anna')).toBeInTheDocument();
+    // Scope to the trace row — the balance graph now also labels the event (CR-18).
+    expect(screen.getByTestId('trace-row')).toHaveTextContent('Anna');
   });
 
   it('writeoff row shows reason', () => {
     const trail = [{ type: 'writeoff', date: '2026-05-09', qty: 2, reason: 'Wilted' }];
     render(<BatchTracePanel trail={trail} t={t} />);
-    expect(screen.getByText('Wilted')).toBeInTheDocument();
+    expect(screen.getByTestId('trace-row')).toHaveTextContent('Wilted');
   });
 
   it('empty trail shows traceEmpty message', () => {
