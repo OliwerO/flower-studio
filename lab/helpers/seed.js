@@ -2,9 +2,9 @@
 //
 // Insert a fixture (returned by a scenario builder) into Postgres.
 // Inserts in FK order:
-//   customers → stock → stock_loss_log → stock_purchases → stock_orders
-//   → stock_order_lines → premade_bouquets → orders → order_lines
-//   → premade_bouquet_lines → deliveries
+//   customers → stock → audit_log → stock_loss_log → stock_purchases
+//   → stock_orders → stock_order_lines → premade_bouquets → orders
+//   → order_lines → premade_bouquet_lines → deliveries
 // Uses a single transaction so partial seeds don't leave the DB inconsistent.
 //
 // premadeBouquets, premadeBouquetLines, stockOrders and stockOrderLines are
@@ -18,6 +18,9 @@ export async function seedFixture(pool, fixture) {
     await client.query('BEGIN');
     await insertMany(client, 'customers', fixture.customers ?? []);
     await insertMany(client, 'stock', fixture.stockItems ?? []);
+    // audit_log.entity_id references a stock row (no FK, but logically after stock).
+    // Source of `premade_dissolved` trace events that have no dedicated table.
+    await insertMany(client, 'audit_log', fixture.auditLog ?? []);
     await insertMany(client, 'stock_loss_log', fixture.stockLosses ?? []);
     await insertMany(client, 'stock_purchases', fixture.stockPurchases ?? []);
     await insertMany(client, 'stock_orders', fixture.stockOrders ?? []);
