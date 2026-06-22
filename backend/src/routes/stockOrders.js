@@ -566,7 +566,7 @@ async function purchaseAlreadyRecorded(marker) {
 // sensible defaults without requiring the florist to fill a form.
 //
 // Sell price uses the global targetMarkup setting: sellPrice = costPerStem * markup.
-async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerStem, originalStockItem, originalStockId, today) {
+async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerStem, originalStockItem, originalStockId, today, varietyAttrs = null) {
   const trimmedName = (altFlowerName || '').trim();
   if (!trimmedName) {
     throw new Error('Cannot receive substitute with empty flower name');
@@ -603,6 +603,14 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
   const markup = Number(getConfig('targetMarkup')) || 1;
   const sellPerStem = Math.round(costPerStem * markup * 100) / 100;
 
+  // C13: a substitute is a DIFFERENT flower from the original (free-text Alt
+  // Flower Name), so its Variety identity is whatever the florist classified it
+  // as during evaluation — NOT the original's attrs (that would mislabel a Peony
+  // substitute as the Rose it replaced). Write the captured attrs when present;
+  // otherwise leave the card attr-less (legacy behaviour). Under STOCK_Y_MODEL a
+  // classified substitute is then visible in listGroupedByVariety; an
+  // unclassified one stays ungrouped until the owner edits it.
+  const aSize = Number(varietyAttrs?.Size);
   const created = await stockRepo.create({
     'Display Name':       trimmedName,
     'Purchase Name':      trimmedName,
@@ -616,6 +624,10 @@ async function findOrCreateSubstituteStock(altFlowerName, altSupplier, costPerSt
     Active:               true,
     'Last Restocked':     today,
     ...(originalStockId ? { 'Substitute For': [originalStockId] } : {}),
+    ...(varietyAttrs?.Type     ? { Type:     String(varietyAttrs.Type).trim() }     : {}),
+    ...(varietyAttrs?.Colour   ? { Colour:   String(varietyAttrs.Colour).trim() }   : {}),
+    ...(Number.isFinite(aSize) && aSize > 0 ? { Size: aSize } : {}),
+    ...(varietyAttrs?.Cultivar ? { Cultivar: String(varietyAttrs.Cultivar).trim() } : {}),
   });
   console.log(`[STOCK-ORDER] Created substitute stock card "${trimmedName}" (${created.id}) — cost ${costPerStem} zł, sell ${sellPerStem} zł`);
   return created.id;
@@ -906,6 +918,15 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const altWriteOff = Number(evalLine.altWriteOffQty) || 0;
         const altSupplier = line['Alt Supplier'] || '';
         const altFlowerName = line['Alt Flower Name'] || '';
+        // C13: Variety attrs the florist captured for the substitute during
+        // evaluation. A substitute is its OWN flower — these are NOT the original
+        // line's attrs. Threaded onto the new substitute card + its dated Batch
+        // so a classified substitute is visible in the grouped Y-model view.
+        const altType     = evalLine.altType     ? String(evalLine.altType).trim()     : null;
+        const altColour   = evalLine.altColour   ? String(evalLine.altColour).trim()   : null;
+        const altSizeCm   = evalLine.altSize != null && Number.isFinite(Number(evalLine.altSize)) && Number(evalLine.altSize) > 0 ? Number(evalLine.altSize) : null;
+        const altCultivar = evalLine.altCultivar ? String(evalLine.altCultivar).trim() : null;
+        const altVarietyAttrs = { Type: altType, Colour: altColour, Size: altSizeCm, Cultivar: altCultivar };
         const altQtyFound = Number(line['Alt Quantity Found']) || 0;
         const altCostTotal = Number(line['Alt Cost']) || 0;
         // Per-stem cost = total paid / total delivered (not / accepted —
@@ -925,12 +946,12 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               ? await stockRepo.getById(stockItemId).catch(() => null)
               : null;
             substituteStockId = await findOrCreateSubstituteStock(
-              altFlowerName, altSupplier, altCostPerStem, originalStockItem, stockItemId, evalDate,
+              altFlowerName, altSupplier, altCostPerStem, originalStockItem, stockItemId, evalDate, altVarietyAttrs,
             );
             const markup = Number(getConfig('targetMarkup')) || 1;
             const altSellPerStem = Math.round(altCostPerStem * markup * 100) / 100;
             const altFinalId = await receiveIntoStock(
-              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate,
+              substituteStockId, altAccepted, altCostPerStem, altSellPerStem, altSupplier, evalDate, altVarietyAttrs,
             );
             substituteStockId = altFinalId; // may be a new batch id
 
@@ -1064,4 +1085,4 @@ export default router;
 // seam where #327 (PRD #324 line 150) Variety attrs propagation is enforced.
 // Direct callers in the route exercise it via POST /stock-orders/:id/evaluate;
 // tests assert its behaviour by calling this seam directly against pglite.
-export const __testing = { receiveIntoStock };
+export const __testing = { receiveIntoStock, findOrCreateSubstituteStock };
