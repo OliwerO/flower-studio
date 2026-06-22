@@ -65,18 +65,33 @@ describe('VarietyTracePanel', () => {
     expect(screen.queryByTestId('unaccounted-footer')).not.toBeInTheDocument();
   });
 
-  it('renders a balance sparkline when there is at least one dated event', () => {
+  it('CR-12: graph is hidden by default; row expansion shows the orders list, the toggle reveals/hides the sparkline', () => {
     const events = [
       { type: 'purchase', qty: 25, date: '2026-06-18' },
-      { type: 'order', qty: -30, date: '2026-06-20' },
+      { type: 'order', qty: -30, date: '2026-06-20', orderId: '202606-1', customer: 'Ann' },
     ];
-    render(<VarietyTracePanel events={events} unaccountedStems={-5} t={{ stems: 'stems', traceBalance: 'Balance', traceTypeOrder: 'Order', traceTypePurchase: 'Purchase' }} />);
+    render(<VarietyTracePanel events={events} unaccountedStems={-5} t={t} />);
+    // List is shown immediately; graph is NOT (the owner clicks to see orders, not the graph).
+    expect(screen.getAllByTestId('trace-row').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('trace-sparkline')).toBeNull();
+    // Reveal on demand.
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
     expect(screen.getByTestId('trace-sparkline')).toBeInTheDocument();
+    // Hide again.
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
+    expect(screen.queryByTestId('trace-sparkline')).toBeNull();
   });
 
-  it('omits the sparkline when no event is dated', () => {
-    render(<VarietyTracePanel events={[{ type: 'premade', qty: -6 }]} unaccountedStems={-6} t={{ stems: 'stems', traceTypePremade: 'Premade' }} />);
+  it('omits the sparkline (and shows no graph toggle) when there are no events', () => {
+    render(<VarietyTracePanel events={[]} unaccountedStems={0} t={t} />);
     expect(screen.queryByTestId('trace-sparkline')).toBeNull();
+    expect(screen.queryByTestId('trace-graph-toggle')).toBeNull();
+  });
+
+  it('graph toggle shows even when the only event is undated, but the sparkline stays empty', () => {
+    render(<VarietyTracePanel events={[{ type: 'premade', qty: -6 }]} unaccountedStems={-6} t={{ ...t, traceTypePremade: 'Premade' }} />);
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
+    expect(screen.queryByTestId('trace-sparkline')).toBeNull(); // BalanceSparkline returns null with no dated events
   });
 
   it('fires onOrderClick with the order record id when an order row is tapped', () => {
@@ -126,11 +141,13 @@ describe('VarietyTracePanel', () => {
       { type: 'order',    date: '2026-05-05', qty: -8 },
     ];
     const { unmount } = render(<VarietyTracePanel events={eventsWithFlags} unaccountedStems={12} t={t} />);
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
     const sparklineWith = screen.getByTestId('trace-sparkline');
     const balanceTextWith = sparklineWith.textContent;
     unmount();
 
     render(<VarietyTracePanel events={eventsWithout} unaccountedStems={12} t={t} />);
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
     const sparklineWithout = screen.getByTestId('trace-sparkline');
     const balanceTextWithout = sparklineWithout.textContent;
 

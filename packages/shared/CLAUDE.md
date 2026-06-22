@@ -31,7 +31,7 @@ components/
   BalanceSparkline.jsx        → Shared step-chart balance trace (S7). Time-proportional X axis, inverted Y axis, always-on zero line (dashed), staircase path (hold→jump), Y/X axis labels, colour-coded event markers. Props: events, t, onOrderClick, asOf. Consumed by BatchTracePanel and VarietyTracePanel.
   BatchTracePanel.jsx         → Inline per-Batch usage trace panel (florist uses this via BatchTraceModal; dashboard renders it directly as an inline panel). Uses shared BalanceSparkline.
   BatchTraceModal.jsx         → Modal wrapper around BatchTracePanel. Used by the florist app where trace opens over a sheet.
-  VarietyTracePanel.jsx       → Per-Variety usage trail — unions events across every Batch + DE in a Variety (GET /stock/varieties/:key/usage). Renders the 4 event kinds + an "unaccounted stems" drift footer. Absorption events deferred (PRD #324 T5). Uses shared BalanceSparkline.
+  VarietyTracePanel.jsx       → Per-Variety usage trail — unions events across every Batch + DE in a Variety (GET /stock/varieties/:key/usage). Renders the 4 event kinds + an "unaccounted stems" drift footer. The BalanceSparkline graph is OFF by default (CR-12) — the consuming-orders list shows on expand; a right-aligned "Show graph" toggle (data-testid `trace-graph-toggle`) reveals it on demand. Absorption events deferred (PRD #324 T5). Uses shared BalanceSparkline.
   WriteOffBatchPicker.jsx     → Batch-targeted write-off form. Excludes Demand Entries; defaults to oldest Batch by date. Behind `STOCK_Y_MODEL`.
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
