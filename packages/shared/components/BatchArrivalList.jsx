@@ -321,14 +321,20 @@ function flatten(groups, reservations, today) {
       m.qty += qty;
       m.reserved += reservations.get(row.id) ?? 0;
       m.underlying.push({ id: row.id, qty, cost, supplier, date });
-      if (cost != null) m.costsSeen.add(cost.toFixed(2));
-      if (supplier) m.suppliersSeen.add(supplier);
-      // Track the newest receive — its cost wins as the displayed cost.
-      if (date && (!m.newestDate || date > m.newestDate)) {
-        m.newestDate = date;
-        m.newestCost = cost;
-      } else if (!m.newestDate && cost != null && m.newestCost == null) {
-        m.newestCost = cost;
+      // CR-14: only POSITIVE-qty receives carry a cost basis. A zero-qty row
+      // (an absorbed demand entry, qty 0 — it clears the qty<0 guard above)
+      // holds a stray cost that must NOT count toward the mixed-cost badge or
+      // the displayed (newest) cost / supplier.
+      if (qty > 0) {
+        if (cost != null) m.costsSeen.add(cost.toFixed(2));
+        if (supplier) m.suppliersSeen.add(supplier);
+        // Track the newest receive — its cost wins as the displayed cost.
+        if (date && (!m.newestDate || date > m.newestDate)) {
+          m.newestDate = date;
+          m.newestCost = cost;
+        } else if (!m.newestDate && cost != null && m.newestCost == null) {
+          m.newestCost = cost;
+        }
       }
     }
   }
