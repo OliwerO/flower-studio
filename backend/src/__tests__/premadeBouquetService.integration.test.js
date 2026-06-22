@@ -301,6 +301,29 @@ describe('createPremadeBouquet flag-on (STOCK_Y_MODEL=true) — issue #285', () 
     const [after] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
     expect(after.currentQuantity).toBe(5);
   });
+
+  it('(C2) preserves the bouquet when createOrder fails — no delete-before-create loss', async () => {
+    const [rose] = await harness.db.insert(stock).values({
+      displayName: 'Rose', currentQuantity: 10, typeName: 'Rose',
+    }).returning();
+    const built = await createPremadeBouquet({
+      name: 'Fragile',
+      lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 4, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+      createdBy: 'F',
+    });
+    // The sale throws mid-createOrder (e.g. bad delivery data). The bouquet must
+    // survive — a failed sale must never destroy the bouquet (delete-before-create).
+    createOrder.mockImplementationOnce(async () => { throw new Error('boom'); });
+
+    await expect(matchPremadeBouquetToOrder(built.id, {
+      customerName: 'Test', deliveryType: 'pickup', orderDate: '2026-05-10',
+    }, defaultConfig)).rejects.toThrow('boom');
+
+    const bouquetsAfter = await harness.db.select().from(premadeBouquets);
+    expect(bouquetsAfter).toHaveLength(1);
+    const linesAfter = await harness.db.select().from(premadeBouquetLines);
+    expect(linesAfter).toHaveLength(1);
+  });
 });
 
 // ── #330: editPremadeBouquetLines under flag-on must NOT touch Batch qty ──
@@ -391,5 +414,21 @@ describe('editPremadeBouquetLines flag-on (STOCK_Y_MODEL=true) — issue #330', 
     expect(after.currentQuantity).toBe(5);
     const [unchanged] = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.id, line.id));
     expect(unchanged.quantity).toBe(4);
+  });
+
+  it('(C10) rolls back a removed-line deletion when a new line fails validation', async () => {
+    const [rose] = await harness.db.insert(stock).values({ displayName: 'Rose', currentQuantity: 5, typeName: 'Rose' }).returning();
+    const { bouquet, line } = await seedBouquetWithLine(rose.id, 4); // reserves 4 of 5
+    // Remove the existing line (frees 4) AND add a new line that still exceeds
+    // free qty (6 > 5) → validateFreeQty throws inside the tx. The removed-line
+    // deletion must roll back with the failed tx, not commit on its own.
+    await expect(editPremadeBouquetLines(bouquet.id, {
+      removedLines: [{ lineId: line.id, stockItemId: rose.id, quantity: 4 }],
+      lines: [{ stockItemId: rose.id, flowerName: 'Rose', quantity: 6, costPricePerUnit: 1, sellPricePerUnit: 5 }],
+    })).rejects.toThrow(/Insufficient free stems/);
+
+    const lines = await harness.db.select().from(premadeBouquetLines).where(eq(premadeBouquetLines.bouquetId, bouquet.id));
+    expect(lines).toHaveLength(1);
+    expect(lines[0].id).toBe(line.id);
   });
 });
