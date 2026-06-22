@@ -1,22 +1,16 @@
 import { defineConfig } from 'vitest/config';
-import { fileURLToPath, URL } from 'node:url';
-import { createRequire } from 'node:module';
+import react from '@vitejs/plugin-react';
 
-const require = createRequire(import.meta.url);
-
-// @vitejs/plugin-react is not a direct dep of packages/shared but is available
-// via the apps' node_modules — resolve it explicitly so JSX tests work.
-const reactPluginPath = new URL(
-  '../../apps/florist/node_modules/@vitejs/plugin-react/dist/index.js',
-  import.meta.url
-).pathname;
-const { default: react } = await import(reactPluginPath);
-
+// The React plugin sets esbuild's automatic JSX runtime so component/hook
+// tests (*.test.jsx) compile without an explicit `import React`. Without it,
+// JSX falls back to the classic `React.createElement` transform and every
+// component test throws "React is not defined". jsdom is the default env so
+// @testing-library/react can mount.
 export default defineConfig({
   plugins: [react()],
   test: {
     globals: true,
-    setupFiles: ['./test/setup.js'],
     environment: 'jsdom',
+    setupFiles: ['./test/setup.js'],
   },
 });
