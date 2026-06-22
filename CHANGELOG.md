@@ -5,6 +5,62 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-22 — New-PO form proposes only un-ordered shortfalls (#419)
+
+Under the Y-model, the New Purchase Order form pre-filled one line per raw negative-quantity stock row (i.e. every Demand Entry), and never subtracted already-open purchase orders. Result: it proposed Varieties whose on-hand stock already covered them, and re-proposed stems already on a **Sent** PO. The form now pre-fills one line per Variety still genuinely short after counting on-hand stock **plus all open POs**.
+
+### Shared (`packages/shared/`)
+- **New util `utils/buildPoSuggestions.js`** (`buildPoSuggestions(groups, pendingPO, premadeMap)`, unit-tested) — one suggestion per Variety with `getVarietyAvailability().effective < 0` (date-agnostic, so even a late PO nets out — intentionally unlike the date-aware Shortfalls panel). Quantity = `−effective`; demand-driven (only Varieties that carry committed demand); attaches to the undated orig row, else carries the 4-tuple Variety identity for a brand-new Variety (#304).
+
+### Frontend (cross-app parity)
+- `apps/florist/.../PurchaseOrderPage.jsx` — now fetches grouped stock + pending-PO + premade-committed and builds the prefill via `buildPoSuggestions` under the flag.
+- `apps/dashboard/.../StockTab.jsx` → `StockOrderPanel.jsx` — passes a `poSuggestions` prop built the same way. Legacy (flag-off) prefill is untouched in both apps.
+
+### No backend / schema change
+Pure reuse of the existing `/stock?grouped=true`, `/stock/pending-po`, and `/stock/premade-committed` endpoints. `STOCK_Y_MODEL` stays unset on prod.
+
+---
+
+## 2026-06-22 — Y-model cutover-blocker cleanup (overnight ultracode audit) — #412-417
+
+An overnight audit of the `STOCK_Y_MODEL` (Y-model) order/stock paths surfaced a cluster of correctness gaps that would each break the Variety/Demand-Entry model once the flag is flipped on prod (the #291 cutover). All were re-verified adversarially against master, then fixed in six slices and merged. **Every fix is inert with the flag off (current prod state) — flag-off paths are provably unchanged.** This batch makes the Y-model functionally ≥ legacy for these paths; the #291 flag-flip is no longer gated by these findings.
+
+Terminology: a **Demand Entry (DE)** is a stock row with `current_quantity < 0` (typeName set) representing unmet demand for a Variety on a date. A **Batch** has `qty >= 0`. A **substitute** is a different free-text flower the driver bought when the ordered one was unavailable.
+
+### #412 — Order no longer double-decrements Demand Entries (C1, CRITICAL)
+`createOrder` deepened a DE in step 3b (`getOrCreateDemandEntry`) **and** then hit the same row again with the unconditional `adjustQuantity` in step 4 — every order against a demand-only Variety counted its demand twice. Step 4 now skips lines already applied via the DE path (`line._deApplied`). `backend/src/repos/orderRepo.js` (+ regression test asserting the seed DE deepens by exactly the line qty).
+
+### #413 — Premade match/edit atomicity (C2/C10)
+`_matchPremadeYModel` deleted the bouquet **before** creating the sale order, and `_editPremadeBouquetLinesYModel` deleted removed-line reservations **outside** the transaction — a throw left the bouquet unrecoverable / reservations leaked. Now create-then-delete (bouquet intact if `createOrder` throws) and removed-line deletes moved inside the edit `db.transaction` (roll back on a later validation failure). `backend/src/services/premadeBouquetService.js`.
+
+### #414 — Owner-visible quick wins (C26 / P1 / PG-6)
+- **C26** — `VarietyListItem` owner financials rendered `0.00 / 0.00`: it read snake_case `current_cost_price` / `current_sell_price`, but the grouped `/stock` API emits **PascalCase** via `pgToResponse`. Switched to the canonical `varietyFinancials()` helper (dual-reads, newest-positive-batch rule).
+- **P1** — desktop `ShortfallSummary` ignored incoming-PO coverage (the florist app already passed `pendingPO`); added `pendingPO={pendingPO}` in `StockTab.jsx` for parity.
+- **PG-6** — a Type-only Y-model PO line couldn't be saved (the disabled-guard `every(l => !l.flowerName)` contradicted the submit filter `l.flowerName || l.type`); guard now mirrors the filter in both PO forms.
+
+### #415 — Pending-PO auto-create carries Variety attrs (C3)
+`GET /stock/pending-po` auto-creates a stock card for an unlinked PO line. Under the Y-model the card was created without `Type/Colour/Size/Cultivar` → `type_name = NULL` → invisible in `listGroupedByVariety` (the incoming flowers "disappeared" from the grouped view; same failure class as #327). Now copies the PO line's Variety attrs onto the new card when present. `backend/src/routes/stock.js`.
+
+### #416 — DE-family lifecycle: release / soft-delete / route demand correctly (C4/C5/C19/C25)
+New seam `stockRepo.reverseLineStockEffect(stockItemId, qty, mode, tx, actor)` enforces the invariant *a line's demand is reversed exactly once, through the correct path*, wired into `cancelWithStockReturn`, `deleteOrder`, and `editBouquetLines` (remove):
+- **C5** — cancel/delete of a DE-bound line releases demand (`+qty`) and **soft-deletes** the DE when it reaches `>= 0`, so a depleted DE can't become a phantom 0-qty FEFO candidate.
+- **C19** — write-off of a DE-bound removed line now **releases** the demand (a DE is future demand, not physical stems) instead of only logging a loss while the demand leaked forever.
+- **C25** — edit add-line against a DE routes to the **canonical dated DE** for the order's Required By (via `getOrCreateDemandEntry`), not a raw `adjustQuantity` on the picker-passed (maybe wrong-dated) DE.
+- **C4** — clearing Required By now cascades (presence-gate, not truthiness); `updateDemandEntryDate` **de-schedules the DE in place** (date → NULL, demand conserved, no split). Decision: a clear is a de-scheduling, not a re-dating — even for a shared DE.
+
+DE detection requires `typeName` set, and the seam resolves recXXX (legacy) ids via `findPgByAirtableOrUuid` + delegates Batch-return to `adjustQuantity`, so legacy / flag-off behavior is unchanged. `backend/src/repos/{orderRepo,stockRepo}.js` (+ 9-test integration file incl. multi-consumer release + shared-DE clear).
+
+### #417 — Substitute Variety capture at evaluation (C13)
+A substitute is a different free-text flower whose structured Variety the system didn't know, so its new card was attr-less → invisible in the grouped view. The florist now classifies a brand-new substitute during evaluation: `StockEvaluationPage` shows `Type/Colour/Size/Cultivar` inputs (gated on `isNewSubstitute && STOCK_Y_MODEL`, **Type required** — a blank Type would recreate the invisible-card bug). The captured attrs thread through the evaluate route onto both `findOrCreateSubstituteStock` (the new card) and `receiveIntoStock` (its dated Batch). A substitute's attrs are **never** inherited from the original line's flower. `backend/src/routes/stockOrders.js` + `apps/florist/src/pages/StockEvaluationPage.jsx` + florist `translations.js`.
+
+### Verification
+Each slice: TDD red→green where it carried logic, full backend suite + 220-assertion E2E green, adversarial multi-agent verification, and CI-clean (incl. all three Vercel preview builds) before merge. Full audit + slice plan: `docs/superpowers/reports/2026-06-21-overnight-ultracode/`.
+
+### No schema migration
+All four Variety columns (`type_name`, `colour`, `size_cm`, `cultivar`) and the DE partial-unique index already exist (issues #284/#287/#304/#286). No env vars, no new tables. `STOCK_Y_MODEL` stays unset on prod.
+
+---
+
 ## 2026-06-21 — Trace under Shortfall + Pending-Arrivals rows (PRD #324 T5 extension)
 
 The per-Variety usage trace (built in T5) now expands directly under each **Shortfalls** and **Pending Arrivals** card row, in both the dashboard and florist apps. Tapping a row shows the full `VarietyTracePanel` — every order, purchase, write-off, and premade lock for that Variety, plus the "unaccounted stems" drift footer. Previously the Shortfalls card had only an ad-hoc orders-only expand, and Pending Arrivals had no expand at all.
@@ -19,7 +75,6 @@ The per-Variety usage trace (built in T5) now expands directly under each **Shor
 
 ### No backend / schema / endpoint change
 Pure UI reuse of the existing `GET /stock/varieties/:key/usage` surface (ADR-0008). Consumption events still come from `order_line.stockItemId` (the `order_line_consumptions` ledger remains future work, PRD #324 T1). Absorption still surfaces as the drift footer.
-
 ---
 
 ## 2026-06-09 — Per-florist payroll breakdown by custom date range (#378)
