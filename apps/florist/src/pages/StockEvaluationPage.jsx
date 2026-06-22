@@ -5,12 +5,16 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
+import { useStockYModelFlag } from '@flower-studio/shared';
 import client from '../api/client.js';
 import t from '../translations.js';
 
 export default function StockEvaluationPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
+  // C13: under the Y-model, a new substitute flower needs a Variety identity or
+  // it is invisible in the grouped Stock view — capture it here at evaluation.
+  const yModelOn = useStockYModelFlag();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
@@ -102,6 +106,26 @@ export default function StockEvaluationPage() {
   async function handleSubmitClick(orderId) {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
+    // C13: under the Y-model a brand-new substitute must be classified (Type) —
+    // an unattributed card is invisible in the grouped stock view. The input
+    // marks Type required (asterisk); enforce it before submit.
+    if (yModelOn) {
+      const unclassified = [];
+      for (const line of order.lines) {
+        if (line['Eval Status'] === 'Processed') continue;
+        const ev = evalState[line.id] || {};
+        const altAccepted = Number(ev.altAccepted) || 0;
+        const altFlowerName = (line['Alt Flower Name'] || '').trim();
+        const isNew = altFlowerName && !knownStockNames.has(altFlowerName.toLowerCase());
+        if (altAccepted > 0 && isNew && !(ev.altType || '').trim()) {
+          unclassified.push(altFlowerName);
+        }
+      }
+      if (unclassified.length > 0) {
+        showToast(`${t.substituteTypeRequired}: ${unclassified.join(', ')}`, 'error');
+        return;
+      }
+    }
     const newOnes = collectNewSubstitutes(order);
     if (newOnes.length > 0) {
       const list = newOnes.map(n => `• ${n}`).join('\n');
@@ -134,6 +158,11 @@ export default function StockEvaluationPage() {
             altQuantityAccepted: Number(ev.altAccepted) || 0,
             altWriteOffQty: Number(ev.altWriteOff) || 0,
             altWriteOffReason: ev.altReason || 'Damaged',
+            // C13: substitute Variety identity (captured below for new substitutes).
+            altType: ev.altType || '',
+            altColour: ev.altColour || '',
+            altSize: ev.altSize || '',
+            altCultivar: ev.altCultivar || '',
           };
         });
       const res = await client.post(`/stock-orders/${orderId}/evaluate`, { lines: evalLines });
@@ -345,6 +374,41 @@ export default function StockEvaluationPage() {
                                     <p className="text-[11px] text-amber-700 bg-amber-50 rounded-lg px-2.5 py-1.5 border border-amber-200">
                                       ⚠ {t.newStockCardWarning}
                                     </p>
+                                  )}
+                                  {/* C13: classify a brand-new substitute so the new
+                                      stock card carries a Variety identity and shows
+                                      in the grouped Y-model stock list. Flag-gated —
+                                      hidden in the legacy flat-stock world. */}
+                                  {isNewSubstitute && yModelOn && (
+                                    <div className="space-y-1.5">
+                                      <p className="text-[11px] text-indigo-600">{t.substituteVarietyHint}</p>
+                                      <div className="grid grid-cols-2 gap-1.5">
+                                        <input
+                                          type="text" value={ev.altType || ''}
+                                          onChange={e => updateEval(line.id, { altType: e.target.value })}
+                                          placeholder={t.subType}
+                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
+                                        />
+                                        <input
+                                          type="text" value={ev.altColour || ''}
+                                          onChange={e => updateEval(line.id, { altColour: e.target.value })}
+                                          placeholder={t.subColour}
+                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
+                                        />
+                                        <input
+                                          type="number" inputMode="numeric" value={ev.altSize || ''}
+                                          onChange={e => updateEval(line.id, { altSize: e.target.value })}
+                                          placeholder={t.subSize}
+                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
+                                        />
+                                        <input
+                                          type="text" value={ev.altCultivar || ''}
+                                          onChange={e => updateEval(line.id, { altCultivar: e.target.value })}
+                                          placeholder={t.subCultivar}
+                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
+                                        />
+                                      </div>
+                                    </div>
                                   )}
                                   <AcceptWriteOffRow
                                     accepted={ev.altAccepted ?? altFound}
