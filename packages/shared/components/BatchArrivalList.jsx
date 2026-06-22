@@ -192,9 +192,9 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700" title={b.costMixed ? (t.costMixedTooltip ?? 'Mixed costs across receives — showing newest') : undefined}>
           {editable
-            ? <InlinePriceField value={b.cost} testid="batch-edit-cost" onSave={(v) => save('cost', v)} suffix={b.costMixed ? <span className="text-gray-400 text-[10px] ml-0.5">·mix</span> : null} />
+            ? <InlinePriceField value={b.cost} testid="batch-edit-cost" onSave={(v) => save('cost', v)} suffix={b.costMixed ? <span className="text-gray-400 text-[10px] ml-0.5">·{t.costMixedShort ?? 'mixed'}</span> : null} />
             : (b.cost != null
-                ? <>{b.cost.toFixed(2)}{b.costMixed && <span className="text-gray-400 text-[10px] ml-0.5">·mix</span>}</>
+                ? <>{b.cost.toFixed(2)}{b.costMixed && <span className="text-gray-400 text-[10px] ml-0.5">·{t.costMixedShort ?? 'mixed'}</span>}</>
                 : '—')}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700">

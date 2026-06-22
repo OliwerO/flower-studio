@@ -10,7 +10,7 @@
  *   value   — current numeric price (null/undefined → shows "—")
  *   onSave  — (number) => void
  *   testid  — data-testid for the button (input gets `${testid}-input`)
- *   suffix  — optional node appended after the value in display mode (e.g. a "·mix" badge)
+ *   suffix  — optional node appended after the value in display mode (e.g. a "·mixed" badge)
  */
 import { useState } from 'react';
 

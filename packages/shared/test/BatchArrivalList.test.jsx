@@ -8,6 +8,7 @@ const t = {
   cost: 'cost', sell: 'sell', markup: 'markup', supplier: 'supplier',
   arrived: 'arrived', qty: 'qty', stems: 'stems',
   expand: 'Expand', collapse: 'Collapse',
+  costMixedShort: 'mixed', costMixedTooltip: 'Mixed costs across receives — showing newest',
 };
 
 // Two batches of Rose Pink 60 at the same sell price (25 zł) but different
@@ -70,5 +71,11 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     render(<BatchArrivalList groups={makeMergedGroup()} t={t} onRowClick={onRowClick} />);
     fireEvent.click(screen.getByTestId('batch-arrival-row'));
     expect(onRowClick).toHaveBeenCalledWith(['s1', 's2']);
+  });
+
+  it('mixed-cost badge text comes from t.costMixedShort, not a hardcoded literal (CR-14)', () => {
+    // Rose merged group has two costs (10 + 12) → costMixed true → badge shown.
+    render(<BatchArrivalList groups={makeMergedGroup()} t={{ ...t, costMixedShort: 'XQZ' }} />);
+    expect(screen.getByText('·XQZ')).toBeInTheDocument();
   });
 });
