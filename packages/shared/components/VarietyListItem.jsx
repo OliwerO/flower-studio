@@ -26,6 +26,7 @@
  */
 import { useState } from 'react';
 import { getVarietyTotals, getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
+import { varietyFinancials } from '../utils/varietyFinancials.js';
 import { formatDateDMY } from '../utils/formatDate.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
 import DateTag from './DateTag.jsx';
@@ -208,11 +209,17 @@ export default function VarietyListItem({
         // Sell label is informative only when more than one Batch tier exists —
         // a single tier is redundant noise next to the Batch chip.
         const multiTier = expansionRows.filter((r) => r.kind === 'batch').length > 1;
-        // CR-36: owner-only financials, representative from the primary Batch.
-        const cost = Number(primaryRow?.current_cost_price) || 0;
-        const sell = Number(primaryRow?.current_sell_price) || 0;
-        const supplier = primaryRow?.supplier || primaryRow?.Supplier || null;
-        const markup = cost > 0 ? (sell / cost).toFixed(1) : null;
+        // CR-36 + C26: owner-only financials via the canonical varietyFinancials
+        // helper. It dual-reads PascalCase (what the grouped /stock API emits
+        // through pgToResponse) ?? snake_case, and mirrors the Flat table's
+        // newest-positive-batch rule. The old inline read used snake_case keys
+        // (current_cost_price/current_sell_price) the API never sends, so the
+        // owner saw 0.00 / 0.00 in production (C26).
+        const fin = varietyFinancials(variety.rows);
+        const cost = fin.cost ?? 0;
+        const sell = fin.sell ?? 0;
+        const supplier = fin.supplier;
+        const markup = fin.markup != null ? fin.markup.toFixed(1) : null;
         return (
         <ul className="bg-gray-50 border-t border-gray-100">
           {isOwner && (sell > 0 || cost > 0 || supplier) && (

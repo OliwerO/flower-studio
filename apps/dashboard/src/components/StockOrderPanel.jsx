@@ -667,9 +667,14 @@ export default function StockOrderPanel({ negativeStock, stock, autoCreate, onCl
           </div>
 
           <div className="flex gap-2">
+            {/* PG-6: a Y-model line may be Type-only (no Flower Name) — the
+                submit filter already accepts `l.flowerName || l.type`, so the
+                guard must mirror it. Inert under STOCK_Y_MODEL off (the Type
+                input is flag-gated, so l.type stays '' → collapses to the
+                legacy !l.flowerName check). */}
             <button
               onClick={createPO}
-              disabled={submitting || formLines.every(l => !l.flowerName)}
+              disabled={submitting || formLines.every(l => !l.flowerName && !l.type)}
               className="px-4 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold disabled:opacity-50"
             >
               {submitting ? t.saving : t.save}
