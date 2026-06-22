@@ -226,16 +226,6 @@ export async function editPremadeBouquetLines(id, payload) {
 async function _editPremadeBouquetLinesYModel(id, { lines = [], removedLines = [] }) {
   const bouquet = await premadeBouquetRepo.getById(id);
 
-  // Removed lines: drop the row only. No credit to Batch qty (nothing was
-  // deducted at build time under the reservation model).
-  for (const rem of removedLines) {
-    if (rem.lineId) {
-      await premadeBouquetRepo.deleteLineById(rem.lineId).catch(err =>
-        console.error(`[PREMADE] Failed to delete removed line ${rem.lineId}:`, err.message),
-      );
-    }
-  }
-
   const newUnmatched = lines.filter(l => !l.id && !l.stockItemId && l.flowerName);
   if (newUnmatched.length > 0) await autoMatchStock(newUnmatched);
 
@@ -256,6 +246,15 @@ async function _editPremadeBouquetLinesYModel(id, { lines = [], removedLines = [
   // deadlock against this open tx in pglite).
   const createdLines = [];
   await db.transaction(async (tx) => {
+    // Removed lines first — drop the reservation row inside the SAME tx so a
+    // later validateFreeQty failure rolls the deletion back (C10). No credit to
+    // Batch qty (nothing was deducted at build time under the reservation model).
+    for (const rem of removedLines) {
+      if (rem.lineId) {
+        await tx.delete(premadeBouquetLines).where(eq(premadeBouquetLines.id, rem.lineId));
+      }
+    }
+
     for (const line of lines) {
       if (line.id) {
         if (line._originalQty != null && line.quantity !== line._originalQty) {
@@ -457,14 +456,22 @@ async function _matchPremadeYModel(id, orderData, config) {
     ? orderData.priceOverride
     : (premade['Price Override'] || null);
 
-  // Delete lines FIRST — frees the reservation before standard order deduction.
-  await premadeBouquetRepo.deleteById(premade._pgId);
-
-  // Standard createOrder — NO skipStockDeduction. Batch decremented now.
+  // Create the order FIRST (standard allocation — NO skipStockDeduction, Batch
+  // decremented now). Only once the sale is safely persisted do we delete the
+  // bouquet, which frees its reservation. If createOrder throws, the bouquet is
+  // left intact — a failed sale must never destroy it (C2). Mirrors the legacy
+  // sale-path ordering. The transient double-count (Batch decremented + premade
+  // reservation still present until the delete) is the same window legacy has.
   const result = await createOrder(
     { ...orderData, orderLines, priceOverride, notes: orderData.notes || premade.Notes || '' },
     config,
   );
+
+  try {
+    await premadeBouquetRepo.deleteById(premade._pgId);  // CASCADE removes lines
+  } catch (cleanupErr) {
+    console.error('[PREMADE] Cleanup after match failed:', cleanupErr.message);
+  }
 
   broadcast({ type: 'premade_bouquet_matched', bouquetId: id, orderId: result.order?.id || null });
   return { ...result, premadeBouquetId: id };
