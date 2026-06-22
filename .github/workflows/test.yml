@@ -80,6 +80,26 @@ jobs:
           PIN_OWNER: '1111'
           PIN_FLORIST: '2222'
 
+  shared:
+    name: Shared unit tests (vitest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run shared tests (utils, hooks, components)
+        run: npx vitest run
+        working-directory: packages/shared
+
   e2e:
     name: E2E harness suite
     runs-on: ubuntu-latest

@@ -115,6 +115,9 @@ export { default as PendingArrivalsPanel } from './components/PendingArrivalsPan
 export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
 export { useVarietyTraceExpand } from './hooks/useVarietyTraceExpand.js';
 
+// Step-chart balance trace — shared by BatchTracePanel and VarietyTracePanel (S7)
+export { default as BalanceSparkline } from './components/BalanceSparkline.jsx';
+
 // Per-batch trace UX seam — panel (inline, dashboard) + modal wrapper (florist) (issue #289)
 export { default as BatchTracePanel } from './components/BatchTracePanel.jsx';
 export { default as BatchTraceModal } from './components/BatchTraceModal.jsx';
