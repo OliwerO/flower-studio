@@ -157,6 +157,22 @@ export async function updateDemandEntryDate(orderLineId, newDate, tx, actor = { 
     .limit(1);
   if (!de) return null; // linked stock is a Batch (qty >= 0), not a DE — nothing to cascade
 
+  // C4: a cleared Required By (newDate == null) is a de-scheduling, not a
+  // re-dating. Splitting needs a target date, so on a clear we set the DE's
+  // date to NULL in place (even when shared) — the demand quantity is
+  // conserved; only the date pin is removed (decision: no split on a clear).
+  if (newDate == null) {
+    const [after] = await tx.update(stock)
+      .set({ date: null, updatedAt: new Date() })
+      .where(eq(stock.id, de.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'stock', entityId: after.id, action: 'update',
+      before: { date: de.date }, after: { date: null }, ...actor,
+    });
+    return { demandEntryId: after.id, action: 'cleared-in-place' };
+  }
+
   // 3. Count other order_lines pointing at the same DE
   const sharingLines = await tx.select({ id: orderLines.id }).from(orderLines)
     .where(and(
@@ -250,6 +266,74 @@ export async function resolveBatchByFEFO(varietyKey, lineQty, tx) {
 
   const fullCover = candidates.find(c => Number(c.currentQuantity) >= Number(lineQty));
   return (fullCover ?? candidates[0]).id;
+}
+
+/**
+ * Reverse an order line's stock effect when the line goes away
+ * (cancel / delete / bouquet-edit remove). Y-model aware:
+ *
+ *  - DE-bound line (linked stock row has typeName set AND currentQuantity < 0):
+ *    the line represented future DEMAND, not physical stems. BOTH 'return' and
+ *    'writeoff' release that demand (+qty toward zero) — there are no stems to
+ *    lose (C19). If the DE reaches >= 0 it is SOFT-DELETED so it can never
+ *    become a phantom 0-qty FEFO candidate (C5; FEFO selects currentQuantity >= 0
+ *    and would otherwise treat a depleted DE as an empty Batch).
+ *
+ *  - Batch / legacy line: 'return' adds the qty back to stock; 'writeoff' leaves
+ *    the quantity decremented (the caller logs the physical loss) — unchanged.
+ *
+ * Must run inside the caller's db.transaction (tx required).
+ *
+ * @param {string} stockItemId
+ * @param {number} quantity  - positive line quantity being reversed
+ * @param {'return'|'writeoff'} mode
+ * @param {object} tx        - Drizzle transaction handle (required)
+ * @param {object} [actor]
+ * @returns {Promise<{ kind: 'de'|'batch', stockId: string, newQty: number, released: boolean }>}
+ */
+export async function reverseLineStockEffect(stockItemId, quantity, mode, tx, actor = { actorRole: 'system', actorPinLabel: null }) {
+  const qty = Number(quantity) || 0;
+  // Resolve recXXX (legacy Airtable) OR uuid the same way adjustQuantity does —
+  // a raw eq(stock.id, recXXX) errors against the uuid column.
+  const row = await findPgByAirtableOrUuid(stockItemId, tx);
+
+  const isDe = !!row && !!row.typeName && Number(row.currentQuantity) < 0;
+
+  if (isDe) {
+    // Release the demand regardless of mode — a DE has no physical stems.
+    const [after] = await tx.update(stock)
+      .set({ currentQuantity: sql`${stock.currentQuantity} + ${qty}`, updatedAt: new Date() })
+      .where(eq(stock.id, row.id))
+      .returning();
+    await tryAudit(tx, {
+      entityType: 'stock', entityId: after.id, action: 'update',
+      before: { 'Current Quantity': row.currentQuantity },
+      after:  { 'Current Quantity': after.currentQuantity }, ...actor,
+    });
+    const newQty = Number(after.currentQuantity);
+    if (newQty >= 0) {
+      // Demand fully satisfied/released — drop the row so it is never a phantom
+      // 0-qty FEFO candidate.
+      await tx.update(stock)
+        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .where(eq(stock.id, row.id));
+      await tryAudit(tx, {
+        entityType: 'stock', entityId: after.id, action: 'delete',
+        before: { 'Current Quantity': after.currentQuantity }, after: null, ...actor,
+      });
+    }
+    return { kind: 'de', stockId: after.airtableId || after.id, newQty, released: true };
+  }
+
+  // Batch / legacy row.
+  if (mode === 'writeoff') {
+    // Leave qty decremented — the caller logs the physical loss. No lookup throw
+    // even if the row is missing (matches the prior write-off-then-log path).
+    return { kind: 'batch', stockId: row?.airtableId || row?.id || stockItemId, newQty: row ? Number(row.currentQuantity) : 0, released: false };
+  }
+  // Return path: delegate to adjustQuantity — it handles dual id-lookup + 404.
+  const result = await adjustQuantity(stockItemId, qty, { tx, actor });
+  return { kind: 'batch', stockId: result.stockId, newQty: result.newQty, released: true };
 }
 
 // ── Backend mode stub ──
