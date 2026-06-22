@@ -37,7 +37,7 @@
 import { randomUUID } from 'crypto';
 import { faker } from '@faker-js/faker';
 import { buildBaseline } from './baseline.js';
-import { makeStockItem, makeOrder, makeOrderLine } from '../factories/index.js';
+import { makeStockItem, makeOrder, makeOrderLine, makeDelivery } from '../factories/index.js';
 import { makeStockLoss } from '../factories/stockLoss.js';
 import { makeStockPurchase } from '../factories/stockPurchase.js';
 import { makeAuditLog } from '../factories/auditLog.js';
@@ -92,14 +92,24 @@ export function buildYModelGuide() {
       display_name: display,
       type_name: type, colour: colour ?? null, size_cm: size ?? null, cultivar: cultivar ?? null,
       current_quantity: qty, date, current_sell_price: sell,
+      // CR-14: demand entries have no cost basis; pin to 0 so faker doesn't inject a phantom cost.
+      current_cost_price: 0,
     });
     stockItems.push(row);
     return row;
   }
-  function order({ requiredBy, status = 'New', deliveryType = 'Pickup', customer = cust }) {
-    const o = makeOrder({ customerId: customer.id, status, delivery_type: deliveryType, required_by: requiredBy });
+  function order({ requiredBy, status = 'New', deliveryType = 'Pickup', customer = cust, extra = {} }) {
+    const o = makeOrder({ customerId: customer.id, status, delivery_type: deliveryType, required_by: requiredBy, ...extra });
     orders.push(o);
     return o;
+  }
+  function delivery({ order: ord, status = 'Pending', fee = 25, driver = 'Nikita', deliveredAt = null, date = TODAY }) {
+    const d = makeDelivery({
+      orderId: ord.id, status, delivery_fee: fee,
+      assigned_driver: driver, delivered_at: deliveredAt, delivery_date: date,
+    });
+    deliveries.push(d);
+    return d;
   }
   function line({ order, stock, qty, name }) {
     const l = makeOrderLine({
@@ -119,12 +129,35 @@ export function buildYModelGuide() {
     stockOrders.push(p);
     return p;
   }
-  function poLine({ po, stock, qty, name, supplier = 'Stojek', cost = 6, sell = 18 }) {
+  function poLine({ po, stock, qty, name, supplier = 'Stojek', cost = 6, sell = 18, ...extra }) {
     stockOrderLines.push({
-      id: randomUUID(), po_id: po.id, stock_id: stock.id,
-      flower_name: name ?? stock.display_name,
-      quantity_needed: qty, lot_size: 0, driver_status: 'Pending',
-      supplier, cost_price: cost, sell_price: sell, created_at: new Date(),
+      id: randomUUID(),
+      po_id: po.id,
+      stock_id: stock ? stock.id : null,
+      flower_name: name ?? (stock ? stock.display_name : ''),
+      quantity_needed: qty,
+      quantity_found: 0,
+      lot_size: 0,
+      driver_status: 'Pending',
+      supplier,
+      cost_price: cost,
+      sell_price: sell,
+      farmer: '',
+      notes: '',
+      substitute_flower_name: '',
+      substitute_status: '',
+      substitute_quantity_found: 0,
+      substitute_cost: 0,
+      substitute_supplier: '',
+      quantity_accepted: 0,
+      write_off_qty: 0,
+      eval_status: '',
+      type_name: null,
+      colour: null,
+      size_cm: null,
+      cultivar: null,
+      created_at: new Date(),
+      ...extra,
     });
   }
   function loss({ stock, qty, date, reason = 'Wilted', notes = '' }) {
@@ -421,6 +454,184 @@ export function buildYModelGuide() {
   });
   purchase({ stock: eucalyptus, qty: 15, date: BATCH_RECENT, cost: 4, supplier: 'Stojek', notes: 'PO #PO-EUC-1 L#1 primary' });
   dissolve({ stock: eucalyptus, releasedQty: 5, bouquetName: 'Winter Wreath' });
+
+  // ════════════════════════════════════════════════════════════════════════════
+  // LIFECYCLE + PAYMENT + DEEP-HISTORY ROWS (#19–#27) — added 2026-06-22.
+  // ════════════════════════════════════════════════════════════════════════════
+
+  // ── 19. PO LIFECYCLE — five remaining statuses (Draft/Shopping/Reviewing/Evaluating/Eval Error)
+  // The guide already has Sent (PO-GUIDE-1) and Complete (PO-ABSORB-1).
+  // Each PO demonstrates a distinct driver_status + eval_status variant.
+
+  // 19a — Draft PO: one blank-ish line (quantity_found=0, driver_status Pending)
+  const draftPo = po({ number: 'PO-DRAFT-1', status: 'Draft', driver: 'Nikita', plannedDate: null });
+  poLine({ po: draftPo, stock: null, qty: 10, name: 'Hydrangea White 30cm', supplier: 'Stojek', cost: 8, sell: 0,
+    notes: 'PO #PO-DRAFT-1 L#1' });
+
+  // 19b — Shopping PO: FoundAll line + Partial line
+  const shopPo = po({ number: 'PO-SHOP-1', status: 'Shopping', driver: 'Nikita', plannedDate: TODAY });
+  poLine({ po: shopPo, stock: tulip, qty: 20, name: 'Tulip Yellow 40cm', supplier: 'Stojek', cost: 3, sell: 11,
+    quantity_found: 20, driver_status: 'Found All', notes: 'PO #PO-SHOP-1 L#1' });
+  poLine({ po: shopPo, stock: null, qty: 15, name: 'Rose Red 50cm Naomi', supplier: 'Stojek', cost: 5, sell: 18,
+    quantity_found: 9, driver_status: 'Partial', notes: 'PO #PO-SHOP-1 L#2' });
+
+  // 19c — Reviewing PO: FoundAll + Partial-with-substitute + NotFound-with-substitute
+  const reviewPo = po({ number: 'PO-REVIEW-1', status: 'Reviewing', driver: 'Nikita', plannedDate: TODAY });
+  // Line 1: FoundAll
+  poLine({ po: reviewPo, stock: astilbe, qty: 8, name: 'Astilbe Pink 50cm', supplier: 'Stojek', cost: 6, sell: 19,
+    quantity_found: 8, driver_status: 'Found All', notes: 'PO #PO-REVIEW-1 L#1' });
+  // Line 2: Partial + substitute
+  poLine({ po: reviewPo, stock: hydBlue, qty: 12, name: 'Hydrangea Blue 30cm', supplier: 'Stojek', cost: 9, sell: 28,
+    quantity_found: 7, driver_status: 'Partial',
+    substitute_flower_name: 'Peony White 50cm', substitute_status: 'Pending',
+    substitute_quantity_found: 5, substitute_cost: 60, substitute_supplier: 'Stojek',
+    notes: 'PO #PO-REVIEW-1 L#2' });
+  // Line 3: NotFound + substitute
+  poLine({ po: reviewPo, stock: null, qty: 6, name: 'Freesia Purple 40cm', supplier: '4f', cost: 5, sell: 14,
+    quantity_found: 0, driver_status: 'Not Found',
+    substitute_flower_name: 'Ranunculus', substitute_status: 'Pending',
+    substitute_quantity_found: 10, substitute_cost: 80, substitute_supplier: '4f',
+    notes: 'PO #PO-REVIEW-1 L#3' });
+
+  // 19d — Evaluating PO: FoundAll + Partial
+  const evalPo = po({ number: 'PO-EVAL-1', status: 'Evaluating', driver: 'Nikita', plannedDate: BATCH_RECENT });
+  poLine({ po: evalPo, stock: scabiosa, qty: 20, name: 'Scabiosa Blue 50cm', supplier: 'Stojek', cost: 6, sell: 17,
+    quantity_found: 20, driver_status: 'Found All', notes: 'PO #PO-EVAL-1 L#1' });
+  poLine({ po: evalPo, stock: null, qty: 10, name: 'Carnation Pink 40cm', supplier: 'Stojek', cost: 4, sell: 12,
+    quantity_found: 6, driver_status: 'Partial', notes: 'PO #PO-EVAL-1 L#2' });
+
+  // 19e — Eval Error PO: one Processed + purchase, one Partial acc=0
+  // The Processed line represents a stem accepted into stock; the Partial is the "error" case.
+  const evalErrStock = batch({
+    display: 'Gerbera Yellow 40cm (19.Jun.)',
+    type: 'Gerbera', colour: 'Yellow', size: 40, cultivar: null,
+    qty: 18, date: ABSORB_ARRIVE, cost: 5, sell: 14,
+  });
+  const errPo = po({ number: 'PO-ERR-1', status: 'Eval Error', driver: 'Nikita', plannedDate: ABSORB_ARRIVE });
+  poLine({ po: errPo, stock: evalErrStock, qty: 18, name: 'Gerbera Yellow 40cm', supplier: 'Stojek', cost: 5, sell: 14,
+    quantity_found: 18, quantity_accepted: 18, driver_status: 'Found All', eval_status: 'Processed',
+    notes: 'PO #PO-ERR-1 L#1' });
+  purchase({ stock: evalErrStock, qty: 18, date: ABSORB_ARRIVE, cost: 5, supplier: 'Stojek',
+    notes: 'PO #PO-ERR-1 L#1 primary' });
+  poLine({ po: errPo, stock: null, qty: 12, name: 'Gerbera Pink 40cm', supplier: 'Stojek', cost: 5, sell: 13,
+    quantity_found: 8, quantity_accepted: 0, driver_status: 'Partial', eval_status: '',
+    notes: 'PO #PO-ERR-1 L#2' });
+
+  // ── 21–23. DELIVERY STATUSES — Out for Delivery / Delivered / Pending ────────
+  // Reuse the existing Rose White 60cm Avalanche batches for the order lines.
+  // The existing ordLisi (concept #6, Lisianthus) is a 'Delivery' order WITH NO linked
+  // delivery — we use that as the deliberate "unlinked" case per the spec.
+  // We create new orders for the delivery-status concepts.
+
+  // Find the Rose White 60cm batch (BATCH_RECENT) to use as the line stock.
+  // It was pushed to stockItems as item #2 (after roseRed), no variable captured — create a new batch.
+  const roseWhite60 = batch({
+    display: 'Rose White 60cm Avalanche (delivery-demo)',
+    type: 'Rose', colour: 'White', size: 60, cultivar: 'Avalanche',
+    qty: 30, date: BATCH_RECENT, cost: 7, sell: 24,
+  });
+
+  // 21 — Out for Delivery order with linked delivery
+  const ordOutDelivery = order({ requiredBy: TODAY, status: 'Out for Delivery', deliveryType: 'Delivery' });
+  line({ order: ordOutDelivery, stock: roseWhite60, qty: 6, name: 'Rose White 60cm Avalanche' });
+  delivery({ order: ordOutDelivery, status: 'Out for Delivery', fee: 30 });
+
+  // 22 — Delivered order with linked delivery (with timestamp)
+  const ordDelivered = order({ requiredBy: TODAY, status: 'Delivered', deliveryType: 'Delivery' });
+  line({ order: ordDelivered, stock: roseWhite60, qty: 4, name: 'Rose White 60cm Avalanche' });
+  delivery({ order: ordDelivered, status: 'Delivered', fee: 25, deliveredAt: '2026-06-22T11:30:00Z' });
+
+  // 23 — Pending delivery linked to a new Delivery order (ordLisi has no delivery — it's the "unlinked" case)
+  const ordPendingDelivery = order({ requiredBy: NEED_25, status: 'Ready', deliveryType: 'Delivery' });
+  line({ order: ordPendingDelivery, stock: roseWhite60, qty: 5, name: 'Rose White 60cm Avalanche' });
+  delivery({ order: ordPendingDelivery, status: 'Pending', fee: 20 });
+  // ordLisi (concept #6) has no delivery linked — deliberate "unlinked" demonstration.
+
+  // ── 24–26. PAYMENT STATES + CANCELLED ORDER ───────────────────────────────────
+
+  // 24 — Fully Paid order (green badge, Card, price_override 120)
+  const ordPaid = order({ requiredBy: NEED_25, deliveryType: 'Pickup',
+    extra: { payment_status: 'Paid', payment_method: 'Card', price_override: '120.00' } });
+  line({ order: ordPaid, stock: tulip, qty: 5, name: 'Tulip Yellow 40cm' });
+
+  // 25 — Partial payment (amber badge, 50 Cash upfront on 130 total)
+  const ordPartial = order({ requiredBy: NEED_27, deliveryType: 'Pickup',
+    extra: { payment_status: 'Partial', payment_1_amount: '50.00', payment_1_method: 'Cash', price_override: '130.00' } });
+  line({ order: ordPartial, stock: scabiosa, qty: 6, name: 'Scabiosa Blue 50cm' });
+
+  // 26 — Cancelled order + Cancelled delivery (Marigold Orange 40cm — new variety)
+  // ARC: purchase 12, order consumes 4, drift-check: 12−4 = 8 = onHand (correct)
+  const marigold = batch({
+    display: 'Marigold Orange 40cm (15.Jun.)',
+    type: 'Marigold', colour: 'Orange', size: 40, cultivar: null,
+    qty: 8, date: BATCH_OLD, cost: 3, sell: 10,
+  });
+  purchase({ stock: marigold, qty: 12, date: BATCH_OLD, cost: 3, supplier: 'Stojek',
+    notes: 'PO #PO-MARI-1 L#1 primary' });
+  const ordCancelled = order({ requiredBy: '2026-06-19', status: 'Cancelled', deliveryType: 'Delivery' });
+  line({ order: ordCancelled, stock: marigold, qty: 4, name: 'Marigold Orange 40cm' });
+  delivery({ order: ordCancelled, status: 'Cancelled', fee: 20 });
+
+  // ── 27. DEEP-HISTORY Tulip Red 50cm Strong Love (rich trace for CR-18) ────────
+  // Two batches, two complete POs, two write-offs, multiple orders, crosses zero twice.
+  // Drift-check: batch1 = 40 in, 12+10+9 out, 8 loss = 1 remaining.
+  //              batch2 = 20 in, 6 out, 3 loss = 11 remaining. Total on-hand = 12.
+  const TR_NEED_04 = '2026-06-04';
+  const TR_NEED_08 = '2026-06-08';
+  const TR_NEED_15 = '2026-06-15';
+  const TR_NEED_23B = '2026-06-23';
+
+  const tulipRed1 = batch({
+    display: 'Tulip Red 50cm Strong Love (01.Jun.)',
+    type: 'Tulip', colour: 'Red', size: 50, cultivar: 'Strong Love',
+    qty: 1, date: '2026-06-01', cost: 4, sell: 15, supplier: 'Stojek',
+  });
+  purchase({ stock: tulipRed1, qty: 40, date: '2026-06-01', cost: 4, supplier: 'Stojek',
+    notes: 'PO #PO-TULRED-1 L#1 primary' });
+
+  const poTulRed1 = po({ number: 'PO-TULRED-1', status: 'Complete', driver: 'Nikita', plannedDate: '2026-06-01' });
+  poLine({ po: poTulRed1, stock: tulipRed1, qty: 40, name: 'Tulip Red 50cm Strong Love', supplier: 'Stojek', cost: 4, sell: 15,
+    quantity_found: 40, quantity_accepted: 40, driver_status: 'Found All', eval_status: 'Processed',
+    notes: 'PO #PO-TULRED-1 L#1' });
+
+  // Orders consuming tulipRed1
+  const ordTulRed1a = order({ requiredBy: TR_NEED_04, status: 'Delivered', deliveryType: 'Pickup' });
+  line({ order: ordTulRed1a, stock: tulipRed1, qty: 12, name: 'Tulip Red 50cm Strong Love' });
+  const ordTulRed1b = order({ requiredBy: TR_NEED_08, status: 'Picked Up', deliveryType: 'Pickup' });
+  line({ order: ordTulRed1b, stock: tulipRed1, qty: 10, name: 'Tulip Red 50cm Strong Love' });
+
+  // Write-off #1
+  loss({ stock: tulipRed1, qty: 8, date: '2026-06-12', reason: 'Wilted', notes: 'first batch wilted' });
+
+  // DE for the trough (batch1 dips near zero; order via DE)
+  const tulipRedDE = de({
+    display: 'Tulip Red 50cm Strong Love (2026-06-15)',
+    type: 'Tulip', colour: 'Red', size: 50, cultivar: 'Strong Love',
+    qty: -9, date: TR_NEED_15, sell: 15,
+  });
+  const ordTulRed1c = order({ requiredBy: TR_NEED_15, status: 'Picked Up', deliveryType: 'Pickup' });
+  line({ order: ordTulRed1c, stock: tulipRedDE, qty: 9, name: 'Tulip Red 50cm Strong Love' });
+
+  // Second batch arrives
+  const tulipRed2 = batch({
+    display: 'Tulip Red 50cm Strong Love (18.Jun.)',
+    type: 'Tulip', colour: 'Red', size: 50, cultivar: 'Strong Love',
+    qty: 11, date: '2026-06-18', cost: 4, sell: 15, supplier: '4f',
+  });
+  purchase({ stock: tulipRed2, qty: 20, date: '2026-06-18', cost: 4, supplier: '4f',
+    notes: 'PO #PO-TULRED-2 L#1 primary' });
+
+  const poTulRed2 = po({ number: 'PO-TULRED-2', status: 'Complete', driver: 'Nikita', plannedDate: '2026-06-18' });
+  poLine({ po: poTulRed2, stock: tulipRed2, qty: 20, name: 'Tulip Red 50cm Strong Love', supplier: '4f', cost: 4, sell: 15,
+    quantity_found: 20, quantity_accepted: 20, driver_status: 'Found All', eval_status: 'Processed',
+    notes: 'PO #PO-TULRED-2 L#1' });
+
+  // Write-off #2
+  loss({ stock: tulipRed2, qty: 3, date: '2026-06-21', reason: 'Damaged', notes: 'second batch corner damage' });
+
+  // Future order from batch2
+  const ordTulRed2a = order({ requiredBy: TR_NEED_23B, status: 'Ready', deliveryType: 'Pickup' });
+  line({ order: ordTulRed2a, stock: tulipRed2, qty: 6, name: 'Tulip Red 50cm Strong Love' });
 
   return {
     customers: base.customers,
