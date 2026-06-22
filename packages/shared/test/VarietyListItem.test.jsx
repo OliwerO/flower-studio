@@ -314,6 +314,26 @@ describe('VarietyListItem owner financials on expand (CR-36)', () => {
     expect(fin).toHaveTextContent('Stojek'); // supplier
   });
 
+  // C26: the grouped /stock API emits PascalCase fields via pgToResponse
+  // ('Current Cost Price' / 'Current Sell Price' / 'Supplier'), NOT the
+  // snake_case current_cost_price/current_sell_price keys the component used to
+  // read. Reading only snake_case rendered 0.00 for the owner in production.
+  // The snake_case test above stays green (varietyFinancials dual-reads).
+  it('reads PascalCase API fields, not just snake_case (C26)', () => {
+    const vPascal = {
+      key: 'Peony|Pink|60|', type_name: 'Peony', colour: 'Pink', size_cm: 60, cultivar: 'Sarah Bernhardt',
+      rows: [{ id: 'b1', current_quantity: 25, date: '2026-06-10',
+               'Current Cost Price': 12, 'Current Sell Price': 42, Supplier: 'Stojek' }],
+    };
+    render(<VarietyListItem variety={vPascal} reservations={new Map()} t={t}
+      hideType={true} expanded={true} isOwner={true} onToggle={() => {}} />);
+    const fin = screen.getByTestId('variety-owner-financials');
+    expect(fin).toHaveTextContent('12.00'); // cost — rendered 0.00 before the fix
+    expect(fin).toHaveTextContent('42.00'); // sell — rendered 0.00 before the fix
+    expect(fin).toHaveTextContent('3.5');   // markup 42/12
+    expect(fin).toHaveTextContent('Stojek'); // supplier
+  });
+
   it('hides owner financials for non-owner', () => {
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} isOwner={false} onToggle={() => {}} />);

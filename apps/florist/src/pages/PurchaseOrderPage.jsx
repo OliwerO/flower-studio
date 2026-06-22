@@ -573,8 +573,13 @@ export default function PurchaseOrderPage() {
 
             {/* Actions */}
             <div className="flex gap-2">
+              {/* PG-6: a Y-model line may be Type-only (no Flower Name) — the
+                  submit filter already accepts `l.flowerName || l.type`, so the
+                  guard must mirror it. Inert under STOCK_Y_MODEL off (the Type
+                  input is flag-gated, so l.type stays '' → collapses to the
+                  legacy !l.flowerName check). */}
               <button onClick={createPO}
-                disabled={submitting || formLines.every(l => !l.flowerName)}
+                disabled={submitting || formLines.every(l => !l.flowerName && !l.type)}
                 className="flex-1 py-3 rounded-2xl bg-brand-600 text-white text-sm font-semibold disabled:opacity-50 active-scale">
                 {submitting ? (t.saving || 'Saving...') : (t.save || 'Save')}
               </button>
