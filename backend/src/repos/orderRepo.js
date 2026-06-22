@@ -932,7 +932,9 @@ export async function cancelWithStockReturn(orderId, opts = {}) {
     const returnedItems = [];
     for (const line of lineRows) {
       if (line.stockItemId && line.quantity > 0) {
-        const result = await stockRepo.adjustQuantity(line.stockItemId, line.quantity, { tx, actor });
+        // C5: DE-bound lines release demand (+qty) and soft-delete the DE at 0;
+        // Batch/legacy lines return stems. reverseLineStockEffect picks correctly.
+        const result = await stockRepo.reverseLineStockEffect(line.stockItemId, line.quantity, 'return', tx, actor);
         returnedItems.push({
           stockId:         result.stockId,
           flowerName:      line.flowerName || '?',
@@ -997,7 +999,9 @@ export async function deleteOrder(orderId, opts = {}) {
         .where(and(eq(orderLines.orderId, before.id), isNull(orderLines.deletedAt)));
       for (const line of lineRows) {
         if (line.stockItemId && line.quantity > 0) {
-          const result = await stockRepo.adjustQuantity(line.stockItemId, line.quantity, { tx, actor });
+          // C5: same DE-aware reversal as cancel — release demand + soft-delete
+          // a DE that hits 0; return stems for Batch/legacy lines.
+          const result = await stockRepo.reverseLineStockEffect(line.stockItemId, line.quantity, 'return', tx, actor);
           returnedItems.push({
             stockId: result.stockId,
             flowerName: line.flowerName,
@@ -1044,22 +1048,23 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
     const writeoffsToLog = [];
     for (const rem of removedLines) {
       if (rem.stockItemId && rem.quantity > 0) {
-        if (rem.action === 'writeoff') {
-          // Buffer Stock Loss Log writes and run OUTSIDE the PG transaction so
-          // a loss-log failure doesn't roll back the order edit. Loss is
-          // non-critical reporting; order/line/stock updates are the business state.
+        const mode = rem.action === 'writeoff' ? 'writeoff' : 'return';
+        // Reverse the line's stock effect. For a Batch/legacy line: 'return'
+        // adds stems back; 'writeoff' leaves qty decremented (logged below).
+        // For a DE-bound line BOTH modes release the demand and soft-delete the
+        // DE at 0 — a DE is future demand, not physical stems, so a write-off
+        // has nothing to lose and must not leak the demand forever (C19/C5).
+        // A missing/unknown action falls through to 'return' so stems are never
+        // silently dropped on the floor (Pitfall #5).
+        const result = await stockRepo.reverseLineStockEffect(rem.stockItemId, rem.quantity, mode, tx, actor);
+        // Only a Batch/legacy write-off records a physical stock loss; a DE
+        // write-off released demand (result.kind === 'de') — nothing lost.
+        if (mode === 'writeoff' && result.kind !== 'de') {
           writeoffsToLog.push({
             stockItemId: rem.stockItemId,
             quantity:    rem.quantity,
             reason:      rem.reason || 'Bouquet edit',
           });
-        } else {
-          // Default = RETURN the stems to inventory. Only an explicit 'writeoff'
-          // loses stock; a missing/unknown action MUST NOT silently delete the
-          // line and drop the stems on the floor (Pitfall #5). This guards the
-          // leak class where a UI path removed a line without tagging the action
-          // — the stock would vanish with no audit. Returning is the safe default.
-          await stockRepo.adjustQuantity(rem.stockItemId, rem.quantity, { tx, actor });
         }
       }
       if (rem.lineId) {
@@ -1148,6 +1153,27 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
             if (targetId && targetId !== line.stockItemId) {
               line.stockItemId = targetId;
             }
+          } else if (stockRow?.typeName && Number(stockRow.currentQuantity) < 0) {
+            // C25: the new line points at a DE. Route its demand to the canonical
+            // dated DE for THIS order's Required By (mirrors createOrder step 3b),
+            // not whatever — possibly wrong-dated — DE id the picker passed. The
+            // raw adjustQuantity below is skipped because getOrCreateDemandEntry
+            // already deepened the demand exactly once (_deApplied).
+            const demandDate = computeDemandDate({
+              requiredBy: order.requiredBy || null,
+              orderDate:  new Date().toISOString().split('T')[0],
+            });
+            const de = await getOrCreateDemandEntry(
+              {
+                typeName: stockRow.typeName,
+                colour:   stockRow.colour,
+                sizeCm:   stockRow.sizeCm,
+                cultivar: stockRow.cultivar,
+              },
+              demandDate, Number(line.quantity), tx, actor,
+            );
+            line.stockItemId = de._pgId;
+            line._deApplied = true;
           }
         }
 
@@ -1161,7 +1187,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
           stockDeferred:    line.stockDeferred === true,
         }).returning();
         createdLines.push(created);
-        if (line.stockItemId && !line.stockDeferred) {
+        if (line.stockItemId && !line.stockDeferred && !line._deApplied) {
           await stockRepo.adjustQuantity(line.stockItemId, -line.quantity, { tx, actor });
         }
       }
@@ -1235,8 +1261,13 @@ export async function updateOrder(id, fields, opts = {}) {
     }
 
     // Flag-on Required By cascade → Demand Entry date update.
-    if (getStockYModelEnabled() && 'Required By' in fields && fields['Required By']) {
-      const newDate = fields['Required By'];
+    // C4: gate on PRESENCE, not truthiness — clearing Required By (null/'')
+    // must still cascade so the linked DEs de-schedule (updateDemandEntryDate
+    // handles a null newDate by clearing the DE date in place). The old
+    // `&& fields['Required By']` skipped clears and left DEs pinned to the
+    // stale date.
+    if (getStockYModelEnabled() && 'Required By' in fields) {
+      const newDate = fields['Required By'] || null;
       // Fetch all order_lines for this order
       const orderLineRows = await tx.select({
         id:          orderLines.id,
