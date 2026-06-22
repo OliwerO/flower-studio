@@ -1300,12 +1300,20 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
   const isLow = qty > 0 && qty <= threshold;
   const isZero = qty === 0;
   const isNegative = qty < 0;
+  // CR-17: premade stems are a SUBSET of physical qty, not extra. Lead the cell
+  // with the FREE (grabbable) count = qty − premade, and show premade
+  // non-additively. Health colour tracks free, not physical.
+  const premadeQty = premade?.qty || 0;
+  const freeQty = premadeQty > 0 ? qty - premadeQty : qty;
+  const freeLow = freeQty > 0 && freeQty <= threshold;
+  const freeZero = freeQty === 0;
+  const freeNeg = freeQty < 0;
   const cost = item['Current Cost Price'] || 0;
   const sell = item['Current Sell Price'] || 0;
   const markup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
   const lotSize = item['Lot Size'] || '';
   const lastRestocked = item['Last Restocked'];
-  const rowColor = isNegative ? 'bg-red-50' : isZero ? 'bg-ios-red/8' : isLow ? 'bg-ios-orange/8' : '';
+  const rowColor = freeNeg ? 'bg-red-50' : freeZero ? 'bg-ios-red/8' : freeLow ? 'bg-ios-orange/8' : '';
 
   return (
     <>
@@ -1315,16 +1323,16 @@ function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatc
           <InlineDate value={lastRestocked} displayName={item['Display Name']} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} hideTag={isNegative} />
         </td>
         <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
-          isNegative ? 'text-red-600' : isZero ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label'
+          freeNeg ? 'text-red-600' : freeZero ? 'text-ios-red' : freeLow ? 'text-ios-orange' : 'text-ios-label'
         }`}>
-          <div>{qty}</div>
-          {premade && premade.qty > 0 && (
+          <div>{freeQty}</div>
+          {premadeQty > 0 && (
             <button
               onClick={e => { e.stopPropagation(); setShowPremadeDetail(v => !v); }}
               className="text-[10px] font-medium text-indigo-600 hover:text-indigo-800 normal-case"
               title={t.clickToSeePremades || 'Click to see which bouquets'}
             >
-              +{premade.qty} {t.inPremades || 'in premades'}
+              · {premadeQty} {t.inPremade || 'in premade'}
             </button>
           )}
         </td>

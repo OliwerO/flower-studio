@@ -78,4 +78,16 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     render(<BatchArrivalList groups={makeMergedGroup()} t={{ ...t, costMixedShort: 'XQZ' }} />);
     expect(screen.getByText('·XQZ')).toBeInTheDocument();
   });
+
+  it('premade shown as a SUBSET: leads with free (qty − reserved), never additive "+" (CR-17)', () => {
+    const groups = [{
+      type_name: 'Hydrangea', colour: 'Blue', size_cm: 60, cultivar: null,
+      rows: [{ id: 'h1', current_quantity: 18, current_sell_price: 40, current_cost_price: 9, supplier: 'Akito', date: '2026-06-20' }],
+    }];
+    render(<BatchArrivalList groups={groups} reservations={new Map([['h1', 6]])} t={{ ...t, inPremade: 'in premade' }} />);
+    expect(screen.getByText('12')).toBeInTheDocument();        // free = 18 − 6 leads
+    expect(screen.getByText(/6 in premade/)).toBeInTheDocument(); // labelled premade
+    expect(screen.queryByText('+6')).toBeNull();               // never "+6" (the additive bug)
+    expect(screen.queryByText('18')).toBeNull();               // physical total no longer the headline
+  });
 });

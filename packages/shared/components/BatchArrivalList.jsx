@@ -185,9 +185,9 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
         </span>
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
-          <span className="font-semibold tabular-nums text-gray-900">{b.qty}</span>
+          <span className="font-semibold tabular-nums text-gray-900">{b.reserved > 0 ? b.qty - b.reserved : b.qty}</span>
           {b.reserved > 0 && (
-            <span className="text-[10px] text-indigo-600 tabular-nums">+{b.reserved} {t.reserved ?? 'res'}</span>
+            <span className="text-[10px] text-indigo-600 tabular-nums">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
           )}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700" title={b.costMixed ? (t.costMixedTooltip ?? 'Mixed costs across receives — showing newest') : undefined}>

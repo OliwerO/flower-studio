@@ -113,6 +113,12 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
 
   const dotColor = isOut ? 'bg-ios-red' : isLow ? 'bg-ios-orange' : 'bg-ios-green';
   const qtyColor = isOut ? 'text-ios-red' : isLow ? 'text-ios-orange' : 'text-ios-label';
+  // CR-17: premade stems are a SUBSET of physical qty, not extra. View-mode
+  // leads with FREE (grabbable) = qty − premade; colour tracks free.
+  const freeQty = premadeQty > 0 ? qty - premadeQty : qty;
+  const freeOut = freeQty <= 0;
+  const freeLow = freeQty > 0 && freeQty <= threshold;
+  const freeColor = freeOut ? 'text-ios-red' : freeLow ? 'text-ios-orange' : 'text-ios-label';
 
   function handleWriteOff() {
     const n = Number(writeOffQty);
@@ -199,7 +205,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
             <>
               {/* Qty number + thin committed bar + premade chip */}
               <div className="flex flex-col items-center w-12">
-                <span className={`font-bold text-[13px] leading-none ${qtyColor}`}>{qty}</span>
+                <span className={`font-bold text-[13px] leading-none ${freeColor}`}>{freeQty}</span>
                 {committed > 0 && (
                   <div className="w-full h-[3px] rounded-full bg-gray-200 mt-1 overflow-hidden">
                     <div
@@ -213,7 +219,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
                     onClick={e => { e.stopPropagation(); setShowPremade(v => !v); }}
                     className="text-[9px] leading-tight text-indigo-600 font-medium mt-0.5 hover:text-indigo-800 whitespace-nowrap"
                   >
-                    +{premadeQty} {t.inPremadesShort || 'premade'}
+                    · {premadeQty} {t.inPremade || 'in premade'}
                   </button>
                 )}
               </div>
