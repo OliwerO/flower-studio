@@ -29,6 +29,8 @@ import { randomUUID } from 'crypto';
 import { faker } from '@faker-js/faker';
 import { buildBaseline } from './baseline.js';
 import { makeStockItem, makeOrder, makeOrderLine } from '../factories/index.js';
+import { makeStockLoss } from '../factories/stockLoss.js';
+import { makeStockPurchase } from '../factories/stockPurchase.js';
 
 const TODAY        = '2026-06-12';
 const BATCH_RECENT = '2026-06-10';
@@ -54,6 +56,8 @@ export function buildYModelGuide() {
   const deliveries      = [];
   const stockOrders     = [];
   const stockOrderLines = [];
+  const stockLosses     = [];
+  const stockPurchases  = [];
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function batch({ display, type, colour, size, cultivar, qty, date, cost = 6, sell = 18, supplier = 'Stojek' }) {
@@ -108,13 +112,30 @@ export function buildYModelGuide() {
       supplier, cost_price: cost, sell_price: sell, created_at: new Date(),
     });
   }
+  function loss({ stock, qty, date, reason = 'Wilted', notes = '' }) {
+    const r = makeStockLoss({ stockId: stock.id, quantity: qty, date, reason, notes });
+    stockLosses.push(r);
+    return r;
+  }
+  function purchase({ stock, qty, date, cost, supplier = 'Stojek', notes = '' }) {
+    const r = makeStockPurchase({ stockId: stock.id, quantity_purchased: qty, purchase_date: date, price_per_unit: cost, supplier, notes });
+    stockPurchases.push(r);
+    return r;
+  }
 
   // ── 1. Healthy stock, single batch, no demand ──────────────────────────────
-  batch({
+  // ARC A: 40 purchased, 20+10 consumed by orders, 6 wilted → 4 remaining.
+  const roseRed = batch({
     display: 'Rose Red 50cm Naomi (10.Jun.)',
     type: 'Rose', colour: 'Red', size: 50, cultivar: 'Naomi',
-    qty: 40, date: BATCH_RECENT, cost: 5, sell: 18,
+    qty: 4, date: BATCH_RECENT, cost: 5, sell: 18,
   });
+  purchase({ stock: roseRed, qty: 40, date: BATCH_RECENT, cost: 5, supplier: 'Stojek', notes: 'PO #PO-ROSE-1 L#1 primary' });
+  const ordRoseA = order({ requiredBy: NEED_13 });
+  line({ order: ordRoseA, stock: roseRed, qty: 20, name: 'Rose Red 50cm Naomi' });
+  const ordRoseB = order({ requiredBy: NEED_15, status: 'Delivered' });
+  line({ order: ordRoseB, stock: roseRed, qty: 10, name: 'Rose Red 50cm Naomi' });
+  loss({ stock: roseRed, qty: 6, date: TODAY, reason: 'Wilted', notes: 'wilted on the shelf' });
 
   // ── 2. Multiple batches, one Variety (FEFO drains oldest first) ─────────────
   batch({
@@ -170,11 +191,14 @@ export function buildYModelGuide() {
   line({ order: ordLisi, stock: lisiDE, qty: 12, name: 'Lisianthus White 50cm' });
 
   // ── 7. Premade reservation ties up physical stock ───────────────────────────
+  // ARC B: 28 purchased, 10 damaged in transit → 12 net effective + 6 tied to premade.
   const hydBlue = batch({
     display: 'Hydrangea Blue 30cm (10.Jun.)',
     type: 'Hydrangea', colour: 'Blue', size: 30, cultivar: null,
-    qty: 28, date: BATCH_RECENT, cost: 9, sell: 28,
+    qty: 12, date: BATCH_RECENT, cost: 9, sell: 28,
   });
+  purchase({ stock: hydBlue, qty: 28, date: BATCH_RECENT, cost: 9, notes: 'PO #PO-HYD-1 L#1 primary' });
+  loss({ stock: hydBlue, qty: 10, date: '2026-06-11', reason: 'Damaged', notes: 'crushed in transit' });
 
   // ── 8. Same Variety, TWO demand dates (06-13 sole + 06-17 summed from 2) ────
   batch({
@@ -211,11 +235,13 @@ export function buildYModelGuide() {
   stockItems.push(attrless);
 
   // ── 10. Undated legacy aggregate (no date chip → "fuzzy") ───────────────────
-  batch({
+  // ARC C: 5 stems written off as old stock; remaining qty 10.
+  const gyp = batch({
     display: 'Gypsophila White',
     type: 'Gypsophila', colour: 'White', size: null, cultivar: null,
-    qty: 15, date: null, cost: 4, sell: 9,
+    qty: 10, date: null, cost: 4, sell: 9,
   });
+  loss({ stock: gyp, qty: 5, date: '2026-06-09', reason: 'Overstock', notes: 'old stock cleared' });
 
   // ── The incoming PO (covers concepts 5, 6, 9) ───────────────────────────────
   // Sent + assigned → also visible on the delivery app's shopping run.
@@ -223,6 +249,25 @@ export function buildYModelGuide() {
   poLine({ po: guidePo, stock: peony50DE, qty: 7,  name: 'Peony Pink 50cm (2026-06-15)',      supplier: 'Stojek', cost: 18, sell: 38 });
   poLine({ po: guidePo, stock: lisiDE,    qty: 20, name: 'Lisianthus White 50cm (2026-06-18)', supplier: 'Stojek', cost: 5,  sell: 14 });
   poLine({ po: guidePo, stock: attrless,  qty: 50, name: 'peony',                              supplier: '4f',     cost: 12, sell: 20 });
+
+  // ── ABSORPTION CASE — Anemone Burgundy 50cm ─────────────────────────────────
+  // Post-absorption STATE: DE=0 (zeroed), Batch=7 (received 12 + existing −5 = 7).
+  // The lab seeds raw rows — it does NOT run receiveIntoStock; this is the end-state.
+  const anemDE = de({
+    display: 'Anemone Burgundy 50cm (2026-06-14)',
+    type: 'Anemone', colour: 'Burgundy', size: 50, cultivar: null,
+    qty: 0, date: '2026-06-14', sell: 22,
+  });
+  const ordAnem = order({ requiredBy: '2026-06-14', status: 'Ready' });
+  line({ order: ordAnem, stock: anemDE, qty: 5, name: 'Anemone Burgundy 50cm' });
+  const anemBatch = batch({
+    display: 'Anemone Burgundy 50cm (16.Jun.)',
+    type: 'Anemone', colour: 'Burgundy', size: 50, cultivar: null,
+    qty: 7, date: PO_ARRIVE, cost: 8, sell: 22, supplier: 'Stojek',
+  });
+  purchase({ stock: anemBatch, qty: 12, date: PO_ARRIVE, cost: 8, supplier: 'Stojek', notes: 'PO #PO-ABSORB-1 L#1 primary' });
+  const absorbPo = po({ number: 'PO-ABSORB-1', status: 'Complete', driver: 'Nikita', plannedDate: PO_ARRIVE });
+  poLine({ po: absorbPo, stock: anemDE, qty: 12, name: 'Anemone Burgundy 50cm (2026-06-14)', supplier: 'Stojek', cost: 8, sell: 22 });
 
   // ── Premade reservation: "Spring Set" reserves 6 Hydrangea Blue ─────────────
   const bouquets = [
@@ -239,6 +284,8 @@ export function buildYModelGuide() {
   return {
     customers: base.customers,
     stockItems,
+    stockLosses,
+    stockPurchases,
     stockOrders,
     stockOrderLines,
     orders,
