@@ -17,6 +17,16 @@ CLAUDE_RO_URL='<from project_postgres_access.md>' node backend/scripts/shadow-he
 ```
 Reports row counts in PG + audit activity. parity_log is no longer fed (shadow mode is off) but the file stays useful as a traffic dashboard.
 
+**Y-model cutover-readiness (DONE 2026-06-22, #412-417):** The overnight ultracode audit (`docs/superpowers/reports/2026-06-21-overnight-ultracode/`) cutover blockers are all fixed + merged to master. See CHANGELOG 2026-06-22 for the per-PR breakdown:
+- [x] #412 — order no longer double-decrements Demand Entries (C1, CRIT)
+- [x] #413 — premade match/edit atomicity (C2/C10)
+- [x] #414 — owner financials (C26) + desktop PO-coverage (P1) + Type-only PO save (PG-6)
+- [x] #415 — pending-PO auto-create carries Variety attrs (C3)
+- [x] #416 — DE-family lifecycle: release/soft-delete/route demand (C4/C5/C19/C25)
+- [x] #417 — substitute Variety capture at evaluation (C13)
+
+All inert with `STOCK_Y_MODEL` off (current prod). The **#291 flag-flip cutover is no longer gated by these findings** — remaining cutover prep is the owner browser-verify + #290 lab Playwright rehearsal below. Deferred non-blocking edges noted in the audit: C25 add-line on an already-de-scheduled order routes to a today-dated DE (mirrors createOrder); shared-DE clear de-schedules co-owners in place (documented decision).
+
 **Open work items, ranked by when they unblock:**
 
 0. **Lab Playwright rehearsal for Y-model stock list** (#290) — deferred from T12 (#289). Baseline scenario (`lab/scenarios/baseline.js`) does not seed 4-tuple Variety rows (`type_name`, `colour`, `size_cm`, `cultivar`), so the spec cannot exercise `TypeGroupHeader` expand, `VarietyListItem` expand, or `WriteOffBatchPicker`. Scope for #290: extend `stockYDemand.js` scenario with multi-Variety rows, add `lab/playwright/stock-y-list.spec.ts` covering: (a) Type group expand/collapse, (b) Variety row expand to Stock Items, (c) write-off picker excludes Demand Entries. Run `npm run lab:template:rebuild -- --scenario=stockYDemand` + `npm run lab:test:ui` once to confirm.
