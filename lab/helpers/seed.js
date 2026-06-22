@@ -2,8 +2,9 @@
 //
 // Insert a fixture (returned by a scenario builder) into Postgres.
 // Inserts in FK order:
-//   customers → stock → stock_orders → stock_order_lines → premade_bouquets
-//   → orders → order_lines → premade_bouquet_lines → deliveries
+//   customers → stock → stock_loss_log → stock_purchases → stock_orders
+//   → stock_order_lines → premade_bouquets → orders → order_lines
+//   → premade_bouquet_lines → deliveries
 // Uses a single transaction so partial seeds don't leave the DB inconsistent.
 //
 // premadeBouquets, premadeBouquetLines, stockOrders and stockOrderLines are
@@ -17,6 +18,8 @@ export async function seedFixture(pool, fixture) {
     await client.query('BEGIN');
     await insertMany(client, 'customers', fixture.customers ?? []);
     await insertMany(client, 'stock', fixture.stockItems ?? []);
+    await insertMany(client, 'stock_loss_log', fixture.stockLosses ?? []);
+    await insertMany(client, 'stock_purchases', fixture.stockPurchases ?? []);
     await insertMany(client, 'stock_orders', fixture.stockOrders ?? []);
     await insertMany(client, 'stock_order_lines', fixture.stockOrderLines ?? []);
     await insertMany(client, 'premade_bouquets', fixture.premadeBouquets ?? []);
