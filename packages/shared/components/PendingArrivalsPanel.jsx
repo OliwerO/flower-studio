@@ -135,11 +135,11 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
       {!collapsed && (
         <ul className="divide-y divide-indigo-100">
           {byDate.map(sec => (
-            <li key={sec.date ?? 'undated'} data-testid={`pending-arrival-date-${sec.date ?? 'undated'}`} className="px-4 py-2">
-              <div className="mb-1">
+            <li key={sec.date ?? 'undated'} data-testid={`pending-arrival-date-${sec.date ?? 'undated'}`} className="px-4 py-1">
+              <div className="mb-0.5">
                 <DateTag date={sec.date} kind="arriving" t={t} />
               </div>
-              <ul className="space-y-1">
+              <ul className="space-y-0.5">
                 {sec.flowers.map(f => {
                   const rowId = `${sec.date ?? 'undated'}@${f.key}`;
                   const canTrace = !!fetchVarietyUsage && !f.key.startsWith('__legacy__');

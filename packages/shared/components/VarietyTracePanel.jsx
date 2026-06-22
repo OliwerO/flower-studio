@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { formatDateDMY } from '../utils/formatDate.js';
 import { byDateAsc } from '../utils/sortByDate.js';
 import BalanceSparkline from './BalanceSparkline.jsx';
@@ -28,9 +29,27 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
 
   const sorted = hasEvents ? [...events].sort(byDateAsc) : [];
 
+  // CR-12: the balance graph is OFF by default. Expanding a row shows the
+  // consuming-orders list (what the owner asked for); a right-aligned button
+  // reveals the graph only when she wants it. Resets each time the row reopens.
+  const [showGraph, setShowGraph] = useState(false);
+
   return (
     <div>
-      <BalanceSparkline events={sorted} t={t} onOrderClick={onOrderClick} />
+      {hasEvents && (
+        <div className="flex justify-end mb-1">
+          <button
+            type="button"
+            data-testid="trace-graph-toggle"
+            onClick={(e) => { e.stopPropagation(); setShowGraph(g => !g); }}
+            aria-pressed={showGraph}
+            className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 active:bg-indigo-200"
+          >
+            📈 {showGraph ? (t.hideGraph ?? 'Hide graph') : (t.showGraph ?? 'Show graph')}
+          </button>
+        </div>
+      )}
+      {showGraph && <BalanceSparkline events={sorted} t={t} onOrderClick={onOrderClick} />}
       {hasEvents ? (
         <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
           {sorted.map((entry, i) => (

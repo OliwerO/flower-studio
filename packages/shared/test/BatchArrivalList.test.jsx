@@ -8,6 +8,7 @@ const t = {
   cost: 'cost', sell: 'sell', markup: 'markup', supplier: 'supplier',
   arrived: 'arrived', qty: 'qty', stems: 'stems',
   expand: 'Expand', collapse: 'Collapse',
+  costMixedShort: 'mixed', costMixedTooltip: 'Mixed costs across receives — showing newest',
 };
 
 // Two batches of Rose Pink 60 at the same sell price (25 zł) but different
@@ -70,5 +71,50 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     render(<BatchArrivalList groups={makeMergedGroup()} t={t} onRowClick={onRowClick} />);
     fireEvent.click(screen.getByTestId('batch-arrival-row'));
     expect(onRowClick).toHaveBeenCalledWith(['s1', 's2']);
+  });
+
+  it('mixed-cost badge text comes from t.costMixedShort, not a hardcoded literal (CR-14)', () => {
+    // Rose merged group has two costs (10 + 12) → costMixed true → badge shown.
+    render(<BatchArrivalList groups={makeMergedGroup()} t={{ ...t, costMixedShort: 'XQZ' }} />);
+    expect(screen.getByText('·XQZ')).toBeInTheDocument();
+  });
+
+  it('·mixed does NOT fire for one positive batch + a zero-qty absorbed demand entry (CR-14)', () => {
+    // Anemone: one real receive @8.00 + an absorbed DE (qty 0) carrying a stray
+    // cost 14.19. The DE has no cost basis → must not trigger the mixed badge.
+    const groups = [{
+      type_name: 'Anemone', colour: 'Burgundy', size_cm: 40, cultivar: null,
+      rows: [
+        { id: 'ab',  current_quantity: 10, current_sell_price: 20, current_cost_price: 8,     date: '2026-06-20' },
+        { id: 'ade', current_quantity: 0,  current_sell_price: 20, current_cost_price: 14.19, date: '2026-06-17' },
+      ],
+    }];
+    render(<BatchArrivalList groups={groups} t={t} />);
+    expect(screen.getByText(/8\.00/)).toBeInTheDocument(); // newest positive receive cost
+    expect(screen.queryByText('·mixed')).toBeNull();       // no spurious mix badge
+  });
+
+  it('·mixed DOES fire for two positive batches at different costs (CR-14 guard)', () => {
+    const groups = [{
+      type_name: 'Carnation', colour: 'Red', size_cm: 50, cultivar: null,
+      rows: [
+        { id: 'c1', current_quantity: 16, current_sell_price: 30, current_cost_price: 8,  date: '2026-06-20' },
+        { id: 'c2', current_quantity: 14, current_sell_price: 30, current_cost_price: 12, date: '2026-06-15' },
+      ],
+    }];
+    render(<BatchArrivalList groups={groups} t={t} />);
+    expect(screen.getByText('·mixed')).toBeInTheDocument();
+  });
+
+  it('premade shown as a SUBSET: leads with free (qty − reserved), never additive "+" (CR-17)', () => {
+    const groups = [{
+      type_name: 'Hydrangea', colour: 'Blue', size_cm: 60, cultivar: null,
+      rows: [{ id: 'h1', current_quantity: 18, current_sell_price: 40, current_cost_price: 9, supplier: 'Akito', date: '2026-06-20' }],
+    }];
+    render(<BatchArrivalList groups={groups} reservations={new Map([['h1', 6]])} t={{ ...t, inPremade: 'in premade' }} />);
+    expect(screen.getByText('12')).toBeInTheDocument();        // free = 18 − 6 leads
+    expect(screen.getByText(/6 in premade/)).toBeInTheDocument(); // labelled premade
+    expect(screen.queryByText('+6')).toBeNull();               // never "+6" (the additive bug)
+    expect(screen.queryByText('18')).toBeNull();               // physical total no longer the headline
   });
 });

@@ -10,7 +10,7 @@
  *   value   — current numeric price (null/undefined → shows "—")
  *   onSave  — (number) => void
  *   testid  — data-testid for the button (input gets `${testid}-input`)
- *   suffix  — optional node appended after the value in display mode (e.g. a "·mix" badge)
+ *   suffix  — optional node appended after the value in display mode (e.g. a "·mixed" badge)
  */
 import { useState } from 'react';
 
@@ -51,7 +51,7 @@ export default function InlinePriceField({ value, onSave, testid, suffix }) {
       type="button"
       data-testid={testid}
       onClick={startEdit}
-      className="tabular-nums text-gray-700 underline decoration-dotted underline-offset-2 hover:text-gray-900"
+      className="tabular-nums text-gray-700 rounded px-0.5 cursor-pointer transition-colors hover:bg-gray-100 hover:text-gray-900"
     >
       {value != null ? value.toFixed(2) : '—'}{suffix}
     </button>

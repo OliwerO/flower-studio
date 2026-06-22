@@ -229,3 +229,39 @@ describe('BalanceSparkline — data-testid preserved', () => {
     expect(screen.getByTestId('trace-sparkline')).toBeInTheDocument();
   });
 });
+
+describe('BalanceSparkline — CR-18 on-chart legibility', () => {
+  it('shows the running balance after each step as a visible text node (not just hover)', () => {
+    render(<BalanceSparkline events={basicEvents} t={t} />);
+    expect(screen.getByText('30')).toBeInTheDocument(); // after purchase
+    expect(screen.getByText('20')).toBeInTheDocument(); // after -10
+    expect(screen.getByText('15')).toBeInTheDocument(); // after -5
+  });
+
+  it('shows the signed delta at each consuming event', () => {
+    render(<BalanceSparkline events={basicEvents} t={t} />);
+    expect(screen.getByText('-10')).toBeInTheDocument();
+    expect(screen.getByText('-5')).toBeInTheDocument();
+  });
+
+  it('shows a short identity for order events (customer name)', () => {
+    render(<BalanceSparkline events={basicEvents} t={t} />);
+    expect(screen.getByText('Anna')).toBeInTheDocument();
+    expect(screen.getByText('Bob')).toBeInTheDocument();
+  });
+
+  it('renders a colour legend (in / out)', () => {
+    render(<BalanceSparkline events={basicEvents} t={t} />);
+    expect(screen.getByText('in')).toBeInTheDocument();
+    expect(screen.getByText('out')).toBeInTheDocument();
+  });
+
+  it('renders a negative-floor y-label when the balance goes below zero', () => {
+    const events = [
+      { type: 'purchase', date: '2026-05-01', quantity: 5 },
+      { type: 'order',    date: '2026-05-05', quantity: -12, orderRecordId: 'r1' },
+    ];
+    render(<BalanceSparkline events={events} t={t} />);
+    expect(screen.getByTestId('y-label-min')).toHaveTextContent('-7');
+  });
+});

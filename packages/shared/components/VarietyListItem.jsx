@@ -267,7 +267,13 @@ export default function VarietyListItem({
                     data-testid="stock-item-row"
                     data-row-kind={kind}
                     data-stock-ids={row.stockIds.join(',')}
-                    onClick={() => handleRowClick && handleRowClick(row.stockIds[0])}
+                    onClick={() => {
+                      // CR-16: an absorbed/zero demand row's consuming order lives in
+                      // the VARIETY trace (unions DE + batch), not the batch-only trace.
+                      // Route demand rows there so "where did the stems go?" is reachable.
+                      if (isDemand && onVarietyTrace) { onVarietyTrace(variety.key); return; }
+                      if (handleRowClick) handleRowClick(row.stockIds[0]);
+                    }}
                     className={`flex items-center gap-2 min-w-0 flex-1 text-left rounded transition-colors ${
                       isDemand ? 'hover:bg-red-100 active:bg-red-100' : 'hover:bg-gray-100 active:bg-gray-100'
                     }`}

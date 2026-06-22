@@ -185,16 +185,16 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
         </span>
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
-          <span className="font-semibold tabular-nums text-gray-900">{b.qty}</span>
+          <span className="font-semibold tabular-nums text-gray-900">{b.reserved > 0 ? b.qty - b.reserved : b.qty}</span>
           {b.reserved > 0 && (
-            <span className="text-[10px] text-indigo-600 tabular-nums">+{b.reserved} {t.reserved ?? 'res'}</span>
+            <span className="text-[10px] text-indigo-600 tabular-nums">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
           )}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700" title={b.costMixed ? (t.costMixedTooltip ?? 'Mixed costs across receives — showing newest') : undefined}>
           {editable
-            ? <InlinePriceField value={b.cost} testid="batch-edit-cost" onSave={(v) => save('cost', v)} suffix={b.costMixed ? <span className="text-gray-400 text-[10px] ml-0.5">·mix</span> : null} />
+            ? <InlinePriceField value={b.cost} testid="batch-edit-cost" onSave={(v) => save('cost', v)} suffix={b.costMixed ? <span className="text-gray-400 text-[10px] ml-0.5">·{t.costMixedShort ?? 'mixed'}</span> : null} />
             : (b.cost != null
-                ? <>{b.cost.toFixed(2)}{b.costMixed && <span className="text-gray-400 text-[10px] ml-0.5">·mix</span>}</>
+                ? <>{b.cost.toFixed(2)}{b.costMixed && <span className="text-gray-400 text-[10px] ml-0.5">·{t.costMixedShort ?? 'mixed'}</span>}</>
                 : '—')}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700">
@@ -321,14 +321,20 @@ function flatten(groups, reservations, today) {
       m.qty += qty;
       m.reserved += reservations.get(row.id) ?? 0;
       m.underlying.push({ id: row.id, qty, cost, supplier, date });
-      if (cost != null) m.costsSeen.add(cost.toFixed(2));
-      if (supplier) m.suppliersSeen.add(supplier);
-      // Track the newest receive — its cost wins as the displayed cost.
-      if (date && (!m.newestDate || date > m.newestDate)) {
-        m.newestDate = date;
-        m.newestCost = cost;
-      } else if (!m.newestDate && cost != null && m.newestCost == null) {
-        m.newestCost = cost;
+      // CR-14: only POSITIVE-qty receives carry a cost basis. A zero-qty row
+      // (an absorbed demand entry, qty 0 — it clears the qty<0 guard above)
+      // holds a stray cost that must NOT count toward the mixed-cost badge or
+      // the displayed (newest) cost / supplier.
+      if (qty > 0) {
+        if (cost != null) m.costsSeen.add(cost.toFixed(2));
+        if (supplier) m.suppliersSeen.add(supplier);
+        // Track the newest receive — its cost wins as the displayed cost.
+        if (date && (!m.newestDate || date > m.newestDate)) {
+          m.newestDate = date;
+          m.newestCost = cost;
+        } else if (!m.newestDate && cost != null && m.newestCost == null) {
+          m.newestCost = cost;
+        }
       }
     }
   }

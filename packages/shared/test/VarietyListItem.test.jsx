@@ -165,15 +165,40 @@ describe('VarietyListItem expansion', () => {
     expect(onRowClick).toHaveBeenCalledWith('b1');
   });
 
-  it('clicking a Demand Entry row also fires onRowClick (both kinds open the same trace)', () => {
-    // Both Batches AND DEs are clickable in the redesign — /stock/:id/usage
-    // surfaces the trail for either kind (linked orders for DEs).
+  it('clicking a Demand Entry row falls back to onRowClick when no onVarietyTrace is wired', () => {
+    // Back-compat: without onVarietyTrace the demand row still opens the
+    // batch-level trace via onRowClick (the DE's own /stock/:id/usage).
     const onRowClick = vi.fn();
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} />);
     const demand = screen.getAllByTestId('stock-item-row').find(r => r.getAttribute('data-row-kind') === 'demand');
     fireEvent.click(demand);
     expect(onRowClick).toHaveBeenCalledWith('d1');
+  });
+
+  it('CR-16: clicking a Demand row opens the VARIETY trace (consuming order), not the batch trace', () => {
+    // An absorbed/zero demand row's consuming order lives in the variety-level
+    // trace (unions DE + batch). When onVarietyTrace is wired, the demand row
+    // routes there instead of the batch-only onRowClick.
+    const onRowClick = vi.fn();
+    const onVarietyTrace = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} onVarietyTrace={onVarietyTrace} />);
+    const demand = screen.getAllByTestId('stock-item-row').find(r => r.getAttribute('data-row-kind') === 'demand');
+    fireEvent.click(demand);
+    expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('CR-16: Batch rows still open the batch trace (onRowClick) even when onVarietyTrace is wired', () => {
+    const onRowClick = vi.fn();
+    const onVarietyTrace = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onRowClick={onRowClick} onVarietyTrace={onVarietyTrace} />);
+    const batch = screen.getAllByTestId('stock-item-row').find(r => r.getAttribute('data-row-kind') === 'batch');
+    fireEvent.click(batch);
+    expect(onRowClick).toHaveBeenCalledWith('b1');
+    expect(onVarietyTrace).not.toHaveBeenCalled();
   });
 
   it('still honours legacy onBatchClick prop name (back-compat)', () => {
