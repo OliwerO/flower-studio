@@ -221,6 +221,66 @@ describe('T5.2 — getUsageByVarietyKey', () => {
     expect(result.unaccountedStems).toBe(0);
     expect(result.variety.key).toBe('Unknown|Blue|99|');
   });
+
+  it('tags firstPo on earliest purchase and firstDemand on earliest order across multiple batches', async () => {
+    const customer = await seedCustomer();
+
+    // Two batches — different receive dates
+    const batch1 = await seedBatch({ displayName: 'Rose Pink 60 (01.May.)', currentQuantity: 20, date: '2026-05-01' });
+    const batch2 = await seedBatch({ displayName: 'Rose Pink 60 (10.May.)', currentQuantity: 15, date: '2026-05-10' });
+
+    // Earlier purchase on batch1, later purchase on batch2
+    await seedPurchase(batch1.id, 20, '2026-05-01');
+    await seedPurchase(batch2.id, 15, '2026-05-10');
+
+    // Earlier order on batch1 (2026-05-03), later order on batch2 (2026-05-12)
+    const ord1 = await seedOrder(customer.id, '2026-05-03');
+    await seedOrderLine(ord1.id, batch1.id, 3);
+    const ord2 = await seedOrder(customer.id, '2026-05-12');
+    await seedOrderLine(ord2.id, batch2.id, 5);
+
+    const result = await stockRepo.getUsageByVarietyKey('Rose|Pink|60|');
+    const events = result.events;
+
+    // Exactly one firstPo marker
+    const posWithFirstPo = events.filter(e => e.firstPo === true);
+    expect(posWithFirstPo).toHaveLength(1);
+    // Must be the 2026-05-01 purchase (earliest)
+    expect(posWithFirstPo[0].type).toBe('purchase');
+    expect(posWithFirstPo[0].date).toBe('2026-05-01');
+
+    // Exactly one firstDemand marker
+    const ordersWithFirstDemand = events.filter(e => e.firstDemand === true);
+    expect(ordersWithFirstDemand).toHaveLength(1);
+    // Must be the 2026-05-03 order (earliest)
+    expect(ordersWithFirstDemand[0].type).toBe('order');
+    expect(ordersWithFirstDemand[0].date).toBe('2026-05-03');
+
+    // The later purchase/order must NOT have the markers
+    const otherPurchases = events.filter(e => e.type === 'purchase' && !e.firstPo);
+    expect(otherPurchases).toHaveLength(1);
+    const otherOrders = events.filter(e => e.type === 'order' && !e.firstDemand);
+    expect(otherOrders).toHaveLength(1);
+
+    // Markers must not affect quantity values (balance unperturbed)
+    const totalQty = events.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
+    expect(totalQty).toBe(result.unaccountedStems);
+  });
+
+  it('produces no firstPo when a Variety has no purchase events', async () => {
+    const customer = await seedCustomer();
+    const batch = await seedBatch({ displayName: 'Rose Pink 60 (05.May.)', currentQuantity: 10, date: '2026-05-05' });
+    const ord = await seedOrder(customer.id, '2026-05-06');
+    await seedOrderLine(ord.id, batch.id, 2);
+    // No seedPurchase call
+
+    const result = await stockRepo.getUsageByVarietyKey('Rose|Pink|60|');
+    const events = result.events;
+
+    expect(events.some(e => e.firstPo === true)).toBe(false);
+    // firstDemand is still tagged on the single order
+    expect(events.filter(e => e.firstDemand === true)).toHaveLength(1);
+  });
 });
 
 describe('T5.3 — listGroupedByVariety includeEmpty=false keeps Variety with active consumers', () => {

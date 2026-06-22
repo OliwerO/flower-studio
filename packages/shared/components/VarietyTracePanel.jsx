@@ -149,6 +149,16 @@ function TraceRow({ entry, t, onOrderClick }) {
         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${typeBadgeClass(entry.type)}`}>
           {typeLabel(entry, t)}
         </span>
+        {entry.firstPo && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 bg-sky-100 text-sky-700">
+            {t.traceFirstPo ?? 'First PO'}
+          </span>
+        )}
+        {entry.firstDemand && (
+          <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 bg-amber-100 text-amber-700">
+            {t.traceFirstDemand ?? 'First demand'}
+          </span>
+        )}
         {detail && (
           <span className="text-xs text-gray-700 truncate">{detail}</span>
         )}
