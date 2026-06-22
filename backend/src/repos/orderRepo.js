@@ -691,6 +691,13 @@ export async function createOrder(params, config, opts = {}) {
             .where(eq(orderLines.id, createdLines[i].id));
           createdLines[i] = { ...createdLines[i], stockItemId: de._pgId };
         }
+
+        // C1: this line's stock effect is now fully applied via the DE path
+        // (getOrCreateDemandEntry deepened the demand above). Mark it so step 4
+        // does NOT decrement it a second time. Without this, every order against
+        // a demand-only Variety counted its demand twice (the seed DE went
+        // -20 → -25 here, then -30 in step 4).
+        line._deApplied = true;
       }
     }
 
@@ -698,7 +705,7 @@ export async function createOrder(params, config, opts = {}) {
     //    THIS transaction. Any throw rolls everything back.
     if (!skipStockDeduction) {
       for (const line of lines) {
-        if (line.stockItemId && !line.stockDeferred) {
+        if (line.stockItemId && !line.stockDeferred && !line._deApplied) {
           await stockRepo.adjustQuantity(line.stockItemId, -line.quantity, { tx, actor });
         }
       }

@@ -14,7 +14,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
 import { stock, orders, orderLines, deliveries, auditLog } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
 const dbHolder = { db: null };
@@ -239,6 +239,46 @@ describe('createOrder', () => {
     // (c) DE row's current_quantity is deepened by the ordered quantity
     const [deAfter] = await harness.db.select().from(stock).where(eq(stock.id, deId));
     expect(deAfter.currentQuantity).toBe(-3); // 0 - 3
+
+    yModelFlag.enabled = false;
+  });
+
+  it('(C1) deepens a pre-existing negative Demand Entry exactly ONCE — no double-decrement', async () => {
+    // Regression for C1. When an order line points at a DE that ALREADY holds
+    // demand (qty < 0) for the same Variety + date the order computes, step 3b
+    // (getOrCreateDemandEntry) deepens it AND step 4 (adjustQuantity) used to hit
+    // the same row again → 2× the line qty. This seed-row assertion is the blind
+    // spot the CR-08 test missed: it seeded qty 0, which step 3b skips (>= 0), so
+    // the line went through step 4 only and never exercised the double path.
+    yModelFlag.enabled = true;
+
+    const demandDate = '2026-07-01';
+    const [de] = await harness.db.insert(stock).values({
+      airtableId: 'recDEc1', displayName: `Tulip (${demandDate})`,
+      typeName: 'Tulip', currentQuantity: -20, date: demandDate, active: true,
+    }).returning();
+    const deId = de.id;
+
+    await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Tulip top-up',
+      deliveryType: 'Pickup',
+      requiredBy: demandDate,
+      orderLines: [
+        { stockItemId: deId, flowerName: 'Tulip', quantity: 5, sellPricePerUnit: 4, costPricePerUnit: 1 },
+      ],
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Demand deepened by EXACTLY the line qty: -20 → -25 (not -30).
+    const [deAfter] = await harness.db.select().from(stock).where(eq(stock.id, deId));
+    expect(deAfter.currentQuantity).toBe(-25);
+
+    // And no duplicate DE row was spawned for the same Variety + date.
+    const sameVariety = await harness.db.select().from(stock)
+      .where(and(eq(stock.typeName, 'Tulip'), eq(stock.date, demandDate)));
+    expect(sameVariety).toHaveLength(1);
 
     yModelFlag.enabled = false;
   });
