@@ -195,7 +195,7 @@ export function buildYModelGuide() {
   const hydBlue = batch({
     display: 'Hydrangea Blue 30cm (10.Jun.)',
     type: 'Hydrangea', colour: 'Blue', size: 30, cultivar: null,
-    qty: 12, date: BATCH_RECENT, cost: 9, sell: 28,
+    qty: 18, date: BATCH_RECENT, cost: 9, sell: 28,
   });
   purchase({ stock: hydBlue, qty: 28, date: BATCH_RECENT, cost: 9, notes: 'PO #PO-HYD-1 L#1 primary' });
   loss({ stock: hydBlue, qty: 10, date: '2026-06-11', reason: 'Damaged', notes: 'crushed in transit' });

@@ -51,17 +51,18 @@ describe('VarietyTracePanel', () => {
     expect(screen.queryByTestId('unaccounted-footer')).not.toBeInTheDocument();
   });
 
-  it('shows the unaccounted footer with signed count when non-zero', () => {
+  it('shows the unaccounted footer with drift count when drift > 0', () => {
     const events = [{ type: 'purchase', date: '2026-05-08', quantity: 30 }];
-    render(<VarietyTracePanel events={events} unaccountedStems={7} t={t} />);
+    render(<VarietyTracePanel events={events} unaccountedStems={30} drift={7} t={t} />);
     const footer = screen.getByTestId('unaccounted-footer');
     expect(footer).toHaveTextContent('Unaccounted');
     expect(footer).toHaveTextContent('+7 stems');
   });
 
-  it('renders the unaccounted footer even with no events', () => {
-    render(<VarietyTracePanel events={[]} unaccountedStems={-4} t={t} />);
-    expect(screen.getByTestId('unaccounted-footer')).toHaveTextContent('-4 stems');
+  it('hides the footer when drift is 0 (even with unaccountedStems > 0)', () => {
+    // Footer is driven by drift, not unaccountedStems — drift=0 means reconciled.
+    render(<VarietyTracePanel events={[]} unaccountedStems={-4} drift={0} t={t} />);
+    expect(screen.queryByTestId('unaccounted-footer')).not.toBeInTheDocument();
   });
 
   it('renders a balance sparkline when there is at least one dated event', () => {
@@ -145,5 +146,36 @@ describe('VarietyTracePanel', () => {
     render(<VarietyTracePanel events={events} unaccountedStems={0} t={t} />);
     expect(screen.queryByText('First PO')).not.toBeInTheDocument();
     expect(screen.queryByText('First demand')).not.toBeInTheDocument();
+  });
+});
+
+describe('VarietyTracePanel — S6 drift-driven footer', () => {
+  it('hides the footer when drift is 0 even if unaccountedStems is large', () => {
+    // e.g. healthy Rose Red: unaccountedStems=4 but drift=0 (on-hand=4)
+    const events = [{ type: 'purchase', date: '2026-05-01', quantity: 40 }];
+    render(<VarietyTracePanel events={events} unaccountedStems={4} drift={0} t={t} />);
+    expect(screen.queryByTestId('unaccounted-footer')).not.toBeInTheDocument();
+  });
+
+  it('hides the footer when drift is negative (more physical stock than events explain)', () => {
+    // opening balance scenario: drift < 0 — not actionable
+    const events = [{ type: 'purchase', date: '2026-05-01', quantity: 10 }];
+    render(<VarietyTracePanel events={events} unaccountedStems={-5} drift={-5} t={t} />);
+    expect(screen.queryByTestId('unaccounted-footer')).not.toBeInTheDocument();
+  });
+
+  it('shows the footer with the drift value when drift > 0', () => {
+    // Iris Purple 50: purchase+30, on-hand=20, drift=10
+    const events = [{ type: 'purchase', date: '2026-06-01', quantity: 30 }];
+    render(<VarietyTracePanel events={events} unaccountedStems={30} drift={10} t={t} />);
+    const footer = screen.getByTestId('unaccounted-footer');
+    expect(footer).toHaveTextContent('Unaccounted');
+    expect(footer).toHaveTextContent('+10 stems');
+  });
+
+  it('drift defaults to 0 so footer is hidden when prop is omitted', () => {
+    const events = [{ type: 'purchase', date: '2026-05-01', quantity: 20 }];
+    render(<VarietyTracePanel events={events} unaccountedStems={20} t={t} />);
+    expect(screen.queryByTestId('unaccounted-footer')).not.toBeInTheDocument();
   });
 });

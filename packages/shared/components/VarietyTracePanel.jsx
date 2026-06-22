@@ -6,21 +6,23 @@ import { byDateAsc } from '../utils/sortByDate.js';
  *
  * Sibling of BatchTracePanel, but spans EVERY Stock row in a Variety (all
  * Batches + Demand Entries) rather than one Batch. Data comes from
- * GET /stock/varieties/:key/usage → { variety, events, unaccountedStems }.
+ * GET /stock/varieties/:key/usage → { variety, events, unaccountedStems, drift }.
  *
  * Props:
  *   events           — array of trail events (already date-asc from the API;
  *                      we re-sort defensively, undated last)
- *   unaccountedStems — signed Σ of all event quantities. Non-zero = drift
- *                      (e.g. a deferred absorption, or a qty change with no
- *                      emitting event). Surfaces a footer only when non-zero.
+ *   unaccountedStems — signed Σ of all event quantities (kept for callers;
+ *                      no longer drives the footer — use `drift` for that).
+ *   drift            — TRUE drift: unaccountedStems + reservedStems − onHand.
+ *                      Footer renders ONLY when drift > 0 (stems vanished with
+ *                      no recorded event). drift ≤ 0 = reconciled, footer hidden.
  *   t                — strings (traceTypeOrder/Writeoff/Purchase/Premade,
  *                      traceEmpty, stems, unaccountedStems)
  *
  * Absorption events are deferred (audit_log has no transaction_id) — they show
  * up inside `unaccountedStems` rather than as paired rows. See the T5 plan.
  */
-export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t, onOrderClick }) {
+export default function VarietyTracePanel({ events = [], unaccountedStems = 0, drift = 0, t, onOrderClick }) {
   const hasEvents = events && events.length > 0;
 
   const sorted = hasEvents ? [...events].sort(byDateAsc) : [];
@@ -44,14 +46,14 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, t
         <p className="text-xs text-gray-400 py-2 text-center">{t.traceEmpty}</p>
       )}
 
-      {unaccountedStems !== 0 && (
+      {drift > 0 && (
         <div
           data-testid="unaccounted-footer"
           className="mt-2 flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs"
         >
           <span className="font-medium text-amber-800">{t.unaccountedStems ?? 'Unaccounted'}</span>
           <span className="font-semibold tabular-nums text-amber-800">
-            {unaccountedStems > 0 ? '+' : ''}{unaccountedStems} {t.stems}
+            +{drift} {t.stems}
           </span>
         </div>
       )}

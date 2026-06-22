@@ -71,6 +71,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [varietyTraceKey, setVarietyTraceKey]           = useState(null);
   const [varietyTrail, setVarietyTrail]                 = useState([]);
   const [varietyUnaccounted, setVarietyUnaccounted]     = useState(0);
+  const [varietyDrift, setVarietyDrift]                 = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading]   = useState(false);
   const [writeOffVariety, setWriteOffVariety] = useState(null); // write-off picker (modal)
   // Per-row "Reconcile" button on premade chips. Gated on a backend setting
@@ -972,16 +973,19 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                               setVarietyTraceKey(null);
                               setVarietyTrail([]);
                               setVarietyUnaccounted(0);
+                              setVarietyDrift(0);
                               return;
                             }
                             setVarietyTraceKey(key);
                             setVarietyTrail([]);
                             setVarietyUnaccounted(0);
+                            setVarietyDrift(0);
                             setVarietyTraceLoading(true);
                             try {
                               const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
                               setVarietyTrail(res.data.events || []);
                               setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
+                              setVarietyDrift(res.data.drift ?? 0);
                             } catch {
                               setVarietyTrail([]);
                             } finally {
@@ -1001,7 +1005,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                                 {t.varietyTraceTitle ?? 'Variety history'}
                               </span>
                               <button
-                                onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); }}
+                                onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); setVarietyDrift(0); }}
                                 className="text-xs text-indigo-400 hover:text-indigo-600"
                               >
                                 ✕
@@ -1010,7 +1014,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                             {varietyTraceLoading ? (
                               <p className="text-xs text-ios-tertiary">{t.loading}</p>
                             ) : (
-                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })} />
+                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} t={t} onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })} />
                             )}
                           </div>
                         )}

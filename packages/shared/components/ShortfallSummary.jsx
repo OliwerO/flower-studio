@@ -276,6 +276,7 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                     <VarietyTracePanel
                       events={getTrace(r.key).events}
                       unaccountedStems={getTrace(r.key).unaccountedStems}
+                      drift={getTrace(r.key).drift}
                       t={t}
                       onOrderClick={onOrderClick}
                     />

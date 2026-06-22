@@ -334,3 +334,59 @@ describe('T5.3 — listGroupedByVariety includeEmpty=false keeps Variety with ac
     expect(keys).not.toContain('Rose|Pink|60|');
   });
 });
+
+// ── S6 drift tests ────────────────────────────────────────────────────────────
+
+describe('S6 — getUsageByVarietyKey drift computation', () => {
+  it('drift is 0 when events reconcile with on-hand stock', async () => {
+    // purchase +20, order −5, writeoff −3 → unaccountedStems=12; on-hand=12 → drift=0
+    const batch1 = await seedBatch({ displayName: 'Tulip Red 40', currentQuantity: 12, typeName: 'Tulip', colour: 'Red', sizeCm: 40 });
+    await seedPurchase(batch1.id, 20, '2026-06-01');
+    const customer = await seedCustomer();
+    const ord = await seedOrder(customer.id, '2026-06-10');
+    await seedOrderLine(ord.id, batch1.id, 5, 'Tulip Red');
+    await seedWriteOff(batch1.id, 3, '2026-06-05');
+
+    const result = await stockRepo.getUsageByVarietyKey('Tulip|Red|40|');
+    // unaccountedStems = +20 − 5 − 3 = 12; reservedStems = 0; onHand = 12; drift = 0
+    expect(result.unaccountedStems).toBe(12);
+    expect(result.reservedStems).toBe(0);
+    expect(result.onHand).toBe(12);
+    expect(result.drift).toBe(0);
+  });
+
+  it('drift is > 0 when on-hand is below what events predict (stems vanished)', async () => {
+    // purchase +30; on-hand only 20 (10 stems unrecorded loss) → drift = 10
+    const batch1 = await seedBatch({ displayName: 'Iris Purple 50', currentQuantity: 20, typeName: 'Iris', colour: 'Purple', sizeCm: 50 });
+    await seedPurchase(batch1.id, 30, '2026-06-01');
+
+    const result = await stockRepo.getUsageByVarietyKey('Iris|Purple|50|');
+    // unaccountedStems = +30; reservedStems = 0; onHand = 20; drift = 30 − 20 = 10
+    expect(result.unaccountedStems).toBe(30);
+    expect(result.reservedStems).toBe(0);
+    expect(result.onHand).toBe(20);
+    expect(result.drift).toBe(10);
+  });
+
+  it('drift is 0 for a premade-reserved Variety (reservedStems excluded from physical)', async () => {
+    // purchase +28, writeoff −10, premade −6; physical on-hand = 18 (premade does not move stock)
+    // unaccountedStems = 28 − 10 − 6 = 12; reservedStems = 6; onHand = 18; drift = 12+6−18 = 0
+    const batch1 = await seedBatch({ displayName: 'Hydrangea Blue 30', currentQuantity: 18, typeName: 'Hydrangea', colour: 'Blue', sizeCm: 30 });
+    await seedPurchase(batch1.id, 28, '2026-06-10');
+    await seedWriteOff(batch1.id, 10, '2026-06-11');
+    await seedPremade(batch1.id, 6);
+
+    const result = await stockRepo.getUsageByVarietyKey('Hydrangea|Blue|30|');
+    expect(result.unaccountedStems).toBe(12);  // 28 − 10 − 6
+    expect(result.reservedStems).toBe(6);
+    expect(result.onHand).toBe(18);
+    expect(result.drift).toBe(0);
+  });
+
+  it('drift fields are present and zero for an unknown key', async () => {
+    const result = await stockRepo.getUsageByVarietyKey('Unknown|Green|99|');
+    expect(result.drift).toBe(0);
+    expect(result.reservedStems).toBe(0);
+    expect(result.onHand).toBe(0);
+  });
+});

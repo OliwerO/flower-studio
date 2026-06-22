@@ -77,6 +77,7 @@ export default function StockPanelPage() {
   const [varietyTraceKey, setVarietyTraceKey]         = useState(null);
   const [varietyTrail, setVarietyTrail]               = useState([]);
   const [varietyUnaccounted, setVarietyUnaccounted]   = useState(0);
+  const [varietyDrift, setVarietyDrift]               = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading] = useState(false);
   // Write-off modal state
   const [writeOffVariety, setWriteOffVariety] = useState(null);
@@ -607,11 +608,13 @@ export default function StockPanelPage() {
                             setVarietyTraceKey(key);
                             setVarietyTrail([]);
                             setVarietyUnaccounted(0);
+                            setVarietyDrift(0);
                             setVarietyTraceLoading(true);
                             try {
                               const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
                               setVarietyTrail(res.data.events || []);
                               setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
+                              setVarietyDrift(res.data.drift ?? 0);
                             } catch {
                               setVarietyTrail([]);
                             } finally {
@@ -708,7 +711,7 @@ export default function StockPanelPage() {
         <div
           data-testid="variety-trace-modal-backdrop"
           className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
-          onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); }}
+          onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); setVarietyDrift(0); }}
         >
           <div
             data-testid="variety-trace-modal-content"
@@ -722,13 +725,13 @@ export default function StockPanelPage() {
               {varietyTraceLoading ? (
                 <p className="text-xs text-ios-tertiary">{t.loading}</p>
               ) : (
-                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} t={t} onOrderClick={(recordId) => navigate('/orders/' + recordId)} />
+                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} t={t} onOrderClick={(recordId) => navigate('/orders/' + recordId)} />
               )}
             </div>
             <div className="px-4 pb-4 pt-1 border-t border-gray-50">
               <button
                 type="button"
-                onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); }}
+                onClick={() => { setVarietyTraceKey(null); setVarietyTrail([]); setVarietyUnaccounted(0); setVarietyDrift(0); }}
                 className="w-full py-2 text-sm text-gray-500 hover:text-gray-700"
               >
                 {t.close}
