@@ -296,7 +296,15 @@ router.get('/pending-po', async (req, res, next) => {
             }
           } else {
             // Auto-create stock item so the flower shows up in pickers.
+            // C3: carry the PO line's Variety identity (Type/Colour/Size/Cultivar,
+            // issue #304) onto the new card. Without it the card has
+            // type_name = NULL and is invisible in listGroupedByVariety, so the
+            // incoming flowers "disappear" from the grouped Stock view under the
+            // Y-model — same failure class as #327. Attrs are written only when
+            // the line carries them, so legacy (Flower-Name-only) lines are
+            // unchanged. Mirrors the evaluate-route auto-create discipline.
             const samplePoLine = unlinked.find(x => x.line['Flower Name']?.trim() === name)?.line;
+            const sizeNum = Number(samplePoLine?.['Size']);
             const created = await stockRepo.create({
               'Display Name':       name,
               'Purchase Name':      name,
@@ -306,6 +314,10 @@ router.get('/pending-po', async (req, res, next) => {
               Supplier:             samplePoLine?.Supplier || '',
               Category:             'Other',
               Active:               true,
+              ...(samplePoLine?.Type     ? { Type:     String(samplePoLine.Type).trim() }     : {}),
+              ...(samplePoLine?.Colour   ? { Colour:   String(samplePoLine.Colour).trim() }   : {}),
+              ...(Number.isFinite(sizeNum) && sizeNum > 0 ? { Size: sizeNum } : {}),
+              ...(samplePoLine?.Cultivar ? { Cultivar: String(samplePoLine.Cultivar).trim() } : {}),
             }, { actor: actorFromReq(req) });
             nameToId[name] = created.id;
             console.log(`[STOCK] Auto-created "${name}" (${created.id}) from pending PO line`);
