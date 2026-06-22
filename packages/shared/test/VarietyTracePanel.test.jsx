@@ -11,6 +11,8 @@ const t = {
   traceEmpty: 'No history yet',
   stems: 'stems',
   unaccountedStems: 'Unaccounted',
+  traceFirstPo: 'First PO',
+  traceFirstDemand: 'First demand',
 };
 
 describe('VarietyTracePanel', () => {
@@ -89,5 +91,59 @@ describe('VarietyTracePanel', () => {
     render(<VarietyTracePanel events={events} unaccountedStems={0} t={{ stems: 'stems', traceTypeOrder: 'Order' }} />);
     const row = screen.getByTestId('trace-row');
     expect(row.tagName).toBe('LI'); // plain list item, not a button
+  });
+
+  it('renders traceFirstPo pill on a purchase event with firstPo flag', () => {
+    const events = [
+      { type: 'purchase', date: '2026-05-01', quantity: 20, firstPo: true },
+      { type: 'purchase', date: '2026-05-10', quantity: 15 },
+    ];
+    render(<VarietyTracePanel events={events} unaccountedStems={0} t={t} />);
+    expect(screen.getByText('First PO')).toBeInTheDocument();
+    // Only one "First PO" pill
+    expect(screen.getAllByText('First PO')).toHaveLength(1);
+  });
+
+  it('renders traceFirstDemand pill on an order event with firstDemand flag', () => {
+    const events = [
+      { type: 'order', date: '2026-05-03', quantity: -3, firstDemand: true },
+      { type: 'order', date: '2026-05-12', quantity: -5 },
+    ];
+    render(<VarietyTracePanel events={events} unaccountedStems={0} t={t} />);
+    expect(screen.getByText('First demand')).toBeInTheDocument();
+    expect(screen.getAllByText('First demand')).toHaveLength(1);
+  });
+
+  it('balance sparkline is unaffected by firstPo and firstDemand flags', () => {
+    // Events with flags — should produce same balance as without
+    const eventsWithFlags = [
+      { type: 'purchase', date: '2026-05-01', qty: 20, firstPo: true },
+      { type: 'order',    date: '2026-05-05', qty: -8, firstDemand: true },
+    ];
+    const eventsWithout = [
+      { type: 'purchase', date: '2026-05-01', qty: 20 },
+      { type: 'order',    date: '2026-05-05', qty: -8 },
+    ];
+    const { unmount } = render(<VarietyTracePanel events={eventsWithFlags} unaccountedStems={12} t={t} />);
+    const sparklineWith = screen.getByTestId('trace-sparkline');
+    const balanceTextWith = sparklineWith.textContent;
+    unmount();
+
+    render(<VarietyTracePanel events={eventsWithout} unaccountedStems={12} t={t} />);
+    const sparklineWithout = screen.getByTestId('trace-sparkline');
+    const balanceTextWithout = sparklineWithout.textContent;
+
+    // Final balance label should be identical
+    expect(balanceTextWith).toBe(balanceTextWithout);
+  });
+
+  it('does not render any marker pill when no flags are set', () => {
+    const events = [
+      { type: 'purchase', date: '2026-05-01', quantity: 20 },
+      { type: 'order',    date: '2026-05-05', quantity: -8 },
+    ];
+    render(<VarietyTracePanel events={events} unaccountedStems={0} t={t} />);
+    expect(screen.queryByText('First PO')).not.toBeInTheDocument();
+    expect(screen.queryByText('First demand')).not.toBeInTheDocument();
   });
 });

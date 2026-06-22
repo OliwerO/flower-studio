@@ -1406,6 +1406,13 @@ export async function getUsageByVarietyKey(key) {
     return da.localeCompare(db);
   });
 
+  // Tag first purchase and first order (chronologically earliest in sorted order).
+  // Events are already sorted ascending; find the first match of each type.
+  const firstPoIdx    = allEvents.findIndex(e => e.type === 'purchase');
+  const firstDemandIdx = allEvents.findIndex(e => e.type === 'order');
+  if (firstPoIdx    !== -1) allEvents[firstPoIdx].firstPo       = true;
+  if (firstDemandIdx !== -1) allEvents[firstDemandIdx].firstDemand = true;
+
   // Compute drift: signed sum across all events.
   const unaccountedStems = allEvents.reduce((sum, e) => sum + (Number(e.quantity) || 0), 0);
 
