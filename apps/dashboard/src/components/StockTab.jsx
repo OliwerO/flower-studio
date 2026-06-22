@@ -17,6 +17,7 @@ import {
   BatchTracePanel,
   VarietyTracePanel,
   WriteOffBatchPicker,
+  buildPoSuggestions,
 } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
@@ -564,6 +565,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
             qty: s['Current Quantity'],
             supplier: s.Supplier,
           }))}
+          // Y-model: netted per-Variety shortfall suggestions (the legacy
+          // negativeStock list is empty under the flag — grouped fetch instead).
+          poSuggestions={stockYModelEnabled ? buildPoSuggestions(groups, pendingPO, premadeMap) : null}
           stock={stock}
           autoCreate={initialFilter?.action === 'createPO'}
           onClose={() => setShowPurchaseOrders(false)}

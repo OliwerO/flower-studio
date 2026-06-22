@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { useStockYModelFlag, DateTag } from '@flower-studio/shared';
+import { useStockYModelFlag, DateTag, buildPoSuggestions } from '@flower-studio/shared';
 import t from '../translations.js';
 
 const STATUS_COLORS = {
@@ -37,6 +37,12 @@ export default function PurchaseOrderPage() {
 
   const [orders, setOrders] = useState([]);
   const [stock, setStock] = useState([]);
+  // Y-model PO-suggestion inputs: grouped Varieties + pending POs + premade
+  // reservations, used by buildPoSuggestions to pre-fill the new-PO form with
+  // netted shortfalls instead of raw negative rows. Legacy path ignores these.
+  const [groups, setGroups] = useState([]);
+  const [pendingPO, setPendingPO] = useState({});
+  const [premadeMap, setPremadeMap] = useState({});
   const [loading, setLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
   const [expandedLines, setExpandedLines] = useState([]);
@@ -71,6 +77,21 @@ export default function PurchaseOrderPage() {
     client.get('/stock?includeEmpty=true').then(r => setStock(r.data)).catch(() => {});
     client.get('/settings').then(r => setDrivers(r.data.drivers || [])).catch(() => {});
   }, [fetchOrders]);
+
+  // Y-model only: grouped Varieties + pending POs + premade reservations feed
+  // buildPoSuggestions. Keyed on yModelOn so it runs once the flag resolves.
+  useEffect(() => {
+    if (!yModelOn) return;
+    Promise.all([
+      client.get('/stock?grouped=true').catch(() => ({ data: {} })),
+      client.get('/stock/pending-po').catch(() => ({ data: {} })),
+      client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+    ]).then(([g, p, pm]) => {
+      setGroups(g.data.groups || []);
+      setPendingPO(p.data || {});
+      setPremadeMap(pm.data || {});
+    });
+  }, [yModelOn]);
 
   // Negative stock items for pre-filling new POs
   const negativeStock = stock.filter(s => (Number(s['Current Quantity']) || 0) < 0);
@@ -110,7 +131,12 @@ export default function PurchaseOrderPage() {
   // owner's demand reading). Pkgs stays 0 — owner decides how many lots she
   // actually wants to buy. Stored Quantity Needed = pkgs > 0 ? pkgs*lot : qty.
   function startNewPO() {
-    const lines = negativeStock.map(item => {
+    // Y-model: pre-fill from netted per-Variety shortfalls (drops Varieties
+    // covered by on-hand stock or already on an open PO, incl. late ones).
+    // Legacy: one line per negative stock row (unchanged).
+    const lines = yModelOn
+      ? buildPoSuggestions(groups, pendingPO, premadeMap)
+      : negativeStock.map(item => {
       const lotSize = Number(item['Lot Size']) || 0;
       const quantity = Math.abs(Number(item['Current Quantity']) || 0);
       const cost = Number(item['Current Cost Price']) || 0;

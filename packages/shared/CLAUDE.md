@@ -63,6 +63,7 @@ utils/
   phone.js                    → cleanPhone, telHref
   imageResize.js              → resizeImageBlob — canvas-based client-side downscale + JPEG re-encode for bouquet uploads
   varietyFinancials.js        → varietyFinancials(rows) — per-Variety Cost/Sell/Markup/Supplier derivation for stock cards (CR-05 follow-on). Mirrors BatchArrivalList.flatten's newest-positive-batch rule.
+  buildPoSuggestions.js       → buildPoSuggestions(groups, pendingPO, premadeMap) — Y-model New-PO-form pre-fill. One line per Variety still short after stock + ALL open POs (effective < 0, date-agnostic so even a late PO nets out — intentionally differs from the date-aware SHORTFALLS panel). qty = −effective; demand-driven (committed > 0 only); attaches to the undated orig row (else carries 4-tuple identity, #304). Consumed by PurchaseOrderPage (florist) + StockOrderPanel via StockTab (dashboard).
 ```
 
 ## Rules
