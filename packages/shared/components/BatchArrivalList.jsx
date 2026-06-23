@@ -31,7 +31,7 @@ import InlinePriceField from './InlinePriceField.jsx';
 // packages/shared/components/stockRowGrid.js (STOCK_CARD_GRID_DASHBOARD).
 // If you change these widths, update stockRowGrid.js in the same PR so the
 // ShortfallSummary and PendingArrivalsPanel cards stay aligned with this table.
-const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,1.5fr)_3.5rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
+const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,13rem)_4.75rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
 
 const COLS = [
   { key: 'type',       label: 'type',       align: 'left'   },
@@ -187,7 +187,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
           <span className="font-semibold tabular-nums text-gray-900">{b.reserved > 0 ? b.qty - b.reserved : b.qty}</span>
           {b.reserved > 0 && (
-            <span className="text-[10px] text-indigo-600 tabular-nums">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
+            <span className="text-[10px] text-indigo-600 tabular-nums whitespace-nowrap">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
           )}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700" title={b.costMixed ? (t.costMixedTooltip ?? 'Mixed costs across receives — showing newest') : undefined}>
