@@ -153,7 +153,7 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                     const ids = idsByKey.get(r.key) ?? [];
                     return (
                       <span
-                        className="grid items-baseline gap-1.5 text-sm"
+                        className="grid items-baseline gap-3 text-sm"
                         style={{ gridTemplateColumns: STOCK_GRID_FULL }}
                       >
                         {/* col 1: Type — chevron inside so it never shifts column boundaries */}

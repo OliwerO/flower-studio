@@ -181,3 +181,13 @@ All 8 CRs sliced into an implementation plan → **`2026-06-21-ymodel-session2-f
 - **Root cause:** the Variety track was `minmax(9rem,1.5fr)` — the `1.5fr` grew to eat the table's slack, pushing data right.
 - **Wanted:** data close to the names.
 - **Fix:** Variety track `1.5fr` → **capped `13rem`** so it sizes to ~the longest name and the data columns sit right after; trailing Supplier `1fr` absorbs the slack (empty space moves to the right). NB: a `max-content` first attempt went RAGGED — each BatchArrivalList row is its OWN grid, so max-content sized per-row and broke vertical alignment; a FIXED cap resolves identically across w-full rows → columns stay aligned. Verified on lab: amount cells align across Anemone/Hydrangea/Peony/Tulip (Peony no longer drifts). **Type: layout.**
+
+### CR-21 — More space between the numeric columns ✅ DONE 2026-06-23
+- **App/surface:** the shared grid gap on BatchArrivalList rows+header, ShortfallSummary, PendingArrivalsPanel (all must match for CR-05 alignment).
+- **Observed (owner, lab):** Available/Cost/Sell/Markup columns felt cramped — "a bit more space between columns with numbers… maybe twice as wide."
+- **Fix:** grid `gap-1.5` (6px) → `gap-3` (12px) in all three sections (kept identical so columns stay aligned). **Type: cosmetic.**
+
+### CR-22 — Available number bigger / bolder ✅ DONE 2026-06-23
+- **App/surface:** BatchArrivalList amount cell (flat-table "Available" free count).
+- **Observed (owner, lab):** wanted the available-flowers number to stand out — "a bit bigger / bolder."
+- **Fix:** amount span `font-semibold` (text-sm) → `text-base font-bold`. Premade sub-label unchanged. Verified on lab: the count now reads larger/bolder than Cost/Sell and still fits the 4.75rem column. **Type: cosmetic.**

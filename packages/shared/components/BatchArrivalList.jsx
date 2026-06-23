@@ -93,7 +93,7 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
 
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
-      <div className={`grid ${GRID_COLS} gap-1.5 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
+      <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
         {COLS.map(c => {
           const active = sortKey === c.key;
           const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
@@ -151,7 +151,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
   return (
     <li>
       <div
-        className={`relative w-full grid ${GRID_COLS} gap-1.5 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
+        className={`relative w-full grid ${GRID_COLS} gap-3 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
       >
         {/* Background tap-target opens trace; price + chevron live above it via z-stacking */}
         <button
@@ -185,7 +185,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
         </span>
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
-          <span className="font-semibold tabular-nums text-gray-900">{b.reserved > 0 ? b.qty - b.reserved : b.qty}</span>
+          <span className="text-base font-bold tabular-nums text-gray-900">{b.reserved > 0 ? b.qty - b.reserved : b.qty}</span>
           {b.reserved > 0 && (
             <span className="text-[10px] text-indigo-600 tabular-nums whitespace-nowrap">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
           )}
