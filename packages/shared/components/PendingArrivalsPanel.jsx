@@ -159,7 +159,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                           type="button"
                           data-testid="pending-arrival-row"
                           onClick={(e) => { e.stopPropagation(); if (canTrace) toggle(rowId, f.key); }}
-                          className={`w-full grid items-baseline gap-1.5 text-sm py-1 text-left ${canTrace ? 'cursor-pointer hover:bg-indigo-50/40' : 'cursor-default'}`}
+                          className={`w-full grid items-baseline gap-3 text-sm py-1 text-left ${canTrace ? 'cursor-pointer hover:bg-indigo-50/40' : 'cursor-default'}`}
                           style={{ gridTemplateColumns: STOCK_GRID_FULL }}
                         >
                           {/* col 1: Type (or fallback name) — chevron inside col 1 for traceable rows */}
