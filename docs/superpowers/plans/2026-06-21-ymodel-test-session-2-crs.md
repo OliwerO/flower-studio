@@ -191,3 +191,9 @@ All 8 CRs sliced into an implementation plan → **`2026-06-21-ymodel-session2-f
 - **App/surface:** BatchArrivalList amount cell (flat-table "Available" free count).
 - **Observed (owner, lab):** wanted the available-flowers number to stand out — "a bit bigger / bolder."
 - **Fix:** amount span `font-semibold` (text-sm) → `text-base font-bold`. Premade sub-label unchanged. Verified on lab: the count now reads larger/bolder than Cost/Sell and still fits the 4.75rem column. **Type: cosmetic.**
+
+### CR-23 — SHORTFALLS "−N" and "+N late" cryptic → add a legend ✅ DONE 2026-06-23
+- **App/surface:** shared `ShortfallSummary.jsx` (Stock panel, both apps).
+- **Observed (owner, lab):** didn't understand the red **−N** (e.g. −6) nor the amber **+N late** badge.
+- **Meaning (verified in code):** −N = `shortQty`, stems short for that needed-by date (deficit after netting in-time arrivals); "+N late" = `latePoQty`, N on a PO that arrives AFTER that date (coming, but too late). No badge = nothing on order.
+- **Fix:** added a one-line legend under the SHORTFALLS header — key `shortfallHint` (en `'−N = stems short for that date · "+N late" = N on order but arriving after it'`, ru `'−N = не хватает к этой дате · "+N поздно" = N в пути, но прибудет позже'`, both apps). Verified on lab. **Type: copy/clarity.**

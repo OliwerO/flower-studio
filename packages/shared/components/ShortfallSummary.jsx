@@ -93,7 +93,11 @@ export default function ShortfallSummary({
       </button>
 
       {!collapsed && (
-        <ul className="divide-y divide-red-100">
+        <>
+          <p data-testid="shortfall-hint" className="px-4 pt-1.5 pb-1 text-[11px] leading-snug text-red-400">
+            {t.shortfallHint ?? '−N = stems short for that date · "+N late" = N on order but arriving after it'}
+          </p>
+          <ul className="divide-y divide-red-100">
           {byDate.map(({ date, rows }) => (
             <li key={date} data-testid={`shortfall-date-${date}`}>
               <DateRow
@@ -112,7 +116,8 @@ export default function ShortfallSummary({
               />
             </li>
           ))}
-        </ul>
+          </ul>
+        </>
       )}
     </section>
   );
