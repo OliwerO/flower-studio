@@ -52,7 +52,7 @@ describe('ShortfallSummary date-aware netting (CR-39)', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('a LATE pending arrival leaves the shortfall but signals it', () => {
+  it('a LATE pending arrival leaves the shortfall (no late badge — removed per owner)', () => {
     const g = [{
       key: 'Peony|Pink|50|', type_name: 'Peony', colour: 'Pink', size_cm: 50, cultivar: null,
       rows: [{ id: 'd1', current_quantity: -7, date: '2026-06-15' }],
@@ -61,8 +61,11 @@ describe('ShortfallSummary date-aware netting (CR-39)', () => {
       pos: [{ quantity: 7, plannedDate: '2026-06-16' }] } };
     render(<ShortfallSummary groups={g} pendingPO={pendingPO} t={tn} today="2026-06-12" />);
     const section = screen.getByTestId('shortfall-date-2026-06-15');
+    // The late PO must NOT cover the demand → the shortfall row still shows −7.
     expect(within(section).getByTestId('shortfall-row')).toHaveTextContent('Peony');
-    expect(within(section).getByTestId('shortfall-late')).toHaveTextContent('7');
+    expect(within(section).getByTestId('shortfall-row')).toHaveTextContent('−7');
+    // The "+N late" badge was removed (owner: it cluttered the panel).
+    expect(screen.queryByTestId('shortfall-late')).toBeNull();
   });
 
   it('no PO → full shortfall, no late signal', () => {
