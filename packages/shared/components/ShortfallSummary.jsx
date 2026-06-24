@@ -93,11 +93,7 @@ export default function ShortfallSummary({
       </button>
 
       {!collapsed && (
-        <>
-          <p data-testid="shortfall-hint" className="px-4 pt-1.5 pb-1 text-[11px] leading-snug text-red-400">
-            {t.shortfallHint ?? '−N = stems short for that date · "+N late" = N on order but arriving after it'}
-          </p>
-          <ul className="divide-y divide-red-100">
+        <ul className="divide-y divide-red-100">
           {byDate.map(({ date, rows }) => (
             <li key={date} data-testid={`shortfall-date-${date}`}>
               <DateRow
@@ -116,8 +112,7 @@ export default function ShortfallSummary({
               />
             </li>
           ))}
-          </ul>
-        </>
+        </ul>
       )}
     </section>
   );
@@ -141,7 +136,7 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                    The parent DateRow div already has px-4, so the grid starts at the
                    same 16px inset as BatchArrivalList (no extra px on the button).
                    Exactly 8 grid children in order:
-                     col1 Type(+chevron) · col2 Variety · col3 amount(+late badge inside)
+                     col1 Type(+chevron) · col2 Variety · col3 amount
                      col4 Cost · col5 Sell · col6 Markup · col7 Arrived(empty) · col8 Supplier */
                 <button
                   type="button"
@@ -173,17 +168,8 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                           {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
                           {!r.colour && r.size_cm == null && !r.cultivar && <span className="text-gray-400">—</span>}
                         </span>
-                        {/* col 3: amount (right-aligned) + late-PO badge INSIDE — keeps col count at 8 */}
+                        {/* col 3: amount (right-aligned) — stems still needed for the date */}
                         <span className="text-right">
-                          {r.latePoQty > 0 && (
-                            <span
-                              data-testid="shortfall-late"
-                              className="block text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded whitespace-nowrap mb-0.5"
-                              title={t.poLate ?? 'PO arriving after needed date'}
-                            >
-                              +{r.latePoQty} {t.poLateShort ?? 'late'}
-                            </span>
-                          )}
                           <span className="text-red-700 font-semibold tabular-nums">−{r.qty}</span>
                         </span>
                         {/* col 4: Cost */}
@@ -258,15 +244,6 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                       )}
                     </span>
                     <span className="flex items-baseline gap-2 ml-2 shrink-0">
-                      {r.latePoQty > 0 && (
-                        <span
-                          data-testid="shortfall-late"
-                          className="text-[10px] font-medium text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded"
-                          title={t.poLate ?? 'PO arriving after needed date'}
-                        >
-                          +{r.latePoQty} {t.poLateShort ?? 'late'}
-                        </span>
-                      )}
                       <span className="text-red-700 font-semibold tabular-nums">−{r.qty} {t.stems}</span>
                     </span>
                   </span>
