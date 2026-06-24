@@ -66,6 +66,73 @@ function StatusBadge({ state }) {
   );
 }
 
+// Shared "+ Add label" dropdown — searchable popover with outside-click close.
+// Used by both the issue detail panel and the new-issue form. `selectedNames`
+// (optional) renders a ✓ next to already-picked labels (multi-select mode).
+function LabelPicker({ labels, onSelect, selectedNames }) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const ref = useRef(null);
+
+  useEffect(() => {
+    function handleClick(e) {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    }
+    if (open) document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, [open]);
+
+  const filtered = query
+    ? labels.filter(l => l.name.toLowerCase().includes(query.toLowerCase()))
+    : labels;
+
+  return (
+    <div className="relative inline-block" ref={ref}>
+      <button
+        onClick={() => { setOpen(v => !v); setQuery(''); }}
+        className="px-2 py-0.5 rounded-full text-xs border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors"
+      >
+        {t.issuesLabelAdd}
+      </button>
+
+      {open && (
+        <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
+          <div className="p-2 border-b border-gray-100">
+            <input
+              autoFocus
+              type="text"
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              placeholder={t.search}
+              className="w-full text-xs px-2 py-1 border border-gray-200 rounded-lg outline-none focus:border-brand-400"
+            />
+          </div>
+          <div className="max-h-48 overflow-y-auto">
+            {filtered.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-gray-400">{t.noResults}</p>
+            ) : filtered.map(l => (
+              <button
+                key={l.id ?? l.name}
+                onClick={() => { onSelect(l); if (!selectedNames) setOpen(false); }}
+                className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 ${
+                  selectedNames?.has(l.name) ? 'bg-brand-50' : ''
+                }`}
+              >
+                <span
+                  className="w-3 h-3 rounded-full inline-block shrink-0"
+                  style={{ backgroundColor: `#${l.color}` }}
+                />
+                <span className="text-xs text-gray-700 flex-1">{l.name}</span>
+                {selectedNames?.has(l.name) && <span className="text-brand-600 text-xs">✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function formatRelativeDate(iso) {
   if (!iso) return '';
   const diff = Date.now() - new Date(iso).getTime();
@@ -121,28 +188,14 @@ function IssueDetail({ issue, allLabels, onIssueUpdated, showToast }) {
   const [commentText, setCommentText] = useState('');
   const [posting, setPosting] = useState(false);
   const [toggling, setToggling] = useState(false);
-  const [showLabelPicker, setShowLabelPicker] = useState(false);
-  const [labelSearch, setLabelSearch] = useState('');
-  const labelPickerRef = useRef(null);
 
   useEffect(() => {
     setComments([]);
     setCommentText('');
-    setShowLabelPicker(false);
     if (!issue) return;
     loadComments();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [issue?.number]);
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (labelPickerRef.current && !labelPickerRef.current.contains(e.target)) {
-        setShowLabelPicker(false);
-      }
-    }
-    if (showLabelPicker) document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showLabelPicker]);
 
   async function loadComments() {
     setCommentsLoading(true);
@@ -171,62 +224,48 @@ function IssueDetail({ issue, allLabels, onIssueUpdated, showToast }) {
     }
   }
 
+  async function patchIssue(patch) {
+    try {
+      const res = await api.patch(`/issues/${issue.number}`, patch);
+      onIssueUpdated(res.data);
+      return true;
+    } catch (err) {
+      showToast(err.response?.data?.error || t.issuesUpdateFailed, 'error');
+      return false;
+    }
+  }
+
   async function toggleState() {
     setToggling(true);
     const newState = issue.state === 'open' ? 'closed' : 'open';
-    try {
-      const res = await api.patch(`/issues/${issue.number}`, { state: newState });
-      onIssueUpdated(res.data);
-      showToast(newState === 'closed' ? t.issuesIssueClosed : t.issuesIssueReopened, 'success');
-    } catch (err) {
-      showToast(err.response?.data?.error || t.issuesUpdateFailed, 'error');
-    } finally {
-      setToggling(false);
-    }
+    const ok = await patchIssue({ state: newState });
+    if (ok) showToast(newState === 'closed' ? t.issuesIssueClosed : t.issuesIssueReopened, 'success');
+    setToggling(false);
   }
 
-  async function setPriority(priorityLabel) {
-    const currentLabels = (issue.labels || []).map(l => l.name);
-    const withoutPriority = currentLabels.filter(n => !PRIORITY_LABELS.includes(n));
-    const newLabels = priorityLabel ? [...withoutPriority, priorityLabel] : withoutPriority;
-    try {
-      const res = await api.patch(`/issues/${issue.number}`, { labels: newLabels });
-      onIssueUpdated(res.data);
-    } catch (err) {
-      showToast(err.response?.data?.error || t.issuesUpdateFailed, 'error');
-    }
+  function setPriority(priorityLabel) {
+    const names = (issue.labels || []).map(l => l.name).filter(n => !PRIORITY_LABELS.includes(n));
+    if (priorityLabel) names.push(priorityLabel);
+    return patchIssue({ labels: names });
   }
 
-  async function addLabel(label) {
-    const currentLabels = (issue.labels || []).map(l => l.name);
-    if (currentLabels.includes(label.name)) return;
-    const newLabels = [...currentLabels, label.name];
-    try {
-      const res = await api.patch(`/issues/${issue.number}`, { labels: newLabels });
-      onIssueUpdated(res.data);
-      setShowLabelPicker(false);
-    } catch (err) {
-      showToast(err.response?.data?.error || t.issuesUpdateFailed, 'error');
-    }
+  function addLabel(label) {
+    const names = (issue.labels || []).map(l => l.name);
+    if (names.includes(label.name)) return;
+    return patchIssue({ labels: [...names, label.name] });
   }
 
-  async function removeLabel(label) {
-    const newLabels = (issue.labels || []).map(l => l.name).filter(n => n !== label.name);
-    try {
-      const res = await api.patch(`/issues/${issue.number}`, { labels: newLabels });
-      onIssueUpdated(res.data);
-    } catch (err) {
-      showToast(err.response?.data?.error || t.issuesUpdateFailed, 'error');
-    }
+  function removeLabel(label) {
+    const names = (issue.labels || []).map(l => l.name).filter(n => n !== label.name);
+    return patchIssue({ labels: names });
   }
 
   const priority = priorityFromLabels(issue.labels || []);
   const nonPriorityLabels = (issue.labels || []).filter(l => !PRIORITY_LABELS.includes(l.name));
   const currentLabelNames = new Set((issue.labels || []).map(l => l.name));
-  const availableLabels = (allLabels || []).filter(l => !currentLabelNames.has(l.name));
-  const filteredAvailable = labelSearch
-    ? availableLabels.filter(l => l.name.toLowerCase().includes(labelSearch.toLowerCase()))
-    : availableLabels;
+  const availableLabels = (allLabels || []).filter(
+    l => !currentLabelNames.has(l.name) && !PRIORITY_LABELS.includes(l.name)
+  );
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -298,51 +337,14 @@ function IssueDetail({ issue, allLabels, onIssueUpdated, showToast }) {
           </div>
 
           {/* Labels */}
-          <div className="relative" ref={labelPickerRef}>
+          <div>
             <p className="text-xs text-gray-400 mb-1">{t.issuesLabels}</p>
             <div className="flex items-center gap-1 flex-wrap">
               {nonPriorityLabels.map(l => (
                 <LabelChip key={l.id} label={l} onRemove={removeLabel} />
               ))}
-              <button
-                onClick={() => { setShowLabelPicker(v => !v); setLabelSearch(''); }}
-                className="px-2 py-0.5 rounded-full text-xs border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors"
-              >
-                {t.issuesLabelAdd}
-              </button>
+              <LabelPicker labels={availableLabels} onSelect={addLabel} />
             </div>
-
-            {showLabelPicker && (
-              <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
-                <div className="p-2 border-b border-gray-100">
-                  <input
-                    autoFocus
-                    type="text"
-                    value={labelSearch}
-                    onChange={e => setLabelSearch(e.target.value)}
-                    placeholder={t.search}
-                    className="w-full text-xs px-2 py-1 border border-gray-200 rounded-lg outline-none focus:border-brand-400"
-                  />
-                </div>
-                <div className="max-h-48 overflow-y-auto">
-                  {filteredAvailable.length === 0 ? (
-                    <p className="px-3 py-2 text-xs text-gray-400">{t.noResults}</p>
-                  ) : filteredAvailable.map(l => (
-                    <button
-                      key={l.id}
-                      onClick={() => addLabel(l)}
-                      className="w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2"
-                    >
-                      <span
-                        className="w-3 h-3 rounded-full inline-block shrink-0"
-                        style={{ backgroundColor: `#${l.color}` }}
-                      />
-                      <span className="text-xs text-gray-700">{l.name}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </div>
@@ -425,19 +427,6 @@ function NewIssueForm({ allLabels, onCreated, onCancel, showToast }) {
   const [body, setBody] = useState('');
   const [selectedLabels, setSelectedLabels] = useState([]);
   const [creating, setCreating] = useState(false);
-  const [labelSearch, setLabelSearch] = useState('');
-  const [showLabelPicker, setShowLabelPicker] = useState(false);
-  const labelPickerRef = useRef(null);
-
-  useEffect(() => {
-    function handleClick(e) {
-      if (labelPickerRef.current && !labelPickerRef.current.contains(e.target)) {
-        setShowLabelPicker(false);
-      }
-    }
-    if (showLabelPicker) document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, [showLabelPicker]);
 
   async function handleCreate() {
     if (!title.trim()) return;
@@ -466,9 +455,6 @@ function NewIssueForm({ allLabels, onCreated, onCancel, showToast }) {
   }
 
   const selectedNames = new Set(selectedLabels.map(l => l.name));
-  const filteredLabels = (allLabels || []).filter(l =>
-    !labelSearch || l.name.toLowerCase().includes(labelSearch.toLowerCase())
-  );
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -500,54 +486,14 @@ function NewIssueForm({ allLabels, onCreated, onCancel, showToast }) {
         </div>
 
         {/* Labels picker */}
-        <div className="relative" ref={labelPickerRef}>
+        <div>
           <p className="text-xs text-gray-400 mb-2">{t.issuesCreateLabelsHint}</p>
           <div className="flex items-center gap-1 flex-wrap">
             {selectedLabels.map(l => (
               <LabelChip key={l.name} label={l} onRemove={() => toggleLabel(l)} />
             ))}
-            <button
-              onClick={() => { setShowLabelPicker(v => !v); setLabelSearch(''); }}
-              className="px-2 py-0.5 rounded-full text-xs border border-dashed border-gray-300 text-gray-400 hover:border-gray-400 hover:text-gray-600 transition-colors"
-            >
-              {t.issuesLabelAdd}
-            </button>
+            <LabelPicker labels={allLabels || []} onSelect={toggleLabel} selectedNames={selectedNames} />
           </div>
-
-          {showLabelPicker && (
-            <div className="absolute top-full left-0 mt-1 w-52 bg-white border border-gray-200 rounded-xl shadow-lg z-20 overflow-hidden">
-              <div className="p-2 border-b border-gray-100">
-                <input
-                  autoFocus
-                  type="text"
-                  value={labelSearch}
-                  onChange={e => setLabelSearch(e.target.value)}
-                  placeholder={t.search}
-                  className="w-full text-xs px-2 py-1 border border-gray-200 rounded-lg outline-none focus:border-brand-400"
-                />
-              </div>
-              <div className="max-h-48 overflow-y-auto">
-                {filteredLabels.length === 0 ? (
-                  <p className="px-3 py-2 text-xs text-gray-400">{t.noResults}</p>
-                ) : filteredLabels.map(l => (
-                  <button
-                    key={l.id}
-                    onClick={() => toggleLabel(l)}
-                    className={`w-full text-left px-3 py-2 hover:bg-gray-50 flex items-center gap-2 ${
-                      selectedNames.has(l.name) ? 'bg-brand-50' : ''
-                    }`}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full inline-block shrink-0"
-                      style={{ backgroundColor: `#${l.color}` }}
-                    />
-                    <span className="text-xs text-gray-700 flex-1">{l.name}</span>
-                    {selectedNames.has(l.name) && <span className="text-brand-600 text-xs">✓</span>}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
       </div>
 
@@ -607,8 +553,22 @@ export default function IssuesTab() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stateFilter, labelFilter]);
 
+  // Seed priority labels (idempotent) before loading the label list, so the
+  // priority buttons always have well-coloured labels to apply.
   useEffect(() => {
-    api.get('/issues/labels').then(res => setAllLabels(res.data || [])).catch(() => {});
+    (async () => {
+      try {
+        await api.post('/issues/labels/ensure-priorities');
+      } catch (err) {
+        console.error('[ISSUES] ensure-priorities failed (non-fatal):', err);
+      }
+      try {
+        const res = await api.get('/issues/labels');
+        setAllLabels(res.data || []);
+      } catch (err) {
+        console.error('[ISSUES] load labels error:', err);
+      }
+    })();
   }, []);
 
   const filteredIssues = search
@@ -619,17 +579,17 @@ export default function IssuesTab() {
     : issues;
 
   function handleIssueUpdated(updatedIssue) {
-    setIssues(prev => prev.map(i => i.number === updatedIssue.number ? updatedIssue : i));
-    if (selectedIssue?.number === updatedIssue.number) {
-      setSelectedIssue(updatedIssue);
-    }
-    // If we're in 'open' filter and the issue was closed, or vice versa, refresh
-    if (
+    setSelectedIssue(prev => (prev?.number === updatedIssue.number ? updatedIssue : prev));
+    // If the issue's new state no longer matches the active filter, drop it
+    // from the list and clear the detail pane; otherwise update it in place.
+    const fallsOut =
       (stateFilter === 'open' && updatedIssue.state === 'closed') ||
-      (stateFilter === 'closed' && updatedIssue.state === 'open')
-    ) {
+      (stateFilter === 'closed' && updatedIssue.state === 'open');
+    if (fallsOut) {
       setIssues(prev => prev.filter(i => i.number !== updatedIssue.number));
       setSelectedIssue(null);
+    } else {
+      setIssues(prev => prev.map(i => (i.number === updatedIssue.number ? updatedIssue : i)));
     }
   }
 
@@ -648,7 +608,7 @@ export default function IssuesTab() {
   )];
 
   return (
-    <div className="flex flex-col h-full" style={{ minHeight: 'calc(100vh - 80px)' }}>
+    <div className="flex flex-col" style={{ minHeight: 'calc(100vh - 120px)' }}>
       {/* Toast */}
       {toastMsg && (
         <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-sm font-medium shadow-lg ${
@@ -756,7 +716,7 @@ export default function IssuesTab() {
               showToast={showToast}
             />
           ) : (
-            <div className="flex items-center justify-center h-full text-sm text-gray-400">
+            <div className="flex items-center justify-center h-full text-sm text-gray-400 py-16">
               {t.issuesSelectToView}
             </div>
           )}

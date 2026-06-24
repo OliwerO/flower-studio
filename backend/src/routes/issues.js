@@ -5,6 +5,15 @@ const router = Router();
 const GITHUB_OWNER = 'OliwerO';
 const GITHUB_REPO = 'flower-studio';
 
+// Priority is modelled as labels (GitHub has no native priority field).
+// Seeded idempotently so the dashboard's priority buttons always have a
+// well-coloured label to apply — colours match the badges in IssuesTab.jsx.
+const PRIORITY_LABELS = [
+  { name: 'priority:high',   color: 'd73a4a', description: 'High priority' },
+  { name: 'priority:medium', color: 'fbca04', description: 'Medium priority' },
+  { name: 'priority:low',    color: '1d76db', description: 'Low priority' },
+];
+
 function githubHeaders() {
   const token = process.env.GITHUB_TOKEN;
   if (!token) throw new Error('GITHUB_TOKEN not configured');
@@ -32,17 +41,33 @@ async function ghFetch(path, options = {}) {
   return body;
 }
 
+// Create any of the three priority labels that don't already exist.
+// Idempotent: safe to call on every dashboard mount.
+async function ensurePriorityLabels() {
+  const existing = await ghFetch('/labels?per_page=100');
+  const have = new Set(existing.map(l => l.name));
+  await Promise.all(
+    PRIORITY_LABELS
+      .filter(pl => !have.has(pl.name))
+      .map(pl =>
+        ghFetch('/labels', { method: 'POST', body: JSON.stringify(pl) })
+          .catch(err => console.error('[ISSUES] seed label failed:', pl.name, err.message))
+      )
+  );
+}
+
 // All issues routes are owner-only
 router.use(authorize('issues'));
 
-// GET /api/issues — list issues
+// GET /api/issues — list issues (pull requests filtered out — GitHub's
+// /issues endpoint returns PRs too, since every PR is also an issue).
 router.get('/', async (req, res) => {
   try {
     const { state = 'open', labels, sort = 'created', direction = 'desc' } = req.query;
     const params = new URLSearchParams({ state, sort, direction, per_page: '100' });
     if (labels) params.set('labels', labels);
     const issues = await ghFetch(`/issues?${params}`);
-    res.json(issues);
+    res.json(Array.isArray(issues) ? issues.filter(i => !i.pull_request) : []);
   } catch (err) {
     console.error('[ISSUES] list error:', err.message);
     res.status(err.status || 500).json({ error: err.message });
@@ -60,8 +85,19 @@ router.get('/labels', async (req, res) => {
   }
 });
 
+// POST /api/issues/labels/ensure-priorities — idempotently seed priority labels
+router.post('/labels/ensure-priorities', async (req, res) => {
+  try {
+    await ensurePriorityLabels();
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[ISSUES] ensure-priorities error:', err.message);
+    res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
 // GET /api/issues/:number/comments
-router.get('/:number/comments', async (req, res) => {
+router.get('/:number(\\d+)/comments', async (req, res) => {
   try {
     const comments = await ghFetch(`/issues/${req.params.number}/comments?per_page=100`);
     res.json(comments);
@@ -72,7 +108,7 @@ router.get('/:number/comments', async (req, res) => {
 });
 
 // GET /api/issues/:number
-router.get('/:number', async (req, res) => {
+router.get('/:number(\\d+)', async (req, res) => {
   try {
     const issue = await ghFetch(`/issues/${req.params.number}`);
     res.json(issue);
@@ -99,7 +135,7 @@ router.post('/', async (req, res) => {
 });
 
 // POST /api/issues/:number/comments — add comment
-router.post('/:number/comments', async (req, res) => {
+router.post('/:number(\\d+)/comments', async (req, res) => {
   try {
     const { body } = req.body;
     if (!body?.trim()) return res.status(400).json({ error: 'body is required' });
@@ -115,7 +151,7 @@ router.post('/:number/comments', async (req, res) => {
 });
 
 // PATCH /api/issues/:number — update title, body, state, or labels
-router.patch('/:number', async (req, res) => {
+router.patch('/:number(\\d+)', async (req, res) => {
   try {
     const { title, body, state, labels } = req.body;
     const payload = {};
