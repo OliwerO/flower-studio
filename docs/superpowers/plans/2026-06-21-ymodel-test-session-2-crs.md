@@ -218,3 +218,10 @@ All 8 CRs sliced into an implementation plan → **`2026-06-21-ymodel-session2-f
 - **Fix (florist):** mirror `supplierFilter` state + full-width `<select>`; period+reason filter gains a supplier clause. Options from all loaded entries.
 - **Translations:** +`supplierAll` ('All suppliers' / 'Все поставщики') en+ru both apps.
 - **Verify:** builds green; verified live (Playwright) — dropdown All suppliers / 4f / Stojek; 4f + This month → single 4f row, totals 32→3 stems / 184→12 zł. **PR #434. Type: feature (filter). Owner-visible.**
+
+### CR-28 — Bouquet "N not in stock" double-counts on-hand across same-Variety sibling lines ✅ DONE 2026-06-24 · bug
+- **App/surface:** shared `stockMath.js` (new `allocateLinesAgainstVariety`) + florist `steps/Step2Bouquet.jsx` + dashboard `steps/Step2Bouquet.jsx` + florist `BouquetEditor.jsx` + tests. Diagnosed via a 6-agent workflow (5 readers + synthesis).
+- **Observed (owner, lab):** Y-model New Order — line 1 = 7 Anemone Burgundy from a dated batch (7 on hand), line 2 = 10 as new demand. Line 2 showed **"3 not in stock"** (10 − 7) not **"10"**. The 7 on-hand stems were counted once per line; real shortfall is 17 − 7 = 10.
+- **Root cause:** each cart line compared its qty to the WHOLE Variety's net (`getVarietyAvailability.net`, shared across all rows per CR-27) and the available number was never reduced by what SIBLING lines of the same Variety already claimed.
+- **Fix:** new pure helper `allocateLinesAgainstVariety(lines, resolve)` walks lines in order, tracks consumed per Variety key, returns each line's `remainingNet = max(0, varietyNet − earlierSiblings)`. `resolve` returns null to skip deferred/future-PO lines. Each badge surface feeds `remainingNet` into `{qty − available} not in stock`. Florist BouquetEditor nets by stockItemId (its single-item model). NEVER mutates the shared varietyAvail object.
+- **Verify:** shared 527/527 (new tests: exact 7→[7,10]→[0,10] case + drain/isolation/deferred/ordering/legacy); 3 apps build; verified live (Playwright) — line 2 now "10 not in stock". **PR #435. Owner-visible.**
