@@ -8,6 +8,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import {
   stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel,
+  formatDateDMY,
   useStockYModelFlag,
   TypeGroupHeader,
   VarietyListItem,
@@ -665,7 +666,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
           if (isEditing) {
             return (
               <tr key={e.id} className="border-b border-gray-50 bg-blue-50/50">
-                <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
+                <td className="px-3 py-1.5 text-xs text-ios-tertiary">{formatDateDMY(e.Date)}</td>
                 <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
                 <td className="px-3 py-1.5 text-xs">{batchTag}</td>
                 <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>
@@ -691,7 +692,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
 
           return (
             <tr key={e.id} className="border-b border-gray-50 group">
-              <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
+              <td className="px-3 py-1.5 text-xs text-ios-tertiary">{formatDateDMY(e.Date)}</td>
               <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
               <td className="px-3 py-1.5 text-xs">{batchTag}</td>
               <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>
