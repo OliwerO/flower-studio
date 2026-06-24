@@ -63,6 +63,7 @@ export default function WasteLogPage() {
   const [period, setPeriod]           = useState('week');
   const [customFrom, setCustomFrom]   = useState('');
   const [customTo, setCustomTo]       = useState('');
+  const [supplierFilter, setSupplier] = useState('all'); // 'all' | <supplier> — combines with the time filter
   const [selectedReasons, setReasons] = useState([]);
   const [addOpen, setAddOpen]         = useState(false);
   const [editingEntry, setEditing]    = useState(null);
@@ -107,12 +108,21 @@ export default function WasteLogPage() {
       const d = e.Date || '';
       if (d < from) return false;
       if (to && d > to) return false;
+      if (supplierFilter !== 'all' && (e.supplier || '—') !== supplierFilter) return false;
       if (selectedReasons.length > 0 && !selectedReasons.includes(e.Reason)) return false;
       return true;
     });
-  }, [entries, period, customFrom, customTo, selectedReasons]);
+  }, [entries, period, customFrom, customTo, supplierFilter, selectedReasons]);
 
   const grouped = useMemo(() => groupByDate(filtered, t), [filtered]);
+
+  // Supplier dropdown options — every supplier in the loaded log, plus the
+  // current selection so it stays valid regardless of the active period.
+  const supplierOptions = useMemo(() => {
+    const set = new Set(entries.map(e => e.supplier || '—'));
+    if (supplierFilter !== 'all') set.add(supplierFilter);
+    return [...set].sort();
+  }, [entries, supplierFilter]);
 
   const periodLabels = {
     today:  t.wastePeriodToday,
@@ -206,6 +216,20 @@ export default function WasteLogPage() {
             <DatePicker value={customTo} onChange={setCustomTo} placeholder={t.dateTo || 'To'} />
           </div>
         )}
+
+        {/* Supplier filter — combines with the time filter above */}
+        <select
+          value={supplierFilter}
+          onChange={e => setSupplier(e.target.value)}
+          className="w-full mb-2 px-3 py-2 rounded-2xl border border-gray-200 dark:border-dark-separator
+                     bg-white dark:bg-dark-card text-sm text-ios-label dark:text-dark-label
+                     focus:outline-none focus:ring-1 focus:ring-brand-400"
+        >
+          <option value="all">{t.supplierAll || 'All suppliers'}</option>
+          {supplierOptions.map(s => (
+            <option key={s} value={s}>{s}</option>
+          ))}
+        </select>
 
         <FilterBar
           chips={LOSS_REASONS.map(r => ({ value: r, label: reasonLabel(t, r) }))}
