@@ -84,6 +84,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [wastePeriod, setWastePeriod] = useState('month'); // 'today' | 'month' | '30d' | '90d' | 'custom'
   const [wasteCustomFrom, setWasteCustomFrom] = useState('');
   const [wasteCustomTo, setWasteCustomTo] = useState('');
+  const [wasteSupplier, setWasteSupplier] = useState('all'); // 'all' | <supplier name> — combines with the time filter
   const [wasteEditId, setWasteEditId] = useState(null);
   const [wasteEditForm, setWasteEditForm] = useState({ quantity: '', reason: '' });
   const [wasteDeleteId, setWasteDeleteId] = useState(null);
@@ -190,6 +191,14 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   // Refetch whenever the period (or the custom range, while custom is active) changes.
   // Fires on mount with the default period, so no separate initial-load effect is needed.
   useEffect(() => { fetchLossLog(wastePeriod, wasteCustomFrom, wasteCustomTo); }, [wastePeriod, wasteCustomFrom, wasteCustomTo]);
+
+  // Supplier dropdown options — suppliers present in the loaded period, plus the
+  // current selection (so it stays valid even if a period change drops its rows).
+  const wasteSupplierOptions = useMemo(() => {
+    const set = new Set(lossLog.map(e => e.supplier || '—'));
+    if (wasteSupplier !== 'all') set.add(wasteSupplier);
+    return [...set].sort();
+  }, [lossLog, wasteSupplier]);
 
   async function handleWasteEdit(id) {
     try {
@@ -636,15 +645,32 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               <DatePicker value={wasteCustomTo} onChange={setWasteCustomTo} placeholder={t.dateTo || 'To'} />
             </div>
           )}
+          {/* Supplier filter — combines with the time filter above */}
+          <select
+            value={wasteSupplier}
+            onChange={e => setWasteSupplier(e.target.value)}
+            className="ml-auto text-xs px-2.5 py-1 rounded-full border border-gray-200 bg-gray-100 text-ios-secondary focus:outline-none focus:ring-1 focus:ring-brand-400"
+          >
+            <option value="all">{t.supplierAll || 'All suppliers'}</option>
+            {wasteSupplierOptions.map(s => (
+              <option key={s} value={s}>{s}</option>
+            ))}
+          </select>
         </div>
       )}
       {view === 'waste' && !loading && (() => {
-        // Filter by search (flower name or supplier), then sort newest-first by date.
-        // No supplier grouping — owner wants one flat list ordered by date desc.
-        const filteredLog = search
-          ? lossLog.filter(e => (e.flowerName || '').toLowerCase().includes(search.toLowerCase())
-              || (e.supplier || '').toLowerCase().includes(search.toLowerCase()))
-          : lossLog;
+        // Filter by search (flower name or supplier) + supplier dropdown (combines
+        // with the time filter), then sort newest-first by date. No supplier grouping —
+        // owner wants one flat list ordered by date desc.
+        const filteredLog = lossLog.filter(e => {
+          if (wasteSupplier !== 'all' && (e.supplier || '—') !== wasteSupplier) return false;
+          if (search) {
+            const q = search.toLowerCase();
+            if (!(e.flowerName || '').toLowerCase().includes(q)
+                && !(e.supplier || '').toLowerCase().includes(q)) return false;
+          }
+          return true;
+        });
         const sortedLog = [...filteredLog].sort((a, b) => (b.Date || '').localeCompare(a.Date || ''));
 
         let totalLost = 0;
