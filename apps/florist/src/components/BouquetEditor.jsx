@@ -3,6 +3,7 @@ import {
   renderStockName, parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
+  allocateLinesAgainstVariety,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 
@@ -40,6 +41,14 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
     }
     return visibleStock;
   }, [visibleStock, showOutOfStock, editing.pendingPO]);
+
+  // Net each cart line's available stock against earlier lines bound to the SAME
+  // stock item, so two lines never both claim the same on-hand stems. lineNets[i]
+  // = what's left for line i after earlier same-item lines took their share.
+  const lineNets = useMemo(() => allocateLinesAgainstVariety(editing.editLines, (l) => {
+    const si = editing.stockItems.find(s => s.id === l.stockItemId);
+    return { key: l.stockItemId ?? l.flowerName, net: Number(si?.['Current Quantity']) || 0 };
+  }), [editing.editLines, editing.stockItems]);
 
   // Group catalog: Y-model = one row per Variety 4-tuple; legacy = one row per base name
   const catalogVarieties = useMemo(() => {
@@ -250,7 +259,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50">
                 {editing.editLines.map((line, idx) => {
                   const si = editing.stockItems.find(s => s.id === line.stockItemId);
-                  const availableQty = Number(si?.['Current Quantity']) || 0;
+                  const availableQty = lineNets[idx]; // sibling-netted (see lineNets memo)
                   // Pending-PO flowers price off their PO, not the stale card sell (#377).
                   const liveSell = resolveStockLinePrice(si, editing.pendingPO?.[line.stockItemId]).sellPricePerUnit
                     || Number(line.sellPricePerUnit) || 0;

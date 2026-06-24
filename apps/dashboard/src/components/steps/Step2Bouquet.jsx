@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -229,6 +229,18 @@ export default function Step2Bouquet({
     }
     return map;
   }, [yEnabled, adaptedStock, pendingPO, reservations, todayIso]);
+
+  // Net each cart line's available stock against earlier lines of the SAME
+  // Variety so two lines of one Variety never both claim the same on-hand stems
+  // (the "3 not in stock" double-count). remainingNet[i] = what's left for line
+  // i after earlier same-Variety lines took their share.
+  const lineNets = useMemo(() => allocateLinesAgainstVariety(orderLines, (l) => {
+    if (l.stockDeferred) return null; // future-PO lines don't pull current stock
+    const a = yEnabled ? varietyAvailById[l.stockItemId] : null;
+    if (a) return { key: a, net: a.net };
+    const si = stock.find(s => s.id === l.stockItemId);
+    return { key: l.stockItemId ?? l.flowerName, net: Number(si?.['Current Quantity']) || 0 };
+  }), [orderLines, varietyAvailById, yEnabled, stock]);
 
   function addOne(stockItem, amount = 1) {
     const add = Math.max(1, Number(amount) || 1);
@@ -596,14 +608,14 @@ export default function Step2Bouquet({
                 </span>
               </div>
             ))}
-            {!premadeLocked && orderLines.map(l => {
+            {!premadeLocked && orderLines.map((l, idx) => {
               const key = lineKey(l);
               const stockItem = stock.find(s => s.id === l.stockItemId);
               // CR-27: whole-Variety net under Y-model, not the single bound row.
               const lineVarietyAvail = yEnabled ? varietyAvailById[l.stockItemId] : null;
-              const availableQty = lineVarietyAvail
-                ? lineVarietyAvail.net
-                : Number(stockItem?.['Current Quantity']) || 0;
+              // ...further reduced by earlier same-Variety lines so two lines of
+              // one Variety never double-count the same on-hand stems.
+              const availableQty = lineNets[idx];
               const overStock = l.stockItemId && !l.stockDeferred && l.quantity > availableQty;
               // Pending-PO flowers price off their PO, not the stale card sell (#377).
               const sellPrice = resolveStockLinePrice(stockItem, pendingPO[l.stockItemId]).sellPricePerUnit

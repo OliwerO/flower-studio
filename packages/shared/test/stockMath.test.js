@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
+import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety } from '../utils/stockMath.js';
 
 // Model (see stockMath.js header): stock is deducted at order creation, so
 // Current Quantity already reflects every pending order's demand. `committed`
@@ -173,5 +173,62 @@ describe('arrivalsForVariety — S1.2 overdue tagging', () => {
     const rawArrivals = arrivalsForVariety(rows, pendingPO, '2026-06-21');
     const a = getVarietyAvailability(rows, new Map(), rawArrivals);
     expect(a.arrivals[0].overdue).toBe(true);
+  });
+});
+
+describe('allocateLinesAgainstVariety — sibling netting', () => {
+  // The exact reported bug: Anemone Burgundy, 7 on hand, two lines [7, 10].
+  // Earlier line claims the 7 → line 2 sees 0 left → shows 10 short, not 3.
+  it('nets the on-hand across same-Variety sibling lines (7 → [7,10])', () => {
+    const variety = { net: 7 }; // one shared avail object, as the UI maps it
+    const lines = [{ stockItemId: 'a', quantity: 7 }, { stockItemId: 'b', quantity: 10 }];
+    const nets = allocateLinesAgainstVariety(lines, () => ({ key: variety, net: 7 }));
+    expect(nets).toEqual([7, 0]);
+    // shortfall the badge shows = qty - remaining
+    const shortfalls = lines.map((l, i) => Math.max(0, l.quantity - nets[i]));
+    expect(shortfalls).toEqual([0, 10]);
+    // invariant: total short === totalRequested - onHand
+    expect(shortfalls.reduce((s, x) => s + x, 0)).toBe(17 - 7);
+  });
+
+  it('three lines drain progressively ([5,5,5] vs net 12)', () => {
+    const v = { net: 12 };
+    const lines = [{ quantity: 5 }, { quantity: 5 }, { quantity: 5 }];
+    const nets = allocateLinesAgainstVariety(lines, () => ({ key: v, net: 12 }));
+    expect(nets).toEqual([12, 7, 2]);
+    const short = lines.map((l, i) => Math.max(0, l.quantity - nets[i]));
+    expect(short).toEqual([0, 0, 3]); // total 3 = 15 - 12
+  });
+
+  it('different varieties do not cross-consume', () => {
+    const a = { net: 5 }, b = { net: 4 };
+    const lines = [{ quantity: 5 }, { quantity: 4 }, { quantity: 3 }];
+    const nets = allocateLinesAgainstVariety(lines, (l, i) =>
+      i < 2 ? { key: a, net: 5 } : { key: b, net: 4 });
+    // line0 drains a; line1 a is gone → 0; line2 is variety b, full 4 available
+    expect(nets).toEqual([5, 0, 4]);
+  });
+
+  it('skips lines whose resolve returns null (deferred — no consumption)', () => {
+    const v = { net: 7 };
+    const lines = [{ quantity: 7, deferred: true }, { quantity: 10 }];
+    const nets = allocateLinesAgainstVariety(lines, (l) =>
+      l.deferred ? null : { key: v, net: 7 });
+    // deferred line consumes nothing → line 2 still sees the full 7
+    expect(nets[1]).toBe(7);
+  });
+
+  it('order matters — first line gets the stock', () => {
+    const v = { net: 6 };
+    const a = allocateLinesAgainstVariety([{ quantity: 6 }, { quantity: 2 }], () => ({ key: v, net: 6 }));
+    const b = allocateLinesAgainstVariety([{ quantity: 2 }, { quantity: 6 }], () => ({ key: v, net: 6 }));
+    expect(a).toEqual([6, 0]);
+    expect(b).toEqual([6, 4]);
+  });
+
+  it('legacy fallback nets against single-item qty by stockItemId key', () => {
+    const lines = [{ stockItemId: 's1', quantity: 4 }, { stockItemId: 's1', quantity: 5 }];
+    const nets = allocateLinesAgainstVariety(lines, (l) => ({ key: l.stockItemId, net: 6 }));
+    expect(nets).toEqual([6, 2]); // 6 - 4 = 2 left for line 2 → shows 3 short
   });
 });
