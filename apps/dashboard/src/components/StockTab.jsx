@@ -23,6 +23,7 @@ import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import ReconciliationSection from './ReconciliationSection.jsx';
 import InlineEdit from './InlineEdit.jsx';
+import DatePicker from './DatePicker.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
 
 function formatDateTag(dateStr, color = 'gray') {
@@ -79,9 +80,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   // stays hidden from the florist's daily flow by default. The setting is
   // fetched alongside the normal stock data below.
   const [showRepairTools, setShowRepairTools] = useState(false);
-  const [wastePeriod, setWastePeriod] = useState('month'); // 'month' | '30d' | '90d'
-  const [wasteGroupBy, setWasteGroupBy] = useState('supplier'); // 'supplier' | 'all'
-  const [wasteSortBy, setWasteSortBy] = useState('date'); // 'date' | 'batch'
+  const [wastePeriod, setWastePeriod] = useState('month'); // 'today' | 'month' | '30d' | '90d' | 'custom'
+  const [wasteCustomFrom, setWasteCustomFrom] = useState('');
+  const [wasteCustomTo, setWasteCustomTo] = useState('');
   const [wasteEditId, setWasteEditId] = useState(null);
   const [wasteEditForm, setWasteEditForm] = useState({ quantity: '', reason: '' });
   const [wasteDeleteId, setWasteDeleteId] = useState(null);
@@ -155,9 +156,15 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
 
   const [lossLog, setLossLog] = useState([]);
 
-  function wasteDateRange(period) {
+  function wasteDateRange(period, customFrom, customTo) {
     const now = new Date();
     const to = now.toISOString().split('T')[0];
+    if (period === 'today') return { from: to, to };
+    if (period === 'custom') {
+      // Caller guarantees both ends are set before fetching; fall back to today
+      // so an in-progress selection never queries an open-ended range.
+      return { from: customFrom || to, to: customTo || to };
+    }
     let from;
     if (period === 'month') {
       from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
@@ -169,16 +176,19 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     return { from, to };
   }
 
-  function fetchLossLog(period) {
-    const { from, to } = wasteDateRange(period || wastePeriod);
+  function fetchLossLog(period, customFrom, customTo) {
+    const p = period || wastePeriod;
+    const cf = customFrom ?? wasteCustomFrom;
+    const ct = customTo ?? wasteCustomTo;
+    // Custom range needs both ends chosen — otherwise wait for the user.
+    if (p === 'custom' && (!cf || !ct)) return;
+    const { from, to } = wasteDateRange(p, cf, ct);
     client.get(`/stock-loss?from=${from}&to=${to}`).then(r => setLossLog(r.data)).catch(() => {});
   }
 
-  useEffect(() => {
-    fetchLossLog();
-  }, []);
-
-  useEffect(() => { fetchLossLog(wastePeriod); }, [wastePeriod]);
+  // Refetch whenever the period (or the custom range, while custom is active) changes.
+  // Fires on mount with the default period, so no separate initial-load effect is needed.
+  useEffect(() => { fetchLossLog(wastePeriod, wasteCustomFrom, wasteCustomTo); }, [wastePeriod, wasteCustomFrom, wasteCustomTo]);
 
   async function handleWasteEdit(id) {
     try {
@@ -605,59 +615,46 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
 
       {/* ── Waste view: period filter + dedicated write-off log ── */}
       {view === 'waste' && (
-        <div className="glass-card px-4 py-2 flex items-center gap-2">
+        <div className="glass-card px-4 py-2 flex flex-wrap items-center gap-2">
           {[
-            { key: 'month', label: t.thisMonth || 'This month' },
-            { key: '30d',   label: t.last30d || 'Last 30 days' },
-            { key: '90d',   label: t.last90d || 'Last 3 months' },
+            { key: 'today',  label: t.today || 'Today' },
+            { key: 'month',  label: t.thisMonth || 'This month' },
+            { key: '30d',    label: t.last30d || 'Last 30 days' },
+            { key: '90d',    label: t.last90d || 'Last 3 months' },
+            { key: 'custom', label: t.customRange || 'Custom range' },
           ].map(p => (
             <button key={p.key} onClick={() => setWastePeriod(p.key)}
               className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
                 wastePeriod === p.key ? 'bg-brand-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
               }`}>{p.label}</button>
           ))}
+          {wastePeriod === 'custom' && (
+            <div className="flex items-center gap-2 ml-1">
+              <DatePicker value={wasteCustomFrom} onChange={setWasteCustomFrom} placeholder={t.dateFrom || 'From'} />
+              <span className="text-xs text-ios-tertiary">→</span>
+              <DatePicker value={wasteCustomTo} onChange={setWasteCustomTo} placeholder={t.dateTo || 'To'} />
+            </div>
+          )}
         </div>
       )}
       {view === 'waste' && !loading && (() => {
-        // Filter by search
-        let filteredLog = search
+        // Filter by search (flower name or supplier), then sort newest-first by date.
+        // No supplier grouping — owner wants one flat list ordered by date desc.
+        const filteredLog = search
           ? lossLog.filter(e => (e.flowerName || '').toLowerCase().includes(search.toLowerCase())
               || (e.supplier || '').toLowerCase().includes(search.toLowerCase()))
           : lossLog;
-
-        // Sort entries
-        if (wasteSortBy === 'batch') {
-          filteredLog = [...filteredLog].sort((a, b) => {
-            const batchA = parseBatchName(a.flowerName || '').batch || '';
-            const batchB = parseBatchName(b.flowerName || '').batch || '';
-            return batchA.localeCompare(batchB) || (a.Date || '').localeCompare(b.Date || '');
-          });
-        } else {
-          filteredLog = [...filteredLog].sort((a, b) => (b.Date || '').localeCompare(a.Date || ''));
-        }
+        const sortedLog = [...filteredLog].sort((a, b) => (b.Date || '').localeCompare(a.Date || ''));
 
         let totalLost = 0;
         let totalCostLost = 0;
-        for (const e of filteredLog) {
+        for (const e of sortedLog) {
           totalLost += e.Quantity || 0;
           totalCostLost += (e.Quantity || 0) * (e.costPrice || 0);
         }
 
-        // Get unique suppliers for filter
-        const allSuppliers = [...new Set(filteredLog.map(e => e.supplier || '—'))].sort();
-
-        // Group by supplier (when not in "all" mode)
-        const bySupplier = {};
-        for (const e of filteredLog) {
-          const sup = e.supplier || '—';
-          if (!bySupplier[sup]) bySupplier[sup] = { entries: [], totalQty: 0, totalCost: 0 };
-          bySupplier[sup].entries.push(e);
-          bySupplier[sup].totalQty += e.Quantity || 0;
-          bySupplier[sup].totalCost += (e.Quantity || 0) * (e.costPrice || 0);
-        }
-
         // Render a waste table row with batch tag + edit/delete
-        function WasteRow({ e, showSupplier }) {
+        function WasteRow({ e }) {
           const { name: baseName, batch } = parseBatchName(e.flowerName || '');
           // If no batch in the name, use the stock item's Last Restocked date as fallback tag
           const batchTag = batch
@@ -671,7 +668,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
                 <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
                 <td className="px-3 py-1.5 text-xs">{batchTag}</td>
-                {showSupplier && <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>}
+                <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>
                 <td className="px-3 py-1.5 text-xs text-right">
                   <input type="number" min="1" value={wasteEditForm.quantity}
                     onChange={ev => setWasteEditForm(f => ({ ...f, quantity: ev.target.value }))}
@@ -697,7 +694,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               <td className="px-3 py-1.5 text-xs text-ios-tertiary">{e.Date}</td>
               <td className="px-3 py-1.5 text-xs font-medium text-ios-label">{baseName}</td>
               <td className="px-3 py-1.5 text-xs">{batchTag}</td>
-              {showSupplier && <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>}
+              <td className="px-3 py-1.5 text-xs text-ios-secondary">{e.supplier || '—'}</td>
               <td className="px-3 py-1.5 text-xs text-right">{e.Quantity}</td>
               <td className="px-3 py-1.5 text-xs">
                 <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${
@@ -735,35 +732,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 </div>
               </div>
             )}
-            {/* Waste toolbar: group by + sort */}
-            <div className="glass-card px-4 py-2 flex flex-wrap items-center gap-2">
-              <div className="flex gap-1">
-                {[
-                  { key: 'supplier', label: t.supplier },
-                  { key: 'all',      label: t.allStatuses },
-                ].map(g => (
-                  <button key={g.key} onClick={() => setWasteGroupBy(g.key)}
-                    className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                      wasteGroupBy === g.key ? 'bg-brand-600 text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
-                    }`}>{g.label}</button>
-                ))}
-              </div>
-              <span className="text-xs text-ios-tertiary">·</span>
-              <div className="flex gap-1">
-                {[
-                  { key: 'date',  label: t.date },
-                  { key: 'batch', label: t.receivedDate || 'Batch' },
-                ].map(s => (
-                  <button key={s.key} onClick={() => setWasteSortBy(s.key)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-medium transition-colors ${
-                      wasteSortBy === s.key ? 'bg-brand-100 text-brand-700' : 'bg-gray-50 text-ios-tertiary'
-                    }`}>{s.label} {wasteSortBy === s.key ? '↓' : ''}</button>
-                ))}
-              </div>
-            </div>
-
             {/* Summary bar */}
-            {filteredLog.length > 0 && (
+            {sortedLog.length > 0 && (
               <div className="glass-card px-4 py-3 flex flex-wrap gap-6">
                 <div>
                   <span className="text-xs text-ios-tertiary">{t.totalLost || 'Total lost'}</span>
@@ -773,44 +743,11 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                   <span className="text-xs text-ios-tertiary">{t.revenueLost || 'Revenue lost'}</span>
                   <p className="text-lg font-bold text-ios-red">{totalCostLost.toFixed(0)} {t.zl}</p>
                 </div>
-                <div>
-                  <span className="text-xs text-ios-tertiary">{t.suppliers || 'Suppliers'}</span>
-                  <p className="text-lg font-bold text-ios-label">{allSuppliers.length}</p>
-                </div>
               </div>
             )}
 
-            {/* Grouped by supplier */}
-            {wasteGroupBy === 'supplier' && Object.entries(bySupplier).sort(([,a], [,b]) => b.totalQty - a.totalQty).map(([sup, data]) => (
-              <div key={sup} className="glass-card overflow-hidden">
-                <div className="px-4 py-2 bg-brand-50/40 border-b border-white/40 flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-brand-700 uppercase tracking-wide">
-                    {sup}
-                  </h3>
-                  <span className="text-xs text-ios-tertiary">
-                    {data.totalQty} {t.stems} · {data.totalCost.toFixed(0)} {t.zl}
-                  </span>
-                </div>
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-xs text-ios-tertiary border-b border-gray-100 bg-gray-50/60">
-                      <th className="text-left px-3 py-2 font-medium">{t.date}</th>
-                      <th className="text-left px-3 py-2 font-medium">{t.stockName}</th>
-                      <th className="text-left px-3 py-2 font-medium">{t.receivedDate || 'Batch'}</th>
-                      <th className="text-right px-3 py-2 font-medium">{t.quantity}</th>
-                      <th className="text-left px-3 py-2 font-medium">{t.reason}</th>
-                      <th className="text-right px-3 py-2 font-medium">{t.daysSurvived}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.entries.map(e => <WasteRow key={e.id} e={e} showSupplier={false} />)}
-                  </tbody>
-                </table>
-              </div>
-            ))}
-
-            {/* All entries — flat table */}
-            {wasteGroupBy === 'all' && filteredLog.length > 0 && (
+            {/* Flat list — newest write-offs on top, no supplier grouping */}
+            {sortedLog.length > 0 && (
               <div className="glass-card overflow-hidden">
                 <table className="w-full text-sm">
                   <thead>
@@ -825,13 +762,13 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredLog.map(e => <WasteRow key={e.id} e={e} showSupplier={true} />)}
+                    {sortedLog.map(e => <WasteRow key={e.id} e={e} />)}
                   </tbody>
                 </table>
               </div>
             )}
 
-            {filteredLog.length === 0 && (
+            {sortedLog.length === 0 && (
               <p className="text-center text-sm text-ios-tertiary py-8">{t.noData}</p>
             )}
           </>
