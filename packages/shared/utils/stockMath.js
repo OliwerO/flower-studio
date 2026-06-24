@@ -191,6 +191,39 @@ export function getVarietyAvailability(rows = [], reservations = new Map(), arri
 }
 
 /**
+ * allocateLinesAgainstVariety — net each bouquet line's available stock against
+ * SIBLING lines of the same Variety in the same bouquet.
+ *
+ * Without this, two lines of one Variety each compared their quantity to the
+ * WHOLE Variety's free stock and so counted the same stems twice: with 7 on hand
+ * and lines [7, 10], line 1 read "0 short" and line 2 read "10 − 7 = 3 short",
+ * hiding 7 stems of real shortfall. This walks the lines in order so earlier
+ * lines claim on-hand first; a later line then sees only what is left. The per-
+ * Variety invariant holds: Σ max(0, qty − remaining) === max(0, ΣqtyShown − net).
+ *
+ * @param {Array} lines  ordered bouquet lines
+ * @param {(line, index) => ({ key, net }|null)} resolve
+ *        key — grouping identity for the line's Variety (the shared varietyAvail
+ *              object, a variety key, or the stockItemId in legacy single-item mode).
+ *        net — the Variety's free stock available to the whole bouquet.
+ *        Return null to skip a line entirely (no consumption) — e.g. a deferred
+ *        line that pulls from a future PO, not current stock.
+ * @returns {number[]} remainingNet per line, aligned to `lines` — the value to
+ *          subtract from line.quantity for the "N not in stock" badge.
+ */
+export function allocateLinesAgainstVariety(lines = [], resolve) {
+  const consumed = new Map();
+  return lines.map((line, i) => {
+    const r = resolve(line, i);
+    if (!r || r.key == null) return r ? (Number(r.net) || 0) : 0;
+    const used = consumed.get(r.key) || 0;
+    const remaining = Math.max(0, (Number(r.net) || 0) - used);
+    consumed.set(r.key, used + (Number(line.quantity) || 0));
+    return remaining;
+  });
+}
+
+/**
  * arrivalsForVariety — collect a Variety's pending PO arrivals as [{date, qty, overdue}]
  * from the /stock/pending-po map (keyed by stockId). Mirrors the shape consumed
  * by getVarietyAvailability + allocateVarietyCoverage so the picker and the
