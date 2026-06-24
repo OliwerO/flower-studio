@@ -15,6 +15,7 @@ import t from '../translations.js';
 import WasteSummary from '../components/waste/WasteSummary.jsx';
 import WasteEntryRow from '../components/waste/WasteEntryRow.jsx';
 import WasteAddSheet from '../components/waste/WasteAddSheet.jsx';
+import DatePicker from '../components/DatePicker.jsx';
 
 // Reference point for relative dates so "today" / "yesterday" labels work
 // whether the user is in CEST or UTC.
@@ -60,6 +61,8 @@ export default function WasteLogPage() {
   const [entries, setEntries]         = useState([]);
   const [stock, setStock]             = useState([]);
   const [period, setPeriod]           = useState('week');
+  const [customFrom, setCustomFrom]   = useState('');
+  const [customTo, setCustomTo]       = useState('');
   const [selectedReasons, setReasons] = useState([]);
   const [addOpen, setAddOpen]         = useState(false);
   const [editingEntry, setEditing]    = useState(null);
@@ -90,23 +93,33 @@ export default function WasteLogPage() {
 
   useEffect(() => { loadAll(); }, []);
 
-  // Filter — period is date-range; reasons are multi-select chips.
+  // Filter — period is a date-range; reasons are multi-select chips.
+  // Custom range applies both a lower AND upper bound; presets only a lower one.
   const filtered = useMemo(() => {
-    const from = periodStart(period);
+    let from, to;
+    if (period === 'custom') {
+      if (!customFrom || !customTo) return []; // wait until both ends are chosen
+      from = customFrom; to = customTo;
+    } else {
+      from = periodStart(period); to = null;
+    }
     return entries.filter(e => {
-      if ((e.Date || '') < from) return false;
+      const d = e.Date || '';
+      if (d < from) return false;
+      if (to && d > to) return false;
       if (selectedReasons.length > 0 && !selectedReasons.includes(e.Reason)) return false;
       return true;
     });
-  }, [entries, period, selectedReasons]);
+  }, [entries, period, customFrom, customTo, selectedReasons]);
 
   const grouped = useMemo(() => groupByDate(filtered, t), [filtered]);
 
   const periodLabels = {
-    today: t.wastePeriodToday,
-    week:  t.wastePeriodWeek,
-    month: t.wastePeriodMonth,
-    all:   t.wastePeriodAll,
+    today:  t.wastePeriodToday,
+    week:   t.wastePeriodWeek,
+    month:  t.wastePeriodMonth,
+    all:    t.wastePeriodAll,
+    custom: t.wastePeriodCustom,
   };
 
   async function handleSave(form) {
@@ -176,14 +189,23 @@ export default function WasteLogPage() {
         <FilterBar
           className="mb-2"
           chips={[
-            { value: 'today', label: t.wastePeriodToday },
-            { value: 'week',  label: t.wastePeriodWeek },
-            { value: 'month', label: t.wastePeriodMonth },
-            { value: 'all',   label: t.wastePeriodAll },
+            { value: 'today',  label: t.wastePeriodToday },
+            { value: 'week',   label: t.wastePeriodWeek },
+            { value: 'month',  label: t.wastePeriodMonth },
+            { value: 'all',    label: t.wastePeriodAll },
+            { value: 'custom', label: t.wastePeriodCustom },
           ]}
           value={period}
           onChange={setPeriod}
         />
+
+        {period === 'custom' && (
+          <div className="flex items-center gap-2 mb-2 px-1">
+            <DatePicker value={customFrom} onChange={setCustomFrom} placeholder={t.dateFrom || 'From'} />
+            <span className="text-xs text-ios-tertiary">→</span>
+            <DatePicker value={customTo} onChange={setCustomTo} placeholder={t.dateTo || 'To'} />
+          </div>
+        )}
 
         <FilterBar
           chips={LOSS_REASONS.map(r => ({ value: r, label: reasonLabel(t, r) }))}
