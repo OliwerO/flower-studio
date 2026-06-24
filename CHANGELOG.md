@@ -5,6 +5,25 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-24 — Issues tab: in-app GitHub issue tracker for the owner (dashboard)
+
+A new **Issues** tab in the dashboard lets the owner browse open/closed GitHub issues, set priority, manage labels, comment, close/reopen, and create new issues — without leaving Blossom. Dashboard-only for now (the owner's strategic-oversight surface); not ported to the florist app.
+
+### Backend (`backend/`)
+- **New route `routes/issues.js`** — thin proxy over the GitHub REST API, reusing the existing `GITHUB_TOKEN` env var (already set in Railway for `feedbackService.js`). Endpoints: `GET /issues` (list, **PRs filtered out** — GitHub's `/issues` returns pull requests too), `GET /issues/labels`, `POST /issues/labels/ensure-priorities` (idempotent priority-label seeding), `GET/POST /issues/:n/comments`, `GET /issues/:n`, `POST /issues`, `PATCH /issues/:n`. `:number` routes are constrained to `(\d+)` so they can't shadow `/labels`.
+- **`middleware/auth.js`** — `issues` added to the **owner-only** `ROLE_ACCESS` list. Florists/drivers get 403.
+- Priority is modelled as labels (`priority:high|medium|low`, seeded with red/amber/blue) since GitHub has no native priority field.
+- Regression test: `__tests__/issues.route.test.js` (PR filtering, idempotent label seeding, validation, label patch).
+
+### Frontend (`apps/dashboard/`)
+- **New tab `components/IssuesTab.jsx`** (lazy-loaded) — two-column list + detail. State filter (open/closed/all), text + label filters, priority quick-select, label add/remove, comment thread, close/reopen, inline "new issue" form. ~54 new translation keys (EN + RU) in `translations.js`. Wired into `pages/DashboardPage.jsx`.
+
+### Env / deployment
+- **No new env var** — relies on the existing `GITHUB_TOKEN`. If absent, the tab surfaces a clear error toast (route returns 500 `GITHUB_TOKEN not configured`).
+- No schema change.
+
+---
+
 ## 2026-06-22 — New-PO form proposes only un-ordered shortfalls (#419)
 
 Under the Y-model, the New Purchase Order form pre-filled one line per raw negative-quantity stock row (i.e. every Demand Entry), and never subtracted already-open purchase orders. Result: it proposed Varieties whose on-hand stock already covered them, and re-proposed stems already on a **Sent** PO. The form now pre-fills one line per Variety still genuinely short after counting on-hand stock **plus all open POs**.

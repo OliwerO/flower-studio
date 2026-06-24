@@ -31,6 +31,7 @@ import floristHoursRoutes from './routes/floristHours.js';
 import premadeBouquetRoutes from './routes/premadeBouquets.js';
 import adminRoutes         from './routes/admin.js';
 import feedbackRoutes      from './routes/feedback.js';
+import issuesRoutes        from './routes/issues.js';
 import { startFeedbackBot } from './services/feedbackTelegramBot.js';
 import { startDriverBot } from './services/driverBot.js';
 
@@ -131,6 +132,7 @@ app.use('/api/florist-hours',  floristHoursRoutes);
 app.use('/api/premade-bouquets', premadeBouquetRoutes);
 app.use('/api/admin',           adminRoutes);
 app.use('/api/feedback',        feedbackRoutes);
+app.use('/api/issues',         issuesRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);

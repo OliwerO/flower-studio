@@ -41,6 +41,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | floristHours.js | CRUD /florist-hours | Florist payroll time tracking |
 | marketingSpend.js | GET/POST /marketing-spend | Ad spend tracking by channel |
 | admin.js | GET /admin/* | Migration health, parity dashboards, audit log viewer (owner only) |
+| issues.js | GET/POST/PATCH /issues, GET /issues/labels, POST /issues/labels/ensure-priorities, GET/POST /issues/:n/comments | Owner-only proxy over the GitHub REST API for the dashboard Issues tab. Reuses `GITHUB_TOKEN` (same token as feedbackService). Filters PRs out of the list (GitHub's /issues returns PRs too). Priority = `priority:*` labels, seeded idempotently. No DB/service — thin HTTP edge. |
 | test.js | POST /test/reset, GET /test/state, /test/audit, /test/parity | Test-harness only — mounted when `IS_HARNESS` flag is set (DATABASE_URL=pglite:memory) |
 
 ## Services (src/services/)

@@ -9,7 +9,7 @@ import { resolveRoleByPin } from '../utils/driverPins.js';
 
 // Route access per role
 const ROLE_ACCESS = {
-  owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'stock-orders', 'auth', 'admin', 'premade-bouquets', 'feedback'],
+  owner:   ['orders', 'customers', 'stock', 'deliveries', 'dashboard', 'analytics', 'stock-purchases', 'stock-orders', 'auth', 'admin', 'premade-bouquets', 'feedback', 'issues'],
   florist: ['orders', 'customers', 'stock', 'stock-purchases', 'stock-orders', 'deliveries', 'premade-bouquets', 'feedback'],
   driver:  ['deliveries', 'stock-orders', 'auth', 'feedback'],
 };
