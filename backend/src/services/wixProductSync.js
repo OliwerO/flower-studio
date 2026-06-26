@@ -69,7 +69,7 @@ function wixHeaders() {
  * Fetch all products from Wix Store (handles pagination).
  * Like requesting a full inventory list from a supplier.
  */
-async function fetchAllWixProducts() {
+export async function fetchAllWixProducts() {
   const products = [];
   let offset = 0;
   const limit = 100;
