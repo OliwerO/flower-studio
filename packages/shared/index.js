@@ -60,6 +60,9 @@ export {
 // Bouquet image upload (Wix-backed)
 export { default as BouquetImageEditor } from './components/BouquetImageEditor.jsx';
 export { default as BouquetImageView }   from './components/BouquetImageView.jsx';
+
+// Shared product name + translation editor (florist + dashboard). ADR-0008.
+export { default as ProductTranslationEditor } from './components/ProductTranslationEditor.jsx';
 export { resizeImageBlob }               from './utils/imageResize.js';
 export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
 export { publishFeedback } from './api/feedback.js';

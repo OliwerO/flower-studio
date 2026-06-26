@@ -36,6 +36,7 @@ components/
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
+  ProductTranslationEditor.jsx → EN product name + PL/RU/UK title/description editor + one-click auto-translate (/products/translate). Owns the canonical name per ADR-0008. Props: group, onUpdateAll, t. Consumed by dashboard ProductCard + florist BouquetCard.
   BouquetImageView.jsx        → Read-only thumbnail with tap-to-zoom fullscreen modal for the driver delivery card
   FeedbackModal.jsx           → AI-assisted bug/feature report modal. Drives /feedback/start → /feedback/continue → /feedback/preview conversation, then publishes via the shared `publishFeedback` wrapper (api/feedback.js — resizes the screenshot before upload). Props: t, reporterRole, reporterName, appArea, onClose. Surfaces the backend error message on failure. Uses inline SVG icons (no lucide-react dep).
 hooks/
