@@ -5,6 +5,17 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-26 — Florist app: product name + translation editor (parity with dashboard)
+
+The florist app's BouquetsPage now includes the shared `ProductTranslationEditor` on every expanded bouquet card, so the owner can edit the EN product name, PL/RU/UK translations, and the storefront description directly from her phone — matching the dashboard Products tab capability added in ADR-0008. No backend change; no schema/env change. The editor is the same shared component consumed by both apps, so the two surfaces cannot drift.
+
+### Frontend (`apps/florist/`)
+- **`BouquetsPage.jsx`** — new generic `updateAll(group, field, value)` handler (optimistic + dirty-marked, mirrors `updateCategories`); passes `onUpdateAll={updateAll}` to `<BouquetCard>`.
+- **`BouquetCard.jsx`** — imports and renders `<ProductTranslationEditor>` in the expanded section (after CategoryChips, before VariantList).
+- **`translations.js`** — adds `prodDescription`, `prodDescriptionHint`, `prodNamePlaceholder`, `prodHasTranslations`, `prodTranslate`, `prodTranslating` (EN + RU).
+
+---
+
 ## 2026-06-26 — Wix product name ownership reversal: flower-studio owns names (ADR-0008, #436)
 
 Product names (bouquet names in all four Wix storefront languages — EN/PL/RU/UK) are now owned by **flower-studio**, not by Wix. The owner renames bouquets in the Dashboard → Products tab; Push sends the new name to every language channel on the Wix storefront. Pull will never overwrite a locally-set name.

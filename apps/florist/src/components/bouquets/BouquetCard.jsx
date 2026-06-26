@@ -8,6 +8,7 @@ import {
   groupCategories,
   parseCats,
   BouquetImageEditor,
+  ProductTranslationEditor,
 } from '@flower-studio/shared';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
@@ -26,6 +27,7 @@ export default function BouquetCard({
   onUpdatePrice,
   onUpdateCategories,
   onUpdateImage,
+  onUpdateAll,
 }) {
   const [expanded, setExpanded] = useState(false);
   const { role } = useAuth();
@@ -139,6 +141,9 @@ export default function BouquetCard({
             selected={parseCats(group.variants[0]?.Category)}
             onChange={next => onUpdateCategories(group, next)}
           />
+          <div className="px-1">
+            <ProductTranslationEditor group={group} onUpdateAll={onUpdateAll} t={t} />
+          </div>
           <VariantList
             variants={group.variants}
             onToggleVariant={onToggleVariant}

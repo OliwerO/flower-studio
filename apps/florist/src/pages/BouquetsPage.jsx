@@ -169,6 +169,25 @@ export default function BouquetsPage() {
     }
   }
 
+  // Generic per-bouquet field update — PATCHes `field`=`value` across every
+  // variant of the group, optimistic + dirty-marked. Used by the shared
+  // ProductTranslationEditor (Product Name / Description / Translations) and
+  // by the Key Flower / Product Type controls.
+  async function updateAll(group, field, value) {
+    const productId = group.wixProductId;
+    markDirty(productId);
+    setRows(prev => prev.map(r =>
+      (r['Wix Product ID'] || r.id) === productId ? { ...r, [field]: value } : r
+    ));
+    const results = await Promise.allSettled(
+      group.variants.map(v => client.patch(`/products/${v.id}`, { [field]: value }))
+    );
+    if (results.some(r => r.status === 'rejected')) {
+      showToast(t.syncFailed, 'error');
+      loadAll();
+    }
+  }
+
   // Inline price edit — mirrors dashboard ProductCard.jsx.
   // The change is local-only until the next push (matches active-toggle semantics).
   async function updateVariantPrice(variant, nextPrice) {
@@ -341,6 +360,7 @@ export default function BouquetsPage() {
             onUpdatePrice={updateVariantPrice}
             onUpdateCategories={updateCategories}
             onUpdateImage={updateImage}
+            onUpdateAll={updateAll}
           />
         ))}
       </div>

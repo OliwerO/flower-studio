@@ -676,6 +676,12 @@ const en = {
   changeQueued:          'change pending',
   syncSuccess:           'Synced to Wix',
   syncFailed:            'Sync failed',
+  prodDescription:      'Description',
+  prodDescriptionHint:  'Product description for the storefront',
+  prodNamePlaceholder:  'Product name (English)',
+  prodHasTranslations:  'Translated',
+  prodTranslate:        'Translate',
+  prodTranslating:      'Translating...',
 
   // ── Waste Log (2026-04) ──
   wasteLog:              'Waste log',
@@ -1517,6 +1523,12 @@ const ru = {
   changeQueued:          'изменение ожидает',
   syncSuccess:           'Синхронизировано с Wix',
   syncFailed:            'Ошибка синхронизации',
+  prodDescription:      'Описание',
+  prodDescriptionHint:  'Описание товара для витрины',
+  prodNamePlaceholder:  'Название (английское)',
+  prodHasTranslations:  'Переведено',
+  prodTranslate:        'Перевести',
+  prodTranslating:      'Переводим...',
 
   // ── Waste Log (2026-04) ──
   wasteLog:              'Журнал потерь',
