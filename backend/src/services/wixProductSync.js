@@ -1282,6 +1282,33 @@ function textToHtml(text) {
 }
 
 /**
+ * Read the PL/RU/UK/EN name + description translations Wix holds for one
+ * Stores product. Inverse of pushProductTranslations — used by the one-time
+ * seed (ADR-0008) and available to Pull. Returns {} when the product has no
+ * translation content.
+ */
+export async function fetchProductTranslations(entityId) {
+  const res = await fetch(`${WIX_API_URL}/translation-content/v1/contents/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { filter: { entityId }, cursorPaging: { limit: 50 } } }),
+  });
+  if (!res.ok) {
+    throw new Error(`Product translation read failed for ${entityId}: ${res.status} ${await res.text()}`);
+  }
+  const out = {};
+  for (const c of (await res.json()).contents || []) {
+    const name = c.fields?.['product-name']?.textValue;
+    const desc = c.fields?.['product-description']?.textValue;
+    const entry = {};
+    if (name) entry.title = name;
+    if (desc) entry.description = desc;
+    if (Object.keys(entry).length) out[c.locale] = entry;
+  }
+  return out;
+}
+
+/**
  * Removes ALL media from a Wix product. Used before attachMediaToProduct
  * to enforce single-image-per-product semantic (see plan Q2=A).
  *
