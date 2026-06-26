@@ -118,7 +118,7 @@ export default function VariantList({ variants, onToggleVariant, onUpdatePrice, 
                     <span className="text-xs text-ios-tertiary">{t.prodLeadTime}:</span>
                     <NumericInput
                       value={lt}
-                      onCommit={val => onUpdate(v.id, 'Lead Time Days', val === null ? 1 : val)}
+                      onCommit={val => onUpdate(v.id, 'Lead Time Days', val === null ? 0 : val)}
                       className="w-12 text-center"
                     />
                   </div>
