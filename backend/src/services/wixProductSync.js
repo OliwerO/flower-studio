@@ -44,6 +44,17 @@ function isProductNotFound(status, text) {
   return status === 404 && text.includes('PRODUCT_NOT_FOUND');
 }
 
+// ── ADR-0008: flower-studio owns Product names ─────────────
+// Once a row carries a local English name (Translations.en.title),
+// Pull must NOT overwrite Product Name from Wix — the owner renames
+// in the Dashboard and Push is authoritative.
+
+export function localNameOwned(existing) {
+  const t = existing?.['Translations'];
+  const tr = typeof t === 'string' ? (() => { try { return JSON.parse(t); } catch { return {}; } })() : (t || {});
+  return Boolean(tr?.en?.title);
+}
+
 // ── Wix API helpers ────────────────────────────────────────
 
 function wixHeaders() {
@@ -695,7 +706,9 @@ export async function runPull() {
           }
         } else {
           const updates = {};
-          if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
+          if (!localNameOwned(existing) && existing['Product Name'] !== productName) {
+            updates['Product Name'] = productName;
+          }
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
           // Price: Pull mirrors Wix → Airtable. Owner edits prices in
           // Wix admin OR in the dashboard/florist app — never directly

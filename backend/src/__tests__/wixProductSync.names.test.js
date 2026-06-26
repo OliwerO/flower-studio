@@ -31,3 +31,16 @@ describe('fetchProductTranslations', () => {
     await expect(fetchProductTranslations('p')).rejects.toThrow(/500|boom|translation/i);
   });
 });
+
+describe('localNameOwned', () => {
+  it('true when a local English title exists', async () => {
+    const { localNameOwned } = await import('../services/wixProductSync.js');
+    expect(localNameOwned({ 'Translations': { en: { title: 'Pink Peonies' } } })).toBe(true);
+  });
+  it('false when translations empty or no en.title', async () => {
+    const { localNameOwned } = await import('../services/wixProductSync.js');
+    expect(localNameOwned({ 'Translations': {} })).toBe(false);
+    expect(localNameOwned({ 'Translations': { pl: { title: 'x' } } })).toBe(false);
+    expect(localNameOwned({})).toBe(false);
+  });
+});
