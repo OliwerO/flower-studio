@@ -30,6 +30,8 @@ export default function BouquetsPage() {
   const [stock, setStock]     = useState([]);
   const [filter, setFilter]   = useState('all');
   const [search, setSearch]   = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [syncLog, setSyncLog] = useState(null);
   const [loading, setLoading] = useState(true);
   const [pulling, setPulling] = useState(false);
   // Async-job UX: opening the modal kicks off POST /products/push and the
@@ -43,7 +45,12 @@ export default function BouquetsPage() {
   // successful push. Cleared on a successful POST /products/push.
   const [dirtyIds, setDirtyIds] = useState(() => new Set());
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => {
+    loadAll();
+    client.get('/products/sync-log').catch(() => ({ data: null })).then(res => {
+      setSyncLog(res?.data || null);
+    });
+  }, []);
 
   // SSE: when an image is uploaded/deleted from another tab or the dashboard,
   // patch matching variant rows in-place so the card re-renders without
@@ -90,13 +97,17 @@ export default function BouquetsPage() {
         const hasToday = g.variants.some(v => parseCats(v.Category).includes('Available Today'));
         if (!hasToday) return false;
       }
+      if (categoryFilter) {
+        const hasCat = g.variants.some(v => parseCats(v.Category).includes(categoryFilter));
+        if (!hasCat) return false;
+      }
       if (search.trim()) {
         const q = search.trim().toLowerCase();
         if (!g.name.toLowerCase().includes(q)) return false;
       }
       return true;
     });
-  }, [rows, filter, search]);
+  }, [rows, filter, search, categoryFilter]);
 
   const totalGroups = useMemo(() => groupByProduct(rows), [rows]);
   const totalActive = totalGroups.filter(g => anyActive(g)).length;
@@ -279,6 +290,18 @@ export default function BouquetsPage() {
     }
   }
 
+  // Compact sync indicator helper — mirrors SyncStatus.jsx logic (dashboard).
+  // Returns { label, color } or null. Guards every field defensively.
+  function fmtSyncEntry(log) {
+    if (!log?.['Timestamp']) return null;
+    const ago = Math.round((Date.now() - new Date(log['Timestamp']).getTime()) / 60000);
+    const failed = log['Status']?.includes('failed');
+    const color = failed || ago > 360 ? 'text-red-500' : ago > 60 ? 'text-amber-500' : 'text-emerald-600';
+    const timeStr = ago < 60 ? `${ago}m` : `${Math.round(ago / 60)}h`;
+    const icon = failed ? '✗' : log['Status']?.includes('push') ? '↑' : '↓';
+    return { label: `${icon} ${timeStr} ${t.prodAgo || 'ago'}`, color };
+  }
+
   const filterChips = [
     { value: 'all',      label: t.bouquetsFilterAll },
     { value: 'active',   label: t.bouquetsFilterActive },
@@ -326,25 +349,57 @@ export default function BouquetsPage() {
       </header>
 
       <div className="container-mobile py-3">
-        {/* Search */}
-        <div className="relative mb-3">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ios-tertiary" />
-          <input
-            type="text"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder={t.bouquetsSearch}
-            className="w-full pl-9 pr-9 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-dark-separator
-                       bg-white dark:bg-dark-elevated text-ios-label dark:text-dark-label outline-none
-                       focus:border-brand-400"
-          />
-          {search && (
-            <button
-              onClick={() => setSearch('')}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-ios-tertiary"
+        {/* Sync-status indicator — compact last-pull/push badge */}
+        {Array.isArray(syncLog) && syncLog.length > 0 && (() => {
+          const lastPull = syncLog.find(l => l['Status']?.includes('pull'));
+          const lastPush = syncLog.find(l => l['Status']?.includes('push'));
+          const pull = fmtSyncEntry(lastPull);
+          const push = fmtSyncEntry(lastPush);
+          if (!pull && !push) return null;
+          return (
+            <div className="flex items-center gap-3 px-1 pb-2 text-[11px]">
+              <span className="text-ios-tertiary">{t.prodLastSync || 'Last sync'}:</span>
+              {pull && <span className={pull.color}>{pull.label}</span>}
+              {push && <span className={push.color}>{push.label}</span>}
+            </div>
+          );
+        })()}
+
+        {/* Search + category filter row */}
+        <div className="flex gap-2 mb-3">
+          <div className="relative flex-1">
+            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-ios-tertiary" />
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder={t.bouquetsSearch}
+              className="w-full pl-9 pr-9 py-2.5 text-sm rounded-xl border border-gray-200 dark:border-dark-separator
+                         bg-white dark:bg-dark-elevated text-ios-label dark:text-dark-label outline-none
+                         focus:border-brand-400"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-ios-tertiary"
+              >
+                <X size={16} />
+              </button>
+            )}
+          </div>
+          {categories.length > 0 && (
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              className="py-2.5 px-3 text-sm rounded-xl border border-gray-200 dark:border-dark-separator
+                         bg-white dark:bg-dark-elevated text-ios-label dark:text-dark-label outline-none
+                         focus:border-brand-400"
             >
-              <X size={16} />
-            </button>
+              <option value="">{t.prodAllCategories || 'All categories'}</option>
+              {categories.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           )}
         </div>
 

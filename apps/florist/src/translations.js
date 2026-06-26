@@ -691,6 +691,9 @@ const en = {
   prodSuggested:        'Suggested',
   prodApplySuggested:   'Apply suggested price',
   prodStems:            'stems',
+  prodAllCategories:    'All categories',
+  prodLastSync:         'Last sync',
+  prodAgo:              'ago',
 
   // ── Waste Log (2026-04) ──
   wasteLog:              'Waste log',
@@ -1547,6 +1550,9 @@ const ru = {
   prodSuggested:        'Рекомендуемая',
   prodApplySuggested:   'Применить рекомендуемую цену',
   prodStems:            'стеблей',
+  prodAllCategories:    'Все категории',
+  prodLastSync:         'Последняя синхронизация',
+  prodAgo:              'назад',
 
   // ── Waste Log (2026-04) ──
   wasteLog:              'Журнал потерь',
