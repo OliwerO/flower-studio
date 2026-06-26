@@ -44,3 +44,29 @@ describe('localNameOwned', () => {
     expect(localNameOwned({})).toBe(false);
   });
 });
+
+describe('buildProductContentPush', () => {
+  it('emits en name + translations, includes description when present', async () => {
+    const { buildProductContentPush } = await import('../services/wixProductSync.js');
+    const out = buildProductContentPush({
+      'Translations': { en: { title: 'Pink Peonies', description: 'Lovely' }, pl: { title: 'Różowe piwonie' } },
+      'Description': '',
+    });
+    expect(out.name).toBe('Pink Peonies');
+    expect(out.description).toBe('Lovely');
+    expect(out.translations.pl.title).toBe('Różowe piwonie');
+  });
+
+  it('omits description when EN description and row Description are both empty (no clobber)', async () => {
+    const { buildProductContentPush } = await import('../services/wixProductSync.js');
+    const out = buildProductContentPush({ 'Translations': { en: { title: 'Pink Peonies' } }, 'Description': '' });
+    expect(out.name).toBe('Pink Peonies');
+    expect(out.description).toBeUndefined();
+  });
+
+  it('omits name when there is no en.title', async () => {
+    const { buildProductContentPush } = await import('../services/wixProductSync.js');
+    const out = buildProductContentPush({ 'Translations': {}, 'Description': 'x' });
+    expect(out.name).toBeUndefined();
+  });
+});

@@ -55,6 +55,22 @@ export function localNameOwned(existing) {
   return Boolean(tr?.en?.title);
 }
 
+// ADR-0008: assemble the name/description/translations payload for one Product
+// push. EN name goes to the Stores product; description is omitted when empty
+// so Push never clobbers a Wix description with ''. translations → Multilingual.
+export function buildProductContentPush(row) {
+  const raw = row['Translations'];
+  const translations = typeof raw === 'string'
+    ? (() => { try { return JSON.parse(raw); } catch { return {}; } })()
+    : (raw || {});
+  const out = { translations };
+  const name = translations?.en?.title?.trim();
+  if (name) out.name = name;
+  const desc = (translations?.en?.description || row['Description'] || '').trim();
+  if (desc) out.description = desc;
+  return out;
+}
+
 // ── Wix API helpers ────────────────────────────────────────
 
 function wixHeaders() {
@@ -1160,46 +1176,29 @@ export async function runPush(onProgress = NO_PROGRESS) {
     try {
       const descRows = await productConfigRepo.list({ activeOnly: true });
 
-      const descByProduct = new Map();
+      const byProduct = new Map();
       for (const row of descRows) {
         const pid = row['Wix Product ID'];
-        if (!pid || descByProduct.has(pid)) continue;
-        const rawTrans = row['Translations'];
-        let translations = {};
-        if (rawTrans && typeof rawTrans === 'string') {
-          try { translations = JSON.parse(rawTrans); } catch { /* skip */ }
-        } else if (rawTrans && typeof rawTrans === 'object') {
-          translations = rawTrans;
-        }
-        const enTitle = translations?.en?.title;
-        const enDesc = translations?.en?.description || row['Description'] || '';
-        if (enTitle || enDesc) {
-          descByProduct.set(pid, {
-            name: enTitle,
-            description: textToHtml(enDesc),
-            translations,
-          });
+        if (!pid || byProduct.has(pid)) continue;
+        const content = buildProductContentPush(row);
+        if (content.name || content.description || Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
+          byProduct.set(pid, content);
         }
       }
 
       const staleDescIds = new Set();
       const descQueue = new PQueue({ concurrency: PUSH_CONCURRENCY });
-      await Promise.all([...descByProduct.entries()].map(([productId, content]) => descQueue.add(async () => {
+      await Promise.all([...byProduct.entries()].map(([productId, content]) => descQueue.add(async () => {
         try {
-          await updateWixProductContent(productId, { name: content.name, description: content.description });
+          await updateWixProductContent(productId, { name: content.name, description: content.description !== undefined ? textToHtml(content.description) : undefined });
           stats.descriptionsSynced++;
         } catch (err) {
-          if (err instanceof WixProductNotFoundError) {
-            staleDescIds.add(productId);
-            return;
-          }
+          if (err instanceof WixProductNotFoundError) { staleDescIds.add(productId); return; }
           stats.errors.push(`Description ${productId}: ${err.message}`);
         }
         try {
           await pushProductTranslations(productId, content.translations);
-          if (content.translations && Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
-            stats.translationsSynced++;
-          }
+          if (Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) stats.translationsSynced++;
         } catch (err) {
           stats.errors.push(`Product translations ${productId}: ${err.message}`);
         }
