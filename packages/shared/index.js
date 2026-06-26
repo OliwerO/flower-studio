@@ -60,6 +60,9 @@ export {
 // Bouquet image upload (Wix-backed)
 export { default as BouquetImageEditor } from './components/BouquetImageEditor.jsx';
 export { default as BouquetImageView }   from './components/BouquetImageView.jsx';
+
+// Shared product name + translation editor (florist + dashboard). ADR-0008.
+export { default as ProductTranslationEditor } from './components/ProductTranslationEditor.jsx';
 export { resizeImageBlob }               from './utils/imageResize.js';
 export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
 export { publishFeedback } from './api/feedback.js';
@@ -139,3 +142,7 @@ export { STOCK_GRID_FULL } from './components/stockRowGrid.js';
 export { varietyFinancials } from './utils/varietyFinancials.js';
 // Y-model New-PO-form pre-fill: netted per-Variety shortfall suggestions (nets all open POs).
 export { buildPoSuggestions } from './utils/buildPoSuggestions.js';
+
+// Mono bouquet suggested price = minStems × key-flower sell price. Shared by
+// dashboard ProductCard and florist VariantList so the math can't drift.
+export { suggestedMonoPrice } from './utils/productPricing.js';

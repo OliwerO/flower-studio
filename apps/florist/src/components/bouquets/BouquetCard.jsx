@@ -8,6 +8,7 @@ import {
   groupCategories,
   parseCats,
   BouquetImageEditor,
+  ProductTranslationEditor,
 } from '@flower-studio/shared';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
@@ -26,6 +27,10 @@ export default function BouquetCard({
   onUpdatePrice,
   onUpdateCategories,
   onUpdateImage,
+  onUpdateAll,
+  stockMap = {},
+  stockList = [],
+  onUpdate,
 }) {
   const [expanded, setExpanded] = useState(false);
   const { role } = useAuth();
@@ -38,6 +43,7 @@ export default function BouquetCard({
   const needsReview = !anyOn && cats.length === 0;
   const isMono = group.variants.length === 1 ||
                  group.variants.every(v => (v['Variant Name'] || '').toLowerCase().includes('default'));
+  const productType = group.variants[0]?.['Product Type'] || (isMono ? 'mono' : 'mix');
   const wixProductId = group.wixProductId;
   const currentImageUrl = group.variants[0]?.['Image URL'] || '';
 
@@ -139,10 +145,63 @@ export default function BouquetCard({
             selected={parseCats(group.variants[0]?.Category)}
             onChange={next => onUpdateCategories(group, next)}
           />
+          {/* Key Flower selector */}
+          <div className="px-3 pb-2 border-b border-gray-100 dark:border-dark-separator">
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs text-ios-tertiary font-medium uppercase tracking-wide">
+                {t.prodKeyFlower}
+              </label>
+              <select
+                value={(() => {
+                  const kf = group.variants[0]?.['Key Flower'];
+                  const stockId = Array.isArray(kf) ? kf[0] : kf;
+                  return stockId || '';
+                })()}
+                onChange={e => {
+                  const val = e.target.value ? [e.target.value] : [];
+                  onUpdateAll(group, 'Key Flower', val);
+                }}
+                className="w-full px-3 py-2 text-sm rounded-xl border border-gray-200 dark:border-dark-separator
+                           bg-white dark:bg-dark-elevated text-ios-label dark:text-dark-label outline-none
+                           focus:border-brand-400"
+              >
+                <option value="">{t.prodSelectFlower}</option>
+                {[...stockList]
+                  .sort((a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''))
+                  .map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s['Display Name']} ({s['Current Quantity'] || 0} {t.prodInStock})
+                    </option>
+                  ))}
+              </select>
+            </div>
+          </div>
+
+          {/* Product Type selector */}
+          <div className="px-3 py-2 border-b border-gray-100 dark:border-dark-separator flex items-center gap-3">
+            <span className="text-xs text-ios-tertiary font-medium uppercase tracking-wide">{t.prodType}</span>
+            <select
+              value={productType}
+              onChange={e => onUpdateAll(group, 'Product Type', e.target.value)}
+              className="px-3 py-1.5 text-sm rounded-xl border border-gray-200 dark:border-dark-separator
+                         bg-white dark:bg-dark-elevated text-ios-label dark:text-dark-label outline-none
+                         focus:border-brand-400"
+            >
+              <option value="mono">mono</option>
+              <option value="mix">mix</option>
+            </select>
+          </div>
+
+          <div className="px-1">
+            <ProductTranslationEditor group={group} onUpdateAll={onUpdateAll} t={t} />
+          </div>
           <VariantList
             variants={group.variants}
             onToggleVariant={onToggleVariant}
             onUpdatePrice={onUpdatePrice}
+            productType={productType}
+            stockMap={stockMap}
+            onUpdate={onUpdate}
           />
         </>
       )}

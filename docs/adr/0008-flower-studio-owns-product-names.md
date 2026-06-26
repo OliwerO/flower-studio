@@ -4,7 +4,7 @@ status: accepted
 
 # flower-studio owns Product names (all locales); Wix is downstream
 
-Reverses the prior "Wix owns: product names" convention (comment in `wixProductSync.js`). flower-studio's `product_config.translations` becomes the source of truth for a Product's name in every language: English is the canonical name, with PL/RU/UK translations. The Owner edits names + translations in the Dashboard Products tab; **Push** writes the English name to the Wix Stores product and the PL/RU/UK names to the Wix Multilingual Translation Content API. Pull no longer imports names for Products that already have local translations.
+Reverses the prior "Wix owns: product names" convention (comment in `wixProductSync.js`). flower-studio's `product_config.translations` becomes the source of truth for a Product's name in every language: English is the canonical name, with PL/RU/UK translations. The Owner edits names + translations in the Dashboard Products tab (and, as of 2026-06-26, the Florist app — see `docs/superpowers/plans/2026-06-26-florist-products-parity.md`); **Push** writes the English name to the Wix Stores product and the PL/RU/UK names to the Wix Multilingual Translation Content API. Pull no longer imports names for Products that already have local translations.
 
 ## Why
 
@@ -22,6 +22,6 @@ The Owner needs one place to rename a Product and have all four languages update
 - **Behavior change for the Owner:** rename Products in the Dashboard, then Push. Renaming directly in Wix is no longer the path — a subsequent Push overwrites a Wix-side name edit (Wix is downstream for names).
 - **Pull guard:** ongoing Pull must not overwrite `product_name` / `translations` for a Product that already has local translations (`wixProductSync.js` line ~698 is the clobber point). New Products still seed their name from Wix once.
 - **One-time seed:** a backfill imports current Wix names (EN Stores name + existing PL/RU/UK Multilingual entries) into `product_config.translations` so existing good translations (roses, vases) are preserved and stale ones (Mix of the day) are surfaced for re-translation. Writes prod `product_config` — run once with Owner approval.
-- **Name management stays Dashboard-only**, consistent with the Products tab being an Owner strategic surface. The Florist app is unaffected (no parity slice).
+- **Name management is available in both the Dashboard and the Florist app.** The Dashboard Products tab was the original surface; as of 2026-06-26 the Florist app's BouquetsPage reached parity via the shared `ProductTranslationEditor` component (see `docs/superpowers/plans/2026-06-26-florist-products-parity.md`, Task 3). The owner can edit Product names and translations from either surface.
 - `product_name` is kept equal to `translations.en.title` (one English name, mirrored for internal grouping/display); grouping remains keyed by `wix_product_id`, so the mirror is safe.
 - The Wix order webhook's fuzzy stock match (`wix.js`) keys off the incoming line-item name; pushing the canonical EN name keeps future Wix orders matching as before.

@@ -36,6 +36,7 @@ components/
   DissolvePremadesDialog.jsx  → Confirm modal for dissolving premade bouquets in an order
   WixPushModal.jsx            → Async-job progress modal for /products/push (florist + dashboard)
   BouquetImageEditor.jsx      → Click/paste image slot. Pass `wixProductId` for storefront product images OR `orderId` for per-order overrides. Owner-only remove via `canRemove`.
+  ProductTranslationEditor.jsx → EN product name + PL/RU/UK title/description editor + one-click auto-translate (/products/translate). Owns the canonical name per ADR-0008. Props: group, onUpdateAll, t. Consumed by dashboard ProductCard + florist BouquetCard.
   BouquetImageView.jsx        → Read-only thumbnail with tap-to-zoom fullscreen modal for the driver delivery card
   FeedbackModal.jsx           → AI-assisted bug/feature report modal. Drives /feedback/start → /feedback/continue → /feedback/preview conversation, then publishes via the shared `publishFeedback` wrapper (api/feedback.js — resizes the screenshot before upload). Props: t, reporterRole, reporterName, appArea, onClose. Surfaces the backend error message on failure. Uses inline SVG icons (no lucide-react dep).
 hooks/
@@ -65,6 +66,7 @@ utils/
   imageResize.js              → resizeImageBlob — canvas-based client-side downscale + JPEG re-encode for bouquet uploads
   varietyFinancials.js        → varietyFinancials(rows) — per-Variety Cost/Sell/Markup/Supplier derivation for stock cards (CR-05 follow-on). Mirrors BatchArrivalList.flatten's newest-positive-batch rule.
   buildPoSuggestions.js       → buildPoSuggestions(groups, pendingPO, premadeMap) — Y-model New-PO-form pre-fill. One line per Variety still short after stock + ALL open POs (effective < 0, date-agnostic so even a late PO nets out — intentionally differs from the date-aware SHORTFALLS panel). qty = −effective; demand-driven (committed > 0 only); attaches to the undated orig row (else carries 4-tuple identity, #304). Consumed by PurchaseOrderPage (florist) + StockOrderPanel via StockTab (dashboard).
+  productPricing.js           → suggestedMonoPrice(variant, stockMap, productType) — mono bouquet suggested price = minStems × key-flower sell. Shared by dashboard ProductCard + florist VariantList.
 ```
 
 ## Rules

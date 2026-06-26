@@ -18,7 +18,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | ShoppingSupportPage | /shopping-support | owner | Real-time supervision of active PO shopping runs (SSE + polling) |
 | FloristHoursPage | /hours | all | Florists log time windows; owner sees monthly payroll summary |
 | DaySummaryPage | /day-summary | owner | Quick mobile dashboard — revenue, order counts, low stock, unpaid orders |
-| BouquetsPage | /bouquets | all | Premade bouquet catalog browse |
+| BouquetsPage | /bouquets | all | Wix storefront bouquet catalog — active/price/category/key-flower/product-type/lead-time/qty editing, name + PL/RU/UK translation editor (shared `ProductTranslationEditor`), category filter, sync-status indicator, Wix push/pull. Owner manages names from here OR the dashboard (parity, ADR-0008). |
 | PremadeBouquetCreatePage | /bouquets/new | owner | Create / edit premade bouquet template (recipe of stock items) |
 | CustomerListPage | /customers | all | Customer search + segmentation list |
 | CustomerDetailPage | /customers/:id | all | Customer profile + order history |
