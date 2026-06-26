@@ -682,6 +682,15 @@ const en = {
   prodHasTranslations:  'Translated',
   prodTranslate:        'Translate',
   prodTranslating:      'Translating...',
+  prodLeadTime:         'Lead time (days)',
+  prodQuantity:         'Qty',
+  prodKeyFlower:        'Key flower',
+  prodSelectFlower:     'Select stock item...',
+  prodInStock:          'in stock',
+  prodType:             'Type',
+  prodSuggested:        'Suggested',
+  prodApplySuggested:   'Apply suggested price',
+  prodStems:            'stems',
 
   // ── Waste Log (2026-04) ──
   wasteLog:              'Waste log',
@@ -1529,6 +1538,15 @@ const ru = {
   prodHasTranslations:  'Переведено',
   prodTranslate:        'Перевести',
   prodTranslating:      'Переводим...',
+  prodLeadTime:         'Срок (дни)',
+  prodQuantity:         'Кол-во',
+  prodKeyFlower:        'Основной цветок',
+  prodSelectFlower:     'Выбрать цветок...',
+  prodInStock:          'в наличии',
+  prodType:             'Тип',
+  prodSuggested:        'Рекомендуемая',
+  prodApplySuggested:   'Применить рекомендуемую цену',
+  prodStems:            'стеблей',
 
   // ── Waste Log (2026-04) ──
   wasteLog:              'Журнал потерь',

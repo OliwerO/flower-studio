@@ -27,6 +27,7 @@ export default function BouquetsPage() {
 
   const [rows, setRows]       = useState([]);
   const [categories, setCategories] = useState([]);
+  const [stock, setStock]     = useState([]);
   const [filter, setFilter]   = useState('all');
   const [search, setSearch]   = useState('');
   const [loading, setLoading] = useState(true);
@@ -60,18 +61,23 @@ export default function BouquetsPage() {
   async function loadAll() {
     setLoading(true);
     try {
-      const [prodRes, catRes] = await Promise.all([
+      const [prodRes, catRes, stockRes] = await Promise.all([
         client.get('/products'),
         client.get('/public/categories').catch(() => ({ data: { allCategories: [] } })),
+        client.get('/stock').catch(() => ({ data: [] })),
       ]);
       setRows(prodRes.data || []);
       setCategories(catRes.data?.allCategories || []);
+      setStock(stockRes.data || []);
     } catch {
       showToast(t.stockLoadError || 'Load failed', 'error');
     } finally {
       setLoading(false);
     }
   }
+
+  const stockList = stock;
+  const stockMap = useMemo(() => Object.fromEntries(stock.map(s => [s.id, s])), [stock]);
 
   // Grouped by bouquet — then filtered, then searched.
   const filteredGroups = useMemo(() => {
@@ -201,6 +207,23 @@ export default function BouquetsPage() {
       setRows(prev => prev.map(r => r.id === variant.id ? { ...r, Price: prevPrice } : r));
       const msg = err.response?.data?.error || t.syncFailed;
       showToast(msg, 'error');
+    }
+  }
+
+  // Per-variant field update — Lead Time Days, Quantity, etc. Optimistic + dirty-marked,
+  // mirrors updateVariantPrice. `value` may be null (clears Quantity back to untracked).
+  async function updateVariantField(variantId, field, value) {
+    const variant = rows.find(r => r.id === variantId);
+    if (!variant) return;
+    const productId = variant['Wix Product ID'] || variant.id;
+    const prev = variant[field];
+    markDirty(productId);
+    setRows(rs => rs.map(r => r.id === variantId ? { ...r, [field]: value } : r));
+    try {
+      await client.patch(`/products/${variantId}`, { [field]: value });
+    } catch (err) {
+      setRows(rs => rs.map(r => r.id === variantId ? { ...r, [field]: prev } : r));
+      showToast(err.response?.data?.error || t.syncFailed, 'error');
     }
   }
 
@@ -361,6 +384,9 @@ export default function BouquetsPage() {
             onUpdateCategories={updateCategories}
             onUpdateImage={updateImage}
             onUpdateAll={updateAll}
+            stockMap={stockMap}
+            stockList={stockList}
+            onUpdate={updateVariantField}
           />
         ))}
       </div>
