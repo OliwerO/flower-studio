@@ -201,6 +201,7 @@ export async function upsert(fields) {
  * @returns Wire-format object or throws 404.
  */
 const EDITABLE_FIELD_MAP = {
+  'Product Name':   true,
   'Price':          true, 'Quantity':      true, 'Lead Time Days': true,
   'Active':         true, 'Visible in Wix': true, 'Category':      true,
   'Key Flower':     true, 'Product Type':  true, 'Min Stems':      true,

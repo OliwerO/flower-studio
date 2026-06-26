@@ -140,6 +140,7 @@ router.get('/sync-log', async (req, res, next) => {
 // Owner can edit: Price, Quantity, Lead Time Days, Active, Visible in Wix,
 // Category, Key Flower, Product Type, Min Stems, Available From/To
 const EDITABLE_FIELDS = [
+  'Product Name',
   'Price', 'Quantity', 'Lead Time Days', 'Active', 'Visible in Wix',
   'Category', 'Key Flower', 'Product Type', 'Min Stems',
   'Sort Order', 'Available From', 'Available To',
