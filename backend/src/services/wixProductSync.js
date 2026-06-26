@@ -3,8 +3,9 @@
 // 1. Pull: check the supplier's catalog (Wix) for new/changed products
 // 2. Push: send our warehouse data (prices, stock) back to the supplier's system
 //
-// Wix owns: product names, images, variant names
-// Airtable owns: prices, lead times, stock, categories, active status
+// Wix owns: images, variant option names
+// flower-studio owns: product NAMES (all locales — ADR-0008), prices, lead
+//   times, stock, categories, active status
 
 import PQueue from 'p-queue';
 import * as stockRepo from '../repos/stockRepo.js';
@@ -44,6 +45,33 @@ function isProductNotFound(status, text) {
   return status === 404 && text.includes('PRODUCT_NOT_FOUND');
 }
 
+// ── ADR-0008: flower-studio owns Product names ─────────────
+// Once a row carries a local English name (Translations.en.title),
+// Pull must NOT overwrite Product Name from Wix — the owner renames
+// in the Dashboard and Push is authoritative.
+
+export function localNameOwned(existing) {
+  const t = existing?.['Translations'];
+  const tr = typeof t === 'string' ? (() => { try { return JSON.parse(t); } catch { return {}; } })() : (t || {});
+  return Boolean(tr?.en?.title);
+}
+
+// ADR-0008: assemble the name/description/translations payload for one Product
+// push. EN name goes to the Stores product; description is omitted when empty
+// so Push never clobbers a Wix description with ''. translations → Multilingual.
+export function buildProductContentPush(row) {
+  const raw = row['Translations'];
+  const translations = typeof raw === 'string'
+    ? (() => { try { return JSON.parse(raw); } catch { return {}; } })()
+    : (raw || {});
+  const out = { translations };
+  const name = translations?.en?.title?.trim();
+  if (name) out.name = name;
+  const desc = (translations?.en?.description || row['Description'] || '').trim();
+  if (desc) out.description = desc;
+  return out;
+}
+
 // ── Wix API helpers ────────────────────────────────────────
 
 function wixHeaders() {
@@ -58,7 +86,7 @@ function wixHeaders() {
  * Fetch all products from Wix Store (handles pagination).
  * Like requesting a full inventory list from a supplier.
  */
-async function fetchAllWixProducts() {
+export async function fetchAllWixProducts() {
   const products = [];
   let offset = 0;
   const limit = 100;
@@ -695,7 +723,9 @@ export async function runPull() {
           }
         } else {
           const updates = {};
-          if (existing['Product Name'] !== productName) updates['Product Name'] = productName;
+          if (!localNameOwned(existing) && existing['Product Name'] !== productName) {
+            updates['Product Name'] = productName;
+          }
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
           // Price: Pull mirrors Wix → Airtable. Owner edits prices in
           // Wix admin OR in the dashboard/florist app — never directly
@@ -1147,46 +1177,29 @@ export async function runPush(onProgress = NO_PROGRESS) {
     try {
       const descRows = await productConfigRepo.list({ activeOnly: true });
 
-      const descByProduct = new Map();
+      const byProduct = new Map();
       for (const row of descRows) {
         const pid = row['Wix Product ID'];
-        if (!pid || descByProduct.has(pid)) continue;
-        const rawTrans = row['Translations'];
-        let translations = {};
-        if (rawTrans && typeof rawTrans === 'string') {
-          try { translations = JSON.parse(rawTrans); } catch { /* skip */ }
-        } else if (rawTrans && typeof rawTrans === 'object') {
-          translations = rawTrans;
-        }
-        const enTitle = translations?.en?.title;
-        const enDesc = translations?.en?.description || row['Description'] || '';
-        if (enTitle || enDesc) {
-          descByProduct.set(pid, {
-            name: enTitle,
-            description: textToHtml(enDesc),
-            translations,
-          });
+        if (!pid || byProduct.has(pid)) continue;
+        const content = buildProductContentPush(row);
+        if (content.name || content.description || Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
+          byProduct.set(pid, content);
         }
       }
 
       const staleDescIds = new Set();
       const descQueue = new PQueue({ concurrency: PUSH_CONCURRENCY });
-      await Promise.all([...descByProduct.entries()].map(([productId, content]) => descQueue.add(async () => {
+      await Promise.all([...byProduct.entries()].map(([productId, content]) => descQueue.add(async () => {
         try {
-          await updateWixProductContent(productId, { name: content.name, description: content.description });
+          await updateWixProductContent(productId, { name: content.name, description: content.description !== undefined ? textToHtml(content.description) : undefined });
           stats.descriptionsSynced++;
         } catch (err) {
-          if (err instanceof WixProductNotFoundError) {
-            staleDescIds.add(productId);
-            return;
-          }
+          if (err instanceof WixProductNotFoundError) { staleDescIds.add(productId); return; }
           stats.errors.push(`Description ${productId}: ${err.message}`);
         }
         try {
           await pushProductTranslations(productId, content.translations);
-          if (content.translations && Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) {
-            stats.translationsSynced++;
-          }
+          if (Object.keys(content.translations).some(l => l !== 'en' && content.translations[l])) stats.translationsSynced++;
         } catch (err) {
           stats.errors.push(`Product translations ${productId}: ${err.message}`);
         }
@@ -1279,6 +1292,33 @@ function textToHtml(text) {
   return text.split(/\n\n+/).map(p =>
     '<p>' + p.replace(/\n/g, '<br>') + '</p>'
   ).join('');
+}
+
+/**
+ * Read the PL/RU/UK/EN name + description translations Wix holds for one
+ * Stores product. Inverse of pushProductTranslations — used by the one-time
+ * seed (ADR-0008) and available to Pull. Returns {} when the product has no
+ * translation content.
+ */
+export async function fetchProductTranslations(entityId) {
+  const res = await fetch(`${WIX_API_URL}/translation-content/v1/contents/query`, {
+    method: 'POST',
+    headers: wixHeaders(),
+    body: JSON.stringify({ query: { filter: { entityId }, cursorPaging: { limit: 50 } } }),
+  });
+  if (!res.ok) {
+    throw new Error(`Product translation read failed for ${entityId}: ${res.status} ${await res.text()}`);
+  }
+  const out = {};
+  for (const c of (await res.json()).contents || []) {
+    const name = c.fields?.['product-name']?.textValue;
+    const desc = c.fields?.['product-description']?.textValue;
+    const entry = {};
+    if (name) entry.title = name;
+    if (desc) entry.description = desc;
+    if (Object.keys(entry).length) out[c.locale] = entry;
+  }
+  return out;
 }
 
 /**

@@ -31,7 +31,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | dashboard.js | GET /dashboard | Today's operational summary for owner |
 | analytics.js | GET /analytics | Financial KPIs with period comparison |
 | settings.js | GET/POST /settings, PUT /settings/driver-language (owner-only; sets a Driver's notification language ru/en/pl in `driver_telegram_chats`), PUT /settings/florist-language (owner-only; sets the group notification language ru/en/pl for the shared florist phone in `system_meta`) | Thin HTTP layer for app config. State lives in `services/configService.js`. Re-exports its getters for backward compat — callers should migrate to importing from configService directly. |
-| products.js | POST /products/pull\|push\|sync\|translate, GET /products/push/status/:jobId | Bidirectional Wix product sync. Push runs as an async job (see `wixPushJob.js`) — POST /push returns 202 + jobId, the modal polls /push/status. /push/sync is the legacy synchronous variant kept for curl debugging. |
+| products.js | POST /products/pull\|push\|sync\|translate, GET /products/push/status/:jobId, PATCH /products/:id | Bidirectional Wix product sync. Push runs as an async job (see `wixPushJob.js`) — POST /push returns 202 + jobId, the modal polls /push/status. /push/sync is the legacy synchronous variant kept for curl debugging. **Product Name is now editable (ADR-0008) and is flower-studio-owned** — Pull will not overwrite a locally-set name (`localNameOwned` guard in `wixProductSync.js`). Push sends EN name + PL/RU/UK translations to Wix. |
 | productImages.js | POST/DELETE /products/:wixProductId/image | Bouquet image upload (florist+owner) and removal (owner only). Orchestrates Wix Media upload + Wix Stores attach via `wixMediaClient.js`, persists URL via `productRepo`, audits as `image_set` / `image_remove`, broadcasts SSE `product_image_changed`. |
 | orderImages.js | POST/DELETE /orders/:orderId/image | Per-order bouquet image override. Florist+owner upload, owner-only remove. Uploads to Wix Media, writes `Image URL` on the order via `orderRepo.updateOrder`, reaps the previous Wix file via `deleteFiles`, audits as `image_set`/`image_remove` (entityType `order`), broadcasts SSE `order_image_changed`. Mounted before orders.js so it bypasses any future role gating there. |
 | webhook.js | POST /webhook/wix | Wix order webhook (HMAC-SHA256 verified) |
@@ -94,6 +94,9 @@ Key paths:
 - **Stock adjustments**: always go through `stockRepo.adjustQuantity` / `stockRepo.atomicAdjust` — never run raw SQL on the stock table.
 - **Error responses**: `{ error: "human-readable message" }` — frontends extract this for toasts.
 - **Config values**: use `getConfig(key)` from `settings.js` — never hardcode business values (fees, driver names, markup).
+
+## Known Pitfalls (backend-specific)
+- **Product names are owned by flower-studio (ADR-0008)** — Pull must not overwrite a row whose `Translations.en.title` is set; see `localNameOwned` in `wixProductSync.js`. Push sends EN name + PL/RU/UK translations to Wix so all storefronts reflect the dashboard-set name.
 
 ## Tests
 Run all: `cd backend && npx vitest run`

@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-26 — Wix product name ownership reversal: flower-studio owns names (ADR-0008, #436)
+
+Product names (bouquet names in all four Wix storefront languages — EN/PL/RU/UK) are now owned by **flower-studio**, not by Wix. The owner renames bouquets in the Dashboard → Products tab; Push sends the new name to every language channel on the Wix storefront. Pull will never overwrite a locally-set name.
+
+### Backend (`backend/`)
+- **Ownership reversal** — `wixProductSync.js`: `runPull` now checks `localNameOwned(existing)` (reads `Translations.en.title`); if set, the Pull skips the name field. `runPush` builds `buildProductContentPush()` which includes `name` (EN) + `translations` (PL/RU/UK) in every push payload; empty-description clobber guard added (Push no longer blanks descriptions whose Wix value is non-empty when the local Description is absent).
+- **`Product Name` is now editable** — `EDITABLE_FIELDS` in `routes/products.js` includes `Product Name` (was excluded). `PATCH /api/products/:id` accepts and persists it.
+- **New service `wixNameSeed.js`** — one-time seed script (category: **DESTRUCTIVE**, requires explicit owner approval before run) that reads EN product names from Wix and writes them into `product_config.product_name` for every row whose local name is still blank. Run once after deploy to pre-populate existing products.
+- **`fetchProductTranslations(wixProductId)`** — new reader in `wixProductSync.js` that fetches the current PL/RU/UK translations from the Wix Multilingual API for a given product; used by the seed and available for future verification tooling.
+
+### Frontend (`apps/dashboard/`)
+- **Products tab rename UX** — `ProductConfigRow.jsx` / `ProductsTab.jsx`: `Product Name` field is now editable inline. A **Translate** button calls `POST /api/products/translate` and fills PL/RU/UK translation fields automatically (empty-description guard: existing non-empty descriptions are preserved). Save mirrors all four languages to `Translations.*` on the local record before the next Push.
+
+### Env / deployment
+- No new env vars. Requires the existing `WIX_API_KEY` + `WIX_SITE_ID` + `ANTHROPIC_API_KEY` (for the Translate button).
+- No schema change — `Product Name` was already a column in `product_config`; `Translations` JSONB column added in an earlier migration.
+- **One-time seed**: after deploy, run `node backend/scripts/wixNameSeed.js` with owner approval to populate existing product names from Wix. This is a **DESTRUCTIVE** script (writes prod DB); it is idempotent (skips rows that already have a local name).
+
+---
+
 ## 2026-06-24 — Issues tab: in-app GitHub issue tracker for the owner (dashboard)
 
 A new **Issues** tab in the dashboard lets the owner browse open/closed GitHub issues, set priority, manage labels, comment, close/reopen, and create new issues — without leaving Blossom. Dashboard-only for now (the owner's strategic-oversight surface); not ported to the florist app.

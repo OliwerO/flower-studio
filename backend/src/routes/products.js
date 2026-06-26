@@ -137,9 +137,11 @@ router.get('/sync-log', async (req, res, next) => {
 });
 
 // ── PATCH /api/products/:id — update a Product Config row ──
-// Owner can edit: Price, Quantity, Lead Time Days, Active, Visible in Wix,
-// Category, Key Flower, Product Type, Min Stems, Available From/To
+// Owner can edit: Product Name, Price, Quantity, Lead Time Days, Active, Visible in Wix,
+// Category, Key Flower, Product Type, Min Stems, Available From/To, Description, Translations
+// Product Name is flower-studio-owned (ADR-0008) — Pull will not overwrite it once set.
 const EDITABLE_FIELDS = [
+  'Product Name',
   'Price', 'Quantity', 'Lead Time Days', 'Active', 'Visible in Wix',
   'Category', 'Key Flower', 'Product Type', 'Min Stems',
   'Sort Order', 'Available From', 'Available To',

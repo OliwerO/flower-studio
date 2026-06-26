@@ -121,7 +121,7 @@ An arrangement of multiple stems. Used in two contexts: as a **Product** (sold v
 _Avoid_: Arrangement, composition, booklet (speech-to-text artifact)
 
 **Product**:
-A bouquet listed in the Wix online store (website). Customers browse and order Products online. Not the same as a Stock Item — Products are what customers see; Stock Items are the raw stems used to build them.
+A bouquet listed in the Wix online store (website). Customers browse and order Products online. Not the same as a Stock Item — Products are what customers see; Stock Items are the raw stems used to build them. A Product's **name is localized** — it has an EN/PL/RU/UK version, and the live storefront shows the version matching the visitor's language. These name translations are **owned by flower-studio** (edited in the Dashboard, pushed to Wix); see ADR-0008. The English name is the canonical Product name; the others are its translations.
 _Avoid_: Wix product, catalog item, listing
 
 **Premade Bouquet**:
