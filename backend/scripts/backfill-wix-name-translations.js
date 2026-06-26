@@ -5,10 +5,10 @@
 // Run once, with Owner approval, from backend/ with prod creds in env:
 //   railway run --service flower-studio-backend node scripts/backfill-wix-name-translations.js
 //
-// Idempotent: re-running re-seeds the same values (safe). It seeds ALL variant
-// rows of each Wix product so the per-variant Translations stay consistent.
+// Idempotent: skips variant rows that already have a local name (localNameOwned).
+// Safe to re-run — owner renames set via the Dashboard are never clobbered.
 
-import { fetchAllWixProducts, fetchProductTranslations } from '../src/services/wixProductSync.js';
+import { fetchAllWixProducts, fetchProductTranslations, localNameOwned } from '../src/services/wixProductSync.js';
 import * as productConfigRepo from '../src/repos/productConfigRepo.js';
 import { buildSeedUpdatesForProduct } from '../src/services/wixNameSeed.js';
 
@@ -21,6 +21,7 @@ const products = await fetchAllWixProducts();
 console.log(`[seed] ${products.length} Wix products`);
 const rows = await productConfigRepo.list();
 let seeded = 0;
+let skipped = 0;
 for (const p of products) {
   let locales = {};
   try { locales = await fetchProductTranslations(p.id); }
@@ -28,10 +29,11 @@ for (const p of products) {
   const updates = buildSeedUpdatesForProduct(p, locales);
   const variantRows = rows.filter(r => r['Wix Product ID'] === p.id);
   for (const r of variantRows) {
+    if (localNameOwned(r)) { skipped++; continue; }
     await productConfigRepo.update(r.id, updates);
     seeded++;
   }
   console.log(`[seed] ${p.name}: ${variantRows.length} rows`);
 }
-console.log(`[seed] done — ${seeded} variant rows seeded`);
+console.log(`[seed] done — ${seeded} seeded, ${skipped} skipped (already owned)`);
 process.exit(0);
