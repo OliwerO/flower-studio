@@ -3,8 +3,9 @@
 // 1. Pull: check the supplier's catalog (Wix) for new/changed products
 // 2. Push: send our warehouse data (prices, stock) back to the supplier's system
 //
-// Wix owns: product names, images, variant names
-// Airtable owns: prices, lead times, stock, categories, active status
+// Wix owns: images, variant option names
+// flower-studio owns: product NAMES (all locales — ADR-0008), prices, lead
+//   times, stock, categories, active status
 
 import PQueue from 'p-queue';
 import * as stockRepo from '../repos/stockRepo.js';
