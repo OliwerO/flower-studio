@@ -66,8 +66,9 @@ function ProductDescriptionEditor({ group, onUpdateAll }) {
     setTranslating(true);
     try {
       const trans = { ...(draft.translations || {}) };
-      if (group.name) {
-        const titleRes = await client.post('/products/translate', { text: group.name, type: 'title' });
+      const sourceTitle = draft.translations?.en?.title || group.name;
+      if (sourceTitle) {
+        const titleRes = await client.post('/products/translate', { text: sourceTitle, type: 'title' });
         for (const lang of ['en', 'pl', 'ru', 'uk']) {
           trans[lang] = { ...(trans[lang] || {}), title: titleRes.data[lang] || '' };
         }
@@ -86,6 +87,8 @@ function ProductDescriptionEditor({ group, onUpdateAll }) {
   }
 
   function handleSave() {
+    const enTitle = draft.translations?.en?.title?.trim();
+    if (enTitle) onUpdateAll(group, 'Product Name', enTitle);
     onUpdateAll(group, 'Description', draft.description);
     onUpdateAll(group, 'Translations', JSON.stringify(draft.translations));
     setEditing(false);
@@ -108,13 +111,19 @@ function ProductDescriptionEditor({ group, onUpdateAll }) {
     <div className="py-2 border-b border-gray-100 space-y-2">
       <div className="flex items-center gap-2">
         <span className="text-xs text-gray-500 font-medium">{t.prodDescription}</span>
-        <button onClick={handleTranslate} disabled={translating || (!group.name && !draft.description)}
+        <button onClick={handleTranslate} disabled={translating || (!(draft.translations?.en?.title || group.name) && !draft.description)}
           className="text-xs text-white bg-blue-500 hover:bg-blue-600 disabled:bg-gray-300 px-3 py-1 rounded-lg ml-auto">
           {translating ? t.prodTranslating : t.prodTranslate}
         </button>
         <button onClick={handleSave} className="text-xs text-white bg-brand-600 px-3 py-1 rounded-lg">{t.save}</button>
         <button onClick={() => setEditing(false)} className="text-xs text-gray-400">✕</button>
       </div>
+      <input
+        value={draft.translations.en?.title || ''}
+        onChange={e => setDraft(d => ({ ...d, translations: { ...d.translations, en: { ...(d.translations.en || {}), title: e.target.value } } }))}
+        placeholder={t.prodNamePlaceholder || 'Product name (English)'}
+        className="w-full text-sm font-medium px-2 py-1 border rounded-lg mb-1"
+      />
       <textarea value={draft.description || ''} onChange={e => setDraft(d => ({ ...d, description: e.target.value }))}
         placeholder={t.prodDescriptionHint} rows={2} className="w-full text-sm px-2 py-1 border rounded-lg resize-none" />
       <div className="border border-gray-100 rounded-lg overflow-hidden">
