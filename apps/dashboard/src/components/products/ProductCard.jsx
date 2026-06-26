@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
-import { BouquetImageEditor, ProductTranslationEditor } from '@flower-studio/shared';
+import { BouquetImageEditor, ProductTranslationEditor, suggestedMonoPrice } from '@flower-studio/shared';
 import t from '../../translations.js';
-import client from '../../api/client.js';
 import { parseCats } from './helpers.js';
 
 const PRODUCT_TYPES = ['mono', 'mix'];
@@ -74,16 +73,7 @@ function VariantRow({ variant, productType, stockMap, onUpdate }) {
     if (e.key === 'Enter') { e.target.blur(); commitFn(); }
   }
 
-  let suggested = null;
-  if (productType === 'mono' && minStems > 0) {
-    const keyFlower = variant['Key Flower'];
-    const stockId = Array.isArray(keyFlower) ? keyFlower[0] : keyFlower;
-    const stockItem = stockId ? stockMap[stockId] : null;
-    if (stockItem) {
-      const sellPerStem = Number(stockItem['Current Sell Price'] || 0);
-      suggested = minStems * sellPerStem;
-    }
-  }
+  const suggested = suggestedMonoPrice(variant, stockMap, productType);
 
   return (
     <tr className="border-b border-gray-50 last:border-0">

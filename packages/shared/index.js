@@ -142,3 +142,7 @@ export { STOCK_GRID_FULL } from './components/stockRowGrid.js';
 export { varietyFinancials } from './utils/varietyFinancials.js';
 // Y-model New-PO-form pre-fill: netted per-Variety shortfall suggestions (nets all open POs).
 export { buildPoSuggestions } from './utils/buildPoSuggestions.js';
+
+// Mono bouquet suggested price = minStems × key-flower sell price. Shared by
+// dashboard ProductCard and florist VariantList so the math can't drift.
+export { suggestedMonoPrice } from './utils/productPricing.js';
