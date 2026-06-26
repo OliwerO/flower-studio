@@ -4,7 +4,7 @@ status: accepted
 
 # flower-studio owns Product names (all locales); Wix is downstream
 
-Reverses the prior "Wix owns: product names" convention (comment in `wixProductSync.js`). flower-studio's `product_config.translations` becomes the source of truth for a Product's name in every language: English is the canonical name, with PL/RU/UK translations. The Owner edits names + translations in the Dashboard Products tab; **Push** writes the English name to the Wix Stores product and the PL/RU/UK names to the Wix Multilingual Translation Content API. Pull no longer imports names for Products that already have local translations.
+Reverses the prior "Wix owns: product names" convention (comment in `wixProductSync.js`). flower-studio's `product_config.translations` becomes the source of truth for a Product's name in every language: English is the canonical name, with PL/RU/UK translations. The Owner edits names + translations in the Dashboard Products tab (and, as of 2026-06-26, the Florist app — see `docs/superpowers/plans/2026-06-26-florist-products-parity.md`); **Push** writes the English name to the Wix Stores product and the PL/RU/UK names to the Wix Multilingual Translation Content API. Pull no longer imports names for Products that already have local translations.
 
 ## Why
 
