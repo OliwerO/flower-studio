@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import client from '../api/client.js';
 
 export default function AskBlossomPanel({ t }) {
@@ -40,7 +41,7 @@ export default function AskBlossomPanel({ t }) {
           <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
             <div className={`inline-block rounded-lg px-3 py-2 max-w-[85%] ${m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
               {m.role === 'assistant'
-                ? <div className="prose prose-sm max-w-none"><ReactMarkdown>{m.text}</ReactMarkdown></div>
+                ? <div className="prose prose-sm max-w-none prose-table:my-2 prose-th:px-2 prose-td:px-2"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
                 : m.text}
             </div>
           </div>

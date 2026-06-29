@@ -35,6 +35,18 @@ describe('AskBlossomPanel', () => {
     expect(client.post).toHaveBeenLastCalledWith('/assistant/message', { sessionId: 's1', message: 'q2' });
   });
 
+  it('renders a GFM markdown table as a real <table> (not raw pipes)', async () => {
+    const answer = '| Status | Count |\n| --- | --- |\n| New | 12 |\n| Ready | 5 |';
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer, toolResults: [] } });
+    const { container } = render(<AskBlossomPanel t={t} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'breakdown' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    await waitFor(() => expect(container.querySelector('table')).toBeInTheDocument());
+    expect(container.querySelectorAll('th')).toHaveLength(2); // GFM table header cells
+    expect(screen.getByRole('cell', { name: 'New' })).toBeInTheDocument();
+    expect(screen.queryByText('| Status | Count |')).not.toBeInTheDocument(); // not raw pipes
+  });
+
   it('shows an error bubble when the request fails', async () => {
     client.post.mockRejectedValueOnce({ response: { data: { error: 'boom' } } });
     render(<AskBlossomPanel t={t} />);
