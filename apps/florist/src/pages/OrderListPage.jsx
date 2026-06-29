@@ -127,6 +127,18 @@ export default function OrderListPage() {
   // Track whether we've done the initial load (show spinner only on first load)
   const initialLoaded = useRef(false);
 
+  // Only the server-supported filter fields drive a refetch. Client-only fields
+  // (customerQuery / bouquetQuery / price) are applied in memory in the render
+  // via orderMatchesClientFilter, so typing in the filter drawer must NOT
+  // trigger a network fetch — otherwise the list flashes to the skeleton on
+  // every keystroke. Keep this dep list in sync with the server fields that
+  // buildOrderQueryParams reads.
+  const baseParams = useMemo(() => buildOrderQueryParams(filter), [
+    filter.status, filter.source, filter.deliveryType, filter.paymentStatus,
+    filter.paymentMethod, filter.excludeCancelled,
+    filter.orderDateFrom, filter.orderDateTo, filter.requiredByFrom, filter.requiredByTo,
+  ]);
+
   const fetchOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
@@ -141,7 +153,7 @@ export default function OrderListPage() {
 
       // Merge shared filter params with view-mode params.
       // buildOrderQueryParams handles status/type/date/price; view flags override the set.
-      const params = { ...buildOrderQueryParams(filter) };
+      const params = { ...baseParams };
       if (status) params.status = status; // status tab overrides drawer status
 
       if (viewMode === VIEW_MODES.ACTIVE) {
@@ -175,7 +187,7 @@ export default function OrderListPage() {
     } finally {
       setLoading(false);
     }
-  }, [viewMode, date, status, filter]);
+  }, [viewMode, date, status, baseParams]);
 
   // Stable identities so React.memo inside OrderCard can skip re-renders.
   // Using the functional setter form means the callbacks never close over

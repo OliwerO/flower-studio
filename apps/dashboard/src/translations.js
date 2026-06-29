@@ -101,6 +101,10 @@ const en = {
   sortByDelivery:   'Sort: Delivery date',
   sortByType:       'Sort: Type',
   sortByOrderDate:  'Sort: Order date',
+  sortByOrderId:    'Sort: Order #',
+  sortByCustomer:   'Sort: Customer',
+  sortByBouquet:    'Sort: Bouquet',
+  sortByTotal:      'Sort: Total',
 
   // Stock tab
   stockName:        'Name',
@@ -1218,6 +1222,10 @@ const ru = {
   sortByDelivery:   'Сорт: Дата доставки',
   sortByType:       'Сорт: Тип',
   sortByOrderDate:  'Сорт: Дата заказа',
+  sortByOrderId:    'Сорт: № заказа',
+  sortByCustomer:   'Сорт: Клиент',
+  sortByBouquet:    'Сорт: Букет',
+  sortByTotal:      'Сорт: Сумма',
 
   // Stock tab
   stockName:        'Название',
