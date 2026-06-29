@@ -56,6 +56,13 @@ export {
   deserializeFilters,
   activeFilterCount,
 } from './utils/customerFilters.js';
+export {
+  EMPTY_ORDER_FILTER,
+  clearOrderFilter,
+  buildOrderQueryParams,
+  orderMatchesClientFilter,
+  activeOrderFilterCount,
+} from './utils/orderFilters.js';
 
 // Bouquet image upload (Wix-backed)
 export { default as BouquetImageEditor } from './components/BouquetImageEditor.jsx';

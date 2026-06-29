@@ -24,6 +24,7 @@ const en = {
   allStatuses:      'All',
   newOrder:         'New Order',
   noOrders:         'No orders found.',
+  noMatches:        'Nothing matched the filters.',
   loading:          'Loading...',
 
   // Order statuses (display labels — API values stay English)
@@ -772,6 +773,12 @@ const en = {
   // Filter sheet
   filters:                   'Filters',
   apply:                     'Apply',
+  all:                       'All',
+  resetFilters:              'Reset',
+  clearAll:                  'Clear all',
+  filterMin:                 'min',
+  filterMax:                 'max',
+  bouquetComposition:        'Bouquet',
   presenceToggles:           'Must have',
   noMinimum:                 'Any',
   close:                     'Close',
@@ -883,6 +890,7 @@ const ru = {
   allStatuses:      'Все',
   newOrder:         'Новый заказ',
   noOrders:         'Заказы не найдены.',
+  noMatches:        'Ничего не найдено.',
   loading:          'Загрузка...',
 
   // Order statuses (display labels — API values stay English)
@@ -1631,6 +1639,12 @@ const ru = {
   // Filter sheet
   filters:                   'Фильтры',
   apply:                     'Применить',
+  all:                       'Все',
+  resetFilters:              'Сбросить',
+  clearAll:                  'Очистить всё',
+  filterMin:                 'мин',
+  filterMax:                 'макс',
+  bouquetComposition:        'Букет',
   presenceToggles:           'Должен быть',
   noMinimum:                 'Любое',
   close:                     'Закрыть',
