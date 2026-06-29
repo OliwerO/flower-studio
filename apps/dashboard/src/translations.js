@@ -105,6 +105,11 @@ const en = {
   sortByCustomer:   'Sort: Customer',
   sortByBouquet:    'Sort: Bouquet',
   sortByTotal:      'Sort: Total',
+  totalsSales:      'Sales',
+  totalsPaid:       'Paid',
+  totalsOutstanding:'Outstanding',
+  totalsProfit:     'Profit',
+  totalsAvg:        'Avg order',
 
   // Stock tab
   stockName:        'Name',
@@ -1226,6 +1231,11 @@ const ru = {
   sortByCustomer:   'Сорт: Клиент',
   sortByBouquet:    'Сорт: Букет',
   sortByTotal:      'Сорт: Сумма',
+  totalsSales:      'Продажи',
+  totalsPaid:       'Оплачено',
+  totalsOutstanding:'Остаток',
+  totalsProfit:     'Прибыль',
+  totalsAvg:        'Средний чек',
 
   // Stock tab
   stockName:        'Название',

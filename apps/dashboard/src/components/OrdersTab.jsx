@@ -91,6 +91,20 @@ function SortHeader({ label, sortKey, sortBy, sortDir, onSort }) {
   );
 }
 
+// One labelled figure in the selection-totals strip (label over a bold value,
+// with an optional muted suffix like the margin %).
+function SelStat({ label, value, sub = null, valueClass = 'text-ios-label' }) {
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-ios-tertiary">{label}</span>
+      <span className={`text-sm font-semibold ${valueClass}`}>
+        {value}
+        {sub != null && <span className="ml-1 text-[11px] font-medium text-ios-tertiary">{sub}</span>}
+      </span>
+    </div>
+  );
+}
+
 function todayStr() {
   return new Date().toISOString().split('T')[0];
 }
@@ -298,6 +312,35 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   // open date/status popover doesn't get torn down mid-edit) and swaps in fresh
   // data when the request resolves.
   const showSkeleton = loading && orders.length === 0;
+
+  // Totals for the orders the owner has ticked — answers "how much did this
+  // selection earn". Tick select-all after filtering by a date range to total a
+  // whole period. Paid is status-aware (Paid = full value, Partial = recorded
+  // payments, Unpaid = 0) so it matches the per-row money display. Sums the
+  // selected orders out of the full fetched set so a later filter change doesn't
+  // silently drop a ticked order from the total.
+  const selectionTotals = useMemo(() => {
+    const sel = orders.filter(o => selected.has(o.id));
+    let sales = 0, cost = 0, paid = 0;
+    for (const o of sel) {
+      const total = Number(o['Final Price'] || o['Price Override'] || o['Sell Total'] || 0);
+      sales += total;
+      cost += Number(o['Flowers Cost Total'] || 0);
+      if (o['Payment Status'] === 'Paid') paid += total;
+      else if (o['Payment Status'] === 'Partial') paid += Number(o['Payment 1 Amount'] || 0) + Number(o['Payment 2 Amount'] || 0);
+    }
+    const profit = sales - cost;
+    return {
+      count: sel.length,
+      sales,
+      paid,
+      outstanding: Math.max(0, sales - paid),
+      profit,
+      margin: sales > 0 ? (profit / sales) * 100 : null,
+      avg: sel.length ? sales / sel.length : 0,
+      hasCost: cost > 0,
+    };
+  }, [orders, selected]);
 
   function daysSince(dateStr) {
     if (!dateStr) return 0;
@@ -613,6 +656,32 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             className="ml-auto text-xs text-ios-secondary hover:text-brand-600 transition-colors"
             title={t.refresh}
           >↻ {t.refresh}</button>
+        </div>
+      )}
+
+      {/* Selection totals — appears when the owner ticks orders. Filter by a
+          date range, tick select-all, and read the period's takings here. */}
+      {!showPremade && !showSkeleton && selected.size > 0 && (
+        <div className="glass-card px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">
+            {selectionTotals.count} {t.selected}
+          </span>
+          <SelStat label={t.totalsSales} value={`${selectionTotals.sales.toFixed(0)} ${t.zl}`} />
+          <SelStat label={t.totalsPaid} value={`${selectionTotals.paid.toFixed(0)} ${t.zl}`} valueClass="text-emerald-600" />
+          <SelStat
+            label={t.totalsOutstanding}
+            value={`${selectionTotals.outstanding.toFixed(0)} ${t.zl}`}
+            valueClass={selectionTotals.outstanding > 0 ? 'text-ios-red' : 'text-ios-label'}
+          />
+          {selectionTotals.hasCost && (
+            <SelStat
+              label={t.totalsProfit}
+              value={`${selectionTotals.profit.toFixed(0)} ${t.zl}`}
+              sub={selectionTotals.margin != null ? `${selectionTotals.margin.toFixed(0)}%` : null}
+              valueClass={selectionTotals.profit >= 0 ? 'text-ios-label' : 'text-ios-red'}
+            />
+          )}
+          <SelStat label={t.totalsAvg} value={`${selectionTotals.avg.toFixed(0)} ${t.zl}`} />
         </div>
       )}
 
