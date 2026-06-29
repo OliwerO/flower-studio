@@ -255,6 +255,9 @@ export async function create(fields) {
   return _pgCustomerToResponse(inserted, kps);
 }
 
+// ISO-8601 date format (YYYY-MM-DD) — what Postgres `date` columns accept.
+const ISO_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export async function update(id, fields) {
   const colValues = {};
   const kpChanges = {};
@@ -265,6 +268,19 @@ export async function update(id, fields) {
     } else if (field in KP_PATCH_MAP) {
       const { slot, prop } = KP_PATCH_MAP[field];
       if (!kpChanges[slot]) kpChanges[slot] = {};
+
+      // Validate important-date values — Postgres date columns require ISO-8601
+      // (YYYY-MM-DD). Reject anything else with a 400 to avoid a 500 from PG.
+      if (prop === 'importantDate' && value != null && value !== '') {
+        if (!ISO_DATE_RE.test(value)) {
+          const err = new Error(
+            `important_date must be in YYYY-MM-DD format (received: "${value}").`,
+          );
+          err.statusCode = 400;
+          throw err;
+        }
+      }
+
       kpChanges[slot][prop] = value ?? null;
     }
   }

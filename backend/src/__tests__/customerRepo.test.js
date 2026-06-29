@@ -250,6 +250,58 @@ describe('repo.update', () => {
   });
 });
 
+// ── update — importantDate validation (#334) ──
+describe('repo.update — importantDate validation', () => {
+  it('throws 400 when Key person 1 important DATE is a non-ISO string', async () => {
+    await expect(
+      repo.update('uuid-cust-1', { 'Key person 1 (important DATE)': '15.03' }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('YYYY-MM-DD') });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('throws 400 when Key person 2 important DATE is a freeform string', async () => {
+    await expect(
+      repo.update('uuid-cust-1', { 'Key person 2 (important DATE)': 'March 15' }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('YYYY-MM-DD') });
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('accepts a valid ISO date (YYYY-MM-DD) without throwing', async () => {
+    const kpRow = { id: 'kp-1', name: 'Bob', importantDate: null, deletedAt: null, createdAt: new Date() };
+    const kpRowUpdated = { ...kpRow, importantDate: '1990-03-15' };
+    // db.select calls: (1) customer row fetch, (2) existing KP fetch, (3) final KP fetch
+    db.select
+      .mockReturnValueOnce(makeChain([makeRow()]))    // customer fetch (no colValues path)
+      .mockReturnValueOnce(makeChain([kpRow]))        // existing KP rows
+      .mockReturnValueOnce(makeChain([kpRowUpdated])); // final KP rows
+    // db.update for the KP row
+    const returning = vi.fn().mockResolvedValue([]);
+    const where     = vi.fn().mockReturnValue({ returning });
+    const set       = vi.fn().mockReturnValue({ where });
+    db.update.mockReturnValue({ set });
+    // Should not throw
+    await expect(
+      repo.update('uuid-cust-1', { 'Key person 1 (important DATE)': '1990-03-15' }),
+    ).resolves.toBeDefined();
+  });
+
+  it('accepts null (clearing the date) without throwing', async () => {
+    const kpRow = { id: 'kp-1', name: 'Bob', importantDate: '1990-03-15', deletedAt: null, createdAt: new Date() };
+    const kpRowCleared = { ...kpRow, importantDate: null };
+    db.select
+      .mockReturnValueOnce(makeChain([makeRow()]))    // customer fetch
+      .mockReturnValueOnce(makeChain([kpRow]))        // existing KP rows
+      .mockReturnValueOnce(makeChain([kpRowCleared])); // final KP rows
+    const returning = vi.fn().mockResolvedValue([]);
+    const where     = vi.fn().mockReturnValue({ returning });
+    const set       = vi.fn().mockReturnValue({ where });
+    db.update.mockReturnValue({ set });
+    await expect(
+      repo.update('uuid-cust-1', { 'Key person 1 (important DATE)': null }),
+    ).resolves.toBeDefined();
+  });
+});
+
 // ── listOrders ──
 describe('repo.listOrders', () => {
   it('merges legacy + app orders, sorts date-desc, nulls last', async () => {

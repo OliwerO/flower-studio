@@ -99,10 +99,14 @@ function KeyPersonSlot({ slot, cust, onPatch, autoFocus, onDone }) {
       </div>
       <div className="mt-1">
         <p className="text-[10px] text-ios-tertiary mb-0.5">{t.importantDate}</p>
-        <InlineEdit
-          value={date || ''}
-          onSave={v => onPatch(slot.dateField, v || null)}
-          placeholder="—"
+        {/* Use a native date input so the browser enforces YYYY-MM-DD — prevents
+            free-text reaching the Postgres `date` column and causing a 500. */}
+        <input
+          type="date"
+          defaultValue={date || ''}
+          onBlur={e => onPatch(slot.dateField, e.target.value || null)}
+          className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+            focus:border-brand-500 focus:outline-none py-0.5 cursor-pointer"
         />
       </div>
     </div>
