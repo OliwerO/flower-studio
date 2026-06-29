@@ -103,7 +103,9 @@ system-prompt tool catalog **from the registry**.
 > assistant never reads `STOCK_Y_MODEL` itself.
 
 **Packs (each independently testable):**
-- **orders** — `queryOrders({ dateField, from, to, status?, deliveryType?, source?, paymentStatus?, paymentMethod?, customerId? })` → count + capped list + totals (wraps `orderRepo.list()`); `breakdownOrders({ dimension, from, to })` → grouped counts/sums (answers "break down by delivery/pickup/source/payment/status/month").
+- **orders** — `queryOrders({ dateField, from, to, status?, deliveryType?, source?, paymentStatus?, paymentMethod?, customerId? })` → full aggregate (count + totals over the **entire** match) + a row list under an adaptive cap (wraps `orderRepo.list()`); `breakdownOrders({ dimension, from, to })` → grouped counts/sums (answers "break down by delivery/pickup/source/payment/status/month").
+
+  **Adaptive list cap (decision 2):** aggregates are **always computed over the full matching set** — only the row *list* is ever capped, so headline numbers ("142 orders, 18 400 zł in May") are always exact. An explicit bounded date range returns its rows in full up to a safety ceiling (`HARD_ROW_CEILING`, e.g. 250); a broad/open request caps the list at a soft default (`SOFT_ROW_CAP`, e.g. 50). When truncated, the result carries `{ truncated: true, matchedCount, shown }` and the answer says "showing first N of X — ask to see all"; a follow-up ("show all") re-queries uncapped/paginated. (Click-to-expand belongs with the future B rich-UI; conversational "show all" works in v1 markdown.)
 - **finance** — `financialSummary({ from, to })` → wraps the existing `/api/analytics` computation (revenue, margins, AOV, costs, waste).
 - **deliveries** — outcomes, failed-attempt counts, by driver.
 - **stock** — current levels by Variety, low/negative stock, write-offs in range. Uses `stockRepo.listGroupedByVariety` + `getEffectiveStock` (Y-model-correct by delegation).
@@ -112,7 +114,8 @@ system-prompt tool catalog **from the registry**.
 - **hours** — Florist Hours / payroll in range.
 
 **Build order (tracer-bullet vertical slices):** **orders + finance first**
-(proves the whole loop end-to-end with the owner's exact examples), then
+(proves the whole loop end-to-end with the owner's exact examples,
+dashboard-mounted), then **florist-app mount** (fast-follow), then
 deliveries → stock → purchasing → customers → hours. Each slice = its tools +
 tests, shippable alone.
 
@@ -123,8 +126,8 @@ tests, shippable alone.
 - Sessions in-memory (`sessionId → message history`), TTL eviction (mirrors `feedbackService`).
 
 ### 3. Frontend
-- `packages/shared/components/AskBlossomPanel.jsx` — message list + input + markdown render.
-- Mounted in **dashboard** (near FinancialTab) and **florist app**, both Owner-PIN-gated.
+- `packages/shared/components/AskBlossomPanel.jsx` — message list + input + markdown render. Built in `packages/shared` so mounting in a second app later is trivial.
+- **v1 mounts dashboard-only** (near FinancialTab), Owner-PIN-gated. **Florist-app mount is a fast-follow slice** (decision 3) — same shared component, just a second mount + that app's `translations.js` keys.
 - Russian UI via `t.xxx`; per-app `translations.js` define the new keys.
 
 ## Accuracy & security guardrails
@@ -178,7 +181,10 @@ assistant scope, but the assistant reveals where it's needed.
 - Any write/action ("create an order", "mark paid").
 - Non-owner roles (florist/driver access).
 
+## Resolved at design time
+- **List cap (decision 2):** adaptive — aggregates always over the full match; bounded period returns rows in full to `HARD_ROW_CEILING`; broad request caps at `SOFT_ROW_CAP` with conversational "show all". See orders pack above.
+- **Florist mount (decision 3):** fast-follow slice, not v1's first slice. Dashboard-only first.
+
 ## Open questions / to confirm at plan time
 - Exact env var name + default model id string (e.g. `ASSISTANT_MODEL`, default `claude-sonnet-4-6`).
-- List-result cap size for `queryOrders` (avoid dumping hundreds of rows into the model context).
-- Whether the florist-app mount is in the same slice as dashboard or a fast-follow.
+- Exact `SOFT_ROW_CAP` / `HARD_ROW_CEILING` values (50 / 250 are placeholders — tune to real order volumes).
