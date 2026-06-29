@@ -9,7 +9,18 @@ vi.mock('../services/assistantTools/index.js', () => ({
   TOOL_HANDLERS: { query_orders: vi.fn(async (input) => ({ matchedCount: 3, echo: input })) },
 }));
 
-import { ask } from '../services/assistantService.js';
+const { mockUpsert, mockGetById, mockList, mockRename, mockRemove } = vi.hoisted(() => ({
+  mockUpsert: vi.fn(async () => {}),
+  mockGetById: vi.fn(async () => null),
+  mockList: vi.fn(async () => []),
+  mockRename: vi.fn(async () => null),
+  mockRemove: vi.fn(async () => false),
+}));
+vi.mock('../repos/assistantConversationRepo.js', () => ({
+  upsert: mockUpsert, getById: mockGetById, list: mockList, rename: mockRename, remove: mockRemove,
+}));
+
+import { ask, toDisplayTurns, listConversations, getConversation, renameConversation, deleteConversation } from '../services/assistantService.js';
 import { TOOL_HANDLERS } from '../services/assistantTools/index.js';
 
 beforeEach(() => { vi.clearAllMocks(); });
@@ -112,5 +123,62 @@ describe('assistantService.ask', () => {
     const secondCallMessages = mockCreate.mock.calls[1][0].messages;
     expect(secondCallMessages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result'))).toBe(true);
     consoleSpy.mockRestore();
+  });
+});
+
+describe('assistant chat history', () => {
+  it('persists the conversation after a successful ask', async () => {
+    mockCreate.mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'hi' }] });
+    const r = await ask({ message: 'How many orders in May?' });
+    expect(mockUpsert).toHaveBeenCalledTimes(1);
+    const arg = mockUpsert.mock.calls[0][0];
+    expect(arg.id).toBe(r.sessionId);
+    expect(arg.title).toBe('How many orders in May?'); // derived from first user message
+    expect(Array.isArray(arg.messages)).toBe(true);
+  });
+
+  it('rehydrates a missing session from PG before answering', async () => {
+    mockGetById.mockResolvedValueOnce({
+      id: 'old-1', title: 't',
+      messages: [{ role: 'user', content: 'earlier q' }, { role: 'assistant', content: [{ type: 'text', text: 'earlier a' }] }],
+    });
+    mockCreate.mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'follow-up answer' }] });
+    await ask({ sessionId: 'old-1', message: 'and June?' });
+    expect(mockGetById).toHaveBeenCalledWith('old-1');
+    const sentMessages = mockCreate.mock.calls[0][0].messages;
+    expect(sentMessages[0]).toMatchObject({ role: 'user', content: 'earlier q' }); // prior turn restored
+    expect(sentMessages.at(-1)).toMatchObject({ role: 'user', content: 'and June?' });
+  });
+
+  it('does not throw when persistence fails', async () => {
+    mockUpsert.mockRejectedValueOnce(new Error('db down'));
+    mockCreate.mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] });
+    await expect(ask({ message: 'q' })).resolves.toMatchObject({ answer: 'ok' });
+  });
+
+  it('toDisplayTurns keeps user text + assistant text, drops tool turns', () => {
+    const turns = toDisplayTurns([
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: [{ type: 'tool_use', id: 't', name: 'x', input: {} }] }, // pure tool_use → drop
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: 't', content: '{}' }] },  // tool_result → drop
+      { role: 'assistant', content: [{ type: 'text', text: 'answer' }] },
+    ]);
+    expect(turns).toEqual([{ role: 'user', text: 'q1' }, { role: 'assistant', text: 'answer' }]);
+  });
+
+  it('getConversation projects stored messages to display turns', async () => {
+    mockGetById.mockResolvedValueOnce({ id: 'c1', title: 'T', messages: [{ role: 'user', content: 'hello' }] });
+    expect(await getConversation('c1')).toEqual({ id: 'c1', title: 'T', messages: [{ role: 'user', text: 'hello' }] });
+    mockGetById.mockResolvedValueOnce(null);
+    expect(await getConversation('nope')).toBeNull();
+  });
+
+  it('list/rename/delete delegate to the repo', async () => {
+    mockList.mockResolvedValueOnce([{ id: 'a', title: 't', updatedAt: 'x', messageCount: 2 }]);
+    expect(await listConversations()).toHaveLength(1);
+    mockRename.mockResolvedValueOnce({ id: 'a', title: 'new' });
+    expect(await renameConversation('a', 'new')).toMatchObject({ title: 'new' });
+    mockRemove.mockResolvedValueOnce(true);
+    expect(await deleteConversation('a')).toBe(true);
   });
 });

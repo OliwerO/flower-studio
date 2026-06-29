@@ -1,6 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import crypto from 'node:crypto';
 import { TOOL_DEFS, TOOL_HANDLERS } from './assistantTools/index.js';
+import * as conversationRepo from '../repos/assistantConversationRepo.js';
 
 const anthropic = new Anthropic();
 const MODEL = process.env.ASSISTANT_MODEL || 'claude-sonnet-4-6';
@@ -27,9 +28,43 @@ function systemPrompt(today) {
   ].join('\n');
 }
 
+// First user message → conversation title, trimmed to 80 chars.
+function deriveTitle(messages) {
+  const firstUser = (messages || []).find(m => m.role === 'user' && typeof m.content === 'string');
+  const raw = (firstUser?.content || '').trim();
+  if (!raw) return '';
+  return raw.length > 80 ? raw.slice(0, 80).trimEnd() + '…' : raw;
+}
+
+// Project the canonical Anthropic message array to UI display turns:
+// keep user text + assistant text, drop tool_use / tool_result blocks.
+export function toDisplayTurns(messages) {
+  const turns = [];
+  for (const m of messages || []) {
+    if (m.role === 'user') {
+      if (typeof m.content === 'string') turns.push({ role: 'user', text: m.content });
+    } else if (m.role === 'assistant') {
+      const text = typeof m.content === 'string'
+        ? m.content
+        : (Array.isArray(m.content) ? m.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() : '');
+      if (text) turns.push({ role: 'assistant', text });
+    }
+  }
+  return turns;
+}
+
 export async function ask({ sessionId, message }) {
   const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw' }).format(new Date());
   let session = sessionId ? sessions.get(sessionId) : null;
+  if (!session && sessionId) {
+    // Reopened conversation after a restart / cache miss — rehydrate from PG.
+    try {
+      const row = await conversationRepo.getById(sessionId);
+      if (row) { session = { messages: row.messages, createdAt: Date.now() }; sessions.set(sessionId, session); }
+    } catch (err) {
+      console.error('[ASSISTANT] failed to rehydrate conversation:', err);
+    }
+  }
   if (!session) {
     sessionId = crypto.randomUUID();
     session = { messages: [], createdAt: Date.now() };
@@ -40,7 +75,7 @@ export async function ask({ sessionId, message }) {
   const toolResults = [];
   let iterations = 0;
   let response = await anthropic.messages.create({
-    model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: session.messages,
+    model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: [...session.messages],
   });
 
   while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
@@ -61,7 +96,7 @@ export async function ask({ sessionId, message }) {
     }
     session.messages.push({ role: 'user', content: resultBlocks });
     response = await anthropic.messages.create({
-      model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: session.messages,
+      model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: [...session.messages],
     });
   }
 
@@ -78,5 +113,29 @@ export async function ask({ sessionId, message }) {
     session.messages.push({ role: 'assistant', content: response.content });
     answer = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || CAP_FALLBACK;
   }
+  try {
+    await conversationRepo.upsert({ id: sessionId, title: deriveTitle(session.messages), messages: session.messages });
+  } catch (err) {
+    console.error('[ASSISTANT] failed to persist conversation:', err);
+  }
   return { sessionId, answer, toolResults };
+}
+
+export async function listConversations() {
+  return conversationRepo.list();
+}
+
+export async function getConversation(id) {
+  const row = await conversationRepo.getById(id);
+  if (!row) return null;
+  return { id: row.id, title: row.title, messages: toDisplayTurns(row.messages) };
+}
+
+// Title is validated non-empty by the route; returns null when no row matched.
+export async function renameConversation(id, title) {
+  return conversationRepo.rename(id, title);
+}
+
+export async function deleteConversation(id) {
+  return conversationRepo.remove(id);
 }
