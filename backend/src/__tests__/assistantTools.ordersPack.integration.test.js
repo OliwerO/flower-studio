@@ -49,4 +49,36 @@ describe('ordersPack.breakdownOrdersHandler', () => {
     expect(r.total).toBe(3);
     expect(r.breakdown).toEqual({ Delivery: 2, Pickup: 1 });
   });
+  it('rejects an unknown breakdown dimension', async () => {
+    await expect(breakdownOrdersHandler({ dimension: 'bogus' })).rejects.toThrow(/Unknown breakdown dimension/);
+  });
+});
+
+describe('ordersPack.queryOrdersHandler — adaptive cap (SOFT_ROW_CAP=50)', () => {
+  let capHarness;
+  beforeEach(async () => {
+    capHarness = await setupPgHarness();
+    dbHolder.db = capHarness.db;
+    // Insert 51 non-cancelled orders with no specific date range context.
+    const rows = Array.from({ length: 51 }, (_, i) => ({
+      appOrderId: `BULK-${i}`,
+      customerId: 'cust-test',
+      orderDate: '2026-05-15',
+      requiredBy: '2026-05-16',
+      deliveryType: 'Delivery',
+      status: 'New',
+      paymentStatus: 'Unpaid',
+      source: 'Wix',
+    }));
+    await capHarness.db.insert(orders).values(rows);
+  });
+  afterEach(async () => { await teardownPgHarness(capHarness); dbHolder.db = null; });
+
+  it('caps unbounded query at 50 and sets truncated=true', async () => {
+    const r = await queryOrdersHandler({});
+    expect(r.matchedCount).toBe(51);
+    expect(r.shown).toBe(50);
+    expect(r.truncated).toBe(true);
+    expect(r.orders).toHaveLength(50);
+  });
 });

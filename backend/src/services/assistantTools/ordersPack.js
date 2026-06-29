@@ -46,8 +46,8 @@ export async function queryOrdersHandler(input) {
 const DIMENSION_KEY = {
   deliveryType: o => o['Delivery Type'] || 'Unknown',
   source: o => o.Source || 'Unknown',
-  status: o => o.Status,
-  paymentStatus: o => o['Payment Status'],
+  status: o => o.Status || 'Unknown',
+  paymentStatus: o => o['Payment Status'] || 'Unknown',
   paymentMethod: o => o['Payment Method'] || 'Unknown',
 };
 
