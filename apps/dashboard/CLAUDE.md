@@ -9,7 +9,7 @@ The owner needs two things: (1) daily operational control — same visibility as
 | Tab | Component | Purpose |
 |-----|-----------|---------|
 | Today | DayToDayTab.jsx | Kanban board of today's orders, pending deliveries, low stock alerts, unpaid orders. Cross-tab navigation to drill into details. |
-| Orders | OrdersTab.jsx | Full order list with filters (status, date, source, payment). Opens OrderDetailPanel for inline editing. |
+| Orders | OrdersTab.jsx | Full order list with per-column filter popovers (# / Order date / Customer / Bouquet / Status+Payment / Type / Fulfilment date / Total). Fulfilment column split into Type (🚗/🏪) + date cells. Date inputs use custom DatePicker (day-month-year). Shared `orderFilters` util drives filter state. Opens OrderDetailPanel for inline editing. |
 | New Order | NewOrderTab.jsx | 4-step order creation wizard (same steps as florist: Customer → Bouquet → Details → Review). |
 | Stock | StockTab.jsx | Inventory management with optimistic qty adjustments, write-off, visibility toggles, stock receive form. Uses `getEffectiveStock` from shared. Y-model collapsed Variety list under `STOCK_Y_MODEL` (TypeGroupHeader + VarietyListItem + BatchTracePanel inline from shared); legacy flat list when flag off. |
 | Customers | CustomersTab.jsx | CRM — customer list with segmentation (RFM scoring), detail panel with order history, editable fields. |
@@ -35,6 +35,7 @@ The owner needs two things: (1) daily operational control — same visibility as
 | PremadeBouquetCreateModal.jsx / PremadeBouquetList.jsx | Premade bouquet template editor + listing. |
 | TopProductsWidget.jsx / SourceChart.jsx / SummaryCard.jsx / Pills.jsx | Financial-tab building blocks. |
 | InlineEdit.jsx / DatePicker.jsx / Skeleton.jsx / Toast.jsx / HelpPanel.jsx | UI primitives. DatePicker is duplicated with florist — TODO move to shared. |
+| order/ColumnFilterPopover.jsx | Generic header `▾` popover shell for per-column filters. Props: `active` (highlights ▾ + shows dot), `title` (popover heading), `children` (filter controls). Consumed by OrdersTab for all 8 column header popovers. |
 | `admin/`, `order/`, `products/`, `settings/`, `steps/` | Sub-folders for AdminTab panels, OrderDetailPanel sections, Products tab subpanels, Settings sections, NewOrder wizard steps. |
 
 ## Dashboard ↔ Florist Feature Parity (IMPORTANT)

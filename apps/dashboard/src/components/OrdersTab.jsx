@@ -3,13 +3,15 @@
 // filterable, and editable from one screen.
 // Accepts initialFilter from cross-tab navigation (Today tab clicks).
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import OrderDetailPanel from './OrderDetailPanel.jsx';
 import PremadeBouquetList from './PremadeBouquetList.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
+import DatePicker from './DatePicker.jsx';
+import ColumnFilterPopover from './order/ColumnFilterPopover.jsx';
 import {
   EMPTY_ORDER_FILTER, buildOrderQueryParams, orderMatchesClientFilter,
   activeOrderFilterCount, clearOrderFilter,
@@ -87,7 +89,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     requiredByFrom: f.dateFrom || monthStart(), // current default range = fulfilment date
     requiredByTo: f.dateTo || todayStr(),
   }));
-  const setFilterField = (key, value) => setFilter(prev => ({ ...prev, [key]: value }));
+  const setFilterField = useCallback((key, value) => setFilter(prev => ({ ...prev, [key]: value })), []);
   const [expandedId, setExpanded] = useState(f.orderId || null);
   // When the owner navigates here from a customer timeline, only the clicked
   // order should be visible — otherwise it's buried among all other orders
@@ -152,6 +154,18 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders, fetchKey, isActive]);
+
+  // Derive distinct payment-method and source values from the loaded orders for
+  // use in the Status column's bundled popover. No memoization needed — only
+  // recomputed when orders change (same cadence as the rest of the render).
+  const paymentMethods = useMemo(
+    () => [...new Set(orders.map(o => o['Payment Method']).filter(Boolean))],
+    [orders]
+  );
+  const sources = useMemo(
+    () => [...new Set(orders.map(o => o['Source']).filter(Boolean))],
+    [orders]
+  );
 
   // Orders with no delivery/pickup date — these get sorted to the bottom of
   // every default view and become "lost". Counted from the unfiltered list so
@@ -301,13 +315,12 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             {t.upcoming || 'Today & upcoming'}
           </button>
           {!upcomingMode && (
-            <>
-              <input type="date" value={filter.requiredByFrom} onChange={e => setFilterField('requiredByFrom', e.target.value)}
-                className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] text-ios-tertiary">{t.byFulfilmentDate}</span>
+              <DatePicker value={filter.requiredByFrom} onChange={v => setFilterField('requiredByFrom', v)} placeholder={t.dateFrom} />
               <span className="text-xs text-ios-tertiary">—</span>
-              <input type="date" value={filter.requiredByTo} onChange={e => setFilterField('requiredByTo', e.target.value)}
-                className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
-            </>
+              <DatePicker value={filter.requiredByTo} onChange={v => setFilterField('requiredByTo', v)} placeholder={t.dateTo} />
+            </div>
           )}
         </div>
 
@@ -360,15 +373,46 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       )}
 
       {/* Active filter badges — show when any filter is active so the user
-          always has a path to undo state. Used to only track cross-tab filters,
-          which let search / dates / noDateOnly silently persist. */}
-      {(filter.source || filter.paymentStatus || filter.deliveryType || filter.paymentMethod || filter.excludeCancelled || filter.status || search || noDateOnly) && (
+          always has a path to undo state. Dates (requiredByFrom/To) are
+          excluded from this gate since they're always set — they surface
+          instead through the column-header popover ▾ affordance. */}
+      {(filter.source || filter.paymentStatus || filter.deliveryType || filter.paymentMethod || filter.excludeCancelled || filter.status || filter.orderIdQuery || filter.customerQuery || filter.bouquetQuery || filter.priceMin != null || filter.priceMax != null || filter.orderDateFrom || filter.orderDateTo || search || noDateOnly) && (
         <div className="flex flex-wrap items-center gap-2 px-1">
           <span className="text-[11px] text-ios-tertiary">{t.activeFilters}:</span>
-          {filter.source && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-brand-100 text-brand-700 text-xs font-medium">
-              {t.source}: {filter.source}
-              <button onClick={() => setFilterField('source', '')} className="ml-0.5 text-brand-400 hover:text-brand-700">×</button>
+          {filter.orderIdQuery && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+              #{filter.orderIdQuery}
+              <button onClick={() => setFilterField('orderIdQuery', '')} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+            </span>
+          )}
+          {filter.customerQuery && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+              {t.colCustomer || t.customer}: {filter.customerQuery}
+              <button onClick={() => setFilterField('customerQuery', '')} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+            </span>
+          )}
+          {filter.bouquetQuery && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+              {t.colBouquet}: {filter.bouquetQuery}
+              <button onClick={() => setFilterField('bouquetQuery', '')} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+            </span>
+          )}
+          {(filter.priceMin != null || filter.priceMax != null) && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+              {t.orderTotal || 'Total'}: {filter.priceMin ?? '…'}–{filter.priceMax ?? '…'} {t.zl}
+              <button onClick={() => { setFilterField('priceMin', null); setFilterField('priceMax', null); }} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+            </span>
+          )}
+          {(filter.orderDateFrom || filter.orderDateTo) && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-700 text-xs font-medium">
+              {t.orderDate}: {filter.orderDateFrom || '…'}–{filter.orderDateTo || '…'}
+              <button onClick={() => { setFilterField('orderDateFrom', ''); setFilterField('orderDateTo', ''); }} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+            </span>
+          )}
+          {filter.status && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
+              {t.labelStatus}: {filter.status}
+              <button onClick={() => setFilterField('status', '')} className="ml-0.5 text-indigo-400 hover:text-indigo-700">×</button>
             </span>
           )}
           {filter.paymentStatus === 'Paid' && (
@@ -377,16 +421,34 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               <button onClick={() => setFilterField('paymentStatus', '')} className="ml-0.5 text-emerald-400 hover:text-emerald-700">×</button>
             </span>
           )}
-          {filter.deliveryType && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">
-              {filter.deliveryType}
-              <button onClick={() => setFilterField('deliveryType', '')} className="ml-0.5 text-sky-400 hover:text-sky-700">×</button>
+          {filter.paymentStatus === 'Unpaid' && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">
+              {t.paymentStatus}: {t.unpaid}
+              <button onClick={() => setFilterField('paymentStatus', '')} className="ml-0.5 text-red-400 hover:text-red-700">×</button>
+            </span>
+          )}
+          {filter.paymentStatus === 'Partial' && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-orange-100 text-orange-700 text-xs font-medium">
+              {t.paymentStatus}: {t.partial}
+              <button onClick={() => setFilterField('paymentStatus', '')} className="ml-0.5 text-orange-400 hover:text-orange-700">×</button>
             </span>
           )}
           {filter.paymentMethod && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-medium">
               {t.paymentMethod}: {filter.paymentMethod}
               <button onClick={() => setFilterField('paymentMethod', '')} className="ml-0.5 text-purple-400 hover:text-purple-700">×</button>
+            </span>
+          )}
+          {filter.source && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-brand-100 text-brand-700 text-xs font-medium">
+              {t.source}: {filter.source}
+              <button onClick={() => setFilterField('source', '')} className="ml-0.5 text-brand-400 hover:text-brand-700">×</button>
+            </span>
+          )}
+          {filter.deliveryType && (
+            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">
+              {filter.deliveryType}
+              <button onClick={() => setFilterField('deliveryType', '')} className="ml-0.5 text-sky-400 hover:text-sky-700">×</button>
             </span>
           )}
           {filter.excludeCancelled && (
@@ -407,22 +469,10 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               <button onClick={() => setNoDateOnly(false)} className="ml-0.5 text-amber-400 hover:text-amber-700">×</button>
             </span>
           )}
-          {filter.status && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
-              {t.labelStatus || 'Status'}: {filter.status}
-              <button onClick={() => setFilterField('status', '')} className="ml-0.5 text-indigo-400 hover:text-indigo-700">×</button>
-            </span>
-          )}
-          {filter.paymentStatus === 'Unpaid' && (
-            <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">
-              {t.paymentStatus}: {t.unpaid}
-              <button onClick={() => setFilterField('paymentStatus', '')} className="ml-0.5 text-red-400 hover:text-red-700">×</button>
-            </span>
-          )}
           <button
             onClick={() => {
-              // Preserve the date range on reset — dates are always active and
-              // clearing them would silently switch from the month view to all-time.
+              // Preserve the fulfilment date range on reset — dates are always
+              // active and clearing them would show all-time orders unexpectedly.
               setFilter(prev => ({
                 ...clearOrderFilter(),
                 requiredByFrom: prev.requiredByFrom,
@@ -508,14 +558,196 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       {!showPremade && !loading && sorted.length > 0 && (
         <div className="px-4 py-2 flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-ios-tertiary">
           <span className="w-4 shrink-0" />
-          <span className="w-10 shrink-0">{t.colOrderId || '#'}</span>
-          <span className="w-20 shrink-0">{t.orderDate || 'Order date'}</span>
-          <span className="w-36">{t.colCustomer || t.customer || 'Customer'}</span>
-          <span className="flex-1">{t.colBouquet || t.bouquetComposition || 'Bouquet'}</span>
-          <span className="shrink-0 w-20 text-right">{t.labelStatus || 'Status'}</span>
-          <span className="shrink-0 w-28 text-right">{t.colFulfillment || (t.deliveryType || 'Fulfilment')}</span>
+          {/* # — Order ID */}
+          <span className="w-10 shrink-0 flex items-center">
+            {t.colOrderId || '#'}
+            <ColumnFilterPopover active={!!filter.orderIdQuery} title={t.colOrderId || '#'}>
+              <input
+                className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                value={filter.orderIdQuery}
+                onChange={e => setFilterField('orderIdQuery', e.target.value)}
+                placeholder="#"
+              />
+            </ColumnFilterPopover>
+          </span>
+          {/* Order date */}
+          <span className="w-20 shrink-0 flex items-center">
+            {t.orderDate || 'Order date'}
+            <ColumnFilterPopover active={!!(filter.orderDateFrom || filter.orderDateTo)} title={t.orderDate || 'Order date'}>
+              <div className="space-y-1.5 min-w-[160px]">
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateFrom}</p>
+                  <DatePicker value={filter.orderDateFrom} onChange={v => setFilterField('orderDateFrom', v)} placeholder={t.dateFrom} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateTo}</p>
+                  <DatePicker value={filter.orderDateTo} onChange={v => setFilterField('orderDateTo', v)} placeholder={t.dateTo} />
+                </div>
+              </div>
+            </ColumnFilterPopover>
+          </span>
+          {/* Customer */}
+          <span className="w-36 flex items-center">
+            {t.colCustomer || t.customer || 'Customer'}
+            <ColumnFilterPopover active={!!filter.customerQuery} title={t.colCustomer || t.customer || 'Customer'}>
+              <input
+                className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                value={filter.customerQuery}
+                onChange={e => setFilterField('customerQuery', e.target.value)}
+                placeholder={t.colCustomer || t.customer || 'Customer'}
+              />
+            </ColumnFilterPopover>
+          </span>
+          {/* Bouquet */}
+          <span className="flex-1 flex items-center">
+            {t.colBouquet || t.bouquetComposition || 'Bouquet'}
+            <ColumnFilterPopover active={!!filter.bouquetQuery} title={t.colBouquet || t.bouquetComposition || 'Bouquet'}>
+              <input
+                className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                value={filter.bouquetQuery}
+                onChange={e => setFilterField('bouquetQuery', e.target.value)}
+                placeholder={t.colBouquet || 'Bouquet'}
+              />
+            </ColumnFilterPopover>
+          </span>
+          {/* Status (bundled: status + payment status + payment method + source) */}
+          <span className="shrink-0 w-20 text-right flex items-center justify-end">
+            {t.labelStatus}
+            <ColumnFilterPopover
+              active={!!(filter.status || filter.paymentStatus || filter.paymentMethod || filter.source)}
+              title={t.labelStatus}
+            >
+              <div className="space-y-3 min-w-[200px]">
+                {/* Status */}
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-1">{t.labelStatus}</p>
+                  <select
+                    className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                    value={filter.status}
+                    onChange={e => setFilterField('status', e.target.value)}
+                  >
+                    {getStatusOptions().map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+                {/* Payment status */}
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-1">{t.paymentStatus}</p>
+                  <div className="flex gap-1 flex-wrap">
+                    {['', 'Paid', 'Unpaid', 'Partial'].map(v => (
+                      <button
+                        key={v}
+                        type="button"
+                        onClick={() => setFilterField('paymentStatus', v)}
+                        className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                          filter.paymentStatus === v
+                            ? 'bg-brand-600 text-white'
+                            : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+                        }`}
+                      >
+                        {v || t.allStatuses}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                {/* Payment method */}
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-1">{t.paymentMethod}</p>
+                  <select
+                    className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                    value={filter.paymentMethod}
+                    onChange={e => setFilterField('paymentMethod', e.target.value)}
+                  >
+                    <option value="">{t.allStatuses}</option>
+                    {paymentMethods.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                {/* Source */}
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-1">{t.source}</p>
+                  <select
+                    className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                    value={filter.source}
+                    onChange={e => setFilterField('source', e.target.value)}
+                  >
+                    <option value="">{t.allStatuses}</option>
+                    {sources.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+              </div>
+            </ColumnFilterPopover>
+          </span>
+          {/* Type — split from Fulfilment (w-12 matches body cell) */}
+          <span className="shrink-0 w-12 flex items-center">
+            {t.deliveryType}
+            <ColumnFilterPopover active={!!filter.deliveryType} title={t.deliveryType}>
+              <div className="flex gap-1 flex-wrap">
+                {[['', t.allStatuses], ['Delivery', t.delivery || 'Delivery'], ['Pickup', t.pickup || 'Pickup']].map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    onClick={() => setFilterField('deliveryType', v)}
+                    className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
+                      filter.deliveryType === v
+                        ? 'bg-brand-600 text-white'
+                        : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </ColumnFilterPopover>
+          </span>
+          {/* Fulfilment date — split from Type (w-24 matches body cell).
+              Active compares against the initial defaults (monthStart/today)
+              since those are always set — comparing to "set at all" would keep
+              the dot permanently lit and stop signalling "filtered here". */}
+          <span className="shrink-0 w-24 text-right flex items-center justify-end">
+            {t.colFulfillment}
+            <ColumnFilterPopover active={filter.requiredByFrom !== monthStart() || filter.requiredByTo !== todayStr()} title={t.byFulfilmentDate}>
+              <div className="space-y-1.5 min-w-[160px]">
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateFrom}</p>
+                  <DatePicker value={filter.requiredByFrom} onChange={v => setFilterField('requiredByFrom', v)} placeholder={t.dateFrom} />
+                </div>
+                <div>
+                  <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateTo}</p>
+                  <DatePicker value={filter.requiredByTo} onChange={v => setFilterField('requiredByTo', v)} placeholder={t.dateTo} />
+                </div>
+              </div>
+            </ColumnFilterPopover>
+          </span>
           <span className="shrink-0 w-2" />{/* margin dot column */}
-          <span className="shrink-0 w-20 text-right">{t.orderTotal || t.total || 'Total'}</span>
+          {/* Total */}
+          <span className="shrink-0 w-20 text-right flex items-center justify-end">
+            {t.orderTotal || t.total || 'Total'}
+            <ColumnFilterPopover active={filter.priceMin != null || filter.priceMax != null} title={t.orderTotal || 'Total'}>
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] text-ios-tertiary w-6 shrink-0">{t.filterMin}</label>
+                  <input
+                    type="number"
+                    className="flex-1 px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                    value={filter.priceMin ?? ''}
+                    placeholder={t.filterMin}
+                    onChange={e => setFilterField('priceMin', Number(e.target.value) || null)}
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] text-ios-tertiary w-6 shrink-0">{t.filterMax}</label>
+                  <input
+                    type="number"
+                    className="flex-1 px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
+                    value={filter.priceMax ?? ''}
+                    placeholder={t.filterMax}
+                    onChange={e => setFilterField('priceMax', Number(e.target.value) || null)}
+                  />
+                </div>
+              </div>
+            </ColumnFilterPopover>
+          </span>
           {unpaidOnly && <span className="shrink-0 w-16 text-right">{t.colAge || t.daysOld || 'Age'}</span>}
           <span className="shrink-0 w-4" />{/* chevron */}
         </div>
@@ -563,21 +795,17 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               }`}>
                 {order.Status}
               </span>
-              {/* Fulfilment — icon + due date for both delivery and pickup.
-                  Delivery Date is only set when the order has a delivery
-                  record; pickup orders keep their due date on Required By. */}
-              <span className="text-xs shrink-0 flex items-center gap-1">
+              {/* Type — split from Fulfilment, w-12 matches header */}
+              <span className="text-xs shrink-0 w-12">
                 {order['Delivery Type'] === 'Delivery' ? '🚗' : '🏪'}
+              </span>
+              {/* Fulfilment date — split from Type, w-24 matches header */}
+              <span className="text-xs shrink-0 w-24 text-ios-tertiary">
                 {(() => {
                   const dueDate = order['Delivery Date'] || order['Required By'];
                   const dueTime = order['Delivery Time'];
-                  if (!dueDate && !dueTime) return null;
-                  return (
-                    <span className="text-ios-tertiary">
-                      {fmtDate(dueDate)}
-                      {dueTime ? ` · ${dueTime}` : ''}
-                    </span>
-                  );
+                  if (!dueDate && !dueTime) return '—';
+                  return `${fmtDate(dueDate) || ''}${dueTime ? ` · ${dueTime}` : ''}`;
                 })()}
               </span>
               {/* Margin dot — green ≥55%, amber ≥40%, red <40%, gray if unknown */}
