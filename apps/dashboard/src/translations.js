@@ -1120,6 +1120,13 @@ const en = {
   assistantThinking:    'Thinking…',
   assistantError:       'Failed to get a response',
   assistantEmpty:       'Ask a question about your data — e.g. "how many orders in May?"',
+  assistantHistory:     'Chats',
+  assistantNewChat:     '+ New chat',
+  assistantNoHistory:   'No saved chats yet',
+  assistantUntitled:   'Untitled',
+  assistantRename:      'Rename',
+  assistantDelete:      'Delete',
+  assistantDeleteConfirm: 'Delete?',
 };
 
 const ru = {
@@ -2241,6 +2248,13 @@ const ru = {
   assistantThinking:    'Думаю…',
   assistantError:       'Не удалось получить ответ',
   assistantEmpty:       'Задайте вопрос о ваших данных — например, «сколько заказов в мае?»',
+  assistantHistory:     'Чаты',
+  assistantNewChat:     '+ Новый чат',
+  assistantNoHistory:   'Пока нет сохранённых чатов',
+  assistantUntitled:   'Без названия',
+  assistantRename:      'Переименовать',
+  assistantDelete:      'Удалить',
+  assistantDeleteConfirm: 'Удалить?',
 };
 
 // ── Proxy-based dynamic translation ──

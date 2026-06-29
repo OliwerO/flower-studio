@@ -2,12 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AskBlossomPanel from '../components/AskBlossomPanel.jsx';
 
-vi.mock('../api/client.js', () => ({ default: { post: vi.fn() } }));
+vi.mock('../api/client.js', () => ({ default: { post: vi.fn(), get: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 import client from '../api/client.js';
 
-const t = { assistantPlaceholder: 'Спросите…', assistantSend: 'Спросить', assistantThinking: 'Думаю…', assistantError: 'Ошибка', assistantEmpty: 'Задайте вопрос о ваших данных' };
+const t = { assistantPlaceholder: 'Спросите…', assistantSend: 'Спросить', assistantThinking: 'Думаю…', assistantError: 'Ошибка', assistantEmpty: 'Задайте вопрос о ваших данных', assistantHistory: 'Чаты', assistantNewChat: '+ Новый чат', assistantNoHistory: 'Нет чатов', assistantUntitled: 'Без названия', assistantRename: 'Переименовать', assistantDelete: 'Удалить', assistantDeleteConfirm: 'Удалить?' };
 
-beforeEach(() => vi.clearAllMocks());
+beforeEach(() => { vi.clearAllMocks(); client.get.mockResolvedValue({ data: [] }); });
 
 describe('AskBlossomPanel', () => {
   it('sends a question and renders the markdown answer', async () => {
@@ -53,5 +53,52 @@ describe('AskBlossomPanel', () => {
     fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'x' } });
     fireEvent.click(screen.getByText('Спросить'));
     expect(await screen.findByText('boom')).toBeInTheDocument();
+  });
+
+  it('lists saved conversations on mount', async () => {
+    client.get.mockResolvedValueOnce({ data: [{ id: 'c1', title: 'May orders', updatedAt: 'x', messageCount: 2 }] });
+    render(<AskBlossomPanel t={t} />);
+    expect(await screen.findByText('May orders')).toBeInTheDocument();
+  });
+
+  it('reopens a conversation when its row is clicked', async () => {
+    client.get
+      .mockResolvedValueOnce({ data: [{ id: 'c1', title: 'May orders', updatedAt: 'x', messageCount: 2 }] }) // mount list
+      .mockResolvedValueOnce({ data: { id: 'c1', title: 'May orders', messages: [{ role: 'user', text: 'q1' }, { role: 'assistant', text: 'a1' }] } }); // load
+    render(<AskBlossomPanel t={t} />);
+    fireEvent.click(await screen.findByText('May orders'));
+    expect(await screen.findByText('q1')).toBeInTheDocument();
+    expect(await screen.findByText('a1')).toBeInTheDocument();
+    expect(client.get).toHaveBeenLastCalledWith('/assistant/conversations/c1');
+  });
+
+  it('New chat clears the current conversation', async () => {
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'a', toolResults: [] } });
+    render(<AskBlossomPanel t={t} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'q' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    await screen.findByText('a');
+    fireEvent.click(screen.getByText('+ Новый чат'));
+    expect(screen.queryByText('a')).not.toBeInTheDocument();
+  });
+
+  it('refreshes the history list after sending', async () => {
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'a', toolResults: [] } });
+    render(<AskBlossomPanel t={t} />);
+    await waitFor(() => expect(client.get).toHaveBeenCalledTimes(1)); // mount
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'q' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    await screen.findByText('a');
+    await waitFor(() => expect(client.get).toHaveBeenCalledTimes(2)); // refreshed after send
+  });
+
+  it('deletes a conversation via two-step confirm', async () => {
+    client.get.mockResolvedValueOnce({ data: [{ id: 'c1', title: 'May orders', updatedAt: 'x', messageCount: 2 }] });
+    client.delete.mockResolvedValueOnce({ status: 204 });
+    render(<AskBlossomPanel t={t} />);
+    await screen.findByText('May orders');
+    fireEvent.click(screen.getByLabelText('Удалить')); // trash → arms confirm
+    fireEvent.click(screen.getByText('Удалить?'));      // confirm
+    await waitFor(() => expect(client.delete).toHaveBeenCalledWith('/assistant/conversations/c1'));
   });
 });
