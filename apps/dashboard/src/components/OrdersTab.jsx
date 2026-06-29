@@ -57,7 +57,35 @@ function getSortOptions() {
     { value: 'deliveryDate', label: t.sortByDelivery || 'Delivery date' },
     { value: 'type',         label: t.sortByType || 'Delivery/Pickup' },
     { value: 'orderDate',    label: t.sortByOrderDate || 'Order date' },
+    { value: 'orderId',      label: t.sortByOrderId || 'Order #' },
+    { value: 'customer',     label: t.sortByCustomer || 'Customer' },
+    { value: 'bouquet',      label: t.sortByBouquet || 'Bouquet' },
+    { value: 'total',        label: t.sortByTotal || 'Total' },
   ];
+}
+
+// Clickable column-header label that drives the table sort. The header text is
+// the sort control (click to sort, click again to flip direction); the funnel
+// button beside it opens the column's filter popover — two distinct affordances.
+// Idle sortable columns reveal a faint ⇅ on hover; the active column shows a
+// brand-coloured ▲ / ▼.
+function SortHeader({ label, sortKey, sortBy, sortDir, onSort }) {
+  const active = sortBy === sortKey;
+  return (
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      className="group inline-flex items-center gap-0.5 hover:text-ios-secondary transition-colors"
+      title={`${t.sortBy}: ${label}`}
+    >
+      <span className={active ? 'text-brand-600' : ''}>{label}</span>
+      <span className={`text-[9px] leading-none ${
+        active ? 'text-brand-600' : 'text-ios-tertiary opacity-0 group-hover:opacity-100'
+      }`}>
+        {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </button>
+  );
 }
 
 function todayStr() {
@@ -112,23 +140,32 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   const initialLoaded = useRef(false);
   const fetchKeyRef = useRef('');
 
+  // Only the SERVER-supported filter fields drive a refetch. Client-only fields
+  // (orderIdQuery / customerQuery / bouquetQuery / price) are applied in memory
+  // below, so typing in a column-search box must NOT hit the network or flip
+  // `loading` — which would unmount the header inputs mid-keystroke and slam the
+  // popover shut after the first letter. Keep this dep list in sync with the
+  // server fields that buildOrderQueryParams reads.
+  // In upcoming mode, fetch by the backend's "upcoming" shortcut, but let
+  // `upcoming` own the date scope by blanking date fields first — all non-date
+  // server filters (status, paymentStatus, source, deliveryType, paymentMethod,
+  // excludeCancelled) still apply. Filter by delivery/pickup date (Required By),
+  // not submission date — the owner thinks "when does this go out" — #337.
+  const queryParams = useMemo(() => (
+    upcomingMode
+      ? { upcoming: '1', ...buildOrderQueryParams({ ...filter, requiredByFrom: '', requiredByTo: '', orderDateFrom: '', orderDateTo: '' }) }
+      : buildOrderQueryParams(filter)
+  ), [
+    upcomingMode,
+    filter.status, filter.source, filter.deliveryType, filter.paymentStatus,
+    filter.paymentMethod, filter.excludeCancelled,
+    filter.orderDateFrom, filter.orderDateTo, filter.requiredByFrom, filter.requiredByTo,
+  ]);
+
   const fetchOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      // In upcoming mode, fetch by the backend's "upcoming" shortcut — but
-      // status still applies (it was sent regardless of mode pre-refactor).
-      // Otherwise, route through the shared param builder so all filter
-      // fields (date range, status, payment, delivery type, etc.) are sent
-      // consistently. Filter by delivery/pickup date (Required By), not
-      // submission date — the owner thinks in terms of "when does this go
-      // out", not "when was it placed" — #337.
-      // In upcoming mode, let `upcoming` own the date scope by blanking date fields
-      // before building params — all non-date server filters (status, paymentStatus,
-      // source, deliveryType, paymentMethod, excludeCancelled) still apply.
-      const params = upcomingMode
-        ? { upcoming: '1', ...buildOrderQueryParams({ ...filter, requiredByFrom: '', requiredByTo: '', orderDateFrom: '', orderDateTo: '' }) }
-        : buildOrderQueryParams(filter);
-      const res = await client.get('/orders', { params });
+      const res = await client.get('/orders', { params: queryParams });
       setOrders(prev => {
         if (!initialLoaded.current) return res.data;
         const newMap = new Map(res.data.map(o => [o.id, o]));
@@ -146,9 +183,9 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     } finally {
       setLoading(false);
     }
-  }, [filter, upcomingMode, showToast]);
+  }, [queryParams, showToast]);
 
-  const fetchKey = JSON.stringify({ filter, upcomingMode });
+  const fetchKey = JSON.stringify(queryParams);
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -225,11 +262,39 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       case 'orderDate':
         result = (a['Order Date'] || '').localeCompare(b['Order Date'] || '');
         break;
+      case 'orderId':
+        result = (Number(a['App Order ID']) || 0) - (Number(b['App Order ID']) || 0);
+        break;
+      case 'customer':
+        result = (a['Customer Name'] || '').localeCompare(b['Customer Name'] || '');
+        break;
+      case 'bouquet':
+        result = (a['Customer Request'] || '').localeCompare(b['Customer Request'] || '');
+        break;
+      case 'total': {
+        const ta = Number(a['Final Price'] || a['Price Override'] || a['Sell Total'] || 0);
+        const tb = Number(b['Final Price'] || b['Price Override'] || b['Sell Total'] || 0);
+        result = ta - tb;
+        break;
+      }
       default:
         result = 0;
     }
     return result * dirMul;
   });
+
+  // Click a column header to sort by it; click the same header again to flip
+  // direction (asc ⇄ desc). A new column always starts ascending.
+  function handleSort(key) {
+    if (sortBy === key) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
+    else { setSortBy(key); setSortDir('asc'); }
+  }
+
+  // Only blank the list to a skeleton on the FIRST load. A refetch triggered by
+  // changing a server filter keeps the previous rows + header on screen (so an
+  // open date/status popover doesn't get torn down mid-edit) and swaps in fresh
+  // data when the request resolves.
+  const showSkeleton = loading && orders.length === 0;
 
   function daysSince(dateStr) {
     if (!dateStr) return 0;
@@ -524,11 +589,11 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       )}
 
       {/* Loading */}
-      {!showPremade && loading && <SkeletonTable rows={8} cols={5} />}
+      {!showPremade && showSkeleton && <SkeletonTable rows={8} cols={5} />}
 
       {/* Order list */}
       {/* Results count */}
-      {!showPremade && !loading && (
+      {!showPremade && !showSkeleton && (
         <div className="flex items-center gap-3 px-1">
           <label className="flex items-center gap-1.5 cursor-pointer" onClick={e => e.stopPropagation()}>
             <input
@@ -548,7 +613,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
         </div>
       )}
 
-      {!showPremade && !loading && fetchError && (
+      {!showPremade && !showSkeleton && fetchError && (
         <div className="text-center py-12">
           <p className="text-ios-tertiary mb-3">{t.error}</p>
           <button onClick={fetchOrders}
@@ -557,19 +622,19 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
         </div>
       )}
 
-      {!showPremade && !loading && !fetchError && sorted.length === 0 && (
+      {!showPremade && !showSkeleton && !fetchError && sorted.length === 0 && (
         <div className="text-center py-12 text-ios-tertiary">{t.noResults}</div>
       )}
 
       {/* Column headers — mirror the collapsed-row flex widths below. Until
           now the order rows had no labels, so users had to guess what each
           column represented. */}
-      {!showPremade && !loading && sorted.length > 0 && (
+      {!showPremade && !showSkeleton && sorted.length > 0 && (
         <div className="px-4 py-2 flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-ios-tertiary">
           <span className="w-4 shrink-0" />
           {/* # — Order ID */}
           <span className="w-10 shrink-0 flex items-center">
-            {t.colOrderId || '#'}
+            <SortHeader label={t.colOrderId || '#'} sortKey="orderId" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.orderIdQuery} title={t.colOrderId || '#'}>
               <input
                 className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
@@ -581,7 +646,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </span>
           {/* Order date */}
           <span className="w-20 shrink-0 flex items-center">
-            {t.orderDate || 'Order date'}
+            <SortHeader label={t.orderDate || 'Order date'} sortKey="orderDate" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!(filter.orderDateFrom || filter.orderDateTo)} title={t.orderDate || 'Order date'}>
               <div className="space-y-1.5 min-w-[160px]">
                 <div>
@@ -597,7 +662,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </span>
           {/* Customer */}
           <span className="w-36 flex items-center">
-            {t.colCustomer || t.customer || 'Customer'}
+            <SortHeader label={t.colCustomer || t.customer || 'Customer'} sortKey="customer" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.customerQuery} title={t.colCustomer || t.customer || 'Customer'}>
               <input
                 className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
@@ -609,7 +674,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </span>
           {/* Bouquet */}
           <span className="flex-1 flex items-center">
-            {t.colBouquet || t.bouquetComposition || 'Bouquet'}
+            <SortHeader label={t.colBouquet || t.bouquetComposition || 'Bouquet'} sortKey="bouquet" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.bouquetQuery} title={t.colBouquet || t.bouquetComposition || 'Bouquet'}>
               <input
                 className="w-full px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs"
@@ -621,10 +686,11 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </span>
           {/* Status (bundled: status + payment status + payment method + source) */}
           <span className="shrink-0 w-20 text-right flex items-center justify-end">
-            {t.labelStatus}
+            <SortHeader label={t.labelStatus} sortKey="status" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover
               active={!!(filter.status || filter.paymentStatus || filter.paymentMethod || filter.source)}
               title={t.labelStatus}
+              align="right"
             >
               <div className="space-y-3 min-w-[200px]">
                 {/* Status */}
@@ -689,7 +755,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </span>
           {/* Type — split from Fulfilment (w-12 matches body cell) */}
           <span className="shrink-0 w-12 flex items-center">
-            {t.deliveryType}
+            <SortHeader label={t.deliveryType} sortKey="type" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.deliveryType} title={t.deliveryType}>
               <div className="flex gap-1 flex-wrap">
                 {[['', t.allStatuses], ['Delivery', t.delivery || 'Delivery'], ['Pickup', t.pickup || 'Pickup']].map(([v, label]) => (
@@ -714,8 +780,8 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               since those are always set — comparing to "set at all" would keep
               the dot permanently lit and stop signalling "filtered here". */}
           <span className="shrink-0 w-24 text-right flex items-center justify-end">
-            {t.colFulfillment}
-            <ColumnFilterPopover active={filter.requiredByFrom !== monthStart() || filter.requiredByTo !== todayStr()} title={t.byFulfilmentDate}>
+            <SortHeader label={t.colFulfillment} sortKey="deliveryDate" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+            <ColumnFilterPopover active={filter.requiredByFrom !== monthStart() || filter.requiredByTo !== todayStr()} title={t.byFulfilmentDate} align="right">
               <div className="space-y-1.5 min-w-[160px]">
                 <div>
                   <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateFrom}</p>
@@ -731,8 +797,8 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           <span className="shrink-0 w-2" />{/* margin dot column */}
           {/* Total */}
           <span className="shrink-0 w-20 text-right flex items-center justify-end">
-            {t.orderTotal || t.total || 'Total'}
-            <ColumnFilterPopover active={filter.priceMin != null || filter.priceMax != null} title={t.orderTotal || 'Total'}>
+            <SortHeader label={t.orderTotal || t.total || 'Total'} sortKey="total" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
+            <ColumnFilterPopover active={filter.priceMin != null || filter.priceMax != null} title={t.orderTotal || 'Total'} align="right">
               <div className="space-y-1.5">
                 <div className="flex items-center gap-1.5">
                   <label className="text-[10px] text-ios-tertiary w-6 shrink-0">{t.filterMin}</label>
@@ -762,7 +828,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
         </div>
       )}
 
-      {!showPremade && !loading && sorted.map(order => {
+      {!showPremade && !showSkeleton && sorted.map(order => {
         const isExpanded = expandedId === order.id;
         const days = daysSince(order['Order Date']);
         const isOverdue = unpaidOnly && days > 7;
