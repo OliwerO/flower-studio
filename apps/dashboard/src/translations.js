@@ -1140,6 +1140,16 @@ const en = {
   assistantRename:      'Rename',
   assistantDelete:      'Delete',
   assistantDeleteConfirm: 'Delete?',
+  assistantStarters: [
+    'Orders today',
+    'Revenue this month',
+    'Top 5 products this month',
+    "What's low in stock?",
+    'Most valuable customers this month',
+    'Marketing spend this month',
+    'Busiest day this month',
+    'Who worked today?',
+  ],
 };
 
 const ru = {
@@ -2281,6 +2291,16 @@ const ru = {
   assistantRename:      'Переименовать',
   assistantDelete:      'Удалить',
   assistantDeleteConfirm: 'Удалить?',
+  assistantStarters: [
+    'Заказы сегодня',
+    'Выручка в этом месяце',
+    'Топ-5 букетов за месяц',
+    'Что заканчивается на складе?',
+    'Самые ценные клиенты за месяц',
+    'Расходы на рекламу в этом месяце',
+    'Самый загруженный день месяца',
+    'Кто работал сегодня?',
+  ],
 };
 
 // ── Proxy-based dynamic translation ──

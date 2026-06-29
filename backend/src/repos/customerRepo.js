@@ -387,6 +387,28 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
   };
 }
 
+// Read-only: all key people with a set important date, joined to their customer.
+// Used by crmPack.upcomingOccasionsHandler to surface upcoming annual occasions.
+export async function listKeyPeopleWithDates() {
+  const rows = await db
+    .select({
+      personName:    keyPeople.name,
+      importantDate: keyPeople.importantDate,
+      label:         keyPeople.importantDateLabel,
+      customerId:    customers.id,
+      customerName:  customers.name,
+      customerPhone: customers.phone,
+    })
+    .from(keyPeople)
+    .innerJoin(customers, eq(keyPeople.customerId, customers.id))
+    .where(and(
+      isNull(keyPeople.deletedAt),
+      isNotNull(keyPeople.importantDate),
+      isNull(customers.deletedAt),
+    ));
+  return rows;
+}
+
 export async function listOrders(customerId) {
   const [appRows, legacyRows] = await Promise.all([
     db.select({
@@ -441,8 +463,11 @@ export async function listOrders(customerId) {
 // Returns customers who have at least one key person with importantDate set.
 // Used by the dashboard reminder widget.
 export async function listWithKeyPeopleHavingDates() {
+  // Exclude soft-deleted key people so this dashboard widget agrees with the
+  // assistant's upcoming_occasions (listKeyPeopleWithDates) — both surfaces must
+  // never drift. (Previously omitted, so a deleted key person still showed.)
   const kpRows = await db.select().from(keyPeople)
-    .where(isNotNull(keyPeople.importantDate));
+    .where(and(isNotNull(keyPeople.importantDate), isNull(keyPeople.deletedAt)));
 
   if (kpRows.length === 0) return [];
 

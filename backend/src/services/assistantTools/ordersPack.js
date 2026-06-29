@@ -28,6 +28,7 @@ export async function queryOrdersHandler(input) {
   const cap = bounded ? HARD_ROW_CEILING : SOFT_ROW_CAP;
   const shownRows = rows.slice(0, cap);
   return {
+    period: { from: from ?? null, to: to ?? null },
     matchedCount,
     truncated: matchedCount > shownRows.length,
     shown: shownRows.length,
@@ -52,11 +53,11 @@ const DIMENSION_KEY = {
 };
 
 export async function breakdownOrdersHandler(input) {
-  const { dimension } = input;
+  const { dimension, from, to } = input;
   const keyOf = DIMENSION_KEY[dimension];
   if (!keyOf) throw new Error(`Unknown breakdown dimension: ${dimension}`);
   const rows = await orderRepo.list({ pg: buildPg({ ...input, status: undefined }) });
   const breakdown = {};
   for (const o of rows) { const k = keyOf(o); breakdown[k] = (breakdown[k] || 0) + 1; }
-  return { dimension, total: rows.length, breakdown };
+  return { period: { from: from ?? null, to: to ?? null }, dimension, total: rows.length, breakdown };
 }

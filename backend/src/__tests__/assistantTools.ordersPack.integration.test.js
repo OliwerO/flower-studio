@@ -35,11 +35,17 @@ describe('ordersPack.queryOrdersHandler', () => {
     expect(r.matchedCount).toBe(3); // BLO-1,2,3 (BLO-5 cancelled excluded, BLO-4 is April)
     expect(r.truncated).toBe(false);
     expect(r.orders.map(o => o.id).sort()).toEqual(['BLO-1', 'BLO-2', 'BLO-3']);
+    // period echo
+    expect(r.period).toEqual({ from: '2026-05-01', to: '2026-05-31' });
   });
   it('includes the requested status even when Cancelled', async () => {
     const r = await queryOrdersHandler({ dateField: 'order', from: '2026-05-01', to: '2026-05-31', status: 'Cancelled' });
     expect(r.matchedCount).toBe(1);
     expect(r.orders[0].id).toBe('BLO-5');
+  });
+  it('period echoes null when from/to omitted', async () => {
+    const r = await queryOrdersHandler({});
+    expect(r.period).toEqual({ from: null, to: null });
   });
 });
 
@@ -48,9 +54,15 @@ describe('ordersPack.breakdownOrdersHandler', () => {
     const r = await breakdownOrdersHandler({ dimension: 'deliveryType', from: '2026-05-01', to: '2026-05-31' });
     expect(r.total).toBe(3);
     expect(r.breakdown).toEqual({ Delivery: 2, Pickup: 1 });
+    // period echo
+    expect(r.period).toEqual({ from: '2026-05-01', to: '2026-05-31' });
   });
   it('rejects an unknown breakdown dimension', async () => {
     await expect(breakdownOrdersHandler({ dimension: 'bogus' })).rejects.toThrow(/Unknown breakdown dimension/);
+  });
+  it('period echoes null when from/to omitted', async () => {
+    const r = await breakdownOrdersHandler({ dimension: 'deliveryType' });
+    expect(r.period).toEqual({ from: null, to: null });
   });
 });
 

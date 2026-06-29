@@ -127,7 +127,7 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 - `packages/shared/` — shared contexts, hooks, API client, utils
 - `backend/src/routes/assistant.js` — `POST /api/assistant/message` (owner-only). Stateless — session continuity via client-supplied `sessionId` UUID.
 - `backend/src/services/assistantService.js` — Anthropic Claude integration; multi-turn session history (in-memory); resolves tool calls through thin adapters over canonical services (parity-pinned: assistant tools call the same `computeAnalytics` / `orderRepo` / etc. as the main API routes, so numbers can never drift).
-- `backend/src/services/assistantTools/` — tool-pack directory. Each tool is a thin adapter; never bypass repos or inline SQL. Dashboard-only in v1; florist mount is a follow-up.
+- `backend/src/services/assistantTools/` — tool-pack directory (20 tools). Each tool is a thin adapter; never bypass repos or inline SQL. Mounted owner-only in dashboard + florist via the shared `AskBlossomLauncher`/`AskBlossomPanel`. Covers orders, finance, finance-insights (top products / channel profitability / period comparison), trends (seasonality, busiest day, cancellation funnel, payment debt), suppliers, marketing spend, stock levels + velocity, customers + re-activation (lapsed / upcoming birthdays), deliveries, POs, purchasing, hours. Correctness: every date tool echoes its resolved period; parity tests pin each tool to its canonical source; a golden-question eval + a SAFE live-smoke script guard accuracy + tool selection.
 
 ## Default Workflow Skills (mandatory for non-trivial work)
 
