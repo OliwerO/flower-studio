@@ -29,4 +29,53 @@ describe('hoursPack.hours_summary', () => {
     expect(mockHoursList).toHaveBeenCalledWith({ dateFrom: '2026-05-01', dateTo: '2026-05-31', name: undefined });
     expect(mockBuildPayroll).toHaveBeenCalledWith([{ Name: 'Anna' }, { Name: 'Bob' }], { Anna: 30 });
   });
+
+  it('surfaces configured per-florist pay rates (top-level + per florist)', async () => {
+    const RATES = {
+      Masha: { Wedding: 25, Holidays: 25, Standard: 25 },
+      Sasha: { Wedding: 50, Holidays: 40, Standard: 33 },
+    };
+    mockGetConfig.mockReturnValue(RATES);
+    mockHoursList.mockResolvedValueOnce([{ Name: 'Sasha' }]);
+    mockBuildPayroll.mockReturnValue({
+      days: [{ name: 'Sasha', hours: 8, earnings: 264, deliveryCount: 0 }],
+      totals: { hours: 8, earnings: 264, deliveries: 0, days: 1 },
+    });
+    const r = await hoursSummaryHandler({ from: '2026-05-01', to: '2026-05-31' });
+    // Top-level rates map carries the full configured rate model.
+    expect(r.rates).toEqual(RATES);
+    // The florist who logged hours carries their own rate(s).
+    const sasha = r.florists.find(f => f.name === 'Sasha');
+    expect(sasha.rates).toEqual({ Wedding: 50, Holidays: 40, Standard: 33 });
+    // Masha has configured rates but no logged hours — still surfaced (zeroed hours).
+    const masha = r.florists.find(f => f.name === 'Masha');
+    expect(masha).toBeDefined();
+    expect(masha.rates).toEqual({ Wedding: 25, Holidays: 25, Standard: 25 });
+    expect(masha).toMatchObject({ hours: 0, earnings: 0, days: 0 });
+  });
+
+  it('answers a rate question with no date range and no logged hours', async () => {
+    mockGetConfig.mockReturnValue({ Sasha: { Standard: 33 } });
+    mockHoursList.mockResolvedValueOnce([]);
+    mockBuildPayroll.mockReturnValue({ days: [], totals: { hours: 0, earnings: 0, deliveries: 0, days: 0 } });
+    const r = await hoursSummaryHandler({});
+    expect(mockHoursList).toHaveBeenCalledWith({ dateFrom: undefined, dateTo: undefined, name: undefined });
+    expect(r.rates).toEqual({ Sasha: { Standard: 33 } });
+    expect(r.florists.find(f => f.name === 'Sasha').rates).toEqual({ Standard: 33 });
+  });
+
+  it('scopes rates to one florist when name is given', async () => {
+    mockGetConfig.mockReturnValue({
+      Masha: { Standard: 25 },
+      Sasha: { Wedding: 50, Standard: 33 },
+    });
+    mockHoursList.mockResolvedValueOnce([{ Name: 'Sasha' }]);
+    mockBuildPayroll.mockReturnValue({
+      days: [{ name: 'Sasha', hours: 5, earnings: 165, deliveryCount: 0 }],
+      totals: { hours: 5, earnings: 165, deliveries: 0, days: 1 },
+    });
+    const r = await hoursSummaryHandler({ name: 'Sasha' });
+    expect(r.rates).toEqual({ Sasha: { Wedding: 50, Standard: 33 } });
+    expect(r.florists.map(f => f.name)).toEqual(['Sasha']);
+  });
 });
