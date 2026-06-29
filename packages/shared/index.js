@@ -156,3 +156,4 @@ export { suggestedMonoPrice } from './utils/productPricing.js';
 
 // Ask Blossom — AI assistant chat panel (markdown render, session continuity)
 export { default as AskBlossomPanel } from './components/AskBlossomPanel.jsx';
+export { default as AskBlossomLauncher } from './components/AskBlossomLauncher.jsx';
