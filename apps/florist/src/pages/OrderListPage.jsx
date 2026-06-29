@@ -3,11 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
-import { getEffectiveStock } from '@flower-studio/shared';
+import { getEffectiveStock, EMPTY_ORDER_FILTER, buildOrderQueryParams, orderMatchesClientFilter, activeOrderFilterCount, clearOrderFilter } from '@flower-studio/shared';
 import client, { cachedGet } from '../api/client.js';
 import OrderCard from '../components/OrderCard.jsx';
 import PremadeBouquetCard from '../components/PremadeBouquetCard.jsx';
 import DatePicker from '../components/DatePicker.jsx';
+import OrderFilterDrawer from '../components/OrderFilterDrawer.jsx';
 import TextImportModal from '../components/TextImportModal.jsx';
 import { OrderListSkeleton } from '../components/Skeleton.jsx';
 import t from '../translations.js';
@@ -97,6 +98,11 @@ export default function OrderListPage() {
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
 
+  // Shared order filter model (mirrors dashboard per-column filters).
+  // status is kept in sync with the status tab so active count stays consistent.
+  const [filter, setFilter] = useState(() => ({ ...EMPTY_ORDER_FILTER, status: '' }));
+  const [filterOpen, setFilterOpen] = useState(false);
+
   // Stock shortfall data: { stockId: { committed, name, currentQty, effective, orders } }
   const [stockShortfalls, setStockShortfalls] = useState({});
 
@@ -133,8 +139,10 @@ export default function OrderListPage() {
         return;
       }
 
-      const params = {};
-      if (status) params.status = status;
+      // Merge shared filter params with view-mode params.
+      // buildOrderQueryParams handles status/type/date/price; view flags override the set.
+      const params = { ...buildOrderQueryParams(filter) };
+      if (status) params.status = status; // status tab overrides drawer status
 
       if (viewMode === VIEW_MODES.ACTIVE) {
         // Active view: all non-terminal orders, sorted by earliest needed
@@ -167,7 +175,7 @@ export default function OrderListPage() {
     } finally {
       setLoading(false);
     }
-  }, [viewMode, date, status]);
+  }, [viewMode, date, status, filter]);
 
   // Stable identities so React.memo inside OrderCard can skip re-renders.
   // Using the functional setter form means the callbacks never close over
@@ -431,7 +439,7 @@ export default function OrderListPage() {
         {/* View mode toggle: Active / Completed / Premade */}
         <div className="flex gap-1.5 bg-white rounded-full border border-ios-separator shadow-sm p-1">
           <button
-            onClick={() => { setViewMode(VIEW_MODES.ACTIVE); setStatus(''); }}
+            onClick={() => { setViewMode(VIEW_MODES.ACTIVE); setStatus(''); setFilter(prev => ({ ...prev, status: '' })); }}
             className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
               viewMode === VIEW_MODES.ACTIVE
                 ? 'bg-brand-600 text-white'
@@ -441,7 +449,7 @@ export default function OrderListPage() {
             {t.activeOrders}
           </button>
           <button
-            onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); setNoDateOnly(false); }}
+            onClick={() => { setViewMode(VIEW_MODES.COMPLETED); setStatus(''); setDate(''); setNoDateOnly(false); setFilter(prev => ({ ...prev, status: '' })); }}
             className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
               viewMode === VIEW_MODES.COMPLETED
                 ? 'bg-brand-600 text-white'
@@ -451,7 +459,7 @@ export default function OrderListPage() {
             {t.completedOrders}
           </button>
           <button
-            onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); setNoDateOnly(false); }}
+            onClick={() => { setViewMode(VIEW_MODES.PREMADE); setStatus(''); setDate(''); setNoDateOnly(false); setFilter(prev => ({ ...prev, status: '' })); }}
             className={`px-4 h-7 rounded-full text-xs font-semibold whitespace-nowrap transition-colors flex items-center gap-1.5 ${
               viewMode === VIEW_MODES.PREMADE
                 ? 'bg-brand-600 text-white'
@@ -469,7 +477,7 @@ export default function OrderListPage() {
           </button>
         </div>
 
-        {/* Status sub-filters + date picker for completed view */}
+        {/* Status sub-filters + date picker for completed view + filter drawer trigger */}
         <div className="flex gap-2 items-center flex-wrap">
           {viewMode === VIEW_MODES.COMPLETED && (
             <div className="flex items-center gap-1.5">
@@ -492,7 +500,7 @@ export default function OrderListPage() {
             {(viewMode === VIEW_MODES.ACTIVE ? ACTIVE_STATUSES : COMPLETED_STATUSES).map(s => (
               <button
                 key={s}
-                onClick={() => setStatus(s)}
+                onClick={() => { setStatus(s); setFilter(prev => ({ ...prev, status: s })); }}
                 className={`px-3 h-7 rounded-full text-xs font-medium whitespace-nowrap transition-colors ${
                   status === s
                     ? 'bg-brand-600 text-white'
@@ -503,7 +511,21 @@ export default function OrderListPage() {
               </button>
             ))}
           </div>
+          {/* Filter drawer trigger */}
+          {viewMode !== VIEW_MODES.PREMADE && (
+            <button onClick={() => setFilterOpen(true)}
+              className="px-3 h-9 rounded-full bg-white border border-ios-separator shadow-sm text-xs font-medium text-ios-secondary flex items-center gap-1 whitespace-nowrap">
+              {t.filters}{activeOrderFilterCount(filter) > 0 ? ` (${activeOrderFilterCount(filter)})` : ''}
+            </button>
+          )}
         </div>
+        <OrderFilterDrawer
+          open={filterOpen}
+          onClose={() => setFilterOpen(false)}
+          filter={filter}
+          onApply={(next) => setFilter(next)}
+          onReset={() => setFilter({ ...clearOrderFilter(), status: filter.status })}
+        />
       </div>
 
       {/* Stock shortfall warning banner */}
@@ -571,7 +593,10 @@ export default function OrderListPage() {
               const base = noDateOnly
                 ? orders.filter(o => !o['Delivery Date'] && !o['Required By'])
                 : orders;
-              return viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(base) : sortByStatus(base);
+              // Apply client-side predicate (customer/bouquet text, delivery type,
+              // date range, price range) on top of the server-fetched set.
+              const filtered = base.filter(o => orderMatchesClientFilter(o, filter));
+              return viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(filtered) : sortByStatus(filtered);
             })().map(order => (
               <OrderCard
                 key={order.id}

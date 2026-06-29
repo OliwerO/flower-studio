@@ -101,6 +101,7 @@ When a feature is added to the florist app, it should also be added to the dashb
 - Premade bouquets: `PremadeBouquetCreatePage.jsx` (florist) ↔ `PremadeBouquetList.jsx` + `PremadeBouquetCreateModal.jsx` (dashboard)
 - Storefront products (Wix catalog): `BouquetsPage.jsx` + `bouquets/BouquetCard.jsx` (florist) ↔ `ProductsTab.jsx` + `products/ProductCard.jsx` (dashboard) — name + PL/RU/UK translations, key flower, product type, price, lead time, qty, category, active, push/pull. Name editor is shared `ProductTranslationEditor`; EN name + translations owned by flower-studio per ADR-0008
 - Waste log: `WasteLogPage.jsx` (florist) ↔ `StockLossSection` inside `SettingsTab.jsx` (dashboard) — keep entry surfaces in lock-step
+- Order filtering: `OrdersTab.jsx` (dashboard, per-column popovers) ↔ `OrderListPage.jsx` + `OrderFilterDrawer.jsx` (florist, bottom-sheet drawer); shared `orderFilters` util (`EMPTY_ORDER_FILTER`, `buildOrderQueryParams`, `orderMatchesClientFilter`, `activeOrderFilterCount`, `clearOrderFilter`)
 
 When adding filters, inline editors, status actions, or any user-facing behavior — implement in both apps.
 

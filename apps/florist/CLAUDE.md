@@ -29,6 +29,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | Component | Purpose |
 |-----------|---------|
 | OrderCard.jsx | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component (1300+ L — split candidate; uses `OrderCardSummary.jsx` + `OrderCardExpanded.jsx`). Order Cancellation flows through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared (no inline handler). |
+| OrderFilterDrawer.jsx | Mobile bottom-sheet filter drawer for the order list. Uses shared `Sheet` + the shared `orderFilters` model (`EMPTY_ORDER_FILTER`, `buildOrderQueryParams`, `orderMatchesClientFilter`, `activeOrderFilterCount`, `clearOrderFilter`). Mirrors the dashboard `OrdersTab.jsx` per-column popovers. Wired into `OrderListPage.jsx` — the Filters button + active-count badge appear next to the status sub-filter tabs in Active and Completed views. |
 | BouquetEditor.jsx | Flower catalog search + cart with qty controls, cost/margin visibility, price override |
 | StockItem.jsx | Single stock row with write-off dialog, adjust buttons, effective-stock display via `getEffectiveStock` |
 | BottomNav.jsx | Tab bar — role-based tabs (florist sees Hours; owner sees Shopping) |
