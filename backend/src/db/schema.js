@@ -586,3 +586,14 @@ export const premadeBouquetLines = pgTable('premade_bouquet_lines', {
   bouquetIdx:  index('premade_bouquet_lines_bouquet_id_idx').on(t.bouquetId),
   stockIdx:    index('premade_bouquet_lines_stock_id_idx').on(t.stockId),
 }));
+
+// ── Ask Blossom: chat history ──
+export const assistantConversations = pgTable('assistant_conversations', {
+  id:        uuid('id').primaryKey(),
+  title:     text('title').notNull().default(''),
+  messages:  jsonb('messages').notNull().default([]),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (t) => ({
+  updatedIdx: index('assistant_conversations_updated_idx').on(t.updatedAt),
+}));
