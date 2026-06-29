@@ -1173,7 +1173,11 @@ function OrderCard({
                 </div>
               )}
 
-              {/* ── Driver assignment ──
+              {/* ── Delivery method + driver assignment ──
+                  Parity with dashboard OrderDetailPanel and OrderDetailPage.
+                  Method pill (Driver/Taxi/Florist) always shows for delivery orders.
+                  Driver picker only renders when method is Driver.
+                  When method switches to Florist/Taxi, Assigned Driver is cleared.
                   Gate on `isDelivery && drivers.length` only: do NOT require
                   `detail?.delivery` here. For fresh Delivery orders the
                   Airtable back-link from Deliveries → Orders can take a
@@ -1183,26 +1187,59 @@ function OrderCard({
                   /convert-to-delivery when one is missing, so the picker
                   can work even when `detail.delivery` is undefined. */}
               {isDelivery && drivers.length > 0 && (
-                <div>
-                  <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
-                  <div className="flex flex-wrap gap-1.5">
-                    {drivers.map(driver => (
-                      <button
-                        key={driver}
-                        onClick={() => patchDelivery({ 'Assigned Driver': detail?.delivery?.['Assigned Driver'] === driver ? '' : driver })}
-                        disabled={saving}
-                        className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                          detail?.delivery?.['Assigned Driver'] === driver
-                            ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                            : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                      >
-                        {driver}
-                      </button>
-                    ))}
+                <div className="space-y-2">
+                  {/* Delivery method selector */}
+                  <div>
+                    <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.deliveryMethod}</p>
+                    <Pills
+                      options={[
+                        { value: 'Driver',  label: t.deliveryMethodDriver },
+                        { value: 'Taxi',    label: t.deliveryMethodTaxi },
+                        { value: 'Florist', label: t.deliveryMethodFlorist },
+                      ]}
+                      value={detail?.delivery?.['Delivery Method'] || 'Driver'}
+                      onChange={v => {
+                        const methodPatch = { 'Delivery Method': v };
+                        if (v === 'Taxi') {
+                          methodPatch['Assigned Driver'] = '';
+                          methodPatch['Driver Payout'] = 0;
+                        } else if (v === 'Florist') {
+                          methodPatch['Assigned Driver'] = '';
+                          methodPatch['Driver Payout'] = 0;
+                          methodPatch['Taxi Cost'] = 0;
+                        } else {
+                          methodPatch['Taxi Cost'] = 0;
+                        }
+                        patchDelivery(methodPatch);
+                      }}
+                      disabled={saving}
+                    />
                   </div>
-                  {!detail?.delivery?.['Assigned Driver'] && (
-                    <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
+
+                  {/* Driver picker — only when method is Driver */}
+                  {(detail?.delivery?.['Delivery Method'] || 'Driver') === 'Driver' && (
+                    <div>
+                      <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {drivers.map(driver => (
+                          <button
+                            key={driver}
+                            onClick={() => patchDelivery({ 'Assigned Driver': detail?.delivery?.['Assigned Driver'] === driver ? '' : driver })}
+                            disabled={saving}
+                            className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                              detail?.delivery?.['Assigned Driver'] === driver
+                                ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                            }`}
+                          >
+                            {driver}
+                          </button>
+                        ))}
+                      </div>
+                      {!detail?.delivery?.['Assigned Driver'] && (
+                        <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
+                      )}
+                    </div>
                   )}
                 </div>
               )}
