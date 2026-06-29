@@ -2,6 +2,7 @@
 import { queryOrdersHandler, breakdownOrdersHandler } from './ordersPack.js';
 import { financialSummaryHandler } from './financePack.js';
 import { stockStatusHandler, stockWriteoffsHandler } from './stockPack.js';
+import { customerInsightsHandler, customerLookupHandler } from './customersPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -76,6 +77,32 @@ export const TOOLS = [
       },
     },
     handler: stockWriteoffsHandler,
+  },
+  {
+    name: 'customer_insights',
+    description: "Customer analytics for a date range: new vs returning customer counts, segment distribution, and the top spenders (by paid revenue). Use for 'how many new customers', 'returning vs new', 'who are my best/top customers', 'customer segments'. Dates YYYY-MM-DD.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'YYYY-MM-DD' },
+        to: { type: 'string', description: 'YYYY-MM-DD' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: customerInsightsHandler,
+  },
+  {
+    name: 'customer_lookup',
+    description: "Look up specific customers by name (substring, case-insensitive). Returns each match with their segment, lifetime order count, total spend, last order date, and key people (with important dates). Use for 'tell me about <name>', 'how much has <name> spent', 'when did <name> last order', 'what's <name>'s birthday'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'Full or partial customer name to search for.' },
+        limit: { type: 'number', description: 'Max matches to return (default 10).' },
+      },
+      required: ['name'],
+    },
+    handler: customerLookupHandler,
   },
 ];
 
