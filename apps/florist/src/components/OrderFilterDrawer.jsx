@@ -20,7 +20,7 @@ export default function OrderFilterDrawer({ open, onClose, filter, onApply, onRe
           {['', 'Delivery', 'Pickup'].map(v => (
             <button key={v || 'all'} onClick={() => set('deliveryType', v)}
               className={`px-3 h-8 rounded-full text-xs font-medium ${filter.deliveryType === v ? 'bg-brand-600 text-white' : 'bg-gray-100 text-ios-secondary'}`}>
-              {v === '' ? t.all : v === 'Delivery' ? t.deliveryType : t.pickup}
+              {v === '' ? t.all : v === 'Delivery' ? t.deliveryDelivery : t.pickup}
             </button>
           ))}
         </div>
