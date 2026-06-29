@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-29 — Y-model cutover migration: fix Phase-5 failure on soft-deleted rows (#291 blocker)
+
+Pre-cutover dry-run prep against a prod read surfaced a defect in the cutover migration that would have made the live run **fail**. Fixed + regression-locked. No app/schema/env change — this only touches the standalone cutover script.
+
+### Backend (`backend/scripts/migrate-stock-y-model.js`)
+- **Defect:** Phase 5 runs `ALTER COLUMN date / type_name SET NOT NULL`, which validates **every physical row, including soft-deleted ones**. Phases 1-3 only date `deleted_at IS NULL` rows and the #292 backfill UI only types active rows, so soft-deleted undated/untyped tombstone rows (qty 0) make Phase 5 fail. On prod today: **150 soft-deleted rows are undated, 149 untyped** (the synthetic lab scenario has none, so it never caught this).
+- **Fix:** new `phaseDeletedFill` (phase 4b) back-fills `date = COALESCE(date, today)` and `type_name = COALESCE(type_name, first-word-of-display_name, 'Unknown')` on soft-deleted rows before phase 5. **Fills, never DELETEs** — `stock_purchases` / `stock_order_lines` / `premade_bouquet_lines` FK-reference `stock(id)` with default `RESTRICT`, so a purge would violate FKs. Active-row logic (phases 1-4 + the type_name pre-condition) is unchanged.
+- **Testability refactor:** script now exports `runMigration(client, {dryRun, today})` + each phase; CLI side-effects (`APPROVE=yes` guard, pool, `process.exit`) are gated behind `main()` so the module is import-safe. The pre-condition message now says "active" rows explicitly.
+
+### Tests
+- New `backend/src/__tests__/migrateStockYModel.integration.test.js` (pglite, 4 tests): regression — Phase 5 succeeds with a soft-deleted undated/untyped zombie present (no NULLs remain, tombstone keeps `deleted_at`, NOT NULL applied); pre-condition aborts on an active untyped row; `--dry-run` rolls back (NOT NULL not applied); idempotent no-op on re-run.
+
+### Cutover status (#291) — still blocked, now by data + infra only
+- **Gate 1 (data):** 23 active stock rows still have `type_name IS NULL` — run the #292 backfill UI before the live migration.
+- **Gate 2 (code):** ✅ this change.
+- **Gate 3 (infra):** prod is PG 18.3, lab harness is PG 15 + no local `pg_dump` — bump the lab container to PG 18 to run the dry-run against a real prod snapshot.
+- Verification: `migrateStockYModel.integration.test.js` 4/4 ✓ (isolation). E2E N/A — the migration is a standalone CLI script, exercised by no API route.
+
+---
+
 ## 2026-06-29 — Ask Blossom: deliveries / purchasing / hours coverage + florist-app mount
 
 The assistant can now answer about three more domains, and the owner can use it on her phone (florist app), not just the dashboard. No schema/env change — pure additive tool packs + a second mount of the existing panel.
