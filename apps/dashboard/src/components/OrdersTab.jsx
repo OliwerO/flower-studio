@@ -109,8 +109,11 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       if (upcomingMode) {
         params.upcoming = '1';
       } else {
-        if (dateFrom) params.dateFrom = dateFrom;
-        if (dateTo) params.dateTo = dateTo;
+        // Filter by delivery/pickup date (Required By), not submission date.
+        // The owner thinks in terms of "when does this order go out",
+        // not "when was it placed" — #337.
+        if (dateFrom) params.requiredByFrom = dateFrom;
+        if (dateTo) params.requiredByTo = dateTo;
       }
       if (unpaidOnly) params.paymentStatus = 'Unpaid';
       if (paidOnly) params.paymentStatus = 'Paid';

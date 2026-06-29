@@ -35,7 +35,7 @@ const ORDERS_PATCH_ALLOWED = [
 // activeOnly: returns all non-terminal orders (excludes Delivered, Picked Up, Cancelled), sorted by Required By asc.
 router.get('/', async (req, res, next) => {
   try {
-    const { status, dateFrom, dateTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming, activeOnly, completedOnly } = req.query;
+    const { status, dateFrom, dateTo, requiredByFrom, requiredByTo, forDate, source, deliveryType, paymentStatus, paymentMethod, excludeCancelled, upcoming, activeOnly, completedOnly } = req.query;
     const filters = [];
 
     if (status)           filters.push(`{Status} = '${sanitizeFormulaValue(status)}'`);
@@ -135,6 +135,10 @@ router.get('/', async (req, res, next) => {
     } else {
       if (dateFrom) pgFilter.dateFrom = dateFrom;
       if (dateTo)   pgFilter.dateTo = dateTo;
+      // Delivery/pickup date range — sent by dashboard's Orders tab so the owner
+      // sees orders by when they go out, not when they were placed (#337).
+      if (requiredByFrom) pgFilter.requiredByFrom = requiredByFrom;
+      if (requiredByTo)   pgFilter.requiredByTo = requiredByTo;
     }
 
     const orders = await orderRepo.list({
