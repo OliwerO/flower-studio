@@ -10,6 +10,10 @@ import t from '../translations.js';
 import OrderDetailPanel from './OrderDetailPanel.jsx';
 import PremadeBouquetList from './PremadeBouquetList.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
+import {
+  EMPTY_ORDER_FILTER, buildOrderQueryParams, orderMatchesClientFilter,
+  activeOrderFilterCount, clearOrderFilter,
+} from '@flower-studio/shared';
 
 // "2026-03-08" → "Mar 8"
 function fmtDate(iso) {
@@ -65,26 +69,25 @@ function monthStart() {
 
 export default function OrdersTab({ initialFilter, onNavigate, isActive = true }) {
   const STATUS_OPTIONS = getStatusOptions();
-  // Initialize state from initialFilter to avoid double-fetch race condition.
-  // If a filter is passed from another tab (e.g., Financial), use it from the start.
+  // Seed filter from cross-tab initialFilter to avoid a double-fetch race —
+  // state is set before the first render so the first fetch uses the right params.
   const f = initialFilter || {};
-  // Default to current month so recent orders are always visible.
-  // When navigating with a specific orderId, also use month start.
-  const defaultFrom = f.dateFrom || monthStart();
-  const defaultTo   = f.dateTo   || todayStr();
   const [orders, setOrders]       = useState([]);
   const [loading, setLoading]     = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [search, setSearch]       = useState('');
-  const [statusFilter, setStatus] = useState(f.status || '');
-  const [dateFrom, setDateFrom]   = useState(defaultFrom);
-  const [dateTo, setDateTo]       = useState(defaultTo);
-  const [unpaidOnly, setUnpaid]   = useState(f.payment === 'Unpaid');
-  const [paidOnly, setPaidOnly]   = useState(f.payment === 'Paid');
-  const [deliveryTypeFilter, setDeliveryType] = useState(f.deliveryType || '');
-  const [sourceFilter, setSourceFilter] = useState(f.source || '');
-  const [paymentMethodFilter, setPaymentMethod] = useState(f.paymentMethod || '');
-  const [excludeCancelled, setExcludeCancelled] = useState(!!f.excludeCancelled);
+  const [filter, setFilter] = useState(() => ({
+    ...EMPTY_ORDER_FILTER,
+    status: f.status || '',
+    source: f.source || '',
+    deliveryType: f.deliveryType || '',
+    paymentStatus: f.payment || '',            // legacy cross-tab key was `payment`
+    paymentMethod: f.paymentMethod || '',
+    excludeCancelled: !!f.excludeCancelled,
+    requiredByFrom: f.dateFrom || monthStart(), // current default range = fulfilment date
+    requiredByTo: f.dateTo || todayStr(),
+  }));
+  const setFilterField = (key, value) => setFilter(prev => ({ ...prev, [key]: value }));
   const [expandedId, setExpanded] = useState(f.orderId || null);
   // When the owner navigates here from a customer timeline, only the clicked
   // order should be visible — otherwise it's buried among all other orders
@@ -104,23 +107,16 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   const fetchOrders = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const params = {};
-      if (statusFilter) params.status = statusFilter;
-      if (upcomingMode) {
-        params.upcoming = '1';
-      } else {
-        // Filter by delivery/pickup date (Required By), not submission date.
-        // The owner thinks in terms of "when does this order go out",
-        // not "when was it placed" — #337.
-        if (dateFrom) params.requiredByFrom = dateFrom;
-        if (dateTo) params.requiredByTo = dateTo;
-      }
-      if (unpaidOnly) params.paymentStatus = 'Unpaid';
-      if (paidOnly) params.paymentStatus = 'Paid';
-      if (deliveryTypeFilter) params.deliveryType = deliveryTypeFilter;
-      if (sourceFilter) params.source = sourceFilter;
-      if (paymentMethodFilter) params.paymentMethod = paymentMethodFilter;
-      if (excludeCancelled) params.excludeCancelled = '1';
+      // In upcoming mode, fetch by the backend's "upcoming" shortcut — but
+      // status still applies (it was sent regardless of mode pre-refactor).
+      // Otherwise, route through the shared param builder so all filter
+      // fields (date range, status, payment, delivery type, etc.) are sent
+      // consistently. Filter by delivery/pickup date (Required By), not
+      // submission date — the owner thinks in terms of "when does this go
+      // out", not "when was it placed" — #337.
+      const params = upcomingMode
+        ? { upcoming: '1', ...(filter.status ? { status: filter.status } : {}) }
+        : buildOrderQueryParams(filter);
       const res = await client.get('/orders', { params });
       setOrders(prev => {
         if (!initialLoaded.current) return res.data;
@@ -139,20 +135,9 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, dateFrom, dateTo, upcomingMode, unpaidOnly, paidOnly, deliveryTypeFilter, sourceFilter, paymentMethodFilter, excludeCancelled, showToast]);
+  }, [filter, upcomingMode, showToast]);
 
-  const fetchKey = JSON.stringify({
-    statusFilter,
-    dateFrom,
-    dateTo,
-    upcomingMode,
-    unpaidOnly,
-    paidOnly,
-    deliveryTypeFilter,
-    sourceFilter,
-    paymentMethodFilter,
-    excludeCancelled,
-  });
+  const fetchKey = JSON.stringify({ filter, upcomingMode });
 
   useEffect(() => {
     if (!isActive) return undefined;
@@ -173,14 +158,19 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   // the banner reflects reality even after the user narrows by search.
   const noDateCount = orders.filter(o => !o['Delivery Date'] && !o['Required By']).length;
 
-  // Client-side search filter
-  let filtered = search
-    ? orders.filter(o => {
-        const q = search.toLowerCase();
-        return (o['Customer Name'] || '').toLowerCase().includes(q)
-          || (o['Customer Request'] || '').toLowerCase().includes(q);
-      })
-    : orders;
+  // Derive unpaidOnly from the unified filter so JSX below keeps working unchanged.
+  const unpaidOnly = filter.paymentStatus === 'Unpaid';
+
+  // Client-side filter — applies the shared predicate (orderIdQuery, customerQuery,
+  // bouquetQuery, priceMin/Max) then the free-text search box (Customer Name +
+  // Customer Request). Server-side fields were already applied by the fetch query.
+  let filtered = orders.filter(o => orderMatchesClientFilter(o, filter));
+  if (search) {
+    const q = search.toLowerCase();
+    filtered = filtered.filter(o =>
+      (o['Customer Name'] || '').toLowerCase().includes(q) ||
+      (o['Customer Request'] || '').toLowerCase().includes(q));
+  }
   if (noDateOnly) {
     filtered = filtered.filter(o => !o['Delivery Date'] && !o['Required By']);
   }
@@ -273,9 +263,9 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           {STATUS_OPTIONS.map(opt => (
             <button
               key={opt.value}
-              onClick={() => setStatus(opt.value)}
+              onClick={() => setFilterField('status', opt.value)}
               className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
-                statusFilter === opt.value
+                filter.status === opt.value
                   ? 'bg-brand-600 text-white'
                   : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
               }`}
@@ -312,10 +302,10 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </button>
           {!upcomingMode && (
             <>
-              <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+              <input type="date" value={filter.requiredByFrom} onChange={e => setFilterField('requiredByFrom', e.target.value)}
                 className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
               <span className="text-xs text-ios-tertiary">—</span>
-              <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+              <input type="date" value={filter.requiredByTo} onChange={e => setFilterField('requiredByTo', e.target.value)}
                 className="px-2 py-1.5 rounded-lg bg-gray-50 border border-gray-200 text-xs" />
             </>
           )}
@@ -323,7 +313,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
 
         {/* Unpaid toggle */}
         <button
-          onClick={() => { setUnpaid(u => !u); setPaidOnly(false); }}
+          onClick={() => setFilterField('paymentStatus', filter.paymentStatus === 'Unpaid' ? '' : 'Unpaid')}
           className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
             unpaidOnly ? 'bg-ios-red text-white' : 'bg-gray-100 text-ios-secondary hover:bg-gray-200'
           }`}
@@ -372,37 +362,37 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       {/* Active filter badges — show when any filter is active so the user
           always has a path to undo state. Used to only track cross-tab filters,
           which let search / dates / noDateOnly silently persist. */}
-      {(sourceFilter || paidOnly || unpaidOnly || deliveryTypeFilter || paymentMethodFilter || excludeCancelled || statusFilter || search || noDateOnly) && (
+      {(filter.source || filter.paymentStatus || filter.deliveryType || filter.paymentMethod || filter.excludeCancelled || filter.status || search || noDateOnly) && (
         <div className="flex flex-wrap items-center gap-2 px-1">
           <span className="text-[11px] text-ios-tertiary">{t.activeFilters}:</span>
-          {sourceFilter && (
+          {filter.source && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-brand-100 text-brand-700 text-xs font-medium">
-              {t.source}: {sourceFilter}
-              <button onClick={() => setSourceFilter('')} className="ml-0.5 text-brand-400 hover:text-brand-700">×</button>
+              {t.source}: {filter.source}
+              <button onClick={() => setFilterField('source', '')} className="ml-0.5 text-brand-400 hover:text-brand-700">×</button>
             </span>
           )}
-          {paidOnly && (
+          {filter.paymentStatus === 'Paid' && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-medium">
               {t.paymentStatus}: {t.paid}
-              <button onClick={() => setPaidOnly(false)} className="ml-0.5 text-emerald-400 hover:text-emerald-700">×</button>
+              <button onClick={() => setFilterField('paymentStatus', '')} className="ml-0.5 text-emerald-400 hover:text-emerald-700">×</button>
             </span>
           )}
-          {deliveryTypeFilter && (
+          {filter.deliveryType && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-sky-100 text-sky-700 text-xs font-medium">
-              {deliveryTypeFilter}
-              <button onClick={() => setDeliveryType('')} className="ml-0.5 text-sky-400 hover:text-sky-700">×</button>
+              {filter.deliveryType}
+              <button onClick={() => setFilterField('deliveryType', '')} className="ml-0.5 text-sky-400 hover:text-sky-700">×</button>
             </span>
           )}
-          {paymentMethodFilter && (
+          {filter.paymentMethod && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-purple-100 text-purple-700 text-xs font-medium">
-              {t.paymentMethod}: {paymentMethodFilter}
-              <button onClick={() => setPaymentMethod('')} className="ml-0.5 text-purple-400 hover:text-purple-700">×</button>
+              {t.paymentMethod}: {filter.paymentMethod}
+              <button onClick={() => setFilterField('paymentMethod', '')} className="ml-0.5 text-purple-400 hover:text-purple-700">×</button>
             </span>
           )}
-          {excludeCancelled && (
+          {filter.excludeCancelled && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-gray-100 text-gray-600 text-xs font-medium">
               {t.statusCancelled} ✗
-              <button onClick={() => setExcludeCancelled(false)} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
+              <button onClick={() => setFilterField('excludeCancelled', false)} className="ml-0.5 text-gray-400 hover:text-gray-700">×</button>
             </span>
           )}
           {search && (
@@ -417,27 +407,27 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               <button onClick={() => setNoDateOnly(false)} className="ml-0.5 text-amber-400 hover:text-amber-700">×</button>
             </span>
           )}
-          {statusFilter && (
+          {filter.status && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-indigo-100 text-indigo-700 text-xs font-medium">
-              {t.labelStatus || 'Status'}: {statusFilter}
-              <button onClick={() => setStatus('')} className="ml-0.5 text-indigo-400 hover:text-indigo-700">×</button>
+              {t.labelStatus || 'Status'}: {filter.status}
+              <button onClick={() => setFilterField('status', '')} className="ml-0.5 text-indigo-400 hover:text-indigo-700">×</button>
             </span>
           )}
-          {unpaidOnly && (
+          {filter.paymentStatus === 'Unpaid' && (
             <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full bg-red-100 text-red-700 text-xs font-medium">
               {t.paymentStatus}: {t.unpaid}
-              <button onClick={() => setUnpaid(false)} className="ml-0.5 text-red-400 hover:text-red-700">×</button>
+              <button onClick={() => setFilterField('paymentStatus', '')} className="ml-0.5 text-red-400 hover:text-red-700">×</button>
             </span>
           )}
           <button
             onClick={() => {
-              setSourceFilter('');
-              setPaidOnly(false);
-              setUnpaid(false);
-              setDeliveryType('');
-              setPaymentMethod('');
-              setStatus('');
-              setExcludeCancelled(false);
+              // Preserve the date range on reset — dates are always active and
+              // clearing them would silently switch from the month view to all-time.
+              setFilter(prev => ({
+                ...clearOrderFilter(),
+                requiredByFrom: prev.requiredByFrom,
+                requiredByTo: prev.requiredByTo,
+              }));
               setSearch('');
               setNoDateOnly(false);
             }}
