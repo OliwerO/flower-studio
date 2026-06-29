@@ -3,6 +3,9 @@ import { queryOrdersHandler, breakdownOrdersHandler } from './ordersPack.js';
 import { financialSummaryHandler } from './financePack.js';
 import { stockStatusHandler, stockWriteoffsHandler } from './stockPack.js';
 import { customerInsightsHandler, customerLookupHandler } from './customersPack.js';
+import { deliveryStatusHandler } from './deliveriesPack.js';
+import { poStatusHandler, purchaseSpendHandler } from './purchasingPack.js';
+import { hoursSummaryHandler } from './hoursPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -103,6 +106,60 @@ export const TOOLS = [
       required: ['name'],
     },
     handler: customerLookupHandler,
+  },
+  {
+    name: 'delivery_status',
+    description: 'Operational delivery view from the deliveries table: counts by status (Pending / Out for Delivery / Delivered / Cancelled) and by driver over an optional date range, plus a sample list. Use for "how many deliveries", "deliveries by driver", delivery completion. NOT for delivery-vs-pickup revenue (use financial_summary).',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD (optional)' },
+        to: { type: 'string', description: 'End date YYYY-MM-DD (optional)' },
+        status: { type: 'string', description: 'Filter to one delivery status (optional)' },
+        driver: { type: 'string', description: 'Filter to one driver name (optional)' },
+        limit: { type: 'number', description: 'Max sample rows (optional, capped at 25)' },
+      },
+    },
+    handler: deliveryStatusHandler,
+  },
+  {
+    name: 'po_status',
+    description: 'Purchase-order workflow status: counts of POs by status (Draft / Sent / Shopping / Reviewing / Evaluating / Complete), open vs complete totals, and a sample list. Use for "how many open purchase orders", PO pipeline questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string', description: 'Filter to one PO status (optional)' },
+        limit: { type: 'number', description: 'Max sample rows (optional, capped at 25)' },
+      },
+    },
+    handler: poStatusHandler,
+  },
+  {
+    name: 'purchase_spend',
+    description: 'Actual flower purchase spend over a date range (recorded supplier purchases): total in złoty and a by-supplier breakdown. Use for "how much did I spend on flowers in May", supplier spend.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD' },
+        to: { type: 'string', description: 'End date YYYY-MM-DD' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: purchaseSpendHandler,
+  },
+  {
+    name: 'hours_summary',
+    description: 'Florist hours + payroll over a date range: hours, earnings (złoty), and delivery counts per florist plus grand totals. Use for "how many hours did each florist work", payroll / labor-cost questions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD' },
+        to: { type: 'string', description: 'End date YYYY-MM-DD' },
+        name: { type: 'string', description: 'Filter to one florist name (optional)' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: hoursSummaryHandler,
   },
 ];
 
