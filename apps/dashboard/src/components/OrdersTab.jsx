@@ -65,26 +65,43 @@ function getSortOptions() {
 }
 
 // Clickable column-header label that drives the table sort. The header text is
-// the sort control (click to sort, click again to flip direction); the funnel
-// button beside it opens the column's filter popover — two distinct affordances.
-// Idle sortable columns reveal a faint ⇅ on hover; the active column shows a
-// brand-coloured ▲ / ▼.
+// the sort control (click to sort, click again to flip direction); the filter
+// chip beside it opens the column's filter popover — two distinct affordances.
+// A faint ↕ sits next to every sortable label so the column reads as sortable
+// at rest (and is visually distinct from the filter chip's bars icon); the
+// active column shows a brand-coloured ▲ / ▼.
 function SortHeader({ label, sortKey, sortBy, sortDir, onSort }) {
   const active = sortBy === sortKey;
   return (
     <button
       type="button"
       onClick={() => onSort(sortKey)}
-      className="group inline-flex items-center gap-0.5 hover:text-ios-secondary transition-colors"
+      className={`group inline-flex items-center gap-1 whitespace-nowrap transition-colors ${
+        active ? 'text-brand-600' : 'hover:text-ios-secondary'
+      }`}
       title={`${t.sortBy}: ${label}`}
     >
-      <span className={active ? 'text-brand-600' : ''}>{label}</span>
+      <span>{label}</span>
       <span className={`text-[9px] leading-none ${
-        active ? 'text-brand-600' : 'text-ios-tertiary opacity-0 group-hover:opacity-100'
+        active ? 'text-brand-600' : 'text-gray-300 group-hover:text-gray-400'
       }`}>
-        {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+        {active ? (sortDir === 'asc' ? '▲' : '▼') : '↕'}
       </span>
     </button>
+  );
+}
+
+// One labelled figure in the selection-totals strip (label over a bold value,
+// with an optional muted suffix like the margin %).
+function SelStat({ label, value, sub = null, valueClass = 'text-ios-label' }) {
+  return (
+    <div className="flex flex-col leading-tight">
+      <span className="text-[10px] font-medium uppercase tracking-wide text-ios-tertiary">{label}</span>
+      <span className={`text-sm font-semibold ${valueClass}`}>
+        {value}
+        {sub != null && <span className="ml-1 text-[11px] font-medium text-ios-tertiary">{sub}</span>}
+      </span>
+    </div>
   );
 }
 
@@ -295,6 +312,35 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   // open date/status popover doesn't get torn down mid-edit) and swaps in fresh
   // data when the request resolves.
   const showSkeleton = loading && orders.length === 0;
+
+  // Totals for the orders the owner has ticked — answers "how much did this
+  // selection earn". Tick select-all after filtering by a date range to total a
+  // whole period. Paid is status-aware (Paid = full value, Partial = recorded
+  // payments, Unpaid = 0) so it matches the per-row money display. Sums the
+  // selected orders out of the full fetched set so a later filter change doesn't
+  // silently drop a ticked order from the total.
+  const selectionTotals = useMemo(() => {
+    const sel = orders.filter(o => selected.has(o.id));
+    let sales = 0, cost = 0, paid = 0;
+    for (const o of sel) {
+      const total = Number(o['Final Price'] || o['Price Override'] || o['Sell Total'] || 0);
+      sales += total;
+      cost += Number(o['Flowers Cost Total'] || 0);
+      if (o['Payment Status'] === 'Paid') paid += total;
+      else if (o['Payment Status'] === 'Partial') paid += Number(o['Payment 1 Amount'] || 0) + Number(o['Payment 2 Amount'] || 0);
+    }
+    const profit = sales - cost;
+    return {
+      count: sel.length,
+      sales,
+      paid,
+      outstanding: Math.max(0, sales - paid),
+      profit,
+      margin: sales > 0 ? (profit / sales) * 100 : null,
+      avg: sel.length ? sales / sel.length : 0,
+      hasCost: cost > 0,
+    };
+  }, [orders, selected]);
 
   function daysSince(dateStr) {
     if (!dateStr) return 0;
@@ -613,6 +659,32 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
         </div>
       )}
 
+      {/* Selection totals — appears when the owner ticks orders. Filter by a
+          date range, tick select-all, and read the period's takings here. */}
+      {!showPremade && !showSkeleton && selected.size > 0 && (
+        <div className="glass-card px-4 py-2.5 flex flex-wrap items-center gap-x-6 gap-y-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-brand-600">
+            {selectionTotals.count} {t.selected}
+          </span>
+          <SelStat label={t.totalsSales} value={`${selectionTotals.sales.toFixed(0)} ${t.zl}`} />
+          <SelStat label={t.totalsPaid} value={`${selectionTotals.paid.toFixed(0)} ${t.zl}`} valueClass="text-emerald-600" />
+          <SelStat
+            label={t.totalsOutstanding}
+            value={`${selectionTotals.outstanding.toFixed(0)} ${t.zl}`}
+            valueClass={selectionTotals.outstanding > 0 ? 'text-ios-red' : 'text-ios-label'}
+          />
+          {selectionTotals.hasCost && (
+            <SelStat
+              label={t.totalsProfit}
+              value={`${selectionTotals.profit.toFixed(0)} ${t.zl}`}
+              sub={selectionTotals.margin != null ? `${selectionTotals.margin.toFixed(0)}%` : null}
+              valueClass={selectionTotals.profit >= 0 ? 'text-ios-label' : 'text-ios-red'}
+            />
+          )}
+          <SelStat label={t.totalsAvg} value={`${selectionTotals.avg.toFixed(0)} ${t.zl}`} />
+        </div>
+      )}
+
       {!showPremade && !showSkeleton && fetchError && (
         <div className="text-center py-12">
           <p className="text-ios-tertiary mb-3">{t.error}</p>
@@ -630,10 +702,10 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           now the order rows had no labels, so users had to guess what each
           column represented. */}
       {!showPremade && !showSkeleton && sorted.length > 0 && (
-        <div className="px-4 py-2 flex items-center gap-4 text-[10px] font-semibold uppercase tracking-wide text-ios-tertiary">
+        <div className="px-4 py-2 flex items-center gap-4 text-[11.5px] font-semibold uppercase tracking-wide text-ios-tertiary">
           <span className="w-4 shrink-0" />
           {/* # — Order ID */}
-          <span className="w-10 shrink-0 flex items-center">
+          <span className="group w-10 shrink-0 flex items-center">
             <SortHeader label={t.colOrderId || '#'} sortKey="orderId" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.orderIdQuery} title={t.colOrderId || '#'}>
               <input
@@ -645,7 +717,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             </ColumnFilterPopover>
           </span>
           {/* Order date */}
-          <span className="w-20 shrink-0 flex items-center">
+          <span className="group w-20 shrink-0 flex items-center">
             <SortHeader label={t.orderDate || 'Order date'} sortKey="orderDate" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!(filter.orderDateFrom || filter.orderDateTo)} title={t.orderDate || 'Order date'}>
               <div className="space-y-1.5 min-w-[160px]">
@@ -661,7 +733,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             </ColumnFilterPopover>
           </span>
           {/* Customer */}
-          <span className="w-36 flex items-center">
+          <span className="group w-36 flex items-center">
             <SortHeader label={t.colCustomer || t.customer || 'Customer'} sortKey="customer" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.customerQuery} title={t.colCustomer || t.customer || 'Customer'}>
               <input
@@ -673,7 +745,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             </ColumnFilterPopover>
           </span>
           {/* Bouquet */}
-          <span className="flex-1 flex items-center">
+          <span className="group flex-1 flex items-center">
             <SortHeader label={t.colBouquet || t.bouquetComposition || 'Bouquet'} sortKey="bouquet" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.bouquetQuery} title={t.colBouquet || t.bouquetComposition || 'Bouquet'}>
               <input
@@ -685,7 +757,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             </ColumnFilterPopover>
           </span>
           {/* Status (bundled: status + payment status + payment method + source) */}
-          <span className="shrink-0 w-20 text-right flex items-center justify-end">
+          <span className="group shrink-0 w-20 text-right flex items-center justify-end">
             <SortHeader label={t.labelStatus} sortKey="status" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover
               active={!!(filter.status || filter.paymentStatus || filter.paymentMethod || filter.source)}
@@ -754,7 +826,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
             </ColumnFilterPopover>
           </span>
           {/* Type — split from Fulfilment (w-12 matches body cell) */}
-          <span className="shrink-0 w-12 flex items-center">
+          <span className="group shrink-0 w-12 flex items-center">
             <SortHeader label={t.deliveryType} sortKey="type" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={!!filter.deliveryType} title={t.deliveryType}>
               <div className="flex gap-1 flex-wrap">
@@ -779,7 +851,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               Active compares against the initial defaults (monthStart/today)
               since those are always set — comparing to "set at all" would keep
               the dot permanently lit and stop signalling "filtered here". */}
-          <span className="shrink-0 w-24 text-right flex items-center justify-end">
+          <span className="group shrink-0 w-24 text-right flex items-center justify-end">
             <SortHeader label={t.colFulfillment} sortKey="deliveryDate" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={filter.requiredByFrom !== monthStart() || filter.requiredByTo !== todayStr()} title={t.byFulfilmentDate} align="right">
               <div className="space-y-1.5 min-w-[160px]">
@@ -796,7 +868,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           </span>
           <span className="shrink-0 w-2" />{/* margin dot column */}
           {/* Total */}
-          <span className="shrink-0 w-20 text-right flex items-center justify-end">
+          <span className="group shrink-0 w-20 text-right flex items-center justify-end">
             <SortHeader label={t.orderTotal || t.total || 'Total'} sortKey="total" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
             <ColumnFilterPopover active={filter.priceMin != null || filter.priceMax != null} title={t.orderTotal || 'Total'} align="right">
               <div className="space-y-1.5">
