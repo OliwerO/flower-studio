@@ -1,10 +1,12 @@
 # docker-compose.lab.yml
-# Local Postgres 15 for the lab harness. Port 5433 to avoid colliding with
-# any other Postgres on :5432. Volume persists across `compose down/up` so
-# the template DB survives between sessions.
+# Local Postgres 18 for the lab harness (matches prod PG 18.x). Port 5433 to
+# avoid colliding with any other Postgres on :5432. Volume persists across
+# `compose down/up` so the template DB survives between sessions.
+# NOTE: bumping the major version requires recreating the volume:
+#   docker compose -f docker-compose.lab.yml down -v && npm run lab:db:up
 services:
   postgres:
-    image: postgres:15-alpine
+    image: postgres:18-alpine
     container_name: flower-lab-pg
     environment:
       POSTGRES_USER: lab
@@ -13,7 +15,8 @@ services:
     ports:
       - "5433:5432"
     volumes:
-      - lab-pg-data:/var/lib/postgresql/data
+      # PG18 image places data in a subdir of /var/lib/postgresql (not /data).
+      - lab-pg-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lab -d lab"]
       interval: 2s
