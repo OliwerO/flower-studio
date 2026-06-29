@@ -93,7 +93,7 @@ export const TOOLS = [
   },
   {
     name: 'customer_lookup',
-    description: "Look up specific customers by name (substring, case-insensitive). Returns each match with their segment, lifetime order count, total spend, last order date, and key people (with important dates). Use for 'tell me about <name>', 'how much has <name> spent', 'when did <name> last order', 'what's <name>'s birthday'.",
+    description: "Look up specific customers by name, nickname, phone, or contact detail (substring, case-insensitive). Returns each match with their segment, lifetime order count, total spend, last order date, and key people (with important dates). Use for 'tell me about <name>', 'how much has <name> spent', 'when did <name> last order', 'what's <name>'s birthday'.",
     input_schema: {
       type: 'object',
       properties: {
