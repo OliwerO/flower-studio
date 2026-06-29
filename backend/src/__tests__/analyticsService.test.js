@@ -73,7 +73,7 @@ describe('calculateRevenueMetrics', () => {
     const result = calculateRevenueMetrics(orders, paidOrders, 2.2);
 
     expect(result.totalRevenue).toBe(370); // 135 + 235
-    expect(result.flowerRevenue).toBe(300); // 100 + 200
+    expect(result.flowerRevenue).toBe(300); // net = total 370 − delivery 70 (no discounts here)
     expect(result.deliveryRevenue).toBe(70); // 35 + 35
     expect(result.avgOrderValue).toBe(185); // 370 / 2
     expect(result.paidFlowerCost).toBe(120); // 40 + 80

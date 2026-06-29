@@ -238,8 +238,13 @@ export function enrichOrderPrices(orders, orderSellTotals, orderCostTotals, deli
  */
 export function calculateRevenueMetrics(orders, paidOrders, targetMarkup) {
   const totalRevenue = paidOrders.reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
-  const flowerRevenue = paidOrders.reduce((sum, o) => sum + o._flowerSell, 0);
   const deliveryRevenue = paidOrders.reduce((sum, o) => sum + o._deliveryFee, 0);
+  // Net flower revenue = what was actually charged for flowers, after Price
+  // Override / Final Price discounts. Defined as total − delivery so the figures
+  // always reconcile (total = flowers + delivery) and Flower Margin reflects the
+  // realized margin, not catalog list price. Prior bug: summed gross `_flowerSell`
+  // (catalog list), which made flowers > total on discounted orders (#prod revenue mismatch).
+  const flowerRevenue = totalRevenue - deliveryRevenue;
   const avgOrderValue = paidOrders.length ? totalRevenue / paidOrders.length : 0;
 
   const paidFlowerCost = paidOrders.reduce((sum, o) => sum + o._cost, 0);
