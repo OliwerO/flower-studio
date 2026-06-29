@@ -42,6 +42,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | marketingSpend.js | GET/POST /marketing-spend | Ad spend tracking by channel |
 | admin.js | GET /admin/* | Migration health, parity dashboards, audit log viewer (owner only) |
 | issues.js | GET/POST/PATCH /issues, GET /issues/labels, POST /issues/labels/ensure-priorities, GET/POST /issues/:n/comments | Owner-only proxy over the GitHub REST API for the dashboard Issues tab. Reuses `GITHUB_TOKEN` (same token as feedbackService). Filters PRs out of the list (GitHub's /issues returns PRs too). Priority = `priority:*` labels, seeded idempotently. No DB/service — thin HTTP edge. |
+| assistant.js | POST /api/assistant/message (owner-only) | "Ask Blossom" AI assistant endpoint. Accepts `{ sessionId?, message }`, calls `assistantService.chat()`, returns `{ sessionId, answer }`. Stateless auth — session continuity is client-side session ID, server holds no state. |
 | test.js | POST /test/reset, GET /test/state, /test/audit, /test/parity | Test-harness only — mounted when `IS_HARNESS` flag is set (DATABASE_URL=pglite:memory) |
 
 ## Services (src/services/)
@@ -60,6 +61,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | driverBot.js | Inbound `/start <PIN>` registration long-poll on `TELEGRAM_BOT_TOKEN` (the alerts bot). Mirrors `feedbackTelegramBot.js` but uses its own `driver_bot_poll_offset` key in `system_meta` so the two loops never collide. Resolves PIN → driver name via `driverPins.js`, persists chat-id + lang via `driverTelegramRepo`, sends a language-matched confirmation. On a florist PIN (`PIN_FLORIST`), resolves via `resolveFloristByPin`, stores in `system_meta` via `floristTelegramRepo`, sends a language-matched florist confirmation. `/start` is brute-force-guarded per chat_id (5 failed PINs / 15 min, in-memory; cleared on a successful registration) — the bot's equivalent of the `/auth/verify` IP rate limit. |
 | intake-parser.js | Claude Haiku integration for parsing freeform text / Flowwow emails into structured orders. |
 | analyticsService.js | Pure math helper functions for financial KPIs (take pre-fetched data, return metrics). Also exports `computeAnalytics({ from, to })` — the DB-backed full-report function that both the `/api/analytics` route and the assistant `financial_summary` tool call (single source of truth, so their numbers always match). |
+| assistantService.js | Anthropic Claude integration for the "Ask Blossom" assistant. Manages multi-turn session history (in-memory, keyed by UUID sessionId). On each turn, calls the tool pack, resolves tool calls, and returns the final text answer. Tool results are thin adapters over canonical services — queries never bypass repos. |
 | configService.js | App config singleton — DEFAULTS, in-memory config state, loadConfig/saveConfig, migrations, driver-of-day daily state, cutoff reminder interval. Exports: `getConfig`, `updateConfig`, `generateOrderId`, `getDriverOfDay`, `isPastCutoff`, `getActiveSeasonalCategory`. Import from here, not from routes/settings.js. |
 | driverState.js | In-memory backup driver state (resets daily at midnight). |
 

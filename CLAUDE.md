@@ -124,6 +124,9 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 - `backend/src/services/orderService.js` — order state machine + business logic
 - `backend/src/routes/` — all API endpoints
 - `packages/shared/` — shared contexts, hooks, API client, utils
+- `backend/src/routes/assistant.js` — `POST /api/assistant/message` (owner-only). Stateless — session continuity via client-supplied `sessionId` UUID.
+- `backend/src/services/assistantService.js` — Anthropic Claude integration; multi-turn session history (in-memory); resolves tool calls through thin adapters over canonical services (parity-pinned: assistant tools call the same `computeAnalytics` / `orderRepo` / etc. as the main API routes, so numbers can never drift).
+- `backend/src/services/assistantTools/` — tool-pack directory. Each tool is a thin adapter; never bypass repos or inline SQL. Dashboard-only in v1; florist mount is a follow-up.
 
 ## Default Workflow Skills (mandatory for non-trivial work)
 
