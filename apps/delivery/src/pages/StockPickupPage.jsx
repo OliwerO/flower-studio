@@ -90,7 +90,9 @@ export default function StockPickupPage() {
       if (o.id !== orderId) return o;
       let payments = {};
       try { payments = JSON.parse(o['Supplier Payments'] || '{}'); } catch {}
-      payments[supplier] = amount === '' ? '' : Number(amount) || 0;
+      // Normalize comma decimal separator (mobile numeric keyboards may insert ',')
+      const normalized = String(amount).replace(',', '.');
+      payments[supplier] = normalized === '' ? '' : Number(normalized) || 0;
       return { ...o, 'Supplier Payments': JSON.stringify(payments) };
     }));
   }
@@ -208,7 +210,8 @@ export default function StockPickupPage() {
                         {t.totalPaidAt} {supplier}:
                       </span>
                       <input
-                        type="number"
+                        type="text"
+                        inputMode="decimal"
                         value={payments[supplier] ?? ''}
                         onChange={e => setLocalPayment(order.id, supplier, e.target.value)}
                         onBlur={() => saveSupplierPayment(order.id, supplier)}
