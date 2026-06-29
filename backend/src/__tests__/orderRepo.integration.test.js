@@ -1023,3 +1023,127 @@ describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
     }
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// updateOrder Delivery→Pickup cascade (#317)
+// ─────────────────────────────────────────────────────────────────────
+//
+// When an order's Delivery Type transitions Delivery → Pickup, the
+// linked delivery record must be cancelled inside the same transaction.
+// This prevents the driver app from showing a stale Pending delivery.
+
+describe('updateOrder Delivery→Pickup cancel cascade (#317)', () => {
+  it('cancels linked Pending delivery when order converts Delivery → Pickup', async () => {
+    // Create a delivery-type order with a linked delivery record.
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Convert test',
+      deliveryType: 'Delivery',
+      requiredBy: '2026-06-20',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 3 }],
+      delivery: { address: 'ul. Floriańska 1', date: '2026-06-20', fee: 25, driver: 'Timur' },
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Sanity: delivery should exist and be Pending.
+    const before = await orderRepo.getById(order.id);
+    expect(before['Delivery Type']).toBe('Delivery');
+    expect(before._delivery).toBeTruthy();
+    expect(before._delivery['Status']).toBe(DELIVERY_STATUS.PENDING);
+    const deliveryId = before._delivery.id;
+
+    // Patch: flip Delivery Type to Pickup.
+    await orderRepo.updateOrder(order.id, { 'Delivery Type': 'Pickup' }, { actor: { actorRole: 'owner' } });
+
+    // The delivery record should now be Cancelled.
+    const [deliveryRow] = await harness.db.select().from(deliveries)
+      .where(eq(deliveries.id, deliveryId));
+    expect(deliveryRow.status).toBe(DELIVERY_STATUS.CANCELLED);
+
+    // listDeliveries with no filter returns all non-deleted rows —
+    // but the driver app only renders Pending/Out-for-Delivery/Delivered.
+    // Confirm the cancelled delivery would be excluded from those groups
+    // (i.e. its status is Cancelled, not Pending).
+    const allDeliveries = await orderRepo.listDeliveries({});
+    const found = allDeliveries.find(d => d.id === deliveryId);
+    expect(found?.Status).toBe(DELIVERY_STATUS.CANCELLED);
+
+    // Audit trail: a delivery update audit row should exist with Status=Cancelled.
+    // audit_log stores { before, after } in the jsonb `diff` column.
+    const auditRows = await harness.db.select().from(auditLog)
+      .where(eq(auditLog.entityType, 'delivery'));
+    const cancelAudit = auditRows.find(
+      a => a.entityId === deliveryId && a.action === 'update'
+        && a.diff?.after?.Status === DELIVERY_STATUS.CANCELLED
+    );
+    expect(cancelAudit).toBeTruthy();
+  });
+
+  it('does NOT cancel the delivery when patching unrelated fields (Delivery stays Pending)', async () => {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Unrelated patch',
+      deliveryType: 'Delivery',
+      requiredBy: '2026-06-20',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 2 }],
+      delivery: { address: 'ul. Test 2', date: '2026-06-20', fee: 25, driver: 'Timur' },
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'owner' } });
+
+    const before = await orderRepo.getById(order.id);
+    const deliveryId = before._delivery.id;
+
+    // Patch something unrelated — florist note.
+    await orderRepo.updateOrder(order.id, { 'Florist Note': 'Add ribbon' }, { actor: { actorRole: 'owner' } });
+
+    // Delivery must remain Pending.
+    const [deliveryRow] = await harness.db.select().from(deliveries)
+      .where(eq(deliveries.id, deliveryId));
+    expect(deliveryRow.status).toBe(DELIVERY_STATUS.PENDING);
+  });
+
+  it('does NOT re-cancel a delivery that is already Cancelled', async () => {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Already cancelled',
+      deliveryType: 'Delivery',
+      requiredBy: '2026-06-20',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 2 }],
+      delivery: { address: 'ul. Test 3', date: '2026-06-20', fee: 25, driver: 'Timur' },
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const before = await orderRepo.getById(order.id);
+    const deliveryId = before._delivery.id;
+
+    // Manually cancel the delivery first.
+    await harness.db.update(deliveries)
+      .set({ status: DELIVERY_STATUS.CANCELLED, updatedAt: new Date() })
+      .where(eq(deliveries.id, deliveryId));
+
+    // Patch Delivery Type → Pickup (delivery already Cancelled).
+    await orderRepo.updateOrder(order.id, { 'Delivery Type': 'Pickup' }, { actor: { actorRole: 'owner' } });
+
+    // Should still be Cancelled — no extra audit rows for a no-op.
+    const [deliveryRow] = await harness.db.select().from(deliveries)
+      .where(eq(deliveries.id, deliveryId));
+    expect(deliveryRow.status).toBe(DELIVERY_STATUS.CANCELLED);
+  });
+
+  it('does NOT touch delivery when converting Pickup → Delivery (no linked delivery exists)', async () => {
+    // Pickup order — no delivery record.
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Pickup order',
+      deliveryType: 'Pickup',
+      requiredBy: '2026-06-20',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 2 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // Patch Delivery Type → Delivery (the reverse path).
+    // convertToDelivery is the proper endpoint for this; updateOrder just stores the field.
+    // Either way no linked delivery exists, so nothing should blow up.
+    await orderRepo.updateOrder(order.id, { 'Delivery Type': 'Delivery' }, { actor: { actorRole: 'owner' } });
+
+    // No deliveries at all — confirm.
+    const allDeliveries = await harness.db.select().from(deliveries);
+    expect(allDeliveries).toHaveLength(0);
+  });
+});
