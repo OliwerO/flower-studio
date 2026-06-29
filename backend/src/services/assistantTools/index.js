@@ -1,6 +1,7 @@
 // backend/src/services/assistantTools/index.js
 import { queryOrdersHandler, breakdownOrdersHandler } from './ordersPack.js';
 import { financialSummaryHandler } from './financePack.js';
+import { stockStatusHandler, stockWriteoffsHandler } from './stockPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -50,6 +51,31 @@ export const TOOLS = [
       required: ['from', 'to'],
     },
     handler: financialSummaryHandler,
+  },
+  {
+    name: 'stock_status',
+    description: "Current stock levels by item. Each item reports its available quantity (Current Quantity — already net of committed demand) and whether it is in shortfall (quantity < 0, meaning more stems are owed to orders than are on hand — buy more). shortfallOnly=true returns ONLY items in shortfall. search filters by item name. Use for 'what's running low', 'what's negative', 'how many <flower> do I have', 'what do I need to order'.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        shortfallOnly: { type: 'boolean', description: 'When true, return only items with negative quantity (shortfall).' },
+        search: { type: 'string', description: 'Filter to stock items whose display name matches this text.' },
+        limit: { type: 'number', description: 'Max items to list (the counts are always over the full match).' },
+      },
+    },
+    handler: stockStatusHandler,
+  },
+  {
+    name: 'stock_writeoffs',
+    description: "Write-offs (stems lost to waste/damage) in a date range: total quantity + a breakdown by reason. Use for 'how much did I write off', 'how much waste this month', 'why did I lose stems'. Dates YYYY-MM-DD.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD (inclusive).' },
+        to: { type: 'string', description: 'End date YYYY-MM-DD (inclusive).' },
+      },
+    },
+    handler: stockWriteoffsHandler,
   },
 ];
 
