@@ -146,3 +146,6 @@ export { buildPoSuggestions } from './utils/buildPoSuggestions.js';
 // Mono bouquet suggested price = minStems × key-flower sell price. Shared by
 // dashboard ProductCard and florist VariantList so the math can't drift.
 export { suggestedMonoPrice } from './utils/productPricing.js';
+
+// Ask Blossom — AI assistant chat panel (markdown render, session continuity)
+export { default as AskBlossomPanel } from './components/AskBlossomPanel.jsx';
