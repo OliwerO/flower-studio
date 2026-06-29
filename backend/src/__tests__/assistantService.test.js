@@ -60,6 +60,22 @@ describe('assistantService.ask', () => {
     });
     const r = await ask({ message: 'loop' });
     expect(mockCreate.mock.calls.length).toBeLessThanOrEqual(7); // 1 initial + MAX_ITERATIONS(6)
-    expect(r).toHaveProperty('answer');
+    expect(r.answer).toBeTruthy();
+  });
+
+  it('catches a tool handler throw and returns an error object in toolResults', async () => {
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    TOOL_HANDLERS.query_orders.mockRejectedValueOnce(new Error('DB down'));
+    mockCreate
+      .mockResolvedValueOnce({
+        stop_reason: 'tool_use',
+        content: [{ type: 'tool_use', id: 'tu_1', name: 'query_orders', input: {} }],
+      })
+      .mockResolvedValueOnce({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'sorry' }] });
+    const r = await ask({ message: 'test' });
+    expect(r.toolResults[0].output).toEqual({ error: 'DB down' });
+    const secondCallMessages = mockCreate.mock.calls[1][0].messages;
+    expect(secondCallMessages.some(m => Array.isArray(m.content) && m.content.some(b => b.type === 'tool_result'))).toBe(true);
+    consoleSpy.mockRestore();
   });
 });

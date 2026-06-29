@@ -15,8 +15,7 @@ setInterval(() => {
   for (const [id, s] of sessions) if (now - s.createdAt > SESSION_TTL_MS) sessions.delete(id);
 }, 10 * 60 * 1000).unref();
 
-function systemPrompt() {
-  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw' }).format(new Date());
+function systemPrompt(today) {
   return [
     "You are Blossom's analytics assistant for the studio owner. Blossom is a flower studio in Krakow.",
     `Today's date is ${today} (Europe/Warsaw). Resolve relative periods like "May", "last month", "this week" against it.`,
@@ -28,6 +27,7 @@ function systemPrompt() {
 }
 
 export async function ask({ sessionId, message }) {
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Warsaw' }).format(new Date());
   let session = sessionId ? sessions.get(sessionId) : null;
   if (!session) {
     sessionId = crypto.randomUUID();
@@ -39,7 +39,7 @@ export async function ask({ sessionId, message }) {
   const toolResults = [];
   let iterations = 0;
   let response = await anthropic.messages.create({
-    model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(), tools: TOOL_DEFS, messages: session.messages,
+    model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: session.messages,
   });
 
   while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
@@ -60,11 +60,12 @@ export async function ask({ sessionId, message }) {
     }
     session.messages.push({ role: 'user', content: resultBlocks });
     response = await anthropic.messages.create({
-      model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(), tools: TOOL_DEFS, messages: session.messages,
+      model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: session.messages,
     });
   }
 
   session.messages.push({ role: 'assistant', content: response.content });
-  const answer = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim();
+  const answer = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
+    || 'Превышен лимит итераций инструментов — попробуйте переформулировать вопрос.';
   return { sessionId, answer, toolResults };
 }
