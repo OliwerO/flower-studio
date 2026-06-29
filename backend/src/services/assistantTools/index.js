@@ -1,5 +1,6 @@
 // backend/src/services/assistantTools/index.js
 import { queryOrdersHandler, breakdownOrdersHandler } from './ordersPack.js';
+import { financialSummaryHandler } from './financePack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -36,6 +37,19 @@ export const TOOLS = [
       required: ['dimension'],
     },
     handler: breakdownOrdersHandler,
+  },
+  {
+    name: 'financial_summary',
+    description: 'Revenue and money figures for a date range: total revenue, flower vs delivery revenue, average order value, revenue per Order Source, flower margin %. Use for any "how much revenue/money/margin" question and for revenue (not count) breakdowns. Dates YYYY-MM-DD.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'YYYY-MM-DD' },
+        to: { type: 'string', description: 'YYYY-MM-DD' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: financialSummaryHandler,
   },
 ];
 
