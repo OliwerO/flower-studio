@@ -43,6 +43,11 @@ describe('stockPack.stockStatusHandler', () => {
     expect(r.matchedCount).toBe(1);
     expect(r.items.map(i => i.name)).toEqual(['White Peony']);
   });
+  it('search does a case-insensitive substring match on item name', async () => {
+    const r = await stockStatusHandler({ search: 'rose' });
+    expect(r.matchedCount).toBe(1);
+    expect(r.items[0].name).toBe('Red Rose 50cm');
+  });
 });
 
 describe('stockPack.stockWriteoffsHandler', () => {

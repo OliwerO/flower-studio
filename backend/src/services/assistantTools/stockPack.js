@@ -9,7 +9,7 @@ const HARD_ROW_CEILING = 250;
 export async function stockStatusHandler(input = {}) {
   const { shortfallOnly = false, search, limit } = input;
   const pg = { includeEmpty: true };
-  if (search) pg.displayName = search;
+  if (search) pg.displayName = `%${search}%`;
   const rows = await stockRepo.list({ pg });
   let items = rows.map((r) => {
     const quantity = Number(r['Current Quantity']) || 0;
