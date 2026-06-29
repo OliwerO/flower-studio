@@ -32,6 +32,7 @@ import premadeBouquetRoutes from './routes/premadeBouquets.js';
 import adminRoutes         from './routes/admin.js';
 import feedbackRoutes      from './routes/feedback.js';
 import issuesRoutes        from './routes/issues.js';
+import assistantRoutes     from './routes/assistant.js';
 import { startFeedbackBot } from './services/feedbackTelegramBot.js';
 import { startDriverBot } from './services/driverBot.js';
 
@@ -133,6 +134,7 @@ app.use('/api/premade-bouquets', premadeBouquetRoutes);
 app.use('/api/admin',           adminRoutes);
 app.use('/api/feedback',        feedbackRoutes);
 app.use('/api/issues',         issuesRoutes);
+app.use('/api/assistant',      assistantRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);
