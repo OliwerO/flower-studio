@@ -1,10 +1,8 @@
 // Analytics computation functions — extracted from routes/analytics.js.
-// All functions are pure: they take pre-fetched data and return computed metrics.
-// No DB calls or HTTP awareness — just math.
-//
-// computeAnalytics is the single source of truth for the full analytics report.
-// It is called by BOTH the /api/analytics route AND the assistant finance tool,
-// guaranteeing their numbers always match.
+// Pure math helper functions below take pre-fetched data and return computed metrics.
+// The `computeAnalytics` export is the DB-backed full-report function (loads data,
+// then runs those helpers) — called by both the /api/analytics route and the
+// assistant finance tool so their numbers always match.
 
 import { ORDER_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import * as orderRepo from '../repos/orderRepo.js';
@@ -26,6 +24,7 @@ import { getConfig } from './configService.js';
  * @returns {Promise<object>} The full analytics payload
  */
 export async function computeAnalytics({ from, to }) {
+  if (!from || !to) throw new Error('computeAnalytics requires both from and to dates (YYYY-MM-DD)');
   const fromDate = new Date(from);
   const toDate = new Date(to);
   const periodLengthMs = toDate.getTime() - fromDate.getTime();
