@@ -4,54 +4,52 @@
 // Migrates production Stock data from legacy aggregate Demand Entry model
 // to Y-model (dated Demand Entries + premade back-add).
 //
-// Pre-condition: All stock rows must have `type_name` set (run Owner
-// backfill UI from issue #292 first).
+// Pre-condition: All ACTIVE stock rows must have `type_name` set (run Owner
+// backfill UI from issue #292 first). Soft-deleted rows are back-filled
+// automatically by phaseDeletedFill (see below).
 //
 // Phases (single transaction):
 //   1. Split aggregate Demand Entries by linked order Required By.
 //   2. Orphan negative aggregates → today-dated Demand Entry.
 //   3. Positive-qty undated rows → synthetic Batch dated migration day.
 //   4. Premade reservation back-add to matching Batch on-hand.
+//   4b. Back-fill date/type_name on SOFT-DELETED rows (phases 1-3 skip
+//       them, but `ALTER ... SET NOT NULL` in phase 5 validates every
+//       physical row — incl. tombstones — so they must be non-NULL too).
+//       We fill, never DELETE: stock_purchases / stock_order_lines /
+//       premade_bouquet_lines FK-reference stock(id) with default RESTRICT.
 //   5. ALTER COLUMN date / type_name SET NOT NULL.
 //
 // Idempotent: re-running after Phase 5 (NOT NULL applied) is a no-op
-// via the early-exit guard `alreadyMigrated()`. Phases 1-3 also become
-// no-ops because their predicates require `date IS NULL`.
+// via the early-exit guard `alreadyMigrated()`. Phases 1-4b also become
+// no-ops because their predicates require `date IS NULL` / NULL attrs.
 //
 // Usage:
 //   APPROVE=yes node backend/scripts/migrate-stock-y-model.js --dry-run
 //   APPROVE=yes node backend/scripts/migrate-stock-y-model.js
 
-import 'dotenv/config';
 import pg from 'pg';
+import { pathToFileURL } from 'url';
 
 const DRY_RUN = process.argv.includes('--dry-run');
 
-if (process.env.APPROVE !== 'yes') {
-  console.error('Set APPROVE=yes to confirm you want to run the Y-model migration.');
-  process.exit(1);
-}
-if (!process.env.DATABASE_URL) {
-  console.error('DATABASE_URL not set. Aborting.');
-  process.exit(1);
+function isoToday() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
-const today = new Date().toISOString().slice(0, 10);
-
-async function preCondition(client) {
+export async function preCondition(client) {
   const { rows } = await client.query(
     `SELECT count(*)::int AS missing FROM stock WHERE type_name IS NULL AND deleted_at IS NULL`
   );
   if (rows[0].missing > 0) {
     throw new Error(
-      `Pre-condition failed: ${rows[0].missing} stock row(s) have type_name IS NULL. ` +
+      `Pre-condition failed: ${rows[0].missing} active stock row(s) have type_name IS NULL. ` +
       `Run the Owner-driven Variety attribute backfill (issue #292) first.`
     );
   }
 }
 
-async function phase1Split(client) {
+export async function phase1Split(client) {
   // Find aggregate DEs: negative qty, no date, linked to at least one active order_line.
   // Phase 1 sums only **active, non-deleted** order_lines (status NOT IN
   //   Cancelled/Delivered/Picked Up). If an aggregate's only linked lines
@@ -128,7 +126,7 @@ async function phase1Split(client) {
   console.log(`[phase1] Split ${aggregates.length} aggregate DE(s).`);
 }
 
-async function phase2OrphanNegative(client, today) {
+export async function phase2OrphanNegative(client, today) {
   const { rows: orphans } = await client.query(`
     SELECT s.id FROM stock s
     WHERE s.current_quantity < 0
@@ -149,7 +147,7 @@ async function phase2OrphanNegative(client, today) {
   console.log(`[phase2] Dated ${orphans.length} orphan aggregate DE(s) → ${today}.`);
 }
 
-async function phase3PositiveUndated(client, today) {
+export async function phase3PositiveUndated(client, today) {
   const { rowCount } = await client.query(`
     UPDATE stock SET date = $1, updated_at = NOW()
     WHERE current_quantity >= 0 AND date IS NULL AND deleted_at IS NULL
@@ -157,13 +155,7 @@ async function phase3PositiveUndated(client, today) {
   console.log(`[phase3] Dated ${rowCount} positive-qty undated row(s) → ${today}.`);
 }
 
-async function phase5SetNotNull(client) {
-  await client.query(`ALTER TABLE stock ALTER COLUMN date SET NOT NULL`);
-  await client.query(`ALTER TABLE stock ALTER COLUMN type_name SET NOT NULL`);
-  console.log('[phase5] Applied NOT NULL on stock.date and stock.type_name.');
-}
-
-async function phase4PremadeBackAdd(client) {
+export async function phase4PremadeBackAdd(client) {
   const { rows: sums } = await client.query(`
     SELECT stock_id, SUM(quantity)::int AS reserved
     FROM premade_bouquet_lines
@@ -181,7 +173,32 @@ async function phase4PremadeBackAdd(client) {
   console.log(`[phase4] Back-added premade reservations to ${sums.length} Batch(es).`);
 }
 
-async function alreadyMigrated(client) {
+// Phase 4b — back-fill soft-deleted (tombstone) rows so phase 5's
+// `SET NOT NULL` validates them. Phases 1-3 deliberately skip
+// `deleted_at IS NOT NULL`, and the #292 backfill UI only types active
+// rows, leaving deleted zombies undated/untyped. type_name falls back to
+// the first word of display_name (e.g. "Hydrangea Pink" → "Hydrangea"),
+// then 'Unknown'. We never DELETE: stock_purchases / stock_order_lines /
+// premade_bouquet_lines reference stock(id) with default RESTRICT.
+export async function phaseDeletedFill(client, today) {
+  const { rowCount } = await client.query(`
+    UPDATE stock
+    SET date = COALESCE(date, $1::date),
+        type_name = COALESCE(type_name, NULLIF(split_part(display_name, ' ', 1), ''), 'Unknown'),
+        updated_at = NOW()
+    WHERE deleted_at IS NOT NULL
+      AND (date IS NULL OR type_name IS NULL)
+  `, [today]);
+  console.log(`[phase4b] Back-filled date/type_name on ${rowCount} soft-deleted row(s) → date ${today}.`);
+}
+
+export async function phase5SetNotNull(client) {
+  await client.query(`ALTER TABLE stock ALTER COLUMN date SET NOT NULL`);
+  await client.query(`ALTER TABLE stock ALTER COLUMN type_name SET NOT NULL`);
+  console.log('[phase5] Applied NOT NULL on stock.date and stock.type_name.');
+}
+
+export async function alreadyMigrated(client) {
   const { rows } = await client.query(`
     SELECT is_nullable FROM information_schema.columns
     WHERE table_name = 'stock' AND column_name = 'date'
@@ -189,33 +206,61 @@ async function alreadyMigrated(client) {
   return rows[0]?.is_nullable === 'NO';
 }
 
-async function run() {
-  const client = await pool.connect();
+/**
+ * Run the full migration against any client exposing `.query(text, params)`
+ * (a pg pool client in production, the pglite handle in tests).
+ * Owns its own BEGIN/COMMIT/ROLLBACK. Throws on failure (CLI wrapper maps
+ * that to a non-zero exit code).
+ * @returns {Promise<{noop?:true, dryRun?:true, committed?:true}>}
+ */
+export async function runMigration(client, { dryRun = false, today = isoToday() } = {}) {
+  await client.query('BEGIN');
   try {
-    await client.query('BEGIN');
     await preCondition(client);
 
     if (await alreadyMigrated(client)) {
       console.log('[migrate] Stock.date already NOT NULL — migration already complete. No-op.');
       await client.query('ROLLBACK');
-      return;
+      return { noop: true };
     }
 
     await phase1Split(client);
     await phase2OrphanNegative(client, today);
     await phase3PositiveUndated(client, today);
     await phase4PremadeBackAdd(client);
+    await phaseDeletedFill(client, today);
     await phase5SetNotNull(client);
 
-    if (DRY_RUN) {
+    if (dryRun) {
       console.log('[migrate] DRY RUN — rolling back transaction.');
       await client.query('ROLLBACK');
-    } else {
-      await client.query('COMMIT');
-      console.log('[migrate] Done.');
+      return { dryRun: true };
     }
+
+    await client.query('COMMIT');
+    console.log('[migrate] Done.');
+    return { committed: true };
   } catch (err) {
     await client.query('ROLLBACK');
+    throw err;
+  }
+}
+
+async function main() {
+  await import('dotenv/config');
+  if (process.env.APPROVE !== 'yes') {
+    console.error('Set APPROVE=yes to confirm you want to run the Y-model migration.');
+    process.exit(1);
+  }
+  if (!process.env.DATABASE_URL) {
+    console.error('DATABASE_URL not set. Aborting.');
+    process.exit(1);
+  }
+  const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+  const client = await pool.connect();
+  try {
+    await runMigration(client, { dryRun: DRY_RUN });
+  } catch (err) {
     console.error('[migrate] FAILED:', err.message);
     process.exitCode = 1;
   } finally {
@@ -224,4 +269,6 @@ async function run() {
   }
 }
 
-run();
+// Only run the CLI side-effects when executed directly, not on import (tests).
+const isCli = import.meta.url === pathToFileURL(process.argv[1] || '').href;
+if (isCli) main();
