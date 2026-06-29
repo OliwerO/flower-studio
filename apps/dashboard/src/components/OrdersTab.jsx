@@ -866,7 +866,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               </div>
             </ColumnFilterPopover>
           </span>
-          <span className="shrink-0 w-2" />{/* margin dot column */}
+          <span className="shrink-0 w-14 text-right">{t.margin}</span>{/* margin (dot + %) column */}
           {/* Total */}
           <span className="group shrink-0 w-20 text-right flex items-center justify-end">
             <SortHeader label={t.orderTotal || t.total || 'Total'} sortKey="total" sortBy={sortBy} sortDir={sortDir} onSort={handleSort} />
@@ -955,7 +955,9 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
                   return `${fmtDate(dueDate) || ''}${dueTime ? ` · ${dueTime}` : ''}`;
                 })()}
               </span>
-              {/* Margin dot — green ≥55%, amber ≥40%, red <40%, gray if unknown */}
+              {/* Margin — coloured dot + % under the "Маржа" header so its meaning
+                  is obvious (green ≥55%, amber 40–54%, red <40%, gray = unknown:
+                  no flower cost recorded). Profit health, NOT payment status. */}
               {(() => {
                 const cost = order['Flowers Cost Total'] || 0;
                 const rev  = order['Final Price'] || order['Price Override'] || order['Sell Total'] || 0;
@@ -964,7 +966,17 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
                   : margin >= 55 ? 'bg-emerald-400'
                   : margin >= 40 ? 'bg-amber-400'
                   : 'bg-rose-400';
-                return <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} title={margin !== null ? `${t.margin}: ${margin.toFixed(0)}%` : ''} />;
+                const textColor = margin === null ? 'text-ios-tertiary'
+                  : margin >= 55 ? 'text-emerald-600'
+                  : margin >= 40 ? 'text-amber-600'
+                  : 'text-rose-600';
+                return (
+                  <span className="shrink-0 w-14 flex items-center justify-end gap-1"
+                    title={margin !== null ? `${t.margin}: ${margin.toFixed(0)}%` : t.margin}>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                    <span className={`text-xs font-medium ${textColor}`}>{margin !== null ? `${margin.toFixed(0)}%` : '—'}</span>
+                  </span>
+                );
               })()}
               {/* Price column — for Partial, show remaining underneath so the owner
                   sees outstanding money without expanding the row. */}

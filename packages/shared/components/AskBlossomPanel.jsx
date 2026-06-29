@@ -97,7 +97,7 @@ export default function AskBlossomPanel({ t }) {
   }
 
   return (
-    <div className="flex h-full max-h-[70vh] gap-3">
+    <div className="flex h-full gap-3">
       <aside className="w-48 shrink-0 border-r flex flex-col">
         <button
           className="m-2 bg-brand-600 text-white rounded-lg px-3 py-2 text-sm"
