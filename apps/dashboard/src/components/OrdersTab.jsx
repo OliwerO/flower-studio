@@ -90,6 +90,12 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     requiredByTo: f.dateTo || todayStr(),
   }));
   const setFilterField = useCallback((key, value) => setFilter(prev => ({ ...prev, [key]: value })), []);
+  // Editing a date-column filter switches off upcoming mode so the new date
+  // range actually takes effect (upcoming owns the date scope; they're mutually exclusive).
+  const setDateField = useCallback((key, value) => {
+    setUpcoming(false);
+    setFilterField(key, value);
+  }, [setFilterField]);
   const [expandedId, setExpanded] = useState(f.orderId || null);
   // When the owner navigates here from a customer timeline, only the clicked
   // order should be visible — otherwise it's buried among all other orders
@@ -116,8 +122,11 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
       // consistently. Filter by delivery/pickup date (Required By), not
       // submission date — the owner thinks in terms of "when does this go
       // out", not "when was it placed" — #337.
+      // In upcoming mode, let `upcoming` own the date scope by blanking date fields
+      // before building params — all non-date server filters (status, paymentStatus,
+      // source, deliveryType, paymentMethod, excludeCancelled) still apply.
       const params = upcomingMode
-        ? { upcoming: '1', ...(filter.status ? { status: filter.status } : {}) }
+        ? { upcoming: '1', ...buildOrderQueryParams({ ...filter, requiredByFrom: '', requiredByTo: '', orderDateFrom: '', orderDateTo: '' }) }
         : buildOrderQueryParams(filter);
       const res = await client.get('/orders', { params });
       setOrders(prev => {
@@ -577,11 +586,11 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               <div className="space-y-1.5 min-w-[160px]">
                 <div>
                   <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateFrom}</p>
-                  <DatePicker value={filter.orderDateFrom} onChange={v => setFilterField('orderDateFrom', v)} placeholder={t.dateFrom} />
+                  <DatePicker value={filter.orderDateFrom} onChange={v => setDateField('orderDateFrom', v)} placeholder={t.dateFrom} />
                 </div>
                 <div>
                   <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateTo}</p>
-                  <DatePicker value={filter.orderDateTo} onChange={v => setFilterField('orderDateTo', v)} placeholder={t.dateTo} />
+                  <DatePicker value={filter.orderDateTo} onChange={v => setDateField('orderDateTo', v)} placeholder={t.dateTo} />
                 </div>
               </div>
             </ColumnFilterPopover>
@@ -710,11 +719,11 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
               <div className="space-y-1.5 min-w-[160px]">
                 <div>
                   <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateFrom}</p>
-                  <DatePicker value={filter.requiredByFrom} onChange={v => setFilterField('requiredByFrom', v)} placeholder={t.dateFrom} />
+                  <DatePicker value={filter.requiredByFrom} onChange={v => setDateField('requiredByFrom', v)} placeholder={t.dateFrom} />
                 </div>
                 <div>
                   <p className="text-[10px] text-ios-tertiary mb-0.5">{t.dateTo}</p>
-                  <DatePicker value={filter.requiredByTo} onChange={v => setFilterField('requiredByTo', v)} placeholder={t.dateTo} />
+                  <DatePicker value={filter.requiredByTo} onChange={v => setDateField('requiredByTo', v)} placeholder={t.dateTo} />
                 </div>
               </div>
             </ColumnFilterPopover>

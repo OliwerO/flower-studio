@@ -587,32 +587,46 @@ export default function OrderListPage() {
             <p className="text-4xl mb-3">🌸</p>
             <p className="text-ios-tertiary">{t.noOrders}</p>
           </div>
-        ) : (
-          <div className="flex flex-col gap-2.5 mt-1">
-            {(() => {
-              const base = noDateOnly
-                ? orders.filter(o => !o['Delivery Date'] && !o['Required By'])
-                : orders;
-              // Apply client-side predicate (customer/bouquet text, delivery type,
-              // date range, price range) on top of the server-fetched set.
-              const filtered = base.filter(o => orderMatchesClientFilter(o, filter));
-              return viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(filtered) : sortByStatus(filtered);
-            })().map(order => (
-              <OrderCard
-                key={order.id}
-                order={order}
-                isOwner={isOwner}
-                stockShortfalls={stockShortfalls}
-                editorStockItems={editorStockItems}
-                editorPremadeMap={editorPremadeMap}
-                editorPendingPO={editorPendingPO}
-                onStockRefresh={refreshEditorStock}
-                onOrderUpdated={handleOrderUpdated}
-                onOrderDeleted={handleOrderDeleted}
-              />
-            ))}
-          </div>
-        )}
+        ) : (() => {
+          // Compute client-filtered + sorted array once so we can detect
+          // the "server returned orders but all were filtered out" case.
+          const base = noDateOnly
+            ? orders.filter(o => !o['Delivery Date'] && !o['Required By'])
+            : orders;
+          // Apply client-side predicate (customer/bouquet text, delivery type,
+          // date range, price range) on top of the server-fetched set.
+          const clientFiltered = base.filter(o => orderMatchesClientFilter(o, filter));
+          const displayOrders = viewMode === VIEW_MODES.ACTIVE
+            ? sortByEarliestNeeded(clientFiltered)
+            : sortByStatus(clientFiltered);
+
+          if (displayOrders.length === 0) {
+            return (
+              <div className="text-center mt-20">
+                <p className="text-4xl mb-3">🌸</p>
+                <p className="text-ios-tertiary">{t.noMatches}</p>
+              </div>
+            );
+          }
+          return (
+            <div className="flex flex-col gap-2.5 mt-1">
+              {displayOrders.map(order => (
+                <OrderCard
+                  key={order.id}
+                  order={order}
+                  isOwner={isOwner}
+                  stockShortfalls={stockShortfalls}
+                  editorStockItems={editorStockItems}
+                  editorPremadeMap={editorPremadeMap}
+                  editorPendingPO={editorPendingPO}
+                  onStockRefresh={refreshEditorStock}
+                  onOrderUpdated={handleOrderUpdated}
+                  onOrderDeleted={handleOrderDeleted}
+                />
+              ))}
+            </div>
+          );
+        })()}
       </main>
 
       {/* Speed-dial FAB — tap "+" to expand, shows two options */}

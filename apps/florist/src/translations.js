@@ -24,6 +24,7 @@ const en = {
   allStatuses:      'All',
   newOrder:         'New Order',
   noOrders:         'No orders found.',
+  noMatches:        'Nothing matched the filters.',
   loading:          'Loading...',
 
   // Order statuses (display labels — API values stay English)
@@ -889,6 +890,7 @@ const ru = {
   allStatuses:      'Все',
   newOrder:         'Новый заказ',
   noOrders:         'Заказы не найдены.',
+  noMatches:        'Ничего не найдено.',
   loading:          'Загрузка...',
 
   // Order statuses (display labels — API values stay English)
