@@ -12,6 +12,8 @@ import { useNotifications } from './hooks/useNotifications.js';
 
 import Toast                   from './components/Toast.jsx';
 import BottomNav               from './components/BottomNav.jsx';
+import { AskBlossomLauncher } from '@flower-studio/shared';
+import t from './translations.js';
 
 const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
 const OrderListPage = lazy(() => import('./pages/OrderListPage.jsx'));
@@ -29,7 +31,6 @@ const BouquetsPage = lazy(() => import('./pages/BouquetsPage.jsx'));
 const WasteLogPage = lazy(() => import('./pages/WasteLogPage.jsx'));
 const CustomerListPage = lazy(() => import('./pages/CustomerListPage.jsx'));
 const CustomerDetailPage = lazy(() => import('./pages/CustomerDetailPage.jsx'));
-const AssistantPage = lazy(() => import('./pages/AssistantPage.jsx'));
 
 function PageFallback() {
   return (
@@ -59,10 +60,12 @@ function OwnerRoute({ children }) {
 // Layout — wraps authenticated pages with the bottom tab bar.
 // Like mounting the factory floor signage above every workstation.
 function Layout({ children }) {
+  const { role } = useAuth();
   return (
     <>
       {children}
       <BottomNav />
+      {role === 'owner' && <AskBlossomLauncher t={t} fabClassName="bottom-20 right-4" />}
     </>
   );
 }
@@ -127,10 +130,6 @@ export default function App() {
 
         <Route path="/day-summary" element={
           <OwnerRoute><Layout><DaySummaryPage /></Layout></OwnerRoute>
-        } />
-
-        <Route path="/assistant" element={
-          <OwnerRoute><Layout><AssistantPage /></Layout></OwnerRoute>
         } />
 
         <Route path="/hours" element={

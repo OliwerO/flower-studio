@@ -5,6 +5,24 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-29 — Ask Blossom: floating chat button (FAB) in dashboard + florist
+
+"Ask Blossom" moved from a dedicated tab (dashboard) / More-menu route (florist) into a shared owner-only floating action button (`AskBlossomLauncher` from `@flower-studio/shared`). On phone it opens a bottom sheet; on desktop a right-side drawer. No separate page or nav entry needed — the FAB is always accessible without leaving the current view.
+
+### Dashboard (`apps/dashboard/`)
+- `DashboardPage.jsx` — removed `AssistantTab` lazy import, the `assistant` TABS entry, and the `renderMountedTab('assistant', ...)` block; imports and mounts `<AskBlossomLauncher t={t} />` just before the root closing `</div>`. Stale-tab guard: a persisted `dashboard_tab=assistant` now falls back to Today.
+- `components/AssistantTab.jsx` — deleted (replaced by launcher).
+
+### Florist (`apps/florist/`)
+- `App.jsx` — removed `AssistantPage` lazy import + `/assistant` `OwnerRoute`; imports `AskBlossomLauncher` + `t`; `Layout` now reads `role` from `useAuth()` and renders `<AskBlossomLauncher t={t} fabClassName="bottom-20 right-4" />` for owners (above the BottomNav safe-area).
+- `components/BottomNav.jsx` — removed `Sparkles` nav entry from `ownerOnlyItems` and from lucide import.
+- `pages/AssistantPage.jsx` — deleted (replaced by launcher).
+
+### Env / deployment
+No schema change, no new env vars. Three app builds ✓.
+
+---
+
 ## 2026-06-29 — Y-model cutover migration: fix Phase-5 failure on soft-deleted rows (#291 blocker)
 
 Pre-cutover dry-run prep against a prod read surfaced a defect in the cutover migration that would have made the live run **fail**. Fixed + regression-locked. No app/schema/env change — this only touches the standalone cutover script.
@@ -22,6 +40,12 @@ Pre-cutover dry-run prep against a prod read surfaced a defect in the cutover mi
 - **Gate 2 (code):** ✅ this change.
 - **Gate 3 (infra):** prod is PG 18.3, lab harness is PG 15 + no local `pg_dump` — bump the lab container to PG 18 to run the dry-run against a real prod snapshot.
 - Verification: `migrateStockYModel.integration.test.js` 4/4 ✓ (isolation). E2E N/A — the migration is a standalone CLI script, exercised by no API route.
+
+---
+
+## 2026-06-29 — Analytics: flower revenue now net (reconciles)
+
+`flowerRevenue` in the financial analytics now equals `total − deliveryFee` (i.e. the flower-only portion), so the Flower Margin figure is the true realised margin on stems + arrangement labour. Before this fix `flowerRevenue` included delivery income, inflating the margin when orders had large delivery fees. No schema/env change — pure analytics arithmetic fix. PR #445.
 
 ---
 

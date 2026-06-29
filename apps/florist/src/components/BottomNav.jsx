@@ -21,7 +21,6 @@ import {
   HelpCircle,
   Users,
   MessageSquareWarning,
-  Sparkles,
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useTheme } from '../context/ThemeContext.jsx';
@@ -122,7 +121,6 @@ export default function BottomNav() {
     { Icon: ClipboardCheck, label: t.stockEvaluation, action: () => navigate('/stock-evaluation') },
   ];
   const ownerOnlyItems = [
-    { Icon: Sparkles, label: t.tabAssistant, action: () => navigate('/assistant') },
     { Icon: Clock, label: t.floristHours, action: () => navigate('/hours') },
   ];
   const helpItem = isOwner

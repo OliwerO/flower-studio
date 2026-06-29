@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
-import { FeedbackModal } from '@flower-studio/shared';
+import { FeedbackModal, AskBlossomLauncher } from '@flower-studio/shared';
 
 const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
 const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
@@ -20,8 +20,6 @@ const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
 const VarietyBackfillTab = lazy(() => import('../components/VarietyBackfillTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 const IssuesTab = lazy(() => import('../components/IssuesTab.jsx'));
-const AssistantTab = lazy(() => import('../components/AssistantTab.jsx'));
-
 function TabFallback() {
   return (
     <div className="flex justify-center py-16">
@@ -40,7 +38,6 @@ export default function DashboardPage() {
     { key: 'stock',     label: t.tabStock },
     { key: 'customers', label: t.tabCustomers },
     { key: 'financial', label: t.tabFinancial },
-    { key: 'assistant', label: t.tabAssistant },
     { key: 'products', label: t.tabProducts },
     { key: 'issues',   label: t.tabIssues },
     { key: 'admin',    label: '\u26a0 ' + t.tabAdmin },
@@ -185,9 +182,6 @@ export default function DashboardPage() {
         {renderMountedTab('customers',
           <CustomersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
         )}
-        {renderMountedTab('assistant',
-          <AssistantTab isActive={activeTab === 'assistant'} />
-        )}
         {renderMountedTab('products',
           <ProductsTab />
         )}
@@ -222,6 +216,7 @@ export default function DashboardPage() {
           onClose={() => setReportOpen(false)}
         />
       )}
+      <AskBlossomLauncher t={t} />
     </div>
   );
 }
