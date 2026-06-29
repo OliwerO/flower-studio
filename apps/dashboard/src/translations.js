@@ -1120,6 +1120,21 @@ const en = {
   writeOffConfirm:              'Confirm',
   writeOffReason:               'Select reason',
   showClearedRows:              'Show cleared rows',
+
+  // Ask Blossom — AI assistant (dashboard-only v1)
+  tabAssistant:         'Assistant',
+  assistantPlaceholder: 'Ask about orders, revenue…',
+  assistantSend:        'Ask',
+  assistantThinking:    'Thinking…',
+  assistantError:       'Failed to get a response',
+  assistantEmpty:       'Ask a question about your data — e.g. "how many orders in May?"',
+  assistantHistory:     'Chats',
+  assistantNewChat:     '+ New chat',
+  assistantNoHistory:   'No saved chats yet',
+  assistantUntitled:   'Untitled',
+  assistantRename:      'Rename',
+  assistantDelete:      'Delete',
+  assistantDeleteConfirm: 'Delete?',
 };
 
 const ru = {
@@ -2241,6 +2256,21 @@ const ru = {
   writeOffConfirm:              'Подтвердить',
   writeOffReason:               'Выберите причину',
   showClearedRows:              'Показать списанные',
+
+  // Ask Blossom — AI assistant (dashboard-only v1)
+  tabAssistant:         'Помощник',
+  assistantPlaceholder: 'Спросите о заказах, выручке…',
+  assistantSend:        'Спросить',
+  assistantThinking:    'Думаю…',
+  assistantError:       'Не удалось получить ответ',
+  assistantEmpty:       'Задайте вопрос о ваших данных — например, «сколько заказов в мае?»',
+  assistantHistory:     'Чаты',
+  assistantNewChat:     '+ Новый чат',
+  assistantNoHistory:   'Пока нет сохранённых чатов',
+  assistantUntitled:   'Без названия',
+  assistantRename:      'Переименовать',
+  assistantDelete:      'Удалить',
+  assistantDeleteConfirm: 'Удалить?',
 };
 
 // ── Proxy-based dynamic translation ──

@@ -29,6 +29,7 @@ const BouquetsPage = lazy(() => import('./pages/BouquetsPage.jsx'));
 const WasteLogPage = lazy(() => import('./pages/WasteLogPage.jsx'));
 const CustomerListPage = lazy(() => import('./pages/CustomerListPage.jsx'));
 const CustomerDetailPage = lazy(() => import('./pages/CustomerDetailPage.jsx'));
+const AssistantPage = lazy(() => import('./pages/AssistantPage.jsx'));
 
 function PageFallback() {
   return (
@@ -126,6 +127,10 @@ export default function App() {
 
         <Route path="/day-summary" element={
           <OwnerRoute><Layout><DaySummaryPage /></Layout></OwnerRoute>
+        } />
+
+        <Route path="/assistant" element={
+          <OwnerRoute><Layout><AssistantPage /></Layout></OwnerRoute>
         } />
 
         <Route path="/hours" element={

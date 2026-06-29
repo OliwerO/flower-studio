@@ -5,6 +5,49 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-29 — Ask Blossom: deliveries / purchasing / hours coverage + florist-app mount
+
+The assistant can now answer about three more domains, and the owner can use it on her phone (florist app), not just the dashboard. No schema/env change — pure additive tool packs + a second mount of the existing panel.
+
+### Backend (`backend/`)
+- **Three new read-only tool packs** (`backend/src/services/assistantTools/`), each a thin adapter over a canonical repo/service — registered in `index.js`:
+  - `deliveriesPack` → `delivery_status`: deliveries by status / by driver over a date range (the operational deliveries table, distinct from the order-derived delivery-vs-pickup split).
+  - `purchasingPack` → `po_status` (PO pipeline: counts by status, open vs complete) + `purchase_spend` (actual flower spend total + by-supplier over a range).
+  - `hoursPack` → `hours_summary`: hours + earnings + delivery counts per florist over a range (uses the same `buildPayroll` math as the owner payroll views — never re-derived).
+
+### Frontend (`apps/florist/`)
+- **`AssistantPage.jsx`** at `/assistant` (owner-only `OwnerRoute`) — renders the shared `AskBlossomPanel`. Reached via the More menu (Sparkles icon, owner-only). Same assistant as the dashboard tab; the owner logs into the florist app with the Owner PIN to use it (a florist gets 403 + no nav entry).
+- **`translations.js`** — `tabAssistant` + the assistant* keys (EN + RU). Added `@tailwindcss/typography` to the florist app (config + devDep) for markdown styling.
+
+### Env / deployment
+- No new env vars, no schema change. `ANTHROPIC_API_KEY` unchanged.
+- Verification: backend suite 659 ✓, 3 app builds ✓. (E2E unchanged at 220 — this slice adds no API routes the suite exercises.)
+
+---
+
+## 2026-06-29 — Ask Blossom: chat history (auto-save, reopen, rename, delete)
+
+Every "Ask Blossom" conversation is now persisted to Postgres and reopenable from a history rail in the dashboard Assistant tab. The owner can resume a past chat (with full context preserved), rename it, delete it, or start a new one. Auto-saved on every turn — no Save button. Also fixes markdown tables in answers rendering as raw pipe text (added remark-gfm).
+
+### Schema / migration
+- **New table `assistant_conversations`** (migration `0016_assistant_conversations.sql`): `id uuid PK` (= the assistant sessionId), `title text`, `messages jsonb` (the canonical Anthropic message array, verbatim), `created_at`, `updated_at` + a `updated_at DESC` index. Idempotent (`CREATE TABLE/INDEX IF NOT EXISTS`); applies via Railway preDeployCommand and the pglite harness like any other migration. Owner-only feature → no owner column.
+
+### Backend (`backend/`)
+- **`repos/assistantConversationRepo.js`** (new) — `upsert / list / getById / rename / remove`. `upsert` preserves a renamed title on later turns (onConflict updates only `messages`+`updated_at`).
+- **`services/assistantService.js`** — `ask()` now rehydrates a missing session from PG on a cache miss (reopened chats keep full tool context) and upserts the full message array after every turn. Both PG calls are try/catch-wrapped: a persistence failure never breaks an answer. New exports: `toDisplayTurns` (projects stored Anthropic array → `{role,text}`, dropping tool blocks), `listConversations`, `getConversation`, `renameConversation`, `deleteConversation`.
+- **`routes/assistant.js`** — four new owner-only endpoints: `GET /conversations`, `GET/PATCH/DELETE /conversations/:id`.
+
+### Frontend (`packages/shared/`, `apps/dashboard/`)
+- **`AskBlossomPanel.jsx`** — left history rail (New chat, reopen, inline rename, two-step delete confirm); answers now render markdown tables via `react-markdown` + `remark-gfm` (new shared dependency). Dependency-free icons (inline glyphs) — no lucide-react.
+- **`apps/dashboard/src/translations.js`** — new `assistant*` history keys (EN + RU).
+
+### Env / deployment
+- No new env vars. `ANTHROPIC_API_KEY` (already required for the assistant) unchanged.
+- Schema change above requires migration 0016 to run on deploy (automatic via preDeployCommand).
+- Verification: backend suite 652 ✓, E2E 220 ✓, all 3 app builds ✓. **Merge gate: owner live smoke test on prod** (draft PR #441).
+
+---
+
 ## 2026-06-26 — Florist app: product name + translation editor (parity with dashboard)
 
 The florist app's BouquetsPage now includes the shared `ProductTranslationEditor` on every expanded bouquet card, so the owner can edit the EN product name, PL/RU/UK translations, and the storefront description directly from her phone — matching the dashboard Products tab capability added in ADR-0008. No backend change; no schema/env change. The editor is the same shared component consumed by both apps, so the two surfaces cannot drift.
