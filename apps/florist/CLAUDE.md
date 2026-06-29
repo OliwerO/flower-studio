@@ -24,7 +24,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | CustomerDetailPage | /customers/:id | all | Customer profile + order history |
 | WasteLogPage | /waste | owner | Stock-loss entry log by reason |
 | SubstituteReconciliationPage | /reconcile | owner | Reconcile substitutions made during PO shopping |
-| AssistantPage | /assistant | owner | "Ask Blossom" NL analytics assistant — shared `AskBlossomPanel`. Owner-only (the owner uses the florist app on her phone); reached via the More menu (Sparkles). Same panel as the dashboard Assistant tab. |
+| ~~AssistantPage~~ | ~~`/assistant`~~ | owner | Removed — replaced by the shared `AskBlossomLauncher` FAB (`bottom-20 right-4`) rendered owner-only in `App.jsx` `Layout`, clearing the bottom nav. Opens the same `AskBlossomPanel` as the dashboard. |
 
 ## Key Components (src/components/)
 | Component | Purpose |

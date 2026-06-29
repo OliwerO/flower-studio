@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
-import { FeedbackModal } from '@flower-studio/shared';
+import { FeedbackModal, AskBlossomLauncher } from '@flower-studio/shared';
 
 const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
 const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
@@ -20,8 +20,6 @@ const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
 const VarietyBackfillTab = lazy(() => import('../components/VarietyBackfillTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 const IssuesTab = lazy(() => import('../components/IssuesTab.jsx'));
-const AssistantTab = lazy(() => import('../components/AssistantTab.jsx'));
-
 function TabFallback() {
   return (
     <div className="flex justify-center py-16">
@@ -40,20 +38,21 @@ export default function DashboardPage() {
     { key: 'stock',     label: t.tabStock },
     { key: 'customers', label: t.tabCustomers },
     { key: 'financial', label: t.tabFinancial },
-    { key: 'assistant', label: t.tabAssistant },
     { key: 'products', label: t.tabProducts },
     { key: 'issues',   label: t.tabIssues },
     { key: 'admin',    label: '\u26a0 ' + t.tabAdmin },
     { key: 'backfill', label: t.tabBackfill },
     { key: 'settings', label: '\u2699 ' + t.tabSettings },
   ];
-  const [activeTab, setActiveTab] = useState(() => {
-    try { return localStorage.getItem('dashboard_tab') || 'today'; } catch { return 'today'; }
-  });
-  const [mountedTabs, setMountedTabs] = useState(() => {
-    try { return new Set([localStorage.getItem('dashboard_tab') || 'today']); }
-    catch { return new Set(['today']); }
-  });
+  // Guard against a stale persisted tab that no longer exists (e.g. the removed
+  // 'assistant' tab — now the floating launcher) so the owner doesn't land on a
+  // blank content area after this deploy.
+  const initialTab = () => {
+    try { const s = localStorage.getItem('dashboard_tab'); return s && s !== 'assistant' ? s : 'today'; }
+    catch { return 'today'; }
+  };
+  const [activeTab, setActiveTab] = useState(initialTab);
+  const [mountedTabs, setMountedTabs] = useState(() => new Set([initialTab()]));
   const [tabFilter, setTabFilter] = useState(null);
   // Track whether the financial tab has ever been opened, so we only mount
   // the lazy-loaded Recharts bundle on first visit (not on initial page load).
@@ -185,9 +184,6 @@ export default function DashboardPage() {
         {renderMountedTab('customers',
           <CustomersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
         )}
-        {renderMountedTab('assistant',
-          <AssistantTab isActive={activeTab === 'assistant'} />
-        )}
         {renderMountedTab('products',
           <ProductsTab />
         )}
@@ -222,6 +218,7 @@ export default function DashboardPage() {
           onClose={() => setReportOpen(false)}
         />
       )}
+      <AskBlossomLauncher t={t} />
     </div>
   );
 }
