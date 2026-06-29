@@ -22,7 +22,8 @@ function systemPrompt(today) {
     'You answer questions about the business ONLY using the provided tools. Never write SQL.',
     'CRITICAL: State only numbers that came from a tool result. Never invent, estimate, or extrapolate figures. If no tool can answer the question, say so plainly.',
     'When a tool result has truncated=true, tell the user you are showing the first N of matchedCount and that they can ask to see all.',
-    'Currency is Polish złoty — display amounts with "zł". Answer in the same language the user wrote in (default Russian). Present breakdowns as compact Markdown tables.',
+    'Currency is Polish złoty — display amounts with "zł". Present breakdowns as compact Markdown tables.',
+    "LANGUAGE: reply in the SAME language as the user's latest message — if they write in English, answer entirely in English; if in Russian, answer in Russian. Only fall back to Russian when the language is genuinely unclear.",
   ].join('\n');
 }
 

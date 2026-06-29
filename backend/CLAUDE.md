@@ -42,7 +42,7 @@ scripts/           → Backfill, shadow-health, start-test-backend, etc.
 | marketingSpend.js | GET/POST /marketing-spend | Ad spend tracking by channel |
 | admin.js | GET /admin/* | Migration health, parity dashboards, audit log viewer (owner only) |
 | issues.js | GET/POST/PATCH /issues, GET /issues/labels, POST /issues/labels/ensure-priorities, GET/POST /issues/:n/comments | Owner-only proxy over the GitHub REST API for the dashboard Issues tab. Reuses `GITHUB_TOKEN` (same token as feedbackService). Filters PRs out of the list (GitHub's /issues returns PRs too). Priority = `priority:*` labels, seeded idempotently. No DB/service — thin HTTP edge. |
-| assistant.js | POST /api/assistant/message (owner-only) | "Ask Blossom" AI assistant endpoint. Accepts `{ sessionId?, message }`, calls `assistantService.chat()`, returns `{ sessionId, answer }`. Stateless auth — session continuity is client-side session ID, server holds no state. |
+| assistant.js | POST /api/assistant/message (owner-only) | "Ask Blossom" AI assistant endpoint. Accepts `{ sessionId?, message }`, calls `assistantService.ask()`, returns `{ sessionId, answer, toolResults }` (toolResults = structured tool outputs for future rich-UI). Session continuity: server holds per-session message history in-memory (Map keyed by sessionId, 2h TTL). |
 | test.js | POST /test/reset, GET /test/state, /test/audit, /test/parity | Test-harness only — mounted when `IS_HARNESS` flag is set (DATABASE_URL=pglite:memory) |
 
 ## Services (src/services/)
