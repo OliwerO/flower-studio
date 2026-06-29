@@ -64,8 +64,18 @@ export async function ask({ sessionId, message }) {
     });
   }
 
-  session.messages.push({ role: 'assistant', content: response.content });
-  const answer = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim()
-    || 'Превышен лимит итераций инструментов — попробуйте переформулировать вопрос.';
+  const CAP_FALLBACK = 'Превышен лимит итераций инструментов — попробуйте переформулировать вопрос.';
+  let answer;
+  if (response.stop_reason === 'tool_use') {
+    // Iteration cap hit mid-tool-use. Do NOT persist the dangling tool_use turn —
+    // the Anthropic API requires every assistant tool_use turn to be immediately
+    // followed by a user turn with matching tool_result blocks. Persisting it here
+    // would 400 the next ask() call on this session.
+    answer = CAP_FALLBACK;
+    session.messages.push({ role: 'assistant', content: answer });
+  } else {
+    session.messages.push({ role: 'assistant', content: response.content });
+    answer = response.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() || CAP_FALLBACK;
+  }
   return { sessionId, answer, toolResults };
 }

@@ -63,6 +63,41 @@ describe('assistantService.ask', () => {
     expect(r.answer).toBeTruthy();
   });
 
+  it('session remains replayable after an iteration-cap hit (no dangling tool_use in history)', async () => {
+    // Phase 1: force the cap — mockCreate always returns tool_use so the loop maxes out.
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    mockCreate.mockResolvedValue({
+      stop_reason: 'tool_use',
+      content: [{ type: 'tool_use', id: 'tu', name: 'query_orders', input: {} }],
+    });
+    const first = await ask({ message: 'loop me' });
+    expect(first.answer).toBeTruthy(); // cap fallback string, not a throw
+
+    // Phase 2: use the same session — mockCreate now returns end_turn.
+    mockCreate.mockReset();
+    mockCreate.mockResolvedValue({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'ok' }] });
+    const second = await ask({ sessionId: first.sessionId, message: 'follow up' });
+
+    // Must succeed and return the model's text.
+    expect(second.answer).toBe('ok');
+
+    // No assistant turn in the stored history may carry an unterminated tool_use block.
+    // (Each such turn must be immediately followed by a user tool_result turn.)
+    const finalMessages = mockCreate.mock.calls[0][0].messages;
+    const danglingIdx = finalMessages.findIndex(
+      (m, i) =>
+        m.role === 'assistant' &&
+        Array.isArray(m.content) &&
+        m.content.some(b => b.type === 'tool_use') &&
+        (i + 1 >= finalMessages.length || finalMessages[i + 1].role !== 'user' ||
+          !Array.isArray(finalMessages[i + 1].content) ||
+          !finalMessages[i + 1].content.some(b => b.type === 'tool_result'))
+    );
+    expect(danglingIdx).toBe(-1); // no dangling tool_use turn
+
+    consoleSpy.mockRestore();
+  });
+
   it('catches a tool handler throw and returns an error object in toolResults', async () => {
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
     TOOL_HANDLERS.query_orders.mockRejectedValueOnce(new Error('DB down'));

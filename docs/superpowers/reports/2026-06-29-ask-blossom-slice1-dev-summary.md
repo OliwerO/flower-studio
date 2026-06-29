@@ -19,9 +19,9 @@
 - **`packages/shared/index.js`**: barrel re-exports `AskBlossomPanel`.
 
 ### Backend (Tasks 1–4 — earlier in branch)
-- **`backend/src/routes/assistant.js`**: `POST /api/assistant/message`, owner-only. Accepts `{ sessionId?, message }`, calls `assistantService.chat()`, returns `{ sessionId, answer }`.
+- **`backend/src/routes/assistant.js`**: `POST /api/assistant/message`, owner-only. Accepts `{ sessionId?, message }`, calls `assistantService.ask()`, returns `{ sessionId, answer }`.
 - **`backend/src/services/assistantService.js`**: Anthropic Claude integration with in-memory multi-turn session history. Each session is a UUID; history is cleared if the server restarts (acceptable for v1).
-- **`backend/src/services/assistantTools/`**: tool-pack directory — thin adapters over canonical services. `financial_summary` calls `computeAnalytics()` from `analyticsService.js` (same function the `/api/analytics` route calls, so numbers are always identical). `order_search` goes via `orderRepo`.
+- **`backend/src/services/assistantTools/`**: tool-pack directory — thin adapters over canonical services. `financial_summary` calls `computeAnalytics()` from `analyticsService.js` (same function the `/api/analytics` route calls, so numbers are always identical). `query_orders` and `breakdown_orders` go via `orderRepo`.
 
 ---
 
@@ -38,9 +38,10 @@ DashboardPage.jsx
   └─ AssistantTab.jsx       (new, lazy-loaded)
        └─ AskBlossomPanel   (packages/shared/components/)
             └─ POST /api/assistant/message
-                 └─ assistantService.chat()
-                      ├─ tool: financial_summary  → analyticsService.computeAnalytics()
-                      └─ tool: order_search       → orderRepo
+                 └─ assistantService.ask()
+                      ├─ tool: financial_summary   → analyticsService.computeAnalytics()
+                      ├─ tool: query_orders        → orderRepo
+                      └─ tool: breakdown_orders    → orderRepo
 ```
 
 The `AssistantTab` simply gates on `isActive` and sets a fixed height container (`h-[75vh]`). All chat state lives inside `AskBlossomPanel` — no lifting to the dashboard page, no cross-tab coupling.
