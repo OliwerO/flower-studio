@@ -149,15 +149,14 @@ export const TOOLS = [
   },
   {
     name: 'hours_summary',
-    description: 'Florist hours + payroll over a date range: hours, earnings (złoty), and delivery counts per florist plus grand totals. Use for "how many hours did each florist work", payroll / labor-cost questions.',
+    description: "Florist hours, pay rates + payroll. Returns each florist's configured hourly pay rate(s) — a flat number or a per-Rate-Type map (Standard / Wedding / Holidays), e.g. Sasha may earn more for weddings — plus hours, earnings (złoty), and delivery counts per florist and grand totals. Florists with configured rates but no logged hours are still listed (rates only). Use for \"what are the florist pay rates\", \"what is Sasha's rate\", \"how many hours did each florist work\", payroll / labor-cost questions. Omit from/to for current rates / all-time; pass them to scope hours + earnings to a period.",
     input_schema: {
       type: 'object',
       properties: {
-        from: { type: 'string', description: 'Start date YYYY-MM-DD' },
-        to: { type: 'string', description: 'End date YYYY-MM-DD' },
+        from: { type: 'string', description: 'Start date YYYY-MM-DD (optional — omit for current rates / all-time)' },
+        to: { type: 'string', description: 'End date YYYY-MM-DD (optional — omit for current rates / all-time)' },
         name: { type: 'string', description: 'Filter to one florist name (optional)' },
       },
-      required: ['from', 'to'],
     },
     handler: hoursSummaryHandler,
   },
