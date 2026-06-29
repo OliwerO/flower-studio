@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-29 — Ask Blossom: deliveries / purchasing / hours coverage + florist-app mount
+
+The assistant can now answer about three more domains, and the owner can use it on her phone (florist app), not just the dashboard. No schema/env change — pure additive tool packs + a second mount of the existing panel.
+
+### Backend (`backend/`)
+- **Three new read-only tool packs** (`backend/src/services/assistantTools/`), each a thin adapter over a canonical repo/service — registered in `index.js`:
+  - `deliveriesPack` → `delivery_status`: deliveries by status / by driver over a date range (the operational deliveries table, distinct from the order-derived delivery-vs-pickup split).
+  - `purchasingPack` → `po_status` (PO pipeline: counts by status, open vs complete) + `purchase_spend` (actual flower spend total + by-supplier over a range).
+  - `hoursPack` → `hours_summary`: hours + earnings + delivery counts per florist over a range (uses the same `buildPayroll` math as the owner payroll views — never re-derived).
+
+### Frontend (`apps/florist/`)
+- **`AssistantPage.jsx`** at `/assistant` (owner-only `OwnerRoute`) — renders the shared `AskBlossomPanel`. Reached via the More menu (Sparkles icon, owner-only). Same assistant as the dashboard tab; the owner logs into the florist app with the Owner PIN to use it (a florist gets 403 + no nav entry).
+- **`translations.js`** — `tabAssistant` + the assistant* keys (EN + RU). Added `@tailwindcss/typography` to the florist app (config + devDep) for markdown styling.
+
+### Env / deployment
+- No new env vars, no schema change. `ANTHROPIC_API_KEY` unchanged.
+- Verification: backend suite 659 ✓, 3 app builds ✓. (E2E unchanged at 220 — this slice adds no API routes the suite exercises.)
+
+---
+
 ## 2026-06-29 — Ask Blossom: chat history (auto-save, reopen, rename, delete)
 
 Every "Ask Blossom" conversation is now persisted to Postgres and reopenable from a history rail in the dashboard Assistant tab. The owner can resume a past chat (with full context preserved), rename it, delete it, or start a new one. Auto-saved on every turn — no Save button. Also fixes markdown tables in answers rendering as raw pipe text (added remark-gfm).
