@@ -713,8 +713,15 @@ export default function Step2Bouquet({
         <div className="ios-card flex items-center px-4">
           <input
             type="number"
-            value={priceOverride}
+            // CR-29: pre-fill the fixed price with the live sell total so the
+            // owner SEES (and the order keeps) that total when she doesn't set a
+            // custom one. State stays empty until she types — clearing reverts to
+            // the suggestion, and the value tracks line edits while untouched.
+            // (Submit sends null when blank; the backend already falls back to
+            // the computed flower total — orderRepo finalPriceAtCreate.)
+            value={priceOverride !== '' ? priceOverride : (sellTotal > 0 ? String(Math.round(sellTotal)) : '')}
             onChange={e => onChange({ priceOverride: e.target.value })}
+            onFocus={e => e.target.select()}
             placeholder={sellTotal > 0 ? String(Math.round(sellTotal)) : '0'}
             className="flex-1 py-3.5 text-base text-ios-label bg-transparent outline-none placeholder-ios-tertiary/50"
           />
