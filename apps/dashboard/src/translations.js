@@ -1140,6 +1140,7 @@ const en = {
   assistantRename:      'Rename',
   assistantDelete:      'Delete',
   assistantDeleteConfirm: 'Delete?',
+  assistantReport:      'Report a problem',
   assistantStarters: [
     'Orders today',
     'Revenue this month',
@@ -2291,6 +2292,7 @@ const ru = {
   assistantRename:      'Переименовать',
   assistantDelete:      'Удалить',
   assistantDeleteConfirm: 'Удалить?',
+  assistantReport:      'Сообщить о проблеме',
   assistantStarters: [
     'Заказы сегодня',
     'Выручка в этом месяце',

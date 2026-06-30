@@ -3,9 +3,23 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import AskBlossomPanel from '../components/AskBlossomPanel.jsx';
 
 vi.mock('../api/client.js', () => ({ default: { post: vi.fn(), get: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
+// FeedbackModal uses resizeImageBlob; mock it so jsdom canvas is not needed.
+vi.mock('../utils/imageResize.js', () => ({ resizeImageBlob: vi.fn().mockResolvedValue(new Blob()) }));
 import client from '../api/client.js';
 
-const t = { assistantPlaceholder: 'Спросите…', assistantSend: 'Спросить', assistantThinking: 'Думаю…', assistantError: 'Ошибка', assistantEmpty: 'Задайте вопрос о ваших данных', assistantHistory: 'Чаты', assistantNewChat: '+ Новый чат', assistantNoHistory: 'Нет чатов', assistantUntitled: 'Без названия', assistantRename: 'Переименовать', assistantDelete: 'Удалить', assistantDeleteConfirm: 'Удалить?' };
+const t = {
+  assistantPlaceholder: 'Спросите…', assistantSend: 'Спросить', assistantThinking: 'Думаю…',
+  assistantError: 'Ошибка', assistantEmpty: 'Задайте вопрос о ваших данных',
+  assistantHistory: 'Чаты', assistantNewChat: '+ Новый чат', assistantNoHistory: 'Нет чатов',
+  assistantUntitled: 'Без названия', assistantRename: 'Переименовать', assistantDelete: 'Удалить',
+  assistantDeleteConfirm: 'Удалить?', assistantReport: 'Сообщить о проблеме',
+  // FeedbackModal keys
+  reportTitle: 'Отчёт', reportPlaceholder: 'Опишите…', reportSend: 'Отправить',
+  reportThinking: 'Думаю…', reportAddScreenshot: 'Добавить скриншот',
+  reportPreviewTitle: 'Предпросмотр', reportCorrect: 'Исправить', reportConfirm: 'Опубликовать',
+  reportSuccess: 'Готово!', reportError: 'Ошибка', reportRetry: 'Попробовать снова',
+  reportExpired: 'Сессия устарела',
+};
 
 beforeEach(() => { vi.clearAllMocks(); client.get.mockResolvedValue({ data: [] }); });
 
@@ -102,5 +116,37 @@ describe('AskBlossomPanel', () => {
     fireEvent.click(screen.getByLabelText('Удалить')); // trash → arms confirm
     fireEvent.click(screen.getByText('Удалить?'));      // confirm
     await waitFor(() => expect(client.delete).toHaveBeenCalledWith('/assistant/conversations/c1'));
+  });
+});
+
+// ── Report button (Part A) ────────────────────────────────────────────────────
+
+describe('AskBlossomPanel — report button', () => {
+  it('shows "Сообщить о проблеме" button when reporterRole is provided', () => {
+    render(<AskBlossomPanel t={t} reporterRole="owner" reporterName="Owner" appArea="dashboard" />);
+    expect(screen.getByText('Сообщить о проблеме')).toBeInTheDocument();
+  });
+
+  it('does not show the report button when reporterRole is absent', () => {
+    render(<AskBlossomPanel t={t} />);
+    expect(screen.queryByText('Сообщить о проблеме')).not.toBeInTheDocument();
+  });
+
+  it('clicking report button opens FeedbackModal', async () => {
+    render(<AskBlossomPanel t={t} reporterRole="owner" reporterName="Owner" appArea="dashboard" />);
+    fireEvent.click(screen.getByText('Сообщить о проблеме'));
+    expect(await screen.findByText('Отчёт')).toBeInTheDocument(); // FeedbackModal header (reportTitle)
+  });
+
+  it('closing FeedbackModal hides it', async () => {
+    render(<AskBlossomPanel t={t} reporterRole="owner" reporterName="Owner" appArea="dashboard" />);
+    fireEvent.click(screen.getByText('Сообщить о проблеме'));
+    await screen.findByText('Отчёт');
+    // Click the close (✕) button inside the FeedbackModal
+    const closeBtn = screen.getAllByRole('button').find(b => b.getAttribute('aria-label') === null && b.textContent === '');
+    // FeedbackModal renders a close button; click the backdrop instead (simpler)
+    const backdrop = document.querySelector('.fixed.inset-0.z-50 > .absolute');
+    fireEvent.click(backdrop);
+    await waitFor(() => expect(screen.queryByText('Отчёт')).not.toBeInTheDocument());
   });
 });

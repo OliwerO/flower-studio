@@ -18,14 +18,16 @@ const upload = multer({
 router.use(authorize('feedback'));
 
 // POST /feedback/start — begin a Report session
+// Accepts optional `image: { dataBase64, mediaType }` (JSON, client-resized) so Haiku
+// gets vision context and asks fewer questions. image is not persisted to the session row.
 router.post('/start', async (req, res) => {
   try {
-    const { text, appArea, reporterRole, reporterName } = req.body;
+    const { text, appArea, reporterRole, reporterName, image } = req.body;
     if (!text?.trim()) return res.status(400).json({ error: 'text is required' });
     if (!reporterRole) return res.status(400).json({ error: 'reporterRole is required' });
     if (!reporterName) return res.status(400).json({ error: 'reporterName is required' });
 
-    const result = await feedbackService.startSession({ text, appArea, reporterRole, reporterName });
+    const result = await feedbackService.startSession({ text, appArea, reporterRole, reporterName, image: image || null });
     res.json(result);
   } catch (err) {
     console.error('[FEEDBACK] start error:', err);
