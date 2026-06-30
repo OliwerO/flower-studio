@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback } from 'react';
 import client from '../api/client.js';
 import { publishFeedback } from '../api/feedback.js';
+import { resizeImageBlob } from '../utils/imageResize.js';
 
 /*
  * FeedbackModal — drives the full AI-assisted Report conversation.
@@ -81,12 +82,29 @@ export default function FeedbackModal({ t, reporterRole, reporterName, appArea, 
     if (!text.trim()) return;
     setLoading(true);
     try {
-      const { data } = await client.post('/feedback/start', {
+      const body = {
         text: text.trim(),
         appArea,
         reporterRole,
         reporterName,
-      });
+      };
+      // If the user already attached a screenshot, send it to the start call so
+      // Haiku can see the UI and ask fewer questions. Resize first (same 1600px cap as publish).
+      if (imageFile) {
+        try {
+          const resized = await resizeImageBlob(imageFile, { maxEdge: 1600, quality: 0.85 });
+          const b64 = await new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(reader.result.split(',')[1]);
+            reader.onerror = reject;
+            reader.readAsDataURL(resized);
+          });
+          body.image = { dataBase64: b64, mediaType: 'image/jpeg' };
+        } catch {
+          // Resize or encode failed — start without image; Haiku will ask about the screen.
+        }
+      }
+      const { data } = await client.post('/feedback/start', body);
       setSessionId(data.sessionId);
       if (data.done) {
         await loadPreview(data.sessionId);

@@ -31,6 +31,9 @@ vi.mock('../db/index.js', () => ({
   },
 }));
 vi.mock('../db/schema.js', () => ({ feedbackReports: {}, feedbackSessions: {} }));
+vi.mock('../services/feedbackContext.js', () => ({
+  getAreaContext: (appArea) => `context-for-${appArea ?? 'unknown'}`,
+}));
 
 global.fetch = vi.fn();
 process.env.GITHUB_TOKEN = 'test-token';
@@ -61,6 +64,7 @@ function questionResponse(question) {
 // ── Imports ───────────────────────────────────────────────────────────────────
 
 import { startSession, publishSession, continueSession, previewSession, sessions } from '../services/feedbackService.js';
+import { getAreaContext } from '../services/feedbackContext.js';
 import { db } from '../db/index.js';
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -323,5 +327,75 @@ describe('publishSession', () => {
     const result = await publishSession(sessionId, Buffer.from('img'), 'test.png');
 
     expect(result.issueNumber).toBe(100); // issue still created
+  });
+});
+
+// ── startSession with image (Part B — screenshot vision) ─────────────────────
+
+describe('startSession — screenshot vision', () => {
+  it('sends image content block to Haiku when image is provided', async () => {
+    await startSession({
+      text: 'кнопка не работает',
+      reporterRole: 'owner',
+      reporterName: 'Owner',
+      image: { dataBase64: 'abc123', mediaType: 'image/jpeg' },
+    });
+
+    const callArgs = mockCreate.mock.calls[0][0];
+    const firstMsg = callArgs.messages[0];
+    expect(Array.isArray(firstMsg.content)).toBe(true);
+    expect(firstMsg.content).toContainEqual({ type: 'text', text: 'кнопка не работает' });
+    expect(firstMsg.content).toContainEqual({
+      type: 'image',
+      source: { type: 'base64', media_type: 'image/jpeg', data: 'abc123' },
+    });
+  });
+
+  it('sends text-only message when no image is provided (existing behavior preserved)', async () => {
+    await startSession({
+      text: 'кнопка не работает',
+      reporterRole: 'florist',
+      reporterName: 'Анна',
+    });
+
+    const callArgs = mockCreate.mock.calls[0][0];
+    const firstMsg = callArgs.messages[0];
+    expect(firstMsg.content).toBe('кнопка не работает');
+  });
+
+  it('does not persist image data in the stored session messages', async () => {
+    const { sessionId } = await startSession({
+      text: 'кнопка не работает',
+      reporterRole: 'owner',
+      reporterName: 'Owner',
+      image: { dataBase64: 'bigbase64data', mediaType: 'image/png' },
+    });
+
+    const session = sessions.get(sessionId);
+    expect(session.messages[0].content).toBe('кнопка не работает');
+  });
+});
+
+// Note: getAreaContext unit tests live in feedbackContext.test.js (tested against the real module).
+
+describe('startSession — per-area context in system prompt', () => {
+  it('includes getAreaContext output in the system prompt sent to Haiku', async () => {
+    await startSession({
+      text: 'test',
+      reporterRole: 'owner',
+      reporterName: 'Owner',
+      appArea: 'dashboard',
+    });
+
+    const callArgs = mockCreate.mock.calls[0][0];
+    // The mock returns "context-for-dashboard" for appArea='dashboard'
+    expect(callArgs.system).toContain('context-for-dashboard');
+  });
+
+  it('includes fallback context when appArea is not provided', async () => {
+    await startSession({ text: 'test', reporterRole: 'owner', reporterName: 'Owner' });
+
+    const callArgs = mockCreate.mock.calls[0][0];
+    expect(callArgs.system).toContain('context-for-unknown');
   });
 });

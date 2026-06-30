@@ -60,7 +60,8 @@ function OwnerRoute({ children }) {
 // Layout — wraps authenticated pages with the bottom tab bar.
 // Like mounting the factory floor signage above every workstation.
 function Layout({ children }) {
-  const { role } = useAuth();
+  const { role, driverName } = useAuth();
+  const reporterName = driverName || (role === 'owner' ? 'Owner' : 'Florist');
   return (
     <>
       {children}
@@ -68,7 +69,15 @@ function Layout({ children }) {
       {/* bottom-36 (not bottom-20): the OrderListPage "Новый заказ" FAB sits at
           bottom-20 right-5 z-50 and would paint over the assistant FAB (z-40) on
           /orders. Stack the assistant above it so both stay tappable. */}
-      {role === 'owner' && <AskBlossomLauncher t={t} fabClassName="bottom-36 right-4" />}
+      {role === 'owner' && (
+        <AskBlossomLauncher
+          t={t}
+          fabClassName="bottom-36 right-4"
+          reporterRole={role}
+          reporterName={reporterName}
+          appArea="florist"
+        />
+      )}
     </>
   );
 }

@@ -218,7 +218,7 @@ export default function DashboardPage() {
           onClose={() => setReportOpen(false)}
         />
       )}
-      <AskBlossomLauncher t={t} />
+      <AskBlossomLauncher t={t} reporterRole="owner" reporterName="Owner" appArea="dashboard" />
     </div>
   );
 }

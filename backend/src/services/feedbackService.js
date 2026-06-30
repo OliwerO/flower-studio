@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { eq, lt } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { feedbackReports, feedbackSessions } from '../db/schema.js';
+import { getAreaContext } from './feedbackContext.js';
 
 const GITHUB_OWNER = 'OliwerO';
 const GITHUB_REPO  = 'flower-studio';
@@ -73,11 +74,11 @@ function tryParseAIResponse(raw) {
   return null;
 }
 
-async function callAI(messages) {
+async function callAI(messages, systemPrompt = SYSTEM_PROMPT) {
   const res = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2048,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages,
   });
 
@@ -90,7 +91,7 @@ async function callAI(messages) {
   const res2 = await anthropic.messages.create({
     model: MODEL,
     max_tokens: 2048,
-    system: SYSTEM_PROMPT,
+    system: systemPrompt,
     messages: [
       ...messages,
       { role: 'assistant', content: raw },
@@ -156,13 +157,32 @@ async function persistSession(sessionId, session) {
 
 /**
  * Start a new Report session. Calls Claude Haiku to classify and format the report.
- * Returns { sessionId, done: true } if AI has enough info, or { sessionId, done: false, question } if more info needed.
+ * @param {{ text: string, appArea?: string, reporterRole: string, reporterName: string,
+ *           telegramChatId?: string|null, image?: { dataBase64: string, mediaType: string } }} opts
+ *   image — optional screenshot captured client-side; included as a vision content block so
+ *   Haiku can see the UI and ask fewer clarifying questions. Not persisted to the DB session.
+ * Returns { sessionId, done: true } if AI has enough info, or { sessionId, done: false, question }.
  */
-export async function startSession({ text, appArea, reporterRole, reporterName, telegramChatId = null }) {
+export async function startSession({ text, appArea, reporterRole, reporterName, telegramChatId = null, image = null }) {
   const sessionId = newSessionId();
-  const messages = [{ role: 'user', content: text }];
 
-  const aiResult = await callAI(messages);
+  // Build the first user message — include screenshot vision block when provided.
+  const userContent = (image?.dataBase64 && image?.mediaType)
+    ? [
+        { type: 'text', text },
+        { type: 'image', source: { type: 'base64', media_type: image.mediaType, data: image.dataBase64 } },
+      ]
+    : text;
+
+  // For storage we only keep the text (image data would bloat the 2h session row).
+  const messages = [{ role: 'user', content: text }];
+  const messagesForAI = [{ role: 'user', content: userContent }];
+
+  // Append per-area context so Haiku infers screen/terminology instead of asking.
+  const areaContext = getAreaContext(appArea);
+  const systemPrompt = `${SYSTEM_PROMPT}\n\n## App context\n\n${areaContext}`;
+
+  const aiResult = await callAI(messagesForAI, systemPrompt);
 
   const session = {
     reporterRole,

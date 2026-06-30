@@ -2,8 +2,9 @@ import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import client from '../api/client.js';
+import FeedbackModal from './FeedbackModal.jsx';
 
-export default function AskBlossomPanel({ t }) {
+export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea }) {
   const [messages, setMessages] = useState([]); // { role: 'user'|'assistant', text }
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState(null);
@@ -13,6 +14,7 @@ export default function AskBlossomPanel({ t }) {
   const [editTitle, setEditTitle] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false); // mobile: history slide-over drawer
+  const [showReport, setShowReport] = useState(false);
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [messages, loading]);
@@ -218,7 +220,27 @@ export default function AskBlossomPanel({ t }) {
             {t.assistantSend}
           </button>
         </div>
+        {reporterRole && (
+          <div className="px-2 pb-2 flex justify-end">
+            <button
+              onClick={() => setShowReport(true)}
+              className="text-xs text-gray-400 hover:text-brand-600 px-2 py-1 rounded-lg hover:bg-brand-50 transition-colors"
+            >
+              {t.assistantReport || 'Сообщить о проблеме'}
+            </button>
+          </div>
+        )}
       </div>
+
+      {showReport && (
+        <FeedbackModal
+          t={t}
+          reporterRole={reporterRole}
+          reporterName={reporterName}
+          appArea={appArea}
+          onClose={() => setShowReport(false)}
+        />
+      )}
     </div>
   );
 }

@@ -7,7 +7,13 @@ import AskBlossomPanel from './AskBlossomPanel.jsx';
 // `fabClassName` lets a host nudge the button (e.g. above the florist bottom nav).
 const SPARKLE = "M12 2l1.8 4.9L19 8.7l-4.2 2.6L13.5 16 12 11.6 10.5 16 9.2 11.3 5 8.7l5.2-1.8L12 2z";
 
-export default function AskBlossomLauncher({ t, fabClassName = 'bottom-6 right-6' }) {
+export default function AskBlossomLauncher({
+  t,
+  fabClassName = 'bottom-6 right-6',
+  reporterRole,
+  reporterName,
+  appArea,
+}) {
   const [open, setOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
   return (
@@ -58,7 +64,12 @@ export default function AskBlossomLauncher({ t, fabClassName = 'bottom-6 right-6
               <button aria-label="Close" onClick={() => setOpen(false)} className="w-7 h-7 rounded hover:bg-white/20 leading-none text-lg">✕</button>
             </div>
             <div className="flex-1 min-h-0">
-              <AskBlossomPanel t={t} />
+              <AskBlossomPanel
+                t={t}
+                reporterRole={reporterRole}
+                reporterName={reporterName}
+                appArea={appArea}
+              />
             </div>
           </div>
         </>
