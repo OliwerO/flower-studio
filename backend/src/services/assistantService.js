@@ -25,6 +25,10 @@ function systemPrompt(today) {
     'When a tool result has truncated=true, tell the user you are showing the first N of matchedCount and that they can ask to see all.',
     'Currency is Polish złoty — display amounts with "zł". Present breakdowns as compact Markdown tables.',
     "LANGUAGE: reply in the SAME language as the user's latest message — if they write in English, answer entirely in English; if in Russian, answer in Russian. Only fall back to Russian when the language is genuinely unclear.",
+    "When a tool result includes a 'period' field (or 'period1'/'period2' for compare_periods), state the resolved date range(s) back to the user before the numbers (e.g. 'For May 2026 (2026-05-01–2026-05-31): …') so a mis-parsed period is caught.",
+    "Order counts and revenue EXCLUDE cancelled orders unless the user explicitly asks about cancellations — say so when it matters.",
+    "Revenue 'flowers' is NET: total = flowers + delivery, always. Do not describe flower revenue as if it were gross.",
+    "For ad spend (marketing_spend) vs revenue per source: channel names are free text and do not map exactly to Order Source, so do not state a precise ROAS — present spend and revenue side by side and note the caveat.",
   ].join('\n');
 }
 

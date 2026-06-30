@@ -46,8 +46,8 @@ export default function AskBlossomPanel({ t }) {
     }
   }
 
-  async function send() {
-    const text = input.trim();
+  async function send(overrideText) {
+    const text = (overrideText !== undefined ? overrideText : input).trim();
     if (!text || loading) return;
     setInput('');
     setMessages((m) => [...m, { role: 'user', text }]);
@@ -142,7 +142,25 @@ export default function AskBlossomPanel({ t }) {
 
       <div className="flex-1 flex flex-col min-w-0">
         <div className="flex-1 overflow-y-auto space-y-3 p-2">
-          {messages.length === 0 && <p className="text-secondary text-center mt-8">{t.assistantEmpty}</p>}
+          {messages.length === 0 && (
+            <div className="mt-8 flex flex-col items-center gap-3">
+              <p className="text-secondary text-center">{t.assistantEmpty}</p>
+              {(t.assistantStarters || []).length > 0 && (
+                <div className="flex flex-wrap justify-center gap-2 max-w-xl px-2">
+                  {(t.assistantStarters || []).map((q, i) => (
+                    <button
+                      key={i}
+                      className="rounded-full border border-gray-200 px-3 py-1 text-sm text-gray-700 hover:bg-gray-100 transition-colors disabled:opacity-40"
+                      onClick={() => send(q)}
+                      disabled={loading}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
           {messages.map((m, i) => (
             <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
               <div className={`inline-block rounded-lg px-3 py-2 max-w-[85%] ${m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
@@ -164,7 +182,7 @@ export default function AskBlossomPanel({ t }) {
             onKeyDown={onKeyDown}
             disabled={loading}
           />
-          <button className="bg-brand-600 text-white rounded-lg px-4 py-2 disabled:opacity-50" onClick={send} disabled={loading}>
+          <button className="bg-brand-600 text-white rounded-lg px-4 py-2 disabled:opacity-50" onClick={() => send()} disabled={loading}>
             {t.assistantSend}
           </button>
         </div>

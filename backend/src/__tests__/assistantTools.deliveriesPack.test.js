@@ -15,6 +15,7 @@ describe('deliveriesPack.delivery_status', () => {
     expect(r.matchedCount).toBe(3);
     expect(r.byStatus).toEqual({ Delivered: 2, 'Out for Delivery': 1 });
     expect(r.byDriver).toEqual({ Nikita: 2, Timur: 1 });
+    expect(r.period).toEqual({ from: '2026-05-01', to: '2026-05-31' });
     expect(mockListDeliveries).toHaveBeenCalledWith({ pg: { from: '2026-05-01', to: '2026-05-31', status: undefined, driver: undefined } });
   });
   it('caps the data list and flags truncated', async () => {

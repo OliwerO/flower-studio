@@ -6,6 +6,12 @@ import { customerInsightsHandler, customerLookupHandler } from './customersPack.
 import { deliveryStatusHandler } from './deliveriesPack.js';
 import { poStatusHandler, purchaseSpendHandler } from './purchasingPack.js';
 import { hoursSummaryHandler } from './hoursPack.js';
+import { topProductsHandler, channelEfficiencyHandler, comparePeriodsHandler } from './financeInsightsPack.js';
+import { salesTrendsHandler } from './trendsPack.js';
+import { supplierScorecardHandler } from './supplierPack.js';
+import { marketingSpendHandler } from './marketingPack.js';
+import { stockVelocityHandler } from './velocityPack.js';
+import { lapsedCustomersHandler, upcomingOccasionsHandler } from './crmPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -159,6 +165,125 @@ export const TOOLS = [
       },
     },
     handler: hoursSummaryHandler,
+  },
+  {
+    name: 'top_products',
+    description: 'Best-selling products/flowers in a date range with revenue, quantity, and trend vs the previous equal-length period. Use for "best sellers", "top products", "what\'s selling", "what\'s declining". Dates YYYY-MM-DD.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from:  { type: 'string', description: 'Start date YYYY-MM-DD (inclusive).' },
+        to:    { type: 'string', description: 'End date YYYY-MM-DD (inclusive).' },
+        limit: { type: 'number', description: 'Max products to return (default 10).' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: topProductsHandler,
+  },
+  {
+    name: 'channel_efficiency',
+    description: 'Per-Order-Source PROFITABILITY: order count, average order value, and margin% per channel (In-store/Instagram/WhatsApp/Telegram/Wix/Flowwow/Other). Use for "which channel is most profitable", "is Instagram worth it after cost". For raw revenue per source use financial_summary; for ad spend use marketing_spend.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD.' },
+        to:   { type: 'string', description: 'End date YYYY-MM-DD.' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: channelEfficiencyHandler,
+  },
+  {
+    name: 'compare_periods',
+    description: 'Compare two date ranges head-to-head: revenue, order count, avg order value, flower margin% with delta + % change. Use for "is May better than April", "this month vs last month", "vs last year".',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from1:  { type: 'string', description: 'Start of first period YYYY-MM-DD.' },
+        to1:    { type: 'string', description: 'End of first period YYYY-MM-DD.' },
+        from2:  { type: 'string', description: 'Start of second period YYYY-MM-DD.' },
+        to2:    { type: 'string', description: 'End of second period YYYY-MM-DD.' },
+        label1: { type: 'string', description: 'Human label for period 1 (optional, e.g. "April").' },
+        label2: { type: 'string', description: 'Human label for period 2 (optional, e.g. "May").' },
+      },
+      required: ['from1', 'to1', 'from2', 'to2'],
+    },
+    handler: comparePeriodsHandler,
+  },
+  {
+    name: 'sales_trends',
+    description: 'Trends & rhythm for a date range: month-by-month revenue (seasonality), busiest day of week (orders + avg revenue), completion/cancellation funnel, and payment-method analysis incl. outstanding unpaid amounts. Use for "busiest day", "how\'s the month trending", "how many orders cancel", "who owes me money / outstanding by payment method", planning peak days.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD.' },
+        to:   { type: 'string', description: 'End date YYYY-MM-DD.' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: salesTrendsHandler,
+  },
+  {
+    name: 'supplier_scorecard',
+    description: 'Per-supplier scorecard for a date range: total spend, purchase count, avg price/unit, and WASTE quantity/cost/percent. Use for "which supplier wastes most / has best quality", "where do I spend most on flowers". Dates YYYY-MM-DD.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start date YYYY-MM-DD.' },
+        to:   { type: 'string', description: 'End date YYYY-MM-DD.' },
+      },
+      required: ['from', 'to'],
+    },
+    handler: supplierScorecardHandler,
+  },
+  {
+    name: 'marketing_spend',
+    description: 'Advertising/marketing spend by channel over a MONTH range (dates are YYYY-MM, e.g. 2026-05). Total + per-channel. Use for "how much did I spend on Instagram ads", "marketing spend this quarter". Channel is free text and does NOT map 1:1 to Order Source, so do not claim a precise ROAS — combine with financial_summary/channel_efficiency and note the caveat.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        from: { type: 'string', description: 'Start month YYYY-MM (inclusive, optional).' },
+        to:   { type: 'string', description: 'End month YYYY-MM (inclusive, optional).' },
+      },
+    },
+    handler: marketingSpendHandler,
+  },
+  {
+    name: 'stock_velocity',
+    description: 'Fastest/slowest-moving stock over a lookback window (default 30 days): quantity sold, average daily usage, current quantity, and days of supply. Use for "what\'s moving fastest", "what\'s been sitting / slow movers", "what do I need to reorder soon". Only flowers linked to a stock item are tracked. sort=fastest|slowest.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        days:   { type: 'number', description: 'Lookback window in days (default 30, max 90).' },
+        sort:   { type: 'string', enum: ['fastest', 'slowest'], description: 'Sort order: fastest (default) or slowest.' },
+        limit:  { type: 'number', description: 'Max items to return (default 20, max 50).' },
+        search: { type: 'string', description: 'Case-insensitive substring to filter by stock item name.' },
+      },
+    },
+    handler: stockVelocityHandler,
+  },
+  {
+    name: 'lapsed_customers',
+    description: 'Customers who have not ordered in the last N days (default 60), with last order date, days since, lifetime orders + spend, and segment. Use for "who hasn\'t ordered recently", "who should I send a discount / win-back". Never-ordered customers are excluded.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        sinceDays: { type: 'number', description: 'Days of inactivity threshold (default 60).' },
+        limit:     { type: 'number', description: 'Max customers to return (default 25, max 100).' },
+      },
+    },
+    handler: lapsedCustomersHandler,
+  },
+  {
+    name: 'upcoming_occasions',
+    description: 'Key people (a customer\'s important contacts) with a birthday/anniversary or other important date coming up within N days (default 14). Use for "whose birthday is this week", "upcoming anniversaries", outreach reminders. Returns the person, the occasion label, the date, days until, and the customer to contact.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        withinDays: { type: 'number', description: 'Look-ahead window in days (default 14).' },
+      },
+    },
+    handler: upcomingOccasionsHandler,
   },
 ];
 

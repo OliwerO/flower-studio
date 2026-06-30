@@ -37,6 +37,7 @@ describe('purchasingPack.purchase_spend', () => {
     expect(r.purchaseCount).toBe(3);
     expect(r.totalSpend).toBe(41);
     expect(r.bySupplier).toEqual({ A: 26, B: 15 });
+    expect(r.period).toEqual({ from: '2026-05-01', to: '2026-05-31' });
     expect(mockPurchList).toHaveBeenCalledWith({ from: '2026-05-01', to: '2026-05-31' });
   });
 });

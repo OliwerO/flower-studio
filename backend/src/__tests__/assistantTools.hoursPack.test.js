@@ -26,6 +26,7 @@ describe('hoursPack.hours_summary', () => {
     expect(anna).toMatchObject({ hours: 12, earnings: 370, deliveries: 2, days: 2 });
     expect(bob).toMatchObject({ hours: 6, earnings: 145, deliveries: 1, days: 1 });
     expect(r.totals).toMatchObject({ hours: 18, earnings: 515 });
+    expect(r.period).toEqual({ from: '2026-05-01', to: '2026-05-31' });
     expect(mockHoursList).toHaveBeenCalledWith({ dateFrom: '2026-05-01', dateTo: '2026-05-31', name: undefined });
     expect(mockBuildPayroll).toHaveBeenCalledWith([{ Name: 'Anna' }, { Name: 'Bob' }], { Anna: 30 });
   });

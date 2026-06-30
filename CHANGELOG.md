@@ -5,6 +5,32 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Ask Blossom: 9 new insight tools + correctness system
+
+Expands the owner-only NL analytics assistant from 11 → 20 tools, unlocking the rich analytics the backend already computes, plus whole new domains. Adds an automated correctness layer so the numbers it states are provably right. No new HTTP routes, no schema change, no new env vars — every tool is a read-only thin adapter over an existing canonical service/repo (parity by construction).
+
+### Backend (`backend/src/services/assistantTools/`)
+New packs (each with a parity/contract test): `financeInsightsPack.js` (top_products, channel_efficiency, compare_periods), `trendsPack.js` (sales_trends — monthly seasonality, busiest day of week, completion/cancellation funnel, payment-method debt), `supplierPack.js` (supplier_scorecard — spend + waste% per supplier), `marketingPack.js` (marketing_spend by channel, `YYYY-MM`), `velocityPack.js` (stock_velocity — fastest/slowest movers, days of supply), `crmPack.js` (lapsed_customers, upcoming_occasions). All registered in `index.js`.
+- `top_products` / `channel_efficiency` / `sales_trends` / `supplier_scorecard` surface sections of `analyticsService.computeAnalytics` (the same report the dashboard uses); `compare_periods` calls it twice and diffs in-adapter. `sales_trends` drops the gross per-month `flowerRevenue` (keeps only net `revenue`) to avoid the net/gross confusion.
+- `stock_velocity` mirrors `GET /stock/velocity` (`orderRepo.getLinesForVelocity`) joined to `stockRepo.list`, grouped by Display Name so it's Y-model-safe; `Current Quantity` used as-is (pitfall #8), `daysOfSupply` null for shortfall items.
+- `marketing_spend` does NOT auto-compute ROAS (channel is free text, Order Source is an enum) — the model combines it with finance tools and states the caveat.
+
+### Backend (`backend/src/repos/customerRepo.js`)
+- New read-only `listKeyPeopleWithDates()` — all key people with a set important date joined to their (non-deleted) customer; powers `upcoming_occasions`.
+
+### Correctness system
+- **Period-echo:** every date-accepting tool now returns `period:{from,to}`; the assistant system prompt makes it state the resolved date range before the numbers (a mis-parsed "May" is now visible). Also added: cancelled-orders-excluded disclosure + NET-flower-revenue rule + ROAS caveat.
+- **Golden-question eval** (`backend/src/__tests__/assistantTools.goldenQuestions.test.js`) — mocks the LLM + pglite, forces each tool, asserts the right tool dispatches and the output is self-consistent (breakdown sums == total, revenue.total == flowers + delivery, shortfall items qty<0, etc.).
+- **Live-smoke** (`backend/scripts/assistant-live-smoke.js`, category SAFE) — runs ~12 NL questions against a real key to verify tool *selection*.
+
+### Frontend (`packages/shared/components/AskBlossomPanel.jsx` + both apps' `translations.js`)
+- Empty state now shows tappable starter-question chips (`t.assistantStarters`, EN+RU in dashboard + florist). One shared component → both apps. Fixed the Send button to `onClick={() => send()}` so the click event isn't passed as message text.
+
+### Verification
+Backend 731 ✓ · shared 556 ✓ · E2E 220/220 ✓ · all three app builds ✓.
+
+---
+
 ## 2026-06-29 — Ask Blossom: floating chat button (FAB) in dashboard + florist
 
 "Ask Blossom" moved from a dedicated tab (dashboard) / More-menu route (florist) into a shared owner-only floating action button (`AskBlossomLauncher` from `@flower-studio/shared`). On phone it opens a bottom sheet; on desktop a right-side drawer. No separate page or nav entry needed — the FAB is always accessible without leaving the current view.
