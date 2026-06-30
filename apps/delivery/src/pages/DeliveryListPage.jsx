@@ -144,7 +144,7 @@ export default function DeliveryListPage() {
       const aIsMine = a['Assigned Driver'] === driverName ? 0 : 1;
       const bIsMine = b['Assigned Driver'] === driverName ? 0 : 1;
       if (aIsMine !== bIsMine) return aIsMine - bIsMine;
-      return (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
+      return (a['Courier Time'] || a['Delivery Time'] || '').localeCompare(b['Courier Time'] || b['Delivery Time'] || '');
     };
     groups['Pending'].sort(prioritySort);
     groups['Out for Delivery'].sort(prioritySort);
@@ -154,7 +154,7 @@ export default function DeliveryListPage() {
     const byDate = {};
     futureList.sort((a, b) =>
       (a['Delivery Date'] || '').localeCompare(b['Delivery Date'] || '') ||
-      (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '')
+      (a['Courier Time'] || a['Delivery Time'] || '').localeCompare(b['Courier Time'] || b['Delivery Time'] || '')
     );
     for (const d of futureList) {
       const k = d['Delivery Date'];

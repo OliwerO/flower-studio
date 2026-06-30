@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -1012,6 +1012,17 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                   <span className="text-xs text-ios-tertiary">{t.zl}</span>
                 </div>
               </Section>
+              {/* Courier 1h slot within the client's chosen 2h window (CR-32) */}
+              {getCourierSlots(o['Delivery Time']).length > 0 && (
+                <Section label={t.courierSlot}>
+                  <Pills
+                    options={getCourierSlots(o['Delivery Time']).map(s => ({ value: s, label: s }))}
+                    value={o.delivery?.['Courier Time'] || ''}
+                    onChange={v => patchDelivery({ 'Courier Time': o.delivery?.['Courier Time'] === v ? '' : v })}
+                    disabled={saving}
+                  />
+                </Section>
+              )}
             </>
           )}
 
@@ -1047,7 +1058,12 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
               <Pills
                 options={timeSlots.map(s => ({ value: s, label: s }))}
                 value={o['Delivery Time'] || ''}
-                onChange={v => patchOrder({ 'Delivery Time': v })}
+                onChange={v => {
+                  patchOrder({ 'Delivery Time': v });
+                  // Drop the courier slot if it no longer fits the new client window.
+                  const courier = o.delivery?.['Courier Time'];
+                  if (courier && !getCourierSlots(v).includes(courier)) patchDelivery({ 'Courier Time': '' });
+                }}
                 disabled={saving}
               />
             </div>

@@ -18,6 +18,15 @@ Y-model test-session CR. The client picks a wide **2h delivery window**; the own
 ### Shared (`packages/shared/utils/timeSlots.js`)
 - New `getCourierSlots(window)` splits a `"HH:MM-HH:MM"` client window into its 1h courier sub-slots (trailing partial for non-whole-hour windows; `[]` for invalid input). Client windows stay sourced from owner config (`getAvailableSlots`) — no hardcoded 08–20 generator.
 
+### Client window (no code change)
+- The owner's configured `deliveryTimeSlots` are already the 2h windows `08:00–20:00`. The existing new-order + order-detail time pickers (both apps) already let the client pick one of those windows into `Delivery Time` — so no picker change was needed for the "client 2h window" half of CR-32.
+
+### Owner UI — assign the courier slot (parity: both apps)
+- Dashboard `OrderDetailPanel.jsx` + florist `OrderCard.jsx` + `OrderDetailPage.jsx`: in the Driver block (next to courier payout), a **Courier slot** picker offers the 1h slots inside the chosen client window (`getCourierSlots(o['Delivery Time'])`), saved to `Courier Time`. Only renders when a client window is set. Changing the client window auto-clears a courier slot that no longer fits it.
+
+### Driver app — sees only the courier slot (CR-32)
+- `apps/delivery/` `DeliveryCard.jsx`, `DeliverySheet.jsx`, `MapView.jsx`, `DeliveryListPage.jsx`: the displayed time and the route sort now use `Courier Time` (fallback to the client window when unset). The wide 2h window is hidden from the driver.
+
 ### Tests
 - `packages/shared/test/timeSlots.test.js` (new, 17) — courier-slot generation + backfilled `getAvailableSlots` coverage.
 - `deliveries.assign-notify.integration.test.js` — `Courier Time` PATCH round-trip + null-default (migration applies under pglite).

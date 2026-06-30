@@ -96,6 +96,13 @@ margin = `delivery_fee − driver_payout` per order and in aggregate.
 - Cascade rule: order date/time ↔ delivery date/time already cascades — verify the new window field cascades too.
 - Don't hardcode locale/time strings; keep slot labels generated.
 
+### Build status (2026-06-30) — SHIPPED in branch `feat/courier-time-slots` (PR #470)
+- **B1 ✅** shared `getCourierSlots` + 17 tests.
+- **B2 ✅** migration `0017_deliveries_courier_time.sql` + `courierTime` schema + `Courier Time` repo/route mapping + lab factory + integration test.
+- **B3 ✅ (no code)** — client 2h windows already come from owner config (`deliveryTimeSlots` = `08:00–20:00` 2h buckets); the existing time pickers already store the window into `Delivery Time`. The plan's literal `getClientWindows` generator was **dropped** to keep owner config authoritative (no hardcoded 08–20).
+- **B4 ✅** Courier-slot picker in the Driver block of dashboard `OrderDetailPanel` + florist `OrderCard` + `OrderDetailPage`; saves `Courier Time`; auto-clears when the client window changes.
+- **B5 ✅** driver app (`DeliveryCard`/`DeliverySheet`/`MapView`/`DeliveryListPage`) shows + sorts by `Courier Time` (fallback to client window); the 2h window is hidden from the driver.
+
 ---
 
 ## Feature C — CR-30: recipient / key-person step + delivery pre-fill

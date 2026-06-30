@@ -29,7 +29,8 @@ export default function DeliveryCard({ delivery, onTap, onStatusChange, onProble
   const address          = d['Delivery Address'] || '';
   const recipientPhone   = d['Recipient Phone'] || '';
   const customerPhone    = d['Customer Phone'] || '';
-  const time             = d['Delivery Time'] || '';
+  // Driver sees only the assigned courier slot; fall back to the client window when unset (CR-32).
+  const time             = d['Courier Time'] || d['Delivery Time'] || '';
   const recipient        = d['Recipient Name'] || '—';
   const customerName     = d['Customer Name'] || '';
   const deliveredAt      = d['Delivered At'];
