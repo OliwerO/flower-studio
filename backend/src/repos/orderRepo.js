@@ -17,7 +17,7 @@ import { orders, orderLines, deliveries, stock, auditLog } from '../db/schema.js
 import { recordAudit } from '../db/audit.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
 import { getStockYModelEnabled } from '../services/configService.js';
-import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc } from 'drizzle-orm';
+import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc, ilike } from 'drizzle-orm';
 
 // ── Backend mode stub ──
 // getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
@@ -1546,6 +1546,39 @@ export async function getLinesForOrders(orderIds) {
       inArray(orderLines.orderId, orderIds),
     ));
   return rows;
+}
+
+// ── Free-text search for the Ask Blossom assistant ──
+//
+// Returns raw PG rows (minimal columns) whose allow-listed text columns
+// ILIKE the given query. The pack handler computes snippets and shapes the
+// result; the repo stays thin. `limit` controls the DB row cap — not the
+// final result count (one row can match multiple columns).
+export async function searchFreeText({ query, limit = 15 }) {
+  if (!db || !query) return [];
+  const pattern = `%${query}%`;
+  return db
+    .select({
+      id:               orders.id,
+      airtableId:       orders.airtableId,
+      appOrderId:       orders.appOrderId,
+      orderDate:        orders.orderDate,
+      status:           orders.status,
+      customerRequest:  orders.customerRequest,
+      floristNote:      orders.floristNote,
+      greetingCardText: orders.greetingCardText,
+    })
+    .from(orders)
+    .where(and(
+      isNull(orders.deletedAt),
+      or(
+        ilike(orders.customerRequest,  pattern),
+        ilike(orders.floristNote,      pattern),
+        ilike(orders.greetingCardText, pattern),
+      )
+    ))
+    .orderBy(desc(orders.orderDate))
+    .limit(limit);
 }
 
 // ── Internal exports for tests ──
