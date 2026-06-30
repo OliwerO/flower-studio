@@ -5,6 +5,18 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Ask Blossom extensions: free-text search, connect-the-dots, in-chat reporting
+
+Three assistant capabilities landed (PRs #459/#461/#460), taking the tool registry 20 → 23. All read-only thin adapters; no schema change.
+
+- **`search_text` (#459, 21st tool)** — open-ended keyword search over order free-text (customer request, florist note, greeting-card message) via `orderRepo.searchFreeText` (parameterized ILIKE). Returns snippets + the record to open. "Find the order that mentions a wedding." (Skeleton's `card_message`/`driver_note`/`customers.notes` don't exist — real columns used.)
+- **`query_records` + `orders_needing_short_stock` (#461)** — the flexible connect-the-dots tool: the model composes a validated declarative spec (allow-listed entities/fields/joins/ops/aggregates) and the backend runs a safe, parameterized, read-only, row-capped Drizzle query — the model never writes SQL. Cross-type joins cast UUID→text (`stock.id::text = order_lines.stock_item_id`, `customers.id::text = orders.customer_id`) so legacy `recXXX` rows don't abort the query on real Postgres (caught in adversarial review; pglite was lenient). `orders_needing_short_stock` = open orders using a flower in shortfall.
+- **In-chat reporting + screenshot vision (#460)** — a "Report a problem" button inside Ask Blossom opens the existing report flow; the screenshot is now sent to Claude Haiku at session start (vision) so it sees the UI and asks fewer questions; a per-area context pack (`feedbackContext.js`) primes the area. (Deeper code-RAG context = issue #457.)
+
+RFC + decisions: `docs/superpowers/plans/2026-06-30-assistant-extensions-rfc.md`.
+
+---
+
 ## 2026-06-30 — Ask Blossom: prompt caching (cost) + earlier cap/coverage
 
 Cost optimization for the assistant — no owner-visible change. The system prompt and the
