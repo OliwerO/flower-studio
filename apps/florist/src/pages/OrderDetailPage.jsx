@@ -655,6 +655,7 @@ export default function OrderDetailPage() {
                     role,
                     currentStatus: current,
                     previousStatuses: prevStatuses,
+                    isDelivery,  // CR-31: a delivery order never offers "Picked Up" (and vice versa)
                   });
                   // Intercept Cancelled — show inline confirm so user picks
                   // return-stock vs status-only cancel. Same pattern as
