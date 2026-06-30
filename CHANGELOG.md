@@ -5,6 +5,19 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Fix (Y-model): new order demand lands on the order's needed date, not a stale qty-0 DE (CR-34)
+
+Found during the Y-model live test session. An order needed on a future date, for an out-of-stock Variety that already had a **qty-0** Demand Entry on an earlier date (e.g. a post-absorption/zeroed DE), had its demand applied to that old DE **in place** — so the SHORTFALLS list showed the shortfall under the wrong (past) date instead of the order's needed date. Backend-only fix.
+
+### Backend (`backend/src/repos/orderRepo.js`)
+- `createOrder` step 3b re-homed demand to a `required_by`-dated Demand Entry only for rows with `currentQuantity < 0`. With no DE-vs-Batch discriminator column (qty sign is the only signal), a **qty-0** DE was misclassified as Batch coverage → skipped re-homing → step 4 `adjustQuantity` decremented it in place at its stale date.
+- Fix: step 3b now also routes a **qty-0 row whose date ≠ the order's needed date** through `getOrCreateDemandEntry(variety, demandDate)` (creating/deepening a DE dated to `required_by`, leaving the old row untouched via `_deApplied`). Unchanged: `qty<0` (C1 deepen), null/same-date `qty-0` (CR-08 fresh-demand placeholder), `qty>0` (Batch coverage). Added `stock.date` to the step-3b SELECT.
+
+### Tests
+- New `(CR-34)` regression in `orderRepo.integration.test.js`: a 07-03 order bound to a pre-existing qty-0 DE dated 06-25 now homes demand to a **07-03** DE (−10) and leaves the 06-25 DE at 0. Verified: orderRepo.integration 43/43; fefo/stockRepo/premadeService/createWixOrder 46/46; C1 + CR-08 green.
+
+---
+
 ## 2026-06-30 — Ask Blossom extensions: free-text search, connect-the-dots, in-chat reporting
 
 Three assistant capabilities landed (PRs #459/#461/#460), taking the tool registry 20 → 23. All read-only thin adapters; no schema change.
