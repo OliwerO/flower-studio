@@ -66,6 +66,12 @@ export async function computeAnalytics({ from, to }) {
   // ── Compute all metrics via service functions ──
   enrichOrderPrices(orders, orderSellTotals, orderCostTotals, deliveryFeeByOrder);
 
+  // Attach _driverPayout: sum of what we pay the courier per delivery.
+  // Driver method → Driver Payout; Taxi method → Taxi Cost.
+  for (const order of orders) {
+    order._driverPayout = Number(order._delivery?.['Driver Payout'] || 0) + Number(order._delivery?.['Taxi Cost'] || 0);
+  }
+
   const paidOrders = orders.filter(o => o['Payment Status'] !== PAYMENT_STATUS.UNPAID);
   const paidOrderIds = new Set(paidOrders.map(o => o.id));
   const prevPaidOrderIds = new Set(
@@ -196,6 +202,8 @@ export async function computeAnalytics({ from, to }) {
       deliveryCount: deliveryOrders.length,
       pickupCount: pickupOrders.length,
       deliveryRevenue: revenue.deliveryRevenue,
+      deliveryProfit: revenue.deliveryProfit,
+      deliveryPayoutTotal: revenue.deliveryPayoutTotal,
       avgDeliveryFee,
     },
     orders: {
@@ -254,9 +262,14 @@ export function calculateRevenueMetrics(orders, paidOrders, targetMarkup) {
     ? ((flowerRevenue - paidFlowerCost) / flowerRevenue) * 100
     : 0;
 
+  // Delivery profit = fee charged to client minus courier payout (Driver Payout or Taxi Cost).
+  const deliveryPayoutTotal = paidOrders.reduce((sum, o) => sum + (o._driverPayout || 0), 0);
+  const deliveryProfit = deliveryRevenue - deliveryPayoutTotal;
+
   return {
     totalRevenue, flowerRevenue, deliveryRevenue, avgOrderValue,
     paidFlowerCost, allFlowerCost, estimatedRevenue, flowerMargin,
+    deliveryProfit, deliveryPayoutTotal,
   };
 }
 
@@ -392,10 +405,12 @@ export function calculateMonthlyBreakdown(orders) {
       const flowerRev = m.paidOrders.reduce((s, o) => s + o._flowerSell, 0);
       const delRev = m.paidOrders.reduce((s, o) => s + o._deliveryFee, 0);
       const mCost = m.paidOrders.reduce((s, o) => s + o._cost, 0);
+      const delPayout = m.paidOrders.reduce((s, o) => s + (o._driverPayout || 0), 0);
       const margin = flowerRev > 0 ? ((flowerRev - mCost) / flowerRev) * 100 : 0;
       return {
         month: m.month,
         revenue: rev, flowerRevenue: flowerRev, deliveryRevenue: delRev,
+        deliveryProfit: delRev - delPayout,
         orderCount: m.orders.length, paidOrderCount: m.paidOrders.length,
         flowerCost: mCost, flowerMarginPercent: margin,
       };

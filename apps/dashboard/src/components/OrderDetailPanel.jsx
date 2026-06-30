@@ -41,6 +41,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   const PAYMENT_METHODS = pmList.map(v => ({ value: v, label: v }));
   const SOURCES = srcList.map(v => ({ value: v, label: v }));
   const [driverNames, setDriverNames] = useState([]);
+  const [defaultDriverPayout, setDefaultDriverPayout] = useState(35);
   const DRIVERS = driverNames.map(v => ({ value: v, label: v }));
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -72,6 +73,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
         ]);
         setOrder(orderRes.data);
         setDriverNames(settingsRes.data.drivers || []);
+        setDefaultDriverPayout(settingsRes.data.config?.driverCostPerDelivery || 35);
       } catch {
         showToast(t.error, 'error');
       } finally {
@@ -977,7 +979,9 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                   patch['Driver Payout'] = 0;
                   patch['Taxi Cost'] = 0;
                 } else {
+                  // Switching to Driver: restore payout from saved value or config default
                   patch['Taxi Cost'] = 0;
+                  patch['Driver Payout'] = Number(o.delivery?.['Driver Payout']) || defaultDriverPayout;
                 }
                 patchDelivery(patch);
               }}
@@ -985,16 +989,30 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
             />
           </Section>
 
-          {/* Driver picker — only when method is Driver */}
+          {/* Driver picker + payout — only when method is Driver */}
           {(o.delivery?.['Delivery Method'] || 'Driver') === 'Driver' && (
-            <Section label={t.driver}>
-              <Pills
-                options={DRIVERS}
-                value={o.delivery?.['Assigned Driver'] || ''}
-                onChange={v => patchDelivery({ 'Assigned Driver': v })}
-                disabled={saving}
-              />
-            </Section>
+            <>
+              <Section label={t.driver}>
+                <Pills
+                  options={DRIVERS}
+                  value={o.delivery?.['Assigned Driver'] || ''}
+                  onChange={v => patchDelivery({ 'Assigned Driver': v })}
+                  disabled={saving}
+                />
+              </Section>
+              <Section label={t.courierPayout}>
+                <div className="flex items-center gap-1">
+                  <InlineEdit
+                    value={o.delivery['Driver Payout'] != null ? String(o.delivery['Driver Payout']) : ''}
+                    type="number"
+                    placeholder="0"
+                    onSave={v => patchDelivery({ 'Driver Payout': v ? Number(v) : 0 })}
+                    disabled={saving}
+                  />
+                  <span className="text-xs text-ios-tertiary">{t.zl}</span>
+                </div>
+              </Section>
+            </>
           )}
 
           {/* Taxi cost — only when method is Taxi */}
@@ -1056,6 +1074,20 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
             <EditableRow label={t.deliveryFee} value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}
               onSave={v => patchDelivery({ 'Delivery Fee': v ? Number(v) : null })} disabled={saving} type="number"
               suffix={t.zl} />
+            {(() => {
+              const fee    = Number(o.delivery?.['Delivery Fee'] || 0);
+              const payout = Number(o.delivery?.['Driver Payout'] || 0);
+              const taxi   = Number(o.delivery?.['Taxi Cost'] || 0);
+              const margin = fee - payout - taxi;
+              return (
+                <div className="flex items-start gap-3">
+                  <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryMargin}</span>
+                  <span className={`text-sm font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {margin.toFixed(0)} {t.zl}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

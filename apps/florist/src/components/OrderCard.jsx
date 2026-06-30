@@ -94,7 +94,7 @@ function OrderCard({
   editorPendingPO: pendingPO = {},
   onStockRefresh,
 }) {
-  const { paymentMethods: payMethods, timeSlots, drivers } = useConfigLists();
+  const { paymentMethods: payMethods, timeSlots, drivers, driverCostPerDelivery } = useConfigLists();
   const { showToast } = useToast();
   const [expanded, setExpanded]   = useState(false);
   const [detail, setDetail]       = useState(null);
@@ -791,23 +791,39 @@ function OrderCard({
                       </div>
                     </div>
                     {isDelivery && (
-                      <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-                        <span className="text-xs text-ios-tertiary">{t.labelFee}</span>
-                        <div className="flex items-center gap-1">
-                          <input
-                            type="number"
-                            defaultValue={detail?.delivery?.['Delivery Fee'] || ''}
-                            onBlur={e => {
-                              const val = e.target.value === '' ? 0 : Number(e.target.value);
-                              if (val !== Number(detail?.delivery?.['Delivery Fee'] || 0)) patchDelivery({ 'Delivery Fee': val });
-                            }}
-                            placeholder="0"
-                            disabled={saving}
-                            className="w-20 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none disabled:opacity-40"
-                          />
-                          <span className="text-xs text-ios-tertiary">zł</span>
+                      <>
+                        <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
+                          <span className="text-xs text-ios-tertiary">{t.labelFee}</span>
+                          <div className="flex items-center gap-1">
+                            <input
+                              type="number"
+                              defaultValue={detail?.delivery?.['Delivery Fee'] || ''}
+                              onBlur={e => {
+                                const val = e.target.value === '' ? 0 : Number(e.target.value);
+                                if (val !== Number(detail?.delivery?.['Delivery Fee'] || 0)) patchDelivery({ 'Delivery Fee': val });
+                              }}
+                              placeholder="0"
+                              disabled={saving}
+                              className="w-20 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none disabled:opacity-40"
+                            />
+                            <span className="text-xs text-ios-tertiary">zł</span>
+                          </div>
                         </div>
-                      </div>
+                        {isOwner && (() => {
+                          const fee    = Number(detail?.delivery?.['Delivery Fee'] || 0);
+                          const payout = Number(detail?.delivery?.['Driver Payout'] || 0);
+                          const taxi   = Number(detail?.delivery?.['Taxi Cost'] || 0);
+                          const margin = fee - payout - taxi;
+                          return (
+                            <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
+                              <span className="text-xs text-ios-tertiary">{t.deliveryMargin}</span>
+                              <span className={`text-xs font-medium ${margin >= 0 ? 'text-ios-green' : 'text-ios-red'}`}>
+                                {margin.toFixed(0)} zł
+                              </span>
+                            </div>
+                          );
+                        })()}
+                      </>
                     )}
                     <div className="flex justify-between py-1.5 border-t border-gray-200">
                       <span className="text-xs font-semibold text-ios-label uppercase">{t.grandTotal || 'Total'}</span>
@@ -1209,7 +1225,9 @@ function OrderCard({
                           methodPatch['Driver Payout'] = 0;
                           methodPatch['Taxi Cost'] = 0;
                         } else {
+                          // Switching to Driver: restore payout from saved value or config default
                           methodPatch['Taxi Cost'] = 0;
+                          methodPatch['Driver Payout'] = Number(detail?.delivery?.['Driver Payout']) || driverCostPerDelivery;
                         }
                         patchDelivery(methodPatch);
                       }}
@@ -1217,30 +1235,54 @@ function OrderCard({
                     />
                   </div>
 
-                  {/* Driver picker — only when method is Driver */}
+                  {/* Driver picker + payout — only when method is Driver */}
                   {(detail?.delivery?.['Delivery Method'] || 'Driver') === 'Driver' && (
-                    <div>
-                      <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
-                      <div className="flex flex-wrap gap-1.5">
-                        {drivers.map(driver => (
-                          <button
-                            key={driver}
-                            onClick={() => patchDelivery({ 'Assigned Driver': detail?.delivery?.['Assigned Driver'] === driver ? '' : driver })}
-                            disabled={saving}
-                            className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                              detail?.delivery?.['Assigned Driver'] === driver
-                                ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
-                            }`}
-                          >
-                            {driver}
-                          </button>
-                        ))}
+                    <>
+                      <div>
+                        <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.assignedDriver}</p>
+                        <div className="flex flex-wrap gap-1.5">
+                          {drivers.map(driver => (
+                            <button
+                              key={driver}
+                              onClick={() => patchDelivery({ 'Assigned Driver': detail?.delivery?.['Assigned Driver'] === driver ? '' : driver })}
+                              disabled={saving}
+                              className={`px-3 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                                detail?.delivery?.['Assigned Driver'] === driver
+                                  ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                              }`}
+                            >
+                              {driver}
+                            </button>
+                          ))}
+                        </div>
+                        {!detail?.delivery?.['Assigned Driver'] && (
+                          <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
+                        )}
                       </div>
-                      {!detail?.delivery?.['Assigned Driver'] && (
-                        <p className="text-xs text-ios-tertiary mt-1">{t.noDriver}</p>
-                      )}
-                    </div>
+                      <div>
+                        <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.courierPayout}</p>
+                        <div className="flex items-center gap-1">
+                          <input
+                            type="number"
+                            value={detail?.delivery?.['Driver Payout'] != null ? detail.delivery['Driver Payout'] : ''}
+                            onChange={e => {
+                              const v = e.target.value;
+                              setDetail(prev => prev ? { ...prev, delivery: { ...prev.delivery, 'Driver Payout': v === '' ? null : Number(v) } } : prev);
+                            }}
+                            onBlur={e => {
+                              const v = e.target.value;
+                              const next = v === '' ? 0 : Number(v);
+                              if (next !== Number(detail?.delivery?.['Driver Payout'] ?? 0)) patchDelivery({ 'Driver Payout': next });
+                            }}
+                            placeholder="0"
+                            disabled={saving}
+                            className="w-20 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none disabled:opacity-40"
+                          />
+                          <span className="text-xs text-ios-tertiary">zł</span>
+                        </div>
+                      </div>
+                    </>
                   )}
                 </div>
               )}
