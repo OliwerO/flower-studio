@@ -418,15 +418,22 @@ export default function FinancialTab({ onNavigate }) {
               <p className="text-lg font-bold text-ios-label">{(delivery.deliveryRevenue || 0).toFixed(0)} {t.zl}</p>
             </div>
             <div className="text-center px-4">
-              <p className="text-sm text-ios-secondary">{t.costPrice}</p>
-              <p className="text-lg font-bold text-ios-tertiary">—</p>
+              <p className="text-sm text-ios-secondary">{t.driverPayoutTotal}</p>
+              <p className="text-lg font-bold text-rose-600">
+                {delivery.deliveryPayoutTotal != null ? `−${(delivery.deliveryPayoutTotal || 0).toFixed(0)}` : '—'} {delivery.deliveryPayoutTotal != null ? t.zl : ''}
+              </p>
             </div>
             <div className="text-right">
               <p className="text-sm text-ios-secondary">{t.deliveryNet}</p>
-              <p className="text-lg font-bold text-emerald-600">{(delivery.deliveryRevenue || 0).toFixed(0)} {t.zl}</p>
+              {delivery.deliveryProfit != null ? (
+                <p className={`text-lg font-bold ${delivery.deliveryProfit >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                  {(delivery.deliveryProfit || 0).toFixed(0)} {t.zl}
+                </p>
+              ) : (
+                <p className="text-lg font-bold text-ios-tertiary">—</p>
+              )}
             </div>
           </div>
-          <p className="text-[10px] text-ios-tertiary mt-2 italic">{t.addDriverCosts}</p>
         </div>
       </Section>
 

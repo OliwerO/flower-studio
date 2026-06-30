@@ -139,7 +139,7 @@ export default function OrderDetailPage() {
   const { role } = useAuth();
   const isOwner = role === 'owner';
   const { showToast } = useToast();
-  const { paymentMethods, timeSlots, drivers } = useConfigLists();
+  const { paymentMethods, timeSlots, drivers, driverCostPerDelivery } = useConfigLists();
 
   const [order, setOrder]     = useState(null);
   const [loading, setLoading] = useState(true);
@@ -569,6 +569,20 @@ export default function OrderDetailPage() {
                     </div>
                   )}
                   <Row label={t.deliveryFee || 'Fee'} value={order.delivery['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
+                  {isOwner && (() => {
+                    const fee    = Number(order.delivery?.['Delivery Fee'] || 0);
+                    const payout = Number(order.delivery?.['Driver Payout'] || 0);
+                    const taxi   = Number(order.delivery?.['Taxi Cost'] || 0);
+                    const margin = fee - payout - taxi;
+                    return (
+                      <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
+                        <span className="text-sm text-ios-tertiary shrink-0">{t.deliveryMargin}</span>
+                        <span className={`text-sm font-medium ${margin >= 0 ? 'text-ios-green' : 'text-ios-red'}`}>
+                          {margin.toFixed(0)} zł
+                        </span>
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
             )}
@@ -604,7 +618,9 @@ export default function OrderDetailPage() {
                           methodPatch['Driver Payout'] = 0;
                           methodPatch['Taxi Cost'] = 0;
                         } else {
+                          // Switching to Driver: restore payout from saved value or config default
                           methodPatch['Taxi Cost'] = 0;
+                          methodPatch['Driver Payout'] = Number(order.delivery?.['Driver Payout']) || driverCostPerDelivery;
                         }
                         patchDelivery(methodPatch);
                       }}
@@ -613,34 +629,54 @@ export default function OrderDetailPage() {
                   </div>
                 </div>
 
-                {/* Driver picker — only when method is Driver */}
+                {/* Driver picker + payout — only when method is Driver */}
                 {(order.delivery?.['Delivery Method'] || 'Driver') === 'Driver' && (
-                  <div>
-                    <p className="ios-label">{t.assignedDriver}</p>
-                    <div className="ios-card p-4">
-                      <div className="flex flex-wrap gap-1.5">
-                        {drivers.map(driver => (
-                          <button
-                            key={driver}
-                            onClick={() => patchDelivery({
-                              'Assigned Driver': order.delivery?.['Assigned Driver'] === driver ? '' : driver,
-                            })}
-                            disabled={saving}
-                            className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
-                              order.delivery?.['Assigned Driver'] === driver
-                                ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
-                                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
-                            }`}
-                          >
-                            {driver}
-                          </button>
-                        ))}
+                  <>
+                    <div>
+                      <p className="ios-label">{t.assignedDriver}</p>
+                      <div className="ios-card p-4">
+                        <div className="flex flex-wrap gap-1.5">
+                          {drivers.map(driver => (
+                            <button
+                              key={driver}
+                              onClick={() => patchDelivery({
+                                'Assigned Driver': order.delivery?.['Assigned Driver'] === driver ? '' : driver,
+                              })}
+                              disabled={saving}
+                              className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                                order.delivery?.['Assigned Driver'] === driver
+                                  ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                                  : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                              }`}
+                            >
+                              {driver}
+                            </button>
+                          ))}
+                        </div>
+                        {!order.delivery?.['Assigned Driver'] && (
+                          <p className="text-xs text-ios-tertiary mt-2">{t.noDriver}</p>
+                        )}
                       </div>
-                      {!order.delivery?.['Assigned Driver'] && (
-                        <p className="text-xs text-ios-tertiary mt-2">{t.noDriver}</p>
-                      )}
                     </div>
-                  </div>
+                    <div>
+                      <p className="ios-label">{t.courierPayout}</p>
+                      <div className="ios-card p-4 flex items-center gap-2">
+                        <input
+                          type="number"
+                          defaultValue={order.delivery?.['Driver Payout'] ?? ''}
+                          onBlur={e => {
+                            const v = e.target.value;
+                            const next = v === '' ? 0 : Number(v);
+                            if (next !== Number(order.delivery?.['Driver Payout'] ?? 0)) patchDelivery({ 'Driver Payout': next });
+                          }}
+                          placeholder="0"
+                          disabled={saving}
+                          className="w-24 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 outline-none disabled:opacity-40"
+                        />
+                        <span className="text-sm text-ios-tertiary">zł</span>
+                      </div>
+                    </div>
+                  </>
                 )}
               </div>
             )}

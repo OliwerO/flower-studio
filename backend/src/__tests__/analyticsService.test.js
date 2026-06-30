@@ -86,6 +86,21 @@ describe('calculateRevenueMetrics', () => {
     expect(result.avgOrderValue).toBe(0);
     expect(result.flowerMargin).toBe(0);
   });
+
+  it('computes deliveryProfit = deliveryRevenue − Σ(driverPayout) and total = flowers + delivery', () => {
+    const o1 = { ...makeOrder(), _flowerSell: 100, _deliveryFee: 50, _driverPayout: 35, _cost: 40, 'Effective Price': 150, 'Payment Status': 'Paid' };
+    const o2 = { ...makeOrder(), _flowerSell: 80, _deliveryFee: 50, _driverPayout: 20, _cost: 30, 'Effective Price': 130, 'Payment Status': 'Paid' };
+    const o3 = { ...makeOrder(), _flowerSell: 60, _deliveryFee: 0, _driverPayout: 0, _cost: 20, 'Effective Price': 60, 'Payment Status': 'Unpaid' };
+    const paidOrders = [o1, o2];
+    const result = calculateRevenueMetrics([o1, o2, o3], paidOrders, 2.2);
+
+    expect(result.deliveryRevenue).toBe(100);          // 50 + 50
+    expect(result.deliveryPayoutTotal).toBe(55);        // 35 + 20
+    expect(result.deliveryProfit).toBe(45);             // 100 − 55
+    expect(result.totalRevenue).toBe(280);              // 150 + 130
+    // total = flowers + delivery invariant
+    expect(result.flowerRevenue + result.deliveryRevenue).toBe(result.totalRevenue);
+  });
 });
 
 // ── calculateWasteMetrics ──

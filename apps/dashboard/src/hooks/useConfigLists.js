@@ -7,13 +7,14 @@ import { useState, useEffect } from 'react';
 import { cachedGet } from '../api/client.js';
 
 const DEFAULTS = {
-  suppliers:      ['4f', 'Mateusz', 'Other', 'Stefan', 'Stojek'],
-  categories:     ['Accessories', 'Greenery', 'Other', 'Roses', 'Seasonal', 'Tulips'],
-  paymentMethods: ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
-  orderSources:   ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
-  timeSlots:      ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
-  floristNames:   ['Anya', 'Daria'],
-  targetMarkup:   2.2,
+  suppliers:             ['4f', 'Mateusz', 'Other', 'Stefan', 'Stojek'],
+  categories:            ['Accessories', 'Greenery', 'Other', 'Roses', 'Seasonal', 'Tulips'],
+  paymentMethods:        ['Cash', 'Card', 'Mbank', 'Monobank', 'Revolut', 'PayPal', 'Wix Online'],
+  orderSources:          ['In-store', 'Instagram', 'WhatsApp', 'Telegram', 'Wix', 'Flowwow', 'Other'],
+  timeSlots:             ['10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00'],
+  floristNames:          ['Anya', 'Daria'],
+  targetMarkup:          2.2,
+  driverCostPerDelivery: 35,
 };
 
 let cached = null;
@@ -34,6 +35,7 @@ export default function useConfigLists() {
         floristNames: listsRes.data.floristNames || DEFAULTS.floristNames,
         targetMarkup: settingsRes.data.config?.targetMarkup || DEFAULTS.targetMarkup,
         slotLeadTimeMinutes: settingsRes.data.config?.slotLeadTimeMinutes || 30,
+        driverCostPerDelivery: settingsRes.data.config?.driverCostPerDelivery || DEFAULTS.driverCostPerDelivery,
       };
       if (merged.categories) merged.categories = [...merged.categories].sort((a, b) => a.localeCompare(b));
       if (merged.suppliers) merged.suppliers = [...merged.suppliers].sort((a, b) => a.localeCompare(b));
