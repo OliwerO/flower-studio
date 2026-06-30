@@ -277,6 +277,23 @@ const en = {
 
   // New order wizard
   newOrderTitle:    'New Order',
+  newOrder:         'New Order',
+  fabPremade:       'Premade bouquet',
+  // Text import / intake (paste-import FAB → AI parse → prefill wizard)
+  intake: {
+    title:              'Paste text',
+    modeGeneral:        'Any message',
+    hintGeneral:        'Paste customer messages from any channel — AI will extract order data.',
+    hintFlowwow:        'Paste Flowwow email text — we\'ll auto-detect order, address, recipient.',
+    placeholderGeneral: 'Paste customer message...\n\nMultiple messages at once are fine.',
+    placeholderFlowwow: 'Paste Flowwow email text...',
+    parseButton:        'Parse',
+    parsing:            'Parsing...',
+    parseError:         'Could not parse text. Try again.',
+    warningsTitle:      'Warnings',
+    fabLabel:           'Paste text',
+    fabManual:          'New order',
+  },
   step1:            'Customer',
   step2:            'Bouquet',
   step3:            'Details',
@@ -1433,6 +1450,23 @@ const ru = {
 
   // New order wizard
   newOrderTitle:    'Новый заказ',
+  newOrder:         'Новый заказ',
+  fabPremade:       'Готовый букет',
+  // Text import / intake (paste-import FAB → AI parse → prefill wizard)
+  intake: {
+    title:              'Вставить текст',
+    modeGeneral:        'Любое сообщение',
+    hintGeneral:        'Вставьте сообщения клиента из любого канала — AI извлечёт данные заказа.',
+    hintFlowwow:        'Вставьте текст письма от Flowwow — автоматически распознаем заказ, адрес, получателя.',
+    placeholderGeneral: 'Вставьте сообщение клиента...\n\nМожно несколько сообщений сразу.',
+    placeholderFlowwow: 'Вставьте текст письма Flowwow...',
+    parseButton:        'Распознать',
+    parsing:            'Распознаём...',
+    parseError:         'Не удалось распознать текст. Попробуйте ещё раз.',
+    warningsTitle:      'Предупреждения',
+    fabLabel:           'Вставить текст',
+    fabManual:          'Новый заказ',
+  },
   step1:            'Клиент',
   step2:            'Букет',
   step3:            'Детали',

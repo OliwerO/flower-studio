@@ -20,6 +20,10 @@ const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
 const VarietyBackfillTab = lazy(() => import('../components/VarietyBackfillTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 const IssuesTab = lazy(() => import('../components/IssuesTab.jsx'));
+// Modals opened from the new-order speed-dial FAB (bottom-right). Lazy so
+// neither the AI paste-import nor the premade builder weighs on initial load.
+const TextImportModal = lazy(() => import('../components/TextImportModal.jsx'));
+const PremadeBouquetCreateModal = lazy(() => import('../components/PremadeBouquetCreateModal.jsx'));
 function TabFallback() {
   return (
     <div className="flex justify-center py-16">
@@ -34,7 +38,9 @@ export default function DashboardPage() {
   const TABS = [
     { key: 'today',     label: t.tabToday },
     { key: 'orders',    label: t.tabOrders },
-    { key: 'newOrder',  label: t.tabNewOrder },
+    // New Order is no longer a top pill — it's reached via the bottom-right
+    // speed-dial FAB (matching the florist app). The 'newOrder' tab content is
+    // still rendered below; only its nav pill was removed.
     { key: 'stock',     label: t.tabStock },
     { key: 'customers', label: t.tabCustomers },
     { key: 'financial', label: t.tabFinancial },
@@ -64,6 +70,10 @@ export default function DashboardPage() {
   const [filterKey, setFilterKey] = useState(0);
   const [showHelp, setShowHelp] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
+  // New-order speed-dial FAB (bottom-right) — mirrors the florist app's FAB.
+  const [fabOpen, setFabOpen] = useState(false);
+  const [showImport, setShowImport] = useState(false);
+  const [showPremadeCreate, setShowPremadeCreate] = useState(false);
 
   useEffect(() => {
     setMountedTabs(prev => {
@@ -218,7 +228,77 @@ export default function DashboardPage() {
           onClose={() => setReportOpen(false)}
         />
       )}
-      <AskBlossomLauncher t={t} reporterRole="owner" reporterName="Owner" appArea="dashboard" />
+      {/* New-order speed-dial FAB — tap "+" to expand into paste-import /
+          premade / manual, matching the florist app's OrderListPage FAB.
+          Sits where the Ask Blossom launcher used to be (bottom-right); the
+          launcher is stacked above it so both stay tappable. */}
+      {fabOpen && (
+        <div className="fixed inset-0 z-40" onClick={() => setFabOpen(false)} />
+      )}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col items-end gap-3">
+        {fabOpen && (
+          <>
+            {/* Paste import option */}
+            <button
+              onClick={() => { setFabOpen(false); setShowImport(true); }}
+              className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active:scale-95 transition-transform"
+            >
+              <span className="text-sm font-semibold text-ios-label">{t.intake.fabLabel}</span>
+              <span className="w-10 h-10 rounded-full bg-amber-500 text-white text-lg flex items-center justify-center">📋</span>
+            </button>
+            {/* Premade bouquet option — compose without a customer */}
+            <button
+              onClick={() => { setFabOpen(false); setShowPremadeCreate(true); }}
+              className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active:scale-95 transition-transform"
+            >
+              <span className="text-sm font-semibold text-ios-label">{t.fabPremade}</span>
+              <span className="w-10 h-10 rounded-full bg-pink-500 text-white text-lg flex items-center justify-center">💐</span>
+            </button>
+            {/* Manual new order option */}
+            <button
+              onClick={() => { setFabOpen(false); navigateTo({ tab: 'newOrder' }); }}
+              className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active:scale-95 transition-transform"
+            >
+              <span className="text-sm font-semibold text-ios-label">{t.intake.fabManual}</span>
+              <span className="w-10 h-10 rounded-full bg-brand-600 text-white text-lg flex items-center justify-center">✏️</span>
+            </button>
+          </>
+        )}
+        {/* Main FAB */}
+        <button
+          onClick={() => setFabOpen(v => !v)}
+          className={`w-14 h-14 bg-brand-600 text-white text-3xl rounded-full shadow-lg
+                     flex items-center justify-center active:bg-brand-700 active:scale-95
+                     transition-transform duration-200 ${fabOpen ? 'rotate-45' : ''}`}
+          aria-label={t.newOrder}
+        >
+          +
+        </button>
+      </div>
+
+      {/* Paste-import modal → AI parse → prefill the New Order wizard */}
+      {showImport && (
+        <Suspense fallback={null}>
+          <TextImportModal
+            onClose={() => setShowImport(false)}
+            onParsed={(draft) => navigateTo({ tab: 'newOrder', filter: { importDraft: draft } })}
+          />
+        </Suspense>
+      )}
+
+      {/* Premade bouquet builder */}
+      {showPremadeCreate && (
+        <Suspense fallback={null}>
+          <PremadeBouquetCreateModal
+            onClose={() => setShowPremadeCreate(false)}
+            onCreated={() => setShowPremadeCreate(false)}
+          />
+        </Suspense>
+      )}
+
+      {/* bottom-24 (not bottom-6): the new-order FAB now occupies bottom-6 right-6,
+          so stack the assistant above it — same pattern as the florist app. */}
+      <AskBlossomLauncher t={t} fabClassName="bottom-24 right-6" reporterRole="owner" reporterName="Owner" appArea="dashboard" />
     </div>
   );
 }

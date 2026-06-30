@@ -31,6 +31,7 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
   const [submitting, setSubmitting] = useState(false);
   const [stock, setStock]     = useState([]);
   const [premadeBouquets, setPremadeBouquets] = useState([]);
+  const [importWarnings, setImportWarnings] = useState([]);
 
   useEffect(() => {
     cachedGet('/stock?includeEmpty=true&includeInactive=true').then(r => setStock(r.data)).catch(console.error);
@@ -72,6 +73,57 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
       }
     })();
   }, [initialFilter?.matchPremadeId]);
+
+  // Path C: owner pasted a customer message in the FAB's TextImportModal — the
+  // AI-parsed draft arrives via initialFilter.importDraft. Prefill the wizard.
+  // Mirror of the florist app's NewOrderPage importDraft handler (parity).
+  useEffect(() => {
+    const draft = initialFilter?.importDraft;
+    if (!draft) return;
+
+    const patch = {};
+    if (draft.customerRequest) patch.customerRequest = draft.customerRequest;
+    if (draft.source) patch.source = draft.source;
+    if (draft.paymentStatus) patch.paymentStatus = draft.paymentStatus;
+    if (draft.notes) patch.notes = draft.notes;
+    if (draft.deliveryFee != null) patch.deliveryFee = draft.deliveryFee;
+    if (draft.totalPrice) patch.priceOverride = String(draft.totalPrice);
+
+    // Delivery fields
+    if (draft.delivery?.address) {
+      patch.deliveryType = 'Delivery';
+      patch.deliveryAddress = draft.delivery.address;
+    }
+    if (draft.delivery?.recipientName) patch.recipientName = draft.delivery.recipientName;
+    if (draft.delivery?.recipientPhone) patch.recipientPhone = draft.delivery.recipientPhone;
+    if (draft.delivery?.date) patch.deliveryDate = draft.delivery.date;
+    if (draft.delivery?.time) patch.deliveryTime = draft.delivery.time;
+    if (draft.delivery?.cardText) patch.cardText = draft.delivery.cardText;
+
+    // Order lines from AI matching
+    if (draft.orderLines?.length > 0) {
+      patch.orderLines = draft.orderLines.map(l => ({
+        stockItemId:      l.stockItemId || null,
+        flowerName:       l.flowerName || '',
+        quantity:         l.quantity || 1,
+        costPricePerUnit: l.costPricePerUnit || 0,
+        sellPricePerUnit: l.sellPricePerUnit || 0,
+        confidence:       l.confidence || 'none',
+      }));
+    }
+
+    // Customer — if AI found a match, pre-select them and skip to Step 2
+    if (draft.customer?.suggestedMatchId) {
+      patch.customerId = draft.customer.suggestedMatchId;
+      patch.customerName = draft.customer.suggestedMatchName || draft.customer.name || '';
+      setStep(1);
+    } else if (draft.customer?.name || draft.customer?.phone) {
+      patch.customerName = draft.customer.name || '';
+    }
+
+    setForm(prev => ({ ...prev, ...patch }));
+    setImportWarnings(draft.warnings?.length > 0 ? draft.warnings : []);
+  }, [initialFilter?.importDraft]);
 
   // Path B: user taps a premade bouquet inside Step 2 — lock cart to its composition.
   function handleSelectPremade(bouquet) {
@@ -243,6 +295,16 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
           ))}
         </div>
       </div>
+
+      {/* Import warnings — surfaced when the AI paste-import flagged ambiguities */}
+      {importWarnings.length > 0 && (
+        <div className="max-w-2xl mx-auto mb-4 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-3">
+          <p className="text-sm font-semibold text-amber-800 mb-1">{t.intake.warningsTitle}</p>
+          <ul className="list-disc list-inside text-sm text-amber-700 space-y-0.5">
+            {importWarnings.map((w, i) => <li key={i}>{w}</li>)}
+          </ul>
+        </div>
+      )}
 
       {/* Step content */}
       <div className="max-w-2xl mx-auto">
