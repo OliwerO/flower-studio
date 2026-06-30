@@ -1,5 +1,7 @@
 # Plan — Y-model test-session feature CRs (CR-30 / CR-32 / CR-33)
 
+> ✅ **COMPLETE (2026-06-30).** All three features shipped: Feature A CR-33 delivery margin → #469; Feature B CR-32 courier time slots → #470 (migration 0017); Feature C CR-30 recipient address book → #471 (migration 0018, slices C1–C4). Plus the small fixes CR-29 #467 / CR-31 #466 / CR-34 #465. Nothing open. Kept for history.
+
 **Date:** 2026-06-30
 **Origin:** Y-model test session 2 CR cluster (`docs/superpowers/plans/2026-06-21-ymodel-test-session-2-crs.md`).
 **Status:** design locked (owner grill 2026-06-30); ready to slice + build.
