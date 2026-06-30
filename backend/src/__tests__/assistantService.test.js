@@ -53,7 +53,11 @@ describe('assistantService.ask', () => {
     await ask({ message: 'hi' });
     const call = mockCreate.mock.calls[0][0];
     expect(call.tools).toHaveLength(1);
-    expect(call.system).toMatch(/\d{4}-\d{2}-\d{2}/); // today's date injected
+    // System is now a cacheable text-block array (prompt caching).
+    expect(call.system[0].text).toMatch(/\d{4}-\d{2}-\d{2}/); // today's date injected
+    // Prompt caching: system block + the last tool def carry a cache_control breakpoint.
+    expect(call.system.at(-1).cache_control).toEqual({ type: 'ephemeral' });
+    expect(call.tools.at(-1).cache_control).toEqual({ type: 'ephemeral' });
   });
 
   it('continues an existing session by id', async () => {

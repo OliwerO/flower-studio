@@ -36,6 +36,26 @@ function systemPrompt(today) {
   ].join('\n');
 }
 
+// ── Prompt caching ──────────────────────────────────────────────────────────
+// The system prompt + the 20 tool definitions are large and IDENTICAL on every
+// turn. Marking them cacheable lets Anthropic serve them from its prompt cache
+// (~10% of normal input-token cost) on the 2nd+ request within the 5-minute TTL —
+// big savings on the multi-tool loop (several create() calls per question) and on
+// multi-turn chats. Prompt caching is GA on SDK 0.78 (no beta header needed).
+// A cache breakpoint caches everything up to AND including the block it's on.
+const CACHE_CONTROL = { type: 'ephemeral' };
+
+// One breakpoint on the LAST tool def → the whole tools block (all 20) is cached.
+const CACHED_TOOLS = TOOL_DEFS.map((t, i) =>
+  i === TOOL_DEFS.length - 1 ? { ...t, cache_control: CACHE_CONTROL } : t,
+);
+
+// System as a single cacheable text block. It changes only with `today`, so the
+// cache is valid for the whole day — every turn within a session reuses it.
+function cachedSystem(today) {
+  return [{ type: 'text', text: systemPrompt(today), cache_control: CACHE_CONTROL }];
+}
+
 // First user message → conversation title, trimmed to 80 chars.
 function deriveTitle(messages) {
   const firstUser = (messages || []).find(m => m.role === 'user' && typeof m.content === 'string');
@@ -83,7 +103,7 @@ export async function ask({ sessionId, message }) {
   const toolResults = [];
   let iterations = 0;
   let response = await anthropic.messages.create({
-    model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: [...session.messages],
+    model: MODEL, max_tokens: MAX_TOKENS, system: cachedSystem(today), tools: CACHED_TOOLS, messages: [...session.messages],
   });
 
   while (response.stop_reason === 'tool_use' && iterations < MAX_ITERATIONS) {
@@ -104,7 +124,7 @@ export async function ask({ sessionId, message }) {
     }
     session.messages.push({ role: 'user', content: resultBlocks });
     response = await anthropic.messages.create({
-      model: MODEL, max_tokens: MAX_TOKENS, system: systemPrompt(today), tools: TOOL_DEFS, messages: [...session.messages],
+      model: MODEL, max_tokens: MAX_TOKENS, system: cachedSystem(today), tools: CACHED_TOOLS, messages: [...session.messages],
     });
   }
 
