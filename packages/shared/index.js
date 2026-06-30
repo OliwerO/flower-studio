@@ -4,7 +4,7 @@ export { default as useLongPress } from './hooks/useLongPress.js';
 export { default as useDebouncedValue } from './hooks/useDebouncedValue.js';
 export { default as parseBatchName } from './utils/parseBatchName.js';
 export { formatDateDMY } from './utils/formatDate.js';
-export { getAvailableSlots } from './utils/timeSlots.js';
+export { getAvailableSlots, getCourierSlots } from './utils/timeSlots.js';
 export { renderStockName, stockBaseName, renderDateTag } from './utils/stockName.jsx';
 export { ToastProvider, useToast } from './context/ToastContext.jsx';
 export { default as Toast } from './components/Toast.jsx';

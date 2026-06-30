@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -538,7 +538,14 @@ export default function OrderDetailPage() {
                     {timeSlots.map(slot => (
                       <button
                         key={slot}
-                        onClick={() => !saving && patch({ 'Delivery Time': order['Delivery Time'] === slot ? '' : slot })}
+                        onClick={() => {
+                          if (saving) return;
+                          const next = order['Delivery Time'] === slot ? '' : slot;
+                          patch({ 'Delivery Time': next });
+                          // Drop the courier slot if it no longer fits the new client window.
+                          const courier = order.delivery?.['Courier Time'];
+                          if (courier && !getCourierSlots(next).includes(courier)) patchDelivery({ 'Courier Time': '' });
+                        }}
                         disabled={saving}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                           order['Delivery Time'] === slot
@@ -676,6 +683,30 @@ export default function OrderDetailPage() {
                         <span className="text-sm text-ios-tertiary">zł</span>
                       </div>
                     </div>
+                    {/* Courier 1h slot within the client's chosen 2h window (CR-32) */}
+                    {getCourierSlots(order['Delivery Time']).length > 0 && (
+                      <div>
+                        <p className="ios-label">{t.courierSlot}</p>
+                        <div className="ios-card p-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            {getCourierSlots(order['Delivery Time']).map(slot => (
+                              <button
+                                key={slot}
+                                onClick={() => patchDelivery({ 'Courier Time': order.delivery?.['Courier Time'] === slot ? '' : slot })}
+                                disabled={saving}
+                                className={`px-3.5 py-1.5 rounded-full text-sm font-medium border transition-colors active-scale disabled:opacity-40 ${
+                                  order.delivery?.['Courier Time'] === slot
+                                    ? 'bg-brand-600 text-white border-brand-600 shadow-sm'
+                                    : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 border-gray-200 dark:border-gray-600 hover:bg-gray-200 dark:hover:bg-gray-600'
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </>
                 )}
               </div>

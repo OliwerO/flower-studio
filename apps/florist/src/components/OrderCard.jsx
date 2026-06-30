@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -1130,9 +1130,13 @@ function OrderCard({
                       {timeSlots.map(slot => (
                         <button
                           key={slot}
-                          onClick={() => patch({
-                            'Delivery Time': d['Delivery Time'] === slot ? '' : slot,
-                          })}
+                          onClick={() => {
+                            const next = d['Delivery Time'] === slot ? '' : slot;
+                            patch({ 'Delivery Time': next });
+                            // Drop the courier slot if it no longer fits the new client window.
+                            const courier = detail?.delivery?.['Courier Time'];
+                            if (courier && !getCourierSlots(next).includes(courier)) patchDelivery({ 'Courier Time': '' });
+                          }}
                           disabled={saving}
                           className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
                             d['Delivery Time'] === slot
@@ -1282,6 +1286,28 @@ function OrderCard({
                           <span className="text-xs text-ios-tertiary">zł</span>
                         </div>
                       </div>
+                      {/* Courier 1h slot within the client's chosen 2h window (CR-32) */}
+                      {getCourierSlots(d['Delivery Time']).length > 0 && (
+                        <div>
+                          <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-1">{t.courierSlot}</p>
+                          <div className="flex flex-wrap gap-1.5">
+                            {getCourierSlots(d['Delivery Time']).map(slot => (
+                              <button
+                                key={slot}
+                                onClick={() => patchDelivery({ 'Courier Time': detail?.delivery?.['Courier Time'] === slot ? '' : slot })}
+                                disabled={saving}
+                                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors active-scale disabled:opacity-40 ${
+                                  detail?.delivery?.['Courier Time'] === slot
+                                    ? 'bg-brand-600 text-white shadow-sm'
+                                    : 'bg-white dark:bg-gray-800 text-ios-secondary dark:text-gray-300 border border-gray-200 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700'
+                                }`}
+                              >
+                                {slot}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
                     </>
                   )}
                 </div>

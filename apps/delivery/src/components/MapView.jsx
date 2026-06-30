@@ -30,9 +30,9 @@ export default function MapView({ deliveries, onBack }) {
     );
   }, []);
 
-  // Sort by time for the route order
+  // Sort by the courier slot (fallback to client window) for the route order (CR-32)
   const sorted = [...deliveries].sort(
-    (a, b) => (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '')
+    (a, b) => (a['Courier Time'] || a['Delivery Time'] || '').localeCompare(b['Courier Time'] || b['Delivery Time'] || '')
   );
 
   // Build Google Maps multi-waypoint URL
@@ -136,10 +136,10 @@ export default function MapView({ deliveries, onBack }) {
                       </a>
                     </div>
 
-                    {/* Time badge */}
-                    {d['Delivery Time'] && (
+                    {/* Time badge — courier slot, falling back to the client window (CR-32) */}
+                    {(d['Courier Time'] || d['Delivery Time']) && (
                       <span className="text-xs text-ios-tertiary font-medium shrink-0">
-                        {d['Delivery Time']}
+                        {d['Courier Time'] || d['Delivery Time']}
                       </span>
                     )}
                   </div>

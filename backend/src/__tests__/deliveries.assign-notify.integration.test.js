@@ -36,6 +36,7 @@ vi.mock('../services/configService.js', () => ({
 }));
 
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
+import { eq } from 'drizzle-orm';
 import { orders, deliveries } from '../db/schema.js';
 import express from 'express';
 import supertest from 'supertest';
@@ -164,5 +165,27 @@ describe('delivery assignment → driver notification diff-detection', () => {
     await new Promise(r => setImmediate(r));
 
     expect(notifyDeliveryAssigned).not.toHaveBeenCalled();
+  });
+});
+
+describe('courier_time persistence (CR-32)', () => {
+  it('round-trips Courier Time through PATCH and persists it on the delivery row', async () => {
+    const res = await supertest(app)
+      .patch(`/api/deliveries/${deliveryId}`)
+      .set('x-auth-pin', OWNER_PIN)
+      .send({ 'Courier Time': '10:00-11:00' });
+
+    expect(res.status).toBe(200);
+    expect(res.body['Courier Time']).toBe('10:00-11:00');
+
+    const [row] = await harness.db
+      .select().from(deliveries).where(eq(deliveries.id, deliveryId));
+    expect(row.courierTime).toBe('10:00-11:00');
+  });
+
+  it('leaves Courier Time null when not supplied (assigned later, not at create)', async () => {
+    const [row] = await harness.db
+      .select().from(deliveries).where(eq(deliveries.id, deliveryId));
+    expect(row.courierTime).toBeNull();
   });
 });

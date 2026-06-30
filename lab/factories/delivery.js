@@ -4,9 +4,9 @@
 //
 // Schema: id, airtable_id, order_id (uuid FK → orders.id), delivery_address,
 //         recipient_name, recipient_phone, delivery_date, delivery_time,
-//         assigned_driver, delivery_fee, driver_instructions, delivery_method
-//         ('Driver' | 'Self'), driver_payout, status (default 'Pending'),
-//         delivered_at, created_at, updated_at, deleted_at
+//         courier_time, assigned_driver, delivery_fee, driver_instructions,
+//         delivery_method ('Driver' | 'Self'), driver_payout,
+//         status (default 'Pending'), delivered_at, created_at, updated_at, deleted_at
 //
 // Factory-only shaping keys (stripped from output):
 //   orderId → maps to order_id
@@ -30,6 +30,7 @@ export function makeDelivery(overrides = {}) {
     recipient_phone: '+48' + faker.string.numeric(9),
     delivery_date: faker.date.soon({ days: 14 }).toISOString().slice(0, 10),
     delivery_time: '14:00',
+    courier_time: null,
     assigned_driver: null,
     delivery_fee: faker.number.int({ min: 15, max: 40 }),
     driver_instructions: null,

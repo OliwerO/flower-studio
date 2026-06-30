@@ -20,7 +20,8 @@ export default function DeliverySheet({ delivery, onClose, onStatusChange, onPro
 
   const address        = d['Delivery Address'] || '';
   const phone          = d['Recipient Phone'] || '';
-  const time           = d['Delivery Time'] || '';
+  // Driver sees only the assigned courier slot; fall back to the client window when unset (CR-32).
+  const time           = d['Courier Time'] || d['Delivery Time'] || '';
   const recipient      = d['Recipient Name'] || 'Unknown';
   const fee            = d['Delivery Fee'];
   const payment        = d['Driver Payment Status'] || t.unpaid;
