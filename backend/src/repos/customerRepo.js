@@ -358,13 +358,15 @@ export async function listKeyPeople(customerId) {
     id:            r.id,
     name:          r.name,
     contactDetails: r.contactDetails ?? null,
+    phone:          r.phone ?? null,
+    address:        r.address ?? null,
     importantDate:  r.importantDate ?? null,
     importantDateLabel: r.importantDateLabel ?? null,
     createdAt:     r.createdAt,
   }));
 }
 
-export async function createKeyPerson(customerId, { name, contactDetails = null, importantDate = null, importantDateLabel = null } = {}) {
+export async function createKeyPerson(customerId, { name, contactDetails = null, phone = null, address = null, importantDate = null, importantDateLabel = null } = {}) {
   if (!name || !name.trim()) {
     const err = new Error('name is required');
     err.statusCode = 400;
@@ -374,6 +376,8 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
     customerId,
     name: name.trim(),
     contactDetails: contactDetails || null,
+    phone: phone || null,
+    address: address || null,
     importantDate: importantDate || null,
     importantDateLabel: importantDateLabel || null,
   }).returning();
@@ -381,6 +385,8 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
     id:            row.id,
     name:          row.name,
     contactDetails: row.contactDetails ?? null,
+    phone:          row.phone ?? null,
+    address:        row.address ?? null,
     importantDate:  row.importantDate ?? null,
     importantDateLabel: row.importantDateLabel ?? null,
     createdAt:     row.createdAt,

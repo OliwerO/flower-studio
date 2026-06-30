@@ -238,8 +238,8 @@ router.get('/:id/key-people', async (req, res, next) => {
 // POST /api/customers/:id/key-people — create a new key person for a customer
 router.post('/:id/key-people', async (req, res, next) => {
   try {
-    const { name, contactDetails, importantDate, importantDateLabel } = req.body;
-    const person = await customerRepo.createKeyPerson(req.params.id, { name, contactDetails, importantDate, importantDateLabel });
+    const { name, contactDetails, phone, address, importantDate, importantDateLabel } = req.body;
+    const person = await customerRepo.createKeyPerson(req.params.id, { name, contactDetails, phone, address, importantDate, importantDateLabel });
     res.status(201).json(person);
   } catch (err) {
     if (err.statusCode === 400) return res.status(400).json({ error: err.message });

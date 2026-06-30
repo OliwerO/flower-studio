@@ -5,6 +5,17 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Feature (CR-30): recipient phone + address as first-class key_people fields
+
+Y-model test-session CR. Each connected key person becomes a reusable address book: phone + delivery address are stored once and pre-fill every future delivery to that person. Plan: `docs/superpowers/plans/2026-06-30-ymodel-test-crs-features.md` (Feature C). Built slice-by-slice on branch `feat/recipient-key-person`.
+
+### C1 — schema + repo (this slice)
+- **Migration `0018_key_people_phone_address.sql`** — adds nullable `key_people.phone` + `key_people.address` (additive → safe on prod).
+- `customerRepo.createKeyPerson` / `listKeyPeople` read + write `phone` + `address` (empty string → null); `POST /api/customers/:id/key-people` accepts them.
+- Test: `customerRepo.keyPeople.integration.test.js` — phone/address round-trip, back-compat null, empty→null.
+
+_Remaining slices (same branch): C2 recipient step in the new-order wizard (both apps), C3 delivery pre-fill from the chosen recipient, C4 CRM surfacing (both apps)._
+
 ## 2026-06-30 — Feature (CR-32): courier time slots — client 2h window vs courier 1h slot
 
 Y-model test-session CR. The client picks a wide **2h delivery window**; the owner later assigns the courier a **1h slot within** that window; the **driver app shows only the courier slot**. Plan: `docs/superpowers/plans/2026-06-30-ymodel-test-crs-features.md` (Feature B).
