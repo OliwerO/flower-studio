@@ -12,6 +12,7 @@ export default function AskBlossomPanel({ t }) {
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [historyOpen, setHistoryOpen] = useState(false); // mobile: history slide-over drawer
   const endRef = useRef(null);
 
   useEffect(() => { endRef.current?.scrollIntoView?.({ behavior: 'smooth' }); }, [messages, loading]);
@@ -32,6 +33,7 @@ export default function AskBlossomPanel({ t }) {
     setInput('');
     setConfirmDeleteId(null);
     setEditingId(null);
+    setHistoryOpen(false);
   }
 
   async function loadConversation(id) {
@@ -41,6 +43,7 @@ export default function AskBlossomPanel({ t }) {
       setSessionId(data.id);
       setConfirmDeleteId(null);
       setEditingId(null);
+      setHistoryOpen(false);
     } catch (err) {
       setMessages((m) => [...m, { role: 'assistant', text: err.response?.data?.error || t.assistantError }]);
     }
@@ -97,8 +100,15 @@ export default function AskBlossomPanel({ t }) {
   }
 
   return (
-    <div className="flex h-full gap-3">
-      <aside className="w-48 shrink-0 border-r flex flex-col">
+    <div className="relative flex h-full gap-0 sm:gap-3 overflow-hidden">
+      {/* History: a static side column on desktop; a slide-over drawer on phones
+          (where a permanent column would squeeze the chat into a cramped half). */}
+      <aside
+        className={`flex flex-col bg-white border-r shrink-0
+                    absolute inset-y-0 left-0 z-30 w-64 shadow-xl transition-transform duration-200
+                    ${historyOpen ? 'translate-x-0' : '-translate-x-full'}
+                    sm:relative sm:inset-auto sm:z-auto sm:w-48 sm:shadow-none sm:translate-x-0`}
+      >
         <button
           className="m-2 bg-brand-600 text-white rounded-lg px-3 py-2 text-sm"
           onClick={newChat}
@@ -140,7 +150,29 @@ export default function AskBlossomPanel({ t }) {
         </div>
       </aside>
 
+      {/* Mobile-only backdrop behind the open history drawer */}
+      {historyOpen && (
+        <div className="sm:hidden absolute inset-0 z-20 bg-black/20" onClick={() => setHistoryOpen(false)} />
+      )}
+
       <div className="flex-1 flex flex-col min-w-0">
+        {/* Mobile-only toolbar: open history drawer + quick new chat (desktop has the side column) */}
+        <div className="sm:hidden flex items-center gap-2 px-2 py-1.5 border-b">
+          <button
+            className="flex items-center gap-1.5 text-sm text-gray-700 px-2 py-1 rounded-lg hover:bg-gray-100"
+            onClick={() => setHistoryOpen(true)}
+            aria-label={t.assistantHistory}
+          >
+            <span className="text-lg leading-none">☰</span>
+            <span>{t.assistantHistory}</span>
+          </button>
+          <button
+            className="ml-auto text-sm font-medium text-brand-600 px-2 py-1 rounded-lg hover:bg-brand-50"
+            onClick={newChat}
+          >
+            {t.assistantNewChat}
+          </button>
+        </div>
         <div className="flex-1 overflow-y-auto space-y-3 p-2">
           {messages.length === 0 && (
             <div className="mt-8 flex flex-col items-center gap-3">

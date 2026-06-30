@@ -78,7 +78,9 @@ describe('AskBlossomPanel', () => {
     fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'q' } });
     fireEvent.click(screen.getByText('Спросить'));
     await screen.findByText('a');
-    fireEvent.click(screen.getByText('+ Новый чат'));
+    // Two "New chat" buttons exist by design: the desktop sidebar + the mobile
+    // toolbar (CSS-toggled via sm: — jsdom renders both). Either clears the chat.
+    fireEvent.click(screen.getAllByText('+ Новый чат')[0]);
     expect(screen.queryByText('a')).not.toBeInTheDocument();
   });
 
