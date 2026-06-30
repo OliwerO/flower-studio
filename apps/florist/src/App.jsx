@@ -65,7 +65,10 @@ function Layout({ children }) {
     <>
       {children}
       <BottomNav />
-      {role === 'owner' && <AskBlossomLauncher t={t} fabClassName="bottom-20 right-4" />}
+      {/* bottom-36 (not bottom-20): the OrderListPage "Новый заказ" FAB sits at
+          bottom-20 right-5 z-50 and would paint over the assistant FAB (z-40) on
+          /orders. Stack the assistant above it so both stay tappable. */}
+      {role === 'owner' && <AskBlossomLauncher t={t} fabClassName="bottom-36 right-4" />}
     </>
   );
 }
