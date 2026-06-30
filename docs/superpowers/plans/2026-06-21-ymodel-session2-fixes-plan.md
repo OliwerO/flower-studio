@@ -1,5 +1,7 @@
 # Y-model Session-2 Fixes — Implementation Plan
 
+> ✅ **COMPLETE (2026-06-30).** All slices shipped to master: S0 null-date comparators (CR-02) #407; S1 availability model — On hand/Premade/Available + incoming (CR-03/04/06) #408; S2 new-demand flow — real DE row, sell price, over-allocation gate (CR-01/07/08) #409; S3 stock-panel column alignment + cards (CR-05) #410. Step checkboxes below left unchecked historically — work is done. Kept for history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Resolve the 8 change-requests captured in the 2026-06-21 Y-model owner test session (`2026-06-21-ymodel-test-session-2-crs.md`) — fixing the availability-bucket semantics, the new-demand order-submit flow, and the stock-panel layout, plus re-landing the crash fix already hot-patched on the lab.

@@ -1,5 +1,7 @@
 # Y-model Test Session 2 — Change Requests (2026-06-21)
 
+> ✅ **COMPLETE (2026-06-30).** Every CR captured here (CR-01 … CR-34) has shipped to master. Stock/new-demand cluster: #407 (CR-02), #408 (CR-03/04/06), #409 (CR-01/07/08), #410 (CR-05), #419 (CR-09), #435 (CR-28). Batch-2 copy/UX/trace (CR-10 … CR-18): see `2026-06-22-ymodel-crs-batch2-plan.md`. Flat-table density + waste-log + shortfall (CR-19 … CR-26): individual fix PRs. Session-2026-06-30 feature CRs: #467 (CR-29), #466 (CR-31), #465 (CR-34), #469 (CR-33), #470 (CR-32), #471 (CR-30). Nothing open. Kept for history.
+
 Live owner walkthrough of the Y-model on the lab dev server (`STOCK_Y_MODEL=true`, scenario `y-model-guide`), continuing the thread from the 2026-06-11/12 session. Owner provides feedback → captured here as CRs → later dissected into implementation slices (after compaction).
 
 ## Environment under test
@@ -226,7 +228,7 @@ All 8 CRs sliced into an implementation plan → **`2026-06-21-ymodel-session2-f
 - **Fix:** new pure helper `allocateLinesAgainstVariety(lines, resolve)` walks lines in order, tracks consumed per Variety key, returns each line's `remainingNet = max(0, varietyNet − earlierSiblings)`. `resolve` returns null to skip deferred/future-PO lines. Each badge surface feeds `remainingNet` into `{qty − available} not in stock`. Florist BouquetEditor nets by stockItemId (its single-item model). NEVER mutates the shared varietyAvail object.
 - **Verify:** shared 527/527 (new tests: exact 7→[7,10]→[0,10] case + drain/isolation/deferred/ordering/legacy); 3 apps build; verified live (Playwright) — line 2 now "10 not in stock". **PR #435. Owner-visible.**
 
-## Session 2026-06-30 (live lab test, y-model-guide self-anchored data) 📝 CAPTURED ONLY
+## Session 2026-06-30 (live lab test, y-model-guide self-anchored data) ✅ ALL SHIPPED (2026-06-30)
 
 ### CR-29 — Fixed-price (Price Override) field should PRE-FILL with the live sell total · UX
 - **App/surface:** order creation + premade creation, BOTH apps. Florist `pages/NewOrderPage.jsx` + `components/steps/Step2Bouquet.jsx` (priceOverride input ~line 905-911, placeholder=sellTotal but field empty); dashboard `NewOrderTab` + `steps/Step2Bouquet.jsx`; florist `PremadeBouquetCreatePage.jsx` (line 70) + dashboard `PremadeBouquetCreateModal.jsx`. Possibly edit surfaces too (OrderDetail / premade edit).
@@ -234,7 +236,7 @@ All 8 CRs sliced into an implementation plan → **`2026-06-21-ymodel-session2-f
 - **Current behavior (works, but implicit):** effective price already = `priceOverride ?? sellTotal` (`NewOrderPage.jsx:310`, `orderRepo.js:533`; premade `premadeBouquetService.js`). Lines snapshot sell price at submit so the total doesn't drift post-create. So this CR is about EXPLICITNESS/visibility, not a price-correctness bug.
 - **KEY DESIGN NUANCE (resolve before implementing):** a pre-filled value must still **track the sell total until the user manually edits it**, then detach (become a real override). Otherwise pre-filling early "locks" a stale number when lines are added/removed afterwards. Standard pattern: controlled default synced to sellTotal while `!userTouchedOverride`; on first manual edit, stop syncing. Decide whether to persist the synced value as a real `Price Override` number on save, or keep saving null when untouched (the latter keeps the existing `?? sellTotal` fallback and avoids stale overrides — but then the field is just visually pre-filled, not a saved override). Owner intent leans toward "the number sticks" → likely persist on save once shown. **Confirm at slice time.**
 - **Parity:** CLAUDE.md order-creation + premade parallel implementations — must land in florist AND dashboard for both order and premade.
-- **Status:** 📝 captured, no code yet (owner in collect-feedback mode).
+- **Status:** ✅ SHIPPED → PR #467 (2026-06-30). Fixed-price field pre-fills the live sell total in `Step2Bouquet` (both apps; new-order + premade), tracks sell until manually edited.
 
 ### CR-30 — Recipient/"for whom" step → pre-fill delivery from the chosen key person · FEATURE
 - **Owner ask:** after choosing the customer, the flow should ask "for whom is the bouquet?" → pick an existing/connected **key person** (e.g. his wife) OR add a **new** key person with phone + address. Then in the delivery step, that key person's name/phone/address are **pre-filled** into the delivery info, **editable** (e.g. wife's home is on file, but this time deliver to her office → change just the address).
@@ -245,7 +247,7 @@ All 8 CRs sliced into an implementation plan → **`2026-06-21-ymodel-session2-f
   2. **Inline add-new-key-person** with phone+address during the order flow (today add-key-person lives in CRM).
   3. **Step3 prefill** `recipientName`/`recipientPhone`/`deliveryAddress` from the selected key person's record; keep fully editable; per-order edits do NOT mutate the key person's stored address (this-time-only override). Optional: "save this address back to the key person?" prompt — confirm at slice time.
 - **Scope flag:** this is a **FEATURE** (schema migration + CRM UI + order-flow wiring across 2 apps), not a quick tweak → run via `/feature`, not a one-shot CR fix. Parity mandatory (florist + dashboard order-creation + CRM).
-- **Status:** 📝 captured, no code yet (owner in collect-feedback mode).
+- **Status:** ✅ SHIPPED → PR #471 (2026-06-30). `key_people.phone`+`address` (migration 0018) + reusable address book: recipient picker in the new-order wizard (both apps), delivery pre-fill from the chosen key person, phone/address inline-editable in CRM. Built per plan `2026-06-30-ymodel-test-crs-features.md`.
 
 ### CR-31 — Florist terminal-status button must match delivery type (Delivery → only "Delivered"; Pickup → only "Picked Up") · bug
 - **Owner ask:** when an order is a **Delivery**, after the florist delivers it she should see ONLY the **Delivered** button (not Picked Up). When it's a **Pickup**, after the client collects it she should see ONLY the **Picked Up** button (not Delivered). No mixing. (Driver→Delivered already cascades automatically — this is about the florist's manual buttons.)

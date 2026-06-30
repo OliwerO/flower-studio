@@ -1,5 +1,7 @@
 # Y-model Test-Session Batch-2 CRs (CR-10 … CR-17) — Implementation Plan
 
+> ✅ **COMPLETE (2026-06-30).** All slices S1–S7 shipped to master: S1 copy/i18n (CR-10/14-label/15) `9793f85`; S2 premade-subset (CR-17) `3ff38e8`; S3 ·mix logic (CR-14) `3b77d26`; S4 row spacing (CR-11) `13d7f56`; S5 dotted underline (CR-13) `72cf967`; S6 trace graph-button + absorbed-row (CR-12/16) `ffba2c5`; S7 balance graph (CR-18) `954e160`. Ledger below left unchecked historically — work is done. Kept for history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) tracking. **One branch** `fix/ymodel-crs-batch2` off master, **commit per slice**, **one PR** at the end (the slices share files heavily — per-slice branches would conflict). CRs sourced from `docs/superpowers/plans/2026-06-21-ymodel-test-session-2-crs.md` (CR-10 … CR-17, captured 2026-06-22 afternoon).
 
 **Goal:** Land the seven display/UX fixes the owner raised live-testing the Y-model trace + stock screens.
