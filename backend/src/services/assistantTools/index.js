@@ -1,6 +1,7 @@
 // backend/src/services/assistantTools/index.js
 import { queryOrdersHandler, breakdownOrdersHandler } from './ordersPack.js';
 import { financialSummaryHandler } from './financePack.js';
+import { queryRecordsHandler, ordersNeedingShortStockHandler } from './dataQueryPack.js';
 import { stockStatusHandler, stockWriteoffsHandler } from './stockPack.js';
 import { customerInsightsHandler, customerLookupHandler } from './customersPack.js';
 import { deliveryStatusHandler } from './deliveriesPack.js';
@@ -315,6 +316,95 @@ export const TOOLS = [
       required: ['query'],
     },
     handler: searchTextHandler,
+  },
+  {
+    name: 'query_records',
+    description:
+      'Flexible cross-entity lookup the fixed tools cannot express: filter, join, group, and aggregate ' +
+      'orders, customers, order_lines, and stock by any allow-listed field. ' +
+      'PREFER the dedicated tools (query_orders, financial_summary, stock_status, customer_lookup, etc.) ' +
+      'for their intended cases — use query_records ONLY when no dedicated tool fits the question. ' +
+      'You compose a structured declarative spec; you NEVER write SQL. ' +
+      'Cancelled orders are excluded unless includeCancelled=true. ' +
+      'Allowed entities: orders, customers, order_lines, stock. ' +
+      'Allowed ops: eq, ne, lt, lte, gt, gte, in, like, isNull, isNotNull. ' +
+      'Allowed aggregate fns: count, sum, avg, min, max.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        entity: {
+          type: 'string',
+          enum: ['orders', 'customers', 'order_lines', 'stock'],
+          description: 'Primary table to query.',
+        },
+        filters: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string', description: 'Allow-listed field name on the entity (or a joined entity).' },
+              op:    { type: 'string', description: 'Operator: eq|ne|lt|lte|gt|gte|in|like|isNull|isNotNull.' },
+              value: { description: 'Value for the comparison (omit for isNull/isNotNull; array for in).' },
+            },
+            required: ['field', 'op'],
+          },
+          description: 'Array of filter conditions (ANDed together).',
+        },
+        join: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders. order_lines joins: stock.',
+        },
+        groupBy: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Field names to group by.',
+        },
+        aggregate: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              fn:    { type: 'string', description: 'count|sum|avg|min|max' },
+              field: { type: 'string', description: 'Field to aggregate (omit for count(*)).' },
+              as:    { type: 'string', description: 'Alias for the result column.' },
+            },
+            required: ['fn', 'as'],
+          },
+        },
+        sort: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              field: { type: 'string' },
+              dir:   { type: 'string', enum: ['asc', 'desc'] },
+            },
+            required: ['field'],
+          },
+        },
+        limit: {
+          type: 'number',
+          description: 'Max rows to return (hard cap is 200).',
+        },
+        includeCancelled: {
+          type: 'boolean',
+          description: 'When true, include Cancelled orders (default: excluded).',
+        },
+      },
+      required: ['entity'],
+    },
+    handler: queryRecordsHandler,
+  },
+  {
+    name: 'orders_needing_short_stock',
+    description:
+      'Open (non-terminal, non-cancelled) orders whose bouquet uses a flower currently in shortfall ' +
+      '(stock.currentQuantity < 0). The canonical "connect the dots" query: which open orders am I at risk ' +
+      'of not fulfilling because I\'m short on a flower? Returns each order\'s id, requiredBy, status, and ' +
+      'the short flower name(s). Use for "which orders are at risk", "what can\'t I fulfill today".',
+    input_schema: { type: 'object', properties: {} },
+    handler: ordersNeedingShortStockHandler,
   },
 ];
 
