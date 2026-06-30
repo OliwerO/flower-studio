@@ -116,8 +116,30 @@ Done in this branch (see top). No further decision.
 4. **Bigger PR:** `query_records` (Option B) — the strategic connect-the-dots layer, with the
    `orders_needing_short_stock` composite shipped first as an appetizer.
 
-## Decisions needed from the owner
-- Connect-the-dots: confirm **structured-query tool (B)** over composites-only / raw-SQL.
-- Free-text: **keyword first** vs. embeddings now.
-- Reporting: **button-in-panel first** vs. in-chat tool; add screenshot vision (yes); codebase
-  context strategy (per-area pack vs repo-map vs code-RAG).
+## Decisions (locked 2026-06-30, owner)
+- **Connect-the-dots:** structured-query tool (Option B). ✅
+- **Free-text:** keyword (Phase 1) now; semantic/embeddings as a fast-follow quality upgrade
+  (cheap — small corpus, embeddings are a separate non-LLM endpoint, add ~0 assistant tokens).
+- **Reporting entry:** button in the assistant panel that opens the existing screenshot flow. ✅
+- **Report codebase context:** per-area context pack **and** code-RAG. Per-area pack + screenshot
+  vision ship with the reporting task; **code-RAG + auto-refresh-on-code-change is split into its
+  own issue** (#457) but the context-provider seam is designed so RAG plugs in without rework.
+
+## Cost & model (owner raised token cost)
+- **Do NOT power the assistant via `claude -p` (subscription).** Per-query CLI spawn + harness boot
+  is too slow for a simple question, isn't built for server concurrency, and subscription auth isn't
+  the supported path for serving app users. Keep the Anthropic API.
+- **Prompt caching (high ROI, easy):** the system prompt + 20 tool defs are large + identical every
+  turn → mark cacheable (`cache_control`) to cut repeat input cost ~90%. Do this on the live assistant.
+- **Model routing:** Haiku for simple/single-tool questions, Sonnet for hard multi-tool reasoning
+  (`ASSISTANT_MODEL` already exists). With caching + Haiku-default, monthly cost for one owner is a few $.
+- **Embeddings cost (if/when semantic free-text):** separate cheap endpoint, not Sonnet/Haiku tokens;
+  small corpus → negligible.
+
+## Sequencing (updated)
+1. **Shipped (this branch):** cap bump + graceful coverage.
+2. **Cost PR (do next, applies to live assistant):** prompt caching + optional Haiku-for-simple routing.
+3. **Reporting PR:** button-in-panel + screenshot vision + per-area context pack (seam for code-RAG).
+4. **Free-text PR:** `search_text` keyword Phase 1.
+5. **Connect-the-dots PR:** `query_records` (Option B), `orders_needing_short_stock` composite first.
+6. **Separate issue:** code-RAG index + scheduled auto-refresh on code change (feeds the report assistant; could later also power a code-aware dev assistant).
