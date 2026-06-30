@@ -56,7 +56,7 @@ utils/
   stockAllocationEngine.js    → stockAllocationEngine(rows, reservations, requiredBy, qty) — Y-model ranked allocation options for one order line (issue #287, PRD #283)
   sortByDate.js               → byDateAsc / byDateDesc — null-safe date comparators for rows shaped { date: string|null }; undated rows sort LAST (CR-02)
   varietyKey.js               → 4-tuple identity helpers — `varietyKey`, `groupByVariety`, `varietyDisplayName`. NULL-aware per ADR-0006.
-  timeSlots.js                → Time slot generation with lead-time filtering
+  timeSlots.js                → getAvailableSlots (client window list + lead-time filtering) + getCourierSlots (split a chosen 2h client window into 1h courier slots; CR-32)
   orderFilters.js             → Order filter model: `EMPTY_ORDER_FILTER`, `clearOrderFilter`, `buildOrderQueryParams` (server params), `orderMatchesClientFilter` (client predicate), `activeOrderFilterCount`. Shared by dashboard `OrdersTab.jsx` (per-column popovers) and florist `OrderListPage.jsx` + `OrderFilterDrawer.jsx` (drawer). Hybrid server/client: server handles status/type/date range; client handles customerQuery/bouquetQuery/price range.
   customerFilters.js          → Customer search + filter predicates (matchesSearch/Filters, EMPTY_FILTERS)
   productGroup.js             → Storefront product grouping (groupByProduct, parseCats, priceRange, ...)
