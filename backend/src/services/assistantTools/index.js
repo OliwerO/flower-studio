@@ -12,6 +12,7 @@ import { supplierScorecardHandler } from './supplierPack.js';
 import { marketingSpendHandler } from './marketingPack.js';
 import { stockVelocityHandler } from './velocityPack.js';
 import { lapsedCustomersHandler, upcomingOccasionsHandler } from './crmPack.js';
+import { searchTextHandler } from './freeTextPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -284,6 +285,36 @@ export const TOOLS = [
       },
     },
     handler: upcomingOccasionsHandler,
+  },
+  {
+    name: 'search_text',
+    description:
+      'Search the free-text the owner/florists typed on records — card messages, ' +
+      'customer requests, and florist notes. Use for "find the order that mentions X", ' +
+      '"which orders talk about a wedding", "any order where the customer asked for blue hydrangeas", ' +
+      '"find all notes about late delivery". Returns matching snippets + the record to open; ' +
+      'it does not invent text that is not in a snippet. ' +
+      'scope="orders" (default "all") to restrict to orders.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Word or phrase to search for (case-insensitive substring match).',
+        },
+        scope: {
+          type: 'string',
+          enum: ['orders', 'customers', 'all'],
+          description: "Which records to search. 'orders' (default) searches order free-text fields. 'customers' has no text fields yet. 'all' covers both.",
+        },
+        limit: {
+          type: 'number',
+          description: `Max order rows to inspect (default ${15}, max ${50}).`,
+        },
+      },
+      required: ['query'],
+    },
+    handler: searchTextHandler,
   },
 ];
 

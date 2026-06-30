@@ -1,46 +1,49 @@
 // backend/src/services/assistantTools/freeTextPack.js
 //
-// ┌─────────────────────────────────────────────────────────────────────────┐
-// │ SKELETON — NOT REGISTERED in index.js yet. Inert until wired + tested.    │
-// └─────────────────────────────────────────────────────────────────────────┘
+// Open-ended free-text search across allow-listed prose fields on orders.
 //
-// The open-ended / unstructured layer. The 20 structured tools answer "what are my
-// numbers"; this answers questions over FREE TEXT the owner typed into records —
-// card messages, customer requests, florist/driver notes, customer notes. These are
-// prose, not aggregates, so a structured tool can't model them.
+// Phase 1: Postgres ILIKE keyword search — zero new infra.
+//   Searches customer_request / florist_note / greeting_card_text on orders.
+//   Returns a snippet around the match + a link to open the record.
+//   The model summarises; it never invents text not present in a snippet.
 //
-// PHASE 1 (this skeleton): Postgres substring / full-text search — zero new infra.
-//   ILIKE '%query%' (or to_tsvector/plainto_tsquery) across an allow-listed set of
-//   text columns; return a snippet + the record to open. Good for "find the order
-//   where the customer asked for blue hydrangeas", "which orders mention a wedding".
+// Phase 2 (optional): pgvector semantic search if keyword search proves too
+//   literal. See RFC: docs/superpowers/plans/2026-06-30-assistant-extensions-rfc.md
 //
-// PHASE 2 (optional, see RFC): semantic search via pgvector embeddings — true RAG.
-//   Embed the text fields, retrieve by cosine similarity for fuzzy/conceptual queries
-//   ("complaints about late delivery"). Only worth it if Phase-1 keyword search proves
-//   too literal. Adds an embedding pipeline + an index to maintain.
-//
-// See RFC: docs/superpowers/plans/2026-06-30-assistant-extensions-rfc.md
+// CUSTOMERS NOTE: the customers table (Phase 5) has no free-text notes column.
+//   When one lands (e.g. a `notes` column), add a customerRepo.searchNotes call
+//   here and uncomment the customers entry in TEXT_FIELDS.
 
-// import { db } from '../../db/index.js';
-// import { sql } from 'drizzle-orm';
+import * as orderRepo from '../../repos/orderRepo.js';
 
 const SNIPPET_RADIUS = 80;  // chars of context around the match
-const DEFAULT_LIMIT = 15;
-const MAX_LIMIT = 50;
+const DEFAULT_LIMIT  = 15;
+const MAX_LIMIT      = 50;
 
-// Allow-listed free-text fields per scope. Only these columns are ever searched —
-// keeps the tool away from structured/sensitive columns.
+// Allow-listed free-text fields per scope. Only these columns are ever searched.
+// Must match columns that ACTUALLY exist in backend/src/db/schema.js.
 const TEXT_FIELDS = {
   orders: [
-    { col: 'customer_request', label: 'Customer request' },
-    { col: 'card_message',     label: 'Card message' },
-    { col: 'florist_note',     label: 'Florist note' },
-    { col: 'driver_note',      label: 'Driver note' },
+    { col: 'customerRequest',  label: 'Customer request' },
+    { col: 'floristNote',      label: 'Florist note'     },
+    { col: 'greetingCardText', label: 'Card message'     },
   ],
-  customers: [
-    { col: 'notes', label: 'Customer notes' },
-  ],
+  // customers: (no notes column in Phase 5 schema — add here when it lands)
 };
+
+/**
+ * Extract a short snippet around the first occurrence of `query` in `text`.
+ * Adds ellipsis when the snippet doesn't start/end at the string boundaries.
+ */
+function makeSnippet(text, query, radius = SNIPPET_RADIUS) {
+  const idx = text.toLowerCase().indexOf(query.toLowerCase());
+  if (idx === -1) return text.slice(0, radius * 2);
+  const start  = Math.max(0, idx - radius);
+  const end    = Math.min(text.length, idx + query.length + radius);
+  const prefix = start > 0 ? '…' : '';
+  const suffix = end < text.length ? '…' : '';
+  return prefix + text.slice(start, end) + suffix;
+}
 
 /**
  * search_text — keyword search across allow-listed free-text fields.
@@ -52,27 +55,66 @@ const TEXT_FIELDS = {
  * }} input
  * @returns {Promise<{
  *   query: string, scope: string, matchedCount: number, truncated: boolean,
- *   results: Array<{ entity:string, id:string, field:string, snippet:string, link:string }>,
+ *   results: Array<{ entity:string, id:string, appOrderId?:string, field:string, snippet:string, link:string }>,
  * }>}
  */
-export async function searchTextHandler(/* input */) {
-  // 1. Resolve scopes → the TEXT_FIELDS columns to search.
-  // 2. For each column: WHERE <col> ILIKE '%' || :query || '%' (parameterized),
-  //    select id + a snippet (substring around the match) + build a link (/orders/:id etc).
-  //    Run as one UNION-style pass or per-column queries; cap at min(limit, MAX_LIMIT).
-  // 3. return { query, scope, matchedCount, truncated, results }.
-  // NOTE: this returns WHERE the text was found + a snippet — the model then summarizes;
-  //       it never fabricates content not present in a snippet.
-  throw new Error('freeTextPack.searchTextHandler not implemented (skeleton)');
-}
+export async function searchTextHandler({ query, scope, limit } = {}) {
+  const q = (query ?? '').trim();
 
-// When ready, register in index.js, e.g.:
-//   {
-//     name: 'search_text',
-//     description: 'Search the free-text the owner/florists/drivers typed on records — card messages, ' +
-//       'customer requests, florist/driver notes, customer notes. Use for "find the order that mentions X", ' +
-//       '"which customers asked about weddings", "any notes about late delivery". Returns matching snippets + ' +
-//       'the record to open; it does not invent text that is not in a snippet.',
-//     input_schema: { /* query (required), scope, limit */ },
-//     handler: searchTextHandler,
-//   }
+  // Empty query → empty result (no error).
+  if (!q) {
+    return { query: q, scope: scope ?? 'all', matchedCount: 0, truncated: false, results: [] };
+  }
+
+  const normalizedScope = ['orders', 'customers', 'all'].includes(scope) ? scope : 'all';
+  const cap = Math.min(limit ?? DEFAULT_LIMIT, MAX_LIMIT);
+
+  const results = [];
+
+  // ── Orders scope ──
+  if (normalizedScope === 'orders' || normalizedScope === 'all') {
+    // Fetch cap+1 rows so we can detect whether there are more results in the DB.
+    const rows = await orderRepo.searchFreeText({ query: q, limit: cap + 1 });
+    const truncated = rows.length > cap;
+    const sliced = truncated ? rows.slice(0, cap) : rows;
+
+    for (const row of sliced) {
+      const orderId = row.airtableId || row.id;
+      for (const { col, label } of TEXT_FIELDS.orders) {
+        const text = row[col];
+        if (text && text.toLowerCase().includes(q.toLowerCase())) {
+          results.push({
+            entity:     'order',
+            id:         orderId,
+            appOrderId: row.appOrderId,
+            field:      label,
+            snippet:    makeSnippet(text, q),
+            link:       `/orders/${orderId}`,
+          });
+        }
+      }
+    }
+
+    if (truncated) {
+      return {
+        query: q,
+        scope: normalizedScope,
+        matchedCount: results.length,
+        truncated: true,
+        results,
+      };
+    }
+  }
+
+  // ── Customers scope ──
+  // No free-text notes column in Phase 5 — always returns empty.
+  // Future: add customerRepo.searchNotes({ query: q, limit: cap }) here.
+
+  return {
+    query:        q,
+    scope:        normalizedScope,
+    matchedCount: results.length,
+    truncated:    false,
+    results,
+  };
+}
