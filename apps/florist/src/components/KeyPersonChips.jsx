@@ -22,7 +22,7 @@ const SLOTS = [
   { nameField: 'Key person 2', dateField: 'Key person 2 (important DATE)' },
 ];
 
-export default function KeyPersonChips({ cust, onPatch, canEdit = false }) {
+export default function KeyPersonChips({ cust, onPatch, onPatchPerson, canEdit = false }) {
   // Index of the slot currently being filled via the "+ Add" button.
   const [addingSlot, setAddingSlot] = useState(null);
 
@@ -49,12 +49,15 @@ export default function KeyPersonChips({ cust, onPatch, canEdit = false }) {
           const hasName = !!cust[slot.nameField];
           const isAdding = addingSlot === i;
           if (!hasName && !isAdding) return null;
+          const person = cust._keyPeople?.[i];
           return (
             <KeyPersonSlot
               key={i}
               slot={slot}
               cust={cust}
               onPatch={onPatch}
+              person={person}
+              onPatchPerson={onPatchPerson}
               canEdit={canEdit}
               autoFocus={isAdding}
               onDone={() => setAddingSlot(null)}
@@ -81,7 +84,7 @@ export default function KeyPersonChips({ cust, onPatch, canEdit = false }) {
   );
 }
 
-function KeyPersonSlot({ slot, cust, onPatch, canEdit, autoFocus, onDone }) {
+function KeyPersonSlot({ slot, cust, onPatch, person, onPatchPerson, canEdit, autoFocus, onDone }) {
   const name = cust[slot.nameField];
   const date = cust[slot.dateField];
 
@@ -102,6 +105,18 @@ function KeyPersonSlot({ slot, cust, onPatch, canEdit, autoFocus, onDone }) {
           <p className="text-[10px] text-ios-tertiary mb-0.5">{t.importantDate || 'Important date'}</p>
           <p className="text-xs text-ios-label">{date || '—'}</p>
         </div>
+        {person?.phone && (
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonPhone}</p>
+            <p className="text-xs text-ios-label">{person.phone}</p>
+          </div>
+        )}
+        {person?.address && (
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonAddress}</p>
+            <p className="text-xs text-ios-label">{person.address}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -142,6 +157,34 @@ function KeyPersonSlot({ slot, cust, onPatch, canEdit, autoFocus, onDone }) {
             focus:border-brand-500 focus:outline-none py-0.5 cursor-pointer"
         />
       </div>
+      {/* C4: phone/address — only once the key person row exists server-side
+          (a brand-new slot filled via the name field above won't have a
+          person row until the customer view reloads — see note in
+          CLAUDE.md parity spec / dashboard counterpart). */}
+      {person?.id && (
+        <>
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonPhone}</p>
+            <input
+              type="tel"
+              defaultValue={person.phone || ''}
+              onBlur={e => onPatchPerson(person.id, { phone: e.target.value || null })}
+              className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+                focus:border-brand-500 focus:outline-none py-0.5"
+            />
+          </div>
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonAddress}</p>
+            <input
+              type="text"
+              defaultValue={person.address || ''}
+              onBlur={e => onPatchPerson(person.id, { address: e.target.value || null })}
+              className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+                focus:border-brand-500 focus:outline-none py-0.5"
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }

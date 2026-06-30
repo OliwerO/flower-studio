@@ -67,6 +67,20 @@ export default function CustomerDetailView({ customerId, onLocalPatch, onNavigat
     }
   }
 
+  // CR-30 C4: phone/address per key person, persisted by personId (separate from
+  // the flat Key person N/date fields edited via patchField above).
+  async function patchKeyPerson(personId, changes) {
+    try {
+      const res = await client.patch(`/customers/${customerId}/key-people/${personId}`, changes);
+      setCust(prev => ({
+        ...prev,
+        _keyPeople: (prev._keyPeople || []).map(p => p.id === personId ? { ...p, ...res.data } : p),
+      }));
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
   if (loading) {
     return (
       <div className="px-4 py-6 flex justify-center">
@@ -87,7 +101,7 @@ export default function CustomerDetailView({ customerId, onLocalPatch, onNavigat
 
       <ProfileGrid cust={cust} onPatch={patchField} onInvalid={msg => showToast(msg, 'error')} />
 
-      <KeyPersonChips cust={cust} onPatch={patchField} />
+      <KeyPersonChips cust={cust} onPatch={patchField} onPatchPerson={patchKeyPerson} />
 
       <NotesSection cust={cust} onPatch={patchField} />
 

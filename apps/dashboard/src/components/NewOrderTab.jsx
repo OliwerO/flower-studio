@@ -13,6 +13,7 @@ import Step4Review   from './steps/Step4Review.jsx';
 
 const emptyForm = {
   customerId: '', customerName: '', keyPersonId: null, keyPersonName: '',
+  keyPersonPhone: '', keyPersonAddress: '',
   customerRequest: '', orderLines: [], priceOverride: '',
   source: 'In-store', deliveryType: 'Pickup',
   recipientName: '', recipientPhone: '',

@@ -1,6 +1,7 @@
 // Step3Details — adapted for dashboard with full payment method list.
 // Uses server-configured delivery time slots (pill buttons) matching the florist app.
 
+import { useEffect } from 'react';
 import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
@@ -81,6 +82,18 @@ export default function Step3Details({ form, onChange }) {
   const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots, slotLeadTimeMinutes } = useConfigLists();
   const smartSlots = getAvailableSlots(timeSlots, form.deliveryDate, slotLeadTimeMinutes);
   const set = key => val => onChange({ [key]: val });
+
+  // CR-30 C3: when a recipient (key person) is chosen and fulfilment is Delivery,
+  // pre-fill the editable recipient fields from the chosen person — empty-only so we
+  // never overwrite a manual edit. Derives from local form state (pitfall #1).
+  useEffect(() => {
+    if (form.deliveryType !== 'Delivery' || !form.keyPersonId) return;
+    const patch = {};
+    if (!form.recipientName   && form.keyPersonName)    patch.recipientName   = form.keyPersonName;
+    if (!form.recipientPhone  && form.keyPersonPhone)   patch.recipientPhone  = form.keyPersonPhone;
+    if (!form.deliveryAddress && form.keyPersonAddress) patch.deliveryAddress = form.keyPersonAddress;
+    if (Object.keys(patch).length) onChange(patch);
+  }, [form.deliveryType, form.keyPersonId]);
 
   // When date changes, clear time slot if it's no longer available
   function handleDateChange(val) {

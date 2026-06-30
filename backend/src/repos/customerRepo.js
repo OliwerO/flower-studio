@@ -393,6 +393,68 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
   };
 }
 
+export async function updateKeyPerson(personId, changes = {}) {
+  const set = {};
+
+  // Use `!== undefined` rather than `'key' in changes` so this is robust whether
+  // the caller passes a sparse literal (tests) or a destructured object where every
+  // key is an own-property but unset keys are `undefined` (the route handler).
+  if (changes.name !== undefined) {
+    if (!changes.name || !changes.name.trim()) {
+      const err = new Error('name is required');
+      err.statusCode = 400;
+      throw err;
+    }
+    set.name = changes.name.trim();
+  }
+  if (changes.contactDetails !== undefined) set.contactDetails = changes.contactDetails || null;
+  if (changes.phone !== undefined) set.phone = changes.phone || null;
+  if (changes.address !== undefined) set.address = changes.address || null;
+  if (changes.importantDate !== undefined) {
+    if (changes.importantDate != null && changes.importantDate !== '') {
+      if (!ISO_DATE_RE.test(changes.importantDate)) {
+        const err = new Error(
+          `important_date must be in YYYY-MM-DD format (received: "${changes.importantDate}").`,
+        );
+        err.statusCode = 400;
+        throw err;
+      }
+      set.importantDate = changes.importantDate;
+    } else {
+      set.importantDate = null;
+    }
+  }
+  if (changes.importantDateLabel !== undefined) set.importantDateLabel = changes.importantDateLabel || null;
+
+  if (Object.keys(set).length === 0) {
+    const err = new Error('No valid fields to update.');
+    err.statusCode = 400;
+    throw err;
+  }
+
+  const [row] = await db.update(keyPeople)
+    .set(set)
+    .where(and(eq(keyPeople.id, personId), isNull(keyPeople.deletedAt)))
+    .returning();
+
+  if (!row) {
+    const err = new Error('Key person not found.');
+    err.statusCode = 404;
+    throw err;
+  }
+
+  return {
+    id:            row.id,
+    name:          row.name,
+    contactDetails: row.contactDetails ?? null,
+    phone:          row.phone ?? null,
+    address:        row.address ?? null,
+    importantDate:  row.importantDate ?? null,
+    importantDateLabel: row.importantDateLabel ?? null,
+    createdAt:     row.createdAt,
+  };
+}
+
 // Read-only: all key people with a set important date, joined to their customer.
 // Used by crmPack.upcomingOccasionsHandler to surface upcoming annual occasions.
 export async function listKeyPeopleWithDates() {

@@ -13,7 +13,7 @@ const SLOTS = [
   { nameField: 'Key person 2', dateField: 'Key person 2 (important DATE)' },
 ];
 
-export default function KeyPersonChips({ cust, onPatch }) {
+export default function KeyPersonChips({ cust, onPatch, onPatchPerson }) {
   // Index of the slot currently being filled via the "+ Add" button.
   const [addingSlot, setAddingSlot] = useState(null);
 
@@ -35,12 +35,15 @@ export default function KeyPersonChips({ cust, onPatch }) {
           const hasName = !!cust[slot.nameField];
           const isAdding = addingSlot === i;
           if (!hasName && !isAdding) return null;
+          const person = cust._keyPeople?.[i];
           return (
             <KeyPersonSlot
               key={i}
               slot={slot}
               cust={cust}
               onPatch={onPatch}
+              person={person}
+              onPatchPerson={onPatchPerson}
               autoFocus={isAdding}
               onDone={() => setAddingSlot(null)}
             />
@@ -64,7 +67,14 @@ export default function KeyPersonChips({ cust, onPatch }) {
   );
 }
 
-function KeyPersonSlot({ slot, cust, onPatch, autoFocus, onDone }) {
+// CR-30 C4 accepted limitation: a brand-new key person added inline via the
+// "+ Add" name field below creates the row server-side but does not refresh
+// `cust._keyPeople` locally (the flat-field `onPatch` only merges
+// `Key person N`), so its phone/address inputs appear only after the customer
+// view reloads. Editing phone/address for already-existing key people works
+// immediately. Adding a new recipient with phone+address up front is fully
+// supported in the New Order wizard (C2).
+function KeyPersonSlot({ slot, cust, onPatch, person, onPatchPerson, autoFocus, onDone }) {
   const name = cust[slot.nameField];
   const date = cust[slot.dateField];
 
@@ -109,6 +119,30 @@ function KeyPersonSlot({ slot, cust, onPatch, autoFocus, onDone }) {
             focus:border-brand-500 focus:outline-none py-0.5 cursor-pointer"
         />
       </div>
+      {person?.id && (
+        <>
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonPhone}</p>
+            <input
+              type="tel"
+              defaultValue={person.phone || ''}
+              onBlur={e => onPatchPerson(person.id, { phone: e.target.value || null })}
+              className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+                focus:border-brand-500 focus:outline-none py-0.5"
+            />
+          </div>
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonAddress}</p>
+            <input
+              type="text"
+              defaultValue={person.address || ''}
+              onBlur={e => onPatchPerson(person.id, { address: e.target.value || null })}
+              className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+                focus:border-brand-500 focus:outline-none py-0.5"
+            />
+          </div>
+        </>
+      )}
     </div>
   );
 }
