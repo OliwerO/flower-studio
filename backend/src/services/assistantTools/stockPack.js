@@ -39,30 +39,48 @@ export async function stockWriteoffsHandler(input = {}) {
     rows = rows.filter((r) => String(r.Reason || '').toLowerCase() === want);
   }
 
+  const round2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+
   const byReason = {};
-  const flowerMap = new Map(); // flowerName -> { flower, quantity, entryCount }
+  const flowerMap = new Map(); // flowerName -> { flower, quantity, entryCount, lostValue }
   let totalQuantity = 0;
+  let totalLostValue = 0;   // sum of quantity * batch cost (zł), where cost is known
+  let unvaluedQuantity = 0; // stems we can't value (loss row has no linked stock / no cost)
   for (const r of rows) {
     const reason = r.Reason || 'Unknown';
     const flower = r.flowerName || '—';
     const q = Number(r.Quantity) || 0;
+    // costPrice = the linked batch's current cost (stock.currentCostPrice via the
+    // loss→stock join in stockLossRepo). Same basis supplier_scorecard uses for
+    // wasteCost. Loss rows with no stock link (flowerName '—') have cost 0.
+    const cost = Number(r.costPrice) || 0;
+    const value = q * cost;
     byReason[reason] = (byReason[reason] || 0) + q;
-    const f = flowerMap.get(flower) || { flower, quantity: 0, entryCount: 0 };
+    const f = flowerMap.get(flower) || { flower, quantity: 0, entryCount: 0, lostValue: 0 };
     f.quantity += q;
     f.entryCount += 1;
+    f.lostValue += value;
     flowerMap.set(flower, f);
     totalQuantity += q;
+    totalLostValue += value;
+    if (cost <= 0) unvaluedQuantity += q;
   }
 
-  // Most-wasted flowers first — answers "which flowers were wasted most".
+  // Most-wasted flowers first (by stems) — answers "which flowers were wasted most".
+  // Each entry also carries lostValue (zł) for "how much did waste cost me by flower".
   const sorted = [...flowerMap.values()].sort((a, b) => b.quantity - a.quantity);
-  const byFlower = sorted.slice(0, WRITEOFF_FLOWER_CAP);
+  const byFlower = sorted
+    .slice(0, WRITEOFF_FLOWER_CAP)
+    .map((f) => ({ ...f, lostValue: round2(f.lostValue) }));
 
   return {
     period: { from: from ?? null, to: to ?? null },
     reason: reasonFilter ?? null,
     entryCount: rows.length,
     totalQuantity,
+    totalLostValue: round2(totalLostValue),
+    unvaluedQuantity, // stems excluded from totalLostValue (no linked stock/cost)
+    currency: 'zł',
     byReason,
     flowerCount: flowerMap.size,
     byFlower,

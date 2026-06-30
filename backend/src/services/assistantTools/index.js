@@ -79,7 +79,7 @@ export const TOOLS = [
   },
   {
     name: 'stock_writeoffs',
-    description: "Write-offs (stems lost to waste/damage) in a date range: total quantity, a breakdown by reason (wilted/broken/damaged/etc.), and a breakdown by flower (most-wasted first). Use for 'how much did I write off', 'how much waste this month', 'why did I lose stems', AND 'which flowers were wasted most', 'what flower do I waste the most', 'most-wasted flower'. Pass `reason` to look at only one reason (e.g. only wilted or only broken). Dates YYYY-MM-DD.",
+    description: "Write-offs (stems lost to waste/damage) in a date range: total quantity, the MONEY value lost (totalLostValue, in zł — quantity × each batch's cost), a breakdown by reason (wilted/broken/damaged/etc.), and a breakdown by flower (most-wasted first; each entry has both quantity AND lostValue in zł). Use for 'how much did I write off', 'how much waste this month', 'why did I lose stems', 'which flowers were wasted most', 'what flower do I waste the most', AND money questions: 'how much money did I lose to waste', 'what did waste cost me by flower', 'which flower wasted the most money', 'value lost to wilting'. `unvaluedQuantity` = stems with no linked stock/cost, excluded from the money totals. Pass `reason` to look at only one reason (e.g. only wilted or only broken). Dates YYYY-MM-DD.",
     input_schema: {
       type: 'object',
       properties: {

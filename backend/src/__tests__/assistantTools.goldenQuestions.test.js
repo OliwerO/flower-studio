@@ -217,6 +217,17 @@ describe('golden questions — tool invariants', () => {
     }
   });
 
+  it('stock_writeoffs money: sum(byFlower lostValue) === totalLostValue (zł)', async () => {
+    mockToolCall('stock_writeoffs', { from: '2026-05-01', to: '2026-05-31' });
+    const r = await ask({ message: 'How much money did flower waste cost me in May?' });
+    expect(r.toolResults[0].name).toBe('stock_writeoffs');
+    const { totalLostValue, byFlower } = r.toolResults[0].output;
+    expect(typeof totalLostValue).toBe('number');
+    expect(totalLostValue).toBeGreaterThanOrEqual(0);
+    const sum = byFlower.reduce((a, f) => a + f.lostValue, 0);
+    expect(sum).toBeCloseTo(totalLostValue, 2);
+  });
+
   it('top_products: products is an array; total >= products.length', async () => {
     mockToolCall('top_products', { from: '2026-05-01', to: '2026-05-31' });
     const r = await ask({ message: "What were the best sellers in May?" });
