@@ -302,6 +302,8 @@ export const keyPeople = pgTable('key_people', {
   customerId:         uuid('customer_id').notNull().references(() => customers.id, { onDelete: 'cascade' }),
   name:               text('name').notNull(),
   contactDetails:     text('contact_details'),
+  phone:              text('phone'),      // recipient phone — reusable address book (CR-30)
+  address:            text('address'),    // recipient delivery address (CR-30)
   importantDate:      date('important_date'),
   importantDateLabel: text('important_date_label'),
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

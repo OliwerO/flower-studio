@@ -82,6 +82,21 @@ export default function CustomerDetailView({
     }
   }
 
+  // C4: phone/address editing per key person — persisted by personId (independent
+  // of the flat `Key person N` fields handled by patchField above).
+  async function patchKeyPerson(personId, changes) {
+    if (!canEdit) return;
+    try {
+      const res = await client.patch(`/customers/${customerId}/key-people/${personId}`, changes);
+      setCust(prev => ({
+        ...prev,
+        _keyPeople: (prev._keyPeople || []).map(p => p.id === personId ? { ...p, ...res.data } : p),
+      }));
+    } catch (err) {
+      showToast(err.response?.data?.error || (t.updateError || 'Update failed'), 'error');
+    }
+  }
+
   if (loading) {
     return (
       <div className="px-4 py-6 flex justify-center">
@@ -107,7 +122,7 @@ export default function CustomerDetailView({
         canEdit={canEdit}
       />
 
-      <KeyPersonChips cust={cust} onPatch={patchField} canEdit={canEdit} />
+      <KeyPersonChips cust={cust} onPatch={patchField} onPatchPerson={patchKeyPerson} canEdit={canEdit} />
 
       <NotesSection cust={cust} onPatch={patchField} canEdit={canEdit} />
 

@@ -5,6 +5,30 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Feature (CR-30): recipient phone + address as first-class key_people fields
+
+Y-model test-session CR. Each connected key person becomes a reusable address book: phone + delivery address are stored once and pre-fill every future delivery to that person. Plan: `docs/superpowers/plans/2026-06-30-ymodel-test-crs-features.md` (Feature C). Built slice-by-slice on branch `feat/recipient-key-person`.
+
+### C1 — schema + repo
+- **Migration `0018_key_people_phone_address.sql`** — adds nullable `key_people.phone` + `key_people.address` (additive → safe on prod).
+- `customerRepo.createKeyPerson` / `listKeyPeople` read + write `phone` + `address` (empty string → null); `POST /api/customers/:id/key-people` accepts them.
+
+### C2 — recipient step in the new-order wizard (both apps)
+- `apps/{dashboard,florist}/src/components/steps/Step1Customer.jsx` — the existing key-person selector (from #216) now also captures **phone + address**: picking a saved recipient carries their stored phone/address; the "add new recipient" branch (shown when a name is typed with no match) adds phone + address inputs and `POST`s `{ name, phone?, address? }` so the person is reusable. On Continue, sets `keyPersonId` + seeds `recipientName/recipientPhone/deliveryAddress` + a `keyPersonName/Phone/Address` snapshot on the wizard form. Failed `POST` now surfaces a toast (was a silent catch).
+- New form fields `keyPersonPhone` / `keyPersonAddress` (prefill snapshot — **not** sent in the order POST).
+
+### C3 — delivery pre-fill from the chosen recipient (both apps)
+- `apps/{dashboard,florist}/src/components/steps/Step3Details.jsx` — when a recipient is chosen and fulfilment is Delivery, an effect pre-fills `recipientName/recipientPhone/deliveryAddress` from the form snapshot, **empty-only** so manual edits are never clobbered. Derives from local form state (pitfall #1).
+
+### C4 — CRM surfacing (both apps)
+- New repo fn `customerRepo.updateKeyPerson(personId, changes)` (partial update; trims/validates `name`, ISO-validates `importantDate`, empty→null, scoped to non-deleted rows, 404 if missing) + route **`PATCH /api/customers/:id/key-people/:personId`**.
+- `apps/{dashboard,florist}/src/components/CustomerDetailView.jsx` + `KeyPersonChips.jsx` — phone + address shown and inline-editable per key person (persist on blur via the PATCH route, merge into local `_keyPeople`, toast on error). Florist additionally view-only displays them when `!canEdit`.
+
+### Tests / verification
+- `customerRepo.keyPeople.integration.test.js` (pglite, applies migration 0018) — create/list phone+address round-trip, back-compat null, empty→null, **plus** `updateKeyPerson` full update / partial update / 404.
+- Backend `vitest run`: 90 files / 810 passed. E2E suite: 220 passed / 0 failed. Dashboard + florist `vite build`: green.
+- Lab `lab-api` gate runs in CI (local run skipped to avoid a cross-session collision on the single shared `flower-lab-pg` container; migration 0018 is `ALTER TABLE ADD COLUMN text`, already proven to apply on real SQL via the pglite harness).
+
 ## 2026-06-30 — Feature (CR-32): courier time slots — client 2h window vs courier 1h slot
 
 Y-model test-session CR. The client picks a wide **2h delivery window**; the owner later assigns the courier a **1h slot within** that window; the **driver app shows only the courier slot**. Plan: `docs/superpowers/plans/2026-06-30-ymodel-test-crs-features.md` (Feature B).

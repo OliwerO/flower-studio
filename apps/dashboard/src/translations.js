@@ -245,6 +245,8 @@ const en = {
   addKeyPerson:             'Add key person',
   keyPersonLimit:           'Both slots filled',
   keyPersonNamePlaceholder: 'Name + contact',
+  keyPersonPhone:           'Phone',
+  keyPersonAddress:         'Address',
   daysShort:                'd',
   monthsShort:              'mo',
   yearsShort:               'y',
@@ -380,6 +382,8 @@ const en = {
   labelRecipient:   'Recipient',
   optional:         'optional',
   deliveryFee:      'Delivery fee',
+  addRecipient:     'Add new recipient',
+  recipientAddress: 'Recipient address',
 
   // Step 4 — Review
   reviewTitle:      'Review order',
@@ -1401,6 +1405,8 @@ const ru = {
   addKeyPerson:             'Добавить контакт',
   keyPersonLimit:           'Оба слота заняты',
   keyPersonNamePlaceholder: 'Имя + контакты',
+  keyPersonPhone:           'Телефон',
+  keyPersonAddress:         'Адрес',
   daysShort:                'д',
   monthsShort:              'мес',
   yearsShort:               'г',
@@ -1536,6 +1542,8 @@ const ru = {
   labelRecipient:   'Получатель',
   optional:         'необязательно',
   deliveryFee:      'Стоимость доставки',
+  addRecipient:     'Новый получатель',
+  recipientAddress: 'Адрес получателя',
 
   // Step 4 — Review
   reviewTitle:      'Проверка заказа',

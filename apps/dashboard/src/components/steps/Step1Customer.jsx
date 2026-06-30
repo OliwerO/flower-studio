@@ -3,9 +3,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import client from '../../api/client.js';
+import { useToast } from '../../context/ToastContext.jsx';
 import t from '../../translations.js';
 
 export default function Step1Customer({ customerId, customerName, onSelect, onChange }) {
+  const { showToast } = useToast();
   const [query, setQuery]           = useState('');
   const [results, setResults]       = useState([]);
   const [searching, setSearching]   = useState(false);
@@ -21,6 +23,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
   const [kpResults, setKpResults] = useState([]);
   const [kpId, setKpId]           = useState(null);
   const [kpName, setKpName]       = useState('');
+  const [kpPhone, setKpPhone]     = useState('');
+  const [kpAddress, setKpAddress] = useState('');
   const [kpCreating, setKpCreating] = useState(false);
   const kpDebounceRef               = useRef(null);
 
@@ -55,6 +59,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
     setKpQuery('');
     setKpId(null);
     setKpName('');
+    setKpPhone('');
+    setKpAddress('');
     setQuery('');
     setResults([]);
     setShowCreate(false);
@@ -72,13 +78,23 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
 
   async function handleContinue() {
     if (!chosenCustomer) return;
-    let resolvedKpId = kpId;
+    let resolvedKpId    = kpId;
+    let resolvedPhone   = kpPhone;
+    let resolvedAddress = kpAddress;
     if (!resolvedKpId && kpName.trim()) {
       setKpCreating(true);
       try {
-        const res = await client.post(`/customers/${chosenCustomer.id}/key-people`, { name: kpName.trim() });
-        resolvedKpId = res.data.id;
-      } catch { /* best-effort */ }
+        const reqBody = { name: kpName.trim() };
+        if (kpPhone.trim())   reqBody.phone   = kpPhone.trim();
+        if (kpAddress.trim()) reqBody.address = kpAddress.trim();
+        const res = await client.post(`/customers/${chosenCustomer.id}/key-people`, reqBody);
+        resolvedKpId    = res.data.id;
+        resolvedPhone   = res.data.phone   || '';
+        resolvedAddress = res.data.address || '';
+      } catch (err) {
+        console.error('Failed to create key person:', err);
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
       finally { setKpCreating(false); }
     }
     onSelect({
@@ -87,6 +103,13 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
       customerCommMethod: chosenCustomer['Communication method'] || '',
       keyPersonId:        resolvedKpId || null,
       keyPersonName:      resolvedKpId ? (kpName || '') : '',
+      keyPersonPhone:     resolvedKpId ? (resolvedPhone   || '') : '',
+      keyPersonAddress:   resolvedKpId ? (resolvedAddress || '') : '',
+      ...(resolvedKpId ? {
+        recipientName:   kpName || '',
+        recipientPhone:  resolvedPhone   || '',
+        deliveryAddress: resolvedAddress || '',
+      } : {}),
     });
   }
 
@@ -345,6 +368,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                 value={kpName}
                 onChange={e => {
                   setKpName(e.target.value);
+                  if (kpId) { setKpPhone(''); setKpAddress(''); }
                   setKpId(null);
                   setKpQuery(e.target.value);
                 }}
@@ -354,7 +378,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
               />
               {kpName && (
                 <button
-                  onClick={() => { setKpName(''); setKpId(null); setKpQuery(''); }}
+                  onClick={() => { setKpName(''); setKpId(null); setKpQuery(''); setKpPhone(''); setKpAddress(''); }}
                   className="text-ios-tertiary text-sm"
                 >&#10005;</button>
               )}
@@ -364,10 +388,17 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                 {kpFiltered.map(p => (
                   <button
                     key={p.id}
-                    onClick={() => { setKpId(p.id); setKpName(p.name); setKpQuery(''); }}
+                    onClick={() => { setKpId(p.id); setKpName(p.name); setKpQuery(''); setKpPhone(p.phone || ''); setKpAddress(p.address || ''); }}
                     className={`w-full text-left px-4 py-3 flex items-center gap-2 active:bg-ios-fill ${kpId === p.id ? 'bg-brand-50' : ''}`}
                   >
-                    <span className="flex-1 text-ios-label text-sm">{p.name}</span>
+                    <div className="flex-1 min-w-0">
+                      <span className="block text-ios-label text-sm truncate">{p.name}</span>
+                      {(p.phone || p.address) && (
+                        <span className="block text-xs text-ios-tertiary truncate">
+                          {[p.phone, p.address].filter(Boolean).join(' · ')}
+                        </span>
+                      )}
+                    </div>
                     {kpId === p.id && <span className="text-brand-600 text-xs">✓</span>}
                   </button>
                 ))}
@@ -378,6 +409,35 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
             {t.keyPerson} — {t.optional || 'optional'}
           </p>
         </div>
+
+        {/* New recipient — phone/address, shown only while creating a new key person */}
+        {!kpId && kpName.trim() && (
+          <div>
+            <p className="ios-label">{t.addRecipient}</p>
+            <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.recipientPhone}</span>
+                <input
+                  type="tel"
+                  value={kpPhone}
+                  onChange={e => setKpPhone(e.target.value)}
+                  placeholder="+48 000 000 000"
+                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
+                />
+              </div>
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.recipientAddress}</span>
+                <input
+                  type="text"
+                  value={kpAddress}
+                  onChange={e => setKpAddress(e.target.value)}
+                  placeholder="ul. Kwiatowa 1, Krakow"
+                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Continue */}
         <button

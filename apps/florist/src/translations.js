@@ -163,6 +163,8 @@ const en = {
   optional:         'optional',
   recipientName:    'Recipient name',
   recipientPhone:   'Recipient phone',
+  addRecipient:     'Add new recipient',
+  recipientAddress: 'Recipient address',
   deliveryAddress:  'Delivery address',
   cardText:         'Card message',
   cardTextPlaceholder: 'Card message for the recipient…',
@@ -778,6 +780,8 @@ const en = {
   keyPersonForOrder:         'Order for',
   keyPersonOrderPlaceholder: 'Who is this order for?',
   importantDate:             'Important date',
+  keyPersonPhone:            'Phone',
+  keyPersonAddress:          'Address',
 
   // Timeline
   timeline:                  'Timeline',
@@ -1056,6 +1060,8 @@ const ru = {
   optional:         'необязательно',
   recipientName:    'Имя получателя',
   recipientPhone:   'Телефон получателя',
+  addRecipient:     'Новый получатель',
+  recipientAddress: 'Адрес получателя',
   deliveryAddress:  'Адрес доставки',
   cardText:         'Текст открытки',
   cardTextPlaceholder: 'Текст открытки для получателя…',
@@ -1671,6 +1677,8 @@ const ru = {
   keyPersonForOrder:         'Заказ для',
   keyPersonOrderPlaceholder: 'Для кого этот заказ?',
   importantDate:             'Важная дата',
+  keyPersonPhone:            'Телефон',
+  keyPersonAddress:          'Адрес',
 
   // Timeline
   timeline:                  'История',
