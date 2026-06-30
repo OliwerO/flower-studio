@@ -282,6 +282,42 @@ describe('createOrder', () => {
 
     yModelFlag.enabled = false;
   });
+
+  it('(CR-34) demand for a future order must NOT land on a pre-existing qty-0 DE dated earlier', async () => {
+    // Repro: the y-model-guide seeds an Anemone "absorption" Demand Entry at
+    // qty 0 dated in the past (06-25). An order needed 07-03 binds its line to
+    // that row. Step 3b skips it (qty 0 >= 0 → can't tell DE from Batch), so
+    // step 4 decrements it IN PLACE → demand lands on 06-25, not 07-03.
+    // CORRECT: the demand must be homed to a DE dated to the order's required-by.
+    yModelFlag.enabled = true;
+    const oldDate = '2026-06-25';
+    const orderDate = '2026-07-03';
+    const [de] = await harness.db.insert(stock).values({
+      airtableId: 'recDE34', displayName: `Anemone Burgundy 50cm (${oldDate})`,
+      typeName: 'Anemone', colour: 'Burgundy', sizeCm: 50,
+      currentQuantity: 0, date: oldDate, active: true,
+    }).returning();
+    const deId = de.id;
+
+    await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Anemone for 3 Jul', deliveryType: 'Pickup',
+      requiredBy: orderDate,
+      orderLines: [
+        { stockItemId: deId, flowerName: 'Anemone Burgundy 50cm', quantity: 10, sellPricePerUnit: 22, costPricePerUnit: 8 },
+      ],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const [oldDE] = await harness.db.select().from(stock).where(eq(stock.id, deId));
+    const futureDEs = await harness.db.select().from(stock)
+      .where(and(eq(stock.typeName, 'Anemone'), eq(stock.date, orderDate)));
+
+    expect(oldDE.currentQuantity).toBe(0);             // old 06-25 DE untouched
+    expect(futureDEs).toHaveLength(1);                 // a 07-03 DE was created
+    expect(futureDEs[0].currentQuantity).toBe(-10);    // demand homed to 07-03
+
+    yModelFlag.enabled = false;
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────

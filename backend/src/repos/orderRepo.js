@@ -662,6 +662,7 @@ export async function createOrder(params, config, opts = {}) {
         const [stockRow] = await tx.select({
           id:              stock.id,
           currentQuantity: stock.currentQuantity,
+          date:            stock.date,
           typeName:        stock.typeName,
           colour:          stock.colour,
           sizeCm:          stock.sizeCm,
@@ -670,8 +671,25 @@ export async function createOrder(params, config, opts = {}) {
           .where(and(eq(stock.id, line.stockItemId), isNull(stock.deletedAt)))
           .limit(1);
 
-        // Skip if stock row not found, typeName null (legacy), or qty >= 0 (Batch)
-        if (!stockRow || !stockRow.typeName || stockRow.currentQuantity >= 0) continue;
+        // Skip rows that aren't demand for THIS order. Route through the dated-DE
+        // path (create/deepen a DE at the order's needed date) when the bound row
+        // is demand:
+        //   - qty < 0 → a Demand Entry (deepen / re-home to demandDate; C1).
+        //   - qty === 0 with a date that ISN'T the order's needed date → a spent/
+        //     absorbed DE (or empty Batch) sitting on the WRONG date. Re-home the
+        //     demand to a DE dated to required_by instead of decrementing it in
+        //     place at its stale date (CR-34: a 07-03 order must not land on a
+        //     pre-existing 06-25 DE). The old row is left untouched (step 4 skips
+        //     it via _deApplied).
+        //   - qty === 0 with no date OR date === demandDate → the freshly-created
+        //     new-demand placeholder (CR-08); leave it for step 4 to decrement.
+        //   - qty > 0 → real Batch coverage; step 4 consumes it.
+        if (!stockRow || !stockRow.typeName) continue;
+        const _q = Number(stockRow.currentQuantity);
+        const isDemandRow =
+          _q < 0 ||
+          (_q === 0 && stockRow.date != null && stockRow.date !== demandDate);
+        if (!isDemandRow) continue;
 
         // Y-model DE row: create or deepen dated DE
         const varietyKey = {
