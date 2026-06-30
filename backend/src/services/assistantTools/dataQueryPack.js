@@ -24,6 +24,13 @@ const ROW_CAP = 200;          // hard ceiling on returned rows
 // ── Allow-list: the ONLY entities/fields/joins/ops the tool will ever touch ──
 // Each field entry maps a model-facing name → the real Drizzle column reference.
 // Anything not listed is invisible to the model.
+//
+// Join entries may carry a `uuidSide` hint for cross-type pairs:
+//   uuidSide: 'foreign' → foreignCol is uuid; emit foreignCol::text = localCol
+//   uuidSide: 'local'   → localCol is uuid;   emit localCol::text  = foreignCol
+// Omitting uuidSide means both sides share a type — plain eq() is used.
+// The uuid→text cast is always safe: text equality on uuid strings never throws,
+// while text::uuid throws for any non-UUID value (e.g. legacy 'recXXX' ids).
 const SCHEMA = {
   orders: {
     table: orders,
@@ -41,9 +48,12 @@ const SCHEMA = {
       customerId:    { col: orders.customerId },
     },
     joins: {
-      customer:  { to: 'customers',    localCol: orders.customerId,   foreignCol: customers.id,     cardinality: 'one' },
-      lines:     { to: 'order_lines',  localCol: orders.id,           foreignCol: orderLines.orderId, cardinality: 'many' },
-      delivery:  { to: 'deliveries',   localCol: orders.id,           foreignCol: deliveries.orderId, cardinality: 'one' },
+      // orders.customerId = TEXT, customers.id = UUID → cast foreignCol (uuid) to text
+      customer: { to: 'customers',   localCol: orders.customerId,     foreignCol: customers.id,       cardinality: 'one',  uuidSide: 'foreign' },
+      // orders.id = UUID,  orderLines.orderId = UUID → same types, plain eq
+      lines:    { to: 'order_lines', localCol: orders.id,             foreignCol: orderLines.orderId, cardinality: 'many' },
+      // orders.id = UUID,  deliveries.orderId = UUID → same types, plain eq
+      delivery: { to: 'deliveries',  localCol: orders.id,             foreignCol: deliveries.orderId, cardinality: 'one' },
     },
     softDeleteCol: orders.deletedAt,
   },
@@ -56,7 +66,8 @@ const SCHEMA = {
       segment: { col: customers.segment },
     },
     joins: {
-      orders: { to: 'orders', localCol: customers.id, foreignCol: orders.customerId, cardinality: 'many' },
+      // customers.id = UUID, orders.customerId = TEXT → cast localCol (uuid) to text
+      orders: { to: 'orders', localCol: customers.id, foreignCol: orders.customerId, cardinality: 'many', uuidSide: 'local' },
     },
     softDeleteCol: customers.deletedAt,
   },
@@ -71,7 +82,8 @@ const SCHEMA = {
       flowerName:  { col: orderLines.flowerName },
     },
     joins: {
-      stock: { to: 'stock', localCol: orderLines.stockItemId, foreignCol: stock.id, cardinality: 'one', castLocal: 'uuid' },
+      // orderLines.stockItemId = TEXT (may hold 'recXXX'), stock.id = UUID → cast foreignCol (uuid) to text
+      stock: { to: 'stock', localCol: orderLines.stockItemId, foreignCol: stock.id, cardinality: 'one', uuidSide: 'foreign' },
     },
     softDeleteCol: orderLines.deletedAt,
   },
@@ -140,6 +152,7 @@ function resolveField(entityDef, fieldName, activeJoins = []) {
 /**
  * Validate a query spec against SCHEMA.
  * Returns { ok:true } or { ok:false, error: string }.
+ * Guards against malformed elements (null filters, etc.) — never throws.
  */
 export function validateSpec(spec) {
   if (!spec || typeof spec !== 'object') return { ok: false, error: 'spec must be an object' };
@@ -163,6 +176,7 @@ export function validateSpec(spec) {
   if (spec.filters) {
     if (!Array.isArray(spec.filters)) return { ok: false, error: 'filters must be an array' };
     for (const f of spec.filters) {
+      if (!f || typeof f !== 'object') return { ok: false, error: 'Each filter must be an object' };
       if (!OPERATORS.has(f.op)) {
         return { ok: false, error: `Unknown operator "${f.op}". Allowed: ${[...OPERATORS].join(', ')}` };
       }
@@ -177,6 +191,7 @@ export function validateSpec(spec) {
   if (spec.groupBy) {
     if (!Array.isArray(spec.groupBy)) return { ok: false, error: 'groupBy must be an array' };
     for (const fieldName of spec.groupBy) {
+      if (typeof fieldName !== 'string') return { ok: false, error: 'groupBy fields must be strings' };
       const col = resolveField(entityDef, fieldName, activeJoins);
       if (!col) {
         return { ok: false, error: `Unknown groupBy field "${fieldName}" on entity "${spec.entity}"` };
@@ -188,6 +203,7 @@ export function validateSpec(spec) {
   if (spec.aggregate) {
     if (!Array.isArray(spec.aggregate)) return { ok: false, error: 'aggregate must be an array' };
     for (const agg of spec.aggregate) {
+      if (!agg || typeof agg !== 'object') return { ok: false, error: 'Each aggregate must be an object' };
       if (!AGG_FNS.has(agg.fn)) {
         return { ok: false, error: `Unknown aggregate function "${agg.fn}". Allowed: ${[...AGG_FNS].join(', ')}` };
       }
@@ -207,6 +223,7 @@ export function validateSpec(spec) {
   if (spec.sort) {
     if (!Array.isArray(spec.sort)) return { ok: false, error: 'sort must be an array' };
     for (const s of spec.sort) {
+      if (!s || typeof s !== 'object') return { ok: false, error: 'Each sort must be an object' };
       const col = resolveField(entityDef, s.field, activeJoins);
       if (!col) {
         return { ok: false, error: `Unknown sort field "${s.field}" on entity "${spec.entity}"` };
@@ -243,7 +260,8 @@ export async function queryRecordsHandler(spec) {
   try {
     const entityDef = SCHEMA[spec.entity];
     const activeJoins = Array.isArray(spec.join) ? spec.join : [];
-    const userLimit = Math.min(Number(spec.limit) || ROW_CAP, ROW_CAP);
+    // Clamp limit: 0 or negative falls back to ROW_CAP
+    const userLimit = Math.min(Math.max(1, Number(spec.limit) || ROW_CAP), ROW_CAP);
 
     // 2. Build WHERE conditions
     const whereClauses = [];
@@ -253,7 +271,7 @@ export async function queryRecordsHandler(spec) {
       whereClauses.push(isNull(entityDef.softDeleteCol));
     }
 
-    // Default Cancelled exclusion for orders
+    // Default Cancelled exclusion for orders (primary entity)
     if (spec.entity === 'orders' && !spec.includeCancelled) {
       whereClauses.push(ne(orders.status, ORDER_STATUS.CANCELLED));
     }
@@ -270,16 +288,47 @@ export async function queryRecordsHandler(spec) {
     const hasAgg = spec.aggregate && spec.aggregate.length > 0;
     const hasGroupBy = spec.groupBy && spec.groupBy.length > 0;
 
-    // Helper to apply joins to any drizzle query builder
+    // Helper to apply joins to any drizzle query builder.
+    //
+    // Cross-type joins (TEXT ↔ UUID): cast the uuid column to text so that
+    // legacy 'recXXX' text values in TEXT columns never trigger a Postgres
+    // cast error. The uuidSide flag on the join definition controls direction:
+    //   uuidSide:'foreign' → sql`foreignCol::text = localCol`
+    //   uuidSide:'local'   → sql`localCol::text  = foreignCol`
+    //   (absent)           → eq(localCol, foreignCol)  — uuid=uuid, type-safe
+    //
+    // Soft-delete and Cancelled-exclude are pushed into each join's ON clause
+    // so joined rows are filtered even when the primary entity is different.
     function applyJoins(q) {
       for (const joinName of activeJoins) {
         const joinDef = entityDef.joins[joinName];
         const joinEntity = SCHEMA[joinDef.to];
-        if (joinDef.castLocal === 'uuid') {
-          q = q.innerJoin(joinEntity.table, sql`${joinDef.localCol}::uuid = ${joinDef.foreignCol}`);
+
+        // Type-safe join condition
+        let condition;
+        if (joinDef.uuidSide === 'foreign') {
+          condition = sql`${joinDef.foreignCol}::text = ${joinDef.localCol}`;
+        } else if (joinDef.uuidSide === 'local') {
+          condition = sql`${joinDef.localCol}::text = ${joinDef.foreignCol}`;
         } else {
-          q = q.innerJoin(joinEntity.table, eq(joinDef.localCol, joinDef.foreignCol));
+          condition = eq(joinDef.localCol, joinDef.foreignCol);
         }
+
+        // Soft-delete filter for the joined table
+        const extraConditions = [];
+        if (joinEntity.softDeleteCol) {
+          extraConditions.push(isNull(joinEntity.softDeleteCol));
+        }
+        // Exclude Cancelled orders from joins whenever orders participates as a join target
+        if (joinDef.to === 'orders' && !spec.includeCancelled) {
+          extraConditions.push(ne(orders.status, ORDER_STATUS.CANCELLED));
+        }
+
+        const fullCondition = extraConditions.length > 0
+          ? and(condition, ...extraConditions)
+          : condition;
+
+        q = q.innerJoin(joinEntity.table, fullCondition);
       }
       return q;
     }
@@ -322,6 +371,14 @@ export async function queryRecordsHandler(spec) {
     dataQuery = dataQuery.limit(userLimit);
 
     const [countResult, rows] = await Promise.all([countBase, dataQuery]);
+
+    // For aggregate/groupBy queries, matchedCount is the ungrouped row count — not meaningful
+    // as a truncation signal because grouped rows are always fewer than ungrouped rows, which
+    // would make truncated:true even when all groups are present. Return truncated:false.
+    if (hasAgg || hasGroupBy) {
+      return { spec, rows, truncated: false };
+    }
+
     const matchedCount = Number(countResult[0]?.total ?? 0);
     return { spec, matchedCount, truncated: matchedCount > rows.length, rows };
   } catch (err) {
@@ -347,7 +404,10 @@ export async function ordersNeedingShortStockHandler() {
       ORDER_STATUS.OUT_FOR_DELIVERY,
     ];
 
-    // Fetch open orders + their lines in one pass, then join to short stock items
+    // Fetch open orders + their lines in one pass, then join to short stock items.
+    // IMPORTANT: orderLines.stockItemId is TEXT (may hold legacy 'recXXX' values).
+    // Cast stock.id (uuid) to text so that non-UUID stockItemIds never throw a cast
+    // error — they simply produce no match, which is the correct behaviour.
     const rows = await db
       .select({
         orderId:     orders.id,
@@ -366,7 +426,7 @@ export async function ordersNeedingShortStockHandler() {
       .innerJoin(
         stock,
         and(
-          sql`${orderLines.stockItemId}::uuid = ${stock.id}`,
+          sql`${stock.id}::text = ${orderLines.stockItemId}`,
           lt(stock.currentQuantity, 0),
           isNull(stock.deletedAt),
         ),
