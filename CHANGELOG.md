@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Ask Blossom: prompt caching (cost) + earlier cap/coverage
+
+Cost optimization for the assistant — no owner-visible change. The system prompt and the
+20 tool definitions are large and identical on every turn; they are now marked cacheable
+(`cache_control: ephemeral`) so Anthropic serves them from its prompt cache (~10% of input
+cost) on the 2nd+ request within the 5-minute window. Big saving on the multi-tool loop
+(several model calls per question) and multi-turn chats. Verified against the live API:
+2nd identical call read the full block from cache (`cache_read_input_tokens` > 0).
+
+- `backend/src/services/assistantService.js` — `CACHED_TOOLS` (cache breakpoint on the last
+  tool def) + `cachedSystem(today)` (system as a cacheable text block); both create() calls use them.
+- No schema/env change. `ASSISTANT_MODEL` (existing) can be set to `claude-haiku-4-5-...` to cut
+  cost further on simpler workloads.
+- Builds on the same-day cap bump (6→12) + graceful no-coverage prompt (PR #455).
+
+---
+
 ## 2026-06-30 — Ask Blossom: 9 new insight tools + correctness system
 
 Expands the owner-only NL analytics assistant from 11 → 20 tools, unlocking the rich analytics the backend already computes, plus whole new domains. Adds an automated correctness layer so the numbers it states are provably right. No new HTTP routes, no schema change, no new env vars — every tool is a read-only thin adapter over an existing canonical service/repo (parity by construction).
