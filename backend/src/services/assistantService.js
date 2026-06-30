@@ -5,7 +5,10 @@ import * as conversationRepo from '../repos/assistantConversationRepo.js';
 
 const anthropic = new Anthropic();
 const MODEL = process.env.ASSISTANT_MODEL || 'claude-sonnet-4-6';
-const MAX_ITERATIONS = 6;
+// Max tool round-trips per question. Raised from 6 → 12 so multi-tool / "connect
+// the dots" questions (call several tools, then reason) can complete instead of
+// hitting the cap. Env-overridable for tuning without a deploy.
+const MAX_ITERATIONS = Number(process.env.ASSISTANT_MAX_ITERATIONS) || 12;
 const MAX_TOKENS = 2048;
 const SESSION_TTL_MS = 2 * 60 * 60 * 1000;
 
@@ -21,7 +24,8 @@ function systemPrompt(today) {
     "You are Blossom's analytics assistant for the studio owner. Blossom is a flower studio in Krakow.",
     `Today's date is ${today} (Europe/Warsaw). Resolve relative periods like "May", "last month", "this week" against it.`,
     'You answer questions about the business ONLY using the provided tools. Never write SQL.',
-    'CRITICAL: State only numbers that came from a tool result. Never invent, estimate, or extrapolate figures. If no tool can answer the question, say so plainly.',
+    'CRITICAL: State only numbers that came from a tool result. Never invent, estimate, or extrapolate figures.',
+    "If no tool can directly answer the question: (1) say plainly that you don't have a dedicated tool for it, (2) then, if related tools returned useful data, give your best interpretation built ONLY on those real figures — clearly labelled as an interpretation/inference, not a measured number. Combine results from MULTIPLE tools when a question needs it (e.g. join orders with stock shortfalls, or spend with revenue) — call each tool, then reason over their real outputs to connect the dots.",
     'When a tool result has truncated=true, tell the user you are showing the first N of matchedCount and that they can ask to see all.',
     'Currency is Polish złoty — display amounts with "zł". Present breakdowns as compact Markdown tables.',
     "LANGUAGE: reply in the SAME language as the user's latest message — if they write in English, answer entirely in English; if in Russian, answer in Russian. Only fall back to Russian when the language is genuinely unclear.",

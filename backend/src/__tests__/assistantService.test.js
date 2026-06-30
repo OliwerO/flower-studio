@@ -70,7 +70,11 @@ describe('assistantService.ask', () => {
       content: [{ type: 'tool_use', id: 'tu', name: 'query_orders', input: {} }],
     });
     const r = await ask({ message: 'loop' });
-    expect(mockCreate.mock.calls.length).toBeLessThanOrEqual(7); // 1 initial + MAX_ITERATIONS(6)
+    // Cap-agnostic: the loop must terminate (1 initial + MAX_ITERATIONS round-trips,
+    // default 12, env-overridable) rather than run forever, and still return an answer.
+    const maxIters = Number(process.env.ASSISTANT_MAX_ITERATIONS) || 12;
+    expect(mockCreate.mock.calls.length).toBeLessThanOrEqual(maxIters + 1);
+    expect(mockCreate.mock.calls.length).toBeGreaterThan(1); // it did loop, not one-shot
     expect(r.answer).toBeTruthy();
   });
 
