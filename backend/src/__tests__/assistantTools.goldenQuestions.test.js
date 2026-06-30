@@ -204,6 +204,19 @@ describe('golden questions — tool invariants', () => {
     expect(sum).toBe(totalQuantity);
   });
 
+  it('stock_writeoffs by flower: sum(byFlower quantities) === totalQuantity, sorted desc', async () => {
+    mockToolCall('stock_writeoffs', { from: '2026-05-01', to: '2026-05-31' });
+    const r = await ask({ message: 'Which flowers were wasted most in May?' });
+    expect(r.toolResults[0].name).toBe('stock_writeoffs');
+    const { totalQuantity, byFlower } = r.toolResults[0].output;
+    expect(Array.isArray(byFlower)).toBe(true);
+    const sum = byFlower.reduce((a, f) => a + f.quantity, 0);
+    expect(sum).toBe(totalQuantity);
+    for (let i = 0; i < byFlower.length - 1; i++) {
+      expect(byFlower[i].quantity).toBeGreaterThanOrEqual(byFlower[i + 1].quantity);
+    }
+  });
+
   it('top_products: products is an array; total >= products.length', async () => {
     mockToolCall('top_products', { from: '2026-05-01', to: '2026-05-31' });
     const r = await ask({ message: "What were the best sellers in May?" });

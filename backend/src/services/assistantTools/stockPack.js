@@ -28,16 +28,44 @@ export async function stockStatusHandler(input = {}) {
   };
 }
 
+const WRITEOFF_FLOWER_CAP = 50;
+
 export async function stockWriteoffsHandler(input = {}) {
-  const { from, to } = input;
-  const rows = await stockLossRepo.list({ from, to });
+  const { from, to, reason: reasonFilter } = input;
+  let rows = await stockLossRepo.list({ from, to });
+  // Optional case-insensitive reason filter (e.g. only "wilted" or "broken").
+  if (reasonFilter) {
+    const want = String(reasonFilter).trim().toLowerCase();
+    rows = rows.filter((r) => String(r.Reason || '').toLowerCase() === want);
+  }
+
   const byReason = {};
+  const flowerMap = new Map(); // flowerName -> { flower, quantity, entryCount }
   let totalQuantity = 0;
   for (const r of rows) {
     const reason = r.Reason || 'Unknown';
+    const flower = r.flowerName || '—';
     const q = Number(r.Quantity) || 0;
     byReason[reason] = (byReason[reason] || 0) + q;
+    const f = flowerMap.get(flower) || { flower, quantity: 0, entryCount: 0 };
+    f.quantity += q;
+    f.entryCount += 1;
+    flowerMap.set(flower, f);
     totalQuantity += q;
   }
-  return { period: { from: from ?? null, to: to ?? null }, entryCount: rows.length, totalQuantity, byReason };
+
+  // Most-wasted flowers first — answers "which flowers were wasted most".
+  const sorted = [...flowerMap.values()].sort((a, b) => b.quantity - a.quantity);
+  const byFlower = sorted.slice(0, WRITEOFF_FLOWER_CAP);
+
+  return {
+    period: { from: from ?? null, to: to ?? null },
+    reason: reasonFilter ?? null,
+    entryCount: rows.length,
+    totalQuantity,
+    byReason,
+    flowerCount: flowerMap.size,
+    byFlower,
+    truncated: flowerMap.size > byFlower.length,
+  };
 }

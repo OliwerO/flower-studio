@@ -79,12 +79,13 @@ export const TOOLS = [
   },
   {
     name: 'stock_writeoffs',
-    description: "Write-offs (stems lost to waste/damage) in a date range: total quantity + a breakdown by reason. Use for 'how much did I write off', 'how much waste this month', 'why did I lose stems'. Dates YYYY-MM-DD.",
+    description: "Write-offs (stems lost to waste/damage) in a date range: total quantity, a breakdown by reason (wilted/broken/damaged/etc.), and a breakdown by flower (most-wasted first). Use for 'how much did I write off', 'how much waste this month', 'why did I lose stems', AND 'which flowers were wasted most', 'what flower do I waste the most', 'most-wasted flower'. Pass `reason` to look at only one reason (e.g. only wilted or only broken). Dates YYYY-MM-DD.",
     input_schema: {
       type: 'object',
       properties: {
         from: { type: 'string', description: 'Start date YYYY-MM-DD (inclusive).' },
         to: { type: 'string', description: 'End date YYYY-MM-DD (inclusive).' },
+        reason: { type: 'string', description: 'Optional. Only count write-offs with this reason (case-insensitive exact match), e.g. "wilted" or "broken".' },
       },
     },
     handler: stockWriteoffsHandler,
