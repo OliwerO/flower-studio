@@ -226,7 +226,8 @@ export const deliveries = pgTable('deliveries', {
   recipientName:      text('recipient_name'),
   recipientPhone:     text('recipient_phone'),
   deliveryDate:       date('delivery_date'),
-  deliveryTime:       text('delivery_time'),
+  deliveryTime:       text('delivery_time'),    // client-facing 2h window
+  courierTime:        text('courier_time'),     // courier 1h slot within the window (CR-32)
   assignedDriver:     text('assigned_driver'),
   deliveryFee:        numeric('delivery_fee', { precision: 10, scale: 2 }),
   driverInstructions: text('driver_instructions'),

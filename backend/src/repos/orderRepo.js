@@ -112,6 +112,7 @@ export function pgDeliveryToResponse(row) {
     'Recipient Phone':     row.recipientPhone ?? null,
     'Delivery Date':       row.deliveryDate ?? null,
     'Delivery Time':       row.deliveryTime ?? null,
+    'Courier Time':        row.courierTime ?? null,
     'Assigned Driver':     row.assignedDriver ?? null,
     'Delivery Fee':        row.deliveryFee != null ? Number(row.deliveryFee) : null,
     'Driver Instructions': row.driverInstructions ?? null,
@@ -171,6 +172,7 @@ function deliveryResponseToPg(fields) {
   if ('Recipient Phone' in fields) out.recipientPhone = fields['Recipient Phone'] || null;
   if ('Delivery Date' in fields)   out.deliveryDate = fields['Delivery Date'] || null;
   if ('Delivery Time' in fields)   out.deliveryTime = fields['Delivery Time'] || null;
+  if ('Courier Time' in fields)    out.courierTime = fields['Courier Time'] || null;
   if ('Assigned Driver' in fields) out.assignedDriver = fields['Assigned Driver'] || null;
   if ('Delivery Fee' in fields)    out.deliveryFee = fields['Delivery Fee'] != null ? String(fields['Delivery Fee']) : null;
   if ('Driver Instructions' in fields) out.driverInstructions = fields['Driver Instructions'] || null;

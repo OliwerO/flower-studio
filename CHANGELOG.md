@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-06-30 — Feature (CR-32): courier time slots — client 2h window vs courier 1h slot
+
+Y-model test-session CR. The client picks a wide **2h delivery window**; the owner later assigns the courier a **1h slot within** that window; the **driver app shows only the courier slot**. Plan: `docs/superpowers/plans/2026-06-30-ymodel-test-crs-features.md` (Feature B).
+
+### Schema (additive, safe on prod)
+- **Migration `0017_deliveries_courier_time.sql`** — adds nullable `deliveries.courier_time text`. `delivery_time` keeps the client window; `courier_time` holds the courier's tighter slot. Lab factory `lab/factories/delivery.js` updated (defaults null).
+
+### Backend (`orderRepo.js`, `deliveries.js`)
+- `pgDeliveryToResponse` / `deliveryResponseToPg` map `Courier Time` ↔ `courier_time`; `Courier Time` added to the `DELIVERIES_PATCH_ALLOWED` allow-list. Delivery-only field (not cascaded from the order).
+
+### Shared (`packages/shared/utils/timeSlots.js`)
+- New `getCourierSlots(window)` splits a `"HH:MM-HH:MM"` client window into its 1h courier sub-slots (trailing partial for non-whole-hour windows; `[]` for invalid input). Client windows stay sourced from owner config (`getAvailableSlots`) — no hardcoded 08–20 generator.
+
+### Tests
+- `packages/shared/test/timeSlots.test.js` (new, 17) — courier-slot generation + backfilled `getAvailableSlots` coverage.
+- `deliveries.assign-notify.integration.test.js` — `Courier Time` PATCH round-trip + null-default (migration applies under pglite).
+
 ## 2026-06-30 — Fix (Y-model): new order demand lands on the order's needed date, not a stale qty-0 DE (CR-34)
 
 Found during the Y-model live test session. An order needed on a future date, for an out-of-stock Variety that already had a **qty-0** Demand Entry on an earlier date (e.g. a post-absorption/zeroed DE), had its demand applied to that old DE **in place** — so the SHORTFALLS list showed the shortfall under the wrong (past) date instead of the order's needed date. Backend-only fix.
