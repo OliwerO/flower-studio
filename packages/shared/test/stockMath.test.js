@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety } from '../utils/stockMath.js';
+import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, varietyGroupMatchesView } from '../utils/stockMath.js';
 
 // Model (see stockMath.js header): stock is deducted at order creation, so
 // Current Quantity already reflects every pending order's demand. `committed`
@@ -230,5 +230,60 @@ describe('allocateLinesAgainstVariety — sibling netting', () => {
     const lines = [{ stockItemId: 's1', quantity: 4 }, { stockItemId: 's1', quantity: 5 }];
     const nets = allocateLinesAgainstVariety(lines, (l) => ({ key: l.stockItemId, net: 6 }));
     expect(nets).toEqual([6, 2]); // 6 - 4 = 2 left for line 2 → shows 3 short
+  });
+});
+
+describe('varietyGroupMatchesView (Y-model Stock view pills)', () => {
+  const grp = (rows) => ({ rows });
+  // net = onHand - planned - reserved (see getVarietyTotals)
+  const NOW = new Date('2026-07-01T00:00:00Z').getTime();
+
+  it("'all' (or empty) always matches", () => {
+    expect(varietyGroupMatchesView(grp([{ id: 'a', current_quantity: 5 }]), 'all')).toBe(true);
+    expect(varietyGroupMatchesView(grp([{ id: 'a', current_quantity: 5 }]), '')).toBe(true);
+    expect(varietyGroupMatchesView(grp([{ id: 'a', current_quantity: 5 }]), null)).toBe(true);
+  });
+
+  it("'negative' matches a SHORT variety (onHand < reserved → net < 0)", () => {
+    // Peony Pink: 19 on hand, 28 in premade → net -9
+    const g = grp([{ id: 'p', current_quantity: 19 }]);
+    const reserved = new Map([['p', 28]]);
+    expect(varietyGroupMatchesView(g, 'negative', reserved)).toBe(true);
+    expect(varietyGroupMatchesView(g, 'low', reserved)).toBe(false);
+  });
+
+  it("'negative' does NOT match a variety with positive net", () => {
+    // Hydrangea Pink: 18 on hand, 12 premade → net 6 (free)
+    const g = grp([{ id: 'h', current_quantity: 18 }]);
+    const reserved = new Map([['h', 12]]);
+    expect(varietyGroupMatchesView(g, 'negative', reserved)).toBe(false);
+  });
+
+  it("'low' matches a tight (net 0) variety", () => {
+    // Hydrangea White: 5 on hand, 5 premade → net 0
+    const g = grp([{ id: 'w', current_quantity: 5 }]);
+    const reserved = new Map([['w', 5]]);
+    expect(varietyGroupMatchesView(g, 'low', reserved)).toBe(true);
+    expect(varietyGroupMatchesView(g, 'negative', reserved)).toBe(false);
+  });
+
+  it("'low' matches net within reorder threshold, not above it", () => {
+    const within = grp([{ id: 'd', current_quantity: 3 }]);       // net 3, default threshold 5
+    const above = grp([{ id: 'e', current_quantity: 18 }]);       // net 18
+    const customThresh = grp([{ id: 'f', current_quantity: 8, 'Reorder Threshold': 10 }]); // net 8 ≤ 10
+    expect(varietyGroupMatchesView(within, 'low')).toBe(true);
+    expect(varietyGroupMatchesView(above, 'low')).toBe(false);
+    expect(varietyGroupMatchesView(customThresh, 'low')).toBe(true);
+  });
+
+  it("'slow' matches positive on-hand not restocked within 14 days", () => {
+    const stale = grp([{ id: 's', current_quantity: 10, 'Last Restocked': '2026-06-01' }]);
+    const fresh = grp([{ id: 't', current_quantity: 10, 'Last Restocked': '2026-06-29' }]);
+    const never = grp([{ id: 'u', current_quantity: 10 }]);
+    const depleted = grp([{ id: 'v', current_quantity: 0, 'Last Restocked': '2020-01-01' }]);
+    expect(varietyGroupMatchesView(stale, 'slow', new Map(), NOW)).toBe(true);
+    expect(varietyGroupMatchesView(fresh, 'slow', new Map(), NOW)).toBe(false);
+    expect(varietyGroupMatchesView(never, 'slow', new Map(), NOW)).toBe(true);
+    expect(varietyGroupMatchesView(depleted, 'slow', new Map(), NOW)).toBe(false);
   });
 });

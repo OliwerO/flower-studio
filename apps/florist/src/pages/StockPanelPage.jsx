@@ -13,6 +13,7 @@ import {
   WriteOffBatchPicker,
   LOSS_REASONS,
   reasonLabel,
+  varietyGroupMatchesView,
 } from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -296,7 +297,13 @@ export default function StockPanelPage() {
         );
       });
     }
-    if (hideZero) {
+    // View pills (Negative / Low / Slow) filter by per-Variety net — the same
+    // number the row badge shows. hideZero only applies in the 'all' view (the
+    // legacy flat list does the same: `hideZero && view === 'all'`), so a short
+    // variety with no on-hand stems still surfaces under Negative.
+    if (view !== 'all') {
+      list = list.filter(g => varietyGroupMatchesView(g, view, reservationsMap));
+    } else if (hideZero) {
       list = list.filter(g => {
         const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
         if (totalQty !== 0) return true;
@@ -304,7 +311,7 @@ export default function StockPanelPage() {
       });
     }
     return list;
-  }, [groups, hideZero, yEnabled, reservationsMap, debouncedSearch]);
+  }, [groups, hideZero, view, yEnabled, reservationsMap, debouncedSearch]);
 
   // Filtered + sorted stock (legacy path)
   const filteredStock = useMemo(() => {
@@ -368,12 +375,21 @@ export default function StockPanelPage() {
     return sorted;
   }, [stock, debouncedSearch, sortKey, sortAsc, view, hideZero, premadeMap]);
 
-  // Counts for view badges
-  const negativeCount = useMemo(() => stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length, [stock]);
-  const lowCount = useMemo(() => stock.filter(s => {
-    const qty = Number(s['Current Quantity']) || 0;
-    return qty > 0 && qty <= (Number(s['Reorder Threshold']) || 5);
-  }).length, [stock]);
+  // Counts for view badges — under the Y-model the signal is the per-Variety net
+  // (matches the Negative/Low pills + the row badge), not a flat per-row qty<0.
+  const negativeCount = useMemo(() =>
+    yEnabled
+      ? groups.filter(g => varietyGroupMatchesView(g, 'negative', reservationsMap)).length
+      : stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length,
+  [yEnabled, groups, reservationsMap, stock]);
+  const lowCount = useMemo(() =>
+    yEnabled
+      ? groups.filter(g => varietyGroupMatchesView(g, 'low', reservationsMap)).length
+      : stock.filter(s => {
+          const qty = Number(s['Current Quantity']) || 0;
+          return qty > 0 && qty <= (Number(s['Reorder Threshold']) || 5);
+        }).length,
+  [yEnabled, groups, reservationsMap, stock]);
 
   return (
     <div className="min-h-screen">
@@ -567,10 +583,9 @@ export default function StockPanelPage() {
                   the Flat table for desktop. */}
             <div className="ios-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
-                // Only show types that have at least one visible group after filtering
-                const visibleRows = hideZero
-                  ? typeRows.filter(g => filteredGroups.includes(g))
-                  : typeRows;
+                // Only show types with at least one group surviving filteredGroups
+                // (which already encodes search + hide-zero + the view pill).
+                const visibleRows = typeRows.filter(g => filteredGroups.includes(g));
                 if (visibleRows.length === 0) return null;
 
                 const isCollapsed = collapsedTypes.has(typeName);

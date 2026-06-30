@@ -85,6 +85,42 @@ export function getVarietyTotals(rows, reservations = new Map()) {
   return { onHand, planned, reservedForPremades, net, reclaimable };
 }
 
+// ── varietyGroupMatchesView ────────────────────────────────────────────────
+// Predicate for the Stock-panel view pills (All / Negative / Low / Slow) under
+// the Y-model grouped list. The legacy flat list filters individual stock rows
+// by `Current Quantity`; under the Y-model the meaningful signal is the
+// per-Variety NET (onHand − planned − reservedForPremades) from getVarietyTotals
+// — the same number that drives the short/tight/free badge — so the pills match
+// what the row shows. Without this the pills were dead (filteredGroups never
+// consulted `view`). `group.rows` are the grouped-endpoint rows; `reservations`
+// is the Map<stockId, reservedQty> used everywhere else on the panel.
+export function varietyGroupMatchesView(group, view, reservations = new Map(), now = Date.now()) {
+  if (!view || view === 'all') return true;
+  const rows = group?.rows || [];
+  const { net, onHand } = getVarietyTotals(rows, reservations);
+
+  if (view === 'negative') return net < 0;            // short — owes stems
+  if (view === 'low') {
+    // not short, but on/under the variety's reorder threshold (incl. tight, net 0)
+    const threshold = rows.reduce(
+      (max, r) => Math.max(max, Number(r['Reorder Threshold'] ?? r.reorder_threshold) || 0),
+      5,
+    );
+    return net >= 0 && net <= threshold;
+  }
+  if (view === 'slow') {
+    if (onHand <= 0) return false;                    // nothing physically sitting
+    const restocks = rows
+      .map(r => r['Last Restocked'] ?? r.last_restocked)
+      .filter(Boolean)
+      .map(d => new Date(d).getTime())
+      .filter(n => Number.isFinite(n));
+    if (restocks.length === 0) return true;           // never restocked = slow
+    return (now - Math.max(...restocks)) > 14 * 86400000;
+  }
+  return true;
+}
+
 /**
  * allocateVarietyCoverage — date-aware coverage of a Variety's dated demands by
  * on-hand stock + pending PO arrivals (CR-39).

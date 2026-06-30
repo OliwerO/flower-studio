@@ -19,6 +19,7 @@ import {
   VarietyTracePanel,
   WriteOffBatchPicker,
   buildPoSuggestions,
+  varietyGroupMatchesView,
 } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
@@ -444,7 +445,13 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
         );
       });
     }
-    if (hideZero) {
+    // View pills (Negative / Slow) filter by per-Variety net — the same number
+    // the row badge shows. hideZero only applies in the 'all' view (the legacy
+    // flat list does the same), so a short variety with no on-hand stems still
+    // surfaces under Negative. 'waste' renders its own panel above, not groups.
+    if (view !== 'all' && view !== 'waste') {
+      list = list.filter(g => varietyGroupMatchesView(g, view, reservationsMap));
+    } else if (hideZero && view === 'all') {
       list = list.filter(g => {
         const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
         if (totalQty !== 0) return true;
@@ -452,7 +459,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
       });
     }
     return list;
-  }, [groups, hideZero, stockYModelEnabled, reservationsMap, search]);
+  }, [groups, hideZero, view, stockYModelEnabled, reservationsMap, search]);
 
   // ── Y-model: batch trace fetch triggered by traceStockId ──
   // traceStockId can be a single id or comma-separated list (merged batch in
@@ -898,9 +905,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
             ) : (
             <div className="glass-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
-                const visibleRows = hideZero
-                  ? typeRows.filter(g => filteredGroups.includes(g))
-                  : typeRows;
+                // filteredGroups already encodes search + hide-zero + the view pill.
+                const visibleRows = typeRows.filter(g => filteredGroups.includes(g));
                 if (visibleRows.length === 0) return null;
                 const isCollapsed = collapsedTypes.has(typeName);
                 const totalQty = typeRows.reduce((sum, g) =>
