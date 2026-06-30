@@ -17,7 +17,6 @@ const CustomersTab = lazy(() => import('../components/CustomersTab.jsx'));
 const ProductsTab = lazy(() => import('../components/ProductsTab.jsx'));
 const AdminTab = lazy(() => import('../components/AdminTab.jsx'));
 const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
-const VarietyBackfillTab = lazy(() => import('../components/VarietyBackfillTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 const IssuesTab = lazy(() => import('../components/IssuesTab.jsx'));
 function TabFallback() {
@@ -41,7 +40,6 @@ export default function DashboardPage() {
     { key: 'products', label: t.tabProducts },
     { key: 'issues',   label: t.tabIssues },
     { key: 'admin',    label: '\u26a0 ' + t.tabAdmin },
-    { key: 'backfill', label: t.tabBackfill },
     { key: 'settings', label: '\u2699 ' + t.tabSettings },
   ];
   // Guard against a stale persisted tab that no longer exists (e.g. the removed
@@ -192,9 +190,6 @@ export default function DashboardPage() {
         )}
         {renderMountedTab('admin',
           <AdminTab />
-        )}
-        {renderMountedTab('backfill',
-          <VarietyBackfillTab />
         )}
         {renderMountedTab('settings',
           <SettingsTab />

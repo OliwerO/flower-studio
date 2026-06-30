@@ -17,7 +17,6 @@ The owner needs two things: (1) daily operational control — same visibility as
 | Products | ProductsTab.jsx | Wix product sync — pull/push products, manage categories (permanent/seasonal/auto), translations. |
 | Settings | SettingsTab.jsx | Delivery zones/fees, driver config, florist rates, payment methods, order sources, marketing spend, stock loss log. |
 | Admin | AdminTab.jsx | Owner-only — Postgres migration health, parity dashboards (stock, soon orders), audit log viewer. Powers the shadow-week verification. |
-| Variety Backfill | VarietyBackfillTab.jsx | Owner-only pre-cutover UI: fills Type/Colour/Size/Cultivar on stock rows where type_name IS NULL. Status banner, autocomplete inputs, cultivar prefill, bulk-edit panel. |
 | Issues | IssuesTab.jsx | In-app GitHub issue tracker (owner-only). Browse open/closed issues, set priority (`priority:*` labels), manage labels, comment, close/reopen, create new issues. Backed by `GET/POST/PATCH /api/issues` (proxy over GitHub REST). Dashboard-only — not in the florist app (owner's strategic-oversight surface, like Financial/Admin). |
 | ~~Assistant~~ | ~~AssistantTab.jsx~~ | Removed — replaced by the shared `AskBlossomLauncher` FAB mounted in `DashboardPage.jsx` (bottom-right floating button → opens full right-side drawer on desktop / bottom sheet on mobile). |
 
