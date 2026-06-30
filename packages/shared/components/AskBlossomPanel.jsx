@@ -221,11 +221,15 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
           </button>
         </div>
         {reporterRole && (
-          <div className="px-2 pb-2 flex justify-end">
+          <div className="px-2 pb-2 flex justify-start">
             <button
               onClick={() => setShowReport(true)}
-              className="text-xs text-gray-400 hover:text-brand-600 px-2 py-1 rounded-lg hover:bg-brand-50 transition-colors"
+              className="flex items-center gap-1.5 text-sm font-medium text-brand-600 border border-brand-600 bg-brand-50 rounded-lg px-3 py-1.5 hover:bg-brand-100 transition-colors"
             >
+              <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z" />
+                <line x1="4" y1="22" x2="4" y2="15" />
+              </svg>
               {t.assistantReport || 'Сообщить о проблеме'}
             </button>
           </div>
