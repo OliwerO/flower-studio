@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -294,10 +294,14 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
         </Section>
       )}
 
-      {/* Status */}
+      {/* Status — CR-31: a delivery order can only terminate as "Delivered",
+          a pickup order only as "Picked Up". Strip the mismatched terminal for
+          the owner too (god-mode elsewhere; this pair is a domain truth). */}
       <Section label={t.status}>
         <Pills
-          options={STATUSES}
+          options={STATUSES.filter(s =>
+            isStatusAllowedForFulfillment(s.value, o['Delivery Type'] === 'Delivery'),
+          )}
           value={o.Status}
           onChange={v => patchOrder({ Status: v })}
           disabled={saving}

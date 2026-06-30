@@ -854,6 +854,7 @@ function OrderCard({
                     role: isOwner ? 'owner' : 'florist',
                     currentStatus,
                     previousStatuses: prevStatuses,
+                    isDelivery,  // CR-31: a delivery order never offers "Picked Up" (and vice versa)
                   });
                   // Intercept the Cancelled pill — show inline confirm so the
                   // user picks return-stock vs status-only cancel.
