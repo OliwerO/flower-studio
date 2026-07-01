@@ -444,6 +444,50 @@ describe('VarietyListItem owner financials on expand (CR-36)', () => {
   });
 });
 
+describe('VarietyListItem reorder settings (E2b)', () => {
+  const v = {
+    key: 'Rose|Pink|60|', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+    rows: [
+      { id: 'b1', current_quantity: 10, 'Reorder Threshold': 5, 'Lot Size': 25, date: '2026-05-10' },
+      { id: 'b2', current_quantity: 8,  'Reorder Threshold': 5, 'Lot Size': 25, date: '2026-05-11' },
+    ],
+  };
+
+  it('renders reorder settings only for an owner WITH onEditField', () => {
+    const { rerender } = render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-reorder-settings')).toBeNull(); // no onEditField
+    rerender(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onEditField={() => {}} onToggle={() => {}} />);
+    expect(screen.getByTestId('variety-reorder-settings')).toBeInTheDocument();
+  });
+
+  it('hides reorder settings for a non-owner', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner={false} onEditField={() => {}} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-reorder-settings')).toBeNull();
+  });
+
+  it('shows current threshold + lot size as integers (no .00)', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onEditField={() => {}} onToggle={() => {}} />);
+    expect(screen.getByTestId('variety-edit-threshold')).toHaveTextContent('5');
+    expect(screen.getByTestId('variety-edit-lotsize')).toHaveTextContent('25');
+    expect(screen.queryByText('5.00')).toBeNull();
+  });
+
+  it('editing threshold bulk-patches every batch id with the API field name', () => {
+    const onEditField = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onEditField={onEditField} onToggle={() => {}} />);
+    fireEvent.click(screen.getByTestId('variety-edit-threshold'));
+    const input = screen.getByTestId('variety-edit-threshold-input');
+    fireEvent.change(input, { target: { value: '8' } });
+    fireEvent.blur(input);
+    expect(onEditField).toHaveBeenCalledWith(['b1', 'b2'], { 'Reorder Threshold': 8 });
+  });
+});
+
 describe('VarietyListItem incoming PO sub-line (CR-03)', () => {
   const variety = {
     key: 'Rose|Pink|60|',

@@ -57,13 +57,15 @@ until fresh dated stock lands.
   Reset` bar in `StockTab`. All client-side. Lab-verified (Type=peony → 2 rows, footer + bar update).
 - ✅ **E2 totals footer** — SHIPPED. `BatchArrivalList footer` sums count/qty/cost/sell over the visible
   (filtered) rows. Lab-verified (TOTAL 7 · 92 · 981 · 2756, follows the filter).
-- ⏭️ **E2 inline reorder-threshold / lot-size edit — DEFERRED.** Placement decision needed: the flat
-  table is already 8 columns (adding 2 = cramped) and these are per-Variety, not per-sell-tier — the
-  right home is the By-Variety expansion (owner-financials area), which also ports to florist. Confirm
-  with owner before building; `patchPriceBulk` extends trivially once the surface is chosen.
-- ⏭️ **E1 florist parity — DEFERRED.** Florist has no flat table (CR-35); parity = a filter drawer over
-  the By-Variety list (mirrors `OrderFilterDrawer`) reusing the same `stockFilters` model. Owner said
-  "dashboard at least, ideally florist" — dashboard done; drawer is the follow-up.
+- ✅ **E2b inline reorder-threshold / lot-size edit — SHIPPED** (owner agreed placement). In the
+  By-Variety EXPANSION (`VarietyListItem`, owner-only `variety-reorder-settings` row): two inline
+  integer fields (`InlinePriceField` gained a `format`/`step` prop). Edit bulk-patches every batch of
+  the Variety (`onEditField` → dashboard `patchPriceBulk` / florist `handleEditVarietyField`); backend
+  already syncs Reorder Threshold across siblings. Lab-verified end-to-end (edit → all 7 batches updated).
+- ⏭️ **E1b florist filter parity — TODO** (owner agreed). Florist has no flat table (CR-35); parity = a
+  filter DRAWER over the By-Variety list. NOTE: the flat-table `stockFilters` operates on flattened
+  sell-tier rows; the By-Variety list needs VARIETY-level dimensions (Type / Variety text / status
+  short·tight·free / net range), so it's a sibling filter model, not a direct reuse.
 
 ## E2 audit — functionality lost moving legacy → Y-model
 
