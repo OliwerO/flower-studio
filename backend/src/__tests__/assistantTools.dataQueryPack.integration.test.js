@@ -6,10 +6,13 @@
 //   - ordersNeedingShortStockHandler: only short-stock orders returned
 //   - Cross-type join safety: recXXX stockItemId + customers↔orders uuid/text pair
 //   - Aggregate/groupBy: truncated always false
+//   - purchases/writeoffs/deliveries/marketing entities: validateSpec + queryRecordsHandler
+//   - purchases→stock join: legacy unlinked purchase (null stockId + recXXX stockAirtableId)
+//     does not abort the query
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
-import { orders, orderLines, stock, customers } from '../db/schema.js';
+import { orders, orderLines, stock, customers, stockPurchases, stockLossLog, deliveries, marketingSpend } from '../db/schema.js';
 
 const dbHolder = { db: null };
 vi.mock('../db/index.js', () => ({
@@ -538,5 +541,198 @@ describe('dataQueryPack — truncated:false for aggregate and groupBy queries', 
     expect(r.matchedCount).toBe(3);
     expect(r.rows.length).toBe(1);
     expect(r.truncated).toBe(true);
+  });
+});
+
+// ── New entities: purchases, writeoffs, deliveries, marketing ──────────────────
+
+describe('dataQueryPack.validateSpec — new entities', () => {
+  it('accepts a valid purchases spec', () => {
+    const r = validateSpec({ entity: 'purchases', filters: [{ field: 'supplier', op: 'eq', value: 'Acme' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a valid writeoffs spec', () => {
+    const r = validateSpec({ entity: 'writeoffs', filters: [{ field: 'reason', op: 'eq', value: 'Wilted' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a valid deliveries spec', () => {
+    const r = validateSpec({ entity: 'deliveries', filters: [{ field: 'status', op: 'eq', value: 'Pending' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a valid marketing spec', () => {
+    const r = validateSpec({ entity: 'marketing', filters: [{ field: 'channel', op: 'eq', value: 'Instagram' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects an unknown field on purchases', () => {
+    const r = validateSpec({ entity: 'purchases', filters: [{ field: 'bogus', op: 'eq', value: 'x' }] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/Unknown field "bogus"/);
+  });
+
+  it('purchases can join stock; writeoffs can join stock; deliveries can join order', () => {
+    expect(validateSpec({ entity: 'purchases', join: ['stock'] }).ok).toBe(true);
+    expect(validateSpec({ entity: 'writeoffs', join: ['stock'] }).ok).toBe(true);
+    expect(validateSpec({ entity: 'deliveries', join: ['order'] }).ok).toBe(true);
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — purchases: filter by supplier, group by flower, sum quantity', () => {
+  let roseId;
+  let tulipId;
+
+  beforeEach(async () => {
+    const [rose] = await harness.db
+      .insert(stock)
+      .values({ displayName: 'Rose Red', currentQuantity: 20, active: true })
+      .returning({ id: stock.id });
+    roseId = rose.id;
+
+    const [tulip] = await harness.db
+      .insert(stock)
+      .values({ displayName: 'Tulip Yellow', currentQuantity: 15, active: true })
+      .returning({ id: stock.id });
+    tulipId = tulip.id;
+
+    await harness.db.insert(stockPurchases).values([
+      { purchaseDate: '2026-06-01', supplier: 'Acme Flowers', stockId: roseId, quantityPurchased: 50, pricePerUnit: '2.50' },
+      { purchaseDate: '2026-06-05', supplier: 'Acme Flowers', stockId: roseId, quantityPurchased: 30, pricePerUnit: '2.75' },
+      { purchaseDate: '2026-06-03', supplier: 'Other Supplier', stockId: tulipId, quantityPurchased: 100, pricePerUnit: '1.20' },
+    ]);
+  });
+
+  it('filters by supplier, joins stock, groups by flower name, sums quantity purchased', async () => {
+    const r = await queryRecordsHandler({
+      entity: 'purchases',
+      join: ['stock'],
+      filters: [{ field: 'supplier', op: 'eq', value: 'Acme Flowers' }],
+      groupBy: ['name'],
+      aggregate: [{ fn: 'sum', field: 'quantityPurchased', as: 'totalQty' }],
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.truncated).toBe(false);
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0].name).toBe('Rose Red');
+    // 50 + 30 = 80 (Other Supplier's Tulip purchase excluded by the supplier filter)
+    expect(Number(r.rows[0].totalQty)).toBe(80);
+  });
+});
+
+// ── Cross-entity join safety: purchases → stock (legacy unlinked purchase) ─────
+//
+// stockPurchases.stockId is UUID, so — unlike orders.customerId / orderLines.stockItemId —
+// it cannot hold a raw 'recXXX' string (Postgres rejects that at insert time). The
+// legacy-id risk here instead lives in `stockAirtableId` (TEXT, holds the Airtable
+// recXXX of a not-yet-linked batch) alongside a NULL `stockId`. This proves the
+// purchases→stock INNER JOIN safely excludes an unlinked legacy purchase row
+// (NULL never matches a uuid join key) instead of throwing, and that the recXXX
+// value is queryable as ordinary column data.
+
+describe('dataQueryPack — cross-entity join safety (purchases → stock, legacy unlinked row)', () => {
+  let realStockId;
+
+  beforeEach(async () => {
+    const [s] = await harness.db
+      .insert(stock)
+      .values({ displayName: 'Peony White', currentQuantity: 10, active: true })
+      .returning({ id: stock.id });
+    realStockId = s.id;
+
+    await harness.db.insert(stockPurchases).values([
+      // Linked purchase — joins successfully
+      { purchaseDate: '2026-06-10', supplier: 'Acme Flowers', stockId: realStockId, quantityPurchased: 20 },
+      // Legacy unlinked purchase — stockId NULL, only a legacy recXXX Airtable id on the batch
+      { purchaseDate: '2026-06-11', supplier: 'Acme Flowers', stockId: null, stockAirtableId: 'recLEGACY456', quantityPurchased: 10 },
+    ]);
+  });
+
+  it('entity:purchases join:stock — unlinked legacy purchase does not abort the query; only the linked row joins', async () => {
+    const r = await queryRecordsHandler({ entity: 'purchases', join: ['stock'] });
+    expect(r.error).toBeUndefined();
+    expect(r).toHaveProperty('rows');
+    expect(r.rows.length).toBe(1);
+  });
+
+  it('entity:purchases (no join) — the recXXX stockAirtableId is queryable as plain data', async () => {
+    const r = await queryRecordsHandler({
+      entity: 'purchases',
+      filters: [{ field: 'stockAirtableId', op: 'eq', value: 'recLEGACY456' }],
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.matchedCount).toBe(1);
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — writeoffs', () => {
+  it('filters writeoffs by reason and excludes soft-deleted rows', async () => {
+    const [s] = await harness.db
+      .insert(stock)
+      .values({ displayName: 'Lily White', currentQuantity: 5, active: true })
+      .returning({ id: stock.id });
+
+    await harness.db.insert(stockLossLog).values([
+      { date: '2026-06-10', stockId: s.id, quantity: '3', reason: 'Wilted' },
+      { date: '2026-06-11', stockId: s.id, quantity: '2', reason: 'Broken' },
+      { date: '2026-06-12', stockId: s.id, quantity: '1', reason: 'Wilted', deletedAt: new Date() },
+    ]);
+
+    const r = await queryRecordsHandler({
+      entity: 'writeoffs',
+      filters: [{ field: 'reason', op: 'eq', value: 'Wilted' }],
+    });
+    expect(r.error).toBeUndefined();
+    // Only the non-deleted Wilted row counts
+    expect(r.matchedCount).toBe(1);
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — deliveries', () => {
+  it('filters deliveries by status and joins order', async () => {
+    const [o] = await harness.db
+      .insert(orders)
+      .values({
+        appOrderId: 'DEL-ORDER-1',
+        customerId: 'cust-1',
+        orderDate: '2026-06-10',
+        requiredBy: '2026-06-11',
+        deliveryType: 'Delivery',
+        status: 'New',
+        paymentStatus: 'Unpaid',
+      })
+      .returning({ id: orders.id });
+
+    await harness.db.insert(deliveries).values({
+      orderId: o.id,
+      deliveryAddress: 'ul. Testowa 1',
+      status: 'Pending',
+    });
+
+    const r = await queryRecordsHandler({
+      entity: 'deliveries',
+      join: ['order'],
+      filters: [{ field: 'status', op: 'eq', value: 'Pending' }],
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.matchedCount).toBe(1);
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — marketing', () => {
+  it('filters marketing spend by channel', async () => {
+    await harness.db.insert(marketingSpend).values([
+      { month: '2026-06-01', channel: 'Instagram', amount: '500.00' },
+      { month: '2026-06-01', channel: 'Facebook', amount: '300.00' },
+    ]);
+
+    const r = await queryRecordsHandler({
+      entity: 'marketing',
+      filters: [{ field: 'channel', op: 'eq', value: 'Instagram' }],
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.matchedCount).toBe(1);
+    expect(r.rows[0].channel).toBe('Instagram');
   });
 });
