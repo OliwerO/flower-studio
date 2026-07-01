@@ -68,7 +68,10 @@ export async function purchaseDetailHandler(input = {}) {
   // Totals/byDate/byFlower are always over the FULL match; only the
   // transactions list itself is capped (mirrors the rest of the tool pack —
   // aggregate is never truncated, the listing may be).
-  const cap = Math.min(Number(limit) || CAP, CAP);
+  // Normalize limit: only a finite positive number narrows the list; 0/negative/
+  // NaN fall back to the hard CAP (a negative slice end would drop rows from the tail).
+  const n = Number(limit);
+  const cap = Number.isFinite(n) && n > 0 ? Math.min(n, CAP) : CAP;
   const transactions = allTransactions.slice(0, cap);
 
   return {

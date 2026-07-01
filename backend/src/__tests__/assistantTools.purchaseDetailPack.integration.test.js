@@ -111,6 +111,14 @@ describe('purchaseDetailPack.purchase_detail', () => {
     expect(r.byFlower.reduce((s, f) => s + f.amount, 0)).toBe(520);
   });
 
+  it('non-positive / invalid limit falls back to the full list (no tail-drop)', async () => {
+    for (const limit of [0, -1, NaN, 'abc']) {
+      const r = await purchaseDetailHandler({ from: '2026-06-01', to: '2026-06-30', limit });
+      expect(r.transactions.length).toBe(4); // all June rows, not 3 (a negative slice end would drop the last)
+      expect(r.transactionCount).toBe(4);
+    }
+  });
+
   it('purchase with no stock link resolves flower to a placeholder', async () => {
     await harness.db.insert(stockPurchases).values([
       { purchaseDate: '2026-06-15', supplier: 'Unknown Supplier', quantityPurchased: 5, pricePerUnit: '1.00' },
