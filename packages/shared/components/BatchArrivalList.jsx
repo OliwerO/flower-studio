@@ -44,12 +44,20 @@ const COLS = [
   { key: 'supplier',   label: 'supplier',   align: 'left'   },
 ];
 
-export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today, traceStockIds, traceNode }) {
+export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today, traceStockIds, traceNode, hideEmpty = false }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [sortKey, setSortKey] = useState('type');
   const [sortDir, setSortDir] = useState('asc');
 
-  const rows = useMemo(() => flatten(groups, reservations, today_), [groups, reservations, today_]);
+  // hideEmpty (the dashboard "In stock" filter): drop merged rows with no
+  // on-hand stems and no premade reservation. The group-level filter keeps a
+  // Variety alive as long as ONE of its sell tiers has stock, but each other
+  // (0-qty, different-sell-price) tier still flattened to its own row here —
+  // that's the pile of "0 available" duplicates the owner saw. (issue A)
+  const rows = useMemo(() => {
+    const all = flatten(groups, reservations, today_);
+    return hideEmpty ? all.filter(r => r.qty > 0 || r.reserved > 0) : all;
+  }, [groups, reservations, today_, hideEmpty]);
 
   const sortedRows = useMemo(() => {
     const arr = [...rows];

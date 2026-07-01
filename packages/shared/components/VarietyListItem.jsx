@@ -259,7 +259,9 @@ export default function VarietyListItem({
               const kind = row.kind;
               const isDemand = kind === 'demand';
               const kindLabel = isDemand ? (t.demandKind ?? 'Demand') : (t.batchKind ?? 'Batch');
-              const dateLabel = isDemand && row.date ? formatDateDMY(row.date) : null;
+              // Show the date for both Demand (requirement date) and Batch tiers
+              // (newest receive / arrival date — B1) so a "Batch" row isn't anonymous.
+              const dateLabel = row.date ? formatDateDMY(row.date) : null;
 
               const rowClass = isDemand
                 ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50'
@@ -382,7 +384,7 @@ function mergeExpansionRows(rows) {
         kind:       'batch',
         key:        k,
         stockIds:   [],
-        date:       null, // not displayed for merged batches
+        date:       null, // newest receive date of the tier — filled below (B1)
         absQty:     0,
         sell,
       };
@@ -390,6 +392,10 @@ function mergeExpansionRows(rows) {
     }
     m.stockIds.push(r.id);
     m.absQty += qty;
+    // B1: owner wants to know which batch a tier is. A tier can span several
+    // receive dates (merged by sell price); show the NEWEST one — same "arrived"
+    // convention as the dashboard flat table (BatchArrivalList).
+    if (r.date && (!m.date || r.date > m.date)) m.date = r.date;
   }
   // Sort underlying stockIds by date asc (NULL last) so [0] = FEFO oldest.
   for (const m of batches.values()) {

@@ -151,11 +151,14 @@ describe('VarietyListItem expansion', () => {
     expect(screen.queryAllByTestId('stock-item-row')).toHaveLength(0);
   });
 
-  it('Demand rows surface their requirement date; Batch rows hide arrival date after merge', () => {
-    // 2026-05-12 is the Demand requirement date — should render.
+  it('B1: Demand rows show requirement date; merged Batch tier shows its NEWEST receive date', () => {
+    // 2026-05-12 = Demand requirement date. b1 (05-10) + b2 (05-11) merge into
+    // one Batch tier that now surfaces the newest receive (05-11), so a "Batch"
+    // row is no longer anonymous (owner feedback B1).
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} />);
-    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument();
+    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument(); // demand date
+    expect(screen.getByText(/11\.05\.2026/)).toBeInTheDocument(); // batch tier newest receive
   });
 
   it('Demand Entry rows are visually distinct (data-row-kind="demand")', () => {

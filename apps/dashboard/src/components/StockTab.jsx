@@ -874,6 +874,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                   groups={filteredGroups}
                   reservations={reservationsMap}
                   t={t}
+                  // "In stock" filter (A): also drop 0-qty tiers within a
+                  // surviving Variety, not just whole empty Varieties.
+                  hideEmpty={hideZero && view === 'all'}
                   onRowClick={(stockIds) => {
                     const joined = stockIds.join(',');
                     setTraceStockId(prev => prev === joined ? null : joined);

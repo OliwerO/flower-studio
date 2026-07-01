@@ -106,6 +106,39 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     expect(screen.getByText('·mixed')).toBeInTheDocument();
   });
 
+  it('A: hideEmpty drops 0-qty tiers within a surviving Variety, but shows them by default', () => {
+    // Hydrangea Pink with three sell tiers, only the 60zł tier has stock — the
+    // 65zł/70zł tiers are the "0 available" duplicates the owner saw.
+    const mixed = () => [{
+      type_name: 'Hydrangea', colour: 'Pink', size_cm: 60, cultivar: null,
+      rows: [
+        { id: 'a', current_quantity: 5, current_sell_price: 60, current_cost_price: 22, date: '2026-06-30' },
+        { id: 'b', current_quantity: 0, current_sell_price: 65, current_cost_price: 0,  date: '2026-06-30' },
+        { id: 'c', current_quantity: 0, current_sell_price: 70, current_cost_price: 0,  date: '2026-06-30' },
+      ],
+    }];
+    // Default: all three tiers render.
+    const { unmount } = render(<BatchArrivalList groups={mixed()} t={t} />);
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(3);
+    unmount();
+    // hideEmpty: only the in-stock tier survives.
+    render(<BatchArrivalList groups={mixed()} t={t} hideEmpty />);
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(1);
+  });
+
+  it('A: hideEmpty keeps a 0-qty tier that still holds premade reservations', () => {
+    const groups = [{
+      type_name: 'Hydrangea', colour: 'Pink', size_cm: 60, cultivar: null,
+      rows: [
+        { id: 'a', current_quantity: 5, current_sell_price: 60, date: '2026-06-30' },
+        { id: 'b', current_quantity: 0, current_sell_price: 65, date: '2026-06-30' },
+      ],
+    }];
+    render(<BatchArrivalList groups={groups} reservations={new Map([['b', 4]])} t={t} hideEmpty />);
+    // tier a (in stock) + tier b (0 on hand but 4 reserved) both survive.
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(2);
+  });
+
   it('premade shown as a SUBSET: leads with free (qty − reserved), never additive "+" (CR-17)', () => {
     const groups = [{
       type_name: 'Hydrangea', colour: 'Blue', size_cm: 60, cultivar: null,
