@@ -322,12 +322,14 @@ export const TOOLS = [
     name: 'query_records',
     description:
       'Flexible cross-entity lookup the fixed tools cannot express: filter, join, group, and aggregate ' +
-      'orders, customers, order_lines, and stock by any allow-listed field. ' +
+      'orders, customers, order_lines, stock, purchases, writeoffs, deliveries, and marketing by any ' +
+      'allow-listed field. ' +
       'PREFER the dedicated tools (query_orders, financial_summary, stock_status, customer_lookup, etc.) ' +
       'for their intended cases — use query_records ONLY when no dedicated tool fits the question. ' +
       'You compose a structured declarative spec; you NEVER write SQL. ' +
       'Cancelled orders are excluded unless includeCancelled=true. ' +
-      'Allowed entities: orders, customers, order_lines, stock. ' +
+      'Allowed entities: orders, customers, order_lines, stock, purchases (supplier flower purchases), ' +
+      'writeoffs (waste log), deliveries (driver assignments/status), marketing (ad spend by month/channel). ' +
       'Allowed ops: eq, ne, lt, lte, gt, gte, in, like, isNull, isNotNull. ' +
       'Allowed aggregate fns: count, sum, avg, min, max.',
     input_schema: {
@@ -335,7 +337,7 @@ export const TOOLS = [
       properties: {
         entity: {
           type: 'string',
-          enum: ['orders', 'customers', 'order_lines', 'stock'],
+          enum: ['orders', 'customers', 'order_lines', 'stock', 'purchases', 'writeoffs', 'deliveries', 'marketing'],
           description: 'Primary table to query.',
         },
         filters: {
@@ -354,7 +356,7 @@ export const TOOLS = [
         join: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders. order_lines joins: stock.',
+          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders. order_lines joins: stock. purchases joins: stock. writeoffs joins: stock. deliveries joins: order.',
         },
         groupBy: {
           type: 'array',
