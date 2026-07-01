@@ -776,6 +776,12 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
 
         const accepted = Number(evalLine.quantityAccepted) || 0;
         const writeOff = Number(evalLine.writeOffQty) || 0;
+        // Found = what was actually bought/paid for at market (Owner-entered
+        // during Reviewing). This is the money-spend basis — the supplier
+        // bills for it regardless of later write-off. Falls back to
+        // accepted+writeOff if Quantity Found was never entered (legacy PO
+        // rows created before the Reviewing step existed).
+        const found = Number(line['Quantity Found']) || (accepted + writeOff);
         const altAcceptedPre = Number(evalLine.altQuantityAccepted) || 0;
         const altWriteOffPre = Number(evalLine.altWriteOffQty) || 0;
 
@@ -899,7 +905,8 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               supplier,
               stockId:           batchItem?._pgId || null,
               stockAirtableId:   typeof finalItemId === 'string' && finalItemId.startsWith('rec') ? finalItemId : null,
-              quantityPurchased: accepted,
+              quantityPurchased: found,
+              quantityAccepted:  accepted,
               pricePerUnit:      costPrice,
               notes:             primaryMarker,
             });
@@ -961,7 +968,8 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
               supplier:          altSupplier,
               stockId:           altBatchItem?._pgId || null,
               stockAirtableId:   typeof altFinalId === 'string' && altFinalId.startsWith('rec') ? altFinalId : null,
-              quantityPurchased: altAccepted,
+              quantityPurchased: altQtyFound,
+              quantityAccepted:  altAccepted,
               pricePerUnit:      altCostPerStem,
               notes:             `${altMarker} - substitute for "${line['Flower Name'] || ''}"`,
             });
