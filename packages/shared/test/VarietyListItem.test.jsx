@@ -112,6 +112,18 @@ describe('VarietyListItem history button (S2)', () => {
     expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
     expect(onToggle).not.toHaveBeenCalled();
   });
+
+  it('D4: showHeaderTrace={false} hides the header trace icon (florist) but keeps trace in the expand body', () => {
+    const onVarietyTrace = vi.fn();
+    const { rerender } = render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} onVarietyTrace={onVarietyTrace} showHeaderTrace={false} />);
+    // Header icon gone…
+    expect(screen.queryByTestId('variety-history-btn')).toBeNull();
+    // …but the expand-body Trace button still renders when expanded.
+    rerender(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onVarietyTrace={onVarietyTrace} showHeaderTrace={false} />);
+    expect(screen.getByTestId('variety-trace-btn')).toBeInTheDocument();
+  });
 });
 
 describe('VarietyListItem expansion', () => {

@@ -46,6 +46,7 @@ export default function VarietyListItem({
   onAdjust, // (stockId, delta) — per-Batch quick-adjust; only rendered on Batch rows
   premadesByStockId,
   isOwner = false, // CR-36: owner-only cost/sell/markup/supplier on expand
+  showHeaderTrace = true, // D4: florist hides the always-on header trace icon; trace stays in the expand body
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
@@ -130,17 +131,24 @@ export default function VarietyListItem({
           {/* Identity row — shared hierarchy via VarietyIdentity (#311). */}
           <VarietyIdentity variety={variety} showType={!hideType} />
 
-          {/* Narrative bucket line. Zero buckets render sr-only so testids stay queryable. */}
-          <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-            <BucketChip testid="bucket-onHand"   value={onHand}              label={t.onHand}    tone="stock" />
-            <BucketChip testid="bucket-planned"  value={planned}             label={t.planned}   tone="orders" />
-            <BucketChip
-              testid="bucket-reserved"
-              value={reservedForPremades}
-              label={t.reserved}
-              tone="reserved"
-              onClick={reservedInteractive ? (e) => { e.stopPropagation(); setPremadeOpen(o => !o); } : null}
-            />
+          {/* Narrative bucket line. Fixed 3-column grid (D3) so On-hand /
+              Planned / In-premade line up vertically down the list. Each bucket
+              lives in its OWN grid cell (wrapping span) — a zero bucket renders
+              sr-only (absolute, invisible) but its wrapper still occupies the
+              cell, so In-premade stays in column 3 whether or not Planned shows.
+              The data-testid contract stays queryable. */}
+          <div className="mt-1 grid grid-cols-[4.75rem_4.75rem_auto] items-center gap-x-1 text-xs">
+            <span><BucketChip testid="bucket-onHand"  value={onHand}  label={t.onHand}  tone="stock" /></span>
+            <span><BucketChip testid="bucket-planned" value={planned} label={t.planned} tone="orders" /></span>
+            <span>
+              <BucketChip
+                testid="bucket-reserved"
+                value={reservedForPremades}
+                label={t.reserved}
+                tone="reserved"
+                onClick={reservedInteractive ? (e) => { e.stopPropagation(); setPremadeOpen(o => !o); } : null}
+              />
+            </span>
           </div>
 
           {/* CR-03: incoming PO sub-line — only when arrivals exist. */}
@@ -173,8 +181,9 @@ export default function VarietyListItem({
           <span className="text-[10px] text-gray-400 mt-0.5">{statusLabel}</span>
         </div>
 
-        {/* Inline history (trace) button — always visible when hasTrace */}
-        {hasTrace && (
+        {/* Inline history (trace) button — visible when hasTrace and the host
+            opts in (D4: florist hides it; trace stays in the expand body). */}
+        {hasTrace && showHeaderTrace && (
           <button
             type="button"
             data-testid="variety-history-btn"

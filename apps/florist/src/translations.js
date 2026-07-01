@@ -902,6 +902,10 @@ const en = {
   stockByType:           'By type',
   stockLongestFirst:     'Longest in stock ↓',
   stockNewestFirst:      'Newest first ↓',
+  stockSortLabel:        'Sort',
+  stockSortName:         'A–Z',
+  stockSortAge:          'Longest in stock',
+  stockSortStock:        'Stock level',
 };
 
 const ru = {
@@ -1803,6 +1807,10 @@ const ru = {
   stockByType:           'По типу',
   stockLongestFirst:     'Дольше на складе ↓',
   stockNewestFirst:      'Сначала новые ↓',
+  stockSortLabel:        'Сортировка',
+  stockSortName:         'А–Я',
+  stockSortAge:          'Дольше на складе',
+  stockSortStock:        'По остатку',
 };
 
 // ── Proxy-based dynamic translation ──
