@@ -15,6 +15,28 @@ const t = {
   traceFirstDemand: 'First demand',
 };
 
+describe('VarietyTracePanel — B2 opening balance', () => {
+  const evs = [
+    { type: 'order', date: '2026-06-03', quantity: -5, orderId: '1', customer: 'A' },
+    { type: 'writeoff', date: '2026-06-03', quantity: -1, reason: 'Wilted' },
+    { type: 'purchase', date: '2026-06-05', quantity: 30, supplier: 'X' },
+  ];
+  it('renders an opening-balance row when openingBalance > 0', () => {
+    render(<VarietyTracePanel events={evs} openingBalance={6} t={{ ...t, traceOpening: 'Opening' }} />);
+    const row = screen.getByTestId('opening-row');
+    expect(row).toHaveTextContent('Opening');
+    expect(row).toHaveTextContent('+6 stems');
+  });
+  it('omits the opening-balance row when openingBalance is 0', () => {
+    render(<VarietyTracePanel events={evs} openingBalance={0} t={t} />);
+    expect(screen.queryByTestId('opening-row')).not.toBeInTheDocument();
+  });
+  it('B3: the unaccounted footer includes an explanatory hint', () => {
+    render(<VarietyTracePanel events={evs} drift={6} t={{ ...t, unaccountedHint: 'from before the switch' }} />);
+    expect(screen.getByTestId('unaccounted-footer')).toHaveTextContent('from before the switch');
+  });
+});
+
 describe('VarietyTracePanel', () => {
   it('renders all four event kinds', () => {
     const events = [

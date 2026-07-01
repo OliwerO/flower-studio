@@ -893,6 +893,9 @@ const en = {
   batchTraceTitle:       'Batch history',
   varietyTraceTitle:     'Variety history',
   unaccountedStems:      'Unaccounted stems',
+  traceOpening:          'Opening',
+  traceOpeningHint:      'stock before these records',
+  unaccountedHint:       'Stems that left with no matching record — usually history from before the switch to the new stock system, or an unlogged loss.',
   writeOffPickerTitle:   'Write off stems',
   writeOffPickerQty:     'Quantity',
   writeOffBatch:         'Batch',
@@ -902,6 +905,10 @@ const en = {
   stockByType:           'By type',
   stockLongestFirst:     'Longest in stock ↓',
   stockNewestFirst:      'Newest first ↓',
+  stockSortLabel:        'Sort',
+  stockSortName:         'A–Z',
+  stockSortAge:          'Longest in stock',
+  stockSortStock:        'Stock level',
 };
 
 const ru = {
@@ -1794,6 +1801,9 @@ const ru = {
   batchTraceTitle:       'История партии',
   varietyTraceTitle:     'История сорта',
   unaccountedStems:      'Неучтённые стебли',
+  traceOpening:          'Начальный остаток',
+  traceOpeningHint:      'остаток до этих записей',
+  unaccountedHint:       'Стебли, ушедшие без записи — обычно история до перехода на новую систему склада или неучтённая потеря.',
   writeOffPickerTitle:   'Списание стеблей',
   writeOffPickerQty:     'Количество',
   writeOffBatch:         'Партия',
@@ -1803,6 +1813,10 @@ const ru = {
   stockByType:           'По типу',
   stockLongestFirst:     'Дольше на складе ↓',
   stockNewestFirst:      'Сначала новые ↓',
+  stockSortLabel:        'Сортировка',
+  stockSortName:         'А–Я',
+  stockSortAge:          'Дольше на складе',
+  stockSortStock:        'По остатку',
 };
 
 // ── Proxy-based dynamic translation ──

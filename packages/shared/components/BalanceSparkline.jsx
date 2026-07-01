@@ -24,8 +24,12 @@ import { formatDateDMY } from '../utils/formatDate.js';
  *                  order-type marker is clicked.
  *   asOf        — optional ISO date string for "now"; defaults to the last
  *                 dated event's date.
+ *   opening     — stems that existed BEFORE the first recorded event (B2). The
+ *                 running balance starts here instead of 0, so pre-record /
+ *                 pre-cutover stock keeps the line from diving below zero (which
+ *                 read as "wrote off flowers we never had").
  */
-export default function BalanceSparkline({ events = [], t = {}, onOrderClick, asOf }) {
+export default function BalanceSparkline({ events = [], t = {}, onOrderClick, asOf, opening = 0 }) {
   // --- 1. Prepare dated events -------------------------------------------
   const dated = (events || [])
     .filter((e) => e.date)
@@ -34,7 +38,9 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   if (dated.length < 1) return null;
 
   // --- 2. Running balance ---------------------------------------------------
-  let running = 0;
+  // Start from the opening balance (pre-record stock), not 0.
+  const openingBal = Number(opening) || 0;
+  let running = openingBal;
   const points = dated.map((e) => {
     const qty = e.qty ?? e.quantity ?? 0;
     running += qty;
@@ -74,7 +80,7 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   }
 
   // --- 5. Scale: balance → y ------------------------------------------------
-  const allBals = [0, ...points.map((p) => p.balance)];
+  const allBals = [0, openingBal, ...points.map((p) => p.balance)];
   const yMin = Math.min(...allBals);
   const yMax = Math.max(...allBals);
   const yRange = Math.max(1, yMax - yMin);
@@ -89,8 +95,8 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   // --- 6. Staircase path ----------------------------------------------------
   const pathParts = [];
   const x0 = xOf(firstDate);
-  const y0 = yOf(0);
-  pathParts.push(`M ${x0.toFixed(1)} ${y0.toFixed(1)}`);           // start at zero
+  const y0 = yOf(openingBal);
+  pathParts.push(`M ${x0.toFixed(1)} ${y0.toFixed(1)}`);           // start at opening balance
   pathParts.push(`L ${x0.toFixed(1)} ${yOf(points[0].balance).toFixed(1)}`); // jump after first event
 
   for (let i = 1; i < points.length; i++) {
@@ -232,6 +238,17 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
           strokeLinecap="square"
           strokeLinejoin="miter"
         />
+
+        {/* Opening balance (B2): pre-record stock the line starts from, so a
+            write-off never sits on a below-zero balance. */}
+        {openingBal > 0 && (
+          <g data-testid="opening-marker">
+            <circle cx={x0.toFixed(1)} cy={yOf(openingBal).toFixed(1)} r="3" fill="#6366f1" stroke="#ffffff" strokeWidth="1" />
+            <text x={(x0 + 4).toFixed(1)} y={(yOf(openingBal) - 5).toFixed(1)} textAnchor="start" fontSize="8" fontWeight="600" fill="#6366f1">
+              {t.traceOpening ?? 'opening'} {openingBal}
+            </text>
+          </g>
+        )}
 
         {/* Event markers + on-chart balance / delta labels */}
         {points.map((p, i) => {

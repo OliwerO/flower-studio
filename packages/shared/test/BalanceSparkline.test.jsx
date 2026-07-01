@@ -35,6 +35,29 @@ function parsePath(d) {
   return coords;
 }
 
+describe('BalanceSparkline — B2 opening balance', () => {
+  // Orders before the first purchase → without opening the balance dives to −24.
+  const negFirst = [
+    { type: 'order',    date: '2026-06-03', quantity: -5,  orderId: 'o1', customer: 'A' },
+    { type: 'writeoff', date: '2026-06-03', quantity: -1,  reason: 'Wilted' },
+    { type: 'order',    date: '2026-06-04', quantity: -7,  orderId: 'o2', customer: 'B' },
+    { type: 'purchase', date: '2026-06-05', quantity: 30,  supplier: 'X' },
+  ];
+  it('renders the opening marker + label when opening > 0', () => {
+    render(<BalanceSparkline events={negFirst} t={{ ...t, traceOpening: 'opening' }} opening={13} />);
+    expect(screen.getByTestId('opening-marker')).toBeInTheDocument();
+  });
+  it('no opening marker when opening is 0', () => {
+    render(<BalanceSparkline events={negFirst} t={t} opening={0} />);
+    expect(screen.queryByTestId('opening-marker')).not.toBeInTheDocument();
+  });
+  it('with opening, the running balance never falls below 0 (no negative y-floor label)', () => {
+    // opening=13 lifts the −13 trough to exactly 0 → min is 0, so no red y-label-min.
+    render(<BalanceSparkline events={negFirst} t={t} opening={13} />);
+    expect(screen.queryByTestId('y-label-min')).not.toBeInTheDocument();
+  });
+});
+
 describe('BalanceSparkline — staircase shape', () => {
   it('returns null for no events', () => {
     const { container } = render(<BalanceSparkline events={[]} t={t} />);

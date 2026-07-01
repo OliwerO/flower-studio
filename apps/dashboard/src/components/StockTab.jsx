@@ -75,6 +75,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [varietyTrail, setVarietyTrail]                 = useState([]);
   const [varietyUnaccounted, setVarietyUnaccounted]     = useState(0);
   const [varietyDrift, setVarietyDrift]                 = useState(0);
+  const [varietyOpening, setVarietyOpening]             = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading]   = useState(false);
   const [writeOffVariety, setWriteOffVariety] = useState(null); // write-off picker (modal)
   // Per-row "Reconcile" button on premade chips. Gated on a backend setting
@@ -874,6 +875,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                   groups={filteredGroups}
                   reservations={reservationsMap}
                   t={t}
+                  // "In stock" filter (A): also drop 0-qty tiers within a
+                  // surviving Variety, not just whole empty Varieties.
+                  hideEmpty={hideZero && view === 'all'}
                   onRowClick={(stockIds) => {
                     const joined = stockIds.join(',');
                     setTraceStockId(prev => prev === joined ? null : joined);
@@ -956,6 +960,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                               setVarietyTrail(res.data.events || []);
                               setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
                               setVarietyDrift(res.data.drift ?? 0);
+                              setVarietyOpening(res.data.openingBalance ?? 0);
                             } catch {
                               setVarietyTrail([]);
                             } finally {
@@ -984,7 +989,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                             {varietyTraceLoading ? (
                               <p className="text-xs text-ios-tertiary">{t.loading}</p>
                             ) : (
-                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} t={t} onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })} />
+                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })} />
                             )}
                           </div>
                         )}

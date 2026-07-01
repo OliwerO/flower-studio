@@ -24,7 +24,7 @@ import BalanceSparkline from './BalanceSparkline.jsx';
  * Absorption events are deferred (audit_log has no transaction_id) — they show
  * up inside `unaccountedStems` rather than as paired rows. See the T5 plan.
  */
-export default function VarietyTracePanel({ events = [], unaccountedStems = 0, drift = 0, t, onOrderClick }) {
+export default function VarietyTracePanel({ events = [], unaccountedStems = 0, drift = 0, openingBalance = 0, t, onOrderClick }) {
   const hasEvents = events && events.length > 0;
 
   const sorted = hasEvents ? [...events].sort(byDateAsc) : [];
@@ -49,9 +49,29 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
           </button>
         </div>
       )}
-      {showGraph && <BalanceSparkline events={sorted} t={t} onOrderClick={onOrderClick} />}
+      {showGraph && <BalanceSparkline events={sorted} t={t} onOrderClick={onOrderClick} opening={openingBalance} />}
       {hasEvents ? (
         <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
+          {/* Opening balance (B2): stems that existed before these records —
+              so the first order/write-off isn't sitting on an empty shelf. */}
+          {openingBalance > 0 && (
+            <li
+              data-testid="opening-row"
+              className="flex items-center justify-between px-3 py-2 bg-indigo-50/50"
+            >
+              <span className="flex items-center gap-2 min-w-0">
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 bg-indigo-100 text-indigo-700">
+                  {t.traceOpening ?? 'Opening'}
+                </span>
+                <span className="text-xs text-gray-500 truncate">
+                  {t.traceOpeningHint ?? 'stock before these records'}
+                </span>
+              </span>
+              <span className="text-xs font-semibold tabular-nums text-indigo-700">
+                +{openingBalance} {t.stems}
+              </span>
+            </li>
+          )}
           {sorted.map((entry, i) => (
             <TraceRow key={i} entry={entry} t={t} onOrderClick={onOrderClick} />
           ))}
@@ -63,12 +83,18 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
       {drift > 0 && (
         <div
           data-testid="unaccounted-footer"
-          className="mt-2 flex items-center justify-between px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs"
+          className="mt-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs"
         >
-          <span className="font-medium text-amber-800">{t.unaccountedStems ?? 'Unaccounted'}</span>
-          <span className="font-semibold tabular-nums text-amber-800">
-            +{drift} {t.stems}
-          </span>
+          <div className="flex items-center justify-between">
+            <span className="font-medium text-amber-800">{t.unaccountedStems ?? 'Not explained by records'}</span>
+            <span className="font-semibold tabular-nums text-amber-800">
+              +{drift} {t.stems}
+            </span>
+          </div>
+          {/* B3: say what the number means so it isn't a mystery. */}
+          <p className="mt-0.5 text-[11px] leading-snug text-amber-700/90">
+            {t.unaccountedHint ?? 'Stems that left with no matching record — usually history from before the switch to the new stock system, or an unlogged loss.'}
+          </p>
         </div>
       )}
     </div>

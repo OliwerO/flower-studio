@@ -1401,6 +1401,7 @@ export async function getUsageByVarietyKey(key) {
       reservedStems:    0,
       onHand:           0,
       drift:            0,
+      openingBalance:   0,
     };
   }
 
@@ -1431,6 +1432,21 @@ export async function getUsageByVarietyKey(key) {
   // Compute unaccountedStems: signed sum across all events (kept for compat).
   const unaccountedStems = allEvents.reduce((sum, e) => sum + (Number(e.quantity) || 0), 0);
 
+  // Opening balance (B2): the stems that must have existed BEFORE the earliest
+  // recorded event for the running balance never to go negative. Pre-cutover
+  // stock (the migration created one dated Batch with no purchase-history event)
+  // and other un-recorded history land here — otherwise the trace dives below
+  // zero and a write-off reads as "we wrote off flowers we never had".
+  // Computed over dated events in chronological order (undated premade
+  // reservations don't gate the opening). = max(0, −minRunningBalance).
+  let _run = 0, _minRun = 0;
+  for (const e of allEvents) {
+    if (!e.date) continue;
+    _run += Number(e.quantity) || 0;
+    if (_run < _minRun) _minRun = _run;
+  }
+  const openingBalance = Math.max(0, -_minRun);
+
   // Compute TRUE drift:
   //   reservedStems = stems locked in premade reservations (premade events are negative
   //                   in the ledger but do NOT reduce physical stock under the Y-model).
@@ -1459,6 +1475,7 @@ export async function getUsageByVarietyKey(key) {
     reservedStems,
     onHand,
     drift,
+    openingBalance,
   };
 }
 

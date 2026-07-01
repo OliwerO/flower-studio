@@ -235,7 +235,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                           <div className="ml-6 mt-1 mb-2">
                             {trace.loading && <p className="text-indigo-400 italic text-xs">{t.loading ?? 'Loading…'}</p>}
                             {!trace.loading && (
-                              <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} drift={trace.drift} t={t} onOrderClick={onOrderClick} />
+                              <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} drift={trace.drift} openingBalance={trace.openingBalance} t={t} onOrderClick={onOrderClick} />
                             )}
                           </div>
                         )}
@@ -273,7 +273,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                         <div className="ml-6 mt-1 mb-2">
                           {trace.loading && <p className="text-indigo-400 italic text-xs">{t.loading ?? 'Loading…'}</p>}
                           {!trace.loading && (
-                            <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} t={t} onOrderClick={onOrderClick} />
+                            <VarietyTracePanel events={trace.events} unaccountedStems={trace.unaccountedStems} openingBalance={trace.openingBalance} t={t} onOrderClick={onOrderClick} />
                           )}
                         </div>
                       )}

@@ -112,6 +112,18 @@ describe('VarietyListItem history button (S2)', () => {
     expect(onVarietyTrace).toHaveBeenCalledWith('Rose|Pink|60|');
     expect(onToggle).not.toHaveBeenCalled();
   });
+
+  it('D4: showHeaderTrace={false} hides the header trace icon (florist) but keeps trace in the expand body', () => {
+    const onVarietyTrace = vi.fn();
+    const { rerender } = render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} onVarietyTrace={onVarietyTrace} showHeaderTrace={false} />);
+    // Header icon gone…
+    expect(screen.queryByTestId('variety-history-btn')).toBeNull();
+    // …but the expand-body Trace button still renders when expanded.
+    rerender(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} onVarietyTrace={onVarietyTrace} showHeaderTrace={false} />);
+    expect(screen.getByTestId('variety-trace-btn')).toBeInTheDocument();
+  });
 });
 
 describe('VarietyListItem expansion', () => {
@@ -139,11 +151,14 @@ describe('VarietyListItem expansion', () => {
     expect(screen.queryAllByTestId('stock-item-row')).toHaveLength(0);
   });
 
-  it('Demand rows surface their requirement date; Batch rows hide arrival date after merge', () => {
-    // 2026-05-12 is the Demand requirement date — should render.
+  it('B1: Demand rows show requirement date; merged Batch tier shows its NEWEST receive date', () => {
+    // 2026-05-12 = Demand requirement date. b1 (05-10) + b2 (05-11) merge into
+    // one Batch tier that now surfaces the newest receive (05-11), so a "Batch"
+    // row is no longer anonymous (owner feedback B1).
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} />);
-    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument();
+    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument(); // demand date
+    expect(screen.getByText(/11\.05\.2026/)).toBeInTheDocument(); // batch tier newest receive
   });
 
   it('Demand Entry rows are visually distinct (data-row-kind="demand")', () => {

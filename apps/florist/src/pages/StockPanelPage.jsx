@@ -14,6 +14,7 @@ import {
   LOSS_REASONS,
   reasonLabel,
   varietyGroupMatchesView,
+  getVarietyTotals,
 } from '@flower-studio/shared';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
@@ -79,6 +80,7 @@ export default function StockPanelPage() {
   const [varietyTrail, setVarietyTrail]               = useState([]);
   const [varietyUnaccounted, setVarietyUnaccounted]   = useState(0);
   const [varietyDrift, setVarietyDrift]               = useState(0);
+  const [varietyOpening, setVarietyOpening]           = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading] = useState(false);
   // Write-off modal state
   const [writeOffVariety, setWriteOffVariety] = useState(null);
@@ -100,8 +102,16 @@ export default function StockPanelPage() {
     return saved === null ? true : saved === 'true';
   });
   useEffect(() => { localStorage.setItem('blossom-florist-stock-flat', String(flatView)); }, [flatView]);
-  // Flat sort by time-in-stock: longest-sitting (oldest batch) first by default.
-  const [flatOldestFirst, setFlatOldestFirst] = useState(true);
+  // Flat-list sort. Owner-confirmed default = alphabetical (2026-07-01). The
+  // earlier time-in-stock default was degenerate right after the cutover (every
+  // migrated batch shares the same date, so age ties and the toggle "did
+  // nothing"). Cycle: name → age (longest in stock) → stock (lowest net first).
+  const FLAT_SORTS = ['name', 'age', 'stock'];
+  const [flatSort, setFlatSort] = useState(() => {
+    const saved = localStorage.getItem('blossom-florist-stock-sort');
+    return FLAT_SORTS.includes(saved) ? saved : 'name';
+  });
+  useEffect(() => { localStorage.setItem('blossom-florist-stock-sort', flatSort); }, [flatSort]);
 
   const fetchStock = useCallback(async () => {
     setLoading(true);
@@ -323,12 +333,10 @@ export default function StockPanelPage() {
     return list;
   }, [groups, hideZero, view, yEnabled, reservationsMap, debouncedSearch]);
 
-  // Flat (ungrouped) list sorted by time-in-stock. A Variety's age = its OLDEST
-  // dated batch (longest-sitting stems). Varieties with no dated batch (unknown
-  // age) always sink to the bottom, regardless of direction.
+  // A Variety's age = its OLDEST dated on-hand batch (longest-sitting stems).
+  // Only positive-qty batches count — Demand Entries (negative qty) are future
+  // needs, not sitting stems. Varieties with no dated batch sink to the bottom.
   function oldestBatchDate(group) {
-    // Only on-hand batches (positive qty) count toward "how long in stock" —
-    // Demand Entries (negative qty) are future needs, not sitting stems.
     const dates = (group.rows || [])
       .filter(r => (Number(r.current_quantity) || 0) > 0)
       .map(r => r.date)
@@ -336,16 +344,29 @@ export default function StockPanelPage() {
       .sort();
     return dates[0] || null;
   }
+  // Alphabetical label for the flat list = Type + Colour + Size + Cultivar,
+  // matching how the row reads ("Hydrangea Pink", "Matthiola Pink").
+  function varietyLabel(group) {
+    return [group.type_name, group.colour, group.size_cm != null ? `${group.size_cm}cm` : '', group.cultivar]
+      .filter(Boolean).join(' ');
+  }
+  // Flat (ungrouped) list sorted per `flatSort`.
   const flatGroups = useMemo(() => {
-    const withDate = [];
-    const undated = [];
-    for (const g of filteredGroups) (oldestBatchDate(g) ? withDate : undated).push(g);
-    withDate.sort((a, b) => {
-      const cmp = String(oldestBatchDate(a)).localeCompare(String(oldestBatchDate(b)));
-      return flatOldestFirst ? cmp : -cmp; // oldest-first (longest in stock) by default
-    });
-    return [...withDate, ...undated];
-  }, [filteredGroups, flatOldestFirst]);
+    const arr = [...filteredGroups];
+    if (flatSort === 'age') {
+      const withDate = [], undated = [];
+      for (const g of arr) (oldestBatchDate(g) ? withDate : undated).push(g);
+      withDate.sort((a, b) => String(oldestBatchDate(a)).localeCompare(String(oldestBatchDate(b))));
+      return [...withDate, ...undated]; // longest in stock (oldest) first
+    }
+    if (flatSort === 'stock') {
+      // Lowest net first — the most urgent (shortfalls) float to the top.
+      return arr.sort((a, b) =>
+        getVarietyTotals(a.rows, reservationsMap).net - getVarietyTotals(b.rows, reservationsMap).net);
+    }
+    // Default: alphabetical.
+    return arr.sort((a, b) => varietyLabel(a).localeCompare(varietyLabel(b)));
+  }, [filteredGroups, flatSort, reservationsMap]);
 
   // Filtered + sorted stock (legacy path)
   const filteredStock = useMemo(() => {
@@ -436,6 +457,9 @@ export default function StockPanelPage() {
           pendingPO={pendingPO}
           hideType={false}
           isOwner={role === 'owner'}
+          // Florist: no always-on trace icon on the row (D4). Trace stays
+          // reachable via tap-to-expand → Trace. Dashboard keeps the header icon.
+          showHeaderTrace={false}
           expanded={expandedKey === group.key}
           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
           onRowClick={(stockId) => setTraceStockId(stockId)}
@@ -450,6 +474,7 @@ export default function StockPanelPage() {
               setVarietyTrail(res.data.events || []);
               setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
               setVarietyDrift(res.data.drift ?? 0);
+              setVarietyOpening(res.data.openingBalance ?? 0);
             } catch {
               setVarietyTrail([]);
             } finally {
@@ -611,13 +636,21 @@ export default function StockPanelPage() {
                   }`}
                 >{t.stockByType || 'By type'}</button>
               </div>
-              {/* Age sort — flat layout only */}
+              {/* Sort — flat layout only. One compact pill that cycles
+                  A–Z → longest in stock → stock level (kept minimal so the
+                  control row doesn't overfill on a phone). */}
               {flatView && (
                 <button
-                  onClick={() => setFlatOldestFirst(v => !v)}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale"
+                  onClick={() => setFlatSort(s => FLAT_SORTS[(FLAT_SORTS.indexOf(s) + 1) % FLAT_SORTS.length])}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-1"
+                  aria-label={t.stockSortLabel || 'Sort'}
                 >
-                  {flatOldestFirst ? (t.stockLongestFirst || 'Longest in stock ↓') : (t.stockNewestFirst || 'Newest first ↓')}
+                  <span className="text-ios-tertiary">⇅</span>
+                  {flatSort === 'name'
+                    ? (t.stockSortName || 'A–Z')
+                    : flatSort === 'age'
+                      ? (t.stockSortAge || 'Longest in stock')
+                      : (t.stockSortStock || 'Stock level')}
                 </button>
               )}
             </>
@@ -816,7 +849,7 @@ export default function StockPanelPage() {
               {varietyTraceLoading ? (
                 <p className="text-xs text-ios-tertiary">{t.loading}</p>
               ) : (
-                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} t={t} onOrderClick={(recordId) => navigate('/orders/' + recordId)} />
+                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => navigate('/orders/' + recordId)} />
               )}
             </div>
             <div className="px-4 pb-4 pt-1 border-t border-gray-50">
