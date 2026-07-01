@@ -62,6 +62,7 @@ export {
   buildOrderQueryParams,
   orderMatchesClientFilter,
   activeOrderFilterCount,
+  buildCrossTabNavFilter,
 } from './utils/orderFilters.js';
 export {
   EMPTY_STOCK_FILTER,

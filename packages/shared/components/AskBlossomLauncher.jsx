@@ -13,6 +13,7 @@ export default function AskBlossomLauncher({
   reporterRole,
   reporterName,
   appArea,
+  onOpenOrders,
 }) {
   const [open, setOpen] = useState(false);
   const [maximized, setMaximized] = useState(false);
@@ -69,6 +70,7 @@ export default function AskBlossomLauncher({
                 reporterRole={reporterRole}
                 reporterName={reporterName}
                 appArea={appArea}
+                onOpenOrders={onOpenOrders}
               />
             </div>
           </div>

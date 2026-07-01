@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
-import { FeedbackModal, AskBlossomLauncher } from '@flower-studio/shared';
+import { FeedbackModal, AskBlossomLauncher, buildCrossTabNavFilter } from '@flower-studio/shared';
 
 const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
 const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
@@ -293,7 +293,14 @@ export default function DashboardPage() {
 
       {/* bottom-24 (not bottom-6): the new-order FAB now occupies bottom-6 right-6,
           so stack the assistant above it — same pattern as the florist app. */}
-      <AskBlossomLauncher t={t} fabClassName="bottom-24 right-6" reporterRole="owner" reporterName="Owner" appArea="dashboard" />
+      <AskBlossomLauncher
+        t={t}
+        fabClassName="bottom-24 right-6"
+        reporterRole="owner"
+        reporterName="Owner"
+        appArea="dashboard"
+        onOpenOrders={(filter) => navigateTo({ tab: 'orders', filter: buildCrossTabNavFilter(filter) })}
+      />
     </div>
   );
 }

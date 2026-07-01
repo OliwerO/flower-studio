@@ -16,6 +16,7 @@ import { lapsedCustomersHandler, upcomingOccasionsHandler } from './crmPack.js';
 import { searchTextHandler } from './freeTextPack.js';
 import { purchaseDetailHandler } from './purchaseDetailPack.js';
 import { listValuesHandler } from './discoveryPack.js';
+import { openOrdersViewHandler } from './ordersViewPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -455,6 +456,33 @@ export const TOOLS = [
       required: ['field'],
     },
     handler: listValuesHandler,
+  },
+  {
+    name: 'open_orders_view',
+    description: "Signal the UI to open the Orders screen pre-filtered. Does not return order data — the caller renders an 'Open in Orders' action from this tool's output. Use this after answering a question about orders when the owner would plausibly want to see the underlying list.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        source: { type: 'string' },
+        deliveryType: { type: 'string' },
+        paymentStatus: { type: 'string' },
+        paymentMethod: { type: 'string' },
+        excludeCancelled: { type: 'boolean' },
+        orderDateFrom: { type: 'string', description: 'YYYY-MM-DD' },
+        orderDateTo: { type: 'string', description: 'YYYY-MM-DD' },
+        requiredByFrom: { type: 'string', description: 'YYYY-MM-DD' },
+        requiredByTo: { type: 'string', description: 'YYYY-MM-DD' },
+        orderIdQuery: { type: 'string' },
+        customerQuery: { type: 'string' },
+        bouquetQuery: { type: 'string' },
+        priceMin: { type: 'number' },
+        priceMax: { type: 'number' },
+        label: { type: 'string', description: "Short Russian phrase describing what's filtered, shown on the button, e.g. 'Заказы без оплаты за июнь'" },
+      },
+      additionalProperties: false,
+    },
+    handler: openOrdersViewHandler,
   },
 ];
 

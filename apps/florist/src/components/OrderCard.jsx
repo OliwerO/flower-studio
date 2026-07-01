@@ -93,10 +93,11 @@ function OrderCard({
   editorPremadeMap: premadeMap = {},
   editorPendingPO: pendingPO = {},
   onStockRefresh,
+  initialExpanded = false, // pre-open this card, e.g. when arriving via Ask Blossom's orderIdQuery deep link
 }) {
   const { paymentMethods: payMethods, timeSlots, drivers, driverCostPerDelivery } = useConfigLists();
   const { showToast } = useToast();
-  const [expanded, setExpanded]   = useState(false);
+  const [expanded, setExpanded]   = useState(initialExpanded);
   const [detail, setDetail]       = useState(null);
   const [loading, setLoading]     = useState(false);
   const [saving, setSaving]       = useState(false);
@@ -137,6 +138,20 @@ function OrderCard({
       .then(r => setPrevStatuses(r.data.previousStatuses || []))
       .catch(() => {});
   }
+
+  // When the card is pre-opened via `initialExpanded` (Ask Blossom deep link),
+  // fetch detail on mount the same way toggle() does for a manual expand.
+  useEffect(() => {
+    if (initialExpanded && !detail) {
+      setLoading(true);
+      client.get(`/orders/${order.id}`)
+        .then(r => setDetail(r.data))
+        .catch(() => showToast(t.loadError, 'error'))
+        .finally(() => setLoading(false));
+      loadStatusHistory();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function toggle() {
     if (expanded) {

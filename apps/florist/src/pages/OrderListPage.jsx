@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext.jsx';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -83,24 +83,57 @@ function todayISO() {
 
 export default function OrderListPage() {
   const navigate         = useNavigate();
+  const location         = useLocation();
   const { role } = useAuth();
   const isOwner = role === 'owner';
   const { showToast } = useToast();
+
+  // Cross-page deep link (e.g. Ask Blossom's "Open in Orders" button, mirrors
+  // dashboard OrdersTab.jsx:121-136's legacy key shape: payment/dateFrom/dateTo/orderId).
+  const navState = location.state || {};
+  const seededStatus = navState.status || '';
+  // Terminal statuses only live in the Completed tab — otherwise ACTIVE's
+  // forced activeOnly=true would silently return zero rows for e.g. Cancelled.
+  const seedsCompletedView = COMPLETED_STATUSES.includes(seededStatus) && seededStatus !== '';
+
   const [orders, setOrders]         = useState([]);
   const [premadeBouquets, setPremadeBouquets] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [ordersReady, setOrdersReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [viewMode, setViewMode]     = useState(VIEW_MODES.ACTIVE);
+  const [viewMode, setViewMode]     = useState(() => (seedsCompletedView ? VIEW_MODES.COMPLETED : VIEW_MODES.ACTIVE));
   const [date, setDate]             = useState(''); // only used in completed view
-  const [status, setStatus]         = useState('');
+  const [status, setStatus]         = useState(() => seededStatus);
   const [noDateOnly, setNoDateOnly] = useState(false); // surface orphan-date orders
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
+  // Pre-open a single order — driven ONLY by a genuine order UUID (navState.orderId),
+  // never by orderIdQuery (an Ask Blossom deep link's App-Order-ID substring, which
+  // is a client contains-filter below, not a focus target — a UUID never equals it).
+  const [expandedId] = useState(() => navState.orderId || null);
 
   // Shared order filter model (mirrors dashboard per-column filters).
   // status is kept in sync with the status tab so active count stays consistent.
-  const [filter, setFilter] = useState(() => ({ ...EMPTY_ORDER_FILTER, status: '' }));
+  const [filter, setFilter] = useState(() => ({
+    ...EMPTY_ORDER_FILTER,
+    status: seededStatus,
+    source: navState.source || '',
+    deliveryType: navState.deliveryType || '',
+    paymentStatus: navState.payment || '',        // legacy cross-tab key
+    paymentMethod: navState.paymentMethod || '',
+    excludeCancelled: !!navState.excludeCancelled,
+    requiredByFrom: navState.dateFrom || '',       // legacy cross-tab key — fulfilment date
+    requiredByTo: navState.dateTo || '',           // legacy cross-tab key
+    orderDateFrom: navState.orderDateFrom || '',   // order/submission date — distinct dimension
+    orderDateTo: navState.orderDateTo || '',
+    // Client-only contains/range filters (Ask Blossom deep links) — applied in
+    // memory via orderMatchesClientFilter below, never as the UUID focus key.
+    orderIdQuery: navState.orderIdQuery || '',
+    customerQuery: navState.customerQuery || '',
+    bouquetQuery: navState.bouquetQuery || '',
+    priceMin: navState.priceMin ?? null,
+    priceMax: navState.priceMax ?? null,
+  }));
   const [filterOpen, setFilterOpen] = useState(false);
 
   // Stock shortfall data: { stockId: { committed, name, currentQty, effective, orders } }
@@ -634,6 +667,7 @@ export default function OrderListPage() {
                   onStockRefresh={refreshEditorStock}
                   onOrderUpdated={handleOrderUpdated}
                   onOrderDeleted={handleOrderDeleted}
+                  initialExpanded={order.id === expandedId}
                 />
               ))}
             </div>
