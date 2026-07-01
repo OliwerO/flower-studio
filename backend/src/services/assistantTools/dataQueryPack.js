@@ -12,7 +12,10 @@
 // See RFC: docs/superpowers/plans/2026-06-30-assistant-extensions-rfc.md
 
 import { db } from '../../db/index.js';
-import { orders, orderLines, customers, stock, deliveries, stockPurchases, stockLossLog, marketingSpend } from '../../db/schema.js';
+import {
+  orders, orderLines, customers, stock, deliveries, stockPurchases, stockLossLog, marketingSpend,
+  keyPeople, stockOrders, stockOrderLines, floristHours,
+} from '../../db/schema.js';
 import {
   and, eq, ne, lt, lte, gt, gte, inArray, ilike, isNull, isNotNull,
   sql, count, sum, avg, min, max, desc, asc,
@@ -31,7 +34,7 @@ const ROW_CAP = 200;          // hard ceiling on returned rows
 // Omitting uuidSide means both sides share a type — plain eq() is used.
 // The uuid→text cast is always safe: text equality on uuid strings never throws,
 // while text::uuid throws for any non-UUID value (e.g. legacy 'recXXX' ids).
-const SCHEMA = {
+export const SCHEMA = {
   orders: {
     table: orders,
     defaultExcludeCancelled: true,
@@ -68,6 +71,8 @@ const SCHEMA = {
     joins: {
       // customers.id = UUID, orders.customerId = TEXT → cast localCol (uuid) to text
       orders: { to: 'orders', localCol: customers.id, foreignCol: orders.customerId, cardinality: 'many', uuidSide: 'local' },
+      // customers.id = UUID, keyPeople.customerId = UUID → same types, plain eq
+      keyPeople: { to: 'key_people', localCol: customers.id, foreignCol: keyPeople.customerId, cardinality: 'many' },
     },
     softDeleteCol: customers.deletedAt,
   },
@@ -167,6 +172,75 @@ const SCHEMA = {
       notes:   { col: marketingSpend.notes },
     },
     softDeleteCol: marketingSpend.deletedAt,
+  },
+  key_people: {
+    table: keyPeople,
+    fields: {
+      id:                { col: keyPeople.id },
+      customerId:        { col: keyPeople.customerId },
+      name:              { col: keyPeople.name },
+      phone:             { col: keyPeople.phone },
+      address:           { col: keyPeople.address },
+      importantDate:     { col: keyPeople.importantDate },
+      importantDateLabel:{ col: keyPeople.importantDateLabel },
+    },
+    joins: {
+      // keyPeople.customerId = UUID, customers.id = UUID → same types, plain eq
+      customer: { to: 'customers', localCol: keyPeople.customerId, foreignCol: customers.id, cardinality: 'one' },
+    },
+    softDeleteCol: keyPeople.deletedAt,
+  },
+  stock_orders: {
+    table: stockOrders,
+    // No softDeleteCol — stockOrders has no deletedAt column.
+    fields: {
+      id:             { col: stockOrders.id },
+      poNumber:       { col: stockOrders.poNumber },
+      status:         { col: stockOrders.status },
+      createdDate:    { col: stockOrders.createdDate },
+      assignedDriver: { col: stockOrders.assignedDriver },
+      plannedDate:    { col: stockOrders.plannedDate },
+    },
+    joins: {
+      // stockOrders.id = UUID, stockOrderLines.poId = UUID → same types, plain eq
+      lines: { to: 'stock_order_lines', localCol: stockOrders.id, foreignCol: stockOrderLines.poId, cardinality: 'many' },
+    },
+  },
+  stock_order_lines: {
+    table: stockOrderLines,
+    // No softDeleteCol — stockOrderLines has no deletedAt column.
+    fields: {
+      id:              { col: stockOrderLines.id },
+      poId:            { col: stockOrderLines.poId },
+      stockId:         { col: stockOrderLines.stockId },
+      flowerName:      { col: stockOrderLines.flowerName },
+      quantityNeeded:  { col: stockOrderLines.quantityNeeded },
+      quantityFound:   { col: stockOrderLines.quantityFound },
+      supplier:        { col: stockOrderLines.supplier },
+      costPrice:       { col: stockOrderLines.costPrice },
+      sellPrice:       { col: stockOrderLines.sellPrice },
+    },
+    joins: {
+      // stockOrderLines.stockId = UUID, stock.id = UUID → same types, plain eq
+      stock: { to: 'stock', localCol: stockOrderLines.stockId, foreignCol: stock.id, cardinality: 'one' },
+      // stockOrderLines.poId = UUID, stockOrders.id = UUID → same types, plain eq
+      po:    { to: 'stock_orders', localCol: stockOrderLines.poId, foreignCol: stockOrders.id, cardinality: 'one' },
+    },
+  },
+  florist_hours: {
+    table: floristHours,
+    // Near-standalone entity — no joins.
+    fields: {
+      id:            { col: floristHours.id },
+      name:          { col: floristHours.name },
+      date:          { col: floristHours.date },
+      hours:         { col: floristHours.hours },
+      hourlyRate:    { col: floristHours.hourlyRate },
+      bonus:         { col: floristHours.bonus },
+      deduction:     { col: floristHours.deduction },
+      deliveryCount: { col: floristHours.deliveryCount },
+    },
+    softDeleteCol: floristHours.deletedAt,
   },
 };
 
