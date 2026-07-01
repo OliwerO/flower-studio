@@ -69,6 +69,12 @@ export {
   stockRowMatchesFilter,
   activeStockFilterCount,
 } from './utils/stockFilters.js';
+export {
+  EMPTY_VARIETY_FILTER,
+  clearVarietyFilter,
+  varietyMatchesFilter,
+  activeVarietyFilterCount,
+} from './utils/varietyFilters.js';
 // Header-anchored per-column filter popover shell — funnel button + panel.
 // Shared so both the Orders table and the Y-model Stock Flat table use one shell.
 export { default as ColumnFilterPopover } from './components/ColumnFilterPopover.jsx';
