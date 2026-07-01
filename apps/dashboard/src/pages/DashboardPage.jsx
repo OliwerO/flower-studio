@@ -7,7 +7,7 @@ import { useState, useCallback, useEffect, lazy, Suspense } from 'react';
 import t from '../translations.js';
 import { LangToggle } from '../context/LanguageContext.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
-import { FeedbackModal, AskBlossomLauncher } from '@flower-studio/shared';
+import { FeedbackModal, AskBlossomLauncher, buildCrossTabNavFilter } from '@flower-studio/shared';
 
 const DayToDayTab = lazy(() => import('../components/DayToDayTab.jsx'));
 const OrdersTab = lazy(() => import('../components/OrdersTab.jsx'));
@@ -299,20 +299,7 @@ export default function DashboardPage() {
         reporterRole="owner"
         reporterName="Owner"
         appArea="dashboard"
-        onOpenOrders={(filter) => navigateTo({
-          tab: 'orders',
-          filter: {
-            status: filter.status,
-            source: filter.source,
-            deliveryType: filter.deliveryType,
-            payment: filter.paymentStatus,        // legacy key translation — OrdersTab.jsx:121-136
-            paymentMethod: filter.paymentMethod,
-            excludeCancelled: filter.excludeCancelled,
-            dateFrom: filter.requiredByFrom || filter.orderDateFrom,   // legacy key translation
-            dateTo: filter.requiredByTo || filter.orderDateTo,         // legacy key translation
-            orderId: filter.orderIdQuery,
-          },
-        })}
+        onOpenOrders={(filter) => navigateTo({ tab: 'orders', filter: buildCrossTabNavFilter(filter) })}
       />
     </div>
   );

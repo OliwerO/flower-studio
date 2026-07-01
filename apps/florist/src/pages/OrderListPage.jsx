@@ -107,8 +107,9 @@ export default function OrderListPage() {
   const [noDateOnly, setNoDateOnly] = useState(false); // surface orphan-date orders
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
-  // Pre-open a single order (Ask Blossom deep link with orderIdQuery) — mirrors
-  // the dashboard's f.orderId → expandedId seeding in OrdersTab.jsx:144.
+  // Pre-open a single order — driven ONLY by a genuine order UUID (navState.orderId),
+  // never by orderIdQuery (an Ask Blossom deep link's App-Order-ID substring, which
+  // is a client contains-filter below, not a focus target — a UUID never equals it).
   const [expandedId] = useState(() => navState.orderId || null);
 
   // Shared order filter model (mirrors dashboard per-column filters).
@@ -121,8 +122,17 @@ export default function OrderListPage() {
     paymentStatus: navState.payment || '',        // legacy cross-tab key
     paymentMethod: navState.paymentMethod || '',
     excludeCancelled: !!navState.excludeCancelled,
-    requiredByFrom: navState.dateFrom || '',       // legacy cross-tab key
+    requiredByFrom: navState.dateFrom || '',       // legacy cross-tab key — fulfilment date
     requiredByTo: navState.dateTo || '',           // legacy cross-tab key
+    orderDateFrom: navState.orderDateFrom || '',   // order/submission date — distinct dimension
+    orderDateTo: navState.orderDateTo || '',
+    // Client-only contains/range filters (Ask Blossom deep links) — applied in
+    // memory via orderMatchesClientFilter below, never as the UUID focus key.
+    orderIdQuery: navState.orderIdQuery || '',
+    customerQuery: navState.customerQuery || '',
+    bouquetQuery: navState.bouquetQuery || '',
+    priceMin: navState.priceMin ?? null,
+    priceMax: navState.priceMax ?? null,
   }));
   const [filterOpen, setFilterOpen] = useState(false);
 

@@ -12,7 +12,7 @@ import { useNotifications } from './hooks/useNotifications.js';
 
 import Toast                   from './components/Toast.jsx';
 import BottomNav               from './components/BottomNav.jsx';
-import { AskBlossomLauncher } from '@flower-studio/shared';
+import { AskBlossomLauncher, buildCrossTabNavFilter } from '@flower-studio/shared';
 import t from './translations.js';
 
 const LoginPage = lazy(() => import('./pages/LoginPage.jsx'));
@@ -77,17 +77,7 @@ function Layout({ children }) {
           reporterRole={role}
           reporterName={reporterName}
           appArea="florist"
-          onOpenOrders={(filter) => navigate('/orders', { state: {
-            status: filter.status,
-            source: filter.source,
-            deliveryType: filter.deliveryType,
-            payment: filter.paymentStatus,
-            paymentMethod: filter.paymentMethod,
-            excludeCancelled: filter.excludeCancelled,
-            dateFrom: filter.requiredByFrom || filter.orderDateFrom,
-            dateTo: filter.requiredByTo || filter.orderDateTo,
-            orderId: filter.orderIdQuery,
-          } })}
+          onOpenOrders={(filter) => navigate('/orders', { state: buildCrossTabNavFilter(filter) })}
         />
       )}
     </>
