@@ -65,4 +65,36 @@ describe('BatchTracePanel', () => {
     const kinds = screen.getAllByTestId('trace-row').map(r => r.getAttribute('data-trace-kind'));
     expect(kinds).toEqual(['purchase', 'order', 'premade']);
   });
+
+  it('graph is OFF by default (traceability first); the toggle reveals/hides it', () => {
+    const trail = [
+      { type: 'purchase', date: '2026-05-08', qty: 30 },
+      { type: 'order',    date: '2026-05-10', qty: -5, customer: 'Anna' },
+    ];
+    render(<BatchTracePanel trail={trail} t={{ ...t, showGraph: 'Show graph', hideGraph: 'Hide graph' }} />);
+    // List shown immediately, graph is NOT.
+    expect(screen.getAllByTestId('trace-row').length).toBeGreaterThan(0);
+    expect(screen.queryByTestId('trace-sparkline')).toBeNull();
+    // Reveal on demand.
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
+    expect(screen.getByTestId('trace-sparkline')).toBeInTheDocument();
+    // Hide again.
+    fireEvent.click(screen.getByTestId('trace-graph-toggle'));
+    expect(screen.queryByTestId('trace-sparkline')).toBeNull();
+  });
+
+  it('fires onOrderClick with the order record id when an order row is tapped', () => {
+    const onOrderClick = vi.fn();
+    const trail = [{ type: 'order', date: '2026-05-10', qty: -5, orderId: '202605-1', orderRecordId: 'rec_9', customer: 'Anna' }];
+    render(<BatchTracePanel trail={trail} t={t} onOrderClick={onOrderClick} />);
+    fireEvent.click(screen.getByTestId('trace-row'));
+    expect(onOrderClick).toHaveBeenCalledWith('rec_9', expect.objectContaining({ orderId: '202605-1' }));
+  });
+
+  it('order row is not clickable without onOrderClick or without orderRecordId', () => {
+    const { rerender } = render(<BatchTracePanel trail={[{ type: 'order', date: '2026-05-10', qty: -5, orderRecordId: 'rec_9' }]} t={t} />);
+    expect(screen.getByTestId('trace-row').getAttribute('role')).not.toBe('button'); // no handler
+    rerender(<BatchTracePanel trail={[{ type: 'order', date: '2026-05-10', qty: -5 }]} t={t} onOrderClick={() => {}} />);
+    expect(screen.getByTestId('trace-row').getAttribute('role')).not.toBe('button'); // no record id
+  });
 });

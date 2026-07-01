@@ -176,7 +176,11 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
-        style={{ height: 'auto', aspectRatio: `${W} / ${H}`, display: 'block' }}
+        // FIXED pixel height (not aspect-ratio): on a wide panel aspect-ratio
+        // made the chart balloon to ~900px tall. A fixed height + `meet` keeps
+        // it a consistent, compact size everywhere; the viewBox (360×176, ~1:1
+        // to the render box) keeps the text legible without downscaling.
+        style={{ height: 200, display: 'block' }}
         preserveAspectRatio="xMidYMid meet"
       >
         <defs>

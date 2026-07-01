@@ -840,6 +840,7 @@ export default function StockPanelPage() {
           trail={traceLoading ? [] : (traceTrail || [])}
           t={t}
           onClose={() => { setTraceStockId(null); setTraceTrail(null); }}
+          onOrderClick={(recordId) => setQuickViewOrderId(recordId)}
         />
       )}
 

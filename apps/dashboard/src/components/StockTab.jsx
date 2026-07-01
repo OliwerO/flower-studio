@@ -913,7 +913,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                       {traceLoading ? (
                         <p className="text-xs text-ios-tertiary">{t.loading}</p>
                       ) : (
-                        <BatchTracePanel trail={traceTrail || []} t={t} />
+                        <BatchTracePanel trail={traceTrail || []} t={t} onOrderClick={(recordId) => setQuickViewOrderId(recordId)} />
                       )}
                     </div>
                   ) : null}
@@ -1025,7 +1025,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                             {traceLoading ? (
                               <p className="text-xs text-ios-tertiary">{t.loading}</p>
                             ) : (
-                              <BatchTracePanel trail={traceTrail || []} t={t} />
+                              <BatchTracePanel trail={traceTrail || []} t={t} onOrderClick={(recordId) => setQuickViewOrderId(recordId)} />
                             )}
                           </div>
                         )}

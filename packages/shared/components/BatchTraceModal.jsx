@@ -11,7 +11,7 @@ import BatchTracePanel from './BatchTracePanel.jsx';
  *   t        — translation strings (all BatchTracePanel keys + close, batchTraceTitle)
  *   onClose  — () => void
  */
-export default function BatchTraceModal({ trail = [], t, onClose }) {
+export default function BatchTraceModal({ trail = [], t, onClose, onOrderClick }) {
   // Escape key listener
   useEffect(() => {
     function handleKeyDown(e) {
@@ -39,7 +39,7 @@ export default function BatchTraceModal({ trail = [], t, onClose }) {
 
         {/* Trail */}
         <div className="px-4 py-3">
-          <BatchTracePanel trail={trail} t={t} />
+          <BatchTracePanel trail={trail} t={t} onOrderClick={onOrderClick} />
         </div>
 
         {/* Close button */}
