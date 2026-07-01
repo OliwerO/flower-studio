@@ -16,7 +16,12 @@ import {
   reasonLabel,
   varietyGroupMatchesView,
   getVarietyTotals,
+  EMPTY_VARIETY_FILTER,
+  clearVarietyFilter,
+  varietyMatchesFilter,
+  activeVarietyFilterCount,
 } from '@flower-studio/shared';
+import StockFilterDrawer from '../components/StockFilterDrawer.jsx';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
@@ -86,6 +91,10 @@ export default function StockPanelPage() {
   // Round-2: tapping an order in a trace opens a read-only popup OVER the trace
   // instead of navigating away, so the owner keeps her place.
   const [quickViewOrderId, setQuickViewOrderId]       = useState(null);
+  // E1b: Variety-level filter drawer (Type / colour·cultivar / status / net range).
+  const [varietyFilter, setVarietyFilter]             = useState(EMPTY_VARIETY_FILTER);
+  const [filterDrawerOpen, setFilterDrawerOpen]       = useState(false);
+  const varietyFilterCount = activeVarietyFilterCount(varietyFilter);
   // Write-off modal state
   const [writeOffVariety, setWriteOffVariety] = useState(null);
 
@@ -331,6 +340,10 @@ export default function StockPanelPage() {
         );
       });
     }
+    // E1b: Variety-level filter drawer (Type / colour·cultivar / status / net).
+    if (varietyFilterCount > 0) {
+      list = list.filter(g => varietyMatchesFilter(g, reservationsMap, varietyFilter));
+    }
     // View pills (Negative / Low / Slow) filter by per-Variety net — the same
     // number the row badge shows. hideZero only applies in the 'all' view (the
     // legacy flat list does the same: `hideZero && view === 'all'`), so a short
@@ -345,7 +358,7 @@ export default function StockPanelPage() {
       });
     }
     return list;
-  }, [groups, hideZero, view, yEnabled, reservationsMap, debouncedSearch]);
+  }, [groups, hideZero, view, yEnabled, reservationsMap, debouncedSearch, varietyFilter, varietyFilterCount]);
 
   // A Variety's age = its OLDEST dated on-hand batch (longest-sitting stems).
   // Only positive-qty batches count — Demand Entries (negative qty) are future
@@ -677,6 +690,20 @@ export default function StockPanelPage() {
                       : (t.stockSortStock || 'Stock level')}
                 </button>
               )}
+              {/* E1b: Variety filter drawer trigger (applies to Flat + By-type). */}
+              <button
+                data-testid="stock-filter-open"
+                onClick={() => setFilterDrawerOpen(true)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium active-scale inline-flex items-center gap-1 ${
+                  varietyFilterCount > 0
+                    ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
+                    : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
+                }`}
+                aria-label={t.filters}
+              >
+                <span className="text-ios-tertiary">⚲</span>
+                {t.filters}{varietyFilterCount > 0 ? ` (${varietyFilterCount})` : ''}
+              </button>
             </>
           )}
           <button
@@ -899,6 +926,17 @@ export default function StockPanelPage() {
         onClose={() => setQuickViewOrderId(null)}
         onOpenFull={(id) => { setQuickViewOrderId(null); navigate('/orders/' + id); }}
       />
+
+      {/* E1b: Variety filter drawer (Type / colour·cultivar / status / net). */}
+      {yEnabled && (
+        <StockFilterDrawer
+          open={filterDrawerOpen}
+          onClose={() => setFilterDrawerOpen(false)}
+          filter={varietyFilter}
+          onApply={(next) => setVarietyFilter(next)}
+          onReset={() => setVarietyFilter(clearVarietyFilter())}
+        />
+      )}
     </div>
   );
 }

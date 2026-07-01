@@ -62,10 +62,12 @@ until fresh dated stock lands.
   integer fields (`InlinePriceField` gained a `format`/`step` prop). Edit bulk-patches every batch of
   the Variety (`onEditField` → dashboard `patchPriceBulk` / florist `handleEditVarietyField`); backend
   already syncs Reorder Threshold across siblings. Lab-verified end-to-end (edit → all 7 batches updated).
-- ⏭️ **E1b florist filter parity — TODO** (owner agreed). Florist has no flat table (CR-35); parity = a
-  filter DRAWER over the By-Variety list. NOTE: the flat-table `stockFilters` operates on flattened
-  sell-tier rows; the By-Variety list needs VARIETY-level dimensions (Type / Variety text / status
-  short·tight·free / net range), so it's a sibling filter model, not a direct reuse.
+- ✅ **E1b florist filter parity — SHIPPED** (owner agreed). New shared `varietyFilters` util (Variety-
+  level: Type / colour·cultivar text / status short·tight·free / net range — a sibling of the flat-table
+  `stockFilters`, since the florist list is grouped by Variety not flattened sell-tiers) + a florist
+  `StockFilterDrawer` (bottom-sheet, mirrors `OrderFilterDrawer`). A `Filters (n)` pill in the Stock
+  control row opens it; the filter applies to `filteredGroups` so both Flat + By-type views honour it.
+  Lab-verified (Status=Short → 6 varieties down to the 1 short Peony).
 
 ## E2 audit — functionality lost moving legacy → Y-model
 
