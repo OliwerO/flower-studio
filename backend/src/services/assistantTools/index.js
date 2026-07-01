@@ -14,6 +14,7 @@ import { marketingSpendHandler } from './marketingPack.js';
 import { stockVelocityHandler } from './velocityPack.js';
 import { lapsedCustomersHandler, upcomingOccasionsHandler } from './crmPack.js';
 import { searchTextHandler } from './freeTextPack.js';
+import { purchaseDetailHandler } from './purchaseDetailPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -406,6 +407,27 @@ export const TOOLS = [
       'the short flower name(s). Use for "which orders are at risk", "what can\'t I fulfill today".',
     input_schema: { type: 'object', properties: {} },
     handler: ordersNeedingShortStockHandler,
+  },
+  {
+    name: 'purchase_detail',
+    description:
+      'Individual flower purchases (PO receipt lines), not just per-supplier totals. Use for "what did I pay ' +
+      '<supplier>", "on which days did we buy from <supplier>", "what flowers did we buy from <supplier>" — ' +
+      'anything that needs the underlying transactions, not just financial_summary/purchase_spend\'s aggregate. ' +
+      'Filter by supplier and/or flower name (both case-insensitive contains); date range is YYYY-MM-DD. ' +
+      'Returns totals plus a by-date and by-flower breakdown (always over the FULL match) and a capped list of ' +
+      'individual transactions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        supplier: { type: 'string', description: 'Filter to purchases whose Supplier contains this text (case-insensitive).' },
+        flower: { type: 'string', description: 'Filter to purchases whose linked stock item display name contains this text (case-insensitive).' },
+        from: { type: 'string', description: 'Start purchase date YYYY-MM-DD (inclusive).' },
+        to: { type: 'string', description: 'End purchase date YYYY-MM-DD (inclusive).' },
+        limit: { type: 'number', description: 'Max transactions to list (default/hard cap 200). Totals/byDate/byFlower are never capped.' },
+      },
+    },
+    handler: purchaseDetailHandler,
   },
 ];
 
