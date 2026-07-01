@@ -221,6 +221,10 @@ The desktop app used by the Owner. Full control over operations, CRM, finances, 
 **Delivery app**:
 The phone app used by Drivers. Covers assigned deliveries and Stock Order shopping runs.
 
+**Explorer**:
+A read-only linked-record surface inside the Dashboard (owner-only, desktop) for exploring Blossom's data. The Owner picks a start-point (a Flower, Order, Customer, Supplier, …), filters it, and drills through relationships by clicking a row to open its related records — e.g. a Flower → the Orders that used it → each Order's Customer → that Customer's Key People. Distinct from **Ask Blossom** (natural-language questions, one answer per turn): Explorer is click-driven navigation with no LLM per click. Ask Blossom can hand a query off to Explorer ("Open in Explorer"). Safe by construction — it can only emit the same validated declarative query spec the assistant uses (allow-listed entities/fields/joins, row cap), never raw SQL, and never edits data (rows deep-link into the existing edit screens).
+_Avoid_: Super-search (the origin term for this idea; "Explorer" is canonical), linked-record explorer, grid
+
 ## Flagged ambiguities
 
 - "Bouquet" is used both for a **Product** (Wix listing) and a **Premade Bouquet** (pre-built inventory item) — these are distinct. Context determines which is meant; prefer the full term when precision matters.

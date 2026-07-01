@@ -33,6 +33,7 @@ import adminRoutes         from './routes/admin.js';
 import feedbackRoutes      from './routes/feedback.js';
 import issuesRoutes        from './routes/issues.js';
 import assistantRoutes     from './routes/assistant.js';
+import explorerRoutes      from './routes/explorer.js';
 import { startFeedbackBot } from './services/feedbackTelegramBot.js';
 import { startDriverBot } from './services/driverBot.js';
 
@@ -135,6 +136,7 @@ app.use('/api/admin',           adminRoutes);
 app.use('/api/feedback',        feedbackRoutes);
 app.use('/api/issues',         issuesRoutes);
 app.use('/api/assistant',      assistantRoutes);
+app.use('/api/explorer',       explorerRoutes);
 
 // Central error handler — must be last
 app.use(errorHandler);

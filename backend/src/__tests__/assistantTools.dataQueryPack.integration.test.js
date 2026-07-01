@@ -9,10 +9,15 @@
 //   - purchases/writeoffs/deliveries/marketing entities: validateSpec + queryRecordsHandler
 //   - purchases→stock join: legacy unlinked purchase (null stockId + recXXX stockAirtableId)
 //     does not abort the query
+//   - key_people/stock_orders/stock_order_lines/florist_hours entities (Explorer allow-list
+//     extension, ADR-0010): validateSpec + queryRecordsHandler + new uuid=uuid joins
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
-import { orders, orderLines, stock, customers, stockPurchases, stockLossLog, deliveries, marketingSpend } from '../db/schema.js';
+import {
+  orders, orderLines, stock, customers, stockPurchases, stockLossLog, deliveries, marketingSpend,
+  keyPeople, stockOrders, stockOrderLines, floristHours,
+} from '../db/schema.js';
 
 const dbHolder = { db: null };
 vi.mock('../db/index.js', () => ({
@@ -734,5 +739,183 @@ describe('dataQueryPack.queryRecordsHandler — marketing', () => {
     expect(r.error).toBeUndefined();
     expect(r.matchedCount).toBe(1);
     expect(r.rows[0].channel).toBe('Instagram');
+  });
+});
+
+// ── Explorer allow-list extension (ADR-0010): key_people, stock_orders, ──────
+// ── stock_order_lines, florist_hours ─────────────────────────────────────────
+
+describe('dataQueryPack.validateSpec — Explorer entities', () => {
+  it('accepts a valid key_people spec', () => {
+    const r = validateSpec({ entity: 'key_people', filters: [{ field: 'name', op: 'eq', value: 'Anna' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a valid stock_orders spec', () => {
+    const r = validateSpec({ entity: 'stock_orders', filters: [{ field: 'status', op: 'eq', value: 'Draft' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a valid stock_order_lines spec', () => {
+    const r = validateSpec({ entity: 'stock_order_lines', filters: [{ field: 'flowerName', op: 'eq', value: 'Rose Red' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('accepts a valid florist_hours spec', () => {
+    const r = validateSpec({ entity: 'florist_hours', filters: [{ field: 'name', op: 'eq', value: 'Anna' }] });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects an unknown field on florist_hours', () => {
+    const r = validateSpec({ entity: 'florist_hours', filters: [{ field: 'bogus', op: 'eq', value: 'x' }] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/Unknown field "bogus"/);
+  });
+
+  it('customers can join keyPeople; key_people can join customer; stock_orders can join lines; stock_order_lines can join stock and po', () => {
+    expect(validateSpec({ entity: 'customers', join: ['keyPeople'] }).ok).toBe(true);
+    expect(validateSpec({ entity: 'key_people', join: ['customer'] }).ok).toBe(true);
+    expect(validateSpec({ entity: 'stock_orders', join: ['lines'] }).ok).toBe(true);
+    expect(validateSpec({ entity: 'stock_order_lines', join: ['stock'] }).ok).toBe(true);
+    expect(validateSpec({ entity: 'stock_order_lines', join: ['po'] }).ok).toBe(true);
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — key_people + customers↔key_people join (uuid=uuid)', () => {
+  it('customers join keyPeople returns the customer\'s key person', async () => {
+    const [cust] = await harness.db
+      .insert(customers)
+      .values({ name: 'Anna Kowalska', phone: '+48111222333', segment: 'Regular' })
+      .returning({ id: customers.id });
+
+    await harness.db.insert(keyPeople).values({
+      customerId: cust.id,
+      name:       'Piotr Kowalski',
+      phone:      '+48999888777',
+      address:    'ul. Kwiatowa 5',
+    });
+
+    const r = await queryRecordsHandler({ entity: 'customers', join: ['keyPeople'] });
+    expect(r.error).toBeUndefined();
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]['key_people']?.name).toBe('Piotr Kowalski');
+  });
+
+  it('key_people join customer returns the linked customer', async () => {
+    const [cust] = await harness.db
+      .insert(customers)
+      .values({ name: 'Maria Nowak', phone: '+48222333444', segment: 'VIP' })
+      .returning({ id: customers.id });
+
+    await harness.db.insert(keyPeople).values({
+      customerId: cust.id,
+      name:       'Jan Nowak',
+    });
+
+    const r = await queryRecordsHandler({ entity: 'key_people', join: ['customer'] });
+    expect(r.error).toBeUndefined();
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]['customers']?.name).toBe('Maria Nowak');
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — stock_orders + lines join (uuid=uuid)', () => {
+  it('stock_orders join lines returns the PO\'s lines', async () => {
+    const [po] = await harness.db
+      .insert(stockOrders)
+      .values({ poNumber: 'PO-1001', status: 'Draft', createdDate: '2026-06-01', assignedDriver: 'Timur' })
+      .returning({ id: stockOrders.id });
+
+    await harness.db.insert(stockOrderLines).values({
+      poId:           po.id,
+      flowerName:     'Rose Red',
+      quantityNeeded: 50,
+      quantityFound:  0,
+      supplier:       'Acme Flowers',
+    });
+
+    const r = await queryRecordsHandler({ entity: 'stock_orders', join: ['lines'] });
+    expect(r.error).toBeUndefined();
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]['stock_order_lines']?.flowerName).toBe('Rose Red');
+  });
+
+  it('filters stock_orders by status', async () => {
+    await harness.db.insert(stockOrders).values([
+      { poNumber: 'PO-2001', status: 'Draft', createdDate: '2026-06-01', assignedDriver: 'Timur' },
+      { poNumber: 'PO-2002', status: 'Sent',  createdDate: '2026-06-02', assignedDriver: 'Nikita' },
+    ]);
+
+    const r = await queryRecordsHandler({
+      entity: 'stock_orders',
+      filters: [{ field: 'status', op: 'eq', value: 'Sent' }],
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.matchedCount).toBe(1);
+    expect(r.rows[0].poNumber).toBe('PO-2002');
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — stock_order_lines joins stock and po (uuid=uuid)', () => {
+  it('stock_order_lines join stock returns the linked batch', async () => {
+    const [s] = await harness.db
+      .insert(stock)
+      .values({ displayName: 'Peony White', currentQuantity: 10, active: true })
+      .returning({ id: stock.id });
+
+    const [po] = await harness.db
+      .insert(stockOrders)
+      .values({ poNumber: 'PO-3001', status: 'Draft', createdDate: '2026-06-01', assignedDriver: 'Timur' })
+      .returning({ id: stockOrders.id });
+
+    await harness.db.insert(stockOrderLines).values({
+      poId:           po.id,
+      stockId:        s.id,
+      flowerName:     'Peony White',
+      quantityNeeded: 20,
+    });
+
+    const r = await queryRecordsHandler({ entity: 'stock_order_lines', join: ['stock'] });
+    expect(r.error).toBeUndefined();
+    expect(r.rows.length).toBe(1);
+    // Plain (non-aggregate) joins return nested objects keyed by the table's
+    // own JS-side column names (displayName), not the SCHEMA alias ('name').
+    expect(r.rows[0]['stock']?.displayName).toBe('Peony White');
+  });
+
+  it('stock_order_lines join po returns the parent PO', async () => {
+    const [po] = await harness.db
+      .insert(stockOrders)
+      .values({ poNumber: 'PO-4001', status: 'Shopping', createdDate: '2026-06-01', assignedDriver: 'Timur' })
+      .returning({ id: stockOrders.id });
+
+    await harness.db.insert(stockOrderLines).values({
+      poId:           po.id,
+      flowerName:     'Tulip Yellow',
+      quantityNeeded: 30,
+    });
+
+    const r = await queryRecordsHandler({ entity: 'stock_order_lines', join: ['po'] });
+    expect(r.error).toBeUndefined();
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]['stock_orders']?.poNumber).toBe('PO-4001');
+  });
+});
+
+describe('dataQueryPack.queryRecordsHandler — florist_hours', () => {
+  it('filters florist_hours by name and excludes soft-deleted rows', async () => {
+    await harness.db.insert(floristHours).values([
+      { name: 'Anna',  date: '2026-06-01', hours: '8.00', hourlyRate: '30.00' },
+      { name: 'Maria', date: '2026-06-01', hours: '6.00', hourlyRate: '30.00' },
+      { name: 'Anna',  date: '2026-06-02', hours: '4.00', hourlyRate: '30.00', deletedAt: new Date() },
+    ]);
+
+    const r = await queryRecordsHandler({
+      entity: 'florist_hours',
+      filters: [{ field: 'name', op: 'eq', value: 'Anna' }],
+    });
+    expect(r.error).toBeUndefined();
+    // Only the non-deleted Anna row counts
+    expect(r.matchedCount).toBe(1);
   });
 });
