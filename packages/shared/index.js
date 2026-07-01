@@ -177,3 +177,19 @@ export { suggestedMonoPrice } from './utils/productPricing.js';
 // Ask Blossom — AI assistant chat panel (markdown render, session continuity)
 export { default as AskBlossomPanel } from './components/AskBlossomPanel.jsx';
 export { default as AskBlossomLauncher } from './components/AskBlossomLauncher.jsx';
+
+// Explorer — read-only linked-record grid over query_records (ADR-0010, PRD #485)
+export {
+  EXPLORER_ROW_CAP,
+  EMPTY_EXPLORER_SPEC,
+  activeExplorerFilterCount,
+  resolveColumns,
+  buildDrillSpec,
+  formatExplorerValue,
+  toggleSort,
+  getSortDir,
+  applyColumnFilter,
+  columnFilterValues,
+  explorerRowsToCsv,
+} from './utils/explorerSpec.js';
+export { default as useExplorerQuery } from './hooks/useExplorerQuery.js';

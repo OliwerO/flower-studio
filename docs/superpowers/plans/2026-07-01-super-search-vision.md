@@ -1,6 +1,8 @@
 # Explorer — a linked-record explorer over Blossom's data (GRILLED / PRD-ready)
 
-**Status:** vision captured 2026-07-01; **grilled 2026-07-01** (all 8 open questions resolved — see decisions below); **PRD published as GitHub issue #485** (`needs-triage`). Canonical name is now **Explorer** (see CONTEXT.md; "super-search" was the origin term). Next: `to-issues` (tracer-bullet slices from #485). Foundation (Ask Blossom drill-down suite, #484) is merged and live in prod.
+**Status:** vision captured 2026-07-01; **grilled 2026-07-01** (all 8 open questions resolved — see decisions below); **PRD published as GitHub issue #485**. Canonical name is now **Explorer** (see CONTEXT.md; "super-search" was the origin term). Foundation (Ask Blossom drill-down suite, #484) merged + live in prod.
+
+**BUILT:** Wave A (backend) shipped in #491 (P1 engine + saved-views table/repo + `open_explorer_view` tool). **Wave B (UI) shipped** on `feat/explorer-ui` — `ExplorerTab` grid + shared `explorerSpec` util + `useExplorerQuery` hook + saved-views CRUD route + CSV + drill navigation + Ask Blossom "Open in Explorer ▸" handoff + Playwright rehearsal. All 5 phases (P1–P5) delivered; only the v2 items below (deep multi-hop reports, two-way handoff, Premade entity, florist parity) remain out of scope.
 
 ## The idea (owner's words, paraphrased)
 

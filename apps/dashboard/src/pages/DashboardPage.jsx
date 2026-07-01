@@ -19,6 +19,7 @@ const AdminTab = lazy(() => import('../components/AdminTab.jsx'));
 const SettingsTab = lazy(() => import('../components/SettingsTab.jsx'));
 const FinancialTab = lazy(() => import('../components/FinancialTab.jsx'));
 const IssuesTab = lazy(() => import('../components/IssuesTab.jsx'));
+const ExplorerTab = lazy(() => import('../components/ExplorerTab.jsx'));
 // Modals opened from the new-order speed-dial FAB (bottom-right). Lazy so
 // neither the AI paste-import nor the premade builder weighs on initial load.
 const TextImportModal = lazy(() => import('../components/TextImportModal.jsx'));
@@ -43,6 +44,7 @@ export default function DashboardPage() {
     { key: 'stock',     label: t.tabStock },
     { key: 'customers', label: t.tabCustomers },
     { key: 'financial', label: t.tabFinancial },
+    { key: 'explorer', label: t.tabExplorer },
     { key: 'products', label: t.tabProducts },
     { key: 'issues',   label: t.tabIssues },
     { key: 'admin',    label: '\u26a0 ' + t.tabAdmin },
@@ -195,6 +197,9 @@ export default function DashboardPage() {
         {renderMountedTab('products',
           <ProductsTab />
         )}
+        {renderMountedTab('explorer',
+          <ExplorerTab key={filterKey} isActive={activeTab === 'explorer'} initialFilter={tabFilter} onNavigate={navigateTo} />
+        )}
         {renderMountedTab('issues',
           <IssuesTab />
         )}
@@ -300,6 +305,7 @@ export default function DashboardPage() {
         reporterName="Owner"
         appArea="dashboard"
         onOpenOrders={(filter) => navigateTo({ tab: 'orders', filter: buildCrossTabNavFilter(filter) })}
+        onOpenExplorer={(spec) => navigateTo({ tab: 'explorer', filter: { explorerSpec: spec } })}
       />
     </div>
   );

@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-01 — Explorer (Wave B): owner linked-record grid UI over query_records
+
+Wave B of the Explorer feature (ADR-0010, PRD #485; Wave A backend shipped in #491). A new owner-only **Explorer** Dashboard tab: a read-only, human-driven second front-end on the same `query_records` engine Ask Blossom uses. Safe by construction — the UI can only emit the same validated declarative spec (allow-listed entities/fields/ops, row cap), never raw SQL, never writes.
+
+### Backend
+- **`explorerSchema.describeSchema()`** enriched: each field now carries its runtime row `key` (Drizzle jsKey, diverges from the model name for renamed columns e.g. `price`→`priceOverride`) so the grid reads `row[key]` while filters/sort emit the model name; each drill carries `localKey` + `foreignField` so the front-end can seed a single-hop drill query. Derived from Drizzle `getTableColumns` — no drift.
+- **`routes/explorer.js`** — added saved-views CRUD: `GET/POST /explorer/views`, `PATCH/DELETE /explorer/views/:id` (owner-only). `POST` **validates the spec via `validateSpec`** before persisting (400 on empty name / bad spec). Backed by the existing `saved_views` table + `savedViewRepo` (migration 0019, Wave A).
+- **E2E section 29** (`scripts/e2e-test.js`) — 33 assertions covering `/query` (valid + invalid specs), `/schema` (data-driven descriptor + runtime key), `/views` CRUD, and role gates (florist/driver → 403, no-PIN → 401).
+
+### Shared (test-mandated)
+- **`utils/explorerSpec.js`** — pure spec logic: `resolveColumns` (descriptor → labeled columns; plain vs groupBy/aggregate), `buildDrillSpec` (seeded single-hop), `toggleSort`/`getSortDir`, `applyColumnFilter`/`columnFilterValues`, `formatExplorerValue` (DMY), `explorerRowsToCsv` (RFC-4180). 18 unit tests.
+- **`hooks/useExplorerQuery.js`** — loads the descriptor once (cachedGet) + runs specs (`POST /explorer/query`); monotonic request id drops stale responses. 6 unit tests.
+- **`AskBlossomPanel` / `AskBlossomLauncher`** — new `onOpenExplorer` prop + an "Open in Explorer ▸" button rendered when a turn returns an `open_explorer_view` tool result (generalizes the existing "Open in Orders" handoff). No florist wiring — Explorer is dashboard-only.
+
+### Dashboard
+- **`components/ExplorerTab.jsx`** (new) + wired into `DashboardPage.jsx` TABS/`renderMountedTab`; the Ask Blossom launcher passes `onOpenExplorer={(spec) => navigateTo({tab:'explorer', filter:{explorerSpec}})}`. Entity picker · sortable/filterable columns (shared `ColumnFilterPopover`) · Group-by count summary · drill navigation w/ breadcrumb · row deep-links (orders/customers) · saved views · CSV. Russian `explorer` translation group + `tabExplorer` + `openInExplorer`.
+- **Playwright rehearsal** `tests/e2e/explorer-ui.spec.js` — open tab → grid → switch entity → drill → save view → CSV (green against the local-PG harness; dashboard webServer needs `VITE_OWNER_PIN=1111`).
+
+Frontend + additive backend only; no schema change beyond Wave A's migration 0019. Verified: backend 885 vitest, shared 680 vitest, E2E 253 (incl. section 29), all three apps `vite build`, Playwright rehearsal green.
+
 ## 2026-07-01 — Florist Stock: Flat (ungrouped) default view + time-in-stock sort
 
 Post-Y-model-cutover owner request: the shop-floor Stock view should default to an ungrouped list like the previous stock model, sorted by how long stems have been in stock, with grouping opt-in.

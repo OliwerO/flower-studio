@@ -37,9 +37,34 @@ describe('explorerSchema.describeSchema', () => {
       for (const f of e.fields) {
         expect(typeof f.name).toBe('string');
         expect(typeof f.label).toBe('string');
+        expect(typeof f.key).toBe('string');
+        expect(f.key.length).toBeGreaterThan(0);
         expect(['date', 'number', 'id', 'text']).toContain(f.type);
       }
     }
+  });
+
+  // The Explorer grid reads cell values as row[field.key]. A plain query_records
+  // select returns rows keyed by the Drizzle JS property name, NOT the
+  // model-facing field name — they diverge for renamed columns. The descriptor
+  // must carry the runtime key so the grid can read the value while filters
+  // still emit the model name.
+  it('field.key is the runtime row key (Drizzle jsKey), which diverges from name for renamed columns', () => {
+    const { entities } = describeSchema();
+    const byKey = Object.fromEntries(entities.map(e => [e.key, e]));
+    const keyOf = (entity, field) => byKey[entity].fields.find(f => f.name === field)?.key;
+
+    // Divergent: model name ≠ Drizzle jsKey
+    expect(keyOf('orders', 'price')).toBe('priceOverride');
+    expect(keyOf('stock', 'name')).toBe('displayName');
+    expect(keyOf('stock', 'quantity')).toBe('currentQuantity');
+    expect(keyOf('stock', 'type')).toBe('typeName');
+    expect(keyOf('order_lines', 'sellPrice')).toBe('sellPricePerUnit');
+
+    // Aligned: model name === Drizzle jsKey
+    expect(keyOf('orders', 'orderDate')).toBe('orderDate');
+    expect(keyOf('customers', 'name')).toBe('name');
+    expect(keyOf('key_people', 'importantDate')).toBe('importantDate');
   });
 
   it('key_people carries a drill to customers', () => {
@@ -52,6 +77,34 @@ describe('explorerSchema.describeSchema', () => {
     expect(drill.to).toBe('customers');
     expect(drill.cardinality).toBe('one');
     expect(drill.label).toMatch(/^Показать: /);
+  });
+
+  // The Explorer front-end seeds a drill as a fresh single-hop query
+  // (ADR-0010): filter the TARGET entity's `foreignField` by the clicked row's
+  // value at `localKey`. The descriptor must expose both so the pure
+  // buildDrillSpec helper can compose the spec without knowing the SCHEMA joins.
+  it('drills carry localKey (primary row key) + foreignField (target filter field)', () => {
+    const { entities } = describeSchema();
+    const byKey = Object.fromEntries(entities.map(e => [e.key, e]));
+
+    // customers → orders (many): filter orders.customerId by customer.id
+    const custToOrders = byKey.customers.drills.find(d => d.join === 'orders');
+    expect(custToOrders.localKey).toBe('id');
+    expect(custToOrders.foreignField).toBe('customerId');
+
+    // orders → customer (one): filter customers.id by order.customerId
+    const orderToCust = byKey.orders.drills.find(d => d.join === 'customer');
+    expect(orderToCust.localKey).toBe('customerId');
+    expect(orderToCust.foreignField).toBe('id');
+
+    // stock → (no drills defined) — sanity that drilling metadata never leaks
+    // undefined keys where drills exist.
+    for (const e of entities) {
+      for (const d of e.drills) {
+        expect(typeof d.localKey).toBe('string');
+        expect(typeof d.foreignField).toBe('string');
+      }
+    }
   });
 
   it('customers carries a new drill to key_people (many)', () => {
