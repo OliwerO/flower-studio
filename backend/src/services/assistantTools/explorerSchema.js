@@ -55,6 +55,23 @@ const ENTITY_LABELS = {
   florist_hours:      'Часы флористов',
 };
 
+// English labels — the descriptor ships BOTH so the Explorer grid follows the
+// dashboard language toggle (the whole app is bilingual RU/EN).
+const ENTITY_LABELS_EN = {
+  orders:             'Orders',
+  customers:          'Customers',
+  order_lines:        'Order lines',
+  stock:              'Stock (flowers)',
+  purchases:          'Purchases',
+  writeoffs:          'Write-offs',
+  deliveries:         'Deliveries',
+  marketing:          'Marketing',
+  key_people:         'Key people',
+  stock_orders:       'Purchase orders',
+  stock_order_lines:  'PO lines',
+  florist_hours:      'Florist hours',
+};
+
 // Russian labels for individual fields, keyed by field name (model-facing name
 // used in SCHEMA, not the DB column name). Shared across entities — a field
 // named `status` means the same thing everywhere it appears. Fields not
@@ -121,6 +138,70 @@ const FIELD_LABELS = {
   deliveryCount:       'Количество доставок',
 };
 
+// English field labels — same keys as FIELD_LABELS. Fields not listed fall
+// back to the raw field name (same as the RU map).
+const FIELD_LABELS_EN = {
+  id:                  'ID',
+  orderDate:           'Order date',
+  requiredBy:          'Required by',
+  status:              'Status',
+  deliveryType:        'Fulfilment type',
+  source:              'Source',
+  paymentStatus:       'Payment status',
+  paymentMethod:       'Payment method',
+  price:               'Price',
+  customerId:          'Customer ID',
+  name:                'Name',
+  phone:               'Phone',
+  segment:             'Segment',
+  orderId:             'Order ID',
+  stockItemId:         'Stock item ID',
+  quantity:            'Quantity',
+  sellPrice:           'Sell price',
+  flowerName:          'Flower name',
+  colour:              'Colour',
+  type:                'Type',
+  purchaseDate:        'Purchase date',
+  supplier:            'Supplier',
+  stockId:             'Stock item ID',
+  stockAirtableId:     'Airtable stock ID',
+  quantityPurchased:   'Qty purchased',
+  pricePerUnit:        'Price per unit',
+  notes:               'Notes',
+  date:                'Date',
+  reason:              'Reason',
+  deliveryAddress:     'Delivery address',
+  recipientName:       'Recipient name',
+  recipientPhone:      'Recipient phone',
+  deliveryDate:        'Delivery date',
+  deliveryTime:        'Delivery time',
+  courierTime:         'Courier time',
+  assignedDriver:      'Assigned driver',
+  deliveryFee:         'Delivery fee',
+  driverInstructions:  'Driver instructions',
+  deliveryMethod:      'Delivery method',
+  driverPayout:        'Driver payout',
+  deliveredAt:         'Delivered at',
+  month:               'Month',
+  channel:             'Channel',
+  amount:              'Amount',
+  address:             'Address',
+  importantDate:       'Important date',
+  importantDateLabel:  'Important date label',
+  poNumber:            'PO number',
+  createdDate:         'Created date',
+  plannedDate:         'Planned date',
+  poId:                'PO ID',
+  quantityNeeded:      'Qty needed',
+  quantityFound:       'Qty found',
+  costPrice:           'Cost price',
+  hours:               'Hours',
+  hourlyRate:          'Hourly rate',
+  bonus:               'Bonus',
+  deduction:           'Deduction',
+  deliveryCount:       'Delivery count',
+};
+
 // Field names that look like a date/timestamp despite not containing "date".
 const DATE_FIELD_OVERRIDES = new Set(['deliveredAt']);
 
@@ -140,6 +221,10 @@ function fieldLabel(fieldName) {
   return FIELD_LABELS[fieldName] || fieldName;
 }
 
+function fieldLabelEn(fieldName) {
+  return FIELD_LABELS_EN[fieldName] || fieldName;
+}
+
 /**
  * describeSchema — projects SCHEMA (dataQueryPack.js) into a UI-safe
  * descriptor consumed by the Explorer front-end. Returns plain, JSON-
@@ -148,9 +233,10 @@ function fieldLabel(fieldName) {
  * @returns {{ entities: Array<{
  *   key: string,
  *   label: string,
+ *   labelEn: string,
  *   softDelete: boolean,
- *   fields: Array<{ name: string, key: string, label: string, type: string }>,
- *   drills: Array<{ join: string, to: string, label: string, cardinality: string, localKey: string, foreignField: string }>,
+ *   fields: Array<{ name: string, key: string, label: string, labelEn: string, type: string }>,
+ *   drills: Array<{ join: string, to: string, label: string, labelEn: string, cardinality: string, localKey: string, foreignField: string }>,
  * }> }}
  */
 export function describeSchema() {
@@ -160,15 +246,17 @@ export function describeSchema() {
       // Runtime row key (Drizzle jsKey) — how a plain query_records select
       // returns this column. Falls back to the model name if the reverse
       // lookup misses (defensive; shouldn't happen for allow-listed columns).
-      key:   runtimeKeyFor(entityDef.table, fieldDef.col) || fieldName,
-      label: fieldLabel(fieldName),
-      type:  inferFieldType(fieldName),
+      key:     runtimeKeyFor(entityDef.table, fieldDef.col) || fieldName,
+      label:   fieldLabel(fieldName),
+      labelEn: fieldLabelEn(fieldName),
+      type:    inferFieldType(fieldName),
     }));
 
     const drills = Object.entries(entityDef.joins || {}).map(([joinName, joinDef]) => ({
       join:        joinName,
       to:          joinDef.to,
       label:       `Показать: ${ENTITY_LABELS[joinDef.to] || joinDef.to}`,
+      labelEn:     `Show: ${ENTITY_LABELS_EN[joinDef.to] || joinDef.to}`,
       cardinality: joinDef.cardinality,
       // Seed data for a single-hop drill query (ADR-0010): read the clicked
       // row's value at `localKey`, then filter the target entity's
@@ -180,6 +268,7 @@ export function describeSchema() {
     return {
       key,
       label:      ENTITY_LABELS[key] || key,
+      labelEn:    ENTITY_LABELS_EN[key] || key,
       softDelete: Boolean(entityDef.softDeleteCol),
       fields,
       drills,

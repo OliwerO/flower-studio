@@ -14,6 +14,24 @@
 
 export const EXPLORER_ROW_CAP = 200; // mirrors ROW_CAP in dataQueryPack.js
 
+// Pick the label for the current dashboard language. The descriptor ships both
+// `label` (Russian) and `labelEn`; everything downstream (columns, drills,
+// entity picker, breadcrumb) reads the single `label` field, so we localize the
+// whole schema up front and let the rest of the code stay language-agnostic.
+export function localizeSchema(schema, lang) {
+  if (!schema || !Array.isArray(schema.entities)) return schema;
+  const pick = (o) => (lang === 'en' && o.labelEn ? o.labelEn : o.label);
+  return {
+    ...schema,
+    entities: schema.entities.map((e) => ({
+      ...e,
+      label: pick(e),
+      fields: (e.fields || []).map((f) => ({ ...f, label: pick(f) })),
+      drills: (e.drills || []).map((d) => ({ ...d, label: pick(d) })),
+    })),
+  };
+}
+
 // A blank spec for a chosen entity. limit is left unset so the engine applies
 // its own ROW_CAP; sort/filters start empty.
 export function EMPTY_EXPLORER_SPEC(entity) {

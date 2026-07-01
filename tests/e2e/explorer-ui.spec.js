@@ -36,6 +36,11 @@ test.describe('Explorer — owner linked-record grid', () => {
     // Entity picker reflects the current entity.
     await expect(page.getByTestId('explorer-entity')).toHaveValue('orders');
 
+    // Column labels follow the dashboard language toggle (descriptor ships RU + EN).
+    await expect(grid).toContainText('Дата заказа'); // RU by default
+    await page.getByRole('button', { name: 'EN', exact: true }).click();
+    await expect(grid).toContainText('Order date'); // now English
+
     // Switch to Customers → grid re-queries.
     await page.getByTestId('explorer-entity').selectOption('customers');
     await expect(page.getByTestId('explorer-entity')).toHaveValue('customers');
@@ -44,8 +49,8 @@ test.describe('Explorer — owner linked-record grid', () => {
     // Drill: from a customer row, follow "→ Orders" (a seeded single-hop query).
     await page.getByTestId('explorer-row').first().getByTestId('explorer-drill-orders').click();
     await expect(page.getByTestId('explorer-entity')).toHaveValue('orders');
-    // Breadcrumb back control appears after a drill.
-    await expect(page.getByRole('button', { name: /Назад/ })).toBeVisible();
+    // Breadcrumb back control appears after a drill (label is language-dependent).
+    await expect(page.getByRole('button', { name: /Back|Назад/ })).toBeVisible();
 
     // Reset to a clean Orders view before saving.
     await page.getByTestId('explorer-entity').selectOption('orders');

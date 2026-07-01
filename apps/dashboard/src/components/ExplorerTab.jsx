@@ -9,10 +9,12 @@
 // All display logic lives in the shared `explorerSpec` util + `useExplorerQuery`
 // hook (both unit-tested); this component is the thin presentation layer.
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import t from '../translations.js';
 import {
   useExplorerQuery,
+  useLanguage,
+  localizeSchema,
   EMPTY_EXPLORER_SPEC,
   resolveColumns,
   buildDrillSpec,
@@ -117,7 +119,8 @@ function ColumnFilter({ col, spec, onApply }) {
 const normalizeSpec = (s) => ({ filters: [], sort: [], ...s });
 
 export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
-  const { schema, schemaLoading, schemaError, rows, matchedCount, truncated, loading, error, run } = useExplorerQuery();
+  const { schema: rawSchema, schemaLoading, schemaError, rows, matchedCount, truncated, loading, error, run } = useExplorerQuery();
+  const { lang } = useLanguage();
 
   const [spec, setSpec] = useState(null);
   const [history, setHistory] = useState([]); // [{ label, spec }] drill breadcrumb
@@ -131,6 +134,11 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   const initedRef = useRef(false);
   const viewsRef = useRef(null);
 
+  // Localize entity/field/drill labels to the dashboard language toggle. The
+  // spec itself (entities/fields it references) is language-agnostic — only the
+  // display labels swap, so re-localizing never re-runs a query.
+  const schema = useMemo(() => localizeSchema(rawSchema, lang), [rawSchema, lang]);
+
   // ── Init once the schema is loaded: use the handoff spec if present, else
   //    default to the first entity. ──
   useEffect(() => {
@@ -143,7 +151,7 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
     run(seed);
   }, [schema, schemaLoading, initialFilter, run]);
 
-  useEffect(() => { if (schema) loadViews(); }, [schema]);
+  useEffect(() => { if (rawSchema) loadViews(); }, [rawSchema]);
 
   // Close the saved-views dropdown on outside click.
   useEffect(() => {
@@ -415,7 +423,7 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
                   </th>
                 );
               })}
-              {showActions && <th className="px-3 py-2 text-right font-medium">{t.explorer.drillFrom}</th>}
+              {showActions && <th className="sticky right-0 z-10 bg-white px-3 py-2 text-right font-medium shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">{t.explorer.drillFrom}</th>}
             </tr>
           </thead>
           <tbody>
@@ -428,11 +436,13 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
                 <tr key={i} data-testid="explorer-row" className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
                   {columns.map((col) => (
                     <td key={col.name} className={`px-3 py-2 ${col.type === 'number' ? 'text-right tabular-nums' : ''} ${col.type === 'id' ? 'text-ios-tertiary text-xs font-mono' : 'text-ios-label'}`}>
-                      {formatExplorerValue(row[col.key], col.type)}
+                      {col.type === 'id'
+                        ? <span className="block max-w-[7rem] truncate" title={row[col.key] == null ? '' : String(row[col.key])}>{formatExplorerValue(row[col.key], col.type)}</span>
+                        : formatExplorerValue(row[col.key], col.type)}
                     </td>
                   ))}
                   {showActions && (
-                    <td className="px-3 py-2">
+                    <td className="sticky right-0 z-10 bg-white px-3 py-2 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
                         {drills.map((dr) => {
                           const canDrill = row[dr.localKey] != null && row[dr.localKey] !== '';

@@ -151,6 +151,28 @@ describe('explorerSchema.describeSchema', () => {
     expect(hours.drills).toEqual([]);
   });
 
+  // The Explorer grid follows the dashboard language toggle, so the descriptor
+  // ships BOTH a Russian `label` and an English `labelEn` for every entity,
+  // field, and drill.
+  it('every entity, field, and drill carries an English labelEn alongside the Russian label', () => {
+    const { entities } = describeSchema();
+    for (const e of entities) {
+      expect(typeof e.labelEn).toBe('string');
+      expect(e.labelEn.length).toBeGreaterThan(0);
+      for (const f of e.fields) {
+        expect(typeof f.labelEn).toBe('string');
+        expect(f.labelEn.length).toBeGreaterThan(0);
+      }
+      for (const d of e.drills) {
+        expect(d.labelEn).toMatch(/^Show: /);
+      }
+    }
+    const byKey = Object.fromEntries(entities.map((e) => [e.key, e]));
+    expect(byKey.orders.labelEn).toBe('Orders');
+    expect(byKey.orders.fields.find((f) => f.name === 'orderDate').labelEn).toBe('Order date');
+    expect(byKey.orders.fields.find((f) => f.name === 'price').labelEn).toBe('Price');
+  });
+
   it('drift/leak guard: the entire descriptor is plain JSON-serializable data', () => {
     const result = describeSchema();
     // JSON round-trip must reproduce an identical structure — if any value

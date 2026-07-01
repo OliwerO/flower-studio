@@ -5,6 +5,15 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-02 — Explorer polish: bilingual labels + pinned drill column
+
+Two fixes from first owner use of the live Explorer (prod).
+
+- **EN labels follow the language toggle.** The descriptor's entity/field/drill labels were hardcoded Russian regardless of the dashboard language. `explorerSchema.describeSchema()` now ships **both** `label` (RU) + `labelEn` for every entity, field, and drill; new shared `localizeSchema(schema, lang)` (in `explorerSpec.js`, unit-tested) swaps them up front; `ExplorerTab` reads the toggle via `useLanguage()` and re-localizes on change (labels only — never re-runs a query). The tab chrome already followed the toggle; now the grid does too.
+- **Drill/Open buttons no longer hidden off-screen.** On wide entities the per-row Related/Open actions sat past the horizontal scroll. The actions column is now **sticky to the right edge** (`sticky right-0` + left shadow) so it's always visible; long ID cells are truncated to ~7rem with a hover-title (full value), which also narrows the table.
+- Playwright rehearsal extended to assert the EN toggle re-labels the grid.
+- Frontend + additive backend only. Verified: backend vitest, shared 684 vitest, E2E 253, all three apps build, Playwright green.
+
 ## 2026-07-01 — Explorer (Wave B): owner linked-record grid UI over query_records
 
 Wave B of the Explorer feature (ADR-0010, PRD #485; Wave A backend shipped in #491). A new owner-only **Explorer** Dashboard tab: a read-only, human-driven second front-end on the same `query_records` engine Ask Blossom uses. Safe by construction — the UI can only emit the same validated declarative spec (allow-listed entities/fields/ops, row cap), never raw SQL, never writes.
