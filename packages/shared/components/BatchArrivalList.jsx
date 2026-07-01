@@ -20,6 +20,8 @@
 import { useMemo, useState } from 'react';
 import { byDateDesc } from '../utils/sortByDate.js';
 import InlinePriceField from './InlinePriceField.jsx';
+import ColumnFilterPopover from './ColumnFilterPopover.jsx';
+import { EMPTY_STOCK_FILTER, stockRowMatchesFilter } from '../utils/stockFilters.js';
 
 // Variety identity gets the widest range so long cultivar names (e.g. "Hawaiian
 // Coral", "Sarah Bernhardt") render in full; long names wrap a second line
@@ -44,10 +46,16 @@ const COLS = [
   { key: 'supplier',   label: 'supplier',   align: 'left'   },
 ];
 
-export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today, traceStockIds, traceNode, hideEmpty = false }) {
+export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today, traceStockIds, traceNode, hideEmpty = false, filter = EMPTY_STOCK_FILTER, onFilterChange, footer = false }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [sortKey, setSortKey] = useState('type');
   const [sortDir, setSortDir] = useState('asc');
+
+  // E1: per-column filtering is client-side (the grouped set is already loaded).
+  // A column popover patches one field; the host owns the filter object so a
+  // single "Filters (n)" badge + reset can live next to the view pills.
+  const filterable = typeof onFilterChange === 'function';
+  const setField = (patch) => onFilterChange && onFilterChange({ ...filter, ...patch });
 
   // hideEmpty (the dashboard "In stock" filter): drop merged rows with no
   // on-hand stems and no premade reservation. The group-level filter keeps a
@@ -55,9 +63,12 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
   // (0-qty, different-sell-price) tier still flattened to its own row here —
   // that's the pile of "0 available" duplicates the owner saw. (issue A)
   const rows = useMemo(() => {
-    const all = flatten(groups, reservations, today_);
-    return hideEmpty ? all.filter(r => r.qty > 0 || r.reserved > 0) : all;
-  }, [groups, reservations, today_, hideEmpty]);
+    let all = flatten(groups, reservations, today_);
+    if (hideEmpty) all = all.filter(r => r.qty > 0 || r.reserved > 0);
+    // E1: per-column filter, applied in memory on the flattened rows.
+    all = all.filter(r => stockRowMatchesFilter(r, filter));
+    return all;
+  }, [groups, reservations, today_, hideEmpty, filter]);
 
   const sortedRows = useMemo(() => {
     const arr = [...rows];
@@ -82,14 +93,6 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
     return arr;
   }, [rows, sortKey, sortDir]);
 
-  if (rows.length === 0) {
-    return (
-      <p data-testid="batch-arrival-empty" className="text-center text-sm text-gray-400 py-12">
-        {t.noStockFound ?? 'No batches'}
-      </p>
-    );
-  }
-
   function clickHeader(key) {
     if (sortKey === key) {
       setSortDir(d => (d === 'asc' ? 'desc' : 'asc'));
@@ -99,45 +102,145 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
     }
   }
 
+  // E2: totals across the currently-visible (filtered + sorted) rows.
+  const totals = useMemo(() => {
+    let count = 0, qty = 0, cost = 0, sell = 0;
+    for (const r of sortedRows) {
+      count += 1;
+      qty += Number(r.qty) || 0;
+      if (r.cost != null) cost += (Number(r.cost) || 0) * (Number(r.qty) || 0);
+      if (r.sell != null) sell += (Number(r.sell) || 0) * (Number(r.qty) || 0);
+    }
+    return { count, qty, cost, sell };
+  }, [sortedRows]);
+
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
       <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
         {COLS.map(c => {
           const active = sortKey === c.key;
           const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
+          const fActive = filterable && columnFilterActive(c.key, filter);
           return (
-            <button
-              key={c.key}
-              type="button"
-              data-testid={`sort-${c.key}`}
-              onClick={() => clickHeader(c.key)}
-              className={`flex items-center gap-1 ${c.align === 'right' ? 'justify-end' : c.align === 'center' ? 'justify-center' : ''} ${active ? 'text-gray-700 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
-            >
-              <span>{t[c.label] ?? c.label}</span>
-              {arrow && <span className="text-[9px]">{arrow}</span>}
-            </button>
+            <div key={c.key} className={`group flex items-center gap-0.5 ${c.align === 'right' ? 'justify-end' : c.align === 'center' ? 'justify-center' : ''}`}>
+              <button
+                type="button"
+                data-testid={`sort-${c.key}`}
+                onClick={() => clickHeader(c.key)}
+                className={`flex items-center gap-1 ${active ? 'text-gray-700 font-semibold' : 'text-gray-400 hover:text-gray-600'}`}
+              >
+                <span>{t[c.label] ?? c.label}</span>
+                {arrow && <span className="text-[9px]">{arrow}</span>}
+              </button>
+              {filterable && (
+                <ColumnFilterPopover active={fActive} title={t[c.label] ?? c.label} align={c.align === 'right' ? 'right' : 'left'}>
+                  <ColumnFilterControl colKey={c.key} filter={filter} setField={setField} t={t} />
+                </ColumnFilterPopover>
+              )}
+            </div>
           );
         })}
       </div>
 
-      <ul className="divide-y divide-gray-100">
-        {sortedRows.map(b => {
-          const joinedIds = b.stockIds.join(',');
-          const isTraceActive = traceStockIds && joinedIds === traceStockIds;
-          return (
-            <BatchRow
-              key={b.id}
-              b={b}
-              t={t}
-              onRowClick={onRowClick}
-              onPatchPriceBulk={onPatchPriceBulk}
-              traceNode={isTraceActive ? traceNode : null}
-            />
-          );
-        })}
-      </ul>
+      {sortedRows.length === 0 ? (
+        <p data-testid="batch-arrival-empty" className="text-center text-sm text-gray-400 py-12">
+          {t.noStockFound ?? 'No batches'}
+        </p>
+      ) : (
+        <ul className="divide-y divide-gray-100">
+          {sortedRows.map(b => {
+            const joinedIds = b.stockIds.join(',');
+            const isTraceActive = traceStockIds && joinedIds === traceStockIds;
+            return (
+              <BatchRow
+                key={b.id}
+                b={b}
+                t={t}
+                onRowClick={onRowClick}
+                onPatchPriceBulk={onPatchPriceBulk}
+                traceNode={isTraceActive ? traceNode : null}
+              />
+            );
+          })}
+        </ul>
+      )}
+
+      {/* E2: totals footer (item count · qty sum · cost value · sell value)
+          over the visible rows — restores the number the owner lost moving off
+          the legacy flat table. */}
+      {footer && sortedRows.length > 0 && (
+        <div data-testid="batch-arrival-footer" className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-xs font-semibold bg-gray-50/80 border-t-2 border-gray-200`}>
+          <span className="uppercase tracking-wide text-gray-500">{t.total ?? 'Total'} ({totals.count})</span>
+          <span></span>
+          <span className="text-right tabular-nums text-gray-900">{totals.qty}</span>
+          <span className="text-right tabular-nums text-gray-700">{totals.cost.toFixed(0)}</span>
+          <span className="text-right tabular-nums text-gray-700">{totals.sell.toFixed(0)}</span>
+          <span></span><span></span><span></span>
+        </div>
+      )}
     </div>
   );
+}
+
+// Whether a given column has an active filter dimension.
+function columnFilterActive(key, f) {
+  if (!f) return false;
+  switch (key) {
+    case 'type':     return !!f.typeQuery;
+    case 'variety':  return !!f.varietyQuery;
+    case 'supplier': return !!f.supplierQuery;
+    case 'qty':      return f.qtyMin != null || f.qtyMax != null;
+    case 'cost':     return f.costMin != null || f.costMax != null;
+    case 'sell':     return f.sellMin != null || f.sellMax != null;
+    case 'markup':   return f.markupMin != null || f.markupMax != null;
+    case 'arrived':  return !!f.arrivedFrom || !!f.arrivedTo;
+    default:         return false;
+  }
+}
+
+// The control rendered inside a column's filter popover.
+function ColumnFilterControl({ colKey, filter, setField, t }) {
+  const inputCls = 'w-full text-xs px-2 py-1 rounded-md border border-gray-200 focus:outline-none focus:ring-1 focus:ring-brand-300';
+  const num = (v) => (v === '' || v == null ? null : Number(v));
+  switch (colKey) {
+    case 'type':
+    case 'variety':
+    case 'supplier': {
+      const field = colKey === 'type' ? 'typeQuery' : colKey === 'variety' ? 'varietyQuery' : 'supplierQuery';
+      return (
+        <input
+          type="text"
+          autoFocus
+          value={filter[field]}
+          onChange={(e) => setField({ [field]: e.target.value })}
+          placeholder={t.filterContains ?? 'contains…'}
+          className={inputCls}
+        />
+      );
+    }
+    case 'qty':
+    case 'cost':
+    case 'sell':
+    case 'markup': {
+      const minF = `${colKey}Min`, maxF = `${colKey}Max`;
+      return (
+        <div className="flex items-center gap-1">
+          <input type="number" inputMode="decimal" value={filter[minF] ?? ''} onChange={(e) => setField({ [minF]: num(e.target.value) })} placeholder={t.filterMin ?? 'min'} className={inputCls} />
+          <span className="text-gray-300">–</span>
+          <input type="number" inputMode="decimal" value={filter[maxF] ?? ''} onChange={(e) => setField({ [maxF]: num(e.target.value) })} placeholder={t.filterMax ?? 'max'} className={inputCls} />
+        </div>
+      );
+    }
+    case 'arrived':
+      return (
+        <div className="space-y-1">
+          <input type="date" value={filter.arrivedFrom} onChange={(e) => setField({ arrivedFrom: e.target.value })} className={inputCls} />
+          <input type="date" value={filter.arrivedTo} onChange={(e) => setField({ arrivedTo: e.target.value })} className={inputCls} />
+        </div>
+      );
+    default:
+      return null;
+  }
 }
 
 function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {

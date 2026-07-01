@@ -63,6 +63,21 @@ export {
   orderMatchesClientFilter,
   activeOrderFilterCount,
 } from './utils/orderFilters.js';
+export {
+  EMPTY_STOCK_FILTER,
+  clearStockFilter,
+  stockRowMatchesFilter,
+  activeStockFilterCount,
+} from './utils/stockFilters.js';
+export {
+  EMPTY_VARIETY_FILTER,
+  clearVarietyFilter,
+  varietyMatchesFilter,
+  activeVarietyFilterCount,
+} from './utils/varietyFilters.js';
+// Header-anchored per-column filter popover shell — funnel button + panel.
+// Shared so both the Orders table and the Y-model Stock Flat table use one shell.
+export { default as ColumnFilterPopover } from './components/ColumnFilterPopover.jsx';
 
 // Bouquet image upload (Wix-backed)
 export { default as BouquetImageEditor } from './components/BouquetImageEditor.jsx';

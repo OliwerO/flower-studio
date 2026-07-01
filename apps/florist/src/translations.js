@@ -410,6 +410,7 @@ const en = {
     confidenceNone:     'Not in stock',
   },
   lotSize:            'Lot Size',
+  reorderThreshold:   'Reorder at',
   packs:              'packs',
 
   // CRM — expanded fields
@@ -811,6 +812,7 @@ const en = {
   clearAll:                  'Clear all',
   filterMin:                 'min',
   filterMax:                 'max',
+  stockFilterVariety:        'Colour / cultivar',
   bouquetComposition:        'Bouquet',
   presenceToggles:           'Must have',
   noMinimum:                 'Any',
@@ -1320,6 +1322,7 @@ const ru = {
     confidenceNone:     'Не найдено на складе',
   },
   lotSize:            'Фасовка',
+  reorderThreshold:   'Порог заказа',
   packs:              'уп.',
 
   // CRM — expanded fields
@@ -1721,6 +1724,7 @@ const ru = {
   clearAll:                  'Очистить всё',
   filterMin:                 'мин',
   filterMax:                 'макс',
+  stockFilterVariety:        'Цвет / сорт',
   bouquetComposition:        'Букет',
   presenceToggles:           'Должен быть',
   noMinimum:                 'Любое',

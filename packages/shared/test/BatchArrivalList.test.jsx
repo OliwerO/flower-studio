@@ -2,6 +2,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import BatchArrivalList from '../components/BatchArrivalList.jsx';
+import { EMPTY_STOCK_FILTER } from '../utils/stockFilters.js';
 
 const t = {
   type: 'type', variety: 'variety', available: 'available',
@@ -30,6 +31,16 @@ function makeSingleGroup() {
       { id: 'p1', current_quantity: 8, current_sell_price: 30, current_cost_price: 9, supplier: 'Akito', date: '2026-05-12' },
     ],
   }];
+}
+
+// One Rose (qty 10) + one Peony (qty 8) — distinct types for filter/footer tests.
+function twoTypes() {
+  return [
+    { type_name: 'Rose',  colour: 'Pink',  size_cm: 60, cultivar: null,
+      rows: [{ id: 'r1', current_quantity: 10, current_sell_price: 25, current_cost_price: 10, supplier: 'Akito',   date: '2026-05-10' }] },
+    { type_name: 'Peony', colour: 'White', size_cm: 50, cultivar: null,
+      rows: [{ id: 'p1', current_quantity: 8,  current_sell_price: 30, current_cost_price: 9,  supplier: 'Mondial', date: '2026-05-12' }] },
+  ];
 }
 
 describe('BatchArrivalList — merged-row drill-down (B3)', () => {
@@ -137,6 +148,44 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     render(<BatchArrivalList groups={groups} reservations={new Map([['b', 4]])} t={t} hideEmpty />);
     // tier a (in stock) + tier b (0 on hand but 4 reserved) both survive.
     expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(2);
+  });
+
+  it('E1: filter prop excludes non-matching rows', () => {
+    render(<BatchArrivalList groups={twoTypes()} t={t} filter={{ ...EMPTY_STOCK_FILTER, typeQuery: 'peony' }} onFilterChange={() => {}} />);
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(1);
+    expect(screen.getByText('White')).toBeInTheDocument(); // the Peony row
+    expect(screen.queryByText('Pink')).toBeNull();          // Rose filtered out
+  });
+
+  it('E1: keeps the header + shows empty state when a filter matches nothing (popovers stay reachable)', () => {
+    render(<BatchArrivalList groups={twoTypes()} t={t} filter={{ ...EMPTY_STOCK_FILTER, typeQuery: 'zzz' }} onFilterChange={() => {}} />);
+    expect(screen.getByTestId('batch-arrival-empty')).toBeInTheDocument();
+    expect(screen.getByTestId('sort-type')).toBeInTheDocument(); // header survives
+  });
+
+  it('E1: renders per-column filter triggers only when onFilterChange is provided', () => {
+    const { unmount } = render(<BatchArrivalList groups={twoTypes()} t={t} />);
+    expect(screen.queryByLabelText('type')).toBeNull(); // no funnel without a handler
+    unmount();
+    render(<BatchArrivalList groups={twoTypes()} t={t} onFilterChange={() => {}} />);
+    expect(screen.getByLabelText('type')).toBeInTheDocument(); // funnel trigger present
+  });
+
+  it('E2: footer sums count + qty over the visible rows only when footer is set', () => {
+    const { unmount } = render(<BatchArrivalList groups={twoTypes()} t={t} />);
+    expect(screen.queryByTestId('batch-arrival-footer')).toBeNull();
+    unmount();
+    render(<BatchArrivalList groups={twoTypes()} t={{ ...t, total: 'Total' }} footer />);
+    const footer = screen.getByTestId('batch-arrival-footer');
+    expect(footer).toHaveTextContent('Total (2)');
+    expect(footer).toHaveTextContent('18'); // 10 + 8 qty
+  });
+
+  it('E2: footer totals reflect the active filter', () => {
+    render(<BatchArrivalList groups={twoTypes()} t={{ ...t, total: 'Total' }} footer filter={{ ...EMPTY_STOCK_FILTER, typeQuery: 'rose' }} onFilterChange={() => {}} />);
+    const footer = screen.getByTestId('batch-arrival-footer');
+    expect(footer).toHaveTextContent('Total (1)');
+    expect(footer).toHaveTextContent('10'); // only the Rose qty
   });
 
   it('premade shown as a SUBSET: leads with free (qty − reserved), never additive "+" (CR-17)', () => {

@@ -51,6 +51,24 @@ until fresh dated stock lands.
   Cost/Sell/Markup/Arrived/Supplier), dashboard first then florist.
 - **E2** restore owner-wanted capabilities lost in the Y-model move (see audit below) — pick per owner.
 
+**Status (2026-07-01, branch `fix/stock-y-filters` → PR):**
+- ✅ **E1 dashboard** — SHIPPED. New shared `stockFilters` util (14 tests) + `ColumnFilterPopover` moved
+  to shared (dashboard file re-exports); `BatchArrivalList` renders a funnel per header, `Filters (n) ·
+  Reset` bar in `StockTab`. All client-side. Lab-verified (Type=peony → 2 rows, footer + bar update).
+- ✅ **E2 totals footer** — SHIPPED. `BatchArrivalList footer` sums count/qty/cost/sell over the visible
+  (filtered) rows. Lab-verified (TOTAL 7 · 92 · 981 · 2756, follows the filter).
+- ✅ **E2b inline reorder-threshold / lot-size edit — SHIPPED** (owner agreed placement). In the
+  By-Variety EXPANSION (`VarietyListItem`, owner-only `variety-reorder-settings` row): two inline
+  integer fields (`InlinePriceField` gained a `format`/`step` prop). Edit bulk-patches every batch of
+  the Variety (`onEditField` → dashboard `patchPriceBulk` / florist `handleEditVarietyField`); backend
+  already syncs Reorder Threshold across siblings. Lab-verified end-to-end (edit → all 7 batches updated).
+- ✅ **E1b florist filter parity — SHIPPED** (owner agreed). New shared `varietyFilters` util (Variety-
+  level: Type / colour·cultivar text / status short·tight·free / net range — a sibling of the flat-table
+  `stockFilters`, since the florist list is grouped by Variety not flattened sell-tiers) + a florist
+  `StockFilterDrawer` (bottom-sheet, mirrors `OrderFilterDrawer`). A `Filters (n)` pill in the Stock
+  control row opens it; the filter applies to `filteredGroups` so both Flat + By-type views honour it.
+  Lab-verified (Status=Short → 6 varieties down to the 1 short Peony).
+
 ## E2 audit — functionality lost moving legacy → Y-model
 
 **Dashboard (flat table → BatchArrivalList / VarietyListItem):**

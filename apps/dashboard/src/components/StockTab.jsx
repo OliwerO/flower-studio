@@ -22,6 +22,9 @@ import {
   buildPoSuggestions,
   varietyGroupMatchesView,
   getVarietyTotals,
+  EMPTY_STOCK_FILTER,
+  clearStockFilter,
+  activeStockFilterCount,
 } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
@@ -59,6 +62,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [showReconcile, setShowReconcile] = useState(false);
   const [view, setView]             = useState('all'); // 'all' | 'waste' | 'slow' | 'negative'
   const [hideZero, setHideZero]     = useState(true);
+  // E1: per-column filter for the Flat table (client-side over the loaded set).
+  const [stockFilter, setStockFilter] = useState(EMPTY_STOCK_FILTER);
+  const stockFilterCount = activeStockFilterCount(stockFilter);
   // Y-model UI state
   const [expandedKey, setExpandedKey]       = useState(null);   // which Variety row is expanded
   const [collapsedTypes, setCollapsedTypes] = useState(new Set()); // collapsed Type group keys
@@ -283,6 +289,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     const body = {};
     if (fields.cost != null) body['Current Cost Price'] = Number(fields.cost);
     if (fields.sell != null) body['Current Sell Price'] = Number(fields.sell);
+    // E2b: reorder threshold + lot size (already the API field names).
+    if (fields['Reorder Threshold'] != null) body['Reorder Threshold'] = Number(fields['Reorder Threshold']);
+    if (fields['Lot Size'] != null) body['Lot Size'] = Number(fields['Lot Size']);
     if (Object.keys(body).length === 0) return;
     try {
       await Promise.all(stockIds.map(id => client.patch(`/stock/${id}`, body)));
@@ -884,10 +893,28 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
             </div>
             {viewMode === 'batch' ? (
               <div className="glass-card overflow-hidden">
+                {/* E1: active-filter summary + one-click reset (the column
+                    popovers live in the table header below). */}
+                {stockFilterCount > 0 && (
+                  <div data-testid="stock-filter-bar" className="flex items-center justify-between px-4 py-2 bg-brand-50 border-b border-brand-100 text-xs">
+                    <span className="text-brand-700 font-medium">{(t.filtersActive ?? 'Filters')} ({stockFilterCount})</span>
+                    <button
+                      type="button"
+                      data-testid="stock-filter-reset"
+                      onClick={() => setStockFilter(clearStockFilter())}
+                      className="text-brand-600 hover:text-brand-800 font-medium"
+                    >
+                      {t.resetFilters ?? 'Reset'}
+                    </button>
+                  </div>
+                )}
                 <BatchArrivalList
                   groups={filteredGroups}
                   reservations={reservationsMap}
                   t={t}
+                  filter={stockFilter}
+                  onFilterChange={setStockFilter}
+                  footer
                   // "In stock" filter (A): also drop 0-qty tiers within a
                   // surviving Variety, not just whole empty Varieties.
                   hideEmpty={hideZero && view === 'all'}
@@ -952,6 +979,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           hideType={false}
                           isOwner={true}
                           showPlanned={anyPlanned}
+                          onEditField={patchPriceBulk}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
