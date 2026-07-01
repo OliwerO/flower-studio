@@ -5,7 +5,29 @@ import AskBlossomPanel from './AskBlossomPanel.jsx';
 // a bottom sheet on phones, a right-side drawer on desktop (responsive via `sm:`).
 // Shared by the dashboard + florist apps; replaces the old top tab / nav entry.
 // `fabClassName` lets a host nudge the button (e.g. above the florist bottom nav).
-const SPARKLE = "M12 2l1.8 4.9L19 8.7l-4.2 2.6L13.5 16 12 11.6 10.5 16 9.2 11.3 5 8.7l5.2-1.8L12 2z";
+
+// "Blossom bubble" — the flower-AI assistant mark: a chat bubble (currentColor,
+// so it inherits the button's white) with a small brand-tint bloom inside, saying
+// "assistant" + "flowers" at once. Two-tone (white bubble + brand-200 petals) reads
+// on both the flat pink and the gradient FAB, and on the brand-600 panel header.
+function BlossomMark({ size = 24 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" aria-hidden="true">
+      <path
+        fill="currentColor"
+        d="M6.2 3.4h11.6a2.9 2.9 0 0 1 2.9 2.9v6.6a2.9 2.9 0 0 1-2.9 2.9h-6l-4.5 3.6a.7.7 0 0 1-1.14-.55v-3.05H6.2A2.9 2.9 0 0 1 3.3 12.9V6.3A2.9 2.9 0 0 1 6.2 3.4z"
+      />
+      <g transform="translate(0 -1.7)">
+        <circle cx="12" cy="9.45" r="2" fill="#fbcfe8" />
+        <circle cx="14.42" cy="11.21" r="2" fill="#fbcfe8" />
+        <circle cx="13.5" cy="13.06" r="2" fill="#fbcfe8" />
+        <circle cx="10.5" cy="13.06" r="2" fill="#fbcfe8" />
+        <circle cx="9.58" cy="11.21" r="2" fill="#fbcfe8" />
+        <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+      </g>
+    </svg>
+  );
+}
 
 export default function AskBlossomLauncher({
   t,
@@ -29,9 +51,9 @@ export default function AskBlossomLauncher({
         <button
           aria-label={t.tabAssistant}
           onClick={() => setOpen(true)}
-          className={`fixed z-40 ${fabClassName} w-14 h-14 rounded-full bg-brand-600 text-white shadow-xl flex items-center justify-center hover:bg-brand-700 active:scale-95 transition`}
+          className={`fixed z-40 ${fabClassName} w-14 h-14 rounded-full bg-gradient-to-br from-brand-400 via-brand-600 to-brand-700 text-white shadow-xl flex items-center justify-center hover:from-brand-500 hover:to-brand-800 active:scale-95 transition`}
         >
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={SPARKLE} /></svg>
+          <BlossomMark size={24} />
         </button>
       )}
 
@@ -49,7 +71,7 @@ export default function AskBlossomLauncher({
                          : 'inset-x-0 bottom-0 top-[12%] rounded-t-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:top-0 sm:w-[440px] sm:max-w-[92vw] sm:rounded-none'}`}
           >
             <div className="flex items-center gap-2 px-3 py-2 border-b bg-brand-600 text-white shrink-0">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d={SPARKLE} /></svg>
+              <BlossomMark size={18} />
               <span className="font-semibold text-sm flex-1">Ask Blossom</span>
               <button
                 aria-label={maximized ? 'Restore' : 'Maximize'}
