@@ -600,3 +600,18 @@ export const assistantConversations = pgTable('assistant_conversations', {
 }, (t) => ({
   updatedIdx: index('assistant_conversations_updated_idx').on(t.updatedAt),
 }));
+
+// ── Explorer: saved views (ADR-0010) ──
+// Single-owner app — no per-user scoping, a saved view belongs to the Owner.
+// `spec` stores the same declarative query_records spec the engine validates
+// (validation happens at query time in the route layer, not here).
+export const savedViews = pgTable('saved_views', {
+  id:        uuid('id').primaryKey().defaultRandom(),
+  name:      text('name').notNull(),
+  spec:      jsonb('spec').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  deletedAt: timestamp('deleted_at', { withTimezone: true }),
+}, (t) => ({
+  createdIdx: index('saved_views_created_idx').on(t.createdAt),
+}));
