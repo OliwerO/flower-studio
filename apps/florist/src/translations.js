@@ -410,6 +410,7 @@ const en = {
     confidenceNone:     'Not in stock',
   },
   lotSize:            'Lot Size',
+  reorderThreshold:   'Reorder at',
   packs:              'packs',
 
   // CRM — expanded fields
@@ -1320,6 +1321,7 @@ const ru = {
     confidenceNone:     'Не найдено на складе',
   },
   lotSize:            'Фасовка',
+  reorderThreshold:   'Порог заказа',
   packs:              'уп.',
 
   // CRM — expanded fields

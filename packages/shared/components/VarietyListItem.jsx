@@ -30,6 +30,7 @@ import { varietyFinancials } from '../utils/varietyFinancials.js';
 import { formatDateDMY } from '../utils/formatDate.js';
 import VarietyIdentity from './VarietyIdentity.jsx';
 import DateTag from './DateTag.jsx';
+import InlinePriceField from './InlinePriceField.jsx';
 
 export default function VarietyListItem({
   variety,
@@ -48,6 +49,7 @@ export default function VarietyListItem({
   isOwner = false, // CR-36: owner-only cost/sell/markup/supplier on expand
   showHeaderTrace = true, // D4: florist hides the always-on header trace icon; trace stays in the expand body
   showPlanned = true, // D3 round-2: parent sets false when NO visible Variety has planned demand → Planned column collapses so In-premade sits next to On-hand
+  onEditField, // (stockIds, fields) — owner bulk-patch of Reorder Threshold / Lot Size across the Variety (E2b). Owner-only; edit fields render on expand.
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
@@ -249,6 +251,20 @@ export default function VarietyListItem({
         const sell = fin.sell ?? 0;
         const supplier = fin.supplier;
         const markup = fin.markup != null ? fin.markup.toFixed(1) : null;
+        // E2b: owner reorder settings — read the current Variety-level values
+        // (consistent across batches; Reorder Threshold auto-syncs siblings on
+        // the backend). Read from the first row, dual-reading PascalCase.
+        const allStockIds = (variety.rows || []).map((r) => r.id);
+        const readInt = (keyA, keyB) => {
+          for (const r of variety.rows || []) {
+            const v = r[keyA] ?? r[keyB];
+            if (v != null && v !== '') return Number(v);
+          }
+          return null;
+        };
+        const reorderThreshold = readInt('Reorder Threshold', 'reorder_threshold');
+        const lotSize = readInt('Lot Size', 'lot_size');
+        const intFmt = (v) => String(Math.round(v));
         return (
         <ul className="bg-gray-50 border-t border-gray-100">
           {isOwner && (sell > 0 || cost > 0 || supplier) && (
@@ -260,6 +276,35 @@ export default function VarietyListItem({
               <span>{t.sellPrice ?? 'Sell'}: <span className="font-semibold tabular-nums text-gray-800">{sell.toFixed(2)}</span></span>
               {markup && <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium tabular-nums">×{markup}</span>}
               {supplier && <span>{t.supplier ?? 'Supplier'}: <span className="text-gray-800">{supplier}</span></span>}
+            </li>
+          )}
+          {/* E2b: owner-editable reorder threshold + lot size (restored from the
+              legacy flat table; per-Variety, patched across every batch). */}
+          {isOwner && onEditField && (
+            <li
+              data-testid="variety-reorder-settings"
+              className="flex flex-wrap items-center gap-x-5 gap-y-1 px-6 py-2 text-xs text-gray-600 border-b border-gray-100"
+            >
+              <span className="flex items-center gap-1">
+                {t.reorderThreshold ?? 'Reorder at'}:
+                <InlinePriceField
+                  value={reorderThreshold}
+                  format={intFmt}
+                  step="1"
+                  testid="variety-edit-threshold"
+                  onSave={(v) => onEditField(allStockIds, { 'Reorder Threshold': Math.max(0, Math.round(v)) })}
+                />
+              </span>
+              <span className="flex items-center gap-1">
+                {t.lotSize ?? 'Lot size'}:
+                <InlinePriceField
+                  value={lotSize}
+                  format={intFmt}
+                  step="1"
+                  testid="variety-edit-lotsize"
+                  onSave={(v) => onEditField(allStockIds, { 'Lot Size': Math.max(0, Math.round(v)) })}
+                />
+              </span>
             </li>
           )}
           {expansionRows.map((row) => {

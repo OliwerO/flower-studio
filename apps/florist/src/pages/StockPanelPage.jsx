@@ -202,6 +202,16 @@ export default function StockPanelPage() {
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
+  // E2b: owner bulk-patch of a Variety-level field (Reorder Threshold / Lot Size)
+  // across every batch of the Variety; refetch so the grouped view reflects it.
+  async function handleEditVarietyField(stockIds, fields) {
+    try {
+      await Promise.all(stockIds.map(id => client.patch(`/stock/${id}`, fields)));
+      showToast(t.stockUpdated, 'success');
+      fetchStock();
+    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
+  }
+
   // Bulk price patch for the Y-model merged Stock row — patches every
   // underlying stock_id so the whole physical bucket re-prices in one tap.
   // `fields` keys: `cost` and/or `sell` (raw numbers; mapped to backend keys).
@@ -469,6 +479,7 @@ export default function StockPanelPage() {
           pendingPO={pendingPO}
           hideType={false}
           isOwner={role === 'owner'}
+          onEditField={role === 'owner' ? handleEditVarietyField : undefined}
           // Florist: no always-on trace icon on the row (D4). Trace stays
           // reachable via tap-to-expand → Trace. Dashboard keeps the header icon.
           showHeaderTrace={false}

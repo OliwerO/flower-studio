@@ -289,6 +289,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     const body = {};
     if (fields.cost != null) body['Current Cost Price'] = Number(fields.cost);
     if (fields.sell != null) body['Current Sell Price'] = Number(fields.sell);
+    // E2b: reorder threshold + lot size (already the API field names).
+    if (fields['Reorder Threshold'] != null) body['Reorder Threshold'] = Number(fields['Reorder Threshold']);
+    if (fields['Lot Size'] != null) body['Lot Size'] = Number(fields['Lot Size']);
     if (Object.keys(body).length === 0) return;
     try {
       await Promise.all(stockIds.map(id => client.patch(`/stock/${id}`, body)));
@@ -976,6 +979,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           hideType={false}
                           isOwner={true}
                           showPlanned={anyPlanned}
+                          onEditField={patchPriceBulk}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
