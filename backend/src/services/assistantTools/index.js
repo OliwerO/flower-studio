@@ -17,6 +17,7 @@ import { searchTextHandler } from './freeTextPack.js';
 import { purchaseDetailHandler } from './purchaseDetailPack.js';
 import { listValuesHandler } from './discoveryPack.js';
 import { openOrdersViewHandler } from './ordersViewPack.js';
+import { openExplorerViewHandler } from './explorerViewPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -483,6 +484,31 @@ export const TOOLS = [
       additionalProperties: false,
     },
     handler: openOrdersViewHandler,
+  },
+  {
+    name: 'open_explorer_view',
+    description:
+      'A SIGNAL tool that echoes a validated query_records spec so the dashboard can render an ' +
+      '"Open in Explorer" button deep-linking into the owner\'s Explorer grid, pre-filtered. ' +
+      'No data is read; use this AFTER you already have a spec you would run with query_records ' +
+      'and the owner would benefit from exploring the full result interactively.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        spec: {
+          type: 'object',
+          description:
+            'A query_records spec: entity (required), plus optional filters/join/groupBy/aggregate/sort/limit/includeCancelled. ' +
+            'Same allow-listed shape query_records accepts.',
+        },
+        label: {
+          type: 'string',
+          description: "Short Russian title for the view, shown on the button, e.g. 'Заказы за июнь'.",
+        },
+      },
+      required: ['spec'],
+    },
+    handler: openExplorerViewHandler,
   },
 ];
 
