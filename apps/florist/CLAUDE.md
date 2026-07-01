@@ -24,7 +24,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | CustomerDetailPage | /customers/:id | all | Customer profile + order history |
 | WasteLogPage | /waste | owner | Stock-loss entry log by reason |
 | SubstituteReconciliationPage | /reconcile | owner | Reconcile substitutions made during PO shopping |
-| ~~AssistantPage~~ | ~~`/assistant`~~ | owner | Removed — replaced by the shared `AskBlossomLauncher` FAB (`bottom-36 right-4`) rendered owner-only in `App.jsx` `Layout`. Sits at `bottom-36` (not `bottom-20`) to stack **above** the OrderListPage "Новый заказ" FAB (`bottom-20 right-5 z-50`), which would otherwise paint over it on `/orders`. Opens the same `AskBlossomPanel` as the dashboard. |
+| ~~AssistantPage~~ | ~~`/assistant`~~ | owner | Removed — replaced by the shared `AskBlossomLauncher` FAB (`bottom-36 right-5`) rendered owner-only in `App.jsx` `Layout`. Sits at `bottom-36` (not `bottom-20`) to stack **above** the OrderListPage "Новый заказ" FAB (`bottom-20 right-5 z-50`), which would otherwise paint over it on `/orders`; **`right-5` matches that FAB so both circles line up vertically** (was `right-4` → 4px off, fixed). The FAB is a **brand gradient** circle with the **"Blossom bubble"** flower-AI mark (chat bubble + bloom). Opens the same `AskBlossomPanel` as the dashboard. |
 
 ## Key Components (src/components/)
 | Component | Purpose |

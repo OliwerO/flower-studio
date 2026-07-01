@@ -72,7 +72,7 @@ function Layout({ children }) {
       {role === 'owner' && (
         <AskBlossomLauncher
           t={t}
-          fabClassName="bottom-36 right-4"
+          fabClassName="bottom-36 right-5"
           reporterRole={role}
           reporterName={reporterName}
           appArea="florist"
