@@ -17,9 +17,11 @@ import {
   BatchArrivalList,
   BatchTracePanel,
   VarietyTracePanel,
+  OrderQuickViewModal,
   WriteOffBatchPicker,
   buildPoSuggestions,
   varietyGroupMatchesView,
+  getVarietyTotals,
 } from '@flower-studio/shared';
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
@@ -71,6 +73,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [traceTrail, setTraceTrail]         = useState(null);
   const [traceLoading, setTraceLoading]     = useState(false);
   // Variety-level trace (inline, independent of per-Batch trace above)
+  // Round-2: order rows/markers in a trace open a read-only popup OVER the
+  // trace instead of switching to the Orders tab (owner keeps her place).
+  const [quickViewOrderId, setQuickViewOrderId]         = useState(null);
   const [varietyTraceKey, setVarietyTraceKey]           = useState(null);
   const [varietyTrail, setVarietyTrail]                 = useState([]);
   const [varietyUnaccounted, setVarietyUnaccounted]     = useState(0);
@@ -462,6 +467,14 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     return list;
   }, [groups, hideZero, view, stockYModelEnabled, reservationsMap, search]);
 
+  // D3 round-2: reserve the Planned column only when some visible Variety has
+  // pending order demand; otherwise collapse it so In-premade sits next to
+  // On-hand (kills the empty-column gap). Mirrors the florist StockPanelPage.
+  const anyPlanned = useMemo(
+    () => filteredGroups.some(g => getVarietyTotals(g.rows, reservationsMap).planned > 0),
+    [filteredGroups, reservationsMap],
+  );
+
   // ── Y-model: batch trace fetch triggered by traceStockId ──
   // traceStockId can be a single id or comma-separated list (merged batch in
   // By Batch view) — union trails for all underlying stock_ids.
@@ -829,7 +842,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
               }}
               splitType
               onPatchPriceBulk={patchPriceBulk}
-              onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })}
+              onOrderClick={(recordId) => setQuickViewOrderId(recordId)}
             />
             <PendingArrivalsPanel
               pendingPO={pendingPO}
@@ -844,7 +857,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                 const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
                 return res.data; // { variety, events, unaccountedStems }
               }}
-              onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })}
+              onOrderClick={(recordId) => setQuickViewOrderId(recordId)}
             />
             {/* View toggle: Variety / Batch */}
             <div className="flex items-center gap-1 mb-3 p-1 bg-gray-100 rounded-full w-fit">
@@ -938,6 +951,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           pendingPO={pendingPO}
                           hideType={false}
                           isOwner={true}
+                          showPlanned={anyPlanned}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
@@ -989,7 +1003,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                             {varietyTraceLoading ? (
                               <p className="text-xs text-ios-tertiary">{t.loading}</p>
                             ) : (
-                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => onNavigate?.({ tab: 'orders', filter: { orderId: recordId } })} />
+                              <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => setQuickViewOrderId(recordId)} />
                             )}
                           </div>
                         )}
@@ -1206,6 +1220,16 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
           </table>
         </div>
       )}
+
+      {/* Order preview popup — opened from any trace order row/marker; sits
+          above everything (z-60) so closing returns to the inline trace. */}
+      <OrderQuickViewModal
+        orderId={quickViewOrderId}
+        apiClient={client}
+        t={t}
+        onClose={() => setQuickViewOrderId(null)}
+        onOpenFull={(id) => { setQuickViewOrderId(null); onNavigate?.({ tab: 'orders', filter: { orderId: id } }); }}
+      />
     </div>
   );
 }

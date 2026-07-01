@@ -136,6 +136,10 @@ export { default as BatchTraceModal } from './components/BatchTraceModal.jsx';
 // surfaces drift via an "unaccounted stems" footer (PRD #324 T5).
 export { default as VarietyTracePanel } from './components/VarietyTracePanel.jsx';
 
+// Read-only order preview shown OVER the Variety trace — tapping a trace order
+// opens this popup instead of navigating away (owner feedback, round-2).
+export { default as OrderQuickViewModal } from './components/OrderQuickViewModal.jsx';
+
 // Write-off Batch picker — Demand Entries excluded, default oldest, FIFO (issue #289)
 export { default as WriteOffBatchPicker } from './components/WriteOffBatchPicker.jsx';
 

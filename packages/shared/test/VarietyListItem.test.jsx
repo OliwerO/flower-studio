@@ -88,6 +88,25 @@ describe('VarietyListItem header', () => {
   });
 });
 
+describe('VarietyListItem Planned column collapse (D3 round-2)', () => {
+  it('renders the Planned bucket by default (showPlanned defaults true)', () => {
+    render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} />);
+    expect(screen.getByTestId('bucket-planned')).toBeInTheDocument();
+  });
+
+  it('drops the Planned column entirely when showPlanned={false} (no empty gap)', () => {
+    render(<VarietyListItem variety={variety} reservations={new Map([['b1', 3]])} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} showPlanned={false} />);
+    // Planned cell is gone…
+    expect(screen.queryByTestId('bucket-planned')).toBeNull();
+    // …On-hand + In-premade still render, so the row is intact.
+    expect(screen.getByTestId('bucket-onHand')).toHaveTextContent('10');
+    expect(screen.getByTestId('bucket-reserved')).toHaveTextContent('3');
+    expect(screen.getByTestId('bucket-net')).toHaveTextContent('7');
+  });
+});
+
 describe('VarietyListItem history button (S2)', () => {
   it('renders variety-history-btn when onVarietyTrace is provided', () => {
     const onVarietyTrace = vi.fn();
@@ -151,14 +170,26 @@ describe('VarietyListItem expansion', () => {
     expect(screen.queryAllByTestId('stock-item-row')).toHaveLength(0);
   });
 
-  it('B1: Demand rows show requirement date; merged Batch tier shows its NEWEST receive date', () => {
+  it('B1 round-2: the Batch chip IS the arrival date (no "Batch" word); Demand keeps its label + date', () => {
     // 2026-05-12 = Demand requirement date. b1 (05-10) + b2 (05-11) merge into
-    // one Batch tier that now surfaces the newest receive (05-11), so a "Batch"
-    // row is no longer anonymous (owner feedback B1).
+    // one Batch tier whose chip now shows the newest receive (05-11) as the
+    // badge itself — the generic word "Batch" is gone (owner feedback B1 r2).
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
       hideType={true} expanded={true} onToggle={() => {}} />);
-    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument(); // demand date
-    expect(screen.getByText(/11\.05\.2026/)).toBeInTheDocument(); // batch tier newest receive
+    expect(screen.getByText(/12\.05\.2026/)).toBeInTheDocument(); // demand requirement date
+    expect(screen.getByText(/11\.05\.2026/)).toBeInTheDocument(); // batch chip = newest receive
+    expect(screen.queryByText('Batch')).toBeNull();               // the word is replaced by the date
+    expect(screen.getByText('Demand')).toBeInTheDocument();       // demand label stays
+  });
+
+  it('B1 round-2: a dated-less Batch tier falls back to the "Batch" word', () => {
+    const noDate = {
+      key: 'Rose|Pink|60|', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+      rows: [{ id: 'b1', current_quantity: 10 }], // no date at all
+    };
+    render(<VarietyListItem variety={noDate} reservations={new Map()} t={t}
+      hideType={true} expanded={true} onToggle={() => {}} />);
+    expect(screen.getByText('Batch')).toBeInTheDocument();
   });
 
   it('Demand Entry rows are visually distinct (data-row-kind="demand")', () => {

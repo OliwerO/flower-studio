@@ -1,35 +1,41 @@
+import { useId } from 'react';
 import { formatDateDMY } from '../utils/formatDate.js';
 
 /**
- * BalanceSparkline — step-chart rendering of stock balance over time.
+ * BalanceSparkline — stock balance over time, redesigned for at-a-glance reading
+ * (owner feedback C round-2: the old chart crammed a balance + delta + identity
+ * label onto EVERY event → tiny, overlapping, clipped text).
  *
- * Redesigned (CR-18) to be a tool, not decoration: the running balance AND the
- * delta + event identity at each change are legible ON the chart, without hover.
- *   1. Stock HOLDS its level until an event fires — staircase, not diagonal.
- *   2. X axis is time-proportional (3 days wide = 3x a 1-day column).
- *   3. Y axis always includes 0, with min / 0 / max gridlines + value labels.
- *   4. At each event: the running balance (how many we had) + the signed delta
- *      (what changed it), colour-coded; a short identity (order / supplier /
- *      bouquet / reason) under the date when the series is short enough to read.
- *   5. Event markers: green = in, red = out, gray = dissolve. Order markers are
- *      clickable via onOrderClick. A legend maps colour → meaning.
+ * The rule now (fintech balance-chart pattern — Robinhood / Monzo / NN-g
+ * "clutter-free charts"): the chart shows the SHAPE + a few anchor values; the
+ * per-event detail lives in the list below. Concretely:
+ *   1. A big headline CURRENT balance (the answer) sits above the plot.
+ *   2. The running balance is a HOLD-then-jump staircase (stock holds until an
+ *      event fires), time-proportional on X.
+ *   3. Only three things are direct-labelled: opening (start), peak/floor
+ *      (y-axis), and 0. No per-event text — it clipped and shrank.
+ *   4. The area fill is split at the zero baseline: green above, red below, so a
+ *      negative balance ("buy stems") is a visible signal, not decoration.
+ *   5. Events are bare coloured dots (green = in, red = out, gray = dissolve);
+ *      order dots stay clickable via onOrderClick. Legend maps colour → meaning.
  *
  * Props
  *   events      — raw event array (same shape as /stock/:id/usage,
  *                 /stock/varieties/:key/usage). Undated events are ignored.
- *   t           — translation strings (stems, traceTypeOrder, traceTypeWriteoff,
- *                 traceTypePurchase, traceTypePremade, traceTypeDissolve,
- *                 traceBalance, traceLegendIn, traceLegendOut)
+ *   t           — translation strings (stems, traceBalance, traceTypeOrder,
+ *                 traceTypeWriteoff, traceTypePurchase, traceTypePremade,
+ *                 traceTypeDissolve, traceLegendIn, traceLegendOut, traceOpening)
  *   onOrderClick — optional (orderRecordId, event) => void — fires when an
  *                  order-type marker is clicked.
  *   asOf        — optional ISO date string for "now"; defaults to the last
  *                 dated event's date.
  *   opening     — stems that existed BEFORE the first recorded event (B2). The
- *                 running balance starts here instead of 0, so pre-record /
- *                 pre-cutover stock keeps the line from diving below zero (which
- *                 read as "wrote off flowers we never had").
+ *                 running balance starts here instead of 0, so pre-cutover stock
+ *                 keeps the line from diving below zero.
  */
 export default function BalanceSparkline({ events = [], t = {}, onOrderClick, asOf, opening = 0 }) {
+  const uid = useId();
+
   // --- 1. Prepare dated events -------------------------------------------
   const dated = (events || [])
     .filter((e) => e.date)
@@ -38,7 +44,6 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   if (dated.length < 1) return null;
 
   // --- 2. Running balance ---------------------------------------------------
-  // Start from the opening balance (pre-record stock), not 0.
   const openingBal = Number(opening) || 0;
   let running = openingBal;
   const points = dated.map((e) => {
@@ -50,22 +55,19 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   const lastPoint = points[points.length - 1];
   const lastBal = lastPoint.balance;
 
-  // --- 3. Layout constants ---------------------------------------------------
-  const W = 480;
-  const H = 230;
-  const padLeft = 38;   // room for y-axis value labels
-  const padRight = 16;
-  const padTop = 30;    // room for top balance label
-  const padBottom = 64; // x-axis date ticks + identity + legend
+  // --- 3. Layout ------------------------------------------------------------
+  // viewBox is kept close to the real render width (~340–480px) so text renders
+  // near 1:1 instead of being shrunk to illegibility. aspect-ratio + w-full lets
+  // the height follow the width, so nothing is letterboxed or downscaled.
+  const W = 360;
+  const H = 176;
+  const padLeft = 30;   // y-axis anchor labels
+  const padRight = 18;  // room for the endpoint dot + labels (no clipping)
+  const padTop = 16;
+  const padBottom = 26; // x-axis date ticks
 
   const plotW = W - padLeft - padRight;
   const plotH = H - padTop - padBottom;
-
-  // Show per-event balance/delta labels + identity only when the series is
-  // short enough that they don't collide; otherwise the markers + the event
-  // list below carry the detail. (~9 points fit at this width.)
-  const labelsFit = points.length <= 9;
-  const identityFits = points.length <= 6;
 
   // --- 4. Scale: time → x ---------------------------------------------------
   const firstDate = dated[0].date;
@@ -96,8 +98,8 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   const pathParts = [];
   const x0 = xOf(firstDate);
   const y0 = yOf(openingBal);
-  pathParts.push(`M ${x0.toFixed(1)} ${y0.toFixed(1)}`);           // start at opening balance
-  pathParts.push(`L ${x0.toFixed(1)} ${yOf(points[0].balance).toFixed(1)}`); // jump after first event
+  pathParts.push(`M ${x0.toFixed(1)} ${y0.toFixed(1)}`);                       // start at opening balance
+  pathParts.push(`L ${x0.toFixed(1)} ${yOf(points[0].balance).toFixed(1)}`);  // jump after first event
 
   for (let i = 1; i < points.length; i++) {
     const xi = xOf(points[i].event.date);
@@ -110,37 +112,23 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
   pathParts.push(`L ${xEnd.toFixed(1)} ${yOf(lastBal).toFixed(1)}`);  // trail to asOf
   const pathD = pathParts.join(' ');
 
-  // Soft fill under the staircase (down to the zero line) for readability.
+  // Area between the staircase and the zero baseline, split at zero via two
+  // clip rects → green fill above zero, red below.
   const areaD = `${pathD} L ${xEnd.toFixed(1)} ${zeroY.toFixed(1)} L ${x0.toFixed(1)} ${zeroY.toFixed(1)} Z`;
+  const plotBottom = padTop + plotH;
 
-  // --- 7. X-axis tick labels ------------------------------------------------
+  // --- 7. X-axis tick labels (start / mid / now — at most 3) ----------------
   const tickDates = (() => {
-    if (dated.length <= 6) {
-      return [...new Set(dated.map((e) => e.date))];
-    }
     const all = [...new Set(dated.map((e) => e.date))];
-    const mid = all[Math.floor(all.length / 2)];
-    return [all[0], mid, all[all.length - 1]];
+    if (all.length <= 3) return all;
+    return [all[0], all[Math.floor(all.length / 2)], all[all.length - 1]];
   })();
 
-  // --- 8. Marker / label helpers -------------------------------------------
-  function trailDetailFor(ev) {
-    switch (ev.type) {
-      case 'order': {
-        const oid = ev.orderId ?? null;
-        const customer = ev.customer ?? null;
-        if (oid && customer) return `${oid} — ${customer}`;
-        return oid ?? customer ?? null;
-      }
-      case 'writeoff': return ev.reason ?? null;
-      case 'purchase': return ev.supplier ?? null;
-      case 'premade':  return ev.bouquetName ?? null;
-      case 'dissolve': {
-        const released = ev.releasedQty ? `+${ev.releasedQty} ${t.stems ?? 'stems'} freed` : null;
-        return [ev.bouquetName, released].filter(Boolean).join(' · ') || null;
-      }
-      default: return null;
-    }
+  // --- 8. Helpers -----------------------------------------------------------
+  function markerFill(ev) {
+    const qty = ev.qty ?? ev.quantity ?? 0;
+    if (ev.type === 'dissolve') return '#9ca3af'; // gray
+    return qty > 0 ? '#10b981' : '#ef4444';
   }
 
   function typeLabelFor(type) {
@@ -154,196 +142,209 @@ export default function BalanceSparkline({ events = [], t = {}, onOrderClick, as
     }
   }
 
-  // Short identity shown under the marker's date — "who/what" consumed/added.
-  function identityShort(ev) {
-    let s = null;
-    switch (ev.type) {
-      case 'order':    s = ev.customer ?? (ev.orderId ? `#${String(ev.orderId).slice(-3)}` : typeLabelFor('order')); break;
-      case 'purchase': s = ev.supplier ?? (ev.poDisplayId ? `PO ${ev.poDisplayId}` : typeLabelFor('purchase')); break;
-      case 'writeoff': s = ev.reason ?? typeLabelFor('writeoff'); break;
-      case 'premade':  s = ev.bouquetName ?? typeLabelFor('premade'); break;
-      case 'dissolve': s = ev.bouquetName ?? typeLabelFor('dissolve'); break;
-      default:         s = ev.type;
-    }
-    if (!s) return null;
-    return s.length > 12 ? `${s.slice(0, 11)}…` : s;
-  }
-
-  function markerFill(ev) {
-    const qty = ev.qty ?? ev.quantity ?? 0;
-    if (ev.type === 'dissolve') return '#9ca3af'; // gray
-    return qty > 0 ? '#10b981' : '#ef4444';
-  }
-
-  function deltaStr(p) {
-    if (p.event.type === 'dissolve') {
-      const r = Number(p.event.releasedQty) || 0;
-      return r ? `+${r}` : '0';
-    }
-    return p.delta > 0 ? `+${p.delta}` : `${p.delta}`;
-  }
-
-  // --- 9. Y-axis value labels: min / 0 / max -------------------------------
+  // --- 9. Anchor y-labels: max / 0 / min ------------------------------------
   const maxBalStr = `${yMax > 0 ? '+' : ''}${yMax}`;
   const maxY = yOf(yMax);
   const minY = yOf(yMin);
   const showMin = yMin < 0; // only label a negative floor; 0 already labelled
 
-  // --- Render -----------------------------------------------------------------
+  // Opening label: keep it inside the plot (flip below the dot if it's near top).
+  const openingLabelBelow = y0 - padTop < 14;
+
+  // --- Render ---------------------------------------------------------------
   return (
     <div
       data-testid="trace-sparkline"
-      className="bg-gradient-to-b from-blue-50/40 to-white px-3 py-2 border-b border-gray-100"
+      className="bg-white px-3 pt-2 pb-2 border-b border-gray-100"
     >
-      <div className="flex items-center justify-between text-[10px] uppercase tracking-wide text-gray-500 mb-1">
-        <span>{t.traceBalance ?? 'Balance'}</span>
-        <span className={`tabular-nums font-semibold ${lastBal < 0 ? 'text-red-600' : 'text-gray-700'}`}>
-          {lastBal} {t.stems}
-        </span>
+      {/* Hero: the current balance is the answer; the chart is context. */}
+      <div className="leading-none mb-1">
+        <div className="text-[11px] uppercase tracking-wide text-gray-400 font-medium">
+          {t.traceBalance ?? 'Balance'}
+        </div>
+        <div className="mt-1">
+          <span
+            data-testid="balance-current"
+            className={`text-3xl font-bold tabular-nums ${lastBal < 0 ? 'text-red-600' : 'text-emerald-600'}`}
+          >
+            {lastBal}
+          </span>
+          <span className="ml-1 text-sm text-gray-400">{t.stems}</span>
+        </div>
       </div>
 
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="w-full"
-        style={{ height: H }}
+        style={{ height: 'auto', aspectRatio: `${W} / ${H}`, display: 'block' }}
         preserveAspectRatio="xMidYMid meet"
       >
-        {/* Y gridlines + value labels: max, 0, (min if negative) */}
-        <line x1={padLeft} x2={W - padRight} y1={maxY} y2={maxY} stroke="#f3f4f6" strokeWidth="1" />
-        <text x={padLeft - 4} y={maxY + 3} textAnchor="end" fontSize="9" fill="#9ca3af" data-testid="y-label-max">
+        <defs>
+          <clipPath id={`${uid}-above`}>
+            <rect x="0" y={padTop} width={W} height={Math.max(0, zeroY - padTop)} />
+          </clipPath>
+          <clipPath id={`${uid}-below`}>
+            <rect x="0" y={zeroY} width={W} height={Math.max(0, plotBottom - zeroY)} />
+          </clipPath>
+        </defs>
+
+        {/* Sign-split area fill: green above zero, red below. */}
+        <path d={areaD} fill="#10b981" fillOpacity="0.14" stroke="none" clipPath={`url(#${uid}-above)`} />
+        <path d={areaD} fill="#ef4444" fillOpacity="0.14" stroke="none" clipPath={`url(#${uid}-below)`} />
+
+        {/* Zero baseline — the only gridline. */}
+        <line
+          data-testid="zero-line"
+          x1={padLeft}
+          x2={W - padRight}
+          y1={zeroY}
+          y2={zeroY}
+          stroke="#d1d5db"
+          strokeWidth="1"
+          strokeDasharray="3 3"
+        />
+
+        {/* Anchor y-labels (peak / floor / zero) — replace the gridlines. */}
+        <text x={padLeft - 5} y={maxY + 4} textAnchor="end" fontSize="11" fill="#9ca3af" className="tabular-nums" data-testid="y-label-max">
           {maxBalStr}
         </text>
-
-        <line data-testid="zero-line" x1={padLeft} x2={W - padRight} y1={zeroY} y2={zeroY} stroke="#d1d5db" strokeWidth="1" strokeDasharray="3 3" />
-        <text x={padLeft - 4} y={zeroY + 3} textAnchor="end" fontSize="9" fill="#9ca3af" data-testid="y-label-zero">
+        <text x={padLeft - 5} y={zeroY + 4} textAnchor="end" fontSize="11" fill="#9ca3af" className="tabular-nums" data-testid="y-label-zero">
           0
         </text>
-
         {showMin && (
-          <>
-            <line x1={padLeft} x2={W - padRight} y1={minY} y2={minY} stroke="#fef2f2" strokeWidth="1" />
-            <text x={padLeft - 4} y={minY + 3} textAnchor="end" fontSize="9" fill="#ef4444" data-testid="y-label-min">
-              {yMin}
-            </text>
-          </>
+          <text x={padLeft - 5} y={minY + 4} textAnchor="end" fontSize="11" fill="#ef4444" className="tabular-nums" data-testid="y-label-min">
+            {yMin}
+          </text>
         )}
 
-        {/* Soft area + staircase line */}
-        <path d={areaD} fill={lastBal < 0 ? '#ef444415' : '#10b98115'} stroke="none" />
+        {/* Staircase line — neutral slate so the fill/colour carry the meaning. */}
         <path
           d={pathD}
           fill="none"
-          stroke={lastBal < 0 ? '#ef4444' : '#10b981'}
-          strokeWidth="1.75"
-          strokeLinecap="square"
-          strokeLinejoin="miter"
+          stroke="#334155"
+          strokeWidth="2.25"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         />
 
-        {/* Opening balance (B2): pre-record stock the line starts from, so a
-            write-off never sits on a below-zero balance. */}
+        {/* Opening balance anchor (B2): where the pre-record stock starts. */}
         {openingBal > 0 && (
           <g data-testid="opening-marker">
-            <circle cx={x0.toFixed(1)} cy={yOf(openingBal).toFixed(1)} r="3" fill="#6366f1" stroke="#ffffff" strokeWidth="1" />
-            <text x={(x0 + 4).toFixed(1)} y={(yOf(openingBal) - 5).toFixed(1)} textAnchor="start" fontSize="8" fontWeight="600" fill="#6366f1">
+            <circle cx={x0.toFixed(1)} cy={y0.toFixed(1)} r="3.5" fill="#6366f1" stroke="#ffffff" strokeWidth="1.25" />
+            <text
+              x={(x0 + 6).toFixed(1)}
+              y={(openingLabelBelow ? y0 + 13 : y0 - 7).toFixed(1)}
+              textAnchor="start"
+              fontSize="11"
+              fontWeight="600"
+              fill="#6366f1"
+              className="tabular-nums"
+            >
               {t.traceOpening ?? 'opening'} {openingBal}
             </text>
           </g>
         )}
 
-        {/* Event markers + on-chart balance / delta labels */}
+        {/* Event dots — bare (no per-event text). Order dots are clickable. */}
         {points.map((p, i) => {
           const cx = xOf(p.event.date);
           const cy = yOf(p.balance);
           const ev = p.event;
           const qty = ev.qty ?? ev.quantity ?? 0;
-          const detail = trailDetailFor(ev);
-          const label = typeLabelFor(ev.type);
           const qtyStr = qty > 0 ? `+${qty}` : `${qty}`;
-          const titleText = `${label} · ${qtyStr} ${t.stems ?? 'stems'} · ${formatDateDMY(ev.date)}${detail ? ` · ${detail}` : ''}`;
+          const detail = trailDetailFor(ev, t);
+          const titleText = `${typeLabelFor(ev.type)} · ${qtyStr} ${t.stems ?? 'stems'} · ${formatDateDMY(ev.date)}${detail ? ` · ${detail}` : ''}`;
           const isOrderClickable = ev.type === 'order' && !!onOrderClick && !!ev.orderRecordId;
           const r = isOrderClickable ? 4.5 : 3.5;
-          const fill = markerFill(ev);
-          // Keep labels inside the plot: balance above the marker unless it's
-          // near the top, delta just below the marker.
-          const balAbove = cy - padTop > 16;
-          const balY = balAbove ? cy - 7 : cy + 18;
-          const deltaY = balAbove ? cy + 13 : cy - 7;
-          const deltaColor = ev.type === 'dissolve' ? '#6b7280' : (p.delta > 0 ? '#059669' : '#dc2626');
-
           return (
-            <g key={i}>
-              {labelsFit && (
-                <>
-                  <text x={cx} y={balY} textAnchor="middle" fontSize="9.5" fontWeight="700" fill={p.balance < 0 ? '#dc2626' : '#374151'} className="tabular-nums">
-                    {p.balance}
-                  </text>
-                  <text x={cx} y={deltaY} textAnchor="middle" fontSize="8.5" fontWeight="600" fill={deltaColor} className="tabular-nums">
-                    {deltaStr(p)}
-                  </text>
-                </>
-              )}
-              <circle
-                data-testid={`marker-${ev.type}`}
-                cx={cx.toFixed(1)}
-                cy={cy.toFixed(1)}
-                r={r}
-                fill={fill}
-                stroke="#ffffff"
-                strokeWidth="1"
-                {...(isOrderClickable ? {
-                  role: 'button',
-                  style: { cursor: 'pointer' },
-                  onClick: (e) => { e.stopPropagation(); onOrderClick(ev.orderRecordId, ev); },
-                } : {})}
-              >
-                <title>{titleText}</title>
-              </circle>
-              {/* Identity ("who/what") under the marker date — only when the series is short */}
-              {identityFits && identityShort(ev) && (
-                <text
-                  x={cx}
-                  y={H - padBottom + 26}
-                  textAnchor="middle"
-                  fontSize="7.5"
-                  fill={ev.type === 'order' ? '#dc2626' : '#6b7280'}
-                  data-testid={`identity-${i}`}
-                >
-                  {identityShort(ev)}
-                </text>
-              )}
-            </g>
+            <circle
+              key={i}
+              data-testid={`marker-${ev.type}`}
+              cx={cx.toFixed(1)}
+              cy={cy.toFixed(1)}
+              r={r}
+              fill={markerFill(ev)}
+              stroke="#ffffff"
+              strokeWidth="1.25"
+              {...(isOrderClickable ? {
+                role: 'button',
+                style: { cursor: 'pointer' },
+                onClick: (e) => { e.stopPropagation(); onOrderClick(ev.orderRecordId, ev); },
+              } : {})}
+            >
+              <title>{titleText}</title>
+            </circle>
           );
         })}
 
-        {/* X-axis date ticks */}
+        {/* Current-balance endpoint — enlarged hero dot on the line. */}
+        <circle
+          data-testid="endpoint-marker"
+          cx={xEnd.toFixed(1)}
+          cy={yOf(lastBal).toFixed(1)}
+          r="5"
+          fill={lastBal < 0 ? '#ef4444' : '#10b981'}
+          stroke="#ffffff"
+          strokeWidth="1.75"
+        />
+
+        {/* X-axis date ticks — start / mid / now. */}
         {tickDates.map((d) => {
           const tx = xOf(d);
           const label = formatDateDMY(d).slice(0, 5); // DD.MM only
+          // Keep the first/last tick text from spilling past the plot edges.
+          const anchor = tx <= padLeft + 2 ? 'start' : tx >= W - padRight - 2 ? 'end' : 'middle';
           return (
             <text
               key={d}
               x={tx.toFixed(1)}
-              y={H - padBottom + 14}
-              textAnchor="middle"
-              fontSize="8"
+              y={H - 8}
+              textAnchor={anchor}
+              fontSize="11"
               fill="#9ca3af"
+              className="tabular-nums"
               data-testid={`x-tick-${d}`}
             >
               {label}
             </text>
           );
         })}
-
-        {/* Legend: colour → meaning */}
-        <g transform={`translate(${padLeft}, ${H - 8})`} fontSize="8" fill="#6b7280">
-          <circle cx="3" cy="-3" r="3" fill="#10b981" />
-          <text x="10" y="0">{t.traceLegendIn ?? 'in'}</text>
-          <circle cx="48" cy="-3" r="3" fill="#ef4444" />
-          <text x="55" y="0">{t.traceLegendOut ?? 'out'}</text>
-          <circle cx="96" cy="-3" r="3" fill="#9ca3af" />
-          <text x="103" y="0">{t.traceTypeDissolve ?? 'dissolved'}</text>
-        </g>
       </svg>
+
+      {/* Legend (HTML, crisp text — colour → meaning). */}
+      <div className="mt-1 flex items-center gap-4 text-[11px] text-gray-500">
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#10b981' }} />
+          {t.traceLegendIn ?? 'in'}
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#ef4444' }} />
+          {t.traceLegendOut ?? 'out'}
+        </span>
+        <span className="flex items-center gap-1">
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#9ca3af' }} />
+          {t.traceTypeDissolve ?? 'dissolved'}
+        </span>
+      </div>
     </div>
   );
+}
+
+function trailDetailFor(ev, t) {
+  switch (ev.type) {
+    case 'order': {
+      const oid = ev.orderId ?? null;
+      const customer = ev.customer ?? null;
+      if (oid && customer) return `${oid} — ${customer}`;
+      return oid ?? customer ?? null;
+    }
+    case 'writeoff': return ev.reason ?? null;
+    case 'purchase': return ev.supplier ?? null;
+    case 'premade':  return ev.bouquetName ?? null;
+    case 'dissolve': {
+      const released = ev.releasedQty ? `+${ev.releasedQty} ${t.stems ?? 'stems'} freed` : null;
+      return [ev.bouquetName, released].filter(Boolean).join(' · ') || null;
+    }
+    default: return null;
+  }
 }

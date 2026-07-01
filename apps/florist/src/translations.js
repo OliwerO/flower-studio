@@ -198,6 +198,8 @@ const en = {
   bouquet:          'Bouquet',
   details:          'Details',
   orderTotal:       'Order total',
+  orderItems:       'Items',
+  orderOpenFull:    'Open full order ›',
   orderSubmitted:   'Order submitted!',
   submitError:      'Failed to submit order. Please try again.',
 
@@ -1106,6 +1108,8 @@ const ru = {
   bouquet:          'Букет',
   details:          'Детали',
   orderTotal:       'Итого',
+  orderItems:       'Состав',
+  orderOpenFull:    'Открыть заказ ›',
   orderSubmitted:   'Заказ оформлен!',
   submitError:      'Не удалось оформить заказ. Попробуйте ещё раз.',
 

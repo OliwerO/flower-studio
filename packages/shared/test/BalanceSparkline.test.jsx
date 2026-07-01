@@ -253,24 +253,26 @@ describe('BalanceSparkline — data-testid preserved', () => {
   });
 });
 
-describe('BalanceSparkline — CR-18 on-chart legibility', () => {
-  it('shows the running balance after each step as a visible text node (not just hover)', () => {
+describe('BalanceSparkline — C round-2 clean redesign', () => {
+  it('shows the CURRENT balance as a headline (the answer)', () => {
+    // final = 30 - 10 - 5 = 15
     render(<BalanceSparkline events={basicEvents} t={t} />);
-    expect(screen.getByText('30')).toBeInTheDocument(); // after purchase
-    expect(screen.getByText('20')).toBeInTheDocument(); // after -10
-    expect(screen.getByText('15')).toBeInTheDocument(); // after -5
+    expect(screen.getByTestId('balance-current')).toHaveTextContent('15');
   });
 
-  it('shows the signed delta at each consuming event', () => {
+  it('enlarged endpoint marker anchors the current balance on the line', () => {
     render(<BalanceSparkline events={basicEvents} t={t} />);
-    expect(screen.getByText('-10')).toBeInTheDocument();
-    expect(screen.getByText('-5')).toBeInTheDocument();
+    expect(screen.getByTestId('endpoint-marker')).toBeInTheDocument();
   });
 
-  it('shows a short identity for order events (customer name)', () => {
+  it('does NOT crowd the chart with per-event balance / delta / identity text', () => {
+    // The old CR-18 chart printed "20", "-10", "Anna" on every event — tiny and
+    // clipped. The redesign moves per-event detail to the list below; the chart
+    // shows shape + anchors only.
     render(<BalanceSparkline events={basicEvents} t={t} />);
-    expect(screen.getByText('Anna')).toBeInTheDocument();
-    expect(screen.getByText('Bob')).toBeInTheDocument();
+    expect(screen.queryByText('20')).toBeNull();   // intermediate balance — gone
+    expect(screen.queryByText('-10')).toBeNull();  // per-event delta — gone
+    expect(screen.queryByText('Anna')).toBeNull(); // identity — gone (list carries it)
   });
 
   it('renders a colour legend (in / out)', () => {
