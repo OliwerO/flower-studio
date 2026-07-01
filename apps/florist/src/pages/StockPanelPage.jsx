@@ -92,6 +92,16 @@ export default function StockPanelPage() {
   const [sortAsc, setSortAsc] = useState(true);
   const [view, setView]       = useState('all');
   const [hideZero, setHideZero] = useState(true);
+  // Layout: flat ungrouped list (default) vs grouped by Type. The owner wanted
+  // the shop-floor view flat like the pre-Y-model stock list, with grouping as
+  // an opt-in. Persisted so the choice sticks between visits.
+  const [flatView, setFlatView] = useState(() => {
+    const saved = localStorage.getItem('blossom-florist-stock-flat');
+    return saved === null ? true : saved === 'true';
+  });
+  useEffect(() => { localStorage.setItem('blossom-florist-stock-flat', String(flatView)); }, [flatView]);
+  // Flat sort by time-in-stock: longest-sitting (oldest batch) first by default.
+  const [flatOldestFirst, setFlatOldestFirst] = useState(true);
 
   const fetchStock = useCallback(async () => {
     setLoading(true);
@@ -313,6 +323,30 @@ export default function StockPanelPage() {
     return list;
   }, [groups, hideZero, view, yEnabled, reservationsMap, debouncedSearch]);
 
+  // Flat (ungrouped) list sorted by time-in-stock. A Variety's age = its OLDEST
+  // dated batch (longest-sitting stems). Varieties with no dated batch (unknown
+  // age) always sink to the bottom, regardless of direction.
+  function oldestBatchDate(group) {
+    // Only on-hand batches (positive qty) count toward "how long in stock" —
+    // Demand Entries (negative qty) are future needs, not sitting stems.
+    const dates = (group.rows || [])
+      .filter(r => (Number(r.current_quantity) || 0) > 0)
+      .map(r => r.date)
+      .filter(Boolean)
+      .sort();
+    return dates[0] || null;
+  }
+  const flatGroups = useMemo(() => {
+    const withDate = [];
+    const undated = [];
+    for (const g of filteredGroups) (oldestBatchDate(g) ? withDate : undated).push(g);
+    withDate.sort((a, b) => {
+      const cmp = String(oldestBatchDate(a)).localeCompare(String(oldestBatchDate(b)));
+      return flatOldestFirst ? cmp : -cmp; // oldest-first (longest in stock) by default
+    });
+    return [...withDate, ...undated];
+  }, [filteredGroups, flatOldestFirst]);
+
   // Filtered + sorted stock (legacy path)
   const filteredStock = useMemo(() => {
     const now = Date.now();
@@ -390,6 +424,58 @@ export default function StockPanelPage() {
           return qty > 0 && qty <= (Number(s['Reorder Threshold']) || 5);
         }).length,
   [yEnabled, groups, reservationsMap, stock]);
+
+  // One Variety row — shared by the grouped (under a Type header) and the flat
+  // (ungrouped) layouts so both render identically.
+  function renderVariety(group) {
+    return (
+      <div key={group.key}>
+        <VarietyListItem
+          variety={group}
+          reservations={reservationsMap}
+          pendingPO={pendingPO}
+          hideType={false}
+          isOwner={role === 'owner'}
+          expanded={expandedKey === group.key}
+          onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
+          onRowClick={(stockId) => setTraceStockId(stockId)}
+          onVarietyTrace={async (key) => {
+            setVarietyTraceKey(key);
+            setVarietyTrail([]);
+            setVarietyUnaccounted(0);
+            setVarietyDrift(0);
+            setVarietyTraceLoading(true);
+            try {
+              const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+              setVarietyTrail(res.data.events || []);
+              setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
+              setVarietyDrift(res.data.drift ?? 0);
+            } catch {
+              setVarietyTrail([]);
+            } finally {
+              setVarietyTraceLoading(false);
+            }
+          }}
+          onWriteOff={(v) => setWriteOffVariety(v)}
+          onAdjust={handleAdjustGroup}
+          premadesByStockId={premadesByStockId}
+          t={t}
+        />
+        {/* Write-off picker inline when this variety is selected */}
+        {writeOffVariety?.key === group.key && (
+          <div className="px-4 pb-3">
+            <WriteOffBatchPicker
+              variety={group}
+              reasons={writeOffReasons}
+              t={{ ...t, writeOffQty: t.writeOffPickerQty }}
+              onConfirm={handleWriteOffY}
+              onCancel={() => setWriteOffVariety(null)}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen">
@@ -505,11 +591,40 @@ export default function StockPanelPage() {
           ))}
         </div>
 
-        {/* Hide-zero / show-cleared toggle — same semantics, different label in Y-model */}
-        <div className="flex justify-end mb-2">
+        {/* Layout toggle (Flat ⇄ By type) + age sort on the left (Y-model);
+            hide-zero / show-cleared on the right. */}
+        <div className="flex items-center gap-2 mb-2">
+          {yEnabled && (
+            <>
+              {/* Flat ⇄ By-type segmented control — flat is the shop-floor default */}
+              <div className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 p-0.5">
+                <button
+                  onClick={() => setFlatView(true)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
+                  }`}
+                >{t.stockFlat || 'Flat'}</button>
+                <button
+                  onClick={() => setFlatView(false)}
+                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                    !flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
+                  }`}
+                >{t.stockByType || 'By type'}</button>
+              </div>
+              {/* Age sort — flat layout only */}
+              {flatView && (
+                <button
+                  onClick={() => setFlatOldestFirst(v => !v)}
+                  className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale"
+                >
+                  {flatOldestFirst ? (t.stockLongestFirst || 'Longest in stock ↓') : (t.stockNewestFirst || 'Newest first ↓')}
+                </button>
+              )}
+            </>
+          )}
           <button
             onClick={() => setHideZero(!hideZero)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors active-scale ${
+            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-medium transition-colors active-scale ${
               hideZero
                 ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
                 : 'bg-gray-200 dark:bg-gray-600 text-ios-label dark:text-gray-200'
@@ -581,6 +696,12 @@ export default function StockPanelPage() {
                   "Flat table" (dashboard format) is gone here; owner financials
                   live in the By-Variety tap-to-expand (CR-36). Dashboard keeps
                   the Flat table for desktop. */}
+            {flatView ? (
+              /* ── Flat (ungrouped) list, sorted by time-in-stock ── */
+              <div className="ios-card overflow-hidden">
+                {flatGroups.map(renderVariety)}
+              </div>
+            ) : (
             <div className="ios-card overflow-hidden">
               {Array.from(typeGroups.entries()).map(([typeName, typeRows]) => {
                 // Only show types with at least one group surviving filteredGroups
@@ -608,57 +729,12 @@ export default function StockPanelPage() {
                       })}
                       t={t}
                     />
-                    {!isCollapsed && visibleRows.map(group => (
-                      <div key={group.key}>
-                        <VarietyListItem
-                          variety={group}
-                          reservations={reservationsMap}
-                          pendingPO={pendingPO}
-                          hideType={false}
-                          isOwner={role === 'owner'}
-                          expanded={expandedKey === group.key}
-                          onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
-                          onRowClick={(stockId) => setTraceStockId(stockId)}
-                          onVarietyTrace={async (key) => {
-                            setVarietyTraceKey(key);
-                            setVarietyTrail([]);
-                            setVarietyUnaccounted(0);
-                            setVarietyDrift(0);
-                            setVarietyTraceLoading(true);
-                            try {
-                              const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
-                              setVarietyTrail(res.data.events || []);
-                              setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
-                              setVarietyDrift(res.data.drift ?? 0);
-                            } catch {
-                              setVarietyTrail([]);
-                            } finally {
-                              setVarietyTraceLoading(false);
-                            }
-                          }}
-                          onWriteOff={(v) => setWriteOffVariety(v)}
-                          onAdjust={handleAdjustGroup}
-                          premadesByStockId={premadesByStockId}
-                          t={t}
-                        />
-                        {/* Write-off picker inline when this variety is selected */}
-                        {writeOffVariety?.key === group.key && (
-                          <div className="px-4 pb-3">
-                            <WriteOffBatchPicker
-                              variety={group}
-                              reasons={writeOffReasons}
-                              t={{ ...t, writeOffQty: t.writeOffPickerQty }}
-                              onConfirm={handleWriteOffY}
-                              onCancel={() => setWriteOffVariety(null)}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))}
+                    {!isCollapsed && visibleRows.map(renderVariety)}
                   </div>
                 );
               })}
             </div>
+            )}
             </>
           )
         ) : (

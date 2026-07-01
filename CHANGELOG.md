@@ -5,6 +5,15 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-01 — Florist Stock: Flat (ungrouped) default view + time-in-stock sort
+
+Post-Y-model-cutover owner request: the shop-floor Stock view should default to an ungrouped list like the previous stock model, sorted by how long stems have been in stock, with grouping opt-in.
+
+- `apps/florist/src/pages/StockPanelPage.jsx` — new **Flat ⇄ By type** segmented toggle (persisted `localStorage['blossom-florist-stock-flat']`, **default Flat**). Flat = one `VarietyListItem` per Variety in a single list (no Type headers) sorted by time-in-stock; **By type** = the existing `TypeGroupHeader` grouping. A **Longest ⇄ Newest** sort button (flat only) flips the order; default **longest in stock first** = oldest **on-hand** batch date ascending (Demand-Entry rows ignored; unknown-age varieties sink last). Extracted `renderVariety` so both layouts render identically. Negative/Low/Slow pills + search + hide-zero apply in both.
+- Translations: `stockFlat` / `stockByType` / `stockLongestFirst` / `stockNewestFirst` (en + ru).
+- Frontend-only; no schema/API change. Verified on a lab mirror of migrated prod data (read-only snapshot → lab; no prod writes): flat is default, toggle switches to grouped Type headers, sort control present. Florist `vite build` green.
+- Note: on the just-migrated prod data every on-hand batch shares the cutover date, so the age sort is a tie until fresh stock arrives with distinct dates.
+
 ## 2026-06-30 — Feature (CR-30): recipient phone + address as first-class key_people fields
 
 Y-model test-session CR. Each connected key person becomes a reusable address book: phone + delivery address are stored once and pre-fill every future delivery to that person. Plan: `docs/superpowers/plans/2026-06-30-ymodel-test-crs-features.md` (Feature C). Built slice-by-slice on branch `feat/recipient-key-person`.

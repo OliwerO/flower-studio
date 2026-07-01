@@ -898,6 +898,10 @@ const en = {
   writeOffBatch:         'Batch',
   writeOffConfirm:       'Confirm',
   showClearedRows:       'Show cleared rows',
+  stockFlat:             'Flat',
+  stockByType:           'By type',
+  stockLongestFirst:     'Longest in stock ↓',
+  stockNewestFirst:      'Newest first ↓',
 };
 
 const ru = {
@@ -1795,6 +1799,10 @@ const ru = {
   writeOffBatch:         'Партия',
   writeOffConfirm:       'Подтвердить',
   showClearedRows:       'Показать списанные',
+  stockFlat:             'Списком',
+  stockByType:           'По типу',
+  stockLongestFirst:     'Дольше на складе ↓',
+  stockNewestFirst:      'Сначала новые ↓',
 };
 
 // ── Proxy-based dynamic translation ──
