@@ -6,7 +6,38 @@
 // Explorer UI can render entity/field pickers and drill buttons without ever
 // touching the DB layer directly. One allow-list, two front-ends.
 
+import { getTableColumns } from 'drizzle-orm';
 import { SCHEMA } from './dataQueryPack.js';
+
+// Reverse-map a Drizzle column reference back to the JS property name that a
+// plain `db.select().from(table)` returns it under. query_records' non-
+// aggregate path emits rows keyed by these jsKeys (camelCase), which diverge
+// from the model-facing field names for renamed columns (e.g. `price` →
+// `priceOverride`). The Explorer grid needs this key to read cell values.
+// Cached per table so getTableColumns only runs once per entity.
+const _keyMapCache = new Map();
+function runtimeKeyFor(table, col) {
+  let map = _keyMapCache.get(table);
+  if (!map) {
+    map = new Map();
+    for (const [jsKey, column] of Object.entries(getTableColumns(table))) {
+      map.set(column, jsKey);
+    }
+    _keyMapCache.set(table, map);
+  }
+  return map.get(col);
+}
+
+// Reverse-map a Drizzle column reference to the MODEL-facing field name it is
+// allow-listed under in an entity's `fields`. Used to translate a join's
+// foreignCol into the filter field name the query_records engine expects.
+function modelFieldFor(entityDef, col) {
+  if (!entityDef) return null;
+  for (const [name, def] of Object.entries(entityDef.fields)) {
+    if (def.col === col) return name;
+  }
+  return null;
+}
 
 // Russian labels for each allow-listed entity.
 const ENTITY_LABELS = {
@@ -118,14 +149,18 @@ function fieldLabel(fieldName) {
  *   key: string,
  *   label: string,
  *   softDelete: boolean,
- *   fields: Array<{ name: string, label: string, type: string }>,
- *   drills: Array<{ join: string, to: string, label: string, cardinality: string }>,
+ *   fields: Array<{ name: string, key: string, label: string, type: string }>,
+ *   drills: Array<{ join: string, to: string, label: string, cardinality: string, localKey: string, foreignField: string }>,
  * }> }}
  */
 export function describeSchema() {
   const entities = Object.entries(SCHEMA).map(([key, entityDef]) => {
-    const fields = Object.keys(entityDef.fields).map(fieldName => ({
+    const fields = Object.entries(entityDef.fields).map(([fieldName, fieldDef]) => ({
       name:  fieldName,
+      // Runtime row key (Drizzle jsKey) — how a plain query_records select
+      // returns this column. Falls back to the model name if the reverse
+      // lookup misses (defensive; shouldn't happen for allow-listed columns).
+      key:   runtimeKeyFor(entityDef.table, fieldDef.col) || fieldName,
       label: fieldLabel(fieldName),
       type:  inferFieldType(fieldName),
     }));
@@ -135,6 +170,11 @@ export function describeSchema() {
       to:          joinDef.to,
       label:       `Показать: ${ENTITY_LABELS[joinDef.to] || joinDef.to}`,
       cardinality: joinDef.cardinality,
+      // Seed data for a single-hop drill query (ADR-0010): read the clicked
+      // row's value at `localKey`, then filter the target entity's
+      // `foreignField` by it. Both are derived from the SCHEMA join columns.
+      localKey:     runtimeKeyFor(entityDef.table, joinDef.localCol) || null,
+      foreignField: modelFieldFor(SCHEMA[joinDef.to], joinDef.foreignCol) || null,
     }));
 
     return {

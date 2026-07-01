@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import client from '../api/client.js';
 import FeedbackModal from './FeedbackModal.jsx';
 
-export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea, onOpenOrders }) {
+export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea, onOpenOrders, onOpenExplorer }) {
   const [messages, setMessages] = useState([]); // { role: 'user'|'assistant', text }
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState(null);
@@ -197,6 +197,7 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
           )}
           {messages.map((m, i) => {
             const openOrdersResult = m.toolResults?.find((r) => r.name === 'open_orders_view');
+            const openExplorerResult = m.toolResults?.find((r) => r.name === 'open_explorer_view');
             return (
               <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
                 <div className={`inline-block rounded-lg px-3 py-2 max-w-[85%] ${m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
@@ -216,6 +217,21 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
                         <path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
                       </svg>
                       {openOrdersResult.output.label || t.openInOrders || 'Open in Orders'}
+                    </button>
+                  </div>
+                )}
+                {openExplorerResult && onOpenExplorer && openExplorerResult.output?.spec && (
+                  <div className="mt-1">
+                    <button
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 border border-brand-600 bg-brand-50 rounded-lg px-3 py-1.5 hover:bg-brand-100 transition-colors"
+                      onClick={() => onOpenExplorer(openExplorerResult.output.spec)}
+                    >
+                      {/* grid / table icon — distinct from the "open in orders" arrow */}
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <rect x="3" y="3" width="18" height="18" rx="2" />
+                        <path d="M3 9h18M3 15h18M9 3v18" />
+                      </svg>
+                      {openExplorerResult.output.label || t.openInExplorer || 'Open in Explorer'}
                     </button>
                   </div>
                 )}

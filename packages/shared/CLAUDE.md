@@ -49,6 +49,7 @@ hooks/
   useLongPress.js             → Long-press gesture detection
   useStockYModelFlag.js       → Reads `stockYModelEnabled` from `/settings`. Single-flight cached.
   useVarietyTraceExpand.js    → Expand state for date-grouped stock cards: opens one row at a time, lazy-fetches + caches each Variety's /stock/varieties/:key/usage trace. Used by ShortfallSummary + PendingArrivalsPanel.
+  useExplorerQuery.js         → Explorer data hook (ADR-0010). Loads the descriptor once (`GET /explorer/schema`, cachedGet 60s) + runs specs on demand (`POST /explorer/query`). Returns `{schema, schemaLoading, schemaError, rows, matchedCount, truncated, lastSpec, loading, error, run(spec)}`. A monotonic request id drops stale responses (a slow earlier query can't overwrite a newer result). Owner-only endpoints — the whole dashboard is already owner-gated, so no extra guard. Consumed by `ExplorerTab`.
 utils/
   parseBatchName.js           → Extracts date from batch names like "Rose (14.Mar.)"
   stockName.jsx               → Formats stock display names with age/date labels
@@ -73,6 +74,7 @@ utils/
   varietyFinancials.js        → varietyFinancials(rows) — per-Variety Cost/Sell/Markup/Supplier derivation for stock cards (CR-05 follow-on). Mirrors BatchArrivalList.flatten's newest-positive-batch rule.
   buildPoSuggestions.js       → buildPoSuggestions(groups, pendingPO, premadeMap) — Y-model New-PO-form pre-fill. One line per Variety still short after stock + ALL open POs (effective < 0, date-agnostic so even a late PO nets out — intentionally differs from the date-aware SHORTFALLS panel). qty = −effective; demand-driven (committed > 0 only); attaches to the undated orig row (else carries 4-tuple identity, #304). Consumed by PurchaseOrderPage (florist) + StockOrderPanel via StockTab (dashboard).
   productPricing.js           → suggestedMonoPrice(variant, stockMap, productType) — mono bouquet suggested price = minStems × key-flower sell. Shared by dashboard ProductCard + florist VariantList.
+  explorerSpec.js             → Explorer grid spec logic (ADR-0010, PRD #485). Pure helpers so `ExplorerTab` stays thin: `EMPTY_EXPLORER_SPEC(entity)`, `activeExplorerFilterCount`, `resolveColumns(descriptor, spec)` (→ `[{name (model, for ops), key (runtime row key, for value read), label, type, agg}]`; plain query = descriptor fields, groupBy/aggregate = group cols + alias cols), `buildDrillSpec(drill, row)` (seeded single-hop: filter target `foreignField` by clicked row's `localKey`; null if FK missing), `toggleSort`/`getSortDir` (one-column asc→desc→off), `applyColumnFilter`/`columnFilterValues` (per-column filter list surgery; component picks op per type — like/eq/gte/lte), `formatExplorerValue(value, type)` (DMY dates), `explorerRowsToCsv(rows, columns)` (RFC-4180 + labels). NOTE: row keys diverge from model names for renamed columns (price→priceOverride) — always read cells via `col.key`, emit filters/sort via `col.name`.
 ```
 
 ## Rules

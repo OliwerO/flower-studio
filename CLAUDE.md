@@ -105,6 +105,8 @@ When a feature is added to the florist app, it should also be added to the dashb
 
 When adding filters, inline editors, status actions, or any user-facing behavior — implement in both apps.
 
+**Documented parity exceptions** (dashboard-only, owner strategic-oversight surfaces, NOT shared operational features): Financial, Admin, Issues, and **Explorer** (`ExplorerTab.jsx` — the read-only linked-record grid over `query_records`, ADR-0010). These deliberately have no florist counterpart.
+
 ## Known Pitfalls (prevent recurrence)
 These bug patterns have been found and fixed. Follow these rules to avoid reintroducing them:
 1. **Stale state after conversion** — when a component has both parent `order` props and local `detail` state, always derive display values (isDelivery, delivery fee, payment status) from `detail` (local state) when loaded, not `order` (parent prop). After a Pickup→Delivery conversion, the parent prop is stale.

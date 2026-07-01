@@ -51,6 +51,7 @@ import { createHmac } from 'node:crypto';
 //   26. Customer CRUD via PG (Phase 5)
 //   27. Driver assignment notification — HTTP contracts (PATCH Assigned Driver + driver-language endpoint)
 //   28. Florist new-order notification — HTTP contracts (PUT /settings/florist-language + order create regression)
+//   29. Explorer — read-only query engine (POST /query, GET /schema) + saved views CRUD + role gates
 
 const PORT = process.env.HARNESS_PORT || '3002';
 const BASE = `http://localhost:${PORT}/api`;
@@ -1675,6 +1676,109 @@ async function section28FloristNewOrderNotification() {
   assert('28.5 Order id returned', !!r.body?.order?.id);
 }
 
+// ──────────── 29. EXPLORER — read-only query engine + saved views ────────────
+//
+// Explorer is the owner-only second front-end on the query_records engine
+// (ADR-0010). This section exercises every /api/explorer boundary the
+// Dashboard UI depends on:
+//   a) GET  /schema  — data-driven descriptor (owner-only)
+//   b) POST /query   — runs a validated spec; bad specs → 400
+//   c) /views CRUD   — persisted specs, validated on write
+//   d) role gates     — florist/driver blocked, no-PIN → 401
+
+async function section29Explorer() {
+  startSection('29. Explorer — query engine + saved views');
+  await reset();
+
+  // ── 29.1 GET /schema (owner) → data-driven descriptor ──
+  let r = await api('GET', '/explorer/schema', { pin: PIN_OWNER });
+  eq('29.1 Owner GET /explorer/schema → 200', r.status, 200);
+  const entities = r.body?.entities || [];
+  assert('29.1 schema lists 12 entities', entities.length === 12);
+  const ordersEntity = entities.find(e => e.key === 'orders');
+  assert('29.1 orders entity present with Russian label', ordersEntity?.label === 'Заказы');
+  const priceField = ordersEntity?.fields?.find(f => f.name === 'price');
+  assert('29.1 orders.price field carries runtime key priceOverride',
+    priceField?.key === 'priceOverride');
+  assert('29.1 fields carry a type hint', priceField?.type === 'number');
+  assert('29.1 orders carries drill edges', Array.isArray(ordersEntity?.drills) && ordersEntity.drills.length > 0);
+
+  // ── 29.2 Role gates on /schema ──
+  r = await api('GET', '/explorer/schema', { pin: PIN_FLORIST });
+  eq('29.2 Florist GET /explorer/schema → 403', r.status, 403);
+  r = await api('GET', '/explorer/schema', { pin: PIN_TIMUR });
+  eq('29.2 Driver GET /explorer/schema → 403', r.status, 403);
+  r = await api('GET', '/explorer/schema');
+  eq('29.2 No-PIN GET /explorer/schema → 401', r.status, 401);
+
+  // ── 29.3 POST /query — valid spec returns rows + counts ──
+  r = await api('POST', '/explorer/query', { pin: PIN_OWNER, body: { entity: 'orders', limit: 5 } });
+  eq('29.3 Owner POST /explorer/query (orders) → 200', r.status, 200);
+  assert('29.3 rows is an array', Array.isArray(r.body?.rows));
+  assert('29.3 matchedCount is a number', typeof r.body?.matchedCount === 'number');
+  assert('29.3 echoes the spec', r.body?.spec?.entity === 'orders');
+
+  // ── 29.4 POST /query — a plain order row is keyed by Drizzle jsKeys ──
+  if ((r.body?.rows || []).length > 0) {
+    const row = r.body.rows[0];
+    assert('29.4 row exposes priceOverride key (not price)',
+      Object.prototype.hasOwnProperty.call(row, 'priceOverride'));
+  } else {
+    ok('29.4 row-key check skipped (no seeded orders)');
+  }
+
+  // ── 29.5 POST /query — invalid specs → 400 ──
+  r = await api('POST', '/explorer/query', { pin: PIN_OWNER, body: { entity: 'bogus' } });
+  eq('29.5 Unknown entity → 400', r.status, 400);
+  assert('29.5 error names the bad entity', /bogus/i.test(r.body?.error || ''));
+  r = await api('POST', '/explorer/query', { pin: PIN_OWNER, body: { entity: 'orders', filters: [{ field: 'nope', op: 'eq', value: 1 }] } });
+  eq('29.5 Unknown field → 400', r.status, 400);
+
+  // ── 29.6 POST /query role gate ──
+  r = await api('POST', '/explorer/query', { pin: PIN_FLORIST, body: { entity: 'orders' } });
+  eq('29.6 Florist POST /explorer/query → 403', r.status, 403);
+
+  // ── 29.7 Saved views — create / validate / list / rename / delete ──
+  r = await api('POST', '/explorer/views', { pin: PIN_OWNER, body: { name: 'Unpaid orders', spec: { entity: 'orders', filters: [{ field: 'paymentStatus', op: 'eq', value: 'Unpaid' }] } } });
+  eq('29.7 Create view → 201', r.status, 201);
+  const viewId = r.body?.id;
+  assert('29.7 created view carries an id', !!viewId);
+  assert('29.7 created view echoes name', r.body?.name === 'Unpaid orders');
+  assert('29.7 created view stores spec verbatim', r.body?.spec?.entity === 'orders');
+
+  // Empty name → 400
+  r = await api('POST', '/explorer/views', { pin: PIN_OWNER, body: { name: '   ', spec: { entity: 'orders' } } });
+  eq('29.7 Empty name → 400', r.status, 400);
+  // Invalid spec → 400 (validated on write)
+  r = await api('POST', '/explorer/views', { pin: PIN_OWNER, body: { name: 'Bad', spec: { entity: 'bogus' } } });
+  eq('29.7 Invalid spec on save → 400', r.status, 400);
+
+  // List contains the created view
+  r = await api('GET', '/explorer/views', { pin: PIN_OWNER });
+  eq('29.7 GET /explorer/views → 200', r.status, 200);
+  assert('29.7 list contains the created view', (r.body || []).some(v => v.id === viewId));
+
+  // Rename
+  r = await api('PATCH', `/explorer/views/${viewId}`, { pin: PIN_OWNER, body: { name: 'Debtors' } });
+  eq('29.7 Rename view → 200', r.status, 200);
+  eq('29.7 name updated', r.body?.name, 'Debtors');
+  // Rename missing → 404
+  r = await api('PATCH', '/explorer/views/00000000-0000-0000-0000-000000000000', { pin: PIN_OWNER, body: { name: 'x' } });
+  eq('29.7 Rename missing view → 404', r.status, 404);
+
+  // Delete
+  r = await api('DELETE', `/explorer/views/${viewId}`, { pin: PIN_OWNER });
+  eq('29.7 Delete view → 204', r.status, 204);
+  r = await api('DELETE', `/explorer/views/${viewId}`, { pin: PIN_OWNER });
+  eq('29.7 Delete again (idempotent) → 404', r.status, 404);
+  r = await api('GET', '/explorer/views', { pin: PIN_OWNER });
+  assert('29.7 deleted view no longer listed', !(r.body || []).some(v => v.id === viewId));
+
+  // Views role gate
+  r = await api('GET', '/explorer/views', { pin: PIN_FLORIST });
+  eq('29.7 Florist GET /explorer/views → 403', r.status, 403);
+}
+
 async function main() {
   const startedAt = Date.now();
   console.log(`\n\x1b[36m╔═══════════════════════════════════════════════════════════╗\x1b[0m`);
@@ -1721,6 +1825,7 @@ async function main() {
     section26CustomerCrudPg,
     section27DriverAssignmentNotification,
     section28FloristNewOrderNotification,
+    section29Explorer,
   ];
 
   for (const section of sections) {
