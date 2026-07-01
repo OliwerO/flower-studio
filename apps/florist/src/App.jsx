@@ -2,7 +2,7 @@
 // Think of it as a site plan: each route is a department, and React Router
 // is the corridor that sends staff to the right room based on the URL.
 
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
 import { useEffect, lazy, Suspense } from 'react';
 import { useAuth } from './context/AuthContext.jsx';
 import { LanguageProvider } from './context/LanguageContext.jsx';
@@ -61,6 +61,7 @@ function OwnerRoute({ children }) {
 // Like mounting the factory floor signage above every workstation.
 function Layout({ children }) {
   const { role, driverName } = useAuth();
+  const navigate = useNavigate();
   const reporterName = driverName || (role === 'owner' ? 'Owner' : 'Florist');
   return (
     <>
@@ -76,6 +77,17 @@ function Layout({ children }) {
           reporterRole={role}
           reporterName={reporterName}
           appArea="florist"
+          onOpenOrders={(filter) => navigate('/orders', { state: {
+            status: filter.status,
+            source: filter.source,
+            deliveryType: filter.deliveryType,
+            payment: filter.paymentStatus,
+            paymentMethod: filter.paymentMethod,
+            excludeCancelled: filter.excludeCancelled,
+            dateFrom: filter.requiredByFrom || filter.orderDateFrom,
+            dateTo: filter.requiredByTo || filter.orderDateTo,
+            orderId: filter.orderIdQuery,
+          } })}
         />
       )}
     </>

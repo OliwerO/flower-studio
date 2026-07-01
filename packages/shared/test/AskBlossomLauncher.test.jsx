@@ -23,4 +23,17 @@ describe('AskBlossomLauncher', () => {
     fireEvent.click(screen.getByLabelText('Close'));
     await waitFor(() => expect(screen.queryByPlaceholderText('Ask…')).not.toBeInTheDocument());
   });
+
+  it('forwards onOpenOrders through to the panel', async () => {
+    const onOpenOrders = vi.fn();
+    const toolResults = [{ name: 'open_orders_view', input: {}, output: { view: 'orders', filter: { status: 'New' }, label: 'Новые заказы' } }];
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'ok', toolResults } });
+    render(<AskBlossomLauncher t={t} onOpenOrders={onOpenOrders} />);
+    fireEvent.click(screen.getByLabelText('Assistant'));
+    fireEvent.change(await screen.findByPlaceholderText('Ask…'), { target: { value: 'new orders?' } });
+    fireEvent.click(screen.getByText('Ask'));
+    const btn = await screen.findByText('Новые заказы');
+    fireEvent.click(btn);
+    expect(onOpenOrders).toHaveBeenCalledWith({ status: 'New' });
+  });
 });

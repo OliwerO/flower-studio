@@ -119,6 +119,49 @@ describe('AskBlossomPanel', () => {
   });
 });
 
+// ── Open in Orders (open_orders_view signal tool) ─────────────────────────────
+
+describe('AskBlossomPanel — Open in Orders', () => {
+  it('renders an Open in Orders button when a message carries an open_orders_view tool result', async () => {
+    const toolResults = [{
+      name: 'open_orders_view',
+      input: { paymentStatus: 'Unpaid' },
+      output: { view: 'orders', filter: { paymentStatus: 'Unpaid' }, label: 'Неоплаченные заказы' },
+    }];
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'Вот неоплаченные заказы', toolResults } });
+    const onOpenOrders = vi.fn();
+    render(<AskBlossomPanel t={t} onOpenOrders={onOpenOrders} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'unpaid?' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    const btn = await screen.findByText('Неоплаченные заказы');
+    fireEvent.click(btn);
+    expect(onOpenOrders).toHaveBeenCalledWith({ paymentStatus: 'Unpaid' });
+  });
+
+  it('does not render the button when onOpenOrders prop is absent', async () => {
+    const toolResults = [{
+      name: 'open_orders_view',
+      input: {},
+      output: { view: 'orders', filter: {}, label: 'Отфильтрованные заказы' },
+    }];
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'ответ', toolResults } });
+    render(<AskBlossomPanel t={t} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'q' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    await screen.findByText('ответ');
+    expect(screen.queryByText('Отфильтрованные заказы')).not.toBeInTheDocument();
+  });
+
+  it('does not render the button when no tool result is open_orders_view', async () => {
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'просто ответ', toolResults: [{ name: 'query_orders', input: {}, output: {} }] } });
+    render(<AskBlossomPanel t={t} onOpenOrders={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'q' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    await screen.findByText('просто ответ');
+    expect(screen.queryByText('Отфильтрованные заказы')).not.toBeInTheDocument();
+  });
+});
+
 // ── Report button (Part A) ────────────────────────────────────────────────────
 
 describe('AskBlossomPanel — report button', () => {

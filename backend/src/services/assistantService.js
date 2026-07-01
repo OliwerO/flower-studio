@@ -33,6 +33,7 @@ function systemPrompt(today) {
     "Order counts and revenue EXCLUDE cancelled orders unless the user explicitly asks about cancellations — say so when it matters.",
     "Revenue 'flowers' is NET: total = flowers + delivery, always. Do not describe flower revenue as if it were gross.",
     "For ad spend (marketing_spend) vs revenue per source: channel names are free text and do not map exactly to Order Source, so do not state a precise ROAS — present spend and revenue side by side and note the caveat.",
+    "When the owner would plausibly want to SEE and keep interacting with a set of orders (not just a number) — e.g. after answering 'which orders are unpaid' or 'show me June's cancellations' — call open_orders_view with the same filters you used to answer, so the UI can offer an 'Open in Orders' action. Do not call it for pure aggregate questions (totals, averages, counts alone) with no natural underlying order list to browse.",
   ].join('\n');
 }
 

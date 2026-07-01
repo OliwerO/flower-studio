@@ -293,7 +293,27 @@ export default function DashboardPage() {
 
       {/* bottom-24 (not bottom-6): the new-order FAB now occupies bottom-6 right-6,
           so stack the assistant above it — same pattern as the florist app. */}
-      <AskBlossomLauncher t={t} fabClassName="bottom-24 right-6" reporterRole="owner" reporterName="Owner" appArea="dashboard" />
+      <AskBlossomLauncher
+        t={t}
+        fabClassName="bottom-24 right-6"
+        reporterRole="owner"
+        reporterName="Owner"
+        appArea="dashboard"
+        onOpenOrders={(filter) => navigateTo({
+          tab: 'orders',
+          filter: {
+            status: filter.status,
+            source: filter.source,
+            deliveryType: filter.deliveryType,
+            payment: filter.paymentStatus,        // legacy key translation — OrdersTab.jsx:121-136
+            paymentMethod: filter.paymentMethod,
+            excludeCancelled: filter.excludeCancelled,
+            dateFrom: filter.requiredByFrom || filter.orderDateFrom,   // legacy key translation
+            dateTo: filter.requiredByTo || filter.orderDateTo,         // legacy key translation
+            orderId: filter.orderIdQuery,
+          },
+        })}
+      />
     </div>
   );
 }
