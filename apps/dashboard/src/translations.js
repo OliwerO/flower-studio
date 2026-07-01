@@ -410,6 +410,11 @@ const en = {
   orderTotal:       'Order total',
   orderItems:       'Items',
   orderOpenFull:    'Open full order ›',
+  filterContains:   'contains…',
+  filterMin:        'min',
+  filterMax:        'max',
+  filtersActive:    'Filters',
+  resetFilters:     'Reset',
 
   // Products tab (Wix integration)
   tabProducts:          'Wix',
@@ -1563,6 +1568,11 @@ const ru = {
   orderTotal:       'Итого',
   orderItems:       'Состав',
   orderOpenFull:    'Открыть заказ ›',
+  filterContains:   'содержит…',
+  filterMin:        'от',
+  filterMax:        'до',
+  filtersActive:    'Фильтры',
+  resetFilters:     'Сбросить',
 
   // Products tab (Wix integration)
   tabProducts:          'Wix',

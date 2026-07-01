@@ -51,6 +51,20 @@ until fresh dated stock lands.
   Cost/Sell/Markup/Arrived/Supplier), dashboard first then florist.
 - **E2** restore owner-wanted capabilities lost in the Y-model move (see audit below) — pick per owner.
 
+**Status (2026-07-01, branch `fix/stock-y-filters` → PR):**
+- ✅ **E1 dashboard** — SHIPPED. New shared `stockFilters` util (14 tests) + `ColumnFilterPopover` moved
+  to shared (dashboard file re-exports); `BatchArrivalList` renders a funnel per header, `Filters (n) ·
+  Reset` bar in `StockTab`. All client-side. Lab-verified (Type=peony → 2 rows, footer + bar update).
+- ✅ **E2 totals footer** — SHIPPED. `BatchArrivalList footer` sums count/qty/cost/sell over the visible
+  (filtered) rows. Lab-verified (TOTAL 7 · 92 · 981 · 2756, follows the filter).
+- ⏭️ **E2 inline reorder-threshold / lot-size edit — DEFERRED.** Placement decision needed: the flat
+  table is already 8 columns (adding 2 = cramped) and these are per-Variety, not per-sell-tier — the
+  right home is the By-Variety expansion (owner-financials area), which also ports to florist. Confirm
+  with owner before building; `patchPriceBulk` extends trivially once the surface is chosen.
+- ⏭️ **E1 florist parity — DEFERRED.** Florist has no flat table (CR-35); parity = a filter drawer over
+  the By-Variety list (mirrors `OrderFilterDrawer`) reusing the same `stockFilters` model. Owner said
+  "dashboard at least, ideally florist" — dashboard done; drawer is the follow-up.
+
 ## E2 audit — functionality lost moving legacy → Y-model
 
 **Dashboard (flat table → BatchArrivalList / VarietyListItem):**
