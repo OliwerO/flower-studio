@@ -460,6 +460,7 @@ export const stockPurchases = pgTable('stock_purchases', {
   stockId:            uuid('stock_id').references(() => stock.id),
   stockAirtableId:    text('stock_airtable_id'),  // Airtable recXXX of batch during cutover
   quantityPurchased:  integer('quantity_purchased').notNull().default(0),
+  quantityAccepted:   integer('quantity_accepted'), // nullable — kept qty after write-off; NULL on historical rows
   pricePerUnit:       numeric('price_per_unit', { precision: 10, scale: 4 }),
   notes:              text('notes').notNull().default(''),
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
