@@ -47,6 +47,7 @@ export default function VarietyListItem({
   premadesByStockId,
   isOwner = false, // CR-36: owner-only cost/sell/markup/supplier on expand
   showHeaderTrace = true, // D4: florist hides the always-on header trace icon; trace stays in the expand body
+  showPlanned = true, // D3 round-2: parent sets false when NO visible Variety has planned demand → Planned column collapses so In-premade sits next to On-hand
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
@@ -131,15 +132,21 @@ export default function VarietyListItem({
           {/* Identity row — shared hierarchy via VarietyIdentity (#311). */}
           <VarietyIdentity variety={variety} showType={!hideType} />
 
-          {/* Narrative bucket line. Fixed 3-column grid (D3) so On-hand /
+          {/* Narrative bucket line. Fixed-width grid (D3) so On-hand /
               Planned / In-premade line up vertically down the list. Each bucket
-              lives in its OWN grid cell (wrapping span) — a zero bucket renders
-              sr-only (absolute, invisible) but its wrapper still occupies the
-              cell, so In-premade stays in column 3 whether or not Planned shows.
-              The data-testid contract stays queryable. */}
-          <div className="mt-1 grid grid-cols-[4.75rem_4.75rem_auto] items-center gap-x-1 text-xs">
+              lives in its OWN grid cell (wrapping span). Tracks are sized for
+              the Russian labels ("В наличии" / "В премейдах" ≈ 5.75rem incl. a
+              3-digit count) so a long label never collides with the next column.
+              D3 round-2: when NO visible Variety has pending order demand the
+              parent passes showPlanned=false — the Planned column is dropped
+              entirely (2-col grid) so In-premade sits right next to On-hand
+              instead of across a full empty column. When any row does have
+              demand the 3-col grid returns and cross-row alignment is preserved. */}
+          <div className={`mt-1 grid ${showPlanned ? 'grid-cols-[5.75rem_5.75rem_auto]' : 'grid-cols-[5.75rem_auto]'} items-center gap-x-1 text-xs`}>
             <span><BucketChip testid="bucket-onHand"  value={onHand}  label={t.onHand}  tone="stock" /></span>
-            <span><BucketChip testid="bucket-planned" value={planned} label={t.planned} tone="orders" /></span>
+            {showPlanned && (
+              <span><BucketChip testid="bucket-planned" value={planned} label={t.planned} tone="orders" /></span>
+            )}
             <span>
               <BucketChip
                 testid="bucket-reserved"
@@ -258,10 +265,14 @@ export default function VarietyListItem({
           {expansionRows.map((row) => {
               const kind = row.kind;
               const isDemand = kind === 'demand';
-              const kindLabel = isDemand ? (t.demandKind ?? 'Demand') : (t.batchKind ?? 'Batch');
-              // Show the date for both Demand (requirement date) and Batch tiers
-              // (newest receive / arrival date — B1) so a "Batch" row isn't anonymous.
               const dateLabel = row.date ? formatDateDMY(row.date) : null;
+              // B1 round-2: the Batch chip shows its (newest) arrival DATE — the
+              // date IS the badge. The generic word "Batch" is only a fallback for
+              // a dated-less tier. Demand rows keep the "Demand" label + their
+              // requirement date beside it.
+              const chipLabel = isDemand
+                ? (t.demandKind ?? 'Demand')
+                : (dateLabel ?? (t.batchKind ?? 'Batch'));
 
               const rowClass = isDemand
                 ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50'
@@ -290,15 +301,17 @@ export default function VarietyListItem({
                     }`}
                   >
                     <span
-                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded tabular-nums ${
                         isDemand ? 'bg-red-100 text-red-700' : 'bg-gray-200 text-gray-700'
                       }`}
                     >
-                      {kindLabel}
+                      {chipLabel}
                     </span>
-                    {dateLabel && <span className="text-gray-500">{dateLabel}</span>}
+                    {/* Demand rows show their requirement date beside the label;
+                        Batch rows already carry the date inside the chip (B1). */}
+                    {isDemand && dateLabel && <span className="text-gray-500">{dateLabel}</span>}
                     {!isDemand && row.sell != null && multiTier && (
-                      <span className="text-gray-500 tabular-nums">{row.sell.toFixed(2)} {t.currency ?? 'zł'}</span>
+                      <span className="text-gray-500 tabular-nums">· {row.sell.toFixed(2)} {t.currency ?? 'zł'}</span>
                     )}
                   </button>
                   <span className="flex items-center gap-2 shrink-0 ml-2">

@@ -10,6 +10,7 @@ import {
   PendingArrivalsPanel,
   BatchTraceModal,
   VarietyTracePanel,
+  OrderQuickViewModal,
   WriteOffBatchPicker,
   LOSS_REASONS,
   reasonLabel,
@@ -82,6 +83,9 @@ export default function StockPanelPage() {
   const [varietyDrift, setVarietyDrift]               = useState(0);
   const [varietyOpening, setVarietyOpening]           = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading] = useState(false);
+  // Round-2: tapping an order in a trace opens a read-only popup OVER the trace
+  // instead of navigating away, so the owner keeps her place.
+  const [quickViewOrderId, setQuickViewOrderId]       = useState(null);
   // Write-off modal state
   const [writeOffVariety, setWriteOffVariety] = useState(null);
 
@@ -446,6 +450,14 @@ export default function StockPanelPage() {
         }).length,
   [yEnabled, groups, reservationsMap, stock]);
 
+  // D3 round-2: reserve the Planned column only when at least one visible
+  // Variety actually has pending order demand. Otherwise collapse it so
+  // In-premade sits right next to On-hand (no empty-column gap).
+  const anyPlanned = useMemo(
+    () => groups.some(g => getVarietyTotals(g.rows, reservationsMap).planned > 0),
+    [groups, reservationsMap],
+  );
+
   // One Variety row — shared by the grouped (under a Type header) and the flat
   // (ungrouped) layouts so both render identically.
   function renderVariety(group) {
@@ -460,6 +472,7 @@ export default function StockPanelPage() {
           // Florist: no always-on trace icon on the row (D4). Trace stays
           // reachable via tap-to-expand → Trace. Dashboard keeps the header icon.
           showHeaderTrace={false}
+          showPlanned={anyPlanned}
           expanded={expandedKey === group.key}
           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
           onRowClick={(stockId) => setTraceStockId(stockId)}
@@ -711,7 +724,7 @@ export default function StockPanelPage() {
                   const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
                   return res.data; // { variety, events, unaccountedStems }
                 }}
-                onOrderClick={(recordId) => navigate('/orders/' + recordId)}
+                onOrderClick={(recordId) => setQuickViewOrderId(recordId)}
               />
               <ShortfallSummary
                 groups={filteredGroups}
@@ -723,7 +736,7 @@ export default function StockPanelPage() {
                   const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
                   return res.data; // { variety, events, unaccountedStems }
                 }}
-                onOrderClick={(recordId) => navigate('/orders/' + recordId)}
+                onOrderClick={(recordId) => setQuickViewOrderId(recordId)}
               />
               {/* CR-35: florist is mobile-only — the wide Cost/Sell/Markup
                   "Flat table" (dashboard format) is gone here; owner financials
@@ -827,6 +840,7 @@ export default function StockPanelPage() {
           trail={traceLoading ? [] : (traceTrail || [])}
           t={t}
           onClose={() => { setTraceStockId(null); setTraceTrail(null); }}
+          onOrderClick={(recordId) => setQuickViewOrderId(recordId)}
         />
       )}
 
@@ -849,7 +863,7 @@ export default function StockPanelPage() {
               {varietyTraceLoading ? (
                 <p className="text-xs text-ios-tertiary">{t.loading}</p>
               ) : (
-                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => navigate('/orders/' + recordId)} />
+                <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => setQuickViewOrderId(recordId)} />
               )}
             </div>
             <div className="px-4 pb-4 pt-1 border-t border-gray-50">
@@ -864,6 +878,16 @@ export default function StockPanelPage() {
           </div>
         </div>
       )}
+
+      {/* Order preview popup — opened from any trace order row/marker; sits
+          ABOVE the trace modal (z-60) so closing returns to the trace. */}
+      <OrderQuickViewModal
+        orderId={quickViewOrderId}
+        apiClient={client}
+        t={t}
+        onClose={() => setQuickViewOrderId(null)}
+        onOpenFull={(id) => { setQuickViewOrderId(null); navigate('/orders/' + id); }}
+      />
     </div>
   );
 }

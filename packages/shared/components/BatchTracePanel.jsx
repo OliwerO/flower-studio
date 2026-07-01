@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { formatDateDMY } from '../utils/formatDate.js';
 import { byDateAsc } from '../utils/sortByDate.js';
 import BalanceSparkline from './BalanceSparkline.jsx';
@@ -17,7 +18,12 @@ import BalanceSparkline from './BalanceSparkline.jsx';
  * reservations don't change the Batch's `current_quantity` under the Y-model
  * reservation model (issue #285), so they're excluded from the running balance.
  */
-export default function BatchTracePanel({ trail = [], t }) {
+export default function BatchTracePanel({ trail = [], t, onOrderClick }) {
+  // CR-12 parity: the trail (traceability) is the primary content; the balance
+  // graph is secondary and OFF by default behind a "Show graph" toggle — the
+  // owner opens the list to see WHERE stems went, not a chart.
+  const [showGraph, setShowGraph] = useState(false);
+
   if (!trail || trail.length === 0) {
     return (
       <p className="text-xs text-gray-400 py-2 text-center">{t.traceEmpty}</p>
@@ -41,10 +47,23 @@ export default function BatchTracePanel({ trail = [], t }) {
 
   return (
     <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
-      <BalanceSparkline events={dated} t={t} />
+      {dated.length > 0 && (
+        <div className="flex justify-end px-2 pt-1">
+          <button
+            type="button"
+            data-testid="trace-graph-toggle"
+            onClick={(e) => { e.stopPropagation(); setShowGraph(g => !g); }}
+            aria-pressed={showGraph}
+            className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 hover:bg-indigo-100 active:bg-indigo-200"
+          >
+            📈 {showGraph ? (t.hideGraph ?? 'Hide graph') : (t.showGraph ?? 'Show graph')}
+          </button>
+        </div>
+      )}
+      {showGraph && <BalanceSparkline events={dated} t={t} onOrderClick={onOrderClick} />}
       <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
         {withBalance.map(({ entry, balance: bal }, i) => (
-          <TraceRow key={`d-${i}`} entry={entry} balance={bal} t={t} />
+          <TraceRow key={`d-${i}`} entry={entry} balance={bal} t={t} onOrderClick={onOrderClick} />
         ))}
       </ul>
       {reserved.length > 0 && (
@@ -54,7 +73,7 @@ export default function BatchTracePanel({ trail = [], t }) {
           </div>
           <ul className="divide-y divide-gray-50">
             {reserved.map((entry, i) => (
-              <TraceRow key={`r-${i}`} entry={entry} balance={null} t={t} />
+              <TraceRow key={`r-${i}`} entry={entry} balance={null} t={t} onOrderClick={onOrderClick} />
             ))}
           </ul>
         </>
@@ -106,15 +125,22 @@ function trailDetail(entry, t) {
   }
 }
 
-function TraceRow({ entry, balance, t }) {
+function TraceRow({ entry, balance, t, onOrderClick }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
   const detail = trailDetail(entry, t);
+  const clickable = entry.type === 'order' && !!onOrderClick && !!entry.orderRecordId;
 
   return (
     <li
       data-testid="trace-row"
       data-trace-kind={entry.type}
-      className="flex items-center justify-between px-3 py-2"
+      className={`flex items-center justify-between px-3 py-2 ${clickable ? 'cursor-pointer hover:bg-brand-50 transition-colors' : ''}`}
+      {...(clickable ? {
+        role: 'button',
+        tabIndex: 0,
+        onClick: (e) => { e.stopPropagation(); onOrderClick(entry.orderRecordId, entry); },
+        onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOrderClick(entry.orderRecordId, entry); } },
+      } : {})}
     >
       <div className="flex items-center gap-2 min-w-0">
         <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded shrink-0 ${typeBadgeClass(entry.type)}`}>

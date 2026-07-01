@@ -408,6 +408,8 @@ const en = {
   bouquet:          'Bouquet',
   details:          'Details',
   orderTotal:       'Order total',
+  orderItems:       'Items',
+  orderOpenFull:    'Open full order ›',
 
   // Products tab (Wix integration)
   tabProducts:          'Wix',
@@ -1559,6 +1561,8 @@ const ru = {
   bouquet:          'Букет',
   details:          'Детали',
   orderTotal:       'Итого',
+  orderItems:       'Состав',
+  orderOpenFull:    'Открыть заказ ›',
 
   // Products tab (Wix integration)
   tabProducts:          'Wix',
