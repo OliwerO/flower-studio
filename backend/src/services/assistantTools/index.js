@@ -333,7 +333,9 @@ export const TOOLS = [
       'You compose a structured declarative spec; you NEVER write SQL. ' +
       'Cancelled orders are excluded unless includeCancelled=true. ' +
       'Allowed entities: orders, customers, order_lines, stock, purchases (supplier flower purchases), ' +
-      'writeoffs (waste log), deliveries (driver assignments/status), marketing (ad spend by month/channel). ' +
+      'writeoffs (waste log), deliveries (driver assignments/status), marketing (ad spend by month/channel), ' +
+      'key_people (a customer\'s important recipients + dates), stock_orders (POs to suppliers), ' +
+      'stock_order_lines (PO line items), florist_hours (payroll hours). ' +
       'Allowed ops: eq, ne, lt, lte, gt, gte, in, like, isNull, isNotNull. ' +
       'Allowed aggregate fns: count, sum, avg, min, max.',
     input_schema: {
@@ -341,7 +343,7 @@ export const TOOLS = [
       properties: {
         entity: {
           type: 'string',
-          enum: ['orders', 'customers', 'order_lines', 'stock', 'purchases', 'writeoffs', 'deliveries', 'marketing'],
+          enum: ['orders', 'customers', 'order_lines', 'stock', 'purchases', 'writeoffs', 'deliveries', 'marketing', 'key_people', 'stock_orders', 'stock_order_lines', 'florist_hours'],
           description: 'Primary table to query.',
         },
         filters: {
@@ -360,7 +362,7 @@ export const TOOLS = [
         join: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders. order_lines joins: stock. purchases joins: stock. writeoffs joins: stock. deliveries joins: order.',
+          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders, keyPeople. order_lines joins: stock. purchases joins: stock. writeoffs joins: stock. deliveries joins: order. key_people joins: customer. stock_orders joins: lines. stock_order_lines joins: stock, po.',
         },
         groupBy: {
           type: 'array',

@@ -11,6 +11,7 @@ vi.mock('../db/index.js', () => ({
 }));
 
 import * as repo from '../repos/savedViewRepo.js';
+import { savedViews } from '../db/schema.js';
 
 let harness;
 beforeEach(async () => { harness = await setupPgHarness(); dbHolder.db = harness.db; });
@@ -35,15 +36,19 @@ describe('savedViewRepo', () => {
     expect(rows[0].spec).toEqual(sampleSpec);
   });
 
-  it('list is newest-first', async () => {
-    const a = await repo.create({ name: 'First', spec: sampleSpec });
-    // pglite timestamps have second-ish resolution in some environments —
-    // insert a second row with an explicit later spec so ordering is
-    // exercised regardless of clock granularity by asserting relative order.
-    const b = await repo.create({ name: 'Second', spec: sampleSpec });
+  it('list is newest-first (by created_at desc)', async () => {
+    // Seed explicit, distinct created_at so the ORDER BY is exercised
+    // deterministically — two same-tick repo.create() calls can tie on
+    // created_at under pglite's now() granularity (real inserts differ).
+    const [older] = await harness.db.insert(savedViews)
+      .values({ name: 'Older', spec: sampleSpec, createdAt: new Date('2026-06-01T00:00:00Z') })
+      .returning();
+    const [newer] = await harness.db.insert(savedViews)
+      .values({ name: 'Newer', spec: sampleSpec, createdAt: new Date('2026-06-02T00:00:00Z') })
+      .returning();
 
     const rows = await repo.list();
-    expect(rows.map(r => r.id)).toEqual([b.id, a.id]);
+    expect(rows.map(r => r.id)).toEqual([newer.id, older.id]);
   });
 
   it('rename changes name and is reflected in list', async () => {
