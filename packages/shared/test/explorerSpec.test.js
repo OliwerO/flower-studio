@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   EXPLORER_ROW_CAP,
+  localizeSchema,
   EMPTY_EXPLORER_SPEC,
   activeExplorerFilterCount,
   resolveColumns,
@@ -28,6 +29,43 @@ const ORDERS_DESCRIPTOR = {
     { join: 'lines', to: 'order_lines', label: 'Показать: Позиции заказа', cardinality: 'many', localKey: 'id', foreignField: 'orderId' },
   ],
 };
+
+describe('localizeSchema', () => {
+  const SCHEMA = {
+    entities: [{
+      key: 'orders',
+      label: 'Заказы', labelEn: 'Orders',
+      fields: [{ name: 'orderDate', key: 'orderDate', label: 'Дата заказа', labelEn: 'Order date', type: 'date' }],
+      drills: [{ join: 'customer', to: 'customers', label: 'Показать: Клиенты', labelEn: 'Show: Customers', cardinality: 'one', localKey: 'customerId', foreignField: 'id' }],
+    }],
+  };
+
+  it('en → swaps entity/field/drill labels to labelEn', () => {
+    const out = localizeSchema(SCHEMA, 'en');
+    const e = out.entities[0];
+    expect(e.label).toBe('Orders');
+    expect(e.fields[0].label).toBe('Order date');
+    expect(e.drills[0].label).toBe('Show: Customers');
+    // Non-label data (keys, types, drill seeds) is preserved.
+    expect(e.fields[0].key).toBe('orderDate');
+    expect(e.drills[0].localKey).toBe('customerId');
+  });
+
+  it('ru (default) → keeps the Russian label', () => {
+    const out = localizeSchema(SCHEMA, 'ru');
+    expect(out.entities[0].label).toBe('Заказы');
+    expect(out.entities[0].fields[0].label).toBe('Дата заказа');
+  });
+
+  it('falls back to label when labelEn is absent', () => {
+    const noEn = { entities: [{ key: 'x', label: 'Икс', fields: [{ name: 'a', key: 'a', label: 'А', type: 'text' }], drills: [] }] };
+    expect(localizeSchema(noEn, 'en').entities[0].label).toBe('Икс');
+  });
+
+  it('null-safe', () => {
+    expect(localizeSchema(null, 'en')).toBeNull();
+  });
+});
 
 describe('EMPTY_EXPLORER_SPEC', () => {
   it('creates a blank spec for an entity with empty filters/sort', () => {

@@ -181,6 +181,7 @@ export { default as AskBlossomLauncher } from './components/AskBlossomLauncher.j
 // Explorer — read-only linked-record grid over query_records (ADR-0010, PRD #485)
 export {
   EXPLORER_ROW_CAP,
+  localizeSchema,
   EMPTY_EXPLORER_SPEC,
   activeExplorerFilterCount,
   resolveColumns,
