@@ -2,7 +2,7 @@
 // GET enriches each row with flower name + supplier via LEFT JOIN on stock table.
 import { db } from '../db/index.js';
 import { stockLossLog, stock } from '../db/schema.js';
-import { and, isNull, gte, lte, eq, desc } from 'drizzle-orm';
+import { and, isNull, gte, lte, eq, desc, sql } from 'drizzle-orm';
 
 function toWire(row) {
   return {
@@ -87,4 +87,17 @@ export async function update(id, { quantity, reason, notes, date }) {
 
 export async function remove(id) {
   await db.update(stockLossLog).set({ deletedAt: new Date() }).where(eq(stockLossLog.id, id));
+}
+
+// Distinct write-off reasons with counts, sorted by count desc, soft-deleted
+// rows excluded. Used by the assistant list_values tool.
+export async function distinctReasons() {
+  if (!db) return [];
+  const rows = await db
+    .select({ value: stockLossLog.reason, count: sql`count(*)` })
+    .from(stockLossLog)
+    .where(and(isNull(stockLossLog.deletedAt), sql`${stockLossLog.reason} IS NOT NULL`))
+    .groupBy(stockLossLog.reason)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map(r => ({ value: r.value, count: Number(r.count) }));
 }

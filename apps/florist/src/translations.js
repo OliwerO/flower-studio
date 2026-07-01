@@ -558,6 +558,7 @@ const en = {
   assistantDelete:        'Delete',
   assistantDeleteConfirm: 'Delete?',
   assistantReport:        'Report a problem',
+  openInOrders:           'Open in Orders',
   assistantStarters: [
     'Orders today',
     'Revenue this month',
@@ -1470,6 +1471,7 @@ const ru = {
   assistantDelete:        'Удалить',
   assistantDeleteConfirm: 'Удалить?',
   assistantReport:        'Сообщить о проблеме',
+  openInOrders:           'Открыть в заказах',
   assistantStarters: [
     'Заказы сегодня',
     'Выручка в этом месяце',

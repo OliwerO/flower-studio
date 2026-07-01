@@ -4,7 +4,7 @@ import remarkGfm from 'remark-gfm';
 import client from '../api/client.js';
 import FeedbackModal from './FeedbackModal.jsx';
 
-export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea }) {
+export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea, onOpenOrders }) {
   const [messages, setMessages] = useState([]); // { role: 'user'|'assistant', text }
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState(null);
@@ -60,7 +60,7 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
     try {
       const { data } = await client.post('/assistant/message', { sessionId, message: text });
       setSessionId(data.sessionId);
-      setMessages((m) => [...m, { role: 'assistant', text: data.answer }]);
+      setMessages((m) => [...m, { role: 'assistant', text: data.answer, toolResults: data.toolResults }]);
       refreshList();
     } catch (err) {
       setMessages((m) => [...m, { role: 'assistant', text: err.response?.data?.error || t.assistantError }]);
@@ -195,15 +195,33 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
               )}
             </div>
           )}
-          {messages.map((m, i) => (
-            <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
-              <div className={`inline-block rounded-lg px-3 py-2 max-w-[85%] ${m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
-                {m.role === 'assistant'
-                  ? <div className="prose prose-sm max-w-none prose-table:my-2 prose-th:px-2 prose-td:px-2"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
-                  : m.text}
+          {messages.map((m, i) => {
+            const openOrdersResult = m.toolResults?.find((r) => r.name === 'open_orders_view');
+            return (
+              <div key={i} className={m.role === 'user' ? 'text-right' : 'text-left'}>
+                <div className={`inline-block rounded-lg px-3 py-2 max-w-[85%] ${m.role === 'user' ? 'bg-brand-600 text-white' : 'bg-gray-100 text-gray-900'}`}>
+                  {m.role === 'assistant'
+                    ? <div className="prose prose-sm max-w-none prose-table:my-2 prose-th:px-2 prose-td:px-2"><ReactMarkdown remarkPlugins={[remarkGfm]}>{m.text}</ReactMarkdown></div>
+                    : m.text}
+                </div>
+                {openOrdersResult && onOpenOrders && (
+                  <div className="mt-1">
+                    <button
+                      className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-600 border border-brand-600 bg-brand-50 rounded-lg px-3 py-1.5 hover:bg-brand-100 transition-colors"
+                      onClick={() => onOpenOrders(openOrdersResult.output.filter)}
+                    >
+                      <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <path d="M14 5h5v5" />
+                        <path d="M19 5l-7 7" />
+                        <path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
+                      </svg>
+                      {openOrdersResult.output.label || t.openInOrders || 'Open in Orders'}
+                    </button>
+                  </div>
+                )}
               </div>
-            </div>
-          ))}
+            );
+          })}
           {loading && <div className="text-left"><div className="inline-block rounded-lg px-3 py-2 bg-gray-100 text-gray-500">{t.assistantThinking}</div></div>}
           <div ref={endRef} />
         </div>

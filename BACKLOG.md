@@ -4,6 +4,12 @@ Features and improvements tracked against original build phases.
 
 ---
 
+## 🔭 Super-search / linked-record explorer (vision — spec captured 2026-07-01)
+
+Owner-requested: a structured, interactive DB explorer (query-driven grid, merges tables, drill down through relationships — e.g. flower → orders that bought a batch → customer → key person), plus an "Open in Explorer ▸" handoff from Ask Blossom. It's a second human-driven front-end on the same `query_records` engine — safe by construction. Foundation = the Ask Blossom drill-down suite (`feat/assistant-drilldown-suite`: query_records entity expansion + purchase_detail + list_values + orders bridge). Main engine gap = multi-hop joins. Full spec + open grill questions + phasing: `docs/superpowers/plans/2026-07-01-super-search-vision.md`. **Next:** run `/feature` (grill → PRD) AFTER the drill-down suite PR merges.
+
+---
+
 ## ⚡ Pick-up checklist for the next session
 
 If a future Claude session is opening this repo cold, here's the live state and what's queued. Updated 2026-05-08.

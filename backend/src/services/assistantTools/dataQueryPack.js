@@ -12,7 +12,7 @@
 // See RFC: docs/superpowers/plans/2026-06-30-assistant-extensions-rfc.md
 
 import { db } from '../../db/index.js';
-import { orders, orderLines, customers, stock, deliveries } from '../../db/schema.js';
+import { orders, orderLines, customers, stock, deliveries, stockPurchases, stockLossLog, marketingSpend } from '../../db/schema.js';
 import {
   and, eq, ne, lt, lte, gt, gte, inArray, ilike, isNull, isNotNull,
   sql, count, sum, avg, min, max, desc, asc,
@@ -97,6 +97,76 @@ const SCHEMA = {
       colour:   { col: stock.colour },
     },
     softDeleteCol: stock.deletedAt,
+  },
+  purchases: {
+    table: stockPurchases,
+    // No softDeleteCol — stockPurchases has no deletedAt column.
+    fields: {
+      id:                { col: stockPurchases.id },
+      purchaseDate:      { col: stockPurchases.purchaseDate },
+      supplier:          { col: stockPurchases.supplier },
+      stockId:           { col: stockPurchases.stockId },
+      stockAirtableId:   { col: stockPurchases.stockAirtableId },
+      quantityPurchased: { col: stockPurchases.quantityPurchased },
+      pricePerUnit:      { col: stockPurchases.pricePerUnit },
+      notes:             { col: stockPurchases.notes },
+    },
+    joins: {
+      // stockPurchases.stockId = UUID, stock.id = UUID → same types, plain eq
+      stock: { to: 'stock', localCol: stockPurchases.stockId, foreignCol: stock.id, cardinality: 'one' },
+    },
+  },
+  writeoffs: {
+    table: stockLossLog,
+    fields: {
+      id:       { col: stockLossLog.id },
+      date:     { col: stockLossLog.date },
+      stockId:  { col: stockLossLog.stockId },
+      quantity: { col: stockLossLog.quantity },
+      reason:   { col: stockLossLog.reason },
+      notes:    { col: stockLossLog.notes },
+    },
+    joins: {
+      // stockLossLog.stockId = UUID, stock.id = UUID → same types, plain eq
+      stock: { to: 'stock', localCol: stockLossLog.stockId, foreignCol: stock.id, cardinality: 'one' },
+    },
+    softDeleteCol: stockLossLog.deletedAt,
+  },
+  deliveries: {
+    table: deliveries,
+    fields: {
+      id:                 { col: deliveries.id },
+      orderId:            { col: deliveries.orderId },
+      deliveryAddress:    { col: deliveries.deliveryAddress },
+      recipientName:      { col: deliveries.recipientName },
+      recipientPhone:     { col: deliveries.recipientPhone },
+      deliveryDate:       { col: deliveries.deliveryDate },
+      deliveryTime:       { col: deliveries.deliveryTime },
+      courierTime:        { col: deliveries.courierTime },
+      assignedDriver:     { col: deliveries.assignedDriver },
+      deliveryFee:        { col: deliveries.deliveryFee },
+      driverInstructions: { col: deliveries.driverInstructions },
+      deliveryMethod:     { col: deliveries.deliveryMethod },
+      driverPayout:       { col: deliveries.driverPayout },
+      status:             { col: deliveries.status },
+      deliveredAt:        { col: deliveries.deliveredAt },
+    },
+    joins: {
+      // deliveries.orderId = UUID, orders.id = UUID → same types, plain eq
+      order: { to: 'orders', localCol: deliveries.orderId, foreignCol: orders.id, cardinality: 'one' },
+    },
+    softDeleteCol: deliveries.deletedAt,
+  },
+  marketing: {
+    table: marketingSpend,
+    fields: {
+      id:      { col: marketingSpend.id },
+      month:   { col: marketingSpend.month },
+      channel: { col: marketingSpend.channel },
+      amount:  { col: marketingSpend.amount },
+      notes:   { col: marketingSpend.notes },
+    },
+    softDeleteCol: marketingSpend.deletedAt,
   },
 };
 

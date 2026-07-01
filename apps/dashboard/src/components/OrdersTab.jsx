@@ -123,6 +123,12 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   const [loading, setLoading]     = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [search, setSearch]       = useState('');
+  // A deep link that supplies a date filter of ANY kind (fulfilment `dateFrom`
+  // or order-placed `orderDateFrom`/`orderDateTo`) opts out of the monthStart()
+  // default below — otherwise an all-time query (e.g. Ask Blossom's "orders
+  // placed in June" with only orderDateFrom set) would get silently re-narrowed
+  // to the current month on the fulfilment-date dimension it never asked about.
+  const hasIncomingDateFilter = !!(f.dateFrom || f.dateTo || f.orderDateFrom || f.orderDateTo);
   const [filter, setFilter] = useState(() => ({
     ...EMPTY_ORDER_FILTER,
     status: f.status || '',
@@ -131,8 +137,18 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     paymentStatus: f.payment || '',            // legacy cross-tab key was `payment`
     paymentMethod: f.paymentMethod || '',
     excludeCancelled: !!f.excludeCancelled,
-    requiredByFrom: f.dateFrom || monthStart(), // current default range = fulfilment date
-    requiredByTo: f.dateTo || todayStr(),
+    requiredByFrom: f.dateFrom || (hasIncomingDateFilter ? '' : monthStart()), // fulfilment date
+    requiredByTo: f.dateTo || (hasIncomingDateFilter ? '' : todayStr()),
+    orderDateFrom: f.orderDateFrom || '',      // order/submission date — distinct dimension
+    orderDateTo: f.orderDateTo || '',
+    // Client-only contains/range filters (Ask Blossom deep links, #review CR) —
+    // applied in memory below via orderMatchesClientFilter, never as the UUID
+    // `orderId` focus key (see focusOrderId/expandedId below).
+    orderIdQuery: f.orderIdQuery || '',
+    customerQuery: f.customerQuery || '',
+    bouquetQuery: f.bouquetQuery || '',
+    priceMin: f.priceMin ?? null,
+    priceMax: f.priceMax ?? null,
   }));
   const setFilterField = useCallback((key, value) => setFilter(prev => ({ ...prev, [key]: value })), []);
   // Editing a date-column filter switches off upcoming mode so the new date
@@ -147,7 +163,7 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   // in the date range. A dismissable banner lets them return to the full list.
   const [focusOrderId, setFocusOrderId] = useState(f.orderId || null);
   const [selected, setSelected]   = useState(new Set());
-  const [upcomingMode, setUpcoming] = useState(!f.dateFrom && !f.orderId);
+  const [upcomingMode, setUpcoming] = useState(!hasIncomingDateFilter && !f.orderId);
   const [showPremade, setShowPremade] = useState(false);
   const [sortBy, setSortBy]       = useState('deliveryDate');
   const [sortDir, setSortDir]     = useState('asc'); // 'asc' | 'desc' — bidirectional sort

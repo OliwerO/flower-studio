@@ -77,6 +77,38 @@ export function orderMatchesClientFilter(order, filter) {
   return true;
 }
 
+// Translates the canonical filter shape (EMPTY_ORDER_FILTER keys — the shape
+// Ask Blossom's open_orders_view tool echoes back) into the legacy cross-tab
+// navigation shape both frontend nav layers understand: dashboard
+// `navigateTo({ tab: 'orders', filter })` and florist
+// `navigate('/orders', { state })`. Single source of truth so the two mappings
+// can't drift out of lockstep — they did once, routing `orderIdQuery` (an App
+// Order ID substring) onto the legacy `orderId` key, which OrdersTab/
+// OrderListPage treat as an exact DB-UUID focus target; a substring never
+// equals a UUID, so the deep link silently rendered an empty order list.
+export function buildCrossTabNavFilter(filter) {
+  const f = filter || EMPTY_ORDER_FILTER;
+  return {
+    status: f.status,
+    source: f.source,
+    deliveryType: f.deliveryType,
+    payment: f.paymentStatus,          // legacy key — OrdersTab/OrderListPage read `payment`
+    paymentMethod: f.paymentMethod,
+    excludeCancelled: f.excludeCancelled,
+    dateFrom: f.requiredByFrom,        // fulfilment date — legacy key
+    dateTo: f.requiredByTo,
+    orderDateFrom: f.orderDateFrom,    // order/submission date — a DISTINCT dimension, never
+    orderDateTo: f.orderDateTo,        // collapsed into dateFrom/dateTo (fulfilment date)
+    // Client-only contains/range filters — consumers apply these in memory via
+    // orderMatchesClientFilter, NEVER as the UUID `orderId` focus key.
+    orderIdQuery: f.orderIdQuery,
+    customerQuery: f.customerQuery,
+    bouquetQuery: f.bouquetQuery,
+    priceMin: f.priceMin,
+    priceMax: f.priceMax,
+  };
+}
+
 // Count active (non-default) filter dimensions — drives the "Фильтры (n)"
 // badge and whether the reset-all affordance shows. A from/to date pair or a
 // min/max price pair each count as one dimension.

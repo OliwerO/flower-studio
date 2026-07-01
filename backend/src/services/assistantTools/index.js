@@ -14,6 +14,9 @@ import { marketingSpendHandler } from './marketingPack.js';
 import { stockVelocityHandler } from './velocityPack.js';
 import { lapsedCustomersHandler, upcomingOccasionsHandler } from './crmPack.js';
 import { searchTextHandler } from './freeTextPack.js';
+import { purchaseDetailHandler } from './purchaseDetailPack.js';
+import { listValuesHandler } from './discoveryPack.js';
+import { openOrdersViewHandler } from './ordersViewPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -322,12 +325,14 @@ export const TOOLS = [
     name: 'query_records',
     description:
       'Flexible cross-entity lookup the fixed tools cannot express: filter, join, group, and aggregate ' +
-      'orders, customers, order_lines, and stock by any allow-listed field. ' +
+      'orders, customers, order_lines, stock, purchases, writeoffs, deliveries, and marketing by any ' +
+      'allow-listed field. ' +
       'PREFER the dedicated tools (query_orders, financial_summary, stock_status, customer_lookup, etc.) ' +
       'for their intended cases — use query_records ONLY when no dedicated tool fits the question. ' +
       'You compose a structured declarative spec; you NEVER write SQL. ' +
       'Cancelled orders are excluded unless includeCancelled=true. ' +
-      'Allowed entities: orders, customers, order_lines, stock. ' +
+      'Allowed entities: orders, customers, order_lines, stock, purchases (supplier flower purchases), ' +
+      'writeoffs (waste log), deliveries (driver assignments/status), marketing (ad spend by month/channel). ' +
       'Allowed ops: eq, ne, lt, lte, gt, gte, in, like, isNull, isNotNull. ' +
       'Allowed aggregate fns: count, sum, avg, min, max.',
     input_schema: {
@@ -335,7 +340,7 @@ export const TOOLS = [
       properties: {
         entity: {
           type: 'string',
-          enum: ['orders', 'customers', 'order_lines', 'stock'],
+          enum: ['orders', 'customers', 'order_lines', 'stock', 'purchases', 'writeoffs', 'deliveries', 'marketing'],
           description: 'Primary table to query.',
         },
         filters: {
@@ -354,7 +359,7 @@ export const TOOLS = [
         join: {
           type: 'array',
           items: { type: 'string' },
-          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders. order_lines joins: stock.',
+          description: 'Allow-listed join names to include. orders joins: customer, lines, delivery. customers joins: orders. order_lines joins: stock. purchases joins: stock. writeoffs joins: stock. deliveries joins: order.',
         },
         groupBy: {
           type: 'array',
@@ -406,6 +411,78 @@ export const TOOLS = [
       'the short flower name(s). Use for "which orders are at risk", "what can\'t I fulfill today".',
     input_schema: { type: 'object', properties: {} },
     handler: ordersNeedingShortStockHandler,
+  },
+  {
+    name: 'purchase_detail',
+    description:
+      'Individual flower purchases (PO receipt lines), not just per-supplier totals. Use for "what did I pay ' +
+      '<supplier>", "on which days did we buy from <supplier>", "what flowers did we buy from <supplier>" — ' +
+      'anything that needs the underlying transactions, not just financial_summary/purchase_spend\'s aggregate. ' +
+      'Filter by supplier and/or flower name (both case-insensitive contains); date range is YYYY-MM-DD. ' +
+      'Returns totals plus a by-date and by-flower breakdown (always over the FULL match) and a capped list of ' +
+      'individual transactions.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        supplier: { type: 'string', description: 'Filter to purchases whose Supplier contains this text (case-insensitive).' },
+        flower: { type: 'string', description: 'Filter to purchases whose linked stock item display name contains this text (case-insensitive).' },
+        from: { type: 'string', description: 'Start purchase date YYYY-MM-DD (inclusive).' },
+        to: { type: 'string', description: 'End purchase date YYYY-MM-DD (inclusive).' },
+        limit: { type: 'number', description: 'Max transactions to list (default/hard cap 200). Totals/byDate/byFlower are never capped.' },
+      },
+    },
+    handler: purchaseDetailHandler,
+  },
+  {
+    name: 'list_values',
+    description:
+      'Discover the real distinct stored values (with counts) for a known dimension field. ' +
+      'Call this FIRST whenever the owner names an entity/value you cannot confidently resolve ' +
+      '(a supplier, payment method, order source, write-off reason, or driver name) — never guess ' +
+      'spelling or which entity a name belongs to (e.g. "Stefan" could be a driver, not a customer; ' +
+      '"Stripe" only matches if it is a real stored Payment Method string). Returns the actual values ' +
+      'so you can filter/query correctly instead of returning 0 results or misrouting.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        field: {
+          type: 'string',
+          enum: ['suppliers', 'paymentMethods', 'sources', 'lossReasons', 'drivers'],
+          description:
+            'suppliers: stock_purchases.supplier. paymentMethods/sources: orders.payment_method/orders.source. ' +
+            'lossReasons: stock_loss_log.reason. drivers: deliveries.assigned_driver.',
+        },
+      },
+      required: ['field'],
+    },
+    handler: listValuesHandler,
+  },
+  {
+    name: 'open_orders_view',
+    description: "Signal the UI to open the Orders screen pre-filtered. Does not return order data — the caller renders an 'Open in Orders' action from this tool's output. Use this after answering a question about orders when the owner would plausibly want to see the underlying list.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        status: { type: 'string' },
+        source: { type: 'string' },
+        deliveryType: { type: 'string' },
+        paymentStatus: { type: 'string' },
+        paymentMethod: { type: 'string' },
+        excludeCancelled: { type: 'boolean' },
+        orderDateFrom: { type: 'string', description: 'YYYY-MM-DD' },
+        orderDateTo: { type: 'string', description: 'YYYY-MM-DD' },
+        requiredByFrom: { type: 'string', description: 'YYYY-MM-DD' },
+        requiredByTo: { type: 'string', description: 'YYYY-MM-DD' },
+        orderIdQuery: { type: 'string' },
+        customerQuery: { type: 'string' },
+        bouquetQuery: { type: 'string' },
+        priceMin: { type: 'number' },
+        priceMax: { type: 'number' },
+        label: { type: 'string', description: "Short Russian phrase describing what's filtered, shown on the button, e.g. 'Заказы без оплаты за июнь'" },
+      },
+      additionalProperties: false,
+    },
+    handler: openOrdersViewHandler,
   },
 ];
 
