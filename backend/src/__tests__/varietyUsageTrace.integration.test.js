@@ -389,4 +389,33 @@ describe('S6 — getUsageByVarietyKey drift computation', () => {
     expect(result.reservedStems).toBe(0);
     expect(result.onHand).toBe(0);
   });
+
+  it('B2: openingBalance = the pre-record stock that keeps the running balance from going negative', async () => {
+    // Orders + a write-off happen BEFORE the first purchase (the post-cutover
+    // shape: consumption on legacy stock, no purchase-history event). Running
+    // balance from 0: −5, −6, −13, then +30 → +17. min = −13 → opening = 13.
+    const batch1 = await seedBatch({ displayName: 'Peony Pink 60', currentQuantity: 17, typeName: 'Peony', colour: 'Pink', sizeCm: 60 });
+    const customer = await seedCustomer();
+    const o1 = await seedOrder(customer.id, '2026-06-03');
+    await seedOrderLine(o1.id, batch1.id, 5, 'Peony Pink');
+    await seedWriteOff(batch1.id, 1, '2026-06-03');
+    const o2 = await seedOrder(customer.id, '2026-06-04');
+    await seedOrderLine(o2.id, batch1.id, 7, 'Peony Pink');
+    await seedPurchase(batch1.id, 30, '2026-06-05');
+
+    const result = await stockRepo.getUsageByVarietyKey('Peony|Pink|60|');
+    expect(result.openingBalance).toBe(13);
+  });
+
+  it('B2: openingBalance is 0 when the balance never dips below zero', async () => {
+    // Purchase first (+20), then a −5 order → never negative → opening 0.
+    const batch1 = await seedBatch({ displayName: 'Tulip Red 40', currentQuantity: 15, typeName: 'Tulip', colour: 'Red', sizeCm: 40 });
+    await seedPurchase(batch1.id, 20, '2026-06-01');
+    const customer = await seedCustomer();
+    const ord = await seedOrder(customer.id, '2026-06-10');
+    await seedOrderLine(ord.id, batch1.id, 5, 'Tulip Red');
+
+    const result = await stockRepo.getUsageByVarietyKey('Tulip|Red|40|');
+    expect(result.openingBalance).toBe(0);
+  });
 });
