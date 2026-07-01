@@ -14,6 +14,7 @@ import { marketingSpendHandler } from './marketingPack.js';
 import { stockVelocityHandler } from './velocityPack.js';
 import { lapsedCustomersHandler, upcomingOccasionsHandler } from './crmPack.js';
 import { searchTextHandler } from './freeTextPack.js';
+import { listValuesHandler } from './discoveryPack.js';
 
 // Each pack pushes { name, description, input_schema, handler }. Adding a domain = add a file + import + push here.
 export const TOOLS = [
@@ -406,6 +407,30 @@ export const TOOLS = [
       'the short flower name(s). Use for "which orders are at risk", "what can\'t I fulfill today".',
     input_schema: { type: 'object', properties: {} },
     handler: ordersNeedingShortStockHandler,
+  },
+  {
+    name: 'list_values',
+    description:
+      'Discover the real distinct stored values (with counts) for a known dimension field. ' +
+      'Call this FIRST whenever the owner names an entity/value you cannot confidently resolve ' +
+      '(a supplier, payment method, order source, write-off reason, or driver name) — never guess ' +
+      'spelling or which entity a name belongs to (e.g. "Stefan" could be a driver, not a customer; ' +
+      '"Stripe" only matches if it is a real stored Payment Method string). Returns the actual values ' +
+      'so you can filter/query correctly instead of returning 0 results or misrouting.',
+    input_schema: {
+      type: 'object',
+      properties: {
+        field: {
+          type: 'string',
+          enum: ['suppliers', 'paymentMethods', 'sources', 'lossReasons', 'drivers'],
+          description:
+            'suppliers: stock_purchases.supplier. paymentMethods/sources: orders.payment_method/orders.source. ' +
+            'lossReasons: stock_loss_log.reason. drivers: deliveries.assigned_driver.',
+        },
+      },
+      required: ['field'],
+    },
+    handler: listValuesHandler,
   },
 ];
 

@@ -1601,6 +1601,43 @@ export async function searchFreeText({ query, limit = 15 }) {
     .limit(limit);
 }
 
+// ── Distinct-value + count helpers (assistant list_values discovery tool) ──
+// Each returns [{ value, count }] sorted by count desc, nulls/soft-deleted excluded.
+// count is coerced to Number — pg drivers return bigint aggregates as strings.
+
+export async function distinctSources() {
+  if (!db) return [];
+  const rows = await db
+    .select({ value: orders.source, count: sql`count(*)` })
+    .from(orders)
+    .where(and(isNull(orders.deletedAt), sql`${orders.source} IS NOT NULL`))
+    .groupBy(orders.source)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map(r => ({ value: r.value, count: Number(r.count) }));
+}
+
+export async function distinctPaymentMethods() {
+  if (!db) return [];
+  const rows = await db
+    .select({ value: orders.paymentMethod, count: sql`count(*)` })
+    .from(orders)
+    .where(and(isNull(orders.deletedAt), sql`${orders.paymentMethod} IS NOT NULL`))
+    .groupBy(orders.paymentMethod)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map(r => ({ value: r.value, count: Number(r.count) }));
+}
+
+export async function distinctAssignedDrivers() {
+  if (!db) return [];
+  const rows = await db
+    .select({ value: deliveries.assignedDriver, count: sql`count(*)` })
+    .from(deliveries)
+    .where(and(isNull(deliveries.deletedAt), sql`${deliveries.assignedDriver} IS NOT NULL`))
+    .groupBy(deliveries.assignedDriver)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map(r => ({ value: r.value, count: Number(r.count) }));
+}
+
 // ── Internal exports for tests ──
 export const _internal = {
   ORDER_WRITE_ALLOWED,

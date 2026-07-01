@@ -1,6 +1,6 @@
 import { db } from '../db/index.js';
 import { stockPurchases } from '../db/schema.js';
-import { eq, and, like, desc, gte, lte } from 'drizzle-orm';
+import { eq, and, like, desc, gte, lte, sql } from 'drizzle-orm';
 
 function toWire(row) {
   return {
@@ -64,4 +64,18 @@ export async function findDateByPoMarker(poId) {
     .orderBy(desc(stockPurchases.createdAt))
     .limit(1);
   return row?.purchaseDate || null;
+}
+
+// Distinct supplier names with counts, sorted by count desc. No deletedAt column
+// on this table. Supplier defaults to '' (not null) — treat blank as "no value"
+// and exclude it, same as a genuine NULL. Used by the assistant list_values tool.
+export async function distinctSuppliers() {
+  if (!db) return [];
+  const rows = await db
+    .select({ value: stockPurchases.supplier, count: sql`count(*)` })
+    .from(stockPurchases)
+    .where(sql`${stockPurchases.supplier} IS NOT NULL AND ${stockPurchases.supplier} <> ''`)
+    .groupBy(stockPurchases.supplier)
+    .orderBy(desc(sql`count(*)`));
+  return rows.map(r => ({ value: r.value, count: Number(r.count) }));
 }
