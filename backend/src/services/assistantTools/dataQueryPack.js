@@ -373,6 +373,31 @@ export function validateSpec(spec) {
     ? resolveFieldInDefs(chainDefs, fieldName)
     : resolveField(entityDef, fieldName, activeJoins);
 
+  // Column selection (#504): optional display projection carried in the spec so
+  // saved views + the assistant handoff persist it. A column is "entity.field"
+  // (qualified — must be on the path) or a bare "field" (resolved across path).
+  // Validated here so a stored/echoed spec can't smuggle an unknown column;
+  // execution ignores it (the front-end projects the returned rows).
+  if (spec.columns !== undefined) {
+    if (!Array.isArray(spec.columns)) return { ok: false, error: 'columns must be an array' };
+    const pathKeys = [spec.entity];
+    if (hasChain) {
+      let cur = spec.entity;
+      for (const edge of spec.chain) { const jd = SCHEMA[cur].joins[edge]; pathKeys.push(jd.to); cur = jd.to; }
+    }
+    const pathKeySet = new Set(pathKeys);
+    for (const c of spec.columns) {
+      if (typeof c !== 'string') return { ok: false, error: 'columns entries must be strings' };
+      if (c.includes('.')) {
+        const [ek, fn] = c.split('.');
+        if (!pathKeySet.has(ek)) return { ok: false, error: `column entity "${ek}" is not on the query path (${pathKeys.join(' → ')})` };
+        if (!SCHEMA[ek].fields[fn]) return { ok: false, error: `unknown column field "${fn}" on entity "${ek}"` };
+      } else if (!pathKeys.some((k) => SCHEMA[k].fields[c])) {
+        return { ok: false, error: `unknown column "${c}" on the query path` };
+      }
+    }
+  }
+
   // Validate joins
   for (const joinName of activeJoins) {
     if (!entityDef.joins?.[joinName]) {

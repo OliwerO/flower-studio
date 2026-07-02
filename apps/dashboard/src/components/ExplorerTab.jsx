@@ -17,7 +17,6 @@ import {
   localizeSchema,
   EMPTY_EXPLORER_SPEC,
   resolveColumns,
-  buildDrillSpec,
   formatExplorerValue,
   toggleSort,
   getSortDir,
@@ -25,8 +24,6 @@ import {
   columnFilterValues,
   activeExplorerFilterCount,
   explorerRowsToCsv,
-  isChainSpec,
-  EMPTY_CHAIN_SPEC,
   resolveChainColumns,
   chainCellValue,
   chainRowsToCsv,
@@ -34,6 +31,9 @@ import {
   chainHasFanOut,
   chainAppendEdge,
   chainRemoveLast,
+  columnId,
+  visibleColumns,
+  toggleColumn,
   apiClient,
   ColumnFilterPopover,
 } from '@flower-studio/shared';
@@ -132,7 +132,6 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   const { lang } = useLanguage();
 
   const [spec, setSpec] = useState(null);
-  const [history, setHistory] = useState([]); // [{ label, spec }] drill breadcrumb
   const [views, setViews] = useState([]);
   const [viewsOpen, setViewsOpen] = useState(false);
   const [showSave, setShowSave] = useState(false);
@@ -140,7 +139,8 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   const [saveErr, setSaveErr] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
-  const [addHopOpen, setAddHopOpen] = useState(false); // deep-join "add hop" menu
+  const [addHopOpen, setAddHopOpen] = useState(false); // "add related" menu
+  const [colsOpen, setColsOpen] = useState(false); // column picker menu
   const initedRef = useRef(false);
   const viewsRef = useRef(null);
 
@@ -191,30 +191,27 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   const entities = schema.entities || [];
   const entityByKey = Object.fromEntries(entities.map((e) => [e.key, e]));
   const descriptor = entityByKey[spec.entity];
-  const isChain = isChainSpec(spec);
-  const columns = isChain ? resolveChainColumns(schema, spec) : resolveColumns(descriptor, spec);
-  const cellValue = (row, col) => (isChain ? chainCellValue(row, col) : row[col.key]);
+  // Unified path-based grid (#504): every grid is a path (0 hops = plain). A
+  // group-by summary is the one non-path mode (only reachable at 0 hops).
+  const hasHops = (spec.chain?.length || 0) > 0;
+  const isSummarize = !hasHops && Array.isArray(spec.groupBy) && spec.groupBy.length > 0;
+  const columns = isSummarize ? resolveColumns(descriptor, spec) : visibleColumns(schema, spec);
+  const pathCols = resolveChainColumns(schema, spec); // every column, for the picker
+  const cellValue = (row, col) => (isSummarize ? row[col.key] : chainCellValue(row, col));
   const colKey = (col) => col.colId || col.name;
-  const chainEdges = isChain ? availableChainEdges(schema, spec) : [];
-  const fanOut = isChain && chainHasFanOut(schema, spec);
-  const isSummarize = !isChain && Array.isArray(spec.groupBy) && spec.groupBy.length > 0;
+  const chainEdges = availableChainEdges(schema, spec);
+  const fanOut = hasHops && chainHasFanOut(schema, spec);
+  const selectedColIds = new Set(columns.map(colKey));
   const groupField = spec.groupBy?.[0] || '';
   const groupCandidates = (descriptor?.fields || []).filter((f) => f.type === 'text' || f.type === 'date');
   const filterCount = activeExplorerFilterCount(spec);
   const entityLabel = (key) => entityByKey[key]?.label || key;
 
-  function changeEntity(key) {
-    setHistory([]);
-    // Preserve deep-join mode when switching the start entity.
-    applyAndRun(isChain ? EMPTY_CHAIN_SPEC(key) : EMPTY_EXPLORER_SPEC(key));
-  }
-  function toggleChain() {
-    setHistory([]);
-    setAddHopOpen(false);
-    applyAndRun(isChain ? EMPTY_EXPLORER_SPEC(spec.entity) : EMPTY_CHAIN_SPEC(spec.entity));
-  }
+  function changeEntity(key) { applyAndRun(EMPTY_EXPLORER_SPEC(key)); }
   function addHop(join) { setAddHopOpen(false); applyAndRun(chainAppendEdge(spec, join)); }
   function removeHop() { applyAndRun(chainRemoveLast(spec)); }
+  function onToggleColumn(colId) { setSpec((s) => toggleColumn(schema, s, colId)); }
+  function resetColumns() { const { columns: _omit, ...rest } = spec; setSpec(rest); }
   function onSort(name) { applyAndRun(toggleSort(spec, name)); }
   function onApplyFilter(name, entries) { applyAndRun(applyColumnFilter(spec, name, entries)); }
   function resetFilters() { applyAndRun({ ...spec, filters: [] }); }
@@ -230,21 +227,10 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
     });
   }
 
-  function drill(dr, row) {
-    const s = buildDrillSpec(dr, row);
-    if (!s) return;
-    setHistory((h) => [...h, { label: entityLabel(spec.entity), spec }]);
-    applyAndRun(normalizeSpec(s));
-  }
-  function goBack() {
-    if (!history.length) return;
-    const prev = history[history.length - 1];
-    setHistory(history.slice(0, -1));
-    applyAndRun(prev.spec);
-  }
-
-  // Deep-link a row into its real edit screen where one exists.
+  // Deep-link a row into its real edit screen where one exists. Only meaningful
+  // for a flat 0-hop grid (multi-hop rows are nested denormalized — no identity).
   function openTarget(row) {
+    if (hasHops) return null;
     if (spec.entity === 'orders' && row.id) return { tab: 'orders', filter: { orderId: row.id } };
     if (spec.entity === 'customers' && row.id) return { tab: 'customers', filter: { selectedId: row.id } };
     if ((spec.entity === 'deliveries' || spec.entity === 'order_lines') && row.orderId) return { tab: 'orders', filter: { orderId: row.orderId } };
@@ -252,7 +238,7 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   }
 
   function downloadCsv() {
-    const csv = isChain ? chainRowsToCsv(rows, columns) : explorerRowsToCsv(rows, columns);
+    const csv = isSummarize ? explorerRowsToCsv(rows, columns) : chainRowsToCsv(rows, columns);
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM → Excel opens UTF-8 correctly
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -278,7 +264,6 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
     }
   }
   function loadView(v) {
-    setHistory([]);
     setViewsOpen(false);
     applyAndRun(normalizeSpec(v.spec));
   }
@@ -294,9 +279,8 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
     catch (err) { console.error('[Explorer] rename view failed:', err); }
   }
 
-  const drills = (descriptor?.drills || []);
-  // Deep-join rows are denormalized (no single-row identity) → no drill/open column.
-  const showActions = !isChain && !isSummarize && (drills.length > 0 || rows.some((r) => openTarget(r)));
+  // Only a flat 0-hop grid has row identity → an "Open" deep-link column.
+  const showActions = !isSummarize && !hasHops && rows.some((r) => openTarget(r));
 
   return (
     <div className="pb-10" data-testid="explorer-tab">
@@ -319,8 +303,8 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
           {entities.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
         </select>
 
-        {/* Group-by / summarize — hidden in deep-join mode (chain = flat rows only) */}
-        {!isChain && (
+        {/* Group-by / summarize — only for a plain 0-hop grid (chain = flat rows) */}
+        {!hasHops && (
           <>
             <label className="text-xs text-ios-secondary ml-2">{t.explorer.groupBy}</label>
             <select
@@ -334,14 +318,30 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
           </>
         )}
 
-        {/* Deep-join toggle */}
-        <button
-          onClick={toggleChain}
-          data-testid="explorer-chain-toggle"
-          className={`text-sm px-3 py-1.5 rounded-lg border ml-2 ${isChain ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
-        >
-          {isChain ? t.explorer.chainExit : t.explorer.chain}
-        </button>
+        {/* Column picker (not in summarize mode — columns there are fixed) */}
+        {!isSummarize && (
+          <div className="relative">
+            <button onClick={() => setColsOpen((o) => !o)} data-testid="explorer-columns-toggle"
+              className="text-sm px-3 py-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-50 ml-2">
+              {t.explorer.columns} ({columns.length}) ▾
+            </button>
+            {colsOpen && (
+              <div className="absolute left-0 top-9 z-30 w-64 max-h-80 overflow-y-auto bg-white rounded-xl shadow-2xl border border-gray-200 p-2 space-y-0.5">
+                <div className="flex justify-between items-center px-1 pb-1">
+                  <span className="text-xs text-ios-tertiary">{t.explorer.columnsPick}</span>
+                  <button onClick={resetColumns} className="text-xs text-brand-600 hover:underline">{t.explorer.reset}</button>
+                </div>
+                {pathCols.map((col) => (
+                  <label key={colKey(col)} className="flex items-center gap-2 px-1 py-1 rounded-lg hover:bg-gray-100 text-sm cursor-pointer">
+                    <input type="checkbox" checked={selectedColIds.has(colKey(col))} onChange={() => onToggleColumn(col.colId)}
+                      data-testid={`explorer-col-${col.colId}`} className="accent-brand-600" />
+                    <span className="truncate">{col.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex-1" />
 
@@ -414,16 +414,6 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
 
       {saveErr && <p className="text-xs text-red-600 mb-2">{saveErr}</p>}
 
-      {/* Breadcrumb / back */}
-      {history.length > 0 && (
-        <div className="flex items-center gap-2 mb-2 text-sm">
-          <button onClick={goBack} className="text-brand-600 hover:underline">‹ {t.explorer.back}</button>
-          <span className="text-ios-tertiary">
-            {history.map((h) => h.label).join(' › ')} › <span className="text-ios-label font-medium">{entityLabel(spec.entity)}</span>
-          </span>
-        </div>
-      )}
-
       {/* Filters summary */}
       {filterCount > 0 && (
         <div className="flex items-center gap-2 mb-2 text-xs">
@@ -432,8 +422,9 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
         </div>
       )}
 
-      {/* Deep-join chain builder */}
-      {isChain && (
+      {/* Path builder — start entity + related hops. Always available (0 hops =
+          plain grid); hidden only while summarizing (group-by is a 0-hop view). */}
+      {!isSummarize && (
         <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm" data-testid="explorer-chain-builder">
           <span className="text-xs text-ios-secondary mr-1">{t.explorer.chainPath}</span>
           <span className="px-2 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-200 font-medium">{entityLabel(spec.entity)}</span>
@@ -454,7 +445,7 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
                 <span className="px-2 py-1 rounded-lg bg-gray-100 text-ios-label border border-gray-200 inline-flex items-center gap-1">
                   {pathEntity?.label || edge}
                   {isLast && (
-                    <button onClick={removeHop} aria-label={t.explorer.chainRemove} className="text-ios-tertiary hover:text-red-600 text-xs">✕</button>
+                    <button onClick={removeHop} aria-label={t.explorer.chainRemove} data-testid="explorer-chain-remove" className="text-ios-tertiary hover:text-red-600 text-xs">✕</button>
                   )}
                 </span>
               </span>
@@ -499,15 +490,15 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
             <tr className="border-b border-gray-200 text-ios-secondary text-xs">
               {columns.map((col) => {
                 const rightAlign = col.type === 'number';
-                // Deep-join columns are plain (sort/filter over a denormalized
-                // join is a follow-up — see plan); other modes keep sort+filter.
-                const filterable = !col.agg && !isSummarize && !isChain;
-                const hasFilter = !isChain && Object.keys(columnFilterValues(spec, col.name)).length > 0;
+                // Sort/filter work on a flat 0-hop grid; over a multi-hop
+                // denormalized join they're a follow-up (see plan).
+                const filterable = !col.agg && !isSummarize && !hasHops;
+                const hasFilter = !hasHops && Object.keys(columnFilterValues(spec, col.name)).length > 0;
                 const headLabel = col.agg && col.name === 'count' ? t.explorer.countLabel : col.label;
                 return (
                   <th key={colKey(col)} className={`group px-3 py-2 font-medium ${rightAlign ? 'text-right' : 'text-left'}`}>
                     <span className={`inline-flex items-center ${rightAlign ? 'justify-end' : ''}`}>
-                      {isChain || col.agg
+                      {hasHops || col.agg
                         ? <span className="whitespace-nowrap">{headLabel}</span>
                         : <SortHeader label={headLabel} dir={getSortDir(spec, col.name)} onSort={() => onSort(col.name)} />}
                       {filterable && (
@@ -543,17 +534,6 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
                   {showActions && (
                     <td className="sticky right-0 z-10 bg-white px-3 py-2 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">
                       <div className="flex items-center justify-end gap-1 flex-wrap">
-                        {drills.map((dr) => {
-                          const canDrill = row[dr.localKey] != null && row[dr.localKey] !== '';
-                          if (!canDrill) return null;
-                          return (
-                            <button key={dr.join} onClick={() => drill(dr, row)} title={dr.label}
-                              data-testid={`explorer-drill-${dr.join}`}
-                              className="text-xs text-brand-600 border border-brand-200 bg-brand-50 rounded-lg px-2 py-0.5 hover:bg-brand-100">
-                              {entityLabel(dr.to)} ›
-                            </button>
-                          );
-                        })}
                         {target && onNavigate && (
                           <button onClick={() => onNavigate(target)} title={t.explorer.open}
                             className="text-xs text-gray-600 border border-gray-200 rounded-lg px-2 py-0.5 hover:bg-gray-100">

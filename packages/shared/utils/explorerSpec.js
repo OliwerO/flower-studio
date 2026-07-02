@@ -195,15 +195,24 @@ export function chainPathEntities(schema, spec) {
   return path;
 }
 
-// Flat, hop-prefixed columns across every entity on the chain path. Each column:
+// Qualified column identity used in spec.columns + the picker: "entity.field"
+// (model names — what the engine validates + the assistant emits).
+export function columnId(col) {
+  return `${col.entityKey}.${col.name}`;
+}
+
+// Flat columns across every entity on the path (0 hops = just the primary — the
+// unified grid; see #504). Each column:
 //   hop        — path index (0 = primary)
-//   table      — SQL table name (how the engine nests this entity in a row)
+//   table      — SQL table name (how the engine nests this entity in a joined row)
 //   key        — runtime row key within row[table]
-//   name       — model field name (for filters/sort — resolved across the path)
-//   label      — "Entity · Field" so same-named columns (id, name) stay distinct
-//   type, colId
+//   name       — model field name (for filters/sort/selection)
+//   label      — "Entity · Field" ONLY when the path spans >1 table (so a single
+//                table grid stays clean); plain field label otherwise
+//   type, colId ("entity.field"), primary (curated default), agg
 export function resolveChainColumns(schema, spec) {
   const path = chainPathEntities(schema, spec);
+  const multi = path.length > 1;
   const cols = [];
   path.forEach((entity, hop) => {
     for (const f of (entity.fields || [])) {
@@ -213,9 +222,10 @@ export function resolveChainColumns(schema, spec) {
         table: entity.table || entity.key,
         key: f.key,
         name: f.name,
-        label: `${entity.label} · ${f.label}`,
+        label: multi ? `${entity.label} · ${f.label}` : f.label,
         type: f.type,
-        colId: `${entity.table || entity.key}::${f.key}`,
+        colId: `${entity.key}.${f.name}`,
+        primary: !!f.primary,
         agg: false,
       });
     }
@@ -223,11 +233,36 @@ export function resolveChainColumns(schema, spec) {
   return cols;
 }
 
-// Read a chain cell: the engine nests each hop under its SQL table name.
+// Read a cell: multi-hop rows nest each hop under its SQL table name; a 0-hop
+// plain query returns a flat row → fall back to the runtime key directly.
 export function chainCellValue(row, col) {
   if (!row || !col) return undefined;
   const bucket = row[col.table];
-  return bucket ? bucket[col.key] : undefined;
+  if (bucket && typeof bucket === 'object') return bucket[col.key];
+  return row[col.key];
+}
+
+// The columns actually shown: the selected set (spec.columns) if any, else the
+// curated primary defaults. Keeps path order. An empty/absent selection → defaults
+// so the grid never opens blank.
+export function visibleColumns(schema, spec) {
+  const all = resolveChainColumns(schema, spec);
+  if (Array.isArray(spec?.columns) && spec.columns.length) {
+    const sel = new Set(spec.columns);
+    return all.filter((c) => sel.has(c.colId) || sel.has(c.name));
+  }
+  return all.filter((c) => c.primary);
+}
+
+// Add/remove a column from the selection. Seeds from the current primary
+// defaults the first time (so toggling from the default view is predictable).
+export function toggleColumn(schema, spec, colId) {
+  const base = (Array.isArray(spec?.columns) && spec.columns.length)
+    ? spec.columns
+    : resolveChainColumns(schema, spec).filter((c) => c.primary).map((c) => c.colId);
+  const set = new Set(base);
+  if (set.has(colId)) set.delete(colId); else set.add(colId);
+  return { ...spec, columns: [...set] };
 }
 
 // CSV of a chain grid — reads nested cells via chainCellValue.
@@ -271,14 +306,19 @@ export function chainHasFanOut(schema, spec) {
   return false;
 }
 
-// Append / drop a hop. Dropping resets sort (a single sort may reference the
-// removed entity); filters are kept (the engine rejects a now-invalid field, and
-// the common case filters the primary entity).
+// Append a hop. A chain is flat-rows-only, so adding a hop drops any
+// groupBy/aggregate (summarize) the 0-hop grid had.
 export function chainAppendEdge(spec, join) {
-  return { ...spec, chain: [...(spec?.chain || []), join] };
+  const { groupBy, aggregate, ...rest } = spec || {};
+  return { ...rest, chain: [...(spec?.chain || []), join] };
 }
 
+// Drop the last hop. Resets sort (it may reference the removed entity). When the
+// chain empties, remove the key entirely so the spec is a clean 0-hop plain grid
+// (re-enables summarize/sort/filter).
 export function chainRemoveLast(spec) {
   const chain = (spec?.chain || []).slice(0, -1);
-  return { ...spec, chain, sort: [] };
+  const next = { ...spec, sort: [] };
+  if (chain.length) next.chain = chain; else delete next.chain;
+  return next;
 }

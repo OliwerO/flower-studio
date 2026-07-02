@@ -204,5 +204,8 @@ export {
   chainHasFanOut,
   chainAppendEdge,
   chainRemoveLast,
+  columnId,
+  visibleColumns,
+  toggleColumn,
 } from './utils/explorerSpec.js';
 export { default as useExplorerQuery } from './hooks/useExplorerQuery.js';

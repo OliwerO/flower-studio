@@ -40,6 +40,23 @@ function modelFieldFor(entityDef, col) {
 }
 
 // Russian labels for each allow-listed entity.
+// Curated default (primary) columns per entity — the readable subset a grid
+// shows on open (#504). Excludes ids/FKs/noise; the column picker exposes the
+// rest. Entities not listed fall back to their first few non-id fields.
+const PRIMARY_FIELDS = {
+  orders:             ['orderDate', 'status', 'price'],
+  customers:          ['name', 'segment'],
+  order_lines:        ['flowerName', 'quantity', 'sellPrice'],
+  stock:              ['name', 'quantity', 'type'],
+  key_people:         ['name', 'importantDate'],
+  purchases:          ['purchaseDate', 'supplier', 'quantityPurchased', 'pricePerUnit'],
+  writeoffs:          ['date', 'quantity', 'reason'],
+  deliveries:         ['deliveryDate', 'recipientName', 'status', 'assignedDriver'],
+  marketing:          ['month', 'channel', 'amount'],
+  stock_orders:       ['poNumber', 'status', 'createdDate'],
+  stock_order_lines:  ['flowerName', 'quantityNeeded', 'supplier'],
+};
+
 const ENTITY_LABELS = {
   orders:             'Заказы',
   customers:          'Клиенты',
@@ -241,7 +258,8 @@ function fieldLabelEn(fieldName) {
  */
 export function describeSchema() {
   const entities = Object.entries(SCHEMA).map(([key, entityDef]) => {
-    const fields = Object.entries(entityDef.fields).map(([fieldName, fieldDef]) => ({
+    const primarySet = PRIMARY_FIELDS[key];
+    const fields = Object.entries(entityDef.fields).map(([fieldName, fieldDef], idx) => ({
       name:  fieldName,
       // Runtime row key (Drizzle jsKey) — how a plain query_records select
       // returns this column. Falls back to the model name if the reverse
@@ -250,6 +268,11 @@ export function describeSchema() {
       label:   fieldLabel(fieldName),
       labelEn: fieldLabelEn(fieldName),
       type:    inferFieldType(fieldName),
+      // Curated default columns (Explorer v2 #504): a grid opens showing only
+      // these so it's readable; the column picker exposes the rest. Listed
+      // entities use their curated set; others fall back to the first few
+      // non-id fields.
+      primary: primarySet ? primarySet.includes(fieldName) : (fieldName !== 'id' && idx < 4),
     }));
 
     const drills = Object.entries(entityDef.joins || {}).map(([joinName, joinDef]) => ({

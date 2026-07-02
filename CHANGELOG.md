@@ -5,6 +5,17 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-02 — Explorer v2 · Wave 3: readable unified Explorer (column selection + merged modes)
+
+Third wave (PRD #496, #504). From the owner's live use of deep-join: grids were **unreadable** (too many columns, none hideable) and the plain-vs-deep-join **toggle was confusing**. Reframed — plain vs deep-join is one axis (how many related tables you pull in), so they're **merged into one grid**, and **column selection** is added as the missing primitive.
+
+- **Unified grid.** The Deep-join toggle is gone. Every Explorer grid is now a path (0 hops = the old plain grid); the **path builder** ("start table → + add related") is always available. Adding a hop drops any group-by (chain = flat rows); removing the last hop restores the plain grid (with sort/filter/group-by).
+- **Curated default columns.** `describeSchema()` marks curated **`primary`** fields per entity (e.g. Orders → date/status/price, not the id), so a grid opens showing a readable handful, not every column.
+- **Column picker.** A "Columns (N)" menu ticks any column on/off across the whole path; the selection is stored in `spec.columns` (qualified `entity.field`), so it persists in saved views AND the assistant handoff. `validateSpec` validates `columns`.
+- **Ask Blossom curates columns.** `open_explorer_view` now takes `chain` + `columns` in its spec; the system prompt tells the assistant to pick the tables AND only the useful columns → "Open in Explorer" shows exactly that clean grid.
+- Follow-ups (deferred): sort/filter over a multi-hop denormalized grid (kept at 0-hop for now); pivot & measures (next wave). Navigate-drill + breadcrumb removed — superseded by "+ add related".
+- Shared `explorerSpec` gains `columnId`/`visibleColumns`/`toggleColumn` + a flat-row fallback in `chainCellValue` (0-hop rows aren't nested). Verified: backend vitest, shared 706, all three apps build, E2E 253, lab-unit 77, Playwright 2/2.
+
 ## 2026-07-02 — Explorer v2 · Wave 2: deep-join reports (fixed edge chains)
 
 Second wave of Explorer v2 (PRD #496, wave #498; **ADR-0011**). The owner can build a **flat multi-hop report** by following the schema's existing relationship edges — e.g. a flower → the orders that used it → each order's customer → that customer's key person, all as one denormalized grid. Read-only, safe by construction (same `query_records` engine, allow-list + row cap).
