@@ -41,6 +41,7 @@ export const SCHEMA = {
     defaultExcludeCancelled: true,
     fields: {
       id:            { col: orders.id },
+      appOrderId:    { col: orders.appOrderId },  // human order number (e.g. 202606-001)
       orderDate:     { col: orders.orderDate },
       requiredBy:    { col: orders.requiredBy },
       status:        { col: orders.status },
@@ -285,23 +286,6 @@ function applyAgg(fn, col, alias) {
   }
 }
 
-/**
- * Resolve a field name to its Drizzle column, searching:
- *   1. The primary entity's fields.
- *   2. The fields of any allowed joins that are active in `activeJoins`.
- */
-function resolveField(entityDef, fieldName, activeJoins = []) {
-  if (entityDef.fields[fieldName]) return entityDef.fields[fieldName].col;
-  for (const joinName of activeJoins) {
-    const joinDef = entityDef.joins?.[joinName];
-    if (!joinDef) continue;
-    const joinEntity = SCHEMA[joinDef.to];
-    if (!joinEntity) continue;
-    if (joinEntity.fields[fieldName]) return joinEntity.fields[fieldName].col;
-  }
-  return null;
-}
-
 // ── Deep-join chain (Explorer v2 Wave 2, ADR-0011) ──
 // A `chain` is an ordered list of edges resolved SEQUENTIALLY: each edge must
 // exist on the PREVIOUS hop's entity (not the primary). Walk it to produce the
@@ -327,10 +311,41 @@ function walkChain(entityName, chain) {
   return { ok: true, defs };
 }
 
-// Resolve a field against any entity def on the chain path (primary first).
-function resolveFieldInDefs(defs, fieldName) {
-  for (const def of defs) {
-    if (def?.fields?.[fieldName]) return def.fields[fieldName].col;
+// The ordered set of entities a spec's fields may reference: the primary, plus
+// the chain path OR the star-join targets. Used for a single field resolver that
+// accepts BOTH a qualified "entity.field" and a bare "field" (resolved in order)
+// anywhere — filters, sort, groupBy, aggregate, columns. Qualified refs make the
+// model's job unambiguous and stop the retry-storm from unresolved fields.
+function buildScope(spec) {
+  const scope = [{ key: spec.entity, def: SCHEMA[spec.entity] }];
+  if (Array.isArray(spec.chain)) {
+    let cur = spec.entity;
+    for (const edge of spec.chain) {
+      const jd = SCHEMA[cur]?.joins?.[edge];
+      if (!jd) break;
+      scope.push({ key: jd.to, def: SCHEMA[jd.to] });
+      cur = jd.to;
+    }
+  } else if (Array.isArray(spec.join)) {
+    for (const j of spec.join) {
+      const jd = SCHEMA[spec.entity]?.joins?.[j];
+      if (jd) scope.push({ key: jd.to, def: SCHEMA[jd.to] });
+    }
+  }
+  return scope;
+}
+
+function resolveInScope(scope, fieldRef) {
+  if (typeof fieldRef !== 'string') return null;
+  const dot = fieldRef.indexOf('.');
+  if (dot >= 0) {
+    const ek = fieldRef.slice(0, dot);
+    const fn = fieldRef.slice(dot + 1);
+    const s = scope.find((x) => x.key === ek);
+    return s?.def?.fields?.[fn]?.col ?? null;
+  }
+  for (const s of scope) {
+    if (s.def?.fields?.[fieldRef]) return s.def.fields[fieldRef].col;
   }
   return null;
 }
@@ -354,7 +369,6 @@ export function validateSpec(spec) {
   // A chain replaces the star `join` with an ordered path of edges. Validate its
   // shape up front, then resolve all subsequent fields against the path entities.
   const hasChain = spec.chain !== undefined;
-  let chainDefs = null;
   if (hasChain) {
     if (!Array.isArray(spec.chain)) return { ok: false, error: 'chain must be an array' };
     if (activeJoins.length) return { ok: false, error: 'cannot combine chain with join' };
@@ -364,37 +378,23 @@ export function validateSpec(spec) {
     if (spec.chain.length > MAX_CHAIN) return { ok: false, error: `chain too long (max ${MAX_CHAIN} hops)` };
     const walked = walkChain(spec.entity, spec.chain);
     if (!walked.ok) return { ok: false, error: walked.error };
-    chainDefs = walked.defs;
   }
 
-  // Field resolver: chain specs resolve against the whole path; otherwise the
-  // primary entity + its active star joins.
-  const resolve = (fieldName) => hasChain
-    ? resolveFieldInDefs(chainDefs, fieldName)
-    : resolveField(entityDef, fieldName, activeJoins);
+  // One field resolver for the whole spec: accepts a qualified "entity.field"
+  // (resolved against the primary + chain path OR star-join targets) or a bare
+  // "field" (searched in scope order). chainDefs is unused now (scope covers it).
+  const scope = buildScope(spec);
+  const resolve = (fieldName) => resolveInScope(scope, fieldName);
 
   // Column selection (#504): optional display projection carried in the spec so
-  // saved views + the assistant handoff persist it. A column is "entity.field"
-  // (qualified — must be on the path) or a bare "field" (resolved across path).
-  // Validated here so a stored/echoed spec can't smuggle an unknown column;
-  // execution ignores it (the front-end projects the returned rows).
+  // saved views + the assistant handoff persist it. Each column is "entity.field"
+  // or a bare "field" — validated in the same scope as everything else.
   if (spec.columns !== undefined) {
     if (!Array.isArray(spec.columns)) return { ok: false, error: 'columns must be an array' };
-    const pathKeys = [spec.entity];
-    if (hasChain) {
-      let cur = spec.entity;
-      for (const edge of spec.chain) { const jd = SCHEMA[cur].joins[edge]; pathKeys.push(jd.to); cur = jd.to; }
-    }
-    const pathKeySet = new Set(pathKeys);
+    const scopeKeys = scope.map((s) => s.key).join(' → ');
     for (const c of spec.columns) {
       if (typeof c !== 'string') return { ok: false, error: 'columns entries must be strings' };
-      if (c.includes('.')) {
-        const [ek, fn] = c.split('.');
-        if (!pathKeySet.has(ek)) return { ok: false, error: `column entity "${ek}" is not on the query path (${pathKeys.join(' → ')})` };
-        if (!SCHEMA[ek].fields[fn]) return { ok: false, error: `unknown column field "${fn}" on entity "${ek}"` };
-      } else if (!pathKeys.some((k) => SCHEMA[k].fields[c])) {
-        return { ok: false, error: `unknown column "${c}" on the query path` };
-      }
+      if (!resolve(c)) return { ok: false, error: `unknown column "${c}" on the query scope (${scopeKeys})` };
     }
   }
 
@@ -494,9 +494,7 @@ export async function queryRecordsHandler(spec) {
   try {
     const entityDef = SCHEMA[spec.entity];
     const activeJoins = Array.isArray(spec.join) ? spec.join : [];
-    // Deep-join chain (ADR-0011): validated already, so walkChain succeeds here.
     const hasChain = Array.isArray(spec.chain);
-    const chainDefs = hasChain ? walkChain(spec.entity, spec.chain).defs : null;
     // A chain fans out if any hop is a "many" edge (row multiplication → warn).
     let fanOut = false;
     if (hasChain) {
@@ -507,11 +505,9 @@ export async function queryRecordsHandler(spec) {
         cur = SCHEMA[jd.to];
       }
     }
-    // Field resolver: chain specs resolve against the whole path; otherwise the
-    // primary entity + its active star joins.
-    const resolve = (fieldName) => hasChain
-      ? resolveFieldInDefs(chainDefs, fieldName)
-      : resolveField(entityDef, fieldName, activeJoins);
+    // Single qualified-or-bare field resolver (same scope as validateSpec).
+    const scope = buildScope(spec);
+    const resolve = (fieldName) => resolveInScope(scope, fieldName);
     // Clamp limit: 0 or negative falls back to ROW_CAP
     const userLimit = Math.min(Math.max(1, Number(spec.limit) || ROW_CAP), ROW_CAP);
 

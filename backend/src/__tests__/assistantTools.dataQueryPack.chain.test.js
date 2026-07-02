@@ -110,3 +110,25 @@ describe('validateSpec — column selection', () => {
     expect(validateSpec({ entity: 'orders', columns: [123] }).ok).toBe(false);
   });
 });
+
+describe('validateSpec — qualified entity.field references everywhere', () => {
+  it('accepts a qualified SORT field on a chain path', () => {
+    const spec = { entity: 'order_lines', chain: ['order', 'customer'], sort: [{ field: 'orders.orderDate', dir: 'desc' }] };
+    expect(validateSpec(spec)).toEqual({ ok: true });
+  });
+
+  it('accepts a qualified FILTER field on a chain path', () => {
+    const spec = { entity: 'order_lines', chain: ['order', 'customer'], filters: [{ field: 'customers.name', op: 'like', value: 'Anna' }] };
+    expect(validateSpec(spec)).toEqual({ ok: true });
+  });
+
+  it('accepts a qualified COLUMN + sort across a star join (join, not chain)', () => {
+    const spec = { entity: 'order_lines', join: ['order'], columns: ['order_lines.flowerName', 'orders.orderDate'], sort: [{ field: 'orders.orderDate', dir: 'desc' }] };
+    expect(validateSpec(spec)).toEqual({ ok: true });
+  });
+
+  it('still rejects a qualified ref whose entity is off the scope', () => {
+    const r = validateSpec({ entity: 'orders', sort: [{ field: 'customers.name', dir: 'asc' }] });
+    expect(r.ok).toBe(false);
+  });
+});

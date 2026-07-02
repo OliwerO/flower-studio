@@ -44,7 +44,7 @@ function modelFieldFor(entityDef, col) {
 // shows on open (#504). Excludes ids/FKs/noise; the column picker exposes the
 // rest. Entities not listed fall back to their first few non-id fields.
 const PRIMARY_FIELDS = {
-  orders:             ['orderDate', 'status', 'price'],
+  orders:             ['appOrderId', 'orderDate', 'status', 'price'],
   customers:          ['name', 'segment'],
   order_lines:        ['flowerName', 'quantity', 'sellPrice'],
   stock:              ['name', 'quantity', 'type'],
@@ -95,6 +95,7 @@ const ENTITY_LABELS_EN = {
 // listed here fall back to the raw field name.
 const FIELD_LABELS = {
   id:                  'ID',
+  appOrderId:          '№ заказа',
   orderDate:           'Дата заказа',
   requiredBy:          'Нужно к',
   status:              'Статус',
@@ -159,6 +160,7 @@ const FIELD_LABELS = {
 // back to the raw field name (same as the RU map).
 const FIELD_LABELS_EN = {
   id:                  'ID',
+  appOrderId:          'Order #',
   orderDate:           'Order date',
   requiredBy:          'Required by',
   status:              'Status',
