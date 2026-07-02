@@ -9,25 +9,26 @@ import { db } from '../db/index.js';
 // handler never touches `db` at all.
 
 describe('explorerViewPack.open_explorer_view', () => {
-  it('returns view/spec/label for a valid spec, using the given label', async () => {
+  it('returns view/spec + both labels for a valid spec, using the given labels', async () => {
     const spec = {
       entity: 'orders',
       filters: [{ field: 'status', op: 'eq', value: 'New' }],
     };
-    const r = await openExplorerViewHandler({ spec, label: 'Новые заказы' });
-    expect(r).toEqual({ view: 'explorer', spec, label: 'Новые заказы' });
+    const r = await openExplorerViewHandler({ spec, label: 'Новые заказы', labelEn: 'New orders' });
+    expect(r).toEqual({ view: 'explorer', spec, label: 'Новые заказы', labelEn: 'New orders' });
   });
 
-  it('defaults to the Russian label "Данные" when label is omitted', async () => {
+  it('defaults to the RU/EN labels ("Данные"/"Data") when labels are omitted', async () => {
     const spec = { entity: 'orders' };
     const r = await openExplorerViewHandler({ spec });
-    expect(r).toEqual({ view: 'explorer', spec, label: 'Данные' });
+    expect(r).toEqual({ view: 'explorer', spec, label: 'Данные', labelEn: 'Data' });
   });
 
-  it('ignores a blank/non-string label and falls back to the default', async () => {
+  it('ignores a blank/non-string label and falls back to the default (each language independently)', async () => {
     const spec = { entity: 'orders' };
-    const r = await openExplorerViewHandler({ spec, label: '   ' });
+    const r = await openExplorerViewHandler({ spec, label: '   ', labelEn: '  ' });
     expect(r.label).toBe('Данные');
+    expect(r.labelEn).toBe('Data');
   });
 
   it('returns { error } for an invalid spec (unknown entity), never a view', async () => {
@@ -48,10 +49,11 @@ describe('explorerViewPack.open_explorer_view', () => {
     expect(db).toBeNull();
 
     const spec = { entity: 'orders', filters: [{ field: 'status', op: 'eq', value: 'New' }] };
-    await expect(openExplorerViewHandler({ spec, label: 'Test' })).resolves.toEqual({
+    await expect(openExplorerViewHandler({ spec, label: 'Test', labelEn: 'Test' })).resolves.toEqual({
       view: 'explorer',
       spec,
       label: 'Test',
+      labelEn: 'Test',
     });
   });
 });

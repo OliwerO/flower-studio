@@ -5,6 +5,11 @@ import AskBlossomPanel from '../components/AskBlossomPanel.jsx';
 vi.mock('../api/client.js', () => ({ default: { post: vi.fn(), get: vi.fn(), patch: vi.fn(), delete: vi.fn() } }));
 // FeedbackModal uses resizeImageBlob; mock it so jsdom canvas is not needed.
 vi.mock('../utils/imageResize.js', () => ({ resizeImageBlob: vi.fn().mockResolvedValue(new Blob()) }));
+// Control the app language for the handoff-label tests (Explorer v2 #497).
+const { langRef } = vi.hoisted(() => ({ langRef: { current: 'ru' } }));
+vi.mock('../context/LanguageContext.jsx', () => ({
+  useLanguage: () => ({ lang: langRef.current, setLang: () => {} }),
+}));
 import client from '../api/client.js';
 
 const t = {
@@ -21,7 +26,7 @@ const t = {
   reportExpired: 'Сессия устарела',
 };
 
-beforeEach(() => { vi.clearAllMocks(); client.get.mockResolvedValue({ data: [] }); });
+beforeEach(() => { vi.clearAllMocks(); langRef.current = 'ru'; client.get.mockResolvedValue({ data: [] }); });
 
 describe('AskBlossomPanel', () => {
   it('sends a question and renders the markdown answer', async () => {
@@ -159,6 +164,68 @@ describe('AskBlossomPanel — Open in Orders', () => {
     fireEvent.click(screen.getByText('Спросить'));
     await screen.findByText('просто ответ');
     expect(screen.queryByText('Отфильтрованные заказы')).not.toBeInTheDocument();
+  });
+});
+
+// ── Bilingual handoff labels + both buttons + persist-on-reopen (Explorer v2 #497) ──
+
+describe('AskBlossomPanel — bilingual handoff labels', () => {
+  const bothLabels = { view: 'orders', filter: { paymentStatus: 'Unpaid' }, label: 'Неоплаченные заказы', labelEn: 'Unpaid orders' };
+
+  it('shows the English label when the app is in English', async () => {
+    langRef.current = 'en';
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'ans', toolResults: [{ name: 'open_orders_view', output: bothLabels }] } });
+    render(<AskBlossomPanel t={t} onOpenOrders={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'unpaid?' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    expect(await screen.findByText('Unpaid orders')).toBeInTheDocument();
+    expect(screen.queryByText('Неоплаченные заказы')).not.toBeInTheDocument();
+  });
+
+  it('shows the Russian label when the app is in Russian', async () => {
+    langRef.current = 'ru';
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'ans', toolResults: [{ name: 'open_orders_view', output: bothLabels }] } });
+    render(<AskBlossomPanel t={t} onOpenOrders={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'unpaid?' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    expect(await screen.findByText('Неоплаченные заказы')).toBeInTheDocument();
+    expect(screen.queryByText('Unpaid orders')).not.toBeInTheDocument();
+  });
+
+  it('renders BOTH buttons when a message carries both signals', async () => {
+    const spec = { entity: 'orders', filters: [], sort: [] };
+    const toolResults = [
+      { name: 'open_orders_view', output: { view: 'orders', filter: {}, label: 'Заказы', labelEn: 'Orders' } },
+      { name: 'open_explorer_view', output: { view: 'explorer', spec, label: 'Заказы (данные)', labelEn: 'Orders (data)' } },
+    ];
+    langRef.current = 'en';
+    client.post.mockResolvedValueOnce({ data: { sessionId: 's1', answer: 'ans', toolResults } });
+    const onOpenOrders = vi.fn();
+    const onOpenExplorer = vi.fn();
+    render(<AskBlossomPanel t={t} onOpenOrders={onOpenOrders} onOpenExplorer={onOpenExplorer} />);
+    fireEvent.change(screen.getByPlaceholderText('Спросите…'), { target: { value: 'orders' } });
+    fireEvent.click(screen.getByText('Спросить'));
+    fireEvent.click(await screen.findByText('Orders'));
+    fireEvent.click(screen.getByText('Orders (data)'));
+    expect(onOpenOrders).toHaveBeenCalledWith({});
+    expect(onOpenExplorer).toHaveBeenCalledWith(spec);
+  });
+
+  it('keeps the handoff button when a saved conversation is reopened (toolResults survive projection)', async () => {
+    // Simulates the new toDisplayTurns output: the assistant turn carries the
+    // reconstructed signal toolResults, so the button re-renders on reopen.
+    client.get
+      .mockResolvedValueOnce({ data: [{ id: 'c1', title: 'Unpaid', updatedAt: 'x', messageCount: 2 }] }) // mount list
+      .mockResolvedValueOnce({ data: { id: 'c1', title: 'Unpaid', messages: [
+        { role: 'user', text: 'unpaid?' },
+        { role: 'assistant', text: 'ans', toolResults: [{ name: 'open_orders_view', output: bothLabels }] },
+      ] } });
+    const onOpenOrders = vi.fn();
+    render(<AskBlossomPanel t={t} onOpenOrders={onOpenOrders} />);
+    fireEvent.click(await screen.findByText('Unpaid'));
+    const btn = await screen.findByText('Неоплаченные заказы'); // ru default
+    fireEvent.click(btn);
+    expect(onOpenOrders).toHaveBeenCalledWith({ paymentStatus: 'Unpaid' });
   });
 });
 

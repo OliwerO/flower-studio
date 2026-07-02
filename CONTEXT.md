@@ -225,6 +225,14 @@ The phone app used by Drivers. Covers assigned deliveries and Stock Order shoppi
 A read-only linked-record surface inside the Dashboard (owner-only, desktop) for exploring Blossom's data. The Owner picks a start-point (a Flower, Order, Customer, Supplier, …), filters it, and drills through relationships by clicking a row to open its related records — e.g. a Flower → the Orders that used it → each Order's Customer → that Customer's Key People. Distinct from **Ask Blossom** (natural-language questions, one answer per turn): Explorer is click-driven navigation with no LLM per click. Ask Blossom can hand a query off to Explorer ("Open in Explorer"). Safe by construction — it can only emit the same validated declarative query spec the assistant uses (allow-listed entities/fields/joins, row cap), never raw SQL, and never edits data (rows deep-link into the existing edit screens).
 _Avoid_: Super-search (the origin term for this idea; "Explorer" is canonical), linked-record explorer, grid
 
+**Deep-join report** (Explorer v2):
+A single flat grid that follows a **fixed chain of relationship edges** across 3+ entities and flattens them into one denormalized row set — e.g. Flower → the Orders that used it → each Order's Customer → that Customer's Key Person, all as columns of one grid. Distinct from **navigation drilling** (v1: clicking a row opens a fresh single-hop query — you move *between* grids). A deep-join report shows every hop at once. Only follows the pre-defined descriptor edges (no arbitrary entity-to-entity joins — that is the deferred **Arbitrary join builder**, v3). Bounded by the same row cap; fan-out (a "many" hop) is warned/capped.
+_Avoid_: multi-hop join, chained query, denormalized report
+
+**Pivot** (Explorer v2):
+A two-dimension summary of a **Measure** — rows × columns × measure (e.g. sales *summed* with Order status down the side and month across the top). A **Measure** is an aggregate of a numeric field: sum / avg / min / max / count. v1 exposed count-only over a single group-by; v2 adds real measures and the second (column) dimension.
+_Avoid_: cross-tab, matrix report
+
 ## Flagged ambiguities
 
 - "Bouquet" is used both for a **Product** (Wix listing) and a **Premade Bouquet** (pre-built inventory item) — these are distinct. Context determines which is meant; prefer the full term when precision matters.

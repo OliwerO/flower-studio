@@ -5,6 +5,16 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-02 — Explorer v2 · Wave 1: Ask Blossom handoff polish
+
+First wave of Explorer v2 (PRD #496, wave #497). Cleanup of the Ask Blossom → screen handoff from the owner's first live use. No engine change; assistant + shared chat panel only.
+
+- **Handoff button label follows the app language.** The `open_orders_view` / `open_explorer_view` signal tools now return **both** `label` (Russian) + `labelEn` (English); `AskBlossomPanel` picks by `useLanguage()` (falls back to either label, then the generic `t.openInOrders`/`openInExplorer`). Previously the tool's Russian `label` always won, so an English dashboard showed a Russian button. Tool input schemas gained a `labelEn` field; the system prompt instructs the model to supply both.
+- **Both buttons for savable order lists.** The panel already rendered an Orders button and an Explorer button independently; the system prompt now tells the model to ALSO emit `open_explorer_view` for a list of orders worth saving/exporting, so the owner sees **both** "Open in Orders" (act) and "Open in Explorer" (save view / export CSV). Pure cross-entity results → Explorer only; pure aggregates → neither.
+- **Handoff button survives chat reopen.** `toDisplayTurns` (assistantService) previously stripped all tool blocks, so reopening a saved chat lost the button. It now reconstructs the signal tools' `{name, output}` from the stored `tool_use`/`tool_result` pair and attaches it to the answer turn (matching the live path), so the button re-renders on reopen.
+- Tests: new `assistantService.toDisplayTurns.test.js` (7); extended `ordersViewPack`/`explorerViewPack` handler tests for `labelEn`; new `AskBlossomPanel` tests (EN/RU label pick, both buttons, persist-on-reopen). Both-buttons tool *selection* is LLM-driven → verified by the SAFE `assistant-live-smoke.js` (owner, real key), noted in the PR.
+- Verified: backend vitest, shared 688 vitest, all three apps build. (Additive shapes — E2E unaffected.)
+
 ## 2026-07-02 — Explorer polish: bilingual labels + pinned drill column
 
 Two fixes from first owner use of the live Explorer (prod).
