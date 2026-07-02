@@ -90,6 +90,8 @@ export const SCHEMA = {
     joins: {
       // orderLines.stockItemId = TEXT (may hold 'recXXX'), stock.id = UUID → cast foreignCol (uuid) to text
       stock: { to: 'stock', localCol: orderLines.stockItemId, foreignCol: stock.id, cardinality: 'one', uuidSide: 'foreign' },
+      // Reverse edge (Explorer v2 deep-join): a line belongs to one order. uuid = uuid.
+      order: { to: 'orders', localCol: orderLines.orderId, foreignCol: orders.id, cardinality: 'one' },
     },
     softDeleteCol: orderLines.deletedAt,
   },
@@ -101,6 +103,11 @@ export const SCHEMA = {
       quantity: { col: stock.currentQuantity },
       type:     { col: stock.typeName },
       colour:   { col: stock.colour },
+    },
+    joins: {
+      // Reverse edge (Explorer v2 deep-join): a flower appears on many order lines.
+      // stock.id = UUID, orderLines.stockItemId = TEXT (may hold 'recXXX') → cast localCol (uuid) to text.
+      lines: { to: 'order_lines', localCol: stock.id, foreignCol: orderLines.stockItemId, cardinality: 'many', uuidSide: 'local' },
     },
     softDeleteCol: stock.deletedAt,
   },
@@ -462,6 +469,24 @@ export async function queryRecordsHandler(spec) {
   try {
     const entityDef = SCHEMA[spec.entity];
     const activeJoins = Array.isArray(spec.join) ? spec.join : [];
+    // Deep-join chain (ADR-0011): validated already, so walkChain succeeds here.
+    const hasChain = Array.isArray(spec.chain);
+    const chainDefs = hasChain ? walkChain(spec.entity, spec.chain).defs : null;
+    // A chain fans out if any hop is a "many" edge (row multiplication → warn).
+    let fanOut = false;
+    if (hasChain) {
+      let cur = entityDef;
+      for (const edge of spec.chain) {
+        const jd = cur.joins[edge];
+        if (jd.cardinality === 'many') fanOut = true;
+        cur = SCHEMA[jd.to];
+      }
+    }
+    // Field resolver: chain specs resolve against the whole path; otherwise the
+    // primary entity + its active star joins.
+    const resolve = (fieldName) => hasChain
+      ? resolveFieldInDefs(chainDefs, fieldName)
+      : resolveField(entityDef, fieldName, activeJoins);
     // Clamp limit: 0 or negative falls back to ROW_CAP
     const userLimit = Math.min(Math.max(1, Number(spec.limit) || ROW_CAP), ROW_CAP);
 
@@ -480,7 +505,7 @@ export async function queryRecordsHandler(spec) {
 
     // User-supplied filters
     for (const f of (spec.filters || [])) {
-      const col = resolveField(entityDef, f.field, activeJoins);
+      const col = resolve(f.field);
       whereClauses.push(applyOp(col, f.op, f.value));
     }
 
@@ -535,9 +560,42 @@ export async function queryRecordsHandler(spec) {
       return q;
     }
 
+    // Deep-join chain: the same join-building as applyJoins, but hops are applied
+    // SEQUENTIALLY along the path (each edge resolved on the previous hop's
+    // entity), producing one denormalized row per matched path (ADR-0011).
+    function applyChain(q) {
+      let currentDef = entityDef;
+      for (const edge of spec.chain) {
+        const joinDef = currentDef.joins[edge];
+        const joinEntity = SCHEMA[joinDef.to];
+
+        let condition;
+        if (joinDef.uuidSide === 'foreign') {
+          condition = sql`${joinDef.foreignCol}::text = ${joinDef.localCol}`;
+        } else if (joinDef.uuidSide === 'local') {
+          condition = sql`${joinDef.localCol}::text = ${joinDef.foreignCol}`;
+        } else {
+          condition = eq(joinDef.localCol, joinDef.foreignCol);
+        }
+
+        const extraConditions = [];
+        if (joinEntity.softDeleteCol) extraConditions.push(isNull(joinEntity.softDeleteCol));
+        if (joinDef.to === 'orders' && !spec.includeCancelled) {
+          extraConditions.push(ne(orders.status, ORDER_STATUS.CANCELLED));
+        }
+
+        const fullCondition = extraConditions.length > 0 ? and(condition, ...extraConditions) : condition;
+        q = q.innerJoin(joinEntity.table, fullCondition);
+        currentDef = joinEntity;
+      }
+      return q;
+    }
+
+    const applyRelations = hasChain ? applyChain : applyJoins;
+
     // Count query over full match (no limit)
     let countBase = db.select({ total: count() }).from(entityDef.table);
-    countBase = applyJoins(countBase);
+    countBase = applyRelations(countBase);
     if (whereExpr) countBase = countBase.where(whereExpr);
 
     // Data query
@@ -546,28 +604,28 @@ export async function queryRecordsHandler(spec) {
       // Build select columns: groupBy fields + aggregates
       const selectCols = {};
       for (const fieldName of (spec.groupBy || [])) {
-        selectCols[fieldName] = resolveField(entityDef, fieldName, activeJoins);
+        selectCols[fieldName] = resolve(fieldName);
       }
       for (const agg of (spec.aggregate || [])) {
-        const col = agg.field ? resolveField(entityDef, agg.field, activeJoins) : null;
+        const col = agg.field ? resolve(agg.field) : null;
         selectCols[agg.as] = applyAgg(agg.fn, col, agg.as);
       }
       dataQuery = db.select(selectCols).from(entityDef.table);
-      dataQuery = applyJoins(dataQuery);
+      dataQuery = applyRelations(dataQuery);
       if (whereExpr) dataQuery = dataQuery.where(whereExpr);
       if (hasGroupBy) {
-        const groupCols = spec.groupBy.map(f => resolveField(entityDef, f, activeJoins));
+        const groupCols = spec.groupBy.map(f => resolve(f));
         dataQuery = dataQuery.groupBy(...groupCols);
       }
     } else {
       dataQuery = db.select().from(entityDef.table);
-      dataQuery = applyJoins(dataQuery);
+      dataQuery = applyRelations(dataQuery);
       if (whereExpr) dataQuery = dataQuery.where(whereExpr);
     }
 
     // OrderBy and limit apply to both paths
     for (const s of (spec.sort || [])) {
-      const col = resolveField(entityDef, s.field, activeJoins);
+      const col = resolve(s.field);
       dataQuery = dataQuery.orderBy(s.dir === 'desc' ? desc(col) : asc(col));
     }
     dataQuery = dataQuery.limit(userLimit);
@@ -582,7 +640,11 @@ export async function queryRecordsHandler(spec) {
     }
 
     const matchedCount = Number(countResult[0]?.total ?? 0);
-    return { spec, matchedCount, truncated: matchedCount > rows.length, rows };
+    const result = { spec, matchedCount, truncated: matchedCount > rows.length, rows };
+    // Deep-join chains report fan-out so the UI can warn that a "many" hop
+    // multiplied rows (and the cap may have trimmed the tail).
+    if (hasChain) result.fanOut = fanOut;
+    return result;
   } catch (err) {
     console.error('[dataQueryPack] queryRecordsHandler error:', err.message);
     return { error: err.message };
