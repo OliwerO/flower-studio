@@ -88,6 +88,20 @@ describe('dataQueryPack — deep-join chain execution', () => {
     expect(r.truncated).toBe(false);
   });
 
+  it("runs the owner's Peony case: chain + qualified sort/columns execute end-to-end", async () => {
+    const r = await queryRecordsHandler({
+      entity: 'order_lines',
+      chain: ['order', 'customer'],
+      columns: ['order_lines.flowerName', 'orders.orderDate', 'customers.name'],
+      sort: [{ field: 'orders.orderDate', dir: 'desc' }], // qualified sort — used to fail
+      filters: [{ field: 'order_lines.flowerName', op: 'like', value: 'Peony' }], // qualified filter
+    });
+    expect(r.error).toBeUndefined();
+    expect(r.rows.length).toBe(1);
+    expect(r.rows[0]['order_lines']?.flowerName).toBe('Peony White');
+    expect(r.rows[0]['customers']?.name).toBe('Anna K');
+  });
+
   it('returns { error } for an invalid chain (unknown edge) instead of throwing', async () => {
     const r = await queryRecordsHandler({ entity: 'orders', chain: ['bogus'] });
     expect(r.error).toBeTypeOf('string');

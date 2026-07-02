@@ -110,6 +110,8 @@ describe('explorerSchema.describeSchema', () => {
     const { entities } = describeSchema();
     const byKey = Object.fromEntries(entities.map(e => [e.key, e]));
     const isPrimary = (ek, fn) => byKey[ek].fields.find(f => f.name === fn)?.primary;
+    // Orders exposes the human order number (appOrderId) as a usable column.
+    expect(byKey.orders.fields.some(f => f.name === 'appOrderId')).toBe(true);
     // Orders: date/status/price are the useful defaults; the id is NOT.
     expect(isPrimary('orders', 'orderDate')).toBe(true);
     expect(isPrimary('orders', 'status')).toBe(true);

@@ -5,6 +5,15 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-02 — Explorer/assistant: qualified field refs everywhere (fixes handoff latency)
+
+From owner live use: a deep-join question ("Peony → orders → customer, just flower/date/customer") took a while because Ask Blossom made **~8 failed tool calls** fumbling the query grammar before the Explorer handoff validated. Diagnosed from the stored prod chat (`claude_ro`). Root causes + fixes:
+
+- **Qualified `entity.field` refs now work everywhere** — one `buildScope`/`resolveInScope` resolver replaces the split chain/star-join resolvers, so `sort: orders.orderDate`, `filter: customers.name`, and `columns` all accept a qualified `entity.field` (resolved against the primary + chain path OR star-join targets) or a bare `field`. Previously qualified refs worked only in `columns`, so every qualified sort/filter the model tried errored and it retried.
+- **`appOrderId`** (the human order number, e.g. `202606-001`) added to the `orders` allow-list + a curated primary column — the model kept asking for it and erroring.
+- **Prompt/tool steering** — `open_explorer_view`'s spec description now tells the model to use a **linear `chain`** (not `join`) for multi-table reports, never combine `chain`+`join`, and reference **every** field as `entity.field`. Collapses the retry storm to 1–2 calls → the handoff button appears much sooner.
+- Backend-only; no schema migration. New tests: qualified sort/filter/column resolution (chain + star join), the owner's Peony case end-to-end, `appOrderId` exposed. Verified: backend vitest, E2E 253, lab-unit 77.
+
 ## 2026-07-02 — Explorer v2 · Wave 3: readable unified Explorer (column selection + merged modes)
 
 Third wave (PRD #496, #504). From the owner's live use of deep-join: grids were **unreadable** (too many columns, none hideable) and the plain-vs-deep-join **toggle was confusing**. Reframed — plain vs deep-join is one axis (how many related tables you pull in), so they're **merged into one grid**, and **column selection** is added as the missing primitive.
