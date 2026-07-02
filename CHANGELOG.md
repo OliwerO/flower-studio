@@ -34,6 +34,19 @@ Wave B of the Explorer feature (ADR-0010, PRD #485; Wave A backend shipped in #4
 
 Frontend + additive backend only; no schema change beyond Wave A's migration 0019. Verified: backend 885 vitest, shared 680 vitest, E2E 253 (incl. section 29), all three apps `vite build`, Playwright rehearsal green.
 
+## 2026-07-01 — Fix: purchase records use Found (bought) quantity, not post-write-off Accepted (#492)
+
+Ask Blossom's supplier-spend tools (`purchase_detail`, purchasing pack) were undercounting money spent — PO evaluation wrote the post-write-off **Accepted** quantity into `stock_purchases.quantity_purchased`, but the supplier bills for what was actually bought/found at market regardless of later write-off. Backend-only fix; no downstream math changes needed (`unitPrice * quantityPurchased` was already correct — only the *value written* was wrong).
+
+- **Migration `0020_stock_purchases_quantity_accepted.sql`** — adds nullable `stock_purchases.quantity_accepted`, carrying the post-write-off kept quantity for traceability. Historical rows are NOT backfilled (the true historical Found quantity isn't reconstructable from the polluted `quantity_purchased` value alone). `backend/src/db/schema.js` — `stockPurchases.quantityAccepted` (Drizzle column).
+- `backend/src/routes/stockOrders.js` (`/evaluate`) — both the primary and substitute-flower purchase-record writes now set `quantityPurchased` to `Quantity Found` (falling back to `accepted + writeOff` for legacy PO rows created before the Reviewing step existed), and separately persist `quantityAccepted` for the kept amount.
+- `backend/src/repos/stockPurchasesRepo.js` — persists + surfaces `quantityAccepted` (wire field `'Quantity Accepted'`, number or `null`).
+- `backend/src/services/assistantTools/purchaseDetailPack.js` + `dataQueryPack.js` — `purchase_detail` and `query_records`' `purchases` domain now expose `quantityAccepted`/`writtenOff` alongside `quantityPurchased`, so the assistant can state both money spent (Found) and stems kept (Accepted) when asked.
+- `lab/factories/stockPurchase.js` — factory updated for the new column (`lab:test:unit` parity).
+
+### Tests
+- `backend/src/__tests__/stockPurchasesRepo.test.js` (new), `backend/src/__tests__/stockOrders.evaluatePurchaseQty.integration.test.js` (new), `backend/src/__tests__/assistantTools.purchaseDetail.test.js` — Found-vs-Accepted split covered end to end (repo persistence, PO evaluation write, assistant tool read-side). `npx vitest run src/__tests__/stockOrderRepo.integration.test.js` confirms migration 0020 applies cleanly under pglite.
+
 ## 2026-07-01 — Florist Stock: Flat (ungrouped) default view + time-in-stock sort
 
 Post-Y-model-cutover owner request: the shop-floor Stock view should default to an ungrouped list like the previous stock model, sorted by how long stems have been in stock, with grouping opt-in.

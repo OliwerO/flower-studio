@@ -53,6 +53,8 @@ export async function purchaseDetailHandler(input = {}) {
     const date = r['Purchase Date'];
     const flowerName = flowerNameFor(r);
     const supplierName = r.Supplier || '';
+    const quantityAccepted = r['Quantity Accepted'] != null ? Number(r['Quantity Accepted']) : null;
+    const writtenOff = quantityAccepted != null ? round(qty - quantityAccepted) : null;
 
     total += amount;
     byDateMap.set(date, round((byDateMap.get(date) || 0) + amount));
@@ -62,7 +64,7 @@ export async function purchaseDetailHandler(input = {}) {
     fEntry.amount = round(fEntry.amount + amount);
     byFlowerMap.set(flowerName, fEntry);
 
-    return { date, flower: flowerName, supplier: supplierName, qty, unitPrice, amount };
+    return { date, flower: flowerName, supplier: supplierName, qty, quantityAccepted, writtenOff, unitPrice, amount };
   });
 
   // Totals/byDate/byFlower are always over the FULL match; only the

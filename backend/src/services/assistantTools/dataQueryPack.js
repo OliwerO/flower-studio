@@ -113,6 +113,7 @@ export const SCHEMA = {
       stockId:           { col: stockPurchases.stockId },
       stockAirtableId:   { col: stockPurchases.stockAirtableId },
       quantityPurchased: { col: stockPurchases.quantityPurchased },
+      quantityAccepted:  { col: stockPurchases.quantityAccepted },
       pricePerUnit:      { col: stockPurchases.pricePerUnit },
       notes:             { col: stockPurchases.notes },
     },

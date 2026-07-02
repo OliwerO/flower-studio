@@ -12,12 +12,13 @@ function toWire(row) {
                            ? [row.stockAirtableId]
                            : row.stockId ? [row.stockId] : [],
     'Quantity Purchased': Number(row.quantityPurchased || 0),
+    'Quantity Accepted':  row.quantityAccepted != null ? Number(row.quantityAccepted) : null,
     'Price Per Unit':    row.pricePerUnit != null ? Number(row.pricePerUnit) : null,
     Notes:               row.notes || '',
   };
 }
 
-export async function create({ purchaseDate, supplier, stockId, stockAirtableId, quantityPurchased, pricePerUnit, notes }) {
+export async function create({ purchaseDate, supplier, stockId, stockAirtableId, quantityPurchased, quantityAccepted, pricePerUnit, notes }) {
   const values = {
     purchaseDate: purchaseDate || new Date().toISOString().split('T')[0],
     supplier:     supplier || '',
@@ -27,6 +28,7 @@ export async function create({ purchaseDate, supplier, stockId, stockAirtableId,
   if (stockId)          values.stockId         = stockId;
   if (stockAirtableId)  values.stockAirtableId = stockAirtableId;
   if (pricePerUnit != null) values.pricePerUnit = String(pricePerUnit);
+  if (quantityAccepted != null) values.quantityAccepted = Number(quantityAccepted);
 
   const [row] = await db.insert(stockPurchases).values(values).returning();
   return toWire(row);

@@ -66,10 +66,20 @@ describe('makeStockPurchase', () => {
     expect(r.created_at).toBeInstanceOf(Date);
   });
 
+  it('quantity_accepted defaults to null', () => {
+    const r = makeStockPurchase({ purchase_date: '2026-06-12' });
+    expect(r.quantity_accepted).toBeNull();
+  });
+
   it('honours explicit quantity_purchased and price_per_unit', () => {
     const r = makeStockPurchase({ purchase_date: '2026-06-12', quantity_purchased: 40, price_per_unit: 5 });
     expect(r.quantity_purchased).toBe(40);
     expect(r.price_per_unit).toBe(5);
+  });
+
+  it('honours explicit quantity_accepted', () => {
+    const r = makeStockPurchase({ purchase_date: '2026-06-12', quantity_accepted: 35 });
+    expect(r.quantity_accepted).toBe(35);
   });
 
   it('honours explicit supplier and notes', () => {
