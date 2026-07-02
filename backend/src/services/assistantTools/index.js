@@ -482,6 +482,7 @@ export const TOOLS = [
         priceMin: { type: 'number' },
         priceMax: { type: 'number' },
         label: { type: 'string', description: "Short Russian phrase describing what's filtered, shown on the button, e.g. 'Заказы без оплаты за июнь'" },
+        labelEn: { type: 'string', description: "English version of the label, shown when the app is in English, e.g. 'Unpaid orders in June'. Always provide alongside label." },
       },
       additionalProperties: false,
     },
@@ -506,6 +507,10 @@ export const TOOLS = [
         label: {
           type: 'string',
           description: "Short Russian title for the view, shown on the button, e.g. 'Заказы за июнь'.",
+        },
+        labelEn: {
+          type: 'string',
+          description: "English version of the title, shown when the app is in English, e.g. 'June orders'. Always provide alongside label.",
         },
       },
       required: ['spec'],

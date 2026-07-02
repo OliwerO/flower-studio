@@ -30,6 +30,9 @@ const EMPTY_ORDER_FILTER = {
 };
 
 const DEFAULT_LABEL = 'Отфильтрованные заказы';
+const DEFAULT_LABEL_EN = 'Filtered orders';
+
+const pickLabel = (v, fallback) => (typeof v === 'string' && v.trim() ? v.trim() : fallback);
 
 export function openOrdersViewHandler(input = {}) {
   const filter = {};
@@ -46,6 +49,9 @@ export function openOrdersViewHandler(input = {}) {
       filter[key] = String(input[key]);
     }
   }
-  const label = typeof input.label === 'string' && input.label.trim() ? input.label : DEFAULT_LABEL;
-  return { view: 'orders', filter, label };
+  // Both labels so the panel can follow the app language (Explorer v2 #497):
+  // `label` (Russian) when the app is in Russian, `labelEn` when in English.
+  const label = pickLabel(input.label, DEFAULT_LABEL);
+  const labelEn = pickLabel(input.labelEn, DEFAULT_LABEL_EN);
+  return { view: 'orders', filter, label, labelEn };
 }

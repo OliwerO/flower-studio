@@ -3,8 +3,18 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import client from '../api/client.js';
 import FeedbackModal from './FeedbackModal.jsx';
+import { useLanguage } from '../context/LanguageContext.jsx';
+
+// Handoff button label follows the app language (Explorer v2 #497): the signal
+// tool returns `label` (Russian) + `labelEn` (English); prefer the current
+// language, then either label, then the generic translated fallback.
+function pickHandoffLabel(output, lang, tFallback) {
+  const primary = lang === 'en' ? output?.labelEn : output?.label;
+  return primary || output?.label || output?.labelEn || tFallback;
+}
 
 export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea, onOpenOrders, onOpenExplorer }) {
+  const { lang } = useLanguage();
   const [messages, setMessages] = useState([]); // { role: 'user'|'assistant', text }
   const [input, setInput] = useState('');
   const [sessionId, setSessionId] = useState(null);
@@ -216,7 +226,7 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
                         <path d="M19 5l-7 7" />
                         <path d="M19 13v5a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h5" />
                       </svg>
-                      {openOrdersResult.output.label || t.openInOrders || 'Open in Orders'}
+                      {pickHandoffLabel(openOrdersResult.output, lang, t.openInOrders || 'Open in Orders')}
                     </button>
                   </div>
                 )}
@@ -231,7 +241,7 @@ export default function AskBlossomPanel({ t, reporterRole, reporterName, appArea
                         <rect x="3" y="3" width="18" height="18" rx="2" />
                         <path d="M3 9h18M3 15h18M9 3v18" />
                       </svg>
-                      {openExplorerResult.output.label || t.openInExplorer || 'Open in Explorer'}
+                      {pickHandoffLabel(openExplorerResult.output, lang, t.openInExplorer || 'Open in Explorer')}
                     </button>
                   </div>
                 )}

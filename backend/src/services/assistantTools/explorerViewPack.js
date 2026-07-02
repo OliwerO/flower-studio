@@ -16,14 +16,21 @@
 import { validateSpec } from './dataQueryPack.js';
 
 const DEFAULT_LABEL = 'Данные';
+const DEFAULT_LABEL_EN = 'Data';
+
+const pickLabel = (v, fallback) => (typeof v === 'string' && v.trim() ? v.trim() : fallback);
 
 export async function openExplorerViewHandler(input = {}) {
-  const { spec, label } = input;
+  const { spec, label, labelEn } = input;
 
   const v = validateSpec(spec);
   if (!v.ok) return { error: v.error };
 
-  const resolvedLabel = (typeof label === 'string' && label.trim()) ? label.trim() : DEFAULT_LABEL;
-
-  return { view: 'explorer', spec, label: resolvedLabel };
+  // Both labels so the panel can follow the app language (Explorer v2 #497).
+  return {
+    view: 'explorer',
+    spec,
+    label: pickLabel(label, DEFAULT_LABEL),
+    labelEn: pickLabel(labelEn, DEFAULT_LABEL_EN),
+  };
 }

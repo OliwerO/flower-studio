@@ -33,7 +33,7 @@ function systemPrompt(today) {
     "Order counts and revenue EXCLUDE cancelled orders unless the user explicitly asks about cancellations — say so when it matters.",
     "Revenue 'flowers' is NET: total = flowers + delivery, always. Do not describe flower revenue as if it were gross.",
     "For ad spend (marketing_spend) vs revenue per source: channel names are free text and do not map exactly to Order Source, so do not state a precise ROAS — present spend and revenue side by side and note the caveat.",
-    "When the owner would plausibly want to SEE and keep interacting with a set of orders (not just a number) — e.g. after answering 'which orders are unpaid' or 'show me June's cancellations' — call open_orders_view with the same filters you used to answer, so the UI can offer an 'Open in Orders' action. Do not call it for pure aggregate questions (totals, averages, counts alone) with no natural underlying order list to browse.",
+    "HANDOFF BUTTONS: when the owner would plausibly want to SEE and keep interacting with a result set (not just a number), signal the UI to open a pre-filtered screen. Rules: (1) For a list of ORDERS the owner may act on (e.g. 'which orders are unpaid', 'June's cancellations'), call open_orders_view with the same filters you used. If that list is also worth saving or exporting (most multi-row order lists are), ALSO call open_explorer_view with the equivalent query_records spec — the UI then shows BOTH buttons ('Open in Orders' to act on them, 'Open in Explorer' to save the view / export CSV). (2) For any OTHER entity or a cross-entity / connect-the-dots result (purchases, write-offs, customers, key people, deliveries, stock, …), call open_explorer_view with the query_records spec. (3) Do NOT signal for pure aggregate answers (totals, averages, counts alone) with no natural underlying list to browse. (4) ALWAYS pass BOTH a Russian `label` and an English `labelEn` to these tools so the button reads in the app's current language.",
   ].join('\n');
 }
 
@@ -65,18 +65,53 @@ function deriveTitle(messages) {
   return raw.length > 80 ? raw.slice(0, 80).trimEnd() + '…' : raw;
 }
 
+// Signal tools whose output the UI turns into an "Open in …" handoff button.
+// Their result must survive the display projection so a reopened chat keeps the
+// button (Explorer v2 #497) — every other tool block is display-irrelevant.
+const SIGNAL_TOOLS = new Set(['open_orders_view', 'open_explorer_view']);
+
+function safeParseToolResult(content) {
+  if (typeof content !== 'string') return content && typeof content === 'object' ? content : null;
+  try { return JSON.parse(content); } catch { return null; }
+}
+
 // Project the canonical Anthropic message array to UI display turns:
-// keep user text + assistant text, drop tool_use / tool_result blocks.
+// keep user text + assistant text, drop tool_use / tool_result blocks — EXCEPT
+// the signal tools, whose {name, output} is reconstructed from the stored
+// tool_use / tool_result pair and attached to the next answer turn (matching the
+// live path, which attaches toolResults to the final answer message).
 export function toDisplayTurns(messages) {
+  const arr = messages || [];
   const turns = [];
-  for (const m of messages || []) {
+  let pendingSignals = [];
+  for (let i = 0; i < arr.length; i++) {
+    const m = arr[i];
     if (m.role === 'user') {
+      // Only string-content user turns are real user text; tool_result turns
+      // (array content) are consumed alongside their assistant tool_use turn.
       if (typeof m.content === 'string') turns.push({ role: 'user', text: m.content });
     } else if (m.role === 'assistant') {
+      const blocks = Array.isArray(m.content) ? m.content : null;
+      if (blocks) {
+        const signalUses = blocks.filter(b => b.type === 'tool_use' && SIGNAL_TOOLS.has(b.name));
+        if (signalUses.length) {
+          const next = arr[i + 1];
+          const resultBlocks = next && next.role === 'user' && Array.isArray(next.content) ? next.content : [];
+          for (const use of signalUses) {
+            const res = resultBlocks.find(b => b.type === 'tool_result' && b.tool_use_id === use.id);
+            const output = res ? safeParseToolResult(res.content) : null;
+            if (output && !output.error) pendingSignals.push({ name: use.name, output });
+          }
+        }
+      }
       const text = typeof m.content === 'string'
         ? m.content
-        : (Array.isArray(m.content) ? m.content.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() : '');
-      if (text) turns.push({ role: 'assistant', text });
+        : (blocks ? blocks.filter(b => b.type === 'text').map(b => b.text).join('\n').trim() : '');
+      if (text) {
+        const turn = { role: 'assistant', text };
+        if (pendingSignals.length) { turn.toolResults = pendingSignals; pendingSignals = []; }
+        turns.push(turn);
+      }
     }
   }
   return turns;

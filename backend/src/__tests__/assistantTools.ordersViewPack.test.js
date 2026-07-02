@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { openOrdersViewHandler } from '../services/assistantTools/ordersViewPack.js';
 
 describe('ordersViewPack.open_orders_view', () => {
-  it('normalizes recognized filter keys and echoes the view/label', () => {
+  it('normalizes recognized filter keys and echoes the view + both labels', () => {
     const r = openOrdersViewHandler({
       status: 'New',
       paymentStatus: 'Unpaid',
@@ -11,6 +11,7 @@ describe('ordersViewPack.open_orders_view', () => {
       orderDateTo: '2026-06-30',
       priceMin: 50,
       label: 'Неоплаченные заказы за июнь',
+      labelEn: 'Unpaid orders in June',
     });
     expect(r).toEqual({
       view: 'orders',
@@ -23,6 +24,7 @@ describe('ordersViewPack.open_orders_view', () => {
         priceMin: 50,
       },
       label: 'Неоплаченные заказы за июнь',
+      labelEn: 'Unpaid orders in June',
     });
   });
 
@@ -40,14 +42,21 @@ describe('ordersViewPack.open_orders_view', () => {
     expect(r.filter.source).toBe('Wix');
   });
 
-  it('defaults to an empty filter + default label on empty input, never errors', () => {
-    expect(openOrdersViewHandler()).toEqual({ view: 'orders', filter: {}, label: 'Отфильтрованные заказы' });
-    expect(openOrdersViewHandler({})).toEqual({ view: 'orders', filter: {}, label: 'Отфильтрованные заказы' });
+  it('defaults to an empty filter + default RU/EN labels on empty input, never errors', () => {
+    expect(openOrdersViewHandler()).toEqual({ view: 'orders', filter: {}, label: 'Отфильтрованные заказы', labelEn: 'Filtered orders' });
+    expect(openOrdersViewHandler({})).toEqual({ view: 'orders', filter: {}, label: 'Отфильтрованные заказы', labelEn: 'Filtered orders' });
   });
 
-  it('ignores a blank/non-string label and falls back to the default', () => {
-    const r = openOrdersViewHandler({ status: 'Ready', label: '   ' });
+  it('ignores a blank/non-string label and falls back to the default (each language independently)', () => {
+    const r = openOrdersViewHandler({ status: 'Ready', label: '   ', labelEn: '  ' });
     expect(r.label).toBe('Отфильтрованные заказы');
+    expect(r.labelEn).toBe('Filtered orders');
+  });
+
+  it('carries a Russian label with a default English label when only label is given', () => {
+    const r = openOrdersViewHandler({ label: 'Заказы' });
+    expect(r.label).toBe('Заказы');
+    expect(r.labelEn).toBe('Filtered orders');
   });
 
   it('ignores null values for recognized keys (treated as absent)', () => {
