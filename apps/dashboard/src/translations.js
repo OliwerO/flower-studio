@@ -1190,6 +1190,8 @@ const en = {
     chainAddHop:  'add related',
     chainRemove:  'Remove hop',
     fanOutWarning:'This report follows a one-to-many link, so rows repeat per match and may be capped at 200.',
+    columns:      'Columns',
+    columnsPick:  'Show columns',
   },
   assistantStarters: [
     'Orders today',
@@ -2392,6 +2394,8 @@ const ru = {
     chainAddHop:  'добавить связь',
     chainRemove:  'Убрать шаг',
     fanOutWarning:'Отчёт идёт по связи «один-ко-многим»: строки повторяются на каждое совпадение и могут быть ограничены до 200.',
+    columns:      'Столбцы',
+    columnsPick:  'Показать столбцы',
   },
   assistantStarters: [
     'Заказы сегодня',

@@ -106,6 +106,24 @@ describe('explorerSchema.describeSchema', () => {
     }
   });
 
+  it('flags curated primary fields per entity (readable default columns)', () => {
+    const { entities } = describeSchema();
+    const byKey = Object.fromEntries(entities.map(e => [e.key, e]));
+    const isPrimary = (ek, fn) => byKey[ek].fields.find(f => f.name === fn)?.primary;
+    // Orders: date/status/price are the useful defaults; the id is NOT.
+    expect(isPrimary('orders', 'orderDate')).toBe(true);
+    expect(isPrimary('orders', 'status')).toBe(true);
+    expect(isPrimary('orders', 'price')).toBe(true);
+    expect(isPrimary('orders', 'id')).toBe(false);
+    // Stock: name/quantity/type primary, id not.
+    expect(isPrimary('stock', 'name')).toBe(true);
+    expect(isPrimary('stock', 'id')).toBe(false);
+    // Every entity exposes at least one primary field so a grid never opens blank.
+    for (const e of entities) {
+      expect(e.fields.some(f => f.primary)).toBe(true);
+    }
+  });
+
   it('carries the SQL table name per entity (for chain-row flattening)', () => {
     const { entities } = describeSchema();
     const byKey = Object.fromEntries(entities.map(e => [e.key, e]));

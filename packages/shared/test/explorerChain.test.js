@@ -11,6 +11,9 @@ import {
   chainHasFanOut,
   chainAppendEdge,
   chainRemoveLast,
+  columnId,
+  visibleColumns,
+  toggleColumn,
 } from '../utils/explorerSpec.js';
 
 // A trimmed descriptor mirroring GET /explorer/schema (localized, so `label` is
@@ -30,7 +33,7 @@ const SCHEMA = {
     },
     {
       key: 'orders', table: 'orders', label: 'Orders',
-      fields: [{ name: 'id', key: 'id', label: 'ID', type: 'id' }, { name: 'status', key: 'status', label: 'Status', type: 'text' }, { name: 'price', key: 'priceOverride', label: 'Price', type: 'number' }],
+      fields: [{ name: 'id', key: 'id', label: 'ID', type: 'id', primary: false }, { name: 'status', key: 'status', label: 'Status', type: 'text', primary: true }, { name: 'price', key: 'priceOverride', label: 'Price', type: 'number', primary: true }],
       drills: [
         { join: 'customer', to: 'customers', label: 'Show: Customers', cardinality: 'one', localKey: 'customerId', foreignField: 'id' },
         { join: 'lines', to: 'order_lines', label: 'Show: Order lines', cardinality: 'many', localKey: 'id', foreignField: 'orderId' },
@@ -38,7 +41,7 @@ const SCHEMA = {
     },
     {
       key: 'customers', table: 'customers', label: 'Customers',
-      fields: [{ name: 'id', key: 'id', label: 'ID', type: 'id' }, { name: 'name', key: 'name', label: 'Name', type: 'text' }],
+      fields: [{ name: 'id', key: 'id', label: 'ID', type: 'id', primary: false }, { name: 'name', key: 'name', label: 'Name', type: 'text', primary: true }],
       drills: [{ join: 'keyPeople', to: 'key_people', label: 'Show: Key people', cardinality: 'many', localKey: 'id', foreignField: 'customerId' }],
     },
     {
@@ -98,6 +101,43 @@ describe('chainCellValue', () => {
     expect(chainCellValue(row, cols.find(c => c.label === 'Orders · Price'))).toBe(120);
     expect(chainCellValue(row, cols.find(c => c.label === 'Customers · Name'))).toBe('Anna');
     expect(chainCellValue({}, cols[0])).toBeUndefined();
+  });
+  it('falls back to a flat row for a 0-hop plain query', () => {
+    const cols = resolveChainColumns(SCHEMA, { entity: 'orders', chain: [] });
+    // 0-hop plain query returns a flat row keyed by runtime key.
+    expect(chainCellValue({ priceOverride: 99 }, cols.find(c => c.name === 'price'))).toBe(99);
+  });
+});
+
+describe('0-hop labels stay unprefixed (unified plain grid)', () => {
+  it('does not prefix a single-table grid', () => {
+    const cols = resolveChainColumns(SCHEMA, { entity: 'orders', chain: [] });
+    expect(cols.map(c => c.label)).toEqual(['ID', 'Status', 'Price']);
+  });
+});
+
+describe('columnId / visibleColumns / toggleColumn', () => {
+  it('columnId is entity.field (qualified, matches spec.columns)', () => {
+    const cols = resolveChainColumns(SCHEMA, { entity: 'orders', chain: ['customer'] });
+    expect(columnId(cols.find(c => c.label === 'Customers · Name'))).toBe('customers.name');
+  });
+
+  it('visibleColumns defaults to the primary fields when nothing is selected', () => {
+    const cols = visibleColumns(SCHEMA, { entity: 'orders', chain: [] });
+    expect(cols.map(c => c.name)).toEqual(['status', 'price']); // id is not primary
+  });
+
+  it('visibleColumns honors an explicit selection (qualified or bare)', () => {
+    const cols = visibleColumns(SCHEMA, { entity: 'orders', chain: ['customer'], columns: ['orders.id', 'customers.name'] });
+    expect(cols.map(columnId)).toEqual(['orders.id', 'customers.name']);
+  });
+
+  it('toggleColumn seeds from defaults, then adds/removes', () => {
+    let spec = { entity: 'orders', chain: [] };
+    spec = toggleColumn(SCHEMA, spec, 'orders.id');   // add id to the primary default set
+    expect(new Set(spec.columns)).toEqual(new Set(['orders.status', 'orders.price', 'orders.id']));
+    spec = toggleColumn(SCHEMA, spec, 'orders.status'); // remove status
+    expect(new Set(spec.columns)).toEqual(new Set(['orders.price', 'orders.id']));
   });
 });
 

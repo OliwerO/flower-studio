@@ -82,3 +82,31 @@ describe('validateSpec — deep-join chain', () => {
     expect(validateSpec({ entity: 'orders', filters: [{ field: 'status', op: 'eq', value: 'New' }] })).toEqual({ ok: true });
   });
 });
+
+describe('validateSpec — column selection', () => {
+  it('accepts qualified columns that resolve on the chain path', () => {
+    const spec = { entity: 'orders', chain: ['customer'], columns: ['orders.status', 'customers.name'] };
+    expect(validateSpec(spec)).toEqual({ ok: true });
+  });
+
+  it('accepts a bare field column (resolved across the path)', () => {
+    expect(validateSpec({ entity: 'orders', columns: ['status'] })).toEqual({ ok: true });
+  });
+
+  it('rejects a column whose entity is not on the path', () => {
+    const r = validateSpec({ entity: 'orders', columns: ['customers.name'] }); // no chain → customers absent
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/customers/i);
+  });
+
+  it('rejects a column with an unknown field on a path entity', () => {
+    const r = validateSpec({ entity: 'orders', columns: ['orders.nope'] });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/nope/i);
+  });
+
+  it('rejects a non-array columns and non-string entries', () => {
+    expect(validateSpec({ entity: 'orders', columns: 'status' }).ok).toBe(false);
+    expect(validateSpec({ entity: 'orders', columns: [123] }).ok).toBe(false);
+  });
+});

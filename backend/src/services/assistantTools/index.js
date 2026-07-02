@@ -502,7 +502,8 @@ export const TOOLS = [
           type: 'object',
           description:
             'A query_records spec: entity (required), plus optional filters/join/groupBy/aggregate/sort/limit/includeCancelled. ' +
-            'Same allow-listed shape query_records accepts.',
+            'Same allow-listed shape query_records accepts. For a multi-table report, use `chain` (an ordered list of relationship edges, e.g. ["lines","order","customer","keyPeople"] from stock) to flatten several related tables into one grid. ' +
+            'IMPORTANT for readability: set `columns` to ONLY the useful fields as "entity.field" strings (e.g. ["order_lines.flowerName","orders.orderDate","customers.name"]) so the owner sees a clean grid, not every column.',
         },
         label: {
           type: 'string',
