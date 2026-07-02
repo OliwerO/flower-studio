@@ -68,4 +68,27 @@ test.describe('Explorer — owner linked-record grid', () => {
     // CSV export is available while rows are loaded.
     await expect(page.getByTestId('explorer-csv')).toBeEnabled();
   });
+
+  test('deep-join: toggle chain → add a hop → columns become hop-prefixed', async ({ page }) => {
+    await page.goto('/');
+    await page.getByRole('button', { name: 'Обозреватель', exact: true }).click();
+    await expect(page.getByTestId('explorer-tab')).toBeVisible();
+    await expect(page.getByTestId('explorer-entity')).toHaveValue('orders');
+
+    // Enter deep-join mode → the chain builder appears rooted at Orders.
+    await page.getByTestId('explorer-chain-toggle').click();
+    await expect(page.getByTestId('explorer-chain-builder')).toBeVisible();
+
+    // Add the customer hop (orders → customers).
+    await page.getByTestId('explorer-chain-add').click();
+    await page.getByTestId('explorer-chain-hop-customer').click();
+
+    // Columns are now hop-prefixed ("Entity · Field") across the whole path.
+    await expect(page.getByTestId('explorer-grid')).toContainText('·');
+
+    // CSV stays available; leaving deep-join restores the plain grid.
+    await expect(page.getByTestId('explorer-csv')).toBeVisible();
+    await page.getByTestId('explorer-chain-toggle').click();
+    await expect(page.getByTestId('explorer-chain-builder')).toHaveCount(0);
+  });
 });

@@ -5,6 +5,26 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-02 — Explorer v2 · Wave 2: deep-join reports (fixed edge chains)
+
+Second wave of Explorer v2 (PRD #496, wave #498; **ADR-0011**). The owner can build a **flat multi-hop report** by following the schema's existing relationship edges — e.g. a flower → the orders that used it → each order's customer → that customer's key person, all as one denormalized grid. Read-only, safe by construction (same `query_records` engine, allow-list + row cap).
+
+### Backend (`dataQueryPack.js`)
+- New bounded **`chain`** spec construct: an ordered list of edges resolved SEQUENTIALLY (each edge on the previous hop's entity, not the primary). `validateSpec` enforces edges-only (no cartesian), cycle-free (no entity revisited), **max 4 hops**, mutually exclusive with the star `join`, and flat-rows-only (no groupBy/aggregate in v2). Field resolution (filters/sort) searches every entity on the path.
+- `queryRecordsHandler` executes a chain via `applyChain` (sequential inner joins, reusing the type-safe UUID↔text cross-join logic) → denormalized rows nested per table + a **`fanOut`** flag when any hop is one-to-many.
+- **Two reverse edges added** so the flagship path works: `stock → order_lines` (many) and `order_lines → orders` (one). Widens Ask Blossom too (one allow-list, two front-ends).
+- `describeSchema()` now emits each entity's **SQL table name** (`table`) so the grid reads chain cells via `row[table][field.key]` (table name diverges from the SCHEMA key, e.g. `purchases` → `stock_purchases`).
+
+### Shared (`explorerSpec.js`, test-mandated)
+- Chain helpers: `EMPTY_CHAIN_SPEC`, `isChainSpec`, `chainPathEntities`, `resolveChainColumns` (hop-prefixed "Entity · Field" columns), `chainCellValue`, `chainRowsToCsv`, `availableChainEdges` (tail edges minus revisits, capped at max), `chainHasFanOut`, `chainAppendEdge`, `chainRemoveLast`. 12 unit tests.
+
+### Dashboard (`ExplorerTab.jsx`)
+- A **Deep-join** toggle + a chain-builder strip (entity → hop chips → "add related" menu, remove-last), a **fan-out warning** banner, hop-prefixed columns, and chain-aware CSV. Saved views + CSV work with chains. Sort/filter/drill/group-by are disabled in chain mode (denormalized rows — those are follow-ups). RU/EN strings added.
+
+### Tests
+- Backend: chain `validateSpec` unit (11) + chain execution integration (flagship 4-hop, 2-hop, fan-out flag, cross-chain filter, matchedCount/truncated, error) ; `describeSchema` table + reverse edges. Shared: 12. Playwright rehearsal extended (toggle → add hop → hop-prefixed columns). E2E 253, existing dataQueryPack + explorerSchema green.
+- Verified: backend vitest, shared 700, all three apps build, E2E 253, lab-unit 77, Playwright green. (No schema migration → lab-api unaffected; CI confirms.)
+
 ## 2026-07-02 — Explorer v2 · Wave 1: Ask Blossom handoff polish
 
 First wave of Explorer v2 (PRD #496, wave #497). Cleanup of the Ask Blossom → screen handoff from the owner's first live use. No engine change; assistant + shared chat panel only.

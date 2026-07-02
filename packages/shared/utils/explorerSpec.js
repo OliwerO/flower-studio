@@ -155,3 +155,130 @@ export function explorerRowsToCsv(rows, columns) {
   );
   return [header, ...body].join('\r\n');
 }
+
+// ── Deep-join chain (Explorer v2 Wave 2, ADR-0011) ──
+// A chain is an ordered edge path (each edge on the previous hop's entity). The
+// engine returns rows nested per SQL table name; these helpers translate a chain
+// spec + descriptor into hop-prefixed columns and read the nested cells. The UI
+// can only ever emit the same validated `chain` spec the engine + Ask Blossom use.
+
+export const EXPLORER_MAX_CHAIN = 4; // mirrors MAX_CHAIN in dataQueryPack.js
+
+export function isChainSpec(spec) {
+  return Array.isArray(spec?.chain);
+}
+
+// A blank chain rooted at an entity (no hops yet — renders as a plain grid).
+export function EMPTY_CHAIN_SPEC(entity) {
+  return { entity, chain: [], filters: [], sort: [] };
+}
+
+function entityByKey(schema, key) {
+  return (schema?.entities || []).find(e => e.key === key) || null;
+}
+
+// The ordered entity descriptors on a chain path: [primary, ...hop targets].
+// Walks spec.chain against each entity's drills; stops if an edge can't resolve
+// (defensive — validateSpec is the real gate).
+export function chainPathEntities(schema, spec) {
+  const primary = entityByKey(schema, spec?.entity);
+  if (!primary) return [];
+  const path = [primary];
+  let current = primary;
+  for (const edge of (spec?.chain || [])) {
+    const drill = (current.drills || []).find(d => d.join === edge);
+    const next = drill && entityByKey(schema, drill.to);
+    if (!next) break;
+    path.push(next);
+    current = next;
+  }
+  return path;
+}
+
+// Flat, hop-prefixed columns across every entity on the chain path. Each column:
+//   hop        — path index (0 = primary)
+//   table      — SQL table name (how the engine nests this entity in a row)
+//   key        — runtime row key within row[table]
+//   name       — model field name (for filters/sort — resolved across the path)
+//   label      — "Entity · Field" so same-named columns (id, name) stay distinct
+//   type, colId
+export function resolveChainColumns(schema, spec) {
+  const path = chainPathEntities(schema, spec);
+  const cols = [];
+  path.forEach((entity, hop) => {
+    for (const f of (entity.fields || [])) {
+      cols.push({
+        hop,
+        entityKey: entity.key,
+        table: entity.table || entity.key,
+        key: f.key,
+        name: f.name,
+        label: `${entity.label} · ${f.label}`,
+        type: f.type,
+        colId: `${entity.table || entity.key}::${f.key}`,
+        agg: false,
+      });
+    }
+  });
+  return cols;
+}
+
+// Read a chain cell: the engine nests each hop under its SQL table name.
+export function chainCellValue(row, col) {
+  if (!row || !col) return undefined;
+  const bucket = row[col.table];
+  return bucket ? bucket[col.key] : undefined;
+}
+
+// CSV of a chain grid — reads nested cells via chainCellValue.
+export function chainRowsToCsv(rows, columns) {
+  const esc = (v) => {
+    const s = v === null || v === undefined ? '' : String(v);
+    return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  };
+  const header = (columns || []).map(c => esc(c.label)).join(',');
+  const body = (rows || []).map(row =>
+    (columns || []).map(c => esc(formatExplorerValue(chainCellValue(row, c), c.type))).join(',')
+  );
+  return [header, ...body].join('\r\n');
+}
+
+// Edges the owner can append at the tail of the current chain: the last hop
+// entity's drills, minus any that would revisit an entity already on the path
+// (cycle guard) — and none once the chain is at max length.
+export function availableChainEdges(schema, spec) {
+  const path = chainPathEntities(schema, spec);
+  if (path.length === 0 || (spec?.chain || []).length >= EXPLORER_MAX_CHAIN) return [];
+  const visited = new Set(path.map(e => e.key));
+  const tail = path[path.length - 1];
+  return (tail.drills || [])
+    .filter(d => !visited.has(d.to))
+    .map(d => ({ join: d.join, to: d.to, label: d.label, cardinality: d.cardinality }));
+}
+
+// True if any hop on the path is a "many" edge → the grid warns about fan-out.
+export function chainHasFanOut(schema, spec) {
+  const primary = entityByKey(schema, spec?.entity);
+  if (!primary) return false;
+  let current = primary;
+  for (const edge of (spec?.chain || [])) {
+    const drill = (current.drills || []).find(d => d.join === edge);
+    if (!drill) return false;
+    if (drill.cardinality === 'many') return true;
+    current = entityByKey(schema, drill.to);
+    if (!current) return false;
+  }
+  return false;
+}
+
+// Append / drop a hop. Dropping resets sort (a single sort may reference the
+// removed entity); filters are kept (the engine rejects a now-invalid field, and
+// the common case filters the primary entity).
+export function chainAppendEdge(spec, join) {
+  return { ...spec, chain: [...(spec?.chain || []), join] };
+}
+
+export function chainRemoveLast(spec) {
+  const chain = (spec?.chain || []).slice(0, -1);
+  return { ...spec, chain, sort: [] };
+}
