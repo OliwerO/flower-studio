@@ -23,6 +23,7 @@ import {
 import { ORDER_STATUS } from '../../constants/statuses.js';
 
 const ROW_CAP = 200;          // hard ceiling on returned rows
+const MAX_CHAIN = 4;          // max hops in a deep-join chain (ADR-0011)
 
 // ── Allow-list: the ONLY entities/fields/joins/ops the tool will ever touch ──
 // Each field entry maps a model-facing name → the real Drizzle column reference.
@@ -89,6 +90,8 @@ export const SCHEMA = {
     joins: {
       // orderLines.stockItemId = TEXT (may hold 'recXXX'), stock.id = UUID → cast foreignCol (uuid) to text
       stock: { to: 'stock', localCol: orderLines.stockItemId, foreignCol: stock.id, cardinality: 'one', uuidSide: 'foreign' },
+      // Reverse edge (Explorer v2 deep-join): a line belongs to one order. uuid = uuid.
+      order: { to: 'orders', localCol: orderLines.orderId, foreignCol: orders.id, cardinality: 'one' },
     },
     softDeleteCol: orderLines.deletedAt,
   },
@@ -100,6 +103,11 @@ export const SCHEMA = {
       quantity: { col: stock.currentQuantity },
       type:     { col: stock.typeName },
       colour:   { col: stock.colour },
+    },
+    joins: {
+      // Reverse edge (Explorer v2 deep-join): a flower appears on many order lines.
+      // stock.id = UUID, orderLines.stockItemId = TEXT (may hold 'recXXX') → cast localCol (uuid) to text.
+      lines: { to: 'order_lines', localCol: stock.id, foreignCol: orderLines.stockItemId, cardinality: 'many', uuidSide: 'local' },
     },
     softDeleteCol: stock.deletedAt,
   },
@@ -294,6 +302,39 @@ function resolveField(entityDef, fieldName, activeJoins = []) {
   return null;
 }
 
+// ── Deep-join chain (Explorer v2 Wave 2, ADR-0011) ──
+// A `chain` is an ordered list of edges resolved SEQUENTIALLY: each edge must
+// exist on the PREVIOUS hop's entity (not the primary). Walk it to produce the
+// ordered list of entity defs on the path (primary first). Edges-only (no
+// free-form joins) + cycle-free (no entity revisited) → cartesian explosion and
+// self-join aliasing are structurally impossible.
+function walkChain(entityName, chain) {
+  const defs = [SCHEMA[entityName]];
+  const visited = new Set([entityName]);
+  let cur = entityName;
+  for (const edge of chain) {
+    if (typeof edge !== 'string') return { ok: false, error: 'chain edges must be strings' };
+    const jd = SCHEMA[cur]?.joins?.[edge];
+    if (!jd) {
+      const allowed = Object.keys(SCHEMA[cur]?.joins || {}).join(', ') || '(none)';
+      return { ok: false, error: `Unknown chain edge "${edge}" on entity "${cur}". Allowed: ${allowed}` };
+    }
+    if (visited.has(jd.to)) return { ok: false, error: `chain revisits entity "${jd.to}" (cycles not allowed)` };
+    visited.add(jd.to);
+    defs.push(SCHEMA[jd.to]);
+    cur = jd.to;
+  }
+  return { ok: true, defs };
+}
+
+// Resolve a field against any entity def on the chain path (primary first).
+function resolveFieldInDefs(defs, fieldName) {
+  for (const def of defs) {
+    if (def?.fields?.[fieldName]) return def.fields[fieldName].col;
+  }
+  return null;
+}
+
 /**
  * Validate a query spec against SCHEMA.
  * Returns { ok:true } or { ok:false, error: string }.
@@ -308,6 +349,29 @@ export function validateSpec(spec) {
   }
 
   const activeJoins = Array.isArray(spec.join) ? spec.join : [];
+
+  // ── Deep-join chain validation (ADR-0011) ──
+  // A chain replaces the star `join` with an ordered path of edges. Validate its
+  // shape up front, then resolve all subsequent fields against the path entities.
+  const hasChain = spec.chain !== undefined;
+  let chainDefs = null;
+  if (hasChain) {
+    if (!Array.isArray(spec.chain)) return { ok: false, error: 'chain must be an array' };
+    if (activeJoins.length) return { ok: false, error: 'cannot combine chain with join' };
+    if ((spec.aggregate?.length) || (spec.groupBy?.length)) {
+      return { ok: false, error: 'chain cannot be combined with groupBy or aggregate (v2 deep-join returns flat rows only)' };
+    }
+    if (spec.chain.length > MAX_CHAIN) return { ok: false, error: `chain too long (max ${MAX_CHAIN} hops)` };
+    const walked = walkChain(spec.entity, spec.chain);
+    if (!walked.ok) return { ok: false, error: walked.error };
+    chainDefs = walked.defs;
+  }
+
+  // Field resolver: chain specs resolve against the whole path; otherwise the
+  // primary entity + its active star joins.
+  const resolve = (fieldName) => hasChain
+    ? resolveFieldInDefs(chainDefs, fieldName)
+    : resolveField(entityDef, fieldName, activeJoins);
 
   // Validate joins
   for (const joinName of activeJoins) {
@@ -325,7 +389,7 @@ export function validateSpec(spec) {
       if (!OPERATORS.has(f.op)) {
         return { ok: false, error: `Unknown operator "${f.op}". Allowed: ${[...OPERATORS].join(', ')}` };
       }
-      const col = resolveField(entityDef, f.field, activeJoins);
+      const col = resolve(f.field);
       if (!col) {
         return { ok: false, error: `Unknown field "${f.field}" on entity "${spec.entity}" (with joins: ${activeJoins.join(', ') || 'none'})` };
       }
@@ -337,7 +401,7 @@ export function validateSpec(spec) {
     if (!Array.isArray(spec.groupBy)) return { ok: false, error: 'groupBy must be an array' };
     for (const fieldName of spec.groupBy) {
       if (typeof fieldName !== 'string') return { ok: false, error: 'groupBy fields must be strings' };
-      const col = resolveField(entityDef, fieldName, activeJoins);
+      const col = resolve(fieldName);
       if (!col) {
         return { ok: false, error: `Unknown groupBy field "${fieldName}" on entity "${spec.entity}"` };
       }
@@ -356,7 +420,7 @@ export function validateSpec(spec) {
         return { ok: false, error: 'Each aggregate must have an "as" alias' };
       }
       if (agg.field) {
-        const col = resolveField(entityDef, agg.field, activeJoins);
+        const col = resolve(agg.field);
         if (!col) {
           return { ok: false, error: `Unknown aggregate field "${agg.field}" on entity "${spec.entity}"` };
         }
@@ -369,7 +433,7 @@ export function validateSpec(spec) {
     if (!Array.isArray(spec.sort)) return { ok: false, error: 'sort must be an array' };
     for (const s of spec.sort) {
       if (!s || typeof s !== 'object') return { ok: false, error: 'Each sort must be an object' };
-      const col = resolveField(entityDef, s.field, activeJoins);
+      const col = resolve(s.field);
       if (!col) {
         return { ok: false, error: `Unknown sort field "${s.field}" on entity "${spec.entity}"` };
       }
@@ -405,6 +469,24 @@ export async function queryRecordsHandler(spec) {
   try {
     const entityDef = SCHEMA[spec.entity];
     const activeJoins = Array.isArray(spec.join) ? spec.join : [];
+    // Deep-join chain (ADR-0011): validated already, so walkChain succeeds here.
+    const hasChain = Array.isArray(spec.chain);
+    const chainDefs = hasChain ? walkChain(spec.entity, spec.chain).defs : null;
+    // A chain fans out if any hop is a "many" edge (row multiplication → warn).
+    let fanOut = false;
+    if (hasChain) {
+      let cur = entityDef;
+      for (const edge of spec.chain) {
+        const jd = cur.joins[edge];
+        if (jd.cardinality === 'many') fanOut = true;
+        cur = SCHEMA[jd.to];
+      }
+    }
+    // Field resolver: chain specs resolve against the whole path; otherwise the
+    // primary entity + its active star joins.
+    const resolve = (fieldName) => hasChain
+      ? resolveFieldInDefs(chainDefs, fieldName)
+      : resolveField(entityDef, fieldName, activeJoins);
     // Clamp limit: 0 or negative falls back to ROW_CAP
     const userLimit = Math.min(Math.max(1, Number(spec.limit) || ROW_CAP), ROW_CAP);
 
@@ -423,7 +505,7 @@ export async function queryRecordsHandler(spec) {
 
     // User-supplied filters
     for (const f of (spec.filters || [])) {
-      const col = resolveField(entityDef, f.field, activeJoins);
+      const col = resolve(f.field);
       whereClauses.push(applyOp(col, f.op, f.value));
     }
 
@@ -478,9 +560,42 @@ export async function queryRecordsHandler(spec) {
       return q;
     }
 
+    // Deep-join chain: the same join-building as applyJoins, but hops are applied
+    // SEQUENTIALLY along the path (each edge resolved on the previous hop's
+    // entity), producing one denormalized row per matched path (ADR-0011).
+    function applyChain(q) {
+      let currentDef = entityDef;
+      for (const edge of spec.chain) {
+        const joinDef = currentDef.joins[edge];
+        const joinEntity = SCHEMA[joinDef.to];
+
+        let condition;
+        if (joinDef.uuidSide === 'foreign') {
+          condition = sql`${joinDef.foreignCol}::text = ${joinDef.localCol}`;
+        } else if (joinDef.uuidSide === 'local') {
+          condition = sql`${joinDef.localCol}::text = ${joinDef.foreignCol}`;
+        } else {
+          condition = eq(joinDef.localCol, joinDef.foreignCol);
+        }
+
+        const extraConditions = [];
+        if (joinEntity.softDeleteCol) extraConditions.push(isNull(joinEntity.softDeleteCol));
+        if (joinDef.to === 'orders' && !spec.includeCancelled) {
+          extraConditions.push(ne(orders.status, ORDER_STATUS.CANCELLED));
+        }
+
+        const fullCondition = extraConditions.length > 0 ? and(condition, ...extraConditions) : condition;
+        q = q.innerJoin(joinEntity.table, fullCondition);
+        currentDef = joinEntity;
+      }
+      return q;
+    }
+
+    const applyRelations = hasChain ? applyChain : applyJoins;
+
     // Count query over full match (no limit)
     let countBase = db.select({ total: count() }).from(entityDef.table);
-    countBase = applyJoins(countBase);
+    countBase = applyRelations(countBase);
     if (whereExpr) countBase = countBase.where(whereExpr);
 
     // Data query
@@ -489,28 +604,28 @@ export async function queryRecordsHandler(spec) {
       // Build select columns: groupBy fields + aggregates
       const selectCols = {};
       for (const fieldName of (spec.groupBy || [])) {
-        selectCols[fieldName] = resolveField(entityDef, fieldName, activeJoins);
+        selectCols[fieldName] = resolve(fieldName);
       }
       for (const agg of (spec.aggregate || [])) {
-        const col = agg.field ? resolveField(entityDef, agg.field, activeJoins) : null;
+        const col = agg.field ? resolve(agg.field) : null;
         selectCols[agg.as] = applyAgg(agg.fn, col, agg.as);
       }
       dataQuery = db.select(selectCols).from(entityDef.table);
-      dataQuery = applyJoins(dataQuery);
+      dataQuery = applyRelations(dataQuery);
       if (whereExpr) dataQuery = dataQuery.where(whereExpr);
       if (hasGroupBy) {
-        const groupCols = spec.groupBy.map(f => resolveField(entityDef, f, activeJoins));
+        const groupCols = spec.groupBy.map(f => resolve(f));
         dataQuery = dataQuery.groupBy(...groupCols);
       }
     } else {
       dataQuery = db.select().from(entityDef.table);
-      dataQuery = applyJoins(dataQuery);
+      dataQuery = applyRelations(dataQuery);
       if (whereExpr) dataQuery = dataQuery.where(whereExpr);
     }
 
     // OrderBy and limit apply to both paths
     for (const s of (spec.sort || [])) {
-      const col = resolveField(entityDef, s.field, activeJoins);
+      const col = resolve(s.field);
       dataQuery = dataQuery.orderBy(s.dir === 'desc' ? desc(col) : asc(col));
     }
     dataQuery = dataQuery.limit(userLimit);
@@ -525,7 +640,11 @@ export async function queryRecordsHandler(spec) {
     }
 
     const matchedCount = Number(countResult[0]?.total ?? 0);
-    return { spec, matchedCount, truncated: matchedCount > rows.length, rows };
+    const result = { spec, matchedCount, truncated: matchedCount > rows.length, rows };
+    // Deep-join chains report fan-out so the UI can warn that a "many" hop
+    // multiplied rows (and the cap may have trimmed the tail).
+    if (hasChain) result.fanOut = fanOut;
+    return result;
   } catch (err) {
     console.error('[dataQueryPack] queryRecordsHandler error:', err.message);
     return { error: err.message };

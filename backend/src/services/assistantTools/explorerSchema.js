@@ -6,7 +6,7 @@
 // Explorer UI can render entity/field pickers and drill buttons without ever
 // touching the DB layer directly. One allow-list, two front-ends.
 
-import { getTableColumns } from 'drizzle-orm';
+import { getTableColumns, getTableName } from 'drizzle-orm';
 import { SCHEMA } from './dataQueryPack.js';
 
 // Reverse-map a Drizzle column reference back to the JS property name that a
@@ -267,6 +267,11 @@ export function describeSchema() {
 
     return {
       key,
+      // SQL table name — how a deep-join (chain) query nests this entity's
+      // columns in a joined row (Drizzle keys nested objects by table name,
+      // which diverges from the SCHEMA key, e.g. `purchases` → `stock_purchases`).
+      // The Explorer grid reads chain cells via row[table][field.key].
+      table:      getTableName(entityDef.table),
       label:      ENTITY_LABELS[key] || key,
       labelEn:    ENTITY_LABELS_EN[key] || key,
       softDelete: Boolean(entityDef.softDeleteCol),

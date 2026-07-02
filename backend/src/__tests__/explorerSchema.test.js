@@ -97,14 +97,41 @@ describe('explorerSchema.describeSchema', () => {
     expect(orderToCust.localKey).toBe('customerId');
     expect(orderToCust.foreignField).toBe('id');
 
-    // stock → (no drills defined) — sanity that drilling metadata never leaks
-    // undefined keys where drills exist.
+    // Sanity: every drill everywhere carries string localKey + foreignField.
     for (const e of entities) {
       for (const d of e.drills) {
         expect(typeof d.localKey).toBe('string');
         expect(typeof d.foreignField).toBe('string');
       }
     }
+  });
+
+  it('carries the SQL table name per entity (for chain-row flattening)', () => {
+    const { entities } = describeSchema();
+    const byKey = Object.fromEntries(entities.map(e => [e.key, e]));
+    // Same as the key when the pgTable name matches…
+    expect(byKey.orders.table).toBe('orders');
+    expect(byKey.order_lines.table).toBe('order_lines');
+    expect(byKey.key_people.table).toBe('key_people');
+    // …and diverges where the SCHEMA key ≠ table name.
+    expect(byKey.purchases.table).toBe('stock_purchases');
+  });
+
+  it('carries the deep-join reverse edges (stock → lines, order_lines → order)', () => {
+    const { entities } = describeSchema();
+    const byKey = Object.fromEntries(entities.map(e => [e.key, e]));
+    // stock → order_lines (many): a flower appears on many lines.
+    const stockToLines = byKey.stock.drills.find(d => d.join === 'lines');
+    expect(stockToLines).toBeDefined();
+    expect(stockToLines.to).toBe('order_lines');
+    expect(stockToLines.cardinality).toBe('many');
+    expect(stockToLines.localKey).toBe('id');
+    expect(stockToLines.foreignField).toBe('stockItemId');
+    // order_lines → orders (one): a line belongs to one order.
+    const lineToOrder = byKey.order_lines.drills.find(d => d.join === 'order');
+    expect(lineToOrder).toBeDefined();
+    expect(lineToOrder.to).toBe('orders');
+    expect(lineToOrder.cardinality).toBe('one');
   });
 
   it('customers carries a new drill to key_people (many)', () => {

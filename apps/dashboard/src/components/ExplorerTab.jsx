@@ -25,6 +25,15 @@ import {
   columnFilterValues,
   activeExplorerFilterCount,
   explorerRowsToCsv,
+  isChainSpec,
+  EMPTY_CHAIN_SPEC,
+  resolveChainColumns,
+  chainCellValue,
+  chainRowsToCsv,
+  availableChainEdges,
+  chainHasFanOut,
+  chainAppendEdge,
+  chainRemoveLast,
   apiClient,
   ColumnFilterPopover,
 } from '@flower-studio/shared';
@@ -131,6 +140,7 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   const [saveErr, setSaveErr] = useState('');
   const [editingId, setEditingId] = useState(null);
   const [editTitle, setEditTitle] = useState('');
+  const [addHopOpen, setAddHopOpen] = useState(false); // deep-join "add hop" menu
   const initedRef = useRef(false);
   const viewsRef = useRef(null);
 
@@ -181,8 +191,13 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   const entities = schema.entities || [];
   const entityByKey = Object.fromEntries(entities.map((e) => [e.key, e]));
   const descriptor = entityByKey[spec.entity];
-  const columns = resolveColumns(descriptor, spec);
-  const isSummarize = Array.isArray(spec.groupBy) && spec.groupBy.length > 0;
+  const isChain = isChainSpec(spec);
+  const columns = isChain ? resolveChainColumns(schema, spec) : resolveColumns(descriptor, spec);
+  const cellValue = (row, col) => (isChain ? chainCellValue(row, col) : row[col.key]);
+  const colKey = (col) => col.colId || col.name;
+  const chainEdges = isChain ? availableChainEdges(schema, spec) : [];
+  const fanOut = isChain && chainHasFanOut(schema, spec);
+  const isSummarize = !isChain && Array.isArray(spec.groupBy) && spec.groupBy.length > 0;
   const groupField = spec.groupBy?.[0] || '';
   const groupCandidates = (descriptor?.fields || []).filter((f) => f.type === 'text' || f.type === 'date');
   const filterCount = activeExplorerFilterCount(spec);
@@ -190,8 +205,16 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
 
   function changeEntity(key) {
     setHistory([]);
-    applyAndRun(EMPTY_EXPLORER_SPEC(key));
+    // Preserve deep-join mode when switching the start entity.
+    applyAndRun(isChain ? EMPTY_CHAIN_SPEC(key) : EMPTY_EXPLORER_SPEC(key));
   }
+  function toggleChain() {
+    setHistory([]);
+    setAddHopOpen(false);
+    applyAndRun(isChain ? EMPTY_EXPLORER_SPEC(spec.entity) : EMPTY_CHAIN_SPEC(spec.entity));
+  }
+  function addHop(join) { setAddHopOpen(false); applyAndRun(chainAppendEdge(spec, join)); }
+  function removeHop() { applyAndRun(chainRemoveLast(spec)); }
   function onSort(name) { applyAndRun(toggleSort(spec, name)); }
   function onApplyFilter(name, entries) { applyAndRun(applyColumnFilter(spec, name, entries)); }
   function resetFilters() { applyAndRun({ ...spec, filters: [] }); }
@@ -229,7 +252,7 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   }
 
   function downloadCsv() {
-    const csv = explorerRowsToCsv(rows, columns);
+    const csv = isChain ? chainRowsToCsv(rows, columns) : explorerRowsToCsv(rows, columns);
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8' }); // BOM → Excel opens UTF-8 correctly
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -272,7 +295,8 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
   }
 
   const drills = (descriptor?.drills || []);
-  const showActions = !isSummarize && (drills.length > 0 || rows.some((r) => openTarget(r)));
+  // Deep-join rows are denormalized (no single-row identity) → no drill/open column.
+  const showActions = !isChain && !isSummarize && (drills.length > 0 || rows.some((r) => openTarget(r)));
 
   return (
     <div className="pb-10" data-testid="explorer-tab">
@@ -295,16 +319,29 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
           {entities.map((e) => <option key={e.key} value={e.key}>{e.label}</option>)}
         </select>
 
-        {/* Group-by / summarize */}
-        <label className="text-xs text-ios-secondary ml-2">{t.explorer.groupBy}</label>
-        <select
-          value={groupField}
-          onChange={(e) => onGroupChange(e.target.value)}
-          className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-sm"
+        {/* Group-by / summarize — hidden in deep-join mode (chain = flat rows only) */}
+        {!isChain && (
+          <>
+            <label className="text-xs text-ios-secondary ml-2">{t.explorer.groupBy}</label>
+            <select
+              value={groupField}
+              onChange={(e) => onGroupChange(e.target.value)}
+              className="px-3 py-1.5 rounded-lg bg-white border border-gray-200 text-sm"
+            >
+              <option value="">{t.explorer.noGroup}</option>
+              {groupCandidates.map((f) => <option key={f.name} value={f.name}>{f.label}</option>)}
+            </select>
+          </>
+        )}
+
+        {/* Deep-join toggle */}
+        <button
+          onClick={toggleChain}
+          data-testid="explorer-chain-toggle"
+          className={`text-sm px-3 py-1.5 rounded-lg border ml-2 ${isChain ? 'bg-brand-600 text-white border-brand-600' : 'bg-white border-gray-200 hover:bg-gray-50'}`}
         >
-          <option value="">{t.explorer.noGroup}</option>
-          {groupCandidates.map((f) => <option key={f.name} value={f.name}>{f.label}</option>)}
-        </select>
+          {isChain ? t.explorer.chainExit : t.explorer.chain}
+        </button>
 
         <div className="flex-1" />
 
@@ -395,6 +432,63 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
         </div>
       )}
 
+      {/* Deep-join chain builder */}
+      {isChain && (
+        <div className="mb-2 flex flex-wrap items-center gap-1.5 text-sm" data-testid="explorer-chain-builder">
+          <span className="text-xs text-ios-secondary mr-1">{t.explorer.chainPath}</span>
+          <span className="px-2 py-1 rounded-lg bg-brand-50 text-brand-700 border border-brand-200 font-medium">{entityLabel(spec.entity)}</span>
+          {(spec.chain || []).map((edge, i) => {
+            const isLast = i === spec.chain.length - 1;
+            // Resolve the hop's target entity label from the path for display.
+            const pathEntity = (function resolveTo() {
+              let cur = descriptor;
+              for (let k = 0; k <= i; k++) {
+                const d = (cur?.drills || []).find((x) => x.join === spec.chain[k]);
+                cur = d ? entityByKey[d.to] : cur;
+              }
+              return cur;
+            })();
+            return (
+              <span key={i} className="flex items-center gap-1.5">
+                <span className="text-ios-tertiary">→</span>
+                <span className="px-2 py-1 rounded-lg bg-gray-100 text-ios-label border border-gray-200 inline-flex items-center gap-1">
+                  {pathEntity?.label || edge}
+                  {isLast && (
+                    <button onClick={removeHop} aria-label={t.explorer.chainRemove} className="text-ios-tertiary hover:text-red-600 text-xs">✕</button>
+                  )}
+                </span>
+              </span>
+            );
+          })}
+          {chainEdges.length > 0 && (
+            <div className="relative">
+              <button onClick={() => setAddHopOpen((o) => !o)} data-testid="explorer-chain-add"
+                className="px-2 py-1 rounded-lg border border-dashed border-brand-300 text-brand-600 hover:bg-brand-50 text-xs">
+                + {t.explorer.chainAddHop} ▾
+              </button>
+              {addHopOpen && (
+                <div className="absolute left-0 top-9 z-30 w-56 bg-white rounded-xl shadow-2xl border border-gray-200 p-1">
+                  {chainEdges.map((e) => (
+                    <button key={e.join} onClick={() => addHop(e.join)}
+                      data-testid={`explorer-chain-hop-${e.join}`}
+                      className="w-full text-left px-2 py-1.5 rounded-lg hover:bg-gray-100 text-sm flex items-center justify-between gap-2">
+                      <span>{entityLabel(e.to)}</span>
+                      {e.cardinality === 'many' && <span className="text-[10px] text-amber-600">×N</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {fanOut && (
+        <div className="mb-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-xs text-amber-700" data-testid="explorer-fanout-warning">
+          {t.explorer.fanOutWarning}
+        </div>
+      )}
+
       {error && <div className="mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 text-sm text-red-700">{error}</div>}
 
       {/* Grid */}
@@ -405,14 +499,16 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
             <tr className="border-b border-gray-200 text-ios-secondary text-xs">
               {columns.map((col) => {
                 const rightAlign = col.type === 'number';
-                const filterable = !col.agg && !isSummarize;
-                const hasFilter = Object.keys(columnFilterValues(spec, col.name)).length > 0;
+                // Deep-join columns are plain (sort/filter over a denormalized
+                // join is a follow-up — see plan); other modes keep sort+filter.
+                const filterable = !col.agg && !isSummarize && !isChain;
+                const hasFilter = !isChain && Object.keys(columnFilterValues(spec, col.name)).length > 0;
                 const headLabel = col.agg && col.name === 'count' ? t.explorer.countLabel : col.label;
                 return (
-                  <th key={col.name} className={`group px-3 py-2 font-medium ${rightAlign ? 'text-right' : 'text-left'}`}>
+                  <th key={colKey(col)} className={`group px-3 py-2 font-medium ${rightAlign ? 'text-right' : 'text-left'}`}>
                     <span className={`inline-flex items-center ${rightAlign ? 'justify-end' : ''}`}>
-                      {col.agg
-                        ? <span>{headLabel}</span>
+                      {isChain || col.agg
+                        ? <span className="whitespace-nowrap">{headLabel}</span>
                         : <SortHeader label={headLabel} dir={getSortDir(spec, col.name)} onSort={() => onSort(col.name)} />}
                       {filterable && (
                         <ColumnFilterPopover active={hasFilter} title={col.label} align={rightAlign ? 'right' : 'left'}>
@@ -434,13 +530,16 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
               const target = openTarget(row);
               return (
                 <tr key={i} data-testid="explorer-row" className="border-b border-gray-100 last:border-0 hover:bg-gray-50">
-                  {columns.map((col) => (
-                    <td key={col.name} className={`px-3 py-2 ${col.type === 'number' ? 'text-right tabular-nums' : ''} ${col.type === 'id' ? 'text-ios-tertiary text-xs font-mono' : 'text-ios-label'}`}>
-                      {col.type === 'id'
-                        ? <span className="block max-w-[7rem] truncate" title={row[col.key] == null ? '' : String(row[col.key])}>{formatExplorerValue(row[col.key], col.type)}</span>
-                        : formatExplorerValue(row[col.key], col.type)}
-                    </td>
-                  ))}
+                  {columns.map((col) => {
+                    const v = cellValue(row, col);
+                    return (
+                      <td key={colKey(col)} className={`px-3 py-2 ${col.type === 'number' ? 'text-right tabular-nums' : ''} ${col.type === 'id' ? 'text-ios-tertiary text-xs font-mono' : 'text-ios-label'}`}>
+                        {col.type === 'id'
+                          ? <span className="block max-w-[7rem] truncate" title={v == null ? '' : String(v)}>{formatExplorerValue(v, col.type)}</span>
+                          : formatExplorerValue(v, col.type)}
+                      </td>
+                    );
+                  })}
                   {showActions && (
                     <td className="sticky right-0 z-10 bg-white px-3 py-2 shadow-[-8px_0_8px_-8px_rgba(0,0,0,0.12)]">
                       <div className="flex items-center justify-end gap-1 flex-wrap">

@@ -192,5 +192,17 @@ export {
   applyColumnFilter,
   columnFilterValues,
   explorerRowsToCsv,
+  // Deep-join chain (Explorer v2 Wave 2, ADR-0011)
+  EXPLORER_MAX_CHAIN,
+  isChainSpec,
+  EMPTY_CHAIN_SPEC,
+  chainPathEntities,
+  resolveChainColumns,
+  chainCellValue,
+  chainRowsToCsv,
+  availableChainEdges,
+  chainHasFanOut,
+  chainAppendEdge,
+  chainRemoveLast,
 } from './utils/explorerSpec.js';
 export { default as useExplorerQuery } from './hooks/useExplorerQuery.js';
