@@ -32,10 +32,10 @@ test.describe('Explorer — unified linked-record grid', () => {
 
     // Column picker: Orders opens with the curated primary columns; adding one grows the set.
     const colsToggle = page.getByTestId('explorer-columns-toggle');
-    await expect(colsToggle).toContainText('(3)'); // orderDate · status · price
+    await expect(colsToggle).toContainText('(4)'); // appOrderId · orderDate · status · price
     await colsToggle.click();
     await page.getByTestId('explorer-col-orders.id').check();
-    await expect(colsToggle).toContainText('(4)');
+    await expect(colsToggle).toContainText('(5)');
     await colsToggle.click(); // close the picker
 
     // Switch to Customers → grid re-queries.
@@ -68,6 +68,13 @@ test.describe('Explorer — unified linked-record grid', () => {
     // Columns become hop-prefixed ("Entity · Field") and a fan-out warning shows.
     await expect(page.getByTestId('explorer-grid')).toContainText('·');
     await expect(page.getByTestId('explorer-fanout-warning')).toBeVisible();
+
+    // Sort/filter are enabled on the multi-hop grid too (idle ↕ indicators show);
+    // clicking a header sorts (active arrow appears).
+    const grid = page.getByTestId('explorer-grid');
+    await expect(grid).toContainText('↕');
+    await grid.getByRole('button').filter({ hasText: '↕' }).first().click();
+    await expect(grid.getByText(/[▲▼]/).first()).toBeVisible();
 
     // Removing the hop returns to a plain grid (warning gone).
     await page.getByTestId('explorer-chain-remove').click();

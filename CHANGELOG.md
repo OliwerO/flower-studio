@@ -5,6 +5,13 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-02 — Explorer: sort + filter a shown view, including deep-join grids
+
+Owner ask: filter/sort the Explorer view once it's on screen — including a multi-hop (deep-join) report. Previously the per-column sort arrows + filter popovers only appeared on a plain 0-hop grid; on a chain the headers were plain.
+
+- Every real column (0-hop and multi-hop) now has a **click-to-sort header + filter popover**. Each column emits its **qualified** `entity.field` as the sort/filter ref (so `orders.orderDate` and `customers.name` never collide on a joined grid); the engine resolves it (via the #506 `buildScope`/`resolveInScope` work) and re-runs the query server-side, respecting the 200-row cap. Aggregate alias columns stay non-sortable.
+- Frontend-only (dashboard `ExplorerTab`). Playwright rehearsal extended: on a deep-join grid, sort controls render and clicking a header activates a sort arrow. Verified: dashboard build, Playwright 2/2.
+
 ## 2026-07-02 — Explorer/assistant: qualified field refs everywhere (fixes handoff latency)
 
 From owner live use: a deep-join question ("Peony → orders → customer, just flower/date/customer") took a while because Ask Blossom made **~8 failed tool calls** fumbling the query grammar before the Explorer handoff validated. Diagnosed from the stored prod chat (`claude_ro`). Root causes + fixes:
