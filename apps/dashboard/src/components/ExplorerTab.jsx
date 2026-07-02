@@ -69,7 +69,12 @@ function SortHeader({ label, dir, onSort }) {
 // Per-column filter form (contains for text, exact for id, range for number/date).
 // Local input state resyncs to the applied spec so a global Reset clears it.
 function ColumnFilter({ col, spec, onApply }) {
-  const cur = columnFilterValues(spec, col.name);
+  // The filter/sort field ref is the QUALIFIED "entity.field" (col.colId) so a
+  // multi-hop grid never confuses same-named columns (orders.id vs customers.id);
+  // the engine resolves both qualified + bare refs. Falls back to the bare name
+  // for summarize columns (which have no colId).
+  const field = col.colId || col.name;
+  const cur = columnFilterValues(spec, field);
   const curSig = JSON.stringify(cur);
   const [text, setText] = useState(cur.like ?? cur.eq ?? '');
   const [min, setMin] = useState(cur.gte ?? '');
@@ -88,18 +93,18 @@ function ColumnFilter({ col, spec, onApply }) {
     const entries = [];
     if (isRange) {
       const cast = (v) => (col.type === 'number' ? Number(v) : v);
-      if (min !== '' && min != null) entries.push({ field: col.name, op: 'gte', value: cast(min) });
-      if (max !== '' && max != null) entries.push({ field: col.name, op: 'lte', value: cast(max) });
+      if (min !== '' && min != null) entries.push({ field, op: 'gte', value: cast(min) });
+      if (max !== '' && max != null) entries.push({ field, op: 'lte', value: cast(max) });
     } else if (col.type === 'id') {
-      if (text !== '') entries.push({ field: col.name, op: 'eq', value: text });
+      if (text !== '') entries.push({ field, op: 'eq', value: text });
     } else if (text !== '') {
-      entries.push({ field: col.name, op: 'like', value: text });
+      entries.push({ field, op: 'like', value: text });
     }
-    onApply(col.name, entries);
+    onApply(field, entries);
   }
   function clear() {
     setText(''); setMin(''); setMax('');
-    onApply(col.name, []);
+    onApply(field, []);
   }
 
   const inputCls = 'px-2 py-1 rounded-lg bg-gray-50 border border-gray-200 text-xs';
@@ -490,17 +495,19 @@ export default function ExplorerTab({ isActive, initialFilter, onNavigate }) {
             <tr className="border-b border-gray-200 text-ios-secondary text-xs">
               {columns.map((col) => {
                 const rightAlign = col.type === 'number';
-                // Sort/filter work on a flat 0-hop grid; over a multi-hop
-                // denormalized join they're a follow-up (see plan).
-                const filterable = !col.agg && !isSummarize && !hasHops;
-                const hasFilter = !hasHops && Object.keys(columnFilterValues(spec, col.name)).length > 0;
+                const field = colKey(col); // qualified "entity.field" ref for sort/filter
+                // Sort + filter work on any real column (0-hop or multi-hop) —
+                // the engine resolves the qualified ref. Aggregate alias columns
+                // can't be sorted/filtered by the engine.
+                const filterable = !col.agg && !isSummarize;
+                const hasFilter = Object.keys(columnFilterValues(spec, field)).length > 0;
                 const headLabel = col.agg && col.name === 'count' ? t.explorer.countLabel : col.label;
                 return (
-                  <th key={colKey(col)} className={`group px-3 py-2 font-medium ${rightAlign ? 'text-right' : 'text-left'}`}>
+                  <th key={field} className={`group px-3 py-2 font-medium ${rightAlign ? 'text-right' : 'text-left'}`}>
                     <span className={`inline-flex items-center ${rightAlign ? 'justify-end' : ''}`}>
-                      {hasHops || col.agg
+                      {col.agg
                         ? <span className="whitespace-nowrap">{headLabel}</span>
-                        : <SortHeader label={headLabel} dir={getSortDir(spec, col.name)} onSort={() => onSort(col.name)} />}
+                        : <SortHeader label={headLabel} dir={getSortDir(spec, field)} onSort={() => onSort(field)} />}
                       {filterable && (
                         <ColumnFilterPopover active={hasFilter} title={col.label} align={rightAlign ? 'right' : 'left'}>
                           <ColumnFilter col={col} spec={spec} onApply={onApplyFilter} />
