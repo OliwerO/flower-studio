@@ -23,6 +23,7 @@ import {
 import { ORDER_STATUS } from '../../constants/statuses.js';
 
 const ROW_CAP = 200;          // hard ceiling on returned rows
+const MAX_CHAIN = 4;          // max hops in a deep-join chain (ADR-0011)
 
 // ── Allow-list: the ONLY entities/fields/joins/ops the tool will ever touch ──
 // Each field entry maps a model-facing name → the real Drizzle column reference.
@@ -294,6 +295,39 @@ function resolveField(entityDef, fieldName, activeJoins = []) {
   return null;
 }
 
+// ── Deep-join chain (Explorer v2 Wave 2, ADR-0011) ──
+// A `chain` is an ordered list of edges resolved SEQUENTIALLY: each edge must
+// exist on the PREVIOUS hop's entity (not the primary). Walk it to produce the
+// ordered list of entity defs on the path (primary first). Edges-only (no
+// free-form joins) + cycle-free (no entity revisited) → cartesian explosion and
+// self-join aliasing are structurally impossible.
+function walkChain(entityName, chain) {
+  const defs = [SCHEMA[entityName]];
+  const visited = new Set([entityName]);
+  let cur = entityName;
+  for (const edge of chain) {
+    if (typeof edge !== 'string') return { ok: false, error: 'chain edges must be strings' };
+    const jd = SCHEMA[cur]?.joins?.[edge];
+    if (!jd) {
+      const allowed = Object.keys(SCHEMA[cur]?.joins || {}).join(', ') || '(none)';
+      return { ok: false, error: `Unknown chain edge "${edge}" on entity "${cur}". Allowed: ${allowed}` };
+    }
+    if (visited.has(jd.to)) return { ok: false, error: `chain revisits entity "${jd.to}" (cycles not allowed)` };
+    visited.add(jd.to);
+    defs.push(SCHEMA[jd.to]);
+    cur = jd.to;
+  }
+  return { ok: true, defs };
+}
+
+// Resolve a field against any entity def on the chain path (primary first).
+function resolveFieldInDefs(defs, fieldName) {
+  for (const def of defs) {
+    if (def?.fields?.[fieldName]) return def.fields[fieldName].col;
+  }
+  return null;
+}
+
 /**
  * Validate a query spec against SCHEMA.
  * Returns { ok:true } or { ok:false, error: string }.
@@ -308,6 +342,29 @@ export function validateSpec(spec) {
   }
 
   const activeJoins = Array.isArray(spec.join) ? spec.join : [];
+
+  // ── Deep-join chain validation (ADR-0011) ──
+  // A chain replaces the star `join` with an ordered path of edges. Validate its
+  // shape up front, then resolve all subsequent fields against the path entities.
+  const hasChain = spec.chain !== undefined;
+  let chainDefs = null;
+  if (hasChain) {
+    if (!Array.isArray(spec.chain)) return { ok: false, error: 'chain must be an array' };
+    if (activeJoins.length) return { ok: false, error: 'cannot combine chain with join' };
+    if ((spec.aggregate?.length) || (spec.groupBy?.length)) {
+      return { ok: false, error: 'chain cannot be combined with groupBy or aggregate (v2 deep-join returns flat rows only)' };
+    }
+    if (spec.chain.length > MAX_CHAIN) return { ok: false, error: `chain too long (max ${MAX_CHAIN} hops)` };
+    const walked = walkChain(spec.entity, spec.chain);
+    if (!walked.ok) return { ok: false, error: walked.error };
+    chainDefs = walked.defs;
+  }
+
+  // Field resolver: chain specs resolve against the whole path; otherwise the
+  // primary entity + its active star joins.
+  const resolve = (fieldName) => hasChain
+    ? resolveFieldInDefs(chainDefs, fieldName)
+    : resolveField(entityDef, fieldName, activeJoins);
 
   // Validate joins
   for (const joinName of activeJoins) {
@@ -325,7 +382,7 @@ export function validateSpec(spec) {
       if (!OPERATORS.has(f.op)) {
         return { ok: false, error: `Unknown operator "${f.op}". Allowed: ${[...OPERATORS].join(', ')}` };
       }
-      const col = resolveField(entityDef, f.field, activeJoins);
+      const col = resolve(f.field);
       if (!col) {
         return { ok: false, error: `Unknown field "${f.field}" on entity "${spec.entity}" (with joins: ${activeJoins.join(', ') || 'none'})` };
       }
@@ -337,7 +394,7 @@ export function validateSpec(spec) {
     if (!Array.isArray(spec.groupBy)) return { ok: false, error: 'groupBy must be an array' };
     for (const fieldName of spec.groupBy) {
       if (typeof fieldName !== 'string') return { ok: false, error: 'groupBy fields must be strings' };
-      const col = resolveField(entityDef, fieldName, activeJoins);
+      const col = resolve(fieldName);
       if (!col) {
         return { ok: false, error: `Unknown groupBy field "${fieldName}" on entity "${spec.entity}"` };
       }
@@ -356,7 +413,7 @@ export function validateSpec(spec) {
         return { ok: false, error: 'Each aggregate must have an "as" alias' };
       }
       if (agg.field) {
-        const col = resolveField(entityDef, agg.field, activeJoins);
+        const col = resolve(agg.field);
         if (!col) {
           return { ok: false, error: `Unknown aggregate field "${agg.field}" on entity "${spec.entity}"` };
         }
@@ -369,7 +426,7 @@ export function validateSpec(spec) {
     if (!Array.isArray(spec.sort)) return { ok: false, error: 'sort must be an array' };
     for (const s of spec.sort) {
       if (!s || typeof s !== 'object') return { ok: false, error: 'Each sort must be an object' };
-      const col = resolveField(entityDef, s.field, activeJoins);
+      const col = resolve(s.field);
       if (!col) {
         return { ok: false, error: `Unknown sort field "${s.field}" on entity "${spec.entity}"` };
       }
