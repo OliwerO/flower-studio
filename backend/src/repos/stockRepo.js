@@ -542,8 +542,21 @@ export async function create(fields, opts = {}) {
   }
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
+  // Every Stock row must carry a `date`. Prod enforces NOT NULL on stock.date
+  // (applied at the Stock Y-model cutover; the STOCK_Y_MODEL flag may still be
+  // off, but the column constraint is live). Callers that create a plain Stock
+  // Item — e.g. POST /stock from the "create demand entry" flow when a variety
+  // isn't in stock yet — don't supply one, so default to today. Dated Demand
+  // Entries go through getOrCreateDemandEntry, which sets `date` explicitly.
+  // Without this, the INSERT throws a NOT NULL violation and the UI surfaces
+  // an empty error toast (#508).
+  const values = responseToPg(safe);
+  if (values.date == null) {
+    values.date = new Date().toISOString().split('T')[0];
+  }
+
   if (opts.tx) {
-    const [row] = await opts.tx.insert(stock).values(responseToPg(safe)).returning();
+    const [row] = await opts.tx.insert(stock).values(values).returning();
     await tryAudit(opts.tx, {
       entityType: 'stock', entityId: row.id, action: 'create',
       before: null, after: pgToResponse(row), ...actor,
@@ -553,7 +566,7 @@ export async function create(fields, opts = {}) {
 
   if (!db) throw new Error('stockRepo.create: postgres backend but DATABASE_URL not configured');
   const pgRow = await db.transaction(async (tx) => {
-    const [row] = await tx.insert(stock).values(responseToPg(safe)).returning();
+    const [row] = await tx.insert(stock).values(values).returning();
     await tryAudit(tx, {
       entityType: 'stock',
       entityId:   row.id,

@@ -5,6 +5,15 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-05 — fix(stock): creating a Stock Item no longer crashes on NOT NULL date (#508)
+
+Owner report: creating a **demand entry for peonies** during new-order intake threw an empty red error toast on both Florist app and Dashboard; other flowers were fine. Root cause found in Railway logs (`ERROR: null value in column "date" of relation "stock" violates not-null constraint`, `type_name=Peony`).
+
+- The "create demand entry" flow (`useOrderEditing.createDemandEntry`) posts to `POST /stock` when a variety isn't in stock yet — peony-specific only because that variety wasn't matched to an existing row. `stockRepo.create` never set `date`, but prod PG enforces **`stock.date NOT NULL`** (applied at the Y-model cutover DDL; the `STOCK_Y_MODEL` flag is still off, but the column constraint is live). The undated INSERT was rejected → generic 500 → empty toast.
+- Fix: `stockRepo.create` now defaults `date` to **today** when the caller supplies none (dated Demand Entries still go through `getOrCreateDemandEntry`, which sets it explicitly). Deepest seam — covers every create caller, not just this flow.
+- Backend-only; no schema migration. Regression test: `stockRepo.integration.test.js` asserts a created row is always dated. Verified: backend vitest 930, E2E 253.
+- **Follow-up (not this PR):** prod is in a half-cutover state — the `stock_demand_variety_date_idx` unique index is live while the flag is off, so two same-variety demand entries created the same day can collide on the later negative-qty update. Proper resolution is the #291 Y-model cutover (route creates through `getOrCreateDemandEntry`, which sums into an existing DE).
+
 ## 2026-07-02 — Explorer: sort + filter a shown view, including deep-join grids
 
 Owner ask: filter/sort the Explorer view once it's on screen — including a multi-hop (deep-join) report. Previously the per-column sort arrows + filter popovers only appeared on a plain 0-hop grid; on a chain the headers were plain.
