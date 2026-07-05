@@ -69,6 +69,27 @@ describe('postgres mode — real SQL', () => {
     expect(auditRows[0].diff.after['Display Name']).toBe('Red Rose');
   });
 
+  it('create() always writes a non-null date (prod enforces stock.date NOT NULL) — #508', async () => {
+    // Regression: the "create demand entry" flow (POST /stock, e.g. a peony
+    // variety not yet in stock) inserts a plain Stock Item without a date.
+    // Prod PG has NOT NULL on stock.date (applied at the Y-model cutover, even
+    // with the flag off), so an undated insert threw and the UI showed an empty
+    // error toast. create() must default the date so the row is always valid.
+    const out = await stockRepo.create({
+      'Display Name': 'Peony Pink',
+      Category: 'Other',
+      'Current Quantity': 0,
+      'Current Sell Price': 20,
+      Type: 'Peony',
+      Colour: 'Pink',
+    }, { actor: { actorRole: 'owner' } });
+
+    const [row] = await harness.db.select().from(stock).where(eq(stock.id, out._pgId));
+    expect(row.date).not.toBeNull();
+    // Defaulted to a YYYY-MM-DD string (today) when the caller supplies none.
+    expect(String(row.date)).toMatch(/^\d{4}-\d{2}-\d{2}/);
+  });
+
   it('update() captures only the changed fields in the audit diff', async () => {
     // Seed
     const created = await stockRepo.create({
