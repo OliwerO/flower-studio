@@ -102,6 +102,7 @@ Key paths:
 
 ## Known Pitfalls (backend-specific)
 - **Product names are owned by flower-studio (ADR-0008)** — Pull must not overwrite a row whose `Translations.en.title` is set; see `localNameOwned` in `wixProductSync.js`. Push sends EN name + PL/RU/UK translations to Wix so all storefronts reflect the dashboard-set name.
+- **Variant availability = `variant.visible`, NOT inventory `inStock` (fixed 2026-07-05)** — a product_config row's `Active` flag round-trips through Wix's per-variant **`variant.visible`** (the storefront option-picker toggle), set on Push via `updateWixVariantVisibility` (`PATCH /stores/v1/products/{id}/variants`) and read back on Pull per-variant. Inventory `inStock`/`quantity` only paints "sold out" and (untracked) doesn't hide the option — never use it as the availability control. Pull must set `Active` from each `variant.visible`, never the product-level `visible` (that stamped every variant active and wiped per-variant deactivations). Product-level `visible` is a separate concern tracked in `Visible in Wix` (and drives simple/unmanaged products via `updateWixProductVisibility`). Regression-locked by `wixProductSync.visibility.test.js`.
 
 ## Tests
 Run all: `cd backend && npx vitest run`
