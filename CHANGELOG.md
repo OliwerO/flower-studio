@@ -5,6 +5,14 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — fix(wix): Pull now reads the NESTED per-variant visible path (follow-up to #511)
+
+Owner re-tested after #511 deployed: Push worked (live Wix confirmed sizes 11 & 7 at `variant.variant.visible = false`), but **Pull still reset all 7 variants to active**. Root cause: the per-variant `visible` flag in the `/stores/v1/products/query` response is **nested** at `variant.variant.visible` (same envelope as `priceData`) — #511's `runPull` read the **top-level** `variant.visible`, which is `undefined`, and `undefined !== false` coerces to `true`, so every variant round-tripped back to active.
+
+- **Fix:** `runPull` reads `variant.variant?.visible !== false` (nested), matching how it already reads `variant.variant.priceData.price`.
+- **Why the #511 test missed it:** the test fixture put `visible` at the variant's top level — the same wrong path as the code — so it passed against the bug. Fixture corrected to nest `visible` under `.variant`, verified against the live Wix response shape, so it now guards the real API contract.
+- Push side unchanged and confirmed working live. Backend-only, no schema change. Regression-locked by the corrected `wixProductSync.visibility.test.js`.
+
 ## 2026-07-05 — fix(wix): deactivating a bouquet variant now actually hides it on the storefront
 
 Owner report: unchecking individual **Red roses** sizes in the Florist app and pushing to Wix had **no effect on the website**, and a subsequent **Pull reset every variant back to active** ("7/7 active" when only 5 should have been). Diagnosed live against the Wix Stores catalog (Catalog V1): the product's variants 11/15 were `visible:false` on Wix, yet inventory showed all 7 `inStock:true` and the app showed 7/7 active — classic round-trip drift.

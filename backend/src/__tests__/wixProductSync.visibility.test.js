@@ -131,6 +131,14 @@ vi.mock('../services/configService.js', () => ({
 }));
 
 // One managed-variant product: size "S" visible, size "L" hidden on Wix.
+//
+// IMPORTANT: this mirrors the REAL `/stores/v1/products/query` response shape,
+// verified live against the Wix catalog: per-variant `visible` is NESTED under
+// `variant.variant.visible` (the same envelope as `priceData`), NOT a top-level
+// `variant.visible`. An earlier version of this fixture put `visible` at the top
+// level, which matched a buggy top-level read in runPull — both wrong, so the
+// test passed while production still reset every variant to active on Pull.
+// Keep `visible` nested here so this test guards the actual API contract.
 function redRosesPayload() {
   return {
     products: [
@@ -139,8 +147,8 @@ function redRosesPayload() {
         name: 'Red roses',
         visible: true, // product-level: the whole product is shown
         variants: [
-          { id: 'v-s', choices: { Rozmiar: 'S' }, visible: true, variant: { priceData: { price: 100 } } },
-          { id: 'v-l', choices: { Rozmiar: 'L' }, visible: false, variant: { priceData: { price: 200 } } },
+          { id: 'v-s', choices: { Rozmiar: 'S' }, variant: { visible: true, priceData: { price: 100 } } },
+          { id: 'v-l', choices: { Rozmiar: 'L' }, variant: { visible: false, priceData: { price: 200 } } },
         ],
       },
     ],
