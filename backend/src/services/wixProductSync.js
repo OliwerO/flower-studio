@@ -756,11 +756,16 @@ export async function runPull() {
         const variantPrice = variant.variant?.priceData?.price
           || variant.variant?.priceData?.discountedPrice || 0;
         // Availability is PER-VARIANT: a managed variant carries its own
-        // `visible` flag (the storefront option-picker toggle). Only fall back
-        // to the product-level `visible` for a simple product's synthetic
-        // default variant, which has no per-variant flag of its own.
+        // `visible` flag (the storefront option-picker toggle). In the Wix
+        // products-query response this lives NESTED at `variant.variant.visible`
+        // — same envelope as `priceData` above, NOT a top-level `variant.visible`
+        // (reading the top-level path returns undefined, which `!== false`
+        // coerces to true, so every variant round-tripped back to active — the
+        // "7/7 active after Pull" bug). Only fall back to the product-level
+        // `visible` for a simple product's synthetic default variant, which has
+        // no per-variant flag of its own.
         const variantVisible = variantId && variantId !== ZERO_UUID
-          ? variant.visible !== false
+          ? variant.variant?.visible !== false
           : wixVisible;
 
         const key = `${productId}::${variantId}`;
