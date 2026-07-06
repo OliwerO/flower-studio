@@ -30,6 +30,13 @@ const NO_PROGRESS = () => {};
 
 const WIX_API_URL = 'https://www.wixapis.com';
 
+// Wix's synthetic "default variant" ID for products WITHOUT managed variants.
+// A simple single-SKU product exposes exactly one variant with this zero-UUID
+// on read; its availability is controlled at the PRODUCT level (`visible`),
+// not per-variant. Managed-variant products (e.g. Red roses / sizes) get real
+// UUIDs and per-variant `visible`. Used by both the visibility push and pull.
+const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
+
 // Thrown when a Wix Stores endpoint returns 404 PRODUCT_NOT_FOUND.
 // The push loop dedupes these by product ID so the owner sees one
 // actionable warning instead of N identical errors per variant.
@@ -248,10 +255,64 @@ async function updateWixInventory(productId, variantStates) {
 }
 
 /**
- * Update Wix product visibility (hide/show).
+ * Build the Wix `PATCH /products/{id}/variants` body that toggles each
+ * managed variant's storefront visibility from its local `Active` flag.
+ *
+ * This is THE availability control the storefront honours. A hidden variant
+ * (`visible: false`) is removed from the product's option picker entirely —
+ * unlike inventory `inStock: false`, which only paints a "sold out" badge and
+ * (when the product is untracked) does not hide the size at all. That mismatch
+ * was the root cause of "deactivated sizes still show on the website": the app
+ * was pushing availability into inventory, never into `variant.visible`.
+ *
+ * Only managed variants (real UUIDs) are emitted. Simple products expose the
+ * synthetic ZERO_UUID default variant, whose availability is a PRODUCT-level
+ * `visible` toggle (see updateWixProductVisibility) — never per-variant.
+ *
+ * @param variantStates Array of { variantId, active } — one per variant
+ * @returns {{ variants: Array<{ variantIds: string[], visible: boolean }> }}
  */
-// Reserved for future use — hides/shows a product on Wix storefront.
-// eslint-disable-next-line no-unused-vars
+export function buildVariantVisibilityPayload(variantStates) {
+  const variants = variantStates
+    .filter(v => v.variantId && v.variantId !== ZERO_UUID)
+    .map(v => ({ variantIds: [v.variantId], visible: v.active === true }));
+  return { variants };
+}
+
+/**
+ * Push per-variant storefront visibility for a managed-variant product.
+ * No-op for simple products (only the ZERO_UUID default variant) — the caller
+ * routes those through updateWixProductVisibility instead.
+ *
+ * Mirrors updateWixInventory's transient-5xx retry so a flaky Wix proxy
+ * doesn't silently drop an availability change.
+ */
+export async function updateWixVariantVisibility(productId, variantStates) {
+  const body = buildVariantVisibilityPayload(variantStates);
+  if (body.variants.length === 0) return;
+
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(
+      `${WIX_API_URL}/stores/v1/products/${productId}/variants`,
+      { method: 'PATCH', headers: wixHeaders(), body: JSON.stringify(body) }
+    );
+    if (res.ok) return;
+    const text = await res.text();
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
+    if (res.status >= 500 && attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+      continue;
+    }
+    throw new Error(`Wix variant visibility update failed for ${productId}: ${text}`);
+  }
+}
+
+/**
+ * Update Wix product visibility (hide/show).
+ * Availability control for SIMPLE (unmanaged) products — the whole product is
+ * shown/hidden, since a single-SKU product has no per-variant visibility.
+ */
 async function updateWixProductVisibility(productId, visible) {
   const res = await fetch(
     `${WIX_API_URL}/stores/v1/products/${productId}`,
@@ -266,6 +327,7 @@ async function updateWixProductVisibility(productId, visible) {
 
   if (!res.ok) {
     const text = await res.text();
+    if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
     throw new Error(`Wix visibility update failed for ${productId}: ${text}`);
   }
 }
@@ -693,6 +755,13 @@ export async function runPull() {
         const variantName = Object.values(variant.choices || {}).join(' / ') || `Variant ${i + 1}`;
         const variantPrice = variant.variant?.priceData?.price
           || variant.variant?.priceData?.discountedPrice || 0;
+        // Availability is PER-VARIANT: a managed variant carries its own
+        // `visible` flag (the storefront option-picker toggle). Only fall back
+        // to the product-level `visible` for a simple product's synthetic
+        // default variant, which has no per-variant flag of its own.
+        const variantVisible = variantId && variantId !== ZERO_UUID
+          ? variant.visible !== false
+          : wixVisible;
 
         const key = `${productId}::${variantId}`;
         seenKeys.add(key);
@@ -709,7 +778,7 @@ export async function runPull() {
               'Image URL': imageUrl,
               'Price': Number(variantPrice) || 0,
               'Lead Time Days': 1,
-              'Active': wixVisible,
+              'Active': variantVisible,
               'Visible in Wix': wixVisible,
               'Product Type': productType,
               'Min Stems': productType === 'mono' ? parseMinStems(variantName) : 0,
@@ -739,15 +808,15 @@ export async function runPull() {
           if (Math.abs(airtablePriceNum - wixPriceNum) > 0.01) {
             updates['Price'] = wixPriceNum;
           }
-          // Active follows Wix "Show in online store". The earlier policy
-          // treated Active as Airtable-owned, but in practice that caused
-          // drift: a product re-listed on Wix stayed inactive in Airtable
-          // forever (seen with "Mix of the day 1 - L/S": live on the
-          // storefront, shown as 0/1 active in the florist app). Wix is
-          // authoritative for whether a product is being sold; local
-          // deactivation should happen via Push (Airtable→Wix), not by
-          // editing Airtable directly and hoping Pull won't overwrite.
-          if (existing['Active'] !== wixVisible) updates['Active'] = wixVisible;
+          // Active mirrors each variant's OWN storefront visibility
+          // (`variant.visible`), not the product-level flag. The earlier
+          // policy stamped the product-level `visible` onto EVERY variant,
+          // which silently reactivated variants the owner had hidden — a Pull
+          // turned "5/7 active" back into "7/7 active". Wix is authoritative
+          // per variant; local deactivation happens via Push (which now sets
+          // `variant.visible`), and a subsequent Pull mirrors it back exactly.
+          // `Visible in Wix` still tracks the product-level flag separately.
+          if (existing['Active'] !== variantVisible) updates['Active'] = variantVisible;
           if (existing['Visible in Wix'] !== wixVisible) updates['Visible in Wix'] = wixVisible;
           // Category reconciliation: Wix is authoritative for any category
           // that maps to a tracked Wix collection (mappedNames). Airtable-
@@ -895,6 +964,7 @@ export async function runPush(onProgress = NO_PROGRESS) {
   const stats = {
     pricesSynced: 0,
     stockSynced: 0,
+    visibilitySynced: 0,
     categoriesSynced: 0,
     descriptionsSynced: 0,
     translationsSynced: 0,
@@ -927,11 +997,9 @@ export async function runPush(onProgress = NO_PROGRESS) {
       }
     }
 
-    // Zero-UUID = Wix's default-variant placeholder for products without
-    // managed variants. Those need the product-level price endpoint, not
-    // the variant batch endpoint (see `updateWixProductPrice` above).
-    const ZERO_UUID = '00000000-0000-0000-0000-000000000000';
-
+    // Zero-UUID (module const) = Wix's default-variant placeholder for
+    // products without managed variants. Those need the product-level price
+    // endpoint, not the variant batch endpoint (see `updateWixProductPrice`).
     const priceJobs = [];
     for (const row of configRows) {
       const pid = row['Wix Product ID'];
@@ -1020,6 +1088,42 @@ export async function runPush(onProgress = NO_PROGRESS) {
       );
       log('item', `Внимание: ${staleInventoryIds.size} товар(ов) удалены в Wix — очистите их из конфигурации.`, 'warn');
     }
+
+    // ── Storefront visibility (the real availability control) ──
+    // Inventory (above) tracks stock; `variant.visible` decides whether a
+    // size is OFFERED on the storefront. Deactivating a variant in the app
+    // must HIDE it — inventory `inStock:false` only shows "sold out" and,
+    // for untracked products, doesn't hide the option at all. This phase
+    // reuses the same `byProduct` map (all variants, active flag per row):
+    //   Managed-variant product → PATCH each variant's `visible` from Active.
+    //   Simple product (only the ZERO_UUID default variant) → toggle the
+    //     PRODUCT-level `visible` from that single row's Active.
+    log('phase', 'Обновляем видимость вариантов...');
+    {
+      const queue = new PQueue({ concurrency: PUSH_CONCURRENCY });
+      await Promise.all([...byProduct.entries()].map(([pid, variantStates]) => queue.add(async () => {
+        if (staleInventoryIds.has(pid)) return; // already known-gone from Wix
+        const isSimpleProduct = variantStates.every(v => v.variantId === ZERO_UUID);
+        try {
+          if (isSimpleProduct) {
+            await updateWixProductVisibility(pid, variantStates.some(v => v.active === true));
+            stats.visibilitySynced += 1;
+          } else {
+            await updateWixVariantVisibility(pid, variantStates);
+            stats.visibilitySynced += variantStates.filter(v => v.variantId !== ZERO_UUID).length;
+          }
+        } catch (err) {
+          if (err instanceof WixProductNotFoundError) {
+            staleInventoryIds.add(pid);
+            return;
+          }
+          stats.errors.push(`Visibility ${pid}: ${err.message}`);
+          const productName = wixProductNameById.get(pid) || pid;
+          log('item', `Ошибка видимости · ${productName}: ${err.message}`, 'error');
+        }
+      })));
+    }
+    log('summary', `Видимость: обновлено ${stats.visibilitySynced} вариант(ов)`);
 
     // ── Categories ──────────────────────────────────────
     log('phase', 'Обновляем категории...');

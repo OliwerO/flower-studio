@@ -5,6 +5,16 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-05 — fix(wix): deactivating a bouquet variant now actually hides it on the storefront
+
+Owner report: unchecking individual **Red roses** sizes in the Florist app and pushing to Wix had **no effect on the website**, and a subsequent **Pull reset every variant back to active** ("7/7 active" when only 5 should have been). Diagnosed live against the Wix Stores catalog (Catalog V1): the product's variants 11/15 were `visible:false` on Wix, yet inventory showed all 7 `inStock:true` and the app showed 7/7 active — classic round-trip drift.
+
+- **Root cause — availability round-tripped through the wrong Wix field.** Push wrote per-variant availability into **inventory** (`inStock`/`quantity=0`), which only paints a "sold out" badge and, for an untracked product, doesn't remove the size from the storefront option picker at all. Pull read the **product-level** `visible` flag and stamped it onto **every** variant, silently reactivating any the owner had hidden.
+- **Fix — round-trip through the per-variant `variant.visible` flag** (the actual storefront option-picker toggle):
+  - **Push** (`wixProductSync.js` → new `updateWixVariantVisibility`, wired into `runPush` as a "видимость вариантов" phase): `PATCH /stores/v1/products/{id}/variants` sets each managed variant's `visible` from its local `Active`. Simple (unmanaged) products route through the existing product-level `updateWixProductVisibility`. Inventory push is unchanged (still tracks real stock).
+  - **Pull** (`runPull`): `Active` now derives from each `variant.visible` (per-variant), not the product-level flag. `Visible in Wix` still mirrors the product-level flag separately. New and existing rows both fixed.
+- No schema change. No florist/dashboard UI change — the app's variant checkbox already maps to `Active`; only the sync semantics moved. Regression tests: `backend/src/__tests__/wixProductSync.visibility.test.js` (payload builder, HTTP wiring incl. 404/5xx, runPull per-variant Active mapping). **Verification note:** proven against mocked Wix + the backend suite; a live prod-Wix push was **not** run from this session (no Wix write creds here) — owner should run one Push + Pull cycle to confirm on the live storefront before closing out.
+
 ## 2026-07-05 — fix(stock): creating a Stock Item no longer crashes on NOT NULL date (#508)
 
 Owner report: creating a **demand entry for peonies** during new-order intake threw an empty red error toast on both Florist app and Dashboard; other flowers were fine. Root cause found in Railway logs (`ERROR: null value in column "date" of relation "stock" violates not-null constraint`, `type_name=Peony`).
