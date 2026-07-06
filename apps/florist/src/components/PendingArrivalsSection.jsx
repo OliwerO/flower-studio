@@ -35,7 +35,7 @@ export default function PendingArrivalsSection({ stock, committedMap, onOrderCli
     return [...ids].map(stockId => {
       const po = pendingPO[stockId] || { ordered: 0, pos: [] };
       const com = (committedMap || {})[stockId] || { committed: 0, orders: [] };
-      // Negative qty = demand already baked in (CLAUDE.md pitfall #7).
+      // Negative qty = demand already baked in (CLAUDE.md pitfall stock-math).
       // /stock/committed returns the same number but reads Airtable (broken until #229).
       // Use whichever is larger — they should match once #229 is fixed.
       const committed = Math.max(com.committed, Math.max(0, -(stockQtyMap[stockId] || 0)));

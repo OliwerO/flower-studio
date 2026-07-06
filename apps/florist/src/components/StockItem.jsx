@@ -77,7 +77,7 @@ export default function StockItem({ item, editMode, onAdjust, onWriteOff, onPatc
   const committed = committedData?.committed || 0;
   // Use the shared helper — inline `qty - committed` was double-counting when
   // qty is already negative (the negative already reflects the same orders).
-  // See packages/shared/utils/stockMath.js + root CLAUDE.md pitfall #7.
+  // See packages/shared/utils/stockMath.js + root CLAUDE.md pitfall stock-math.
   const effective = getEffectiveStock(qty, committed);
   const hasShortfall = hasStockShortfall(qty, committed);
   const isLow     = qty > 0 && qty <= threshold;

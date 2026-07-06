@@ -136,7 +136,7 @@ router.get('/premade-committed', async (req, res, next) => {
 // (orderService.js → atomicStockAdjust). The `committed` number this endpoint
 // returns is the SAME demand, viewed from the other side — it is already
 // baked into Current Quantity. The frontend must NOT subtract committed from
-// qty: that would double-count. See root CLAUDE.md "Known Pitfalls" #7 and
+// qty: that would double-count. See root CLAUDE.md "Known Pitfalls" stock-math and
 // packages/shared/utils/stockMath.js.
 // Returns { stockId: { committed: N, orders: [{ orderId, appOrderId, customerName, requiredBy, qty }] } }
 router.get('/committed', async (req, res, next) => {
@@ -530,7 +530,7 @@ router.get('/varieties/:key/usage', async (req, res, next) => {
 // Goal: sum(trail.quantity) should equal the Stock row's Current Quantity, for
 // every row, always. If it doesn't, something changed qty without emitting an
 // event here — that's a data-integrity gap to investigate. See root CLAUDE.md
-// pitfall #7 + packages/shared/utils/stockMath.js for the model.
+// pitfall stock-math + packages/shared/utils/stockMath.js for the model.
 //
 // Event types:
 //   - 'order'     — order line consuming stems (negative qty)

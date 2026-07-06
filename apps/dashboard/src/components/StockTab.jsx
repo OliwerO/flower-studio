@@ -391,7 +391,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
       // Only count "New" orders as committed — Ready orders already have flowers composed
       const newOrders = (com.orders || []).filter(o => o.status === 'New');
       const fromEndpoint = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
-      // Negative qty = demand baked into Current Quantity (CLAUDE.md pitfall #7).
+      // Negative qty = demand baked into Current Quantity (CLAUDE.md pitfall stock-math).
       // /stock/committed reads Airtable (frozen — issue #229). Use negative qty as fallback.
       const committedQty = Math.max(fromEndpoint, Math.max(0, -(stockQtyMap[stockId] || 0)));
       const stockName = nameMap[stockId] || '';

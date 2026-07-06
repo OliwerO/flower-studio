@@ -11,7 +11,7 @@ Use this skill when the user asks to run the migrated source command `feature`.
 
 # /feature — tuned superpowers for flower-studio
 
-Run the full superpowers chain with the cost-discipline rules from `AGENTS.md` enforced as hard defaults. Use this for any feature/bugfix that takes more than a one-line change. For typo fixes, dependency bumps, or doc-only PRs, skip and edit directly.
+Run the full superpowers chain with the cost-discipline rules from `CLAUDE.md` enforced as hard defaults. Use this for any feature/bugfix that takes more than a one-line change. For typo fixes, dependency bumps, or doc-only PRs, skip and edit directly.
 
 The user invoked this with `/feature <one-line description>` (or no args; ask once if missing).
 
@@ -37,14 +37,14 @@ When spawning subagents via the `Agent` tool, **pass `model` explicitly**:
 
 ### Review cadence: phase boundaries, not per task
 
-The default `subagent-driven-development` skill spec runs spec-reviewer + code-quality-reviewer **after every task**. For a 17-task plan that's ~34 review subagents, each re-reading AGENTS.md + plan + spec.
+The default `subagent-driven-development` skill spec runs spec-reviewer + code-quality-reviewer **after every task**. For a 17-task plan that's ~34 review subagents, each re-reading CLAUDE.md + plan + spec.
 
 **Override:** group tasks into phases of 3–5. Run spec-compliance review **after each task** (cheap, Sonnet). Run code-quality review **only at phase boundaries** (Opus, expensive). Final code-reviewer pass over the whole branch diff before PR.
 
-**Exception — keep per-task code-quality review** when the task touches a Known Pitfall area from `AGENTS.md`:
+**Exception — keep per-task code-quality review** when the task touches a Known Pitfall area from `CLAUDE.md`:
 - Status workflows (`backend/src/constants/statuses.js`, any `*Service.js` state machine)
 - Stock math (`packages/shared/utils/stockMath.js`, `StockItem.jsx`, `StockTab.jsx`)
-- Cancel-with-return (three lockstep files in AGENTS.md Known Pitfalls #7)
+- Cancel-with-return (three lockstep files in CLAUDE.md Known Pitfalls #7)
 - Wix sync / webhook (`backend/src/services/wix*.js`, `backend/src/routes/wix*.js`)
 - Shadow-window writes (anything routed through `stockRepo` / `orderRepo` while a `*_BACKEND` flag is at `shadow`)
 
@@ -55,7 +55,7 @@ Don't paste the full plan into every executor subagent. The plan exists on disk 
 - The plan path so the subagent can read more if it needs to
 - The 3–5 file paths that task touches
 - The spec excerpt that constrains the task (1–2 paragraphs, not the whole spec)
-- Pointer to `AGENTS.md` for repo conventions (subagent reads automatically)
+- Pointer to `CLAUDE.md` for repo conventions (subagent reads automatically)
 
 That's it. No prior tasks, no future tasks, no chat history.
 
@@ -87,7 +87,7 @@ If two Codex sessions might run in this repo, create a worktree under `.worktree
 
 ### Pre-PR verification gate
 
-Before announcing the PR is ready, run the check matrix from `AGENTS.md` § "Pre-PR Verification". Specifically:
+Before announcing the PR is ready, run the check matrix from `CLAUDE.md` § "Pre-PR Verification". Specifically:
 1. Backend changes → `cd backend && npx vitest run` + `npm run harness &` then `npm run test:e2e`
 2. Shared changes → `cd packages/shared && ../../backend/node_modules/.bin/vitest run` AND build all three apps (`apps/florist`, `apps/dashboard`, `apps/delivery`)
 3. Single-app frontend changes → build that app, plus any other app touching files you changed in `packages/shared/`
@@ -99,10 +99,10 @@ Quote the actual output. No "tests pass" claims without the green output in the 
 0. **Branch hygiene gate** — before anything else, run `BRANCH_AUDIT_FRESH=1 bash .Codex/hooks/branch-audit.sh` (or invoke `/branches` for an interactive audit). If the audit reports >2 stale branches >7d old without an open PR, OR any open PR by the current user that hasn't been touched in >5 days, **stop and resolve those first**. Land them, close them, or salvage to BACKLOG. The "pile new work onto whatever branch is checked out" trap that produced the May 2026 branch graveyard happens because new features get started while old ones are still half-shipped. Don't add to the pile.
 1. **`superpowers:brainstorming`** — explore intent + design. Skip if the user's prompt to `/feature` already pins scope down to file-level decisions.
 2. **`superpowers:writing-plans`** — write the plan to `docs/superpowers/plans/YYYY-MM-DD-<feature>.md`. Enforce the right-size limits above. If the plan exceeds them, propose an MVP split before continuing.
-3. **`superpowers:using-git-worktrees`** — `.worktrees/<feature>/` with branch `feat/<feature>` (or `fix/`, `chore/`, etc. per `AGENTS.md`).
+3. **`superpowers:using-git-worktrees`** — `.worktrees/<feature>/` with branch `feat/<feature>` (or `fix/`, `chore/`, etc. per `CLAUDE.md`).
 4. **`superpowers:subagent-driven-development`** — execute with the model + review-cadence overrides above. Use phase-boundary reviews; per-task only for Known-Pitfall tasks.
 5. **`superpowers:verification-before-completion`** — run the check matrix, paste output.
-6. **`superpowers:finishing-a-development-branch`** — propose merge / PR / cleanup. PR description must name the verification path per `AGENTS.md` § "Verification Gate".
+6. **`superpowers:finishing-a-development-branch`** — propose merge / PR / cleanup. PR description must name the verification path per `CLAUDE.md` § "Verification Gate".
 
 ## When to bail to a lighter flow
 
