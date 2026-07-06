@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { formatDateDMY } from '../utils/formatDate.js';
 import { byDateAsc } from '../utils/sortByDate.js';
+import { windowTrace, DEFAULT_TRACE_WINDOW } from '../utils/traceWindow.js';
 import BalanceSparkline from './BalanceSparkline.jsx';
+import TraceWindowPills from './TraceWindowPills.jsx';
 
 /**
  * VarietyTracePanel — presentational per-Variety usage trail (PRD #324 T5).
@@ -34,10 +36,30 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
   // reveals the graph only when she wants it. Resets each time the row reopens.
   const [showGraph, setShowGraph] = useState(false);
 
+  // #4b: clip the trail to a recent window so months of history don't squash
+  // the part the owner cares about. Older events fold into the opening balance
+  // so the running total in the list + graph stays correct.
+  const [windowKey, setWindowKey] = useState(DEFAULT_TRACE_WINDOW);
+  const scoped = windowTrace(sorted, windowKey, { baseOpening: openingBalance });
+  const shownEvents = scoped.events;
+  const shownOpening = scoped.opening;
+
+  // Running absolute balance after each event (owner: "trace doesn't show the
+  // absolute amounts anymore"). Premade reservations don't move physical stock
+  // under the Y-model, so they don't advance the balance and show no total.
+  let running = shownOpening;
+  const withBalance = shownEvents.map((entry) => {
+    const counts = !!entry.date && entry.type !== 'premade';
+    if (!counts) return { entry, balance: null };
+    running += Number(entry.qty ?? entry.quantity ?? 0);
+    return { entry, balance: running };
+  });
+
   return (
     <div>
       {hasEvents && (
-        <div className="flex justify-end mb-1">
+        <div className="flex items-center justify-between mb-1 gap-2">
+          <TraceWindowPills windowKey={windowKey} onChange={setWindowKey} t={t} />
           <button
             type="button"
             data-testid="trace-graph-toggle"
@@ -49,12 +71,14 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
           </button>
         </div>
       )}
-      {showGraph && <BalanceSparkline events={sorted} t={t} onOrderClick={onOrderClick} opening={openingBalance} />}
+      {showGraph && <BalanceSparkline events={shownEvents} t={t} onOrderClick={onOrderClick} opening={shownOpening} />}
       {hasEvents ? (
         <ul className="divide-y divide-gray-50 bg-white rounded-lg border border-gray-100 overflow-hidden max-h-64 overflow-y-auto">
           {/* Opening balance (B2): stems that existed before these records —
-              so the first order/write-off isn't sitting on an empty shelf. */}
-          {openingBalance > 0 && (
+              so the first order/write-off isn't sitting on an empty shelf.
+              #4b: when a window folds older events, `shownOpening` grows to
+              absorb them and the hint says how many collapsed. */}
+          {shownOpening > 0 && (
             <li
               data-testid="opening-row"
               className="flex items-center justify-between px-3 py-2 bg-indigo-50/50"
@@ -64,16 +88,18 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
                   {t.traceOpening ?? 'Opening'}
                 </span>
                 <span className="text-xs text-gray-500 truncate">
-                  {t.traceOpeningHint ?? 'stock before these records'}
+                  {scoped.hiddenCount > 0
+                    ? `${scoped.hiddenCount} ${t.traceWindowFolded ?? 'earlier events folded in'}`
+                    : (t.traceOpeningHint ?? 'stock before these records')}
                 </span>
               </span>
               <span className="text-xs font-semibold tabular-nums text-indigo-700">
-                +{openingBalance} {t.stems}
+                +{shownOpening} {t.stems}
               </span>
             </li>
           )}
-          {sorted.map((entry, i) => (
-            <TraceRow key={i} entry={entry} t={t} onOrderClick={onOrderClick} />
+          {withBalance.map(({ entry, balance }, i) => (
+            <TraceRow key={i} entry={entry} balance={balance} t={t} onOrderClick={onOrderClick} />
           ))}
         </ul>
       ) : (
@@ -142,7 +168,7 @@ function trailDetail(entry, t) {
   }
 }
 
-function TraceRow({ entry, t, onOrderClick }) {
+function TraceRow({ entry, balance = null, t, onOrderClick }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
   const detail = trailDetail(entry, t);
   const clickable = entry.type === 'order' && !!onOrderClick && !!entry.orderRecordId;
@@ -188,6 +214,15 @@ function TraceRow({ entry, t, onOrderClick }) {
         ) : (
           <span className={`text-xs font-semibold tabular-nums ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
             {qty > 0 ? '+' : ''}{qty} {t.stems}
+          </span>
+        )}
+        {balance != null && (
+          <span
+            data-testid="trace-balance"
+            className={`text-[10px] tabular-nums w-14 text-right ${balance < 0 ? 'text-red-500 font-medium' : 'text-gray-500'}`}
+            title={t.traceBalance ?? 'Balance after this event'}
+          >
+            = {balance}
           </span>
         )}
       </div>

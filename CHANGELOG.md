@@ -5,6 +5,34 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — fix(stock): EVERY "create a new flower" form now captures Y-model Variety attrs (full codebase sweep)
+
+Owner-reported gap + a follow-up **whole-codebase audit** of every `POST /stock` create surface. Creating a flower the owner didn't have yet under `STOCK_Y_MODEL` was landing attr-less Stock rows the grouped view can't classify (root pitfall #9). Audited all frontend stock-create callers and fixed each:
+
+- New shared `NewVarietyFields` component (Type* / Colour / Size / Cultivar, datalist suggestions from loaded stock) rendered under the flag in **all 7 create-a-flower forms**: florist `BouquetEditor` + `steps/Step2Bouquet` (custom-flower) + `ReceiveStockForm`; dashboard `order/BouquetSection` + `OrderDetailPanel` + `steps/Step2Bouquet` (custom-flower) + `StockReceiveForm`.
+- Shared `useOrderEditing.openNewFlowerForm`/`addNewFlower` seed + POST the 4-tuple (typeName falls back to the display name — NOT NULL on prod; blank optionals → null). Each inline POST body (Step2Bouquet ×2, receive forms ×2, OrderDetailPanel) updated to carry the attrs.
+- **One-tap quick-adds** with no form (`OrderCard` inline "Add unlisted", `addNewFlowerQuick`) now send `typeName = name` so the row stays classifiable (Colour/Size/Cultivar unknown at one tap → refined later).
+- **Already correct** (no change): Y-model `VarietyAllocationPicker` create paths (`onCreateVariety` + fresh `onSelectStock`) in both Step2Bouquet files already carried the 4-tuple. PO pages don't `POST /stock` — stock is created backend-side at receipt (W1 type_name safety net covers it).
+- New translation keys `flowerType/flowerColour/flowerCultivar/flowerSizeCm` (florist + dashboard, ru/en). No backend change (`POST /stock` already accepts the attrs).
+- Tests: `NewVarietyFields.test.jsx` + `useOrderEditing` addNewFlower cases. Shared suite **727** green; all three apps build.
+
+## 2026-07-06 — data(stock): reconcile 4 phantom demand rows + 1 mislabel (prod, owner-approved)
+
+One-off prod correction (transactional, guarded, owner-approved per-row) of stale Y-model demand entries surfaced during the #4 trace review. Root cause: a fulfilled order (Delivered/Picked Up) left an **unsettled demand entry** instead of consuming real stock — the demand was never absorbed. Rows fixed:
+- **Peony Pink −11** (`5a229444`, phantom DE bound to Delivered order 202607-002): the order was delivered via a substitute — the on-hand batch mislabeled "Peony Pink · Sarah Bernhardt" (`dcf4867b`, q15) is actually plain Peony Pink. Relabeled cultivar → NULL, decremented 15→4 (the 11 delivered), deleted the phantom, repointed the order line to the real batch. **Peony Pink → net 4.**
+- **Hydrangea Pink −4** (`e4e56a1a`, phantom DE bound to Picked-Up order 202607-001): 9 real stems existed but were never consumed. FEFO-decremented the two oldest batches (22.Jun 1→0, 26.Jun 3→0) and deleted the phantom. **Hydrangea Pink → net 5** (shown cleanly as 5 on hand; the confusing 1-stem @50 zł duplicate row also cleared).
+- **2 orphan DEs** (`fdb40f9d` Peony·Sarah Bernhardt −1, `43b6c091` Hydrangea White −1, no order references): deleted.
+- Net inventory unchanged everywhere — only phantoms removed + real consumption recorded. **Systemic follow-up (#3): terminal-order demand must settle against real stock / substitute at fulfilment (and stock arrival must absorb open same-variety demand) so these phantoms can't recur.** Not yet coded.
+
+## 2026-07-06 — fix(stock): Y-model trace is read-only by default + windowed graph (#4 traceability)
+
+Owner feedback on the Y-model Stock trace: (1) received-lot stem counts could be changed casually via inline +/- ("you shall not just change the stems per order"); (2) the balance graph plotted the *entire* history, so recent weeks were unreadable.
+
+- **(a) Read-only stem counts.** The per-Batch `+/-` quick-adjust in the shared `VarietyListItem` expansion is now **hidden by default** and gated behind an explicit **owner-only "Correct count" toggle** (`variety-correct-toggle`). Non-owners never see it; the mode resets when the row collapses. An honest recount stays possible but never happens by accident. Decrements still go through Write-off, increments through PO receive.
+- **(b) Windowed trace graph + list.** New shared `windowTrace` util + `TraceWindowPills` segmented control (**2 нед / 1 мес / Все**, default **2 weeks**) on both `VarietyTracePanel` and `BatchTracePanel`. The window is anchored on the newest event (not "today"), and older events fold into the opening balance so the running total in the list + graph stays arithmetically correct (folded count surfaced in the opening row / a folded banner).
+- No backend/schema change; shared component so both apps inherit it. New translation keys: `correctCount`, `correctCountDone`, `window2w`, `window1m`, `windowAll`, `traceWindowFolded` (florist + dashboard, ru/en).
+- Tests: `traceWindow.test.js` (window math, folding, anchor, undated handling); `VarietyListItem.test.jsx` updated to the gated adjust behavior. Shared suite **718** green; florist + dashboard build clean.
+
 ## 2026-07-06 — fix(stock): over-consumed Batch no longer collides on the demand unique index (dup-key 500s)
 
 Prod symptom (Railway PG logs 2026-07-03 & 07-06): `duplicate key value violates unique constraint "stock_demand_variety_date_idx"` on order-creation / stock-adjust `UPDATE stock SET current_quantity`. Root cause: the cutover backfilled ~62 active Batches onto one shared date (`2026-06-29`); when order consumption pushed a **second** same-`(variety,date)` row negative via the raw `adjustQuantity` in `orderRepo` step 4, it collided with the existing negative Demand Entry on the partial unique index (`WHERE current_quantity < 0`). The order create/edit 500'd and rolled back.

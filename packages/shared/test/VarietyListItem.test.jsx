@@ -297,16 +297,33 @@ describe('VarietyListItem per-Batch quick-adjust', () => {
     ],
   };
 
-  it('renders no +/- controls when onAdjust is absent', () => {
+  // #4(a): stem counts are read-only until the owner explicitly enters
+  // "Correct count" mode. Enter it by clicking the toggle after expand.
+  function enterCorrectMode() {
+    fireEvent.click(screen.getByTestId('variety-correct-toggle'));
+  }
+
+  it('shows NO Correct-count toggle when onAdjust is absent', () => {
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
-      hideType={true} expanded={true} onToggle={() => {}} />);
+      hideType={true} expanded={true} isOwner={true} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-correct-toggle')).toBeNull();
     expect(screen.queryAllByTestId('variety-adjust-inc')).toHaveLength(0);
-    expect(screen.queryAllByTestId('variety-adjust-dec')).toHaveLength(0);
   });
 
-  it('renders +/- on Batch rows only, never on Demand rows', () => {
+  it('shows NO Correct-count toggle for a non-owner even with onAdjust', () => {
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
-      hideType={true} expanded={true} onToggle={() => {}} onAdjust={() => {}} />);
+      hideType={true} expanded={true} isOwner={false} onToggle={() => {}} onAdjust={() => {}} />);
+    expect(screen.queryByTestId('variety-correct-toggle')).toBeNull();
+    expect(screen.queryAllByTestId('variety-adjust-inc')).toHaveLength(0);
+  });
+
+  it('owner sees the toggle but +/- stay hidden until Correct-count is armed', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType={true} expanded={true} isOwner={true} onToggle={() => {}} onAdjust={() => {}} />);
+    expect(screen.getByTestId('variety-correct-toggle')).toBeInTheDocument();
+    // Hidden by default — this is the "not casually editable" guarantee.
+    expect(screen.queryAllByTestId('variety-adjust-inc')).toHaveLength(0);
+    enterCorrectMode();
     // After merge: 1 merged Batch row → 1 inc + 1 dec; the Demand row gets none.
     expect(screen.getAllByTestId('variety-adjust-inc')).toHaveLength(1);
     expect(screen.getAllByTestId('variety-adjust-dec')).toHaveLength(1);
@@ -316,7 +333,8 @@ describe('VarietyListItem per-Batch quick-adjust', () => {
     const onAdjust = vi.fn();
     const onRowClick = vi.fn();
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
-      hideType={true} expanded={true} onToggle={() => {}} onAdjust={onAdjust} onRowClick={onRowClick} />);
+      hideType={true} expanded={true} isOwner={true} onToggle={() => {}} onAdjust={onAdjust} onRowClick={onRowClick} />);
+    enterCorrectMode();
     fireEvent.click(screen.getAllByTestId('variety-adjust-inc')[0]);
     expect(onAdjust).toHaveBeenCalledWith('b1', 1);
     expect(onRowClick).not.toHaveBeenCalled();
@@ -325,7 +343,8 @@ describe('VarietyListItem per-Batch quick-adjust', () => {
   it('clicking - fires onAdjust(stockId, -1)', () => {
     const onAdjust = vi.fn();
     render(<VarietyListItem variety={v} reservations={new Map()} t={t}
-      hideType={true} expanded={true} onToggle={() => {}} onAdjust={onAdjust} />);
+      hideType={true} expanded={true} isOwner={true} onToggle={() => {}} onAdjust={onAdjust} />);
+    enterCorrectMode();
     fireEvent.click(screen.getAllByTestId('variety-adjust-dec')[0]);
     expect(onAdjust).toHaveBeenCalledWith('b1', -1);
   });

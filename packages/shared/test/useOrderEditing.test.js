@@ -125,6 +125,49 @@ function makeHookProps(overrides = {}) {
   };
 }
 
+describe('addNewFlower — Y-model Variety attrs (#gap)', () => {
+  it('openNewFlowerForm seeds the 4-tuple with typeName defaulted to the name', () => {
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+    act(() => result.current.openNewFlowerForm('Red Roses'));
+    expect(result.current.newFlowerForm).toMatchObject({
+      name: 'Red Roses', typeName: 'Red Roses', colour: '', sizeCm: '', cultivar: '',
+    });
+  });
+
+  it('addNewFlower POSTs the Variety 4-tuple (attrs + prices)', async () => {
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+    act(() => result.current.openNewFlowerForm('Red Roses'));
+    act(() => result.current.setNewFlowerForm(p => ({
+      ...p, typeName: 'Rose', colour: 'Red', sizeCm: '50', cultivar: 'Freedom',
+      costPrice: '3', sellPrice: '9', lotSize: '25', supplier: 'Stefan',
+    })));
+    await act(async () => { await result.current.addNewFlower(); });
+
+    expect(props.apiClient.post).toHaveBeenCalledWith('/stock', {
+      displayName: 'Red Roses',
+      typeName: 'Rose', colour: 'Red', sizeCm: 50, cultivar: 'Freedom',
+      costPrice: 3, sellPrice: 9, lotSize: 25, supplier: 'Stefan', quantity: 0,
+    });
+  });
+
+  it('addNewFlower falls back typeName to the name and nulls blank optional attrs', async () => {
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+    act(() => result.current.openNewFlowerForm('Mystery Bloom'));
+    // leave typeName as the seeded name, clear it to empty to prove the fallback
+    act(() => result.current.setNewFlowerForm(p => ({ ...p, typeName: '   ' })));
+    await act(async () => { await result.current.addNewFlower(); });
+
+    const body = props.apiClient.post.mock.calls[0][1];
+    expect(body.typeName).toBe('Mystery Bloom'); // fallback to display name (NOT NULL on prod)
+    expect(body.colour).toBeNull();
+    expect(body.sizeCm).toBeNull();
+    expect(body.cultivar).toBeNull();
+  });
+});
+
 describe('createDemandEntry', () => {
   // ── Legacy string path ────────────────────────────────────────────────────
 

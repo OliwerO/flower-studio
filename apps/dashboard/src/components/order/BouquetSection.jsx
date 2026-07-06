@@ -4,7 +4,7 @@ import {
   parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
-  shouldShowBouquetSection,
+  shouldShowBouquetSection, NewVarietyFields,
 } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -364,6 +364,15 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
           {newFlowerForm && (
             <div className="bg-indigo-50 rounded-xl px-4 py-3 space-y-2">
               <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {newFlowerForm.name}</p>
+              {yEnabled && (
+                <NewVarietyFields
+                  form={newFlowerForm}
+                  onChange={editing.setNewFlowerForm}
+                  t={t}
+                  stockItems={stockItems}
+                  idPrefix="nv-dash-bq"
+                />
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <input type="number" step="0.01" value={newFlowerForm.costPrice}
                   onChange={e => {

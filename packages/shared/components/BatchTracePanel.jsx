@@ -1,7 +1,9 @@
 import { useState } from 'react';
 import { formatDateDMY } from '../utils/formatDate.js';
 import { byDateAsc } from '../utils/sortByDate.js';
+import { windowTrace, DEFAULT_TRACE_WINDOW } from '../utils/traceWindow.js';
 import BalanceSparkline from './BalanceSparkline.jsx';
+import TraceWindowPills from './TraceWindowPills.jsx';
 
 /**
  * BatchTracePanel — presentational component rendering the per-batch usage trail.
@@ -23,6 +25,9 @@ export default function BatchTracePanel({ trail = [], t, onOrderClick }) {
   // graph is secondary and OFF by default behind a "Show graph" toggle — the
   // owner opens the list to see WHERE stems went, not a chart.
   const [showGraph, setShowGraph] = useState(false);
+  // #4b: scope the trail to a recent window (older events fold into the opening
+  // balance so the running total stays correct).
+  const [windowKey, setWindowKey] = useState(DEFAULT_TRACE_WINDOW);
 
   if (!trail || trail.length === 0) {
     return (
@@ -30,15 +35,20 @@ export default function BatchTracePanel({ trail = [], t, onOrderClick }) {
     );
   }
 
-  const dated = [];
+  const allDated = [];
   const reserved = [];
   for (const e of trail) {
     if (e.type === 'premade' || !e.date) reserved.push(e);
-    else dated.push(e);
+    else allDated.push(e);
   }
-  dated.sort(byDateAsc);
+  allDated.sort(byDateAsc);
 
-  let balance = 0;
+  const scoped = windowTrace(allDated, windowKey);
+  const dated = scoped.events;
+
+  // Running balance starts from the folded-away opening so a windowed view
+  // still shows the true stem count after each shown event.
+  let balance = scoped.opening;
   const withBalance = dated.map((entry) => {
     const qty = entry.qty ?? entry.quantity ?? 0;
     balance += qty;
@@ -47,8 +57,9 @@ export default function BatchTracePanel({ trail = [], t, onOrderClick }) {
 
   return (
     <div className="bg-white rounded-lg border border-gray-100 overflow-hidden">
-      {dated.length > 0 && (
-        <div className="flex justify-end px-2 pt-1">
+      {allDated.length > 0 && (
+        <div className="flex items-center justify-between px-2 pt-1 gap-2">
+          <TraceWindowPills windowKey={windowKey} onChange={setWindowKey} t={t} />
           <button
             type="button"
             data-testid="trace-graph-toggle"
@@ -60,7 +71,16 @@ export default function BatchTracePanel({ trail = [], t, onOrderClick }) {
           </button>
         </div>
       )}
-      {showGraph && <BalanceSparkline events={dated} t={t} onOrderClick={onOrderClick} />}
+      {showGraph && <BalanceSparkline events={dated} t={t} onOrderClick={onOrderClick} opening={scoped.opening} />}
+      {scoped.hiddenCount > 0 && (
+        <div
+          data-testid="trace-window-folded"
+          className="px-3 py-1.5 bg-indigo-50/60 border-b border-indigo-100 text-[11px] text-indigo-700 flex items-center justify-between"
+        >
+          <span>{scoped.hiddenCount} {t.traceWindowFolded ?? 'earlier events folded in'}</span>
+          <span className="tabular-nums font-semibold">= {scoped.opening} {t.stems}</span>
+        </div>
+      )}
       <ul className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
         {withBalance.map(({ entry, balance: bal }, i) => (
           <TraceRow key={`d-${i}`} entry={entry} balance={bal} t={t} onOrderClick={onOrderClick} />

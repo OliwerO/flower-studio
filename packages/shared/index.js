@@ -101,6 +101,9 @@ export { default as OrderTerminationConfirm } from './components/OrderTerminatio
 // Null-safe date comparators (CR-02 — never dereference null.localeCompare)
 export { byDateAsc, byDateDesc } from './utils/sortByDate.js';
 
+// Trace-window clipping for stock usage graphs (#4b)
+export { TRACE_WINDOWS, DEFAULT_TRACE_WINDOW, windowTrace } from './utils/traceWindow.js';
+
 // Stock Y-model allocation engine (issue #287, PRD #283)
 export { stockAllocationEngine } from './utils/stockAllocationEngine.js';
 
@@ -109,6 +112,7 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 
 // Variety allocation picker — Stage 1 typeahead (issue #288)
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
+export { default as NewVarietyFields } from './components/NewVarietyFields.jsx';
 
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.
 export { default as VarietyIdentity } from './components/VarietyIdentity.jsx';

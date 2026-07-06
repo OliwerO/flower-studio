@@ -35,6 +35,24 @@ describe('VarietyTracePanel — B2 opening balance', () => {
     render(<VarietyTracePanel events={evs} drift={6} t={{ ...t, unaccountedHint: 'from before the switch' }} />);
     expect(screen.getByTestId('unaccounted-footer')).toHaveTextContent('from before the switch');
   });
+
+  it('shows the running absolute balance after each event (#4 owner: "absolute amounts")', () => {
+    // opening 6 → order -5 = 1 → write-off -1 = 0 → purchase +30 = 30.
+    render(<VarietyTracePanel events={evs} openingBalance={6} t={{ ...t, traceOpening: 'Opening' }} />);
+    const balances = screen.getAllByTestId('trace-balance').map((n) => n.textContent.trim());
+    expect(balances).toEqual(['= 1', '= 0', '= 30']);
+  });
+
+  it('does not advance the balance for undated premade reservations', () => {
+    const withPremade = [
+      { type: 'purchase', date: '2026-06-05', quantity: 10, supplier: 'X' },
+      { type: 'premade', quantity: -3, bouquetName: 'Mix' }, // undated
+    ];
+    render(<VarietyTracePanel events={withPremade} t={t} />);
+    const balances = screen.getAllByTestId('trace-balance').map((n) => n.textContent.trim());
+    // Only the dated purchase row carries a balance; the premade row has none.
+    expect(balances).toEqual(['= 10']);
+  });
 });
 
 describe('VarietyTracePanel', () => {

@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -225,7 +225,7 @@ export default function Step2Bouquet({
   const [showCost, setShowCost]       = useState(false);
   const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
-  const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+  const [customFlower, setCustomFlower] = useState({ name: '', typeName: '', colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
   const [pendingPO, setPendingPO]     = useState({});
   const [reservations, setReservations] = useState(new Map());
   // Y-model picker state — opens when flag-on AND a Variety has >1 Stock Items
@@ -609,7 +609,7 @@ export default function Step2Bouquet({
                   setFlowerQuery('');
                 } else {
                   setShowCustomFlower(true);
-                  setCustomFlower({ name: flowerQuery, supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+                  setCustomFlower({ name: flowerQuery, typeName: flowerQuery, colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
                 }
               }}
               className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
@@ -716,6 +716,15 @@ export default function Step2Bouquet({
             placeholder={t.flowerName || 'Flower name'}
             className="field-input w-full text-sm"
           />
+          {yEnabled && (
+            <NewVarietyFields
+              form={customFlower}
+              onChange={setCustomFlower}
+              t={t}
+              stockItems={stock}
+              idPrefix="nv-florist-step2"
+            />
+          )}
           <div className="grid grid-cols-2 gap-2">
             <select
               value={customFlower.supplier}
@@ -799,8 +808,15 @@ export default function Step2Bouquet({
                   if (customFlower.supplier === '__other__' && supplierValue && !configSuppliers.some(s => s.toLowerCase() === supplierValue.toLowerCase())) {
                     client.put('/settings/config', { suppliers: [...configSuppliers, supplierValue] }).catch(() => {});
                   }
+                  const sizeRaw = customFlower.sizeCm;
                   const res = await client.post('/stock', {
                     displayName: customFlower.name.trim(),
+                    // Y-model Variety attrs (pitfall #9): typeName falls back to
+                    // the name so it is never blank (NOT NULL on prod).
+                    typeName: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
+                    colour: (customFlower.colour ?? '').trim() || null,
+                    sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+                    cultivar: (customFlower.cultivar ?? '').trim() || null,
                     supplier: supplierValue,
                     costPrice: Number(customFlower.costPrice) || 0,
                     sellPrice: Number(customFlower.sellPrice) || 0,

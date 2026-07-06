@@ -8,6 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
+import { useStockYModelFlag, NewVarietyFields } from '@flower-studio/shared';
 
 const NEW_ITEM_VALUE = '__new__';
 const NEW_SUPPLIER_VALUE = '__new_supplier__';
@@ -17,6 +18,8 @@ export default function StockReceiveForm({ stock, onDone }) {
   const [itemId, setItemId]       = useState('');
   const [newName, setNewName]     = useState('');
   const [newCategory, setNewCategory] = useState('Other');
+  const [newAttrs, setNewAttrs]   = useState({ typeName: '', colour: '', sizeCm: '', cultivar: '' });
+  const yEnabled = useStockYModelFlag();
   const [quantity, setQuantity]   = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [sellPrice, setSellPrice] = useState('');
@@ -100,9 +103,16 @@ export default function StockReceiveForm({ stock, onDone }) {
 
       // Create new stock item first if needed
       if (isNew) {
+        const sizeRaw = newAttrs.sizeCm;
         const res = await client.post('/stock', {
           displayName: newName.trim(),
           category: newCategory,
+          // Y-model Variety attrs (pitfall #9): typeName falls back to the name
+          // so it is never blank (NOT NULL on prod).
+          typeName: (newAttrs.typeName ?? '').trim() || newName.trim(),
+          colour: (newAttrs.colour ?? '').trim() || null,
+          sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+          cultivar: (newAttrs.cultivar ?? '').trim() || null,
           quantity: 0,
           costPrice: cost,
           sellPrice: sell,
@@ -173,6 +183,15 @@ export default function StockReceiveForm({ stock, onDone }) {
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
+            {yEnabled && (
+              <NewVarietyFields
+                form={newAttrs}
+                onChange={setNewAttrs}
+                t={t}
+                stockItems={stock}
+                idPrefix="nv-dash-receive"
+              />
+            )}
           </>
         ) : (
           <>
