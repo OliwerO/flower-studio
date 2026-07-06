@@ -24,7 +24,7 @@
  *
  * Pitfall #8: never inline qty − reserved subtraction; always use getVarietyTotals.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getVarietyTotals, getVarietyAvailability, arrivalsForVariety } from '../utils/stockMath.js';
 import { varietyFinancials } from '../utils/varietyFinancials.js';
 import { formatDateDMY } from '../utils/formatDate.js';
@@ -103,6 +103,16 @@ export default function VarietyListItem({
   // Reserved-bucket interactivity.
   const [premadeOpen, setPremadeOpen] = useState(false);
   const reservedInteractive = reservedForPremades > 0 && !!premadesByStockId;
+
+  // #4(a): received-lot stem counts are NOT casually editable. The per-Batch
+  // +/- adjust is hidden by default and only revealed by the owner via an
+  // explicit "Correct count" toggle — an honest recount stays possible, but a
+  // stem count never changes by accident. Owner-only; resets on collapse.
+  const [correctMode, setCorrectMode] = useState(false);
+  // Collapsing the row exits Correct-count mode so it never lingers armed.
+  useEffect(() => {
+    if (!expanded) setCorrectMode(false);
+  }, [expanded]);
 
   const premadeLines = [];
   if (premadesByStockId) {
@@ -307,6 +317,29 @@ export default function VarietyListItem({
               </span>
             </li>
           )}
+          {/* #4(a): owner-only "Correct count" toggle. Hidden by default so
+              received-lot stem counts can't change by accident; flipping it
+              reveals the per-Batch +/- adjust below. */}
+          {isOwner && onAdjust && (
+            <li
+              data-testid="variety-correct-count"
+              className="flex items-center justify-end px-6 py-1.5 border-b border-gray-100"
+            >
+              <button
+                type="button"
+                data-testid="variety-correct-toggle"
+                onClick={(e) => { e.stopPropagation(); setCorrectMode((m) => !m); }}
+                aria-pressed={correctMode}
+                className={`text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${
+                  correctMode
+                    ? 'bg-amber-500 text-white active:bg-amber-600'
+                    : 'bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200'
+                }`}
+              >
+                {correctMode ? (t.correctCountDone ?? 'Done') : (t.correctCount ?? 'Correct count')}
+              </button>
+            </li>
+          )}
           {expansionRows.map((row) => {
               const kind = row.kind;
               const isDemand = kind === 'demand';
@@ -322,7 +355,7 @@ export default function VarietyListItem({
               const rowClass = isDemand
                 ? 'w-full flex items-center justify-between px-6 py-2 text-sm text-red-700 bg-red-50'
                 : 'w-full flex items-center justify-between px-6 py-2 text-sm text-gray-700';
-              const showAdjust = !!onAdjust && !isDemand;
+              const showAdjust = !!onAdjust && !isDemand && isOwner && correctMode;
               // For merged Batch rows: adjust acts on the FEFO-oldest underlying
               // stock_id so positive +/- credits/debits the row that'll be consumed next.
               const adjustTargetId = row.stockIds[0];

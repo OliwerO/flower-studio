@@ -5,6 +5,15 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — fix(stock): Y-model trace is read-only by default + windowed graph (#4 traceability)
+
+Owner feedback on the Y-model Stock trace: (1) received-lot stem counts could be changed casually via inline +/- ("you shall not just change the stems per order"); (2) the balance graph plotted the *entire* history, so recent weeks were unreadable.
+
+- **(a) Read-only stem counts.** The per-Batch `+/-` quick-adjust in the shared `VarietyListItem` expansion is now **hidden by default** and gated behind an explicit **owner-only "Correct count" toggle** (`variety-correct-toggle`). Non-owners never see it; the mode resets when the row collapses. An honest recount stays possible but never happens by accident. Decrements still go through Write-off, increments through PO receive.
+- **(b) Windowed trace graph + list.** New shared `windowTrace` util + `TraceWindowPills` segmented control (**2 нед / 1 мес / Все**, default **2 weeks**) on both `VarietyTracePanel` and `BatchTracePanel`. The window is anchored on the newest event (not "today"), and older events fold into the opening balance so the running total in the list + graph stays arithmetically correct (folded count surfaced in the opening row / a folded banner).
+- No backend/schema change; shared component so both apps inherit it. New translation keys: `correctCount`, `correctCountDone`, `window2w`, `window1m`, `windowAll`, `traceWindowFolded` (florist + dashboard, ru/en).
+- Tests: `traceWindow.test.js` (window math, folding, anchor, undated handling); `VarietyListItem.test.jsx` updated to the gated adjust behavior. Shared suite **718** green; florist + dashboard build clean.
+
 ## 2026-07-06 — fix(stock): over-consumed Batch no longer collides on the demand unique index (dup-key 500s)
 
 Prod symptom (Railway PG logs 2026-07-03 & 07-06): `duplicate key value violates unique constraint "stock_demand_variety_date_idx"` on order-creation / stock-adjust `UPDATE stock SET current_quantity`. Root cause: the cutover backfilled ~62 active Batches onto one shared date (`2026-06-29`); when order consumption pushed a **second** same-`(variety,date)` row negative via the raw `adjustQuantity` in `orderRepo` step 4, it collided with the existing negative Demand Entry on the partial unique index (`WHERE current_quantity < 0`). The order create/edit 500'd and rolled back.

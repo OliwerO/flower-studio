@@ -101,6 +101,9 @@ export { default as OrderTerminationConfirm } from './components/OrderTerminatio
 // Null-safe date comparators (CR-02 — never dereference null.localeCompare)
 export { byDateAsc, byDateDesc } from './utils/sortByDate.js';
 
+// Trace-window clipping for stock usage graphs (#4b)
+export { TRACE_WINDOWS, DEFAULT_TRACE_WINDOW, windowTrace } from './utils/traceWindow.js';
+
 // Stock Y-model allocation engine (issue #287, PRD #283)
 export { stockAllocationEngine } from './utils/stockAllocationEngine.js';
 
