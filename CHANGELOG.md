@@ -5,6 +5,14 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — data(stock): reconcile 4 phantom demand rows + 1 mislabel (prod, owner-approved)
+
+One-off prod correction (transactional, guarded, owner-approved per-row) of stale Y-model demand entries surfaced during the #4 trace review. Root cause: a fulfilled order (Delivered/Picked Up) left an **unsettled demand entry** instead of consuming real stock — the demand was never absorbed. Rows fixed:
+- **Peony Pink −11** (`5a229444`, phantom DE bound to Delivered order 202607-002): the order was delivered via a substitute — the on-hand batch mislabeled "Peony Pink · Sarah Bernhardt" (`dcf4867b`, q15) is actually plain Peony Pink. Relabeled cultivar → NULL, decremented 15→4 (the 11 delivered), deleted the phantom, repointed the order line to the real batch. **Peony Pink → net 4.**
+- **Hydrangea Pink −4** (`e4e56a1a`, phantom DE bound to Picked-Up order 202607-001): 9 real stems existed but were never consumed. FEFO-decremented the two oldest batches (22.Jun 1→0, 26.Jun 3→0) and deleted the phantom. **Hydrangea Pink → net 5** (shown cleanly as 5 on hand; the confusing 1-stem @50 zł duplicate row also cleared).
+- **2 orphan DEs** (`fdb40f9d` Peony·Sarah Bernhardt −1, `43b6c091` Hydrangea White −1, no order references): deleted.
+- Net inventory unchanged everywhere — only phantoms removed + real consumption recorded. **Systemic follow-up (#3): terminal-order demand must settle against real stock / substitute at fulfilment (and stock arrival must absorb open same-variety demand) so these phantoms can't recur.** Not yet coded.
+
 ## 2026-07-06 — fix(stock): Y-model trace is read-only by default + windowed graph (#4 traceability)
 
 Owner feedback on the Y-model Stock trace: (1) received-lot stem counts could be changed casually via inline +/- ("you shall not just change the stems per order"); (2) the balance graph plotted the *entire* history, so recent weeks were unreadable.
