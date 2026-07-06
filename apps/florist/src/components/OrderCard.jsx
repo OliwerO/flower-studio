@@ -652,7 +652,10 @@ function OrderCard({
                                   e.stopPropagation();
                                   try {
                                     const res = await client.post('/stock', {
-                                      displayName: flowerSearch.trim(), quantity: 0,
+                                      // Y-model (pitfall #9): one-tap quick add has no
+                                      // attr form, so at least carry a non-null Type
+                                      // (= the name) so the row stays classifiable.
+                                      displayName: flowerSearch.trim(), typeName: flowerSearch.trim(), quantity: 0,
                                     });
                                     setEditLines(p => [...p, {
                                       id: null, stockItemId: res.data.id,

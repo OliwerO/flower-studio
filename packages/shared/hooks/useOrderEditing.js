@@ -313,7 +313,9 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
       return;
     }
     try {
-      const res = await apiClient.post('/stock', { displayName: name.trim(), quantity: 0 });
+      // Y-model (pitfall #9): quick add has no attr form — carry a non-null Type
+      // (= the name) so the row stays classifiable in the grouped Stock view.
+      const res = await apiClient.post('/stock', { displayName: name.trim(), typeName: name.trim(), quantity: 0 });
       setEditLines(prev => [...prev, {
         id: null, stockItemId: res.data.id, flowerName: res.data['Display Name'],
         quantity: 1, _originalQty: 0,

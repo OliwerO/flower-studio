@@ -5,14 +5,16 @@ Review this entire file before flipping to production.
 
 ---
 
-## 2026-07-06 — fix(stock): "Add new flower" in order intake now captures Y-model Variety attrs
+## 2026-07-06 — fix(stock): EVERY "create a new flower" form now captures Y-model Variety attrs (full codebase sweep)
 
-Owner-reported gap (missed in the earlier Y-model audit): creating a new order, searching for a flower she didn't have yet (e.g. "red roses") and clicking **Add new** opened a form capturing only price/lot/supplier — **no Type/Colour/Size/Cultivar**. Under `STOCK_Y_MODEL` that creates an attr-less Stock row the grouped Stock view can't classify (root pitfall #9 / the type_name NOT NULL class).
+Owner-reported gap + a follow-up **whole-codebase audit** of every `POST /stock` create surface. Creating a flower the owner didn't have yet under `STOCK_Y_MODEL` was landing attr-less Stock rows the grouped view can't classify (root pitfall #9). Audited all frontend stock-create callers and fixed each:
 
-- New shared `NewVarietyFields` component (Type* / Colour / Size / Cultivar, datalist suggestions from loaded stock) rendered under the flag in **all three** new-flower form sites: florist `BouquetEditor`, dashboard `BouquetSection` + `OrderDetailPanel`.
-- Shared `useOrderEditing.openNewFlowerForm` seeds the 4-tuple (typeName defaults to the searched name so it's never blank); `addNewFlower` POSTs `typeName/colour/sizeCm/cultivar` (blank optionals → null). `OrderDetailPanel`'s inline create path updated to match (parity).
-- New translation keys `flowerType/flowerColour/flowerCultivar/flowerSizeCm` (florist + dashboard, ru/en). Backend `POST /stock` already accepts the 4-tuple (no backend change).
-- Tests: `NewVarietyFields.test.jsx` + `useOrderEditing` addNewFlower attr cases. Shared suite **727** green; all three apps build.
+- New shared `NewVarietyFields` component (Type* / Colour / Size / Cultivar, datalist suggestions from loaded stock) rendered under the flag in **all 7 create-a-flower forms**: florist `BouquetEditor` + `steps/Step2Bouquet` (custom-flower) + `ReceiveStockForm`; dashboard `order/BouquetSection` + `OrderDetailPanel` + `steps/Step2Bouquet` (custom-flower) + `StockReceiveForm`.
+- Shared `useOrderEditing.openNewFlowerForm`/`addNewFlower` seed + POST the 4-tuple (typeName falls back to the display name — NOT NULL on prod; blank optionals → null). Each inline POST body (Step2Bouquet ×2, receive forms ×2, OrderDetailPanel) updated to carry the attrs.
+- **One-tap quick-adds** with no form (`OrderCard` inline "Add unlisted", `addNewFlowerQuick`) now send `typeName = name` so the row stays classifiable (Colour/Size/Cultivar unknown at one tap → refined later).
+- **Already correct** (no change): Y-model `VarietyAllocationPicker` create paths (`onCreateVariety` + fresh `onSelectStock`) in both Step2Bouquet files already carried the 4-tuple. PO pages don't `POST /stock` — stock is created backend-side at receipt (W1 type_name safety net covers it).
+- New translation keys `flowerType/flowerColour/flowerCultivar/flowerSizeCm` (florist + dashboard, ru/en). No backend change (`POST /stock` already accepts the attrs).
+- Tests: `NewVarietyFields.test.jsx` + `useOrderEditing` addNewFlower cases. Shared suite **727** green; all three apps build.
 
 ## 2026-07-06 — data(stock): reconcile 4 phantom demand rows + 1 mislabel (prod, owner-approved)
 

@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety } from '@flower-studio/shared';
+import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -100,7 +100,7 @@ export default function Step2Bouquet({
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
-  const [customFlower, setCustomFlower] = useState({ name: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+  const [customFlower, setCustomFlower] = useState({ name: '', typeName: '', colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
   // Pending purchase orders — drives the "arrives DD.Mmm" badge in the picker
   // so the owner can grab a flower that's on order instead of typing it again
   // and creating a duplicate stock card.
@@ -401,7 +401,7 @@ export default function Step2Bouquet({
               type="button"
               onClick={() => {
                 setShowCustomFlower(true);
-                setCustomFlower({ name: flowerQuery, supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+                setCustomFlower({ name: flowerQuery, typeName: flowerQuery, colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
               }}
               className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
             >
@@ -503,6 +503,15 @@ export default function Step2Bouquet({
             placeholder={t.flowerName || 'Flower name'}
             className="field-input w-full text-sm"
           />
+          {yEnabled && (
+            <NewVarietyFields
+              form={customFlower}
+              onChange={setCustomFlower}
+              t={t}
+              stockItems={stock}
+              idPrefix="nv-dash-step2"
+            />
+          )}
           {customNameMatch && (() => {
             const matchPo = pendingPO[customNameMatch.id];
             const matchPoLabel = formatPoDate(matchPo?.plannedDate);
@@ -561,8 +570,15 @@ export default function Step2Bouquet({
                   return;
                 }
                 try {
+                  const sizeRaw = customFlower.sizeCm;
                   const res = await client.post('/stock', {
                     displayName: customFlower.name.trim(),
+                    // Y-model Variety attrs (pitfall #9): typeName falls back to
+                    // the name so it is never blank (NOT NULL on prod).
+                    typeName: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
+                    colour: (customFlower.colour ?? '').trim() || null,
+                    sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+                    cultivar: (customFlower.cultivar ?? '').trim() || null,
                     supplier: customFlower.supplier || '',
                     costPrice: Number(customFlower.costPrice) || 0,
                     sellPrice: Number(customFlower.sellPrice) || 0,

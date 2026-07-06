@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import client from '../api/client.js';
-import { renderStockName } from '@flower-studio/shared';
+import { renderStockName, useStockYModelFlag, NewVarietyFields } from '@flower-studio/shared';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 
@@ -36,6 +36,8 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
   const [stockItemId, setStockItemId] = useState('');
   const [newName, setNewName]         = useState('');
   const [newCategory, setNewCategory] = useState('Other');
+  const [newAttrs, setNewAttrs]       = useState({ typeName: '', colour: '', sizeCm: '', cultivar: '' });
+  const yEnabled = useStockYModelFlag();
   const [qty, setQty]                 = useState('');
   const [price, setPrice]             = useState('');
   const [sellPrice, setSellPrice]     = useState('');
@@ -63,9 +65,16 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
 
       if (isNew) {
         // Create the stock item first, then log receipt
+        const sizeRaw = newAttrs.sizeCm;
         const res = await client.post('/stock', {
           displayName: newName.trim(),
           category:    newCategory,
+          // Y-model Variety attrs (pitfall #9): a newly-received flower must
+          // carry its 4-tuple; typeName falls back to the name (NOT NULL on prod).
+          typeName:    (newAttrs.typeName ?? '').trim() || newName.trim(),
+          colour:      (newAttrs.colour ?? '').trim() || null,
+          sizeCm:      sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+          cultivar:    (newAttrs.cultivar ?? '').trim() || null,
           quantity:    0,
           costPrice:   Number(price) || 0,
           sellPrice:   Number(sellPrice) || 0,
@@ -145,6 +154,17 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               </select>
             </Row>
           </div>
+          {yEnabled && (
+            <div className="mt-2">
+              <NewVarietyFields
+                form={newAttrs}
+                onChange={setNewAttrs}
+                t={t}
+                stockItems={stock}
+                idPrefix="nv-florist-receive"
+              />
+            </div>
+          )}
         </div>
       )}
 
