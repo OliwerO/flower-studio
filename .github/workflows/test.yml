@@ -152,7 +152,7 @@ jobs:
     timeout-minutes: 12
     services:
       postgres:
-        image: postgres:15-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_USER: lab
           POSTGRES_PASSWORD: lab

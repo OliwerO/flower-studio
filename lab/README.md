@@ -47,7 +47,7 @@ npm run lab:test:ui     # Playwright: UI smoke + flow tests
 ## CI
 
 The `lab-api` GitHub Actions job runs on every PR and push to master. It:
-1. Spins up a Postgres 15 service container (matches local Docker config).
+1. Spins up a Postgres 18 service container (matches local Docker config + prod).
 2. Runs `npm run lab:test:unit` (factory + scenario tests).
 3. Rebuilds `lab_template` with baseline scenario.
 4. Runs `npm run lab:test:api` (API integration tests).
