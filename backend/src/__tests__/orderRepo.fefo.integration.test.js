@@ -7,7 +7,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
 import { stock, orderLines } from '../db/schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 
 const dbHolder = { db: null };
 vi.mock('../db/index.js', () => ({
@@ -96,7 +96,11 @@ describe('createOrder FEFO routing (#319)', () => {
     expect(line.stockItemId).toBe(oldBatch.id);
   });
 
-  it('falls back to oldest Batch when none has enough cover (lets it go negative)', async () => {
+  it('when no Batch fully covers, routes shortfall to a Demand Entry — Batches never go negative (Option A)', async () => {
+    // Under Option A (2026-07 dup-key incident) a Batch is never driven negative:
+    // an under-covering line routes its whole demand to a dated Demand Entry so a
+    // negative Batch can't collide with a same-(variety,date) DE on the unique
+    // index. Both Batches keep their physical qty; the shortfall lives on the DE.
     const oldBatch = await seedBatch({ qty: 1, date: '2026-05-16' });
     const newBatch = await seedBatch({ qty: 2, date: '2026-05-18' });
 
@@ -113,8 +117,17 @@ describe('createOrder FEFO routing (#319)', () => {
 
     const [oldAfter] = await harness.db.select().from(stock).where(eq(stock.id, oldBatch.id));
     const [newAfter] = await harness.db.select().from(stock).where(eq(stock.id, newBatch.id));
-    expect(oldAfter.currentQuantity).toBe(-4);  // 1 - 5
-    expect(newAfter.currentQuantity).toBe(2);
+    expect(oldAfter.currentQuantity).toBe(1);   // untouched — no longer driven negative
+    expect(newAfter.currentQuantity).toBe(2);   // untouched
+
+    // A Demand Entry now carries the full order demand; Variety net = 1+2-5 = -2.
+    const all = await harness.db.select().from(stock)
+      .where(and(eq(stock.typeName, 'Hydrangea'), eq(stock.colour, 'White')));
+    const net = all.reduce((s, r) => s + Number(r.currentQuantity), 0);
+    expect(net).toBe(-2);
+    const de = all.find(r => Number(r.currentQuantity) < 0);
+    expect(de).toBeTruthy();
+    expect(Number(de.currentQuantity)).toBe(-5);
   });
 
   it('prefers newer full-cover Batch over older short Batch', async () => {

@@ -691,7 +691,16 @@ export async function createOrder(params, config, opts = {}) {
         const isDemandRow =
           _q < 0 ||
           (_q === 0 && stockRow.date != null && stockRow.date !== demandDate);
-        if (!isDemandRow) continue;
+        // Option A (2026-07, dup-key incident): a positive Batch that can't fully
+        // cover this line must NOT be pushed negative by step 4's raw
+        // adjustQuantity — a negative Batch collides with a same-(variety,date)
+        // Demand Entry on the `stock_demand_variety_date_idx` partial unique index
+        // (prod 500s on order create/edit). Route the WHOLE line's demand to the
+        // dated DE instead (create-or-sum at the order's need date, so different
+        // plan dates stay separate); the Batch keeps its physical qty. Net
+        // inventory is identical — shortfall lives on the DE, its proper home.
+        const isBatchUnderflow = _q > 0 && _q < Number(line.quantity);
+        if (!isDemandRow && !isBatchUnderflow) continue;
 
         // Y-model DE row: create or deepen dated DE
         const varietyKey = {
@@ -1194,6 +1203,33 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
             );
             line.stockItemId = de._pgId;
             line._deApplied = true;
+          }
+
+          // Option A (2026-07 dup-key incident): after FEFO, if the resolved Batch
+          // is positive but still can't fully cover this new line, route the whole
+          // demand to the dated DE instead of letting step-4's raw adjustQuantity
+          // drive the Batch negative (which would collide with a same-(variety,
+          // date) DE on the unique index). Mirrors createOrder step 3b.
+          if (!line._deApplied && line.stockItemId) {
+            const [b] = await tx.select({
+              typeName: stock.typeName, colour: stock.colour,
+              sizeCm: stock.sizeCm, cultivar: stock.cultivar,
+              currentQuantity: stock.currentQuantity,
+            }).from(stock)
+              .where(and(eq(stock.id, line.stockItemId), isNull(stock.deletedAt)))
+              .limit(1);
+            if (b?.typeName && Number(b.currentQuantity) > 0 && Number(b.currentQuantity) < Number(line.quantity)) {
+              const demandDate = computeDemandDate({
+                requiredBy: order.requiredBy || null,
+                orderDate:  new Date().toISOString().split('T')[0],
+              });
+              const de = await getOrCreateDemandEntry(
+                { typeName: b.typeName, colour: b.colour, sizeCm: b.sizeCm, cultivar: b.cultivar },
+                demandDate, Number(line.quantity), tx, actor,
+              );
+              line.stockItemId = de._pgId;
+              line._deApplied = true;
+            }
           }
         }
 
