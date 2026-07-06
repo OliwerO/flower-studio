@@ -31,6 +31,9 @@ const ORDERS_PATCH_ALLOWED = [
 
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram&forDate=2025-01-15
 // forDate: unified date filter — returns orders placed on OR due on that date (OR logic).
+//          EXCEPTION: combined with completedOnly, forDate matches Required By
+//          ONLY (fulfilment date) — the Completed tab means "delivered/picked
+//          up on this day", not "placed or due" (#390).
 // dateFrom/dateTo: legacy Order Date range filter (AND logic).
 // activeOnly: returns all non-terminal orders (excludes Delivered, Picked Up, Cancelled), sorted by Required By asc.
 router.get('/', async (req, res, next) => {
@@ -57,9 +60,15 @@ router.get('/', async (req, res, next) => {
       // Terminal orders only. If no date filter, show last 30 days.
       filters.push(`OR({Status} = '${ORDER_STATUS.DELIVERED}', {Status} = '${ORDER_STATUS.PICKED_UP}', {Status} = '${ORDER_STATUS.CANCELLED}')`);
       if (forDate) {
-        // Apply date filter inside completedOnly mode (was previously ignored — bug fix)
+        // Completed view shows terminal orders by FULFILMENT date (Required
+        // By — the same field the order cards display as "Delivery Date"),
+        // never by Order Date. Unlike the general `forDate` OR-search below
+        // (deliberately "placed OR due" for the default/active list), a
+        // Completed-tab date filter means "delivered/picked-up on this day" —
+        // matching an unrelated Order Date here surfaced orders that were
+        // merely *placed* that day but fulfilled on a different one (#390).
         const d = sanitizeFormulaValue(forDate);
-        filters.push(`OR(DATESTR({Order Date}) = '${d}', DATESTR({Required By}) = '${d}')`);
+        filters.push(`DATESTR({Required By}) = '${d}'`);
       } else if (!dateFrom) {
         // Legacy orders (imported or created before the requiredBy validation)
         // may have a blank Required By. Fall back to Order Date for the cutoff
@@ -124,7 +133,10 @@ router.get('/', async (req, res, next) => {
     } else if (completedOnly) {
       pgFilter.statuses = [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP, ORDER_STATUS.CANCELLED];
       if (forDate) {
-        pgFilter.forDate = forDate;
+        // Fulfilment-date-only match (Required By) — see the Airtable-formula
+        // comment above for why this must NOT reuse the general `forDate`
+        // OR-with-Order-Date key (#390).
+        pgFilter.completedForDate = forDate;
       } else if (!dateFrom) {
         pgFilter.completedSinceFallback = new Date(Date.now() - 30 * 86400000).toISOString().split('T')[0];
       }

@@ -114,11 +114,45 @@ function monthStart() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`;
 }
 
+// Session-scoped persistence for the filter/sort state (#338): the owner
+// filters Orders, navigates to a customer, comes back — the filter must
+// still be applied. sessionStorage (not localStorage) so a stale filter from
+// days ago doesn't silently reappear in a fresh browser session; it clears
+// naturally when the tab/window closes, same lifetime as the rest of the
+// owner's working session.
+const ORDERS_TAB_SESSION_KEY = 'dashboard_orders_tab_state';
+
+function loadPersistedState() {
+  try {
+    const raw = sessionStorage.getItem(ORDERS_TAB_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedState(state) {
+  try {
+    sessionStorage.setItem(ORDERS_TAB_SESSION_KEY, JSON.stringify(state));
+  } catch { /* sessionStorage unavailable (private mode, quota) — filters just won't persist */ }
+}
+
 export default function OrdersTab({ initialFilter, onNavigate, isActive = true }) {
   const STATUS_OPTIONS = getStatusOptions();
   // Seed filter from cross-tab initialFilter to avoid a double-fetch race —
   // state is set before the first render so the first fetch uses the right params.
   const f = initialFilter || {};
+  // An explicit incoming filter (Today-tab widget click, Ask Blossom deep
+  // link, etc.) always WINS over whatever was persisted from a previous
+  // session visit (#338) — otherwise a deep link into a specific status/date
+  // could get silently overridden by leftover state from an earlier look
+  // at the Orders tab.
+  const hasIncomingFilter = !!(
+    f.status || f.source || f.deliveryType || f.payment || f.paymentMethod || f.excludeCancelled ||
+    f.dateFrom || f.dateTo || f.orderDateFrom || f.orderDateTo || f.orderId ||
+    f.orderIdQuery || f.customerQuery || f.bouquetQuery || f.priceMin != null || f.priceMax != null
+  );
+  const persisted = hasIncomingFilter ? null : loadPersistedState();
   const [orders, setOrders]       = useState([]);
   const [loading, setLoading]     = useState(true);
   const [fetchError, setFetchError] = useState(false);
@@ -129,27 +163,30 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   // placed in June" with only orderDateFrom set) would get silently re-narrowed
   // to the current month on the fulfilment-date dimension it never asked about.
   const hasIncomingDateFilter = !!(f.dateFrom || f.dateTo || f.orderDateFrom || f.orderDateTo);
-  const [filter, setFilter] = useState(() => ({
-    ...EMPTY_ORDER_FILTER,
-    status: f.status || '',
-    source: f.source || '',
-    deliveryType: f.deliveryType || '',
-    paymentStatus: f.payment || '',            // legacy cross-tab key was `payment`
-    paymentMethod: f.paymentMethod || '',
-    excludeCancelled: !!f.excludeCancelled,
-    requiredByFrom: f.dateFrom || (hasIncomingDateFilter ? '' : monthStart()), // fulfilment date
-    requiredByTo: f.dateTo || (hasIncomingDateFilter ? '' : todayStr()),
-    orderDateFrom: f.orderDateFrom || '',      // order/submission date — distinct dimension
-    orderDateTo: f.orderDateTo || '',
-    // Client-only contains/range filters (Ask Blossom deep links, #review CR) —
-    // applied in memory below via orderMatchesClientFilter, never as the UUID
-    // `orderId` focus key (see focusOrderId/expandedId below).
-    orderIdQuery: f.orderIdQuery || '',
-    customerQuery: f.customerQuery || '',
-    bouquetQuery: f.bouquetQuery || '',
-    priceMin: f.priceMin ?? null,
-    priceMax: f.priceMax ?? null,
-  }));
+  const [filter, setFilter] = useState(() => {
+    if (persisted?.filter) return persisted.filter;
+    return {
+      ...EMPTY_ORDER_FILTER,
+      status: f.status || '',
+      source: f.source || '',
+      deliveryType: f.deliveryType || '',
+      paymentStatus: f.payment || '',            // legacy cross-tab key was `payment`
+      paymentMethod: f.paymentMethod || '',
+      excludeCancelled: !!f.excludeCancelled,
+      requiredByFrom: f.dateFrom || (hasIncomingDateFilter ? '' : monthStart()), // fulfilment date
+      requiredByTo: f.dateTo || (hasIncomingDateFilter ? '' : todayStr()),
+      orderDateFrom: f.orderDateFrom || '',      // order/submission date — distinct dimension
+      orderDateTo: f.orderDateTo || '',
+      // Client-only contains/range filters (Ask Blossom deep links, #review CR) —
+      // applied in memory below via orderMatchesClientFilter, never as the UUID
+      // `orderId` focus key (see focusOrderId/expandedId below).
+      orderIdQuery: f.orderIdQuery || '',
+      customerQuery: f.customerQuery || '',
+      bouquetQuery: f.bouquetQuery || '',
+      priceMin: f.priceMin ?? null,
+      priceMax: f.priceMax ?? null,
+    };
+  });
   const setFilterField = useCallback((key, value) => setFilter(prev => ({ ...prev, [key]: value })), []);
   // Editing a date-column filter switches off upcoming mode so the new date
   // range actually takes effect (upcoming owns the date scope; they're mutually exclusive).
@@ -163,10 +200,13 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
   // in the date range. A dismissable banner lets them return to the full list.
   const [focusOrderId, setFocusOrderId] = useState(f.orderId || null);
   const [selected, setSelected]   = useState(new Set());
-  const [upcomingMode, setUpcoming] = useState(!hasIncomingDateFilter && !f.orderId);
+  const [upcomingMode, setUpcoming] = useState(() => {
+    if (persisted?.filter) return persisted.upcomingMode ?? false;
+    return !hasIncomingDateFilter && !f.orderId;
+  });
   const [showPremade, setShowPremade] = useState(false);
-  const [sortBy, setSortBy]       = useState('deliveryDate');
-  const [sortDir, setSortDir]     = useState('asc'); // 'asc' | 'desc' — bidirectional sort
+  const [sortBy, setSortBy]       = useState(() => (hasIncomingFilter ? 'deliveryDate' : (persisted?.sortBy || 'deliveryDate')));
+  const [sortDir, setSortDir]     = useState(() => (hasIncomingFilter ? 'asc' : (persisted?.sortDir || 'asc'))); // 'asc' | 'desc' — bidirectional sort
   const [noDateOnly, setNoDateOnly] = useState(false); // surface orphan-date orders
   const { showToast }             = useToast();
 
@@ -233,6 +273,17 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
     document.addEventListener('visibilitychange', onVisible);
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders, fetchKey, isActive]);
+
+  // Persist filter + sort to sessionStorage on every change (#338) — so the
+  // state the owner set up survives both a collateral remount (a different
+  // tab's cross-tab navigation — see filterKeys in DashboardPage.jsx) and a
+  // genuine remount (navigating away and later back to Orders with no
+  // explicit incoming filter). Session-scoped, not localStorage — clears
+  // naturally at the end of the working session rather than persisting
+  // indefinitely across days.
+  useEffect(() => {
+    savePersistedState({ filter, sortBy, sortDir, upcomingMode });
+  }, [filter, sortBy, sortDir, upcomingMode]);
 
   // Derive distinct payment-method and source values from the loaded orders for
   // use in the Status column's bundled popover. No memoization needed — only
