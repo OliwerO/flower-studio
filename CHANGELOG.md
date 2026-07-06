@@ -5,6 +5,14 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — fix(stock): over-consumed Batch no longer collides on the demand unique index (dup-key 500s)
+
+Prod symptom (Railway PG logs 2026-07-03 & 07-06): `duplicate key value violates unique constraint "stock_demand_variety_date_idx"` on order-creation / stock-adjust `UPDATE stock SET current_quantity`. Root cause: the cutover backfilled ~62 active Batches onto one shared date (`2026-06-29`); when order consumption pushed a **second** same-`(variety,date)` row negative via the raw `adjustQuantity` in `orderRepo` step 4, it collided with the existing negative Demand Entry on the partial unique index (`WHERE current_quantity < 0`). The order create/edit 500'd and rolled back.
+
+- **Option A invariant (owner-approved): Batches never go negative — shortfall lives on the dated Demand Entry.** `orderRepo.createOrder` step 3b now also catches a positive Batch that can't fully cover a line and routes the **whole line's demand** to `getOrCreateDemandEntry(variety, needDate)` (create-or-sum), leaving the Batch at its physical qty. Same guard added to the order-**edit** new-line path. Net inventory is identical; the collision is impossible by construction. Routing on the order's **need date** means a far-future order opens a **new** demand for that plan date rather than merging into a nearer one (matches the Y-model demand model).
+- No data migration required — the fix handles the legacy shared-date rows and any future occurrence. No schema change.
+- Regression: `orderRepo.batchUnderflowDemand.integration.test.js` reproduces the exact `23505` collision (positive Batch + negative DE on the same variety+date) and proves it resolves; the pre-existing FEFO "goes negative" test was updated to the new invariant. Verified: backend vitest **941**, E2E **253**.
+
 ## 2026-07-06 — fix(wix): Pull now reads the NESTED per-variant visible path (follow-up to #511)
 
 Owner re-tested after #511 deployed: Push worked (live Wix confirmed sizes 11 & 7 at `variant.variant.visible = false`), but **Pull still reset all 7 variants to active**. Root cause: the per-variant `visible` flag in the `/stores/v1/products/query` response is **nested** at `variant.variant.visible` (same envelope as `priceData`) — #511's `runPull` read the **top-level** `variant.visible`, which is `undefined`, and `undefined !== false` coerces to `true`, so every variant round-tripped back to active.
