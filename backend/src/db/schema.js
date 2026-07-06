@@ -543,6 +543,12 @@ export const stockOrderLines = pgTable('stock_order_lines', {
   substituteQuantityFound:  integer('substitute_quantity_found').notNull().default(0),
   substituteCost:           numeric('substitute_cost', { precision: 10, scale: 4 }).notNull().default('0'),
   substituteSupplier:       text('substitute_supplier').notNull().default(''),
+  // Substitute Variety identity (#2) — classified by the owner at shopping entry.
+  // A substitute is its OWN flower; evaluation pre-fills its Type/Colour from these.
+  substituteTypeName:       text('substitute_type_name'),
+  substituteColour:         text('substitute_colour'),
+  substituteSizeCm:         integer('substitute_size_cm'),
+  substituteCultivar:       text('substitute_cultivar'),
   quantityAccepted:         integer('quantity_accepted').notNull().default(0),
   writeOffQty:              integer('write_off_qty').notNull().default(0),
   evalStatus:               text('eval_status').notNull().default(''),

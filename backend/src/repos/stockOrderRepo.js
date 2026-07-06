@@ -166,6 +166,11 @@ export function lineToWire(row) {
     'Alt Quantity Found':  row.substituteQuantityFound,
     'Alt Cost':            Number(row.substituteCost),
     'Alt Supplier':        row.substituteSupplier,
+    // Substitute Variety identity (#2) — classified at shopping entry
+    'Alt Type':            row.substituteTypeName ?? null,
+    'Alt Colour':          row.substituteColour   ?? null,
+    'Alt Size':            row.substituteSizeCm   ?? null,
+    'Alt Cultivar':        row.substituteCultivar ?? null,
     'Quantity Accepted':   row.quantityAccepted,
     'Write Off Qty':       row.writeOffQty,
     'Eval Status':         row.evalStatus,
@@ -194,6 +199,14 @@ function lineToPg(fields) {
   if ('Alt Quantity Found' in fields)  out.substituteQuantityFound  = Number(fields['Alt Quantity Found']) || 0;
   if ('Alt Cost' in fields)            out.substituteCost           = String(Number(fields['Alt Cost']) || 0);
   if ('Alt Supplier' in fields)        out.substituteSupplier       = fields['Alt Supplier'] || '';
+  // Substitute Variety identity (#2). Empty string → NULL (NULL-aware matching).
+  if ('Alt Type' in fields)     out.substituteTypeName = fields['Alt Type']   ? String(fields['Alt Type']).trim()   || null : null;
+  if ('Alt Colour' in fields)   out.substituteColour   = fields['Alt Colour'] ? String(fields['Alt Colour']).trim() || null : null;
+  if ('Alt Size' in fields) {
+    const n = Number(fields['Alt Size']);
+    out.substituteSizeCm = Number.isFinite(n) && n > 0 ? n : null;
+  }
+  if ('Alt Cultivar' in fields) out.substituteCultivar = fields['Alt Cultivar'] ? String(fields['Alt Cultivar']).trim() || null : null;
   if ('Quantity Accepted' in fields)   out.quantityAccepted         = Number(fields['Quantity Accepted']) || 0;
   if ('Write Off Qty' in fields)       out.writeOffQty              = Number(fields['Write Off Qty']) || 0;
   if ('Eval Status' in fields)         out.evalStatus               = fields['Eval Status'] || '';

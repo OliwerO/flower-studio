@@ -189,12 +189,31 @@ describe('stockOrderRepo line CRUD', () => {
       'Alt Cost':           4.5,
       'Alt Quantity Found': 20,
       'Alt Supplier':       'Market B',
+      // Substitute Variety identity classified at shopping entry (#2)
+      'Alt Type':           'Rose',
+      'Alt Colour':         'Pink',
+      'Alt Size':           50,
+      'Alt Cultivar':       'Pink Ohara',
     });
     const [r] = await harness.db.select().from(stockOrderLines).where(eq(stockOrderLines.id, line._pgId));
     expect(r.substituteFlowerName).toBe('Pink Rose');
     expect(Number(r.substituteCost)).toBe(4.5);
     expect(r.substituteQuantityFound).toBe(20);
     expect(r.substituteSupplier).toBe('Market B');
+    expect(r.substituteTypeName).toBe('Rose');
+    expect(r.substituteColour).toBe('Pink');
+    expect(r.substituteSizeCm).toBe(50);
+    expect(r.substituteCultivar).toBe('Pink Ohara');
+  });
+
+  it('updateLine normalises a blank Alt Type / zero Alt Size to NULL', async () => {
+    const po = await stockOrderRepo.create({ 'Stock Order ID': 'PO-AN', 'Created Date': '2026-05-08' });
+    const line = await stockOrderRepo.createLine({ 'Stock Orders': [po._pgId], 'Flower Name': 'Rose' });
+    await stockOrderRepo.updateLine(line._pgId, { 'Alt Type': '  ', 'Alt Size': 0, 'Alt Colour': '' });
+    const [r] = await harness.db.select().from(stockOrderLines).where(eq(stockOrderLines.id, line._pgId));
+    expect(r.substituteTypeName).toBeNull();
+    expect(r.substituteSizeCm).toBeNull();
+    expect(r.substituteColour).toBeNull();
   });
 
   it('lineToWire reads substitute_* back as Alt * for API surface', async () => {
@@ -205,10 +224,18 @@ describe('stockOrderRepo line CRUD', () => {
       'Alt Flower Name':    'Pink Rose',
       'Alt Cost':           4.5,
       'Alt Quantity Found': 20,
+      'Alt Type':           'Rose',
+      'Alt Colour':         'Pink',
+      'Alt Size':           50,
+      'Alt Cultivar':       'Pink Ohara',
     });
     expect(line['Alt Flower Name']).toBe('Pink Rose');
     expect(line['Alt Cost']).toBe(4.5);
     expect(line['Alt Quantity Found']).toBe(20);
+    expect(line['Alt Type']).toBe('Rose');
+    expect(line['Alt Colour']).toBe('Pink');
+    expect(line['Alt Size']).toBe(50);
+    expect(line['Alt Cultivar']).toBe('Pink Ohara');
   });
 
   it('getLinesForPos returns Map<pgUuid, line[]>', async () => {
