@@ -667,7 +667,15 @@ export async function queryRecordsHandler(spec) {
     if (hasChain) result.fanOut = fanOut;
     return result;
   } catch (err) {
-    console.error('[dataQueryPack] queryRecordsHandler error:', err.message);
+    // A failure here means the spec PASSED validation but the generated SQL
+    // still blew up — an engine bug by definition. Log the full spec so the
+    // backend service log alone identifies the failing shape: the PG-side log
+    // can't (it mixes in ad-hoc read-only client queries and has no spec).
+    console.error(
+      '[dataQueryPack] queryRecordsHandler post-validation failure:',
+      err.message,
+      '— spec:', JSON.stringify(spec),
+    );
     return { error: err.message };
   }
 }
