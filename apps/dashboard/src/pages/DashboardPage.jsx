@@ -63,11 +63,21 @@ export default function DashboardPage() {
   // Track whether the financial tab has ever been opened, so we only mount
   // the lazy-loaded Recharts bundle on first visit (not on initial page load).
   const [financialMounted, setFinancialMounted] = useState(activeTab === 'financial');
-  // filterKey increments on every cross-tab navigation, forcing the target tab
-  // to fully remount with a clean state. Without this, React may reuse the
-  // previous component instance and old filter state "leaks" across navigations.
-  // Think of it like resetting a workstation between different job orders.
-  const [filterKey, setFilterKey] = useState(0);
+  // Per-tab remount keys — one counter PER keyed tab, not a single shared one.
+  // A cross-tab navigateTo() bumps ONLY the destination tab's key, forcing
+  // just that tab to remount and pick up its fresh initialFilter. Other
+  // keyed tabs keep their key unchanged so they are NOT remounted and their
+  // local state (filters, sort, selection) survives.
+  //
+  // History (#338): all four keyed tabs (orders/stock/customers/explorer)
+  // used to share one `filterKey` counter, so navigating to e.g. Customers
+  // from an order's detail panel bumped the SAME key read by OrdersTab —
+  // remounting Orders too and silently wiping its filter/sort state even
+  // though the owner never touched that tab. Splitting the counter per tab
+  // fixes that collateral remount; OrdersTab additionally persists its
+  // filter/sort to sessionStorage so it also survives a genuine remount
+  // (e.g. the Orders tab itself is later navigated to fresh).
+  const [filterKeys, setFilterKeys] = useState({ orders: 0, stock: 0, customers: 0, explorer: 0 });
   const [showHelp, setShowHelp] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
   // New-order speed-dial FAB (bottom-right) — mirrors the florist app's FAB.
@@ -88,14 +98,15 @@ export default function DashboardPage() {
   const navigateTo = useCallback(({ tab, filter }) => {
     setActiveTab(tab);
     setTabFilter(filter || null);
-    setFilterKey(k => k + 1);
+    // Only bump the destination tab's own key — see filterKeys comment above.
+    setFilterKeys(prev => (tab in prev ? { ...prev, [tab]: prev[tab] + 1 } : prev));
     if (tab === 'financial') setFinancialMounted(true);
     try { localStorage.setItem('dashboard_tab', tab); } catch {}
   }, []);
 
   // When user clicks a tab pill manually, clear any navigation filter.
-  // Don't increment filterKey here — CSS hiding keeps tabs alive, so we only
-  // force remount on cross-tab navigation (navigateTo) with a new filter.
+  // Don't bump any filterKeys entry here — CSS hiding keeps tabs alive, so we
+  // only force a remount on cross-tab navigation (navigateTo) with a new filter.
   function handleTabClick(key) {
     setActiveTab(key);
     setTabFilter(null);
@@ -174,11 +185,11 @@ export default function DashboardPage() {
           <DayToDayTab isActive={activeTab === 'today'} onNavigate={navigateTo} />
         )}
         {renderMountedTab('orders',
-          <OrdersTab key={filterKey} isActive={activeTab === 'orders'} initialFilter={tabFilter} onNavigate={navigateTo} />
+          <OrdersTab key={filterKeys.orders} isActive={activeTab === 'orders'} initialFilter={tabFilter} onNavigate={navigateTo} />
         )}
         {renderMountedTab('newOrder',
           <>
-            {/* No key={filterKey}: the wizard must NOT remount when an unrelated
+            {/* No remount key: the wizard must NOT remount when an unrelated
                 tab triggers a cross-tab navigation, otherwise an in-progress
                 order is wiped. The matchPremadeId effect inside NewOrderTab
                 handles Match-Premade re-entries without a remount. */}
@@ -189,16 +200,16 @@ export default function DashboardPage() {
           </>
         )}
         {renderMountedTab('stock',
-          <StockTab key={filterKey} isActive={activeTab === 'stock'} initialFilter={tabFilter} onNavigate={navigateTo} />
+          <StockTab key={filterKeys.stock} isActive={activeTab === 'stock'} initialFilter={tabFilter} onNavigate={navigateTo} />
         )}
         {renderMountedTab('customers',
-          <CustomersTab key={filterKey} initialFilter={tabFilter} onNavigate={navigateTo} />
+          <CustomersTab key={filterKeys.customers} initialFilter={tabFilter} onNavigate={navigateTo} />
         )}
         {renderMountedTab('products',
           <ProductsTab />
         )}
         {renderMountedTab('explorer',
-          <ExplorerTab key={filterKey} isActive={activeTab === 'explorer'} initialFilter={tabFilter} onNavigate={navigateTo} />
+          <ExplorerTab key={filterKeys.explorer} isActive={activeTab === 'explorer'} initialFilter={tabFilter} onNavigate={navigateTo} />
         )}
         {renderMountedTab('issues',
           <IssuesTab />

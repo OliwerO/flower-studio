@@ -267,6 +267,12 @@ async function listFromPg(options = {}) {
   if (pg.sourceOther)       filters.push(or(eq(orders.source, 'Other'), isNull(orders.source)));
   else if (pg.source)       filters.push(eq(orders.source, pg.source));
   if (pg.forDate)           filters.push(or(eq(orders.orderDate, pg.forDate), eq(orders.requiredBy, pg.forDate)));
+  // Completed-tab date filter — fulfilment date ONLY (Required By), never
+  // OR'd with Order Date. Matches the order-card display convention
+  // (Delivery Date || Required By) and fixes #390: a completed order that
+  // was merely *placed* on the selected date but delivered/picked-up on a
+  // different one must not appear.
+  if (pg.completedForDate) filters.push(eq(orders.requiredBy, pg.completedForDate));
   if (pg.orderDateFrom)     filters.push(gte(orders.orderDate, pg.orderDateFrom));
   if (pg.completedSinceFallback) {
     // "Completed in last N days" — prefer Required By; fall back to Order Date

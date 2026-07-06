@@ -81,6 +81,30 @@ function todayISO() {
   return new Date().toISOString().split('T')[0];
 }
 
+// Session-scoped persistence for filter/view state (#338 parity — dashboard
+// OrdersTab persists the same way). /orders is a normal React Router route,
+// so navigating to an order's customer (or anywhere else) fully unmounts
+// this page; without this, the filter/view the florist just set up resets
+// to defaults the moment they come back. sessionStorage (not localStorage)
+// so it clears at the end of the working session rather than sticking
+// around across days.
+const ORDER_LIST_SESSION_KEY = 'florist_order_list_state';
+
+function loadPersistedListState() {
+  try {
+    const raw = sessionStorage.getItem(ORDER_LIST_SESSION_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function savePersistedListState(state) {
+  try {
+    sessionStorage.setItem(ORDER_LIST_SESSION_KEY, JSON.stringify(state));
+  } catch { /* sessionStorage unavailable (private mode, quota) — filters just won't persist */ }
+}
+
 export default function OrderListPage() {
   const navigate         = useNavigate();
   const location         = useLocation();
@@ -96,14 +120,28 @@ export default function OrderListPage() {
   // forced activeOnly=true would silently return zero rows for e.g. Cancelled.
   const seedsCompletedView = COMPLETED_STATUSES.includes(seededStatus) && seededStatus !== '';
 
+  // An explicit incoming filter (deep link) always WINS over persisted state
+  // from a previous visit this session (#338) — see ORDER_LIST_SESSION_KEY comment.
+  const hasIncomingFilter = !!(
+    navState.status || navState.source || navState.deliveryType || navState.payment ||
+    navState.paymentMethod || navState.excludeCancelled || navState.dateFrom || navState.dateTo ||
+    navState.orderDateFrom || navState.orderDateTo || navState.orderId ||
+    navState.orderIdQuery || navState.customerQuery || navState.bouquetQuery ||
+    navState.priceMin != null || navState.priceMax != null
+  );
+  const persistedList = hasIncomingFilter ? null : loadPersistedListState();
+
   const [orders, setOrders]         = useState([]);
   const [premadeBouquets, setPremadeBouquets] = useState([]);
   const [loading, setLoading]       = useState(true);
   const [ordersReady, setOrdersReady] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const [viewMode, setViewMode]     = useState(() => (seedsCompletedView ? VIEW_MODES.COMPLETED : VIEW_MODES.ACTIVE));
-  const [date, setDate]             = useState(''); // only used in completed view
-  const [status, setStatus]         = useState(() => seededStatus);
+  const [viewMode, setViewMode]     = useState(() => {
+    if (persistedList?.viewMode) return persistedList.viewMode;
+    return seedsCompletedView ? VIEW_MODES.COMPLETED : VIEW_MODES.ACTIVE;
+  });
+  const [date, setDate]             = useState(() => persistedList?.date || ''); // only used in completed view
+  const [status, setStatus]         = useState(() => (hasIncomingFilter ? seededStatus : (persistedList?.status ?? seededStatus)));
   const [noDateOnly, setNoDateOnly] = useState(false); // surface orphan-date orders
   const [fabOpen, setFabOpen]       = useState(false);
   const [showImport, setShowImport] = useState(false);
@@ -114,26 +152,29 @@ export default function OrderListPage() {
 
   // Shared order filter model (mirrors dashboard per-column filters).
   // status is kept in sync with the status tab so active count stays consistent.
-  const [filter, setFilter] = useState(() => ({
-    ...EMPTY_ORDER_FILTER,
-    status: seededStatus,
-    source: navState.source || '',
-    deliveryType: navState.deliveryType || '',
-    paymentStatus: navState.payment || '',        // legacy cross-tab key
-    paymentMethod: navState.paymentMethod || '',
-    excludeCancelled: !!navState.excludeCancelled,
-    requiredByFrom: navState.dateFrom || '',       // legacy cross-tab key — fulfilment date
-    requiredByTo: navState.dateTo || '',           // legacy cross-tab key
-    orderDateFrom: navState.orderDateFrom || '',   // order/submission date — distinct dimension
-    orderDateTo: navState.orderDateTo || '',
-    // Client-only contains/range filters (Ask Blossom deep links) — applied in
-    // memory via orderMatchesClientFilter below, never as the UUID focus key.
-    orderIdQuery: navState.orderIdQuery || '',
-    customerQuery: navState.customerQuery || '',
-    bouquetQuery: navState.bouquetQuery || '',
-    priceMin: navState.priceMin ?? null,
-    priceMax: navState.priceMax ?? null,
-  }));
+  const [filter, setFilter] = useState(() => {
+    if (persistedList?.filter) return persistedList.filter;
+    return {
+      ...EMPTY_ORDER_FILTER,
+      status: seededStatus,
+      source: navState.source || '',
+      deliveryType: navState.deliveryType || '',
+      paymentStatus: navState.payment || '',        // legacy cross-tab key
+      paymentMethod: navState.paymentMethod || '',
+      excludeCancelled: !!navState.excludeCancelled,
+      requiredByFrom: navState.dateFrom || '',       // legacy cross-tab key — fulfilment date
+      requiredByTo: navState.dateTo || '',           // legacy cross-tab key
+      orderDateFrom: navState.orderDateFrom || '',   // order/submission date — distinct dimension
+      orderDateTo: navState.orderDateTo || '',
+      // Client-only contains/range filters (Ask Blossom deep links) — applied in
+      // memory via orderMatchesClientFilter below, never as the UUID focus key.
+      orderIdQuery: navState.orderIdQuery || '',
+      customerQuery: navState.customerQuery || '',
+      bouquetQuery: navState.bouquetQuery || '',
+      priceMin: navState.priceMin ?? null,
+      priceMax: navState.priceMax ?? null,
+    };
+  });
   const [filterOpen, setFilterOpen] = useState(false);
 
   // Stock shortfall data: { stockId: { committed, name, currentQty, effective, orders } }
@@ -281,6 +322,13 @@ export default function OrderListPage() {
     return () => { clearInterval(interval); document.removeEventListener('visibilitychange', onVisible); };
   }, [fetchOrders]);
 
+  // Persist filter + view state to sessionStorage on every change (#338) —
+  // this is a normal React Router route, so navigating away (e.g. tapping a
+  // customer from an order card) fully unmounts this page; without this the
+  // florist's filter/view resets to defaults the moment they come back.
+  useEffect(() => {
+    savePersistedListState({ filter, viewMode, status, date });
+  }, [filter, viewMode, status, date]);
 
   // Owner: fetch dashboard data for today's summary + stock alerts
   useEffect(() => {

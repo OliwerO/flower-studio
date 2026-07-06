@@ -720,6 +720,40 @@ describe('list + getById', () => {
   it('getById throws 404 when order missing', async () => {
     await expect(orderRepo.getById('rec-does-not-exist')).rejects.toMatchObject({ statusCode: 404 });
   });
+
+  // Regression for #390: the Completed tab's single-date filter must match
+  // orders by FULFILMENT date (Required By), not by when they were placed
+  // (Order Date) — an order placed on the selected day but delivered on a
+  // different day must NOT appear.
+  it('pg.completedForDate matches Required By only, not Order Date', async () => {
+    // Placed on the 1st, delivered on the 5th — must show up under forDate=5th,
+    // NOT under forDate=1st.
+    const [placedOn1st] = await harness.db.insert(orders).values({
+      appOrderId: 'BLO-390-A', customerId: 'cust-390', orderDate: '2026-06-01',
+      requiredBy: '2026-06-05', deliveryType: 'Delivery', status: ORDER_STATUS.DELIVERED,
+      paymentStatus: 'Paid',
+    }).returning();
+    // Placed AND delivered on the 1st — should show up under forDate=1st.
+    const [placedAndDeliveredOn1st] = await harness.db.insert(orders).values({
+      appOrderId: 'BLO-390-B', customerId: 'cust-390', orderDate: '2026-06-01',
+      requiredBy: '2026-06-01', deliveryType: 'Pickup', status: ORDER_STATUS.PICKED_UP,
+      paymentStatus: 'Paid',
+    }).returning();
+
+    const forJune1 = await orderRepo.list({
+      pg: { statuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP], completedForDate: '2026-06-01' },
+    });
+    const ids = forJune1.map(o => o.id);
+    expect(ids).toContain(placedAndDeliveredOn1st.id);
+    expect(ids).not.toContain(placedOn1st.id);
+
+    const forJune5 = await orderRepo.list({
+      pg: { statuses: [ORDER_STATUS.DELIVERED, ORDER_STATUS.PICKED_UP], completedForDate: '2026-06-05' },
+    });
+    const ids5 = forJune5.map(o => o.id);
+    expect(ids5).toContain(placedOn1st.id);
+    expect(ids5).not.toContain(placedAndDeliveredOn1st.id);
+  });
 });
 
 // ─────────────────────────────────────────────────────────────────────
