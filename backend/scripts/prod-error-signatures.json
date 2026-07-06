@@ -1,0 +1,7 @@
+{
+  "signatures": [
+    "ERROR: duplicate key value violates unique constraint \"stock_demand_variety_date_idx\"",
+    "ERROR: null value in column \"date\" of relation \"stock\" violates not-null constraint",
+    "ERROR: null value in column \"type_name\" of relation \"stock\" violates not-null constraint"
+  ]
+}
