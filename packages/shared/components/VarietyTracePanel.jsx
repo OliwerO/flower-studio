@@ -44,6 +44,17 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
   const shownEvents = scoped.events;
   const shownOpening = scoped.opening;
 
+  // Running absolute balance after each event (owner: "trace doesn't show the
+  // absolute amounts anymore"). Premade reservations don't move physical stock
+  // under the Y-model, so they don't advance the balance and show no total.
+  let running = shownOpening;
+  const withBalance = shownEvents.map((entry) => {
+    const counts = !!entry.date && entry.type !== 'premade';
+    if (!counts) return { entry, balance: null };
+    running += Number(entry.qty ?? entry.quantity ?? 0);
+    return { entry, balance: running };
+  });
+
   return (
     <div>
       {hasEvents && (
@@ -87,8 +98,8 @@ export default function VarietyTracePanel({ events = [], unaccountedStems = 0, d
               </span>
             </li>
           )}
-          {shownEvents.map((entry, i) => (
-            <TraceRow key={i} entry={entry} t={t} onOrderClick={onOrderClick} />
+          {withBalance.map(({ entry, balance }, i) => (
+            <TraceRow key={i} entry={entry} balance={balance} t={t} onOrderClick={onOrderClick} />
           ))}
         </ul>
       ) : (
@@ -157,7 +168,7 @@ function trailDetail(entry, t) {
   }
 }
 
-function TraceRow({ entry, t, onOrderClick }) {
+function TraceRow({ entry, balance = null, t, onOrderClick }) {
   const qty = entry.qty ?? entry.quantity ?? 0;
   const detail = trailDetail(entry, t);
   const clickable = entry.type === 'order' && !!onOrderClick && !!entry.orderRecordId;
@@ -203,6 +214,15 @@ function TraceRow({ entry, t, onOrderClick }) {
         ) : (
           <span className={`text-xs font-semibold tabular-nums ${qty > 0 ? 'text-green-600' : 'text-red-600'}`}>
             {qty > 0 ? '+' : ''}{qty} {t.stems}
+          </span>
+        )}
+        {balance != null && (
+          <span
+            data-testid="trace-balance"
+            className={`text-[10px] tabular-nums w-14 text-right ${balance < 0 ? 'text-red-500 font-medium' : 'text-gray-500'}`}
+            title={t.traceBalance ?? 'Balance after this event'}
+          >
+            = {balance}
           </span>
         )}
       </div>
