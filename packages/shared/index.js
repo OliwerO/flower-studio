@@ -112,6 +112,7 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 
 // Variety allocation picker — Stage 1 typeahead (issue #288)
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
+export { default as NewVarietyFields } from './components/NewVarietyFields.jsx';
 
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.
 export { default as VarietyIdentity } from './components/VarietyIdentity.jsx';

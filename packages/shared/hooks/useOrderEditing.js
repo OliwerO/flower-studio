@@ -257,7 +257,10 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
 
   // ── New flower (full form — owner/dashboard) ───────────────────
   function openNewFlowerForm(name) {
-    setNewFlowerForm({ name, costPrice: '', sellPrice: '', lotSize: '', supplier: '' });
+    // Y-model: seed the Variety 4-tuple so a brand-new flower carries its attrs
+    // (Type NOT NULL on prod, drives grouping — root pitfall #9). typeName
+    // defaults to the searched name so it is never blank; the owner refines it.
+    setNewFlowerForm({ name, typeName: name, colour: '', sizeCm: '', cultivar: '', costPrice: '', sellPrice: '', lotSize: '', supplier: '' });
     setAddingFlower(false);
   }
 
@@ -271,8 +274,16 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
       return;
     }
     try {
+      // Y-model Variety attrs (root pitfall #9): a new flower must carry its
+      // 4-tuple. typeName falls back to the display name so it is never blank
+      // (NOT NULL on prod); blank optional attrs are sent as null.
+      const sizeRaw = newFlowerForm.sizeCm;
       const res = await apiClient.post('/stock', {
         displayName: newFlowerForm.name,
+        typeName: (newFlowerForm.typeName ?? '').trim() || newFlowerForm.name,
+        colour: (newFlowerForm.colour ?? '').trim() || null,
+        sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+        cultivar: (newFlowerForm.cultivar ?? '').trim() || null,
         costPrice: Number(newFlowerForm.costPrice) || 0,
         sellPrice: Number(newFlowerForm.sellPrice) || 0,
         lotSize: Number(newFlowerForm.lotSize) || 1,

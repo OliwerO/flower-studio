@@ -5,6 +5,15 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — fix(stock): "Add new flower" in order intake now captures Y-model Variety attrs
+
+Owner-reported gap (missed in the earlier Y-model audit): creating a new order, searching for a flower she didn't have yet (e.g. "red roses") and clicking **Add new** opened a form capturing only price/lot/supplier — **no Type/Colour/Size/Cultivar**. Under `STOCK_Y_MODEL` that creates an attr-less Stock row the grouped Stock view can't classify (root pitfall #9 / the type_name NOT NULL class).
+
+- New shared `NewVarietyFields` component (Type* / Colour / Size / Cultivar, datalist suggestions from loaded stock) rendered under the flag in **all three** new-flower form sites: florist `BouquetEditor`, dashboard `BouquetSection` + `OrderDetailPanel`.
+- Shared `useOrderEditing.openNewFlowerForm` seeds the 4-tuple (typeName defaults to the searched name so it's never blank); `addNewFlower` POSTs `typeName/colour/sizeCm/cultivar` (blank optionals → null). `OrderDetailPanel`'s inline create path updated to match (parity).
+- New translation keys `flowerType/flowerColour/flowerCultivar/flowerSizeCm` (florist + dashboard, ru/en). Backend `POST /stock` already accepts the 4-tuple (no backend change).
+- Tests: `NewVarietyFields.test.jsx` + `useOrderEditing` addNewFlower attr cases. Shared suite **727** green; all three apps build.
+
 ## 2026-07-06 — data(stock): reconcile 4 phantom demand rows + 1 mislabel (prod, owner-approved)
 
 One-off prod correction (transactional, guarded, owner-approved per-row) of stale Y-model demand entries surfaced during the #4 trace review. Root cause: a fulfilled order (Delivered/Picked Up) left an **unsettled demand entry** instead of consuming real stock — the demand was never absorbed. Rows fixed:

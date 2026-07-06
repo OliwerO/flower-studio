@@ -3,7 +3,7 @@ import {
   renderStockName, parseBatchName, findAllMatchingVariety,
   BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
-  allocateLinesAgainstVariety,
+  allocateLinesAgainstVariety, NewVarietyFields,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
@@ -255,6 +255,15 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
           {editing.newFlowerForm && (
             <div className="bg-indigo-50 rounded-xl px-3 py-3 space-y-2">
               <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {editing.newFlowerForm.name}</p>
+              {yEnabled && (
+                <NewVarietyFields
+                  form={editing.newFlowerForm}
+                  onChange={editing.setNewFlowerForm}
+                  t={t}
+                  stockItems={editing.stockItems}
+                  idPrefix="nv-florist"
+                />
+              )}
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
