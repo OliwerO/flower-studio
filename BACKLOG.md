@@ -6,7 +6,7 @@ Features and improvements tracked against original build phases.
 
 ## 🔭 Super-search / linked-record explorer (vision — spec captured 2026-07-01)
 
-Owner-requested: a structured, interactive DB explorer (query-driven grid, merges tables, drill down through relationships — e.g. flower → orders that bought a batch → customer → key person), plus an "Open in Explorer ▸" handoff from Ask Blossom. It's a second human-driven front-end on the same `query_records` engine — safe by construction. Foundation = the Ask Blossom drill-down suite (`feat/assistant-drilldown-suite`: query_records entity expansion + purchase_detail + list_values + orders bridge). Main engine gap = multi-hop joins. Full spec + open grill questions + phasing: `docs/superpowers/plans/2026-07-01-super-search-vision.md`. **Next:** run `/feature` (grill → PRD) AFTER the drill-down suite PR merges.
+**SHIPPED (2026-07-01/02).** This vision became the **Explorer** (ADR-0010 v1 PRD #485 closed; deep-join ADR-0011): `ExplorerTab.jsx` with sort/filter/group-by, drill navigation, saved views, CSV, multi-hop chain reports, column selection, and the two-way Ask Blossom handoff. Remaining v2 scope tracked in #496 → #499 (pivot & measures) + #500 (Wave 4 handoffs). Original spec kept for history: `docs/superpowers/plans/2026-07-01-super-search-vision.md`.
 
 ---
 
@@ -291,7 +291,7 @@ reports). Each item below was re-validated against the current code on
 - [x] "Lot Size" field unknown in dev Airtable — frontend correctly doesn't send from order creation; `airtableSchema.js:35` expects it in `STOCK_ORDER_LINES` only. Close once the dev base has the column added (infra hygiene, no code change).
 
 #### Spin-off (discovered during 2026-04-19 validation)
-- [ ] **Hardcoded `'Nikita'` driver fallback** — `backend/src/routes/stockOrders.js:471` uses the literal name instead of `getDriverOfDay()`. Separate from the "PO can't be saved" bug. Per the "hardcoded fallbacks" rule in CLAUDE.md, swap to `getDriverOfDay()`. Tier 2 cleanup.
+- [x] **Hardcoded `'Nikita'` driver fallback** — verified fixed (2026-07-06 audit): no literal driver name remains in `stockOrders.js`; driver assignment falls back to `getDriverOfDay() || null` (see `orders.js` convert-to-delivery).
 
 ### Tier 2 UX Fixes — Daily Friction (2026-04-03)
 - [x] **Can't submit order without address** — fixed 2026-04-23 in PR #143. `orders.js:273` + `premadeBouquets.js:146` both dropped the required-address check on Delivery orders. Date still mandatory.
