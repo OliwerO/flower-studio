@@ -88,7 +88,10 @@ describe('findOrCreateSubstituteStock — Variety capture (C13)', () => {
     expect(card.sizeCm).toBe(null); // 0 dropped, not stored
   });
 
-  it('leaves the substitute card attr-less when no attrs captured (no regression)', async () => {
+  it('defaults type_name to the base name when no attrs captured (Y-model NOT NULL safety net)', async () => {
+    // Was previously allowed to be attr-less (type_name NULL). Under Y-model
+    // prod enforces NOT NULL on type_name, so stockRepo.create defaults it to
+    // the base Display Name rather than 500. Colour/Size/Cultivar stay null.
     const orig = await seedOrig();
 
     const subId = await findOrCreateSubstituteStock(
@@ -96,7 +99,7 @@ describe('findOrCreateSubstituteStock — Variety capture (C13)', () => {
     );
 
     const card = await harness.db.select().from(stock).where(eq(stock.id, subId)).then(r => r[0]);
-    expect(card.typeName).toBe(null);
+    expect(card.typeName).toBe('Mystery Substitute');
     expect(card.colour).toBe(null);
   });
 });

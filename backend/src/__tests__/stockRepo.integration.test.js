@@ -314,3 +314,30 @@ describe('opts.tx — participate in an outer transaction (Phase 4 contract)', (
   });
 });
 
+describe('create() — type_name NOT NULL safety net (Y-model, audit 2026-07-06)', () => {
+  it('defaults type_name from the base Display Name when no Type is supplied', async () => {
+    // Reproduces the 5 PO/receive/substitute create paths that can reach the
+    // repo with no Type. Prod has NOT NULL on stock.type_name, so without this
+    // the INSERT throws a 500 and the PO evaluation / delivery receive fails.
+    const created = await stockRepo.create({
+      'Display Name': 'Dahlia Coral (6.Jul.)',
+      'Current Quantity': 10,
+    });
+    // Row exists (no throw) and carries a non-null Variety key with the date
+    // suffix stripped so every dated Batch shares one bucket.
+    const [row] = await harness.db.select().from(stock).where(eq(stock.id, created.id));
+    expect(row.typeName).toBe('Dahlia Coral');
+  });
+
+  it('never overwrites a Type that WAS supplied', async () => {
+    const created = await stockRepo.create({
+      'Display Name': 'Dahlia Coral (6.Jul.)',
+      Type: 'Dahlia',
+      Colour: 'Coral',
+      'Current Quantity': 10,
+    });
+    const [row] = await harness.db.select().from(stock).where(eq(stock.id, created.id));
+    expect(row.typeName).toBe('Dahlia');
+  });
+});
+

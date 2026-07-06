@@ -109,7 +109,7 @@ describe('POST /stock — 4-tuple Variety attributes', () => {
     expect(row.cultivar).toBeNull();
   });
 
-  it('legacy shape (no 4-tuple fields): still works; 4-tuple columns null in DB', async () => {
+  it('legacy shape (no 4-tuple fields): type_name defaults to base name, other attrs null (Y-model NOT NULL safety net)', async () => {
     const res = await supertest(app)
       .post('/stock')
       .set('x-test-role', 'florist')
@@ -121,13 +121,15 @@ describe('POST /stock — 4-tuple Variety attributes', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.Type).toBeNull();
+    // Prod enforces NOT NULL on type_name; the repo defaults it to the base
+    // Display Name so a legacy create never 500s. Colour/Size/Cultivar stay null.
+    expect(res.body.Type).toBe('Legacy Stem');
     expect(res.body.Colour).toBeNull();
     expect(res.body.Size).toBeNull();
     expect(res.body.Cultivar).toBeNull();
 
     const row = await getStockRow(res.body._pgId);
-    expect(row.typeName).toBeNull();
+    expect(row.typeName).toBe('Legacy Stem');
     expect(row.colour).toBeNull();
     expect(row.sizeCm).toBeNull();
     expect(row.cultivar).toBeNull();

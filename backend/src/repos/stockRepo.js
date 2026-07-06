@@ -555,6 +555,22 @@ export async function create(fields, opts = {}) {
     values.date = new Date().toISOString().split('T')[0];
   }
 
+  // Every Stock row must carry a non-null `type_name` (Y-model cutover added the
+  // NOT NULL constraint; the STOCK_Y_MODEL flag may still be off, but the column
+  // constraint is live). Several PO/receive/substitute create paths derive Type
+  // from a PO line or the originating Stock Item and can legitimately end up with
+  // none (attr-less legacy orig, unclassified substitute). Rather than let the
+  // INSERT throw a NOT NULL 500 that surfaces as an empty toast — and blocks the
+  // PO evaluation / delivery receive entirely — fall back to the base Display
+  // Name (date suffix stripped so every dated Batch of the same flower shares one
+  // Variety bucket). The owner can reclassify later via the Variety editor.
+  // Audit finding 2026-07-06: 5 create sites could reach here with null Type.
+  if (values.typeName == null || String(values.typeName).trim() === '') {
+    const rawName = String(values.displayName || values.purchaseName || '').trim();
+    const baseName = rawName.replace(/\s*\(.*\)\s*$/, '').trim();
+    values.typeName = baseName || 'Unclassified';
+  }
+
   if (opts.tx) {
     const [row] = await opts.tx.insert(stock).values(values).returning();
     await tryAudit(opts.tx, {

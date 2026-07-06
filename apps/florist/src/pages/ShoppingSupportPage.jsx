@@ -12,6 +12,15 @@ import t from '../translations.js';
 
 const DRIVER_STATUSES = ['Pending', 'Found All', 'Partial', 'Not Found'];
 
+// Parse a money string that may use a pl-locale comma ("12,5" → 12.5). Money
+// inputs use type="text" (not "number") so the comma isn't rejected on entry;
+// this normalizes it to a number on blur. Returns 0 for empty/invalid.
+function parseDecimal(v) {
+  if (v === '' || v == null) return 0;
+  const n = Number(String(v).replace(',', '.').trim());
+  return Number.isFinite(n) ? n : 0;
+}
+
 export default function ShoppingSupportPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -140,7 +149,7 @@ export default function ShoppingSupportPage() {
         flowerName: flowerName.trim(),
         supplier: supplier.trim(),
         quantity: stems,
-        costPrice: Number(costPrice) || 0,
+        costPrice: parseDecimal(costPrice),
         lotSize: Number(lotSize) || 0,
       });
       // Mark the new line as Found All immediately — the owner only adds lines
@@ -166,7 +175,11 @@ export default function ShoppingSupportPage() {
       if (o.id !== orderId) return o;
       let payments = {};
       try { payments = JSON.parse(o['Supplier Payments'] || '{}'); } catch {}
-      payments[supplier] = amount === '' ? '' : Number(amount) || 0;
+      // Keep the RAW keystroke string mid-edit — coercing to Number here strips
+      // in-progress decimals ("12." → 12) and turns a pl-locale comma ("12,5")
+      // into NaN → 0, so the owner could never type a decimal. Coercion happens
+      // once on blur in saveSupplierPayment.
+      payments[supplier] = amount;
       return { ...o, 'Supplier Payments': JSON.stringify(payments) };
     }));
   }
@@ -175,7 +188,8 @@ export default function ShoppingSupportPage() {
     const order = orders.find(o => o.id === orderId);
     let payments = {};
     try { payments = JSON.parse(order['Supplier Payments'] || '{}'); } catch {}
-    if (payments[supplier] === '') payments[supplier] = 0;
+    // Coerce the raw edit string → number here (normalize pl-locale comma → dot).
+    payments[supplier] = parseDecimal(payments[supplier]);
     try {
       await client.patch(`/stock-orders/${orderId}`, {
         'Supplier Payments': JSON.stringify(payments),
@@ -329,7 +343,7 @@ export default function ShoppingSupportPage() {
                       </label>
                       <div className="flex items-center gap-2">
                         <input
-                          type="number"
+                          type="text"
                           inputMode="decimal"
                           value={payments[supplier] ?? ''}
                           onChange={e => setLocalPayment(order.id, supplier, e.target.value)}
@@ -361,14 +375,14 @@ export default function ShoppingSupportPage() {
                   </label>
                   <div className="flex items-center gap-2">
                     <input
-                      type="number"
+                      type="text"
                       inputMode="decimal"
                       value={order['Driver Payment'] ?? ''}
                       onChange={e => setOrders(prev => prev.map(o => o.id === order.id ? { ...o, 'Driver Payment': e.target.value } : o))}
                       onBlur={async () => {
                         try {
                           await client.patch(`/stock-orders/${order.id}`, {
-                            'Driver Payment': Number(order['Driver Payment']) || 0,
+                            'Driver Payment': parseDecimal(order['Driver Payment']),
                           });
                         } catch (err) {
                           console.error('Driver Payment save failed', err);
@@ -487,11 +501,11 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
     // Save any pending local edits before changing status
     const pendingFields = {
       'Quantity Found': Number(local.qtyFound) || 0,
-      'Cost Price': Number(local.costPrice) || 0,
+      'Cost Price': parseDecimal(local.costPrice),
       'Alt Flower Name': local.altFlower || '',
       'Alt Supplier': local.altSupplier || '',
       'Alt Quantity Found': Number(local.altQty) || 0,
-      'Alt Cost': local.altCost === '' ? 0 : Number(local.altCost) || 0,
+      'Alt Cost': parseDecimal(local.altCost),
       Notes: local.notes || '',
       'Driver Status': newStatus,
     };
@@ -499,6 +513,12 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
       const fullQty = lots > 0 ? lots * lotSize : needed;
       pendingFields['Quantity Found'] = fullQty;
       setLocal(prev => ({ ...prev, qtyFound: fullQty }));
+    } else if (newStatus === 'Not Found') {
+      // Not Found ⇒ none of the ORIGINAL arrived (a substitute may replace it).
+      // Zero Quantity Found so the line can't carry a stale primary qty that the
+      // evaluation would otherwise book into stock (the double-book bug).
+      pendingFields['Quantity Found'] = 0;
+      setLocal(prev => ({ ...prev, qtyFound: 0 }));
     }
     onBlurLine();
     onUpdate(orderId, line.id, pendingFields);
@@ -565,12 +585,12 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
             <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.costPrice}</label>
             <div className="relative">
               <input
-                type="number"
+                type="text"
                 inputMode="decimal"
                 value={local.costPrice}
                 onChange={e => handleChange('costPrice', e.target.value)}
                 onFocus={onFocus}
-                onBlur={() => handleBlur({ 'Cost Price': local.costPrice === '' ? '' : Number(local.costPrice) || 0 })}
+                onBlur={() => handleBlur({ 'Cost Price': local.costPrice === '' ? '' : parseDecimal(local.costPrice) })}
                 className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 pr-8 bg-white dark:bg-dark-elevated outline-none"
               />
               <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ios-tertiary">zł</span>
@@ -627,12 +647,12 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                 <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altCost || 'Alt cost total'}</label>
                 <div className="relative">
                   <input
-                    type="number"
+                    type="text"
                     inputMode="decimal"
                     value={local.altCost ?? ''}
                     onChange={e => handleChange('altCost', e.target.value)}
                     onFocus={onFocus}
-                    onBlur={() => handleBlur({ 'Alt Cost': local.altCost === '' ? '' : Number(local.altCost) || 0 })}
+                    onBlur={() => handleBlur({ 'Alt Cost': local.altCost === '' ? '' : parseDecimal(local.altCost) })}
                     placeholder={(Number(local.costPrice || 0) * Number(local.altQty || 0)).toFixed(0) || '0'}
                     className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 pr-8 bg-white dark:bg-dark-elevated outline-none"
                   />
@@ -767,9 +787,8 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
         <div className="flex-1 relative">
           <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.costPerStem}</label>
           <input
-            type="number"
+            type="text"
             inputMode="decimal"
-            step="0.01"
             value={form.costPerStem}
             onChange={e => setForm(f => ({ ...f, costPerStem: e.target.value }))}
             placeholder="0"

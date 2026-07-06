@@ -498,7 +498,9 @@ router.get('/needs-backfill', authorize('stock', ['owner']), async (req, res, ne
 // Returns a sorted array of distinct non-null values for one of the four
 // Variety columns. Used by autocomplete inputs. Allowed columns:
 // typeName, colour, sizeCm, cultivar.
-router.get('/distinct/:column', authorize('stock', ['owner']), async (req, res, next) => {
+// Florist-accessible: the PO evaluation screen seeds its substitute Type/Colour
+// picker from these distinct values (read-only, low sensitivity).
+router.get('/distinct/:column', authorize('stock', ['owner', 'florist']), async (req, res, next) => {
   try {
     const values = await stockRepo.distinctValues(req.params.column);
     res.json(values);

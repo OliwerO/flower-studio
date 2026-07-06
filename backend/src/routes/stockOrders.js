@@ -774,8 +774,26 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const sellPrice = Number(line['Sell Price']) || 0;
         const supplier = line.Supplier || '';
 
-        const accepted = Number(evalLine.quantityAccepted) || 0;
-        const writeOff = Number(evalLine.writeOffQty) || 0;
+        let accepted = Number(evalLine.quantityAccepted) || 0;
+        let writeOff = Number(evalLine.writeOffQty) || 0;
+
+        // Double-book guard (prod incident 2026-07-06, PO-20260705-1).
+        // Driver Status "Not Found" means NONE of the ORIGINAL flower arrived —
+        // it was replaced by a substitute. The original must therefore never be
+        // received into stock, no matter what quantityAccepted the UI submits
+        // (the shopping screen could leave a stale Quantity Found on the line).
+        // If some of the original DID arrive it should be "Partial", not
+        // "Not Found". This is the authoritative server-side invariant; the
+        // florist UI mirrors it but the guard here is what makes the phantom
+        // structurally impossible. The substitute (alt*) is unaffected.
+        if (line['Driver Status'] === 'Not Found' && (accepted > 0 || writeOff > 0)) {
+          console.log(
+            `[STOCK-ORDER] Line ${evalLine.lineId} is "Not Found" — skipping primary receive ` +
+            `of ${accepted} (original "${line['Flower Name'] || ''}" was substituted, not delivered)`,
+          );
+          accepted = 0;
+          writeOff = 0;
+        }
         // Found = what was actually bought/paid for at market (Owner-entered
         // during Reviewing). This is the money-spend basis — the supplier
         // bills for it regardless of later write-off. Falls back to
