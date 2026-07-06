@@ -91,9 +91,9 @@ describe('GET /stock/needs-backfill', () => {
 });
 
 describe('GET /stock/distinct/:column', () => {
-  it('returns 403 for Florist', async () => {
+  it('allows Florist (read-only; feeds the PO evaluation substitute Type/Colour picker)', async () => {
     const res = await supertest(app).get('/stock/distinct/typeName').set('x-test-role', 'florist');
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
   it('returns 400 for disallowed column', async () => {

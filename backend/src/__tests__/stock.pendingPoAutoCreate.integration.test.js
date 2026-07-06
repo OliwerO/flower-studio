@@ -93,7 +93,7 @@ describe('GET /stock/pending-po auto-create — Variety attrs (C3)', () => {
     expect(created.cultivar).toBe('Sarah');
   });
 
-  it('leaves a legacy (Flower-Name-only) line attr-less — no regression', async () => {
+  it('defaults type_name to the flower name for a legacy (name-only) line (Y-model NOT NULL safety net)', async () => {
     const po = await seedPendingPo();
     await harness.db.insert(stockOrderLines).values({
       poId: po.id,
@@ -109,7 +109,8 @@ describe('GET /stock/pending-po auto-create — Variety attrs (C3)', () => {
     const created = await harness.db.select().from(stock)
       .where(eq(stock.displayName, 'Mystery Bloom')).then(r => r[0]);
     expect(created).toBeTruthy();
-    expect(created.typeName).toBe(null);
+    // NOT NULL on prod → default from the base name instead of 500; colour null.
+    expect(created.typeName).toBe('Mystery Bloom');
     expect(created.colour).toBe(null);
   });
 });

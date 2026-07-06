@@ -23,10 +23,22 @@ export default function StockEvaluationPage() {
   // substitutes will become brand-new stock cards on submit (edge case 2).
   const [knownStockNames, setKnownStockNames] = useState(new Set());
   const [committedMap, setCommittedMap] = useState({});
+  // Existing Variety Type/Colour values — seed the substitute classification
+  // picker so the florist selects a real Type instead of free-typing one (which
+  // is how "Dahlia Coral" once got Type="Dahlia Pink"). Datalist still allows a
+  // genuinely new value.
+  const [typeOptions, setTypeOptions] = useState([]);
+  const [colourOptions, setColourOptions] = useState([]);
 
   useEffect(() => {
     client.get('/stock/committed').then(r => setCommittedMap(r.data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!yModelOn) return;
+    client.get('/stock/distinct/type').then(r => setTypeOptions(r.data || [])).catch(() => {});
+    client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
+  }, [yModelOn]);
 
   useEffect(() => {
     client.get('/stock-orders/meta/lookups')
@@ -52,8 +64,13 @@ export default function StockEvaluationPage() {
           if (line['Eval Status'] === 'Processed') continue;
           const found = Number(line['Quantity Found']) || 0;
           const altFound = Number(line['Alt Quantity Found']) || 0;
+          // "Not Found" ⇒ none of the ORIGINAL arrived (it was substituted), so
+          // the primary is never received — default accepted to 0 regardless of
+          // any stale Quantity Found left on the line. Mirrors the server guard
+          // in stockOrders.js /evaluate. Only the substitute is accepted.
+          const notFound = line['Driver Status'] === 'Not Found';
           initial[line.id] = {
-            accepted: found, writeOff: 0, reason: 'Damaged',
+            accepted: notFound ? 0 : found, writeOff: 0, reason: 'Damaged',
             altAccepted: altFound, altWriteOff: 0, altReason: 'Damaged',
           };
         }
@@ -190,6 +207,13 @@ export default function StockEvaluationPage() {
 
   return (
     <div className="min-h-screen bg-ios-bg">
+      {/* Substitute Type/Colour pickers seed from existing Varieties (all lines share these). */}
+      <datalist id="sub-type-options">
+        {typeOptions.map(v => <option key={v} value={v} />)}
+      </datalist>
+      <datalist id="sub-colour-options">
+        {colourOptions.map(v => <option key={v} value={v} />)}
+      </datalist>
       <header className="glass-nav px-4 pt-3 pb-3 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <button onClick={() => navigate('/orders')} className="text-brand-600 font-medium text-sm">
@@ -336,8 +360,12 @@ export default function StockEvaluationPage() {
                               </div>
                             </div>
 
-                            {/* Accept / Write-off controls — only when primary supplier actually delivered */}
-                            {found > 0 && (
+                            {/* Accept / Write-off controls — only when the primary
+                                supplier actually delivered. "Not Found" means the
+                                original was substituted (never arrived), so the
+                                primary is hidden and only the substitute below is
+                                received — this is what stops the double-book. */}
+                            {found > 0 && line['Driver Status'] !== 'Not Found' && (
                               <AcceptWriteOffRow
                                 accepted={ev.accepted ?? found}
                                 writeOff={ev.writeOff || 0}
@@ -384,13 +412,13 @@ export default function StockEvaluationPage() {
                                       <p className="text-[11px] text-indigo-600">{t.substituteVarietyHint}</p>
                                       <div className="grid grid-cols-2 gap-1.5">
                                         <input
-                                          type="text" value={ev.altType || ''}
+                                          type="text" list="sub-type-options" value={ev.altType || ''}
                                           onChange={e => updateEval(line.id, { altType: e.target.value })}
                                           placeholder={t.subType}
                                           className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
                                         />
                                         <input
-                                          type="text" value={ev.altColour || ''}
+                                          type="text" list="sub-colour-options" value={ev.altColour || ''}
                                           onChange={e => updateEval(line.id, { altColour: e.target.value })}
                                           placeholder={t.subColour}
                                           className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
