@@ -336,6 +336,90 @@ export async function reverseLineStockEffect(stockItemId, quantity, mode, tx, ac
   return { kind: 'batch', stockId: result.stockId, newQty: result.newQty, released: true };
 }
 
+/**
+ * Settle a fulfilled-terminal order line's demand against real stock (Y-model, #3).
+ *
+ * Called when an order enters DELIVERED / PICKED UP — the physical stems have left
+ * the studio, so a Demand Entry the line still points at must be RECONCILED, not
+ * merely released like a cancellation. A cancellation "return" evaporates the
+ * demand and touches nothing physical; a fulfilment must also account for the real
+ * stems that shipped, or the Variety's net drifts (root cause of the 2026-07-06
+ * phantom demand rows: delivered orders left floating negatives).
+ *
+ * For a line bound to an open Demand Entry (linked row has typeName set AND
+ * currentQuantity < 0):
+ *   1. FEFO-consume same-Variety Batches by up to `quantity` stems (oldest date
+ *      first). Batches never go negative (W2) — we take min(qty, available), so a
+ *      partial cover just consumes what exists.
+ *   2. Release the line's FULL demand contribution from the DE (+qty toward 0),
+ *      soft-deleting the DE when it reaches >= 0. The order is done, so its share of
+ *      the shortfall no longer stands. Any qty NOT covered by a Batch was fulfilled
+ *      by a SUBSTITUTE (a different Variety) — that substitute is decremented via the
+ *      substitute-capture flow at entry, never guessed here.
+ *
+ * Net effect per Variety:
+ *   - Batch fully covered  → net unchanged (the DE was already reserving those stems).
+ *   - Uncovered (substitute) → same-Variety net rises to reflect that the shortfall
+ *     for THIS variety is gone (the customer received a substitute instead).
+ *
+ * Batch / legacy / deferred lines are a no-op: their stock was already decremented at
+ * order creation (step 4), so terminal fulfilment must not touch them again.
+ *
+ * Idempotent: a settled DE is soft-deleted, so a re-run (double PATCH, revert +
+ * re-deliver) finds no open DE for the line via findPgByAirtableOrUuid and skips.
+ *
+ * Must run inside the caller's db.transaction (tx required).
+ *
+ * @param {string} stockItemId - the order line's stock_item_id
+ * @param {number} quantity    - positive line quantity
+ * @param {object} tx          - Drizzle transaction handle (required)
+ * @param {object} [actor]
+ * @returns {Promise<{ kind: 'de'|'noop', consumed: number, released: number }>}
+ */
+export async function settleLineDemand(stockItemId, quantity, tx, actor = { actorRole: 'system', actorPinLabel: null }) {
+  const qty = Number(quantity) || 0;
+  if (qty <= 0) return { kind: 'noop', consumed: 0, released: 0 };
+
+  const row = await findPgByAirtableOrUuid(stockItemId, tx);
+  const isDe = !!row && !!row.typeName && Number(row.currentQuantity) < 0;
+  // Not an open Demand Entry → stock already consumed at creation (or nothing to do).
+  if (!isDe) return { kind: 'noop', consumed: 0, released: 0 };
+
+  // 1. FEFO-consume same-Variety Batches for the real stems that shipped.
+  const batches = await tx.select({ id: stock.id, qty: stock.currentQuantity })
+    .from(stock)
+    .where(and(
+      eq(stock.typeName, row.typeName),
+      row.colour   ? eq(stock.colour, row.colour)     : isNull(stock.colour),
+      row.sizeCm   ? eq(stock.sizeCm, row.sizeCm)     : isNull(stock.sizeCm),
+      row.cultivar ? eq(stock.cultivar, row.cultivar) : isNull(stock.cultivar),
+      sql`${stock.currentQuantity} > 0`,
+      isNull(stock.deletedAt),
+    ))
+    .orderBy(sql`${stock.date} ASC NULLS LAST`, sql`${stock.createdAt} ASC`);
+
+  let remaining = qty;
+  let consumed = 0;
+  for (const b of batches) {
+    if (remaining <= 0) break;
+    const take = Math.min(remaining, Number(b.qty));
+    if (take <= 0) continue;
+    await adjustQuantity(b.id, -take, { tx, actor });
+    remaining -= take;
+    consumed += take;
+  }
+
+  // 2. Release the line's full demand contribution from the DE (soft-delete at >= 0).
+  await reverseLineStockEffect(stockItemId, qty, 'return', tx, actor);
+
+  if (consumed < qty) {
+    // Uncovered remainder was fulfilled by a substitute Variety — logged for the
+    // #3 "where did this demand go" drill; the substitute is decremented elsewhere.
+    console.log(`[STOCK-SETTLE] Line ${stockItemId}: settled ${qty} demand, ${consumed} from real batches, ${qty - consumed} via substitute/uncovered.`);
+  }
+  return { kind: 'de', consumed, released: qty };
+}
+
 // ── Backend mode stub ──
 // getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
 // remove the callers in orderService.js and wix.js.

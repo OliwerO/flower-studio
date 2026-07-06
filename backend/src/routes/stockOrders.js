@@ -310,6 +310,8 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       'Flower Name', 'Supplier', 'Lot Size', 'Farmer',
       // Y-model Variety identity for new-Variety lines (issue #304)
       'Type', 'Colour', 'Size', 'Cultivar',
+      // Substitute Variety identity classified at shopping entry (#2)
+      'Alt Type', 'Alt Colour', 'Alt Size', 'Alt Cultivar',
     ];
     const fields = {};
     for (const key of allowed) {
@@ -943,14 +945,16 @@ router.post('/:id/evaluate', authorize('stock-orders', ['owner', 'florist']), as
         const altWriteOff = Number(evalLine.altWriteOffQty) || 0;
         const altSupplier = line['Alt Supplier'] || '';
         const altFlowerName = line['Alt Flower Name'] || '';
-        // C13: Variety attrs the florist captured for the substitute during
-        // evaluation. A substitute is its OWN flower — these are NOT the original
-        // line's attrs. Threaded onto the new substitute card + its dated Batch
-        // so a classified substitute is visible in the grouped Y-model view.
-        const altType     = evalLine.altType     ? String(evalLine.altType).trim()     : null;
-        const altColour   = evalLine.altColour   ? String(evalLine.altColour).trim()   : null;
-        const altSizeCm   = evalLine.altSize != null && Number.isFinite(Number(evalLine.altSize)) && Number(evalLine.altSize) > 0 ? Number(evalLine.altSize) : null;
-        const altCultivar = evalLine.altCultivar ? String(evalLine.altCultivar).trim() : null;
+        // C13 + #2: Variety attrs for the substitute. A substitute is its OWN flower
+        // — NOT the original line's attrs. Prefer the florist's eval-time value, then
+        // fall back to what the owner classified at shopping entry (persisted on the
+        // line as 'Alt Type' etc). Threaded onto the new substitute card + its dated
+        // Batch so a classified substitute is visible in the grouped Y-model view.
+        const altType     = (evalLine.altType     ? String(evalLine.altType).trim()     : '') || (line['Alt Type']   || null);
+        const altColour   = (evalLine.altColour   ? String(evalLine.altColour).trim()   : '') || (line['Alt Colour'] || null);
+        const altSizeRaw  = evalLine.altSize != null ? evalLine.altSize : line['Alt Size'];
+        const altSizeCm   = altSizeRaw != null && Number.isFinite(Number(altSizeRaw)) && Number(altSizeRaw) > 0 ? Number(altSizeRaw) : null;
+        const altCultivar = (evalLine.altCultivar ? String(evalLine.altCultivar).trim() : '') || (line['Alt Cultivar'] || null);
         const altVarietyAttrs = { Type: altType, Colour: altColour, Size: altSizeCm, Cultivar: altCultivar };
         const altQtyFound = Number(line['Alt Quantity Found']) || 0;
         const altCostTotal = Number(line['Alt Cost']) || 0;

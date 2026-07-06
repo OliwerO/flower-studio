@@ -854,6 +854,29 @@ export async function getOrderStatusHistory(orderId, runner = db) {
   };
 }
 
+// Settle Y-model demand for a fulfilled-terminal order (#3). Shared by the direct
+// status path (transitionStatus) and the delivery→order cascade (updateDelivery),
+// so a delivery marked Delivered by the driver settles exactly like a pickup marked
+// Picked Up. For each DE-bound, non-deferred line, reconcile its demand against real
+// stock (FEFO-consume) and release it — no-op + idempotent for non-DE lines.
+// Flag-gated; callers still guard on a FRESH entry into a fulfilled terminal.
+async function settleFulfilledOrderDemand(orderPgId, tx, actor) {
+  if (!getStockYModelEnabled()) return;
+  const lineRows = await tx.select().from(orderLines)
+    .where(and(eq(orderLines.orderId, orderPgId), isNull(orderLines.deletedAt)));
+  for (const line of lineRows) {
+    if (line.stockItemId && !line.stockDeferred && line.quantity > 0) {
+      await stockRepo.settleLineDemand(line.stockItemId, line.quantity, tx, actor);
+    }
+  }
+}
+
+// A fulfilled terminal = the stems physically left (Delivered / Picked Up).
+// Cancellation is NOT fulfilment — it keeps its own cancelWithStockReturn path.
+function isFulfilledTerminal(status) {
+  return status === ORDER_STATUS.DELIVERED || status === ORDER_STATUS.PICKED_UP;
+}
+
 export async function transitionStatus(orderId, newStatus, otherFields = {}, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
@@ -900,6 +923,15 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
       before: { Status: before.status }, after: { Status: after.status },
       ...actor,
     });
+
+    // Y-model: settle demand on a FRESH entry into a fulfilled terminal (#3).
+    // Entering DELIVERED / PICKED UP means the stems physically shipped, so any
+    // Demand Entry the lines still point at must be reconciled against real stock
+    // and released, never left floating as a phantom negative. settleLineDemand is
+    // idempotent; the guard skips re-entry (revert + re-deliver) and cancellation.
+    if (isFulfilledTerminal(newStatus) && newStatus !== currentStatus && !isFulfilledTerminal(currentStatus)) {
+      await settleFulfilledOrderDemand(after.id, tx, actor);
+    }
 
     // Cascade order status → delivery status. Bidirectional: the forward path
     // (Ready → … → Delivered) and the reverse path (revert Delivered → Ready
@@ -1413,6 +1445,12 @@ export async function updateDelivery(id, fields, opts = {}) {
             before: { Status: order.status }, after: { Status: updatedOrder.status },
             ...actor,
           });
+          // #3: a driver marking the DELIVERY Delivered cascades the order to
+          // Delivered here (a raw update, not transitionStatus) — settle its demand
+          // through the SAME seam so delivery orders reconcile like pickups do.
+          if (isFulfilledTerminal(orderStatus) && !isFulfilledTerminal(order.status)) {
+            await settleFulfilledOrderDemand(order.id, tx, actor);
+          }
         }
         linkedOrderId = order.airtableId || order.id;
       }

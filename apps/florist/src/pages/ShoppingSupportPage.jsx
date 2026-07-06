@@ -34,6 +34,16 @@ export default function ShoppingSupportPage() {
   // Track which line IDs have a focused input — skip them during poll refresh
   const focusedLines = useRef(new Set());
 
+  // Variety classification options for the substitute picker (#2). Seed the
+  // Type/Colour datalists from real stored Varieties so the owner picks an
+  // existing Type instead of free-typing one (which once mislabelled a batch).
+  const [typeOptions, setTypeOptions] = useState([]);
+  const [colourOptions, setColourOptions] = useState([]);
+  useEffect(() => {
+    client.get('/stock/distinct/type').then(r => setTypeOptions(r.data || [])).catch(() => {});
+    client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
+  }, []);
+
   // ── Fetch active POs (same pattern as StockPickupPage) ──
   const fetchOrders = useCallback(async (poll = false) => {
     try {
@@ -259,6 +269,9 @@ export default function ShoppingSupportPage() {
       </header>
 
       <main className="px-4 py-4 pb-32 space-y-6">
+        {/* Shared Variety datalists for the substitute Type/Colour pickers (#2) */}
+        <datalist id="shop-alt-type">{typeOptions.map(o => <option key={o} value={o} />)}</datalist>
+        <datalist id="shop-alt-colour">{colourOptions.map(o => <option key={o} value={o} />)}</datalist>
         {orders.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-3xl mb-2">🛒</p>
@@ -414,6 +427,8 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
     altSupplier:  line['Alt Supplier'] || '',
     altQty:       line['Alt Quantity Found'] ?? '',
     altCost:      line['Alt Cost'] ?? '',
+    altType:      line['Alt Type'] || '',
+    altColour:    line['Alt Colour'] || '',
     notes:        line.Notes || '',
   });
 
@@ -429,6 +444,8 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
         altSupplier:  line['Alt Supplier'] || '',
         altQty:       line['Alt Quantity Found'] ?? '',
         altCost:      line['Alt Cost'] ?? '',
+        altType:      line['Alt Type'] || '',
+        altColour:    line['Alt Colour'] || '',
         notes:        line.Notes || '',
       });
     }
@@ -615,6 +632,35 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
                 placeholder={t.shopping.altFlowerHint}
                 className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
               />
+            </div>
+            {/* Substitute Variety classification (#2) — owner picks Type/Colour at
+                entry from real Varieties; evaluation pre-fills from these. */}
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altType || 'Type'}</label>
+                <input
+                  type="text"
+                  list="shop-alt-type"
+                  value={local.altType}
+                  onChange={e => handleChange('altType', e.target.value)}
+                  onFocus={onFocus}
+                  onBlur={() => handleBlur({ 'Alt Type': local.altType })}
+                  placeholder={t.shopping.altTypeHint || ''}
+                  className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+                />
+              </div>
+              <div className="flex-1">
+                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altColour || 'Colour'}</label>
+                <input
+                  type="text"
+                  list="shop-alt-colour"
+                  value={local.altColour}
+                  onChange={e => handleChange('altColour', e.target.value)}
+                  onFocus={onFocus}
+                  onBlur={() => handleBlur({ 'Alt Colour': local.altColour })}
+                  className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+                />
+              </div>
             </div>
             <div className="flex gap-2">
               <div className="flex-1">

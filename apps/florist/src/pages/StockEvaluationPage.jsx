@@ -72,6 +72,12 @@ export default function StockEvaluationPage() {
           initial[line.id] = {
             accepted: notFound ? 0 : found, writeOff: 0, reason: 'Damaged',
             altAccepted: altFound, altWriteOff: 0, altReason: 'Damaged',
+            // Pre-fill the substitute's Variety classification from what the owner
+            // captured at shopping entry (#2). The florist can still adjust it.
+            altType:     line['Alt Type']     || '',
+            altColour:   line['Alt Colour']   || '',
+            altSize:     line['Alt Size']     ?? '',
+            altCultivar: line['Alt Cultivar'] || '',
           };
         }
       }

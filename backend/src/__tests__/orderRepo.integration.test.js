@@ -1183,3 +1183,216 @@ describe('updateOrder Delivery→Pickup cancel cascade (#317)', () => {
     expect(allDeliveries).toHaveLength(0);
   });
 });
+
+// ─────────────────────────────────────────────────────────────────────
+// transitionStatus — Y-model demand settlement (#3)
+//
+// When an order enters a fulfilled-terminal state (Delivered / Picked Up) the
+// stems have physically shipped, so any Demand Entry the lines still point at
+// must be reconciled: FEFO-consume real same-Variety Batches for the stems that
+// left, and release the line's demand from the DE (soft-delete at >= 0). A
+// delivered order must never leave a floating negative (the 2026-07-06 phantom).
+// ─────────────────────────────────────────────────────────────────────
+
+describe('transitionStatus — Y-model demand settlement (#3)', () => {
+  // Seed a 0-qty Variety ANCHOR with a stale date. An order line pointing at it is
+  // classified as needing a Demand Entry (qty 0 + date ≠ the order's demand date),
+  // so createOrder step 3b builds the real dated DE fresh — mirroring prod, where
+  // the orders (not a pre-seed) create the DE. The 0-qty anchor contributes 0 to net.
+  async function seedAnchor(attrs = {}) {
+    const [a] = await harness.db.insert(stock).values({
+      displayName: `Peony Pink (anchor)`,
+      currentQuantity: 0,
+      typeName: 'Peony', colour: 'Pink', sizeCm: null, cultivar: null,
+      date: '2000-01-01', active: true, ...attrs,
+    }).returning();
+    return a.id;
+  }
+  async function seedBatch(qty, date, attrs = {}) {
+    const [b] = await harness.db.insert(stock).values({
+      displayName: `Peony Pink batch ${date || ''}`,
+      currentQuantity: qty, // positive
+      typeName: 'Peony', colour: 'Pink', sizeCm: null, cultivar: null,
+      date: date || null, active: true, ...attrs,
+    }).returning();
+    return b.id;
+  }
+  // Net effective stock for the Peony/Pink Variety = SUM of all live rows.
+  async function peonyNet() {
+    const rows = await harness.db.select().from(stock)
+      .where(and(eq(stock.typeName, 'Peony'), eq(stock.colour, 'Pink')));
+    return rows
+      .filter(r => r.deletedAt == null)
+      .reduce((n, r) => n + Number(r.currentQuantity), 0);
+  }
+  async function makeOrder(anchorId, qty, requiredBy = '2026-07-10') {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Peony order', deliveryType: 'Pickup',
+      requiredBy,
+      orderLines: [{ stockItemId: anchorId, flowerName: 'Peony', quantity: qty, sellPricePerUnit: 20 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+    // Read the persisted line to get its CURRENT binding (rebound to the dated DE).
+    const [line] = await harness.db.select().from(orderLines)
+      .where(eq(orderLines.orderId, order.id));
+    return { order, lineStockId: line.stockItemId };
+  }
+
+  it('substitute case (no covering batch): releases the DE, net rises to 0, no batch touched', async () => {
+    yModelFlag.enabled = true;
+    const anchorId = await seedAnchor();       // Peony Pink Variety, no batch exists
+    const { order, lineStockId } = await makeOrder(anchorId, 11);
+
+    expect(await peonyNet()).toBe(-11);        // shortfall standing
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    // DE released + soft-deleted; no same-Variety batch to consume.
+    const [de] = await harness.db.select().from(stock).where(eq(stock.id, lineStockId));
+    expect(de.deletedAt).not.toBeNull();
+    expect(await peonyNet()).toBe(0);          // shortfall gone — substitute fulfilled it
+  });
+
+  it('batch fully covers (incident post-relabel): consumes the batch, DE gone, net unchanged', async () => {
+    yModelFlag.enabled = true;
+    const anchorId = await seedAnchor();
+    // Order placed with no stock → DE -11. Batch arrives AFTER without absorbing it
+    // (the mislabel incident: variety-key mismatch skipped ADR-0002 absorption).
+    const { order, lineStockId } = await makeOrder(anchorId, 11);
+    const batchId = await seedBatch(15, '2026-07-06');
+
+    expect(await peonyNet()).toBe(4);          // 15 - 11
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(4);     // 15 - 11 consumed
+    const [de] = await harness.db.select().from(stock).where(eq(stock.id, lineStockId));
+    expect(de.deletedAt).not.toBeNull();       // DE settled + dropped
+    expect(await peonyNet()).toBe(4);          // net unchanged — DE was already reserving
+  });
+
+  it('partial cover: consumes all of a too-small batch, releases the DE, net rises to 0', async () => {
+    yModelFlag.enabled = true;
+    const anchorId = await seedAnchor();
+    const { order, lineStockId } = await makeOrder(anchorId, 11);
+    const batchId = await seedBatch(5, '2026-07-06');   // too-small batch arrives after
+
+    expect(await peonyNet()).toBe(-6);         // 5 - 11
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(0);     // drained, never negative (W2)
+    const [de] = await harness.db.select().from(stock).where(eq(stock.id, lineStockId));
+    expect(de.deletedAt).not.toBeNull();
+    expect(await peonyNet()).toBe(0);          // 6 uncovered → substitute; shortfall cleared
+  });
+
+  it('shared DE (two orders same Variety+date): settling one releases only its qty', async () => {
+    yModelFlag.enabled = true;
+    const anchorId = await seedAnchor();       // orders build the dated DE
+    const a = await makeOrder(anchorId, 5, '2026-07-10');
+    const b = await makeOrder(anchorId, 3, '2026-07-10');
+    const batchId = await seedBatch(10, '2026-07-06');  // batch arrives after both orders
+    // Both bind to one dated DE at -8 (5 + 3).
+    expect(a.lineStockId).toBe(b.lineStockId);
+    const [sharedBefore] = await harness.db.select().from(stock).where(eq(stock.id, a.lineStockId));
+    expect(sharedBefore.currentQuantity).toBe(-8);
+
+    // Deliver order A (qty 5).
+    await orderRepo.transitionStatus(a.order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(a.order.id, ORDER_STATUS.PICKED_UP);
+
+    const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(5);     // 10 - 5 consumed for A
+    const [sharedAfter] = await harness.db.select().from(stock).where(eq(stock.id, a.lineStockId));
+    expect(sharedAfter.currentQuantity).toBe(-3); // B's 3 still owed
+    expect(sharedAfter.deletedAt).toBeNull();  // not dropped — still open demand
+  });
+
+  it('idempotent: revert out of terminal then re-deliver does not double-consume', async () => {
+    yModelFlag.enabled = true;
+    const anchorId = await seedAnchor();
+    const { order } = await makeOrder(anchorId, 11);
+    const batchId = await seedBatch(15, '2026-07-06');   // arrives after order → DE stuck open
+    const owner = { actor: { actorRole: 'owner' } };
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP, {}, owner);
+    let [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(4);
+
+    // Owner reverts, then re-delivers — settlement must not fire again.
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY, {}, owner);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP, {}, owner);
+    [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(4);     // unchanged — no second consume
+    expect(await peonyNet()).toBe(4);
+  });
+
+  it('delivery cascade: driver marking the DELIVERY Delivered settles the order demand', async () => {
+    yModelFlag.enabled = true;
+    const anchorId = await seedAnchor();
+    // A DELIVERY order (not pickup) → status flips via the delivery→order cascade,
+    // NOT transitionStatus. Settlement must fire through that seam too.
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Peony delivery', deliveryType: 'Delivery',
+      requiredBy: '2026-07-10',
+      orderLines: [{ stockItemId: anchorId, flowerName: 'Peony', quantity: 11, sellPricePerUnit: 20 }],
+      delivery: { address: 'Krakow 1', date: '2026-07-10', driver: 'Timur', fee: 20 },
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+    const batchId = await seedBatch(15, '2026-07-06');   // arrives after → DE stuck open
+    expect(await peonyNet()).toBe(4);
+
+    // Driver marks the linked delivery Delivered.
+    const [delivery] = await harness.db.select().from(deliveries)
+      .where(eq(deliveries.orderId, order.id));
+    await orderRepo.updateDelivery(delivery.id, { Status: DELIVERY_STATUS.DELIVERED },
+      { actor: { actorRole: 'driver' } });
+
+    const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(4);     // consumed via the cascade seam
+    expect(await peonyNet()).toBe(4);          // net unchanged — demand reconciled
+  });
+
+  it('batch-bound line: terminal transition does not double-decrement (already consumed at create)', async () => {
+    yModelFlag.enabled = true;
+    // stockId1 (Red Rose, qty 100) is a legacy Batch (no typeName) — consumed at create.
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'Roses', deliveryType: 'Pickup',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 5 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+    let [s] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(s.currentQuantity).toBe(95);
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    [s] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(s.currentQuantity).toBe(95);        // no-op — batch not touched again
+  });
+
+  it('flag-off: terminal transition leaves the row untouched (no settlement)', async () => {
+    yModelFlag.enabled = false;
+    const anchorId = await seedAnchor();
+    // Flag off → createOrder does classic deduction; confirm the transition itself
+    // never settles/soft-deletes when Y-model is disabled.
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1', customerRequest: 'X', deliveryType: 'Pickup',
+      orderLines: [{ stockItemId: anchorId, flowerName: 'Peony', quantity: 11 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    const [row] = await harness.db.select().from(stock).where(eq(stock.id, anchorId));
+    expect(row.deletedAt).toBeNull();          // untouched — settlement is flag-gated
+  });
+});

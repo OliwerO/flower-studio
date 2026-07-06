@@ -5,6 +5,29 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-06 — fix(stock): terminal orders settle their demand (#3) + owner classifies the substitute at shopping entry (#2) + SAFE demand-hygiene scripts
+
+The systemic follow-up promised in the phantom-demand reconciliation below, plus the substitute-classification follow-up (#2) and reusable verification tooling.
+
+### #3 — terminal-order demand settlement (code)
+Root cause of the 2026-07-06 phantom rows: a fulfilled order (Delivered / Picked Up) left an **unsettled negative Demand Entry** instead of consuming real stock. Now, on a **fresh** entry into a fulfilled terminal, the order's demand is reconciled:
+- New `stockRepo.settleLineDemand(stockItemId, qty, tx, actor)` — for a line still bound to an open DE: **FEFO-consume** same-Variety Batches by up to `qty` (the real stems that shipped; batches never go negative — W2), then **release** the line's full demand from the DE (soft-delete at ≥0). Batch-covered → net unchanged (the DE was already reserving those stems); substitute case (no batch) → same-Variety net rises to 0 (the shortfall was met by a substitute, which is decremented via #2, not guessed here). Batch/legacy/deferred lines are a no-op (already consumed at creation). Idempotent (settled DE is soft-deleted → invisible on re-run).
+- Wired into **both** terminal seams via a shared `settleFulfilledOrderDemand` helper: `orderRepo.transitionStatus` (pickup / owner status change) **and** `orderRepo.updateDelivery`'s delivery→order cascade (driver marks the delivery Delivered — a raw order update that previously bypassed settlement). Cancellation keeps its own `cancelWithStockReturn` path (unchanged).
+- Flag-gated (`STOCK_Y_MODEL`). Regression: 8 cases in `orderRepo.integration.test.js` (substitute-release, full/partial batch cover, shared DE, idempotent revert-then-redeliver, batch-line no-op, flag-off no-op, **delivery-cascade**).
+
+### #2 — substitute Variety classified at shopping entry (owner choice)
+The owner records a substitute on the **shopping-support** view but previously couldn't set its flower Type there (only the florist could, later, at evaluation — W1). Now she classifies at entry:
+- **Migration `0021_po_line_substitute_variety.sql`** — 4 nullable columns on `stock_order_lines`: `substitute_type_name / substitute_colour / substitute_size_cm / substitute_cultivar`.
+- Repo maps them as `Alt Type / Alt Colour / Alt Size / Alt Cultivar` (both directions, blank→NULL); shopping PATCH allow-list + schema updated.
+- Florist `ShoppingSupportPage` alt block gains **Type / Colour** pickers (datalists seeded from `/stock/distinct/*`); `StockEvaluationPage` **pre-fills** the substitute classification from the persisted values; `/evaluate` prefers the florist's eval-time value and **falls back** to the entry classification. New florist keys `altType/altTypeHint/altColour` (ru/en). Florist-only (no dashboard shopping/eval twin). Tests extended in `stockOrderRepo.integration.test.js`.
+
+### SAFE data-verification helpers (`backend/scripts/`, read-only via `CLAUDE_RO_URL`)
+- `report-stale-demand.mjs` — buckets every negative-qty stock row as OPEN / TERMINAL-only (stale) / ORPHAN with the driving orders. (Ran clean against prod.)
+- `check-variety-net.mjs <type> [colour] [cultivar] [size]` — lists contributing rows + net for a Variety. (Confirmed Peony Pink net 4, Hydrangea Pink net 5.)
+- `trace-order-stock.mjs <order_id>` — shows an order's lines and the stock rows they bind to; flags a live DE on a terminal order.
+
+Verification: backend **951**, orderRepo suite **51**, E2E **253**, lab-unit **77**, lab-api **18**, florist build — all green; migration 0021 applies cleanly to lab template + pglite harness.
+
 ## 2026-07-06 — fix(stock): EVERY "create a new flower" form now captures Y-model Variety attrs (full codebase sweep)
 
 Owner-reported gap + a follow-up **whole-codebase audit** of every `POST /stock` create surface. Creating a flower the owner didn't have yet under `STOCK_Y_MODEL` was landing attr-less Stock rows the grouped view can't classify (root pitfall #9). Audited all frontend stock-create callers and fixed each:
