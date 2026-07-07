@@ -67,9 +67,6 @@ const DEFAULTS = {
   availableTodayTimezone: 'Europe/Warsaw',
   cutoffReminderLastDate: null,
   slotLeadTimeMinutes: 30,
-  // Shows the per-row "Reconcile premade" action on stock rows in the dashboard.
-  // Off by default — admin tooling for fixing historical data mismatches.
-  showStockRepairTools: false,
 };
 
 // ── In-memory config (loaded from Postgres on startup) ──────

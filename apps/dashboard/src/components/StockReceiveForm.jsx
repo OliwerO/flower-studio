@@ -8,7 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { useStockYModelFlag, NewVarietyFields } from '@flower-studio/shared';
+import { NewVarietyFields } from '@flower-studio/shared';
 
 const NEW_ITEM_VALUE = '__new__';
 const NEW_SUPPLIER_VALUE = '__new_supplier__';
@@ -19,7 +19,6 @@ export default function StockReceiveForm({ stock, onDone }) {
   const [newName, setNewName]     = useState('');
   const [newCategory, setNewCategory] = useState('Other');
   const [newAttrs, setNewAttrs]   = useState({ typeName: '', colour: '', sizeCm: '', cultivar: '' });
-  const yEnabled = useStockYModelFlag();
   const [quantity, setQuantity]   = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [sellPrice, setSellPrice] = useState('');
@@ -183,15 +182,13 @@ export default function StockReceiveForm({ stock, onDone }) {
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            {yEnabled && (
-              <NewVarietyFields
-                form={newAttrs}
-                onChange={setNewAttrs}
-                t={t}
-                stockItems={stock}
-                idPrefix="nv-dash-receive"
-              />
-            )}
+            <NewVarietyFields
+              form={newAttrs}
+              onChange={setNewAttrs}
+              t={t}
+              stockItems={stock}
+              idPrefix="nv-dash-receive"
+            />
           </>
         ) : (
           <>

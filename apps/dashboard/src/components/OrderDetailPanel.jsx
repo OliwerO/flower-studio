@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, useStockYModelFlag, NewVarietyFields } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, NewVarietyFields } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -56,7 +56,6 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   const [stockItems, setStockItems] = useState([]);
   const [newFlowerForm, setNewFlowerForm] = useState(null); // { name, typeName, colour, sizeCm, cultivar, costPrice, sellPrice, lotSize, supplier }
   const [pendingPO, setPendingPO] = useState({});
-  const yEnabled = useStockYModelFlag();
   // Premade reservations + pending dissolve dialog. Fetched lazily when the
   // owner opens the bouquet editor; only rendered when a save would push
   // stock negative for a flower that's locked in a premade.
@@ -769,15 +768,13 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
               {newFlowerForm && (
                 <div className="bg-indigo-50 rounded-xl px-4 py-3 space-y-2">
                   <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {newFlowerForm.name}</p>
-                  {yEnabled && (
-                    <NewVarietyFields
-                      form={newFlowerForm}
-                      onChange={setNewFlowerForm}
-                      t={t}
-                      stockItems={stockItems}
-                      idPrefix="nv-dash-odp"
-                    />
-                  )}
+                  <NewVarietyFields
+                    form={newFlowerForm}
+                    onChange={setNewFlowerForm}
+                    t={t}
+                    stockItems={stockItems}
+                    idPrefix="nv-dash-odp"
+                  />
                   <div className="grid grid-cols-2 gap-2">
                     <input type="number" step="0.01" value={newFlowerForm.costPrice}
                       onChange={e => {
