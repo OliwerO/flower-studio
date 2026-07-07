@@ -23,8 +23,6 @@ vi.mock('../services/orderService.js', () => ({
 
 // Mock configService (loaded by orderRepo via services, avoids production path)
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled:    () => false,
-  getStockXModelEnabled:    () => false,
   getConfig:                vi.fn((k) => ({ defaultDeliveryFee: 25, driverCostPerDelivery: 10 }[k] ?? 0)),
   updateConfig:             vi.fn(),
   generateOrderId:          async () => 'TEST-D-1',

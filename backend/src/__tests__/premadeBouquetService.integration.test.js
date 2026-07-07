@@ -83,102 +83,14 @@ async function seedPremadeBouquet(name, lineSpecs /* [{stockUuid, flowerName, qt
   return b;
 }
 
-describe('returnPremadeBouquetToStock — postgres mode (regression for 2026-05-04 bug)', () => {
-  it('increments PG stock quantities, not Airtable', async () => {
-    // Seed two stock rows in PG with the qty AFTER the premade was created
-    // (i.e. already deducted by 3 and 2 stems respectively).
-    const rose = await seedStockRow('Rose', 7);        // started at 10, 3 in bouquet
-    const euca = await seedStockRow('Eucalyptus', 8);  // started at 10, 2 in bouquet
-
-    // Seed the premade in PG (rather than Airtable mock)
-    const bouquet = await seedPremadeBouquet('Spring Pink', [
-      { stockUuid: rose.id, flowerName: 'Rose', qty: 3 },
-      { stockUuid: euca.id, flowerName: 'Eucalyptus', qty: 2 },
-    ]);
-
-    const result = await returnPremadeBouquetToStock(bouquet.id);
-
-    // PG rows should be back to their pre-bouquet quantities.
-    const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
-    const [eucaAfter] = await harness.db.select().from(stock).where(eq(stock.id, euca.id));
-    expect(roseAfter.currentQuantity).toBe(10);
-    expect(eucaAfter.currentQuantity).toBe(10);
-
-    // Bouquet record removed (CASCADE removes lines)
-    const [check] = await harness.db.select().from(premadeBouquets).where(eq(premadeBouquets.id, bouquet.id));
-    expect(check).toBeUndefined();
-
-    // Service still reports per-line summary so the toast can name what came back.
-    expect(result.returnedItems).toHaveLength(2);
-    expect(result.returnedItems[0]).toMatchObject({ flowerName: 'Rose', quantityReturned: 3, newStockQty: 10 });
-  });
-
-  it('handles a line whose Stock Item link is missing without aborting other returns', async () => {
-    const rose = await seedStockRow('Rose', 7);
-
-    // Seed bouquet with one linked + one orphan line
-    const [b] = await harness.db.insert(premadeBouquets).values({ name: 'Mixed' }).returning();
-    await harness.db.insert(premadeBouquetLines).values([
-      { bouquetId: b.id, stockId: rose.id, flowerName: 'Rose', quantity: 3, costPricePerUnit: '1', sellPricePerUnit: '5' },
-      { bouquetId: b.id, stockId: null, flowerName: 'Mystery', quantity: 2, costPricePerUnit: '1', sellPricePerUnit: '5' },
-    ]);
-
-    const result = await returnPremadeBouquetToStock(b.id);
-
-    const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
-    expect(roseAfter.currentQuantity).toBe(10);
-    expect(result.returnedItems).toHaveLength(1);
-    expect(result.returnedItems[0].flowerName).toBe('Rose');
-  });
-});
-
-describe('createPremadeBouquet — postgres mode', () => {
-  it('decrements PG stock when the bouquet is composed', async () => {
-    const rose = await seedStockRow('Rose', 10);
-
-    await createPremadeBouquet({
-      name: 'Solo',
-      lines: [
-        // Pass the airtableId — stockRepo.adjustQuantity accepts either form.
-        { stockItemId: rose.airtableId, flowerName: 'Rose', quantity: 4, costPricePerUnit: 4, sellPricePerUnit: 10 },
-      ],
-      createdBy: 'Florist',
-    });
-
-    const [roseAfter] = await harness.db.select().from(stock).where(eq(stock.id, rose.id));
-    expect(roseAfter.currentQuantity).toBe(6);
-
-    // PG bouquet + line should exist
-    const allBouquets = await harness.db.select().from(premadeBouquets);
-    expect(allBouquets).toHaveLength(1);
-    expect(allBouquets[0].name).toBe('Solo');
-    const allLines = await harness.db.select().from(premadeBouquetLines);
-    expect(allLines).toHaveLength(1);
-    expect(allLines[0].quantity).toBe(4);
-  });
-});
-
-// ── Flag-on integration tests (STOCK_Y_MODEL=true) — issue #285 ──
-// These tests verify the reservation model: build does NOT decrement Batch,
-// dissolve clears lines without crediting Batch, sale routes through standard
+// ── Reservation-model integration tests (issue #285) ──
+// The premade reservation model: build does NOT decrement Batch, dissolve
+// clears lines without crediting Batch, sale routes through standard
 // createOrder allocation (no skipDeduction).
-//
-// configService is spied on so toggling doesn't affect the legacy describe blocks above.
 
-import * as configService from '../services/configService.js';
 import { createOrder } from '../services/orderService.js';
 
-describe('createPremadeBouquet flag-on (STOCK_Y_MODEL=true) — issue #285', () => {
-  let flagSpy;
-
-  beforeEach(() => {
-    flagSpy = vi.spyOn(configService, 'getStockYModelEnabled').mockReturnValue(true);
-  });
-
-  afterEach(() => {
-    flagSpy.mockRestore();
-  });
-
+describe('createPremadeBouquet — reservation model (issue #285)', () => {
   it('build leaves Batch unchanged + writes premade_bouquet_lines row', async () => {
     const [rose] = await harness.db.insert(stock).values({
       displayName: 'Pink Rose 60cm', currentQuantity: 10, typeName: 'Rose', colour: 'Pink', sizeCm: 60,
@@ -326,13 +238,10 @@ describe('createPremadeBouquet flag-on (STOCK_Y_MODEL=true) — issue #285', () 
   });
 });
 
-// ── #330: editPremadeBouquetLines under flag-on must NOT touch Batch qty ──
+// ── #330: editPremadeBouquetLines must NOT touch Batch qty ──
 import { editPremadeBouquetLines } from '../services/premadeBouquetService.js';
 
-describe('editPremadeBouquetLines flag-on (STOCK_Y_MODEL=true) — issue #330', () => {
-  let flagSpy;
-  beforeEach(() => { flagSpy = vi.spyOn(configService, 'getStockYModelEnabled').mockReturnValue(true); });
-  afterEach(() => { flagSpy.mockRestore(); });
+describe('editPremadeBouquetLines — reservation model (issue #330)', () => {
 
   async function seedBouquetWithLine(stockId, qty) {
     const [bq] = await harness.db.insert(premadeBouquets).values({ name: 'Edit-test' }).returning();

@@ -28,9 +28,7 @@ vi.mock('../db/index.js', () => ({
 }));
 
 // configService mock so listGroupedByVariety can be checked under Y-model flag
-let yModelEnabled = false;
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelEnabled,
   getConfig: () => undefined,
   getActiveSeasonalCategory: () => null,
   generateOrderId: async () => 'TEST-001',
@@ -48,7 +46,6 @@ let harness;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelEnabled = false;
 });
 afterEach(async () => {
   await teardownPgHarness(harness);
@@ -144,8 +141,7 @@ describe('receiveIntoStock — Variety attrs propagation (#327)', () => {
     expect(origAfter.typeName).toBe('Peony');
   });
 
-  it('makes the new Batch visible in /stock?grouped=true under STOCK_Y_MODEL', async () => {
-    yModelEnabled = true;
+  it('makes the new Batch visible in /stock?grouped=true', async () => {
     const orig = await seedOrigStockItem({ currentQuantity: 0 });
 
     await receiveIntoStock(orig.id, 50, 8, 25, 'Stefan', TODAY, PEONY_PINK_60);

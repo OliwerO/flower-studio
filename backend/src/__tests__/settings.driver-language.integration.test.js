@@ -10,7 +10,6 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Mock configService to avoid loading production config on boot
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled:     () => false,
   getConfig:                 vi.fn((k) => ({ defaultDeliveryFee: 25 }[k] ?? 0)),
   updateConfig:              vi.fn(),
   updateConfigBulk:          vi.fn(),

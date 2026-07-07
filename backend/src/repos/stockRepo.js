@@ -627,23 +627,22 @@ export async function create(fields, opts = {}) {
   const actor = opts.actor || { actorRole: 'system', actorPinLabel: null };
 
   // Every Stock row must carry a `date`. Prod enforces NOT NULL on stock.date
-  // (applied at the Stock Y-model cutover; the STOCK_Y_MODEL flag may still be
-  // off, but the column constraint is live). Callers that create a plain Stock
-  // Item — e.g. POST /stock from the "create demand entry" flow when a variety
-  // isn't in stock yet — don't supply one, so default to today. Dated Demand
-  // Entries go through getOrCreateDemandEntry, which sets `date` explicitly.
-  // Without this, the INSERT throws a NOT NULL violation and the UI surfaces
-  // an empty error toast (#508).
+  // (applied at the Stock Y-model cutover, #291). Callers that create a plain
+  // Stock Item — e.g. POST /stock from the "create demand entry" flow when a
+  // variety isn't in stock yet — don't supply one, so default to today. Dated
+  // Demand Entries go through getOrCreateDemandEntry, which sets `date`
+  // explicitly. Without this, the INSERT throws a NOT NULL violation and the
+  // UI surfaces an empty error toast (#508).
   const values = responseToPg(safe);
   if (values.date == null) {
     values.date = new Date().toISOString().split('T')[0];
   }
 
-  // Every Stock row must carry a non-null `type_name` (Y-model cutover added the
-  // NOT NULL constraint; the STOCK_Y_MODEL flag may still be off, but the column
-  // constraint is live). Several PO/receive/substitute create paths derive Type
-  // from a PO line or the originating Stock Item and can legitimately end up with
-  // none (attr-less legacy orig, unclassified substitute). Rather than let the
+  // Every Stock row must carry a non-null `type_name` (Y-model cutover added
+  // the NOT NULL constraint). Several PO/receive/substitute create paths
+  // derive Type from a PO line or the originating Stock Item and can
+  // legitimately end up with none (attr-less legacy orig, unclassified
+  // substitute). Rather than let the
   // INSERT throw a NOT NULL 500 that surfaces as an empty toast — and blocks the
   // PO evaluation / delivery receive entirely — fall back to the base Display
   // Name (date suffix stripped so every dated Batch of the same flower shares one
@@ -1269,8 +1268,8 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
 
 // ── getUsageByExactId (Stock Y-model, issue #289, ADR-0007) ──
 //
-// Under STOCK_Y_MODEL=true, each Batch is an addressable identity — siblings
-// of the same Variety that share a base display name must NOT be aggregated.
+// Each Batch is an addressable identity — siblings of the same Variety that
+// share a base display name must NOT be aggregated.
 // This helper filters EVERY usage table by the exact stock UUID so the trace
 // shows only events tied to this specific Batch.
 //

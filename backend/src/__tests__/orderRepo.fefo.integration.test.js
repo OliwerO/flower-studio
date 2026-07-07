@@ -1,8 +1,8 @@
 // FEFO routing inside orderRepo.createOrder — closes #319.
 //
-// When STOCK_Y_MODEL=true and a Variety has multiple positive Batches,
-// the line's stockItemId is rerouted to the oldest Batch that can fully
-// cover the line, regardless of which Batch the picker initially passed.
+// When a Variety has multiple positive Batches, the line's stockItemId is
+// rerouted to the oldest Batch that can fully cover the line, regardless of
+// which Batch the picker initially passed.
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
@@ -18,10 +18,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-const yModelFlag = { enabled: true };
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelFlag.enabled,
-  getStockXModelEnabled: () => false,
   getConfig: vi.fn(),
   updateConfig: vi.fn(),
   generateOrderId: vi.fn(),
@@ -45,7 +42,6 @@ const config = {
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelFlag.enabled = true;
   orderIdCounter = 0;
   vi.clearAllMocks();
 });
@@ -167,29 +163,6 @@ describe('createOrder FEFO routing (#319)', () => {
 
     const [after] = await harness.db.select().from(stock).where(eq(stock.id, only.id));
     expect(after.currentQuantity).toBe(7);
-  });
-
-  it('skips FEFO when STOCK_Y_MODEL=false (legacy path unchanged)', async () => {
-    yModelFlag.enabled = false;
-    const oldBatch = await seedBatch({ qty: 10, date: '2026-05-16' });
-    const newBatch = await seedBatch({ qty: 5, date: '2026-05-18' });
-
-    await orderRepo.createOrder({
-      customer: 'recCust1',
-      deliveryType: 'Pickup',
-      orderLines: [
-        { stockItemId: newBatch.id, flowerName: 'Hydrangea White', quantity: 2 },
-      ],
-      paymentStatus: 'Unpaid',
-      paymentMethod: 'Cash',
-      createdBy: 'florist',
-    }, config, { actor: { actorRole: 'florist' } });
-
-    const [oldAfter] = await harness.db.select().from(stock).where(eq(stock.id, oldBatch.id));
-    const [newAfter] = await harness.db.select().from(stock).where(eq(stock.id, newBatch.id));
-    // Legacy: decrement lands on whatever picker passed.
-    expect(oldAfter.currentQuantity).toBe(10);
-    expect(newAfter.currentQuantity).toBe(3);
   });
 
   it('reproduces #319 shape: 3 rows, oldest negative, picks middle (full cover)', async () => {

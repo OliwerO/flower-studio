@@ -10,7 +10,6 @@
 //
 // Y-model safe: groups by 'Display Name' so multi-batch Varieties (multiple PG
 // rows sharing the same display name) merge their qtySold and currentQty sums.
-// No flag check needed — this grouping is correct regardless of STOCK_Y_MODEL.
 //
 // Pitfall #8 compliance: currentQty is used as-is from 'Current Quantity' (already
 // net of committed demand). qty < 0 = genuine shortfall — never subtract committed.
@@ -75,7 +74,7 @@ export async function stockVelocityHandler(input = {}) {
   const stockRows = await stockRepo.list({ pg: { includeEmpty: true } });
 
   // Group by Display Name — sums qtySold and currentQty across all batches sharing a name.
-  // This merges Y-model siblings without touching the STOCK_Y_MODEL flag.
+  // This merges Y-model siblings.
   const groups = {};
   for (const row of stockRows) {
     const name = row['Display Name'];

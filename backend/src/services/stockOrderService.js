@@ -123,9 +123,9 @@ export async function findOrCreateSubstituteStock(altFlowerName, altSupplier, co
   // Flower Name), so its Variety identity is whatever the florist classified it
   // as during evaluation — NOT the original's attrs (that would mislabel a Peony
   // substitute as the Rose it replaced). Write the captured attrs when present;
-  // otherwise leave the card attr-less (legacy behaviour). Under STOCK_Y_MODEL a
-  // classified substitute is then visible in listGroupedByVariety; an
-  // unclassified one stays ungrouped until the owner edits it.
+  // otherwise leave the card attr-less (legacy behaviour). A classified
+  // substitute is then visible in listGroupedByVariety; an unclassified one
+  // stays ungrouped until the owner edits it.
   const aSize = Number(varietyAttrs?.Size);
   const created = await stockRepo.create({
     'Display Name':       trimmedName,

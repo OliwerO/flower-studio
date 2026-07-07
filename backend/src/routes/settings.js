@@ -9,7 +9,6 @@ import {
   getConfig, getAllConfig, updateConfigBulk,
   getDriverOfDay, setDailyDriver, getDailyState,
   driverNames, autoClearIfNewDay,
-  getStockYModelEnabled,
 } from '../services/configService.js';
 import { notifyDeliveryDigest, SUPPORTED_LANGS } from '../services/driverNotifyService.js';
 import { setLang } from '../repos/driverTelegramRepo.js';
@@ -31,7 +30,9 @@ router.get('/', authorize('orders'), (req, res) => {
     drivers:            resolvedDrivers,
     pinDrivers:         driverNames,
     config,
-    stockYModelEnabled: getStockYModelEnabled(),
+    // Always true post-cutover (#291); field kept until the frontend hook is
+    // removed in the shared/apps PR, then delete.
+    stockYModelEnabled: true,
   });
 });
 

@@ -10,7 +10,6 @@ import * as premadeBouquetRepo from '../repos/premadeBouquetRepo.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { actorFromReq } from '../utils/actor.js';
 import { ORDER_STATUS, PO_STATUS, LOSS_REASON } from '../constants/statuses.js';
-import { getStockYModelEnabled } from '../services/configService.js';
 
 const router = Router();
 router.use(authorize('stock'));
@@ -32,12 +31,12 @@ router.get('/', async (req, res, next) => {
     const { category, includeEmpty, includeInactive } = req.query;
 
     // ── Y-model grouped path (issue #289) ──
-    // When STOCK_Y_MODEL is enabled AND caller passes ?grouped=true, return
-    // Variety-grouped aggregation: { groups: [{ key, type_name, colour,
-    // size_cm, cultivar, rows: StockItem[], reservedForPremades }] }.
+    // When caller passes ?grouped=true, return Variety-grouped aggregation:
+    // { groups: [{ key, type_name, colour, size_cm, cultivar, rows:
+    // StockItem[], reservedForPremades }] }.
     // All other query params are ignored on this path — the grouped query
     // fetches all Y-model rows and applies its own includeEmpty logic.
-    if (getStockYModelEnabled() && req.query.grouped === 'true') {
+    if (req.query.grouped === 'true') {
       const groups = await stockRepo.listGroupedByVariety({
         includeEmpty: includeEmpty === 'true',
       });
@@ -115,57 +114,14 @@ router.get('/velocity', async (req, res, next) => {
 // an order needs more stems than are freely available.
 router.get('/premade-committed', async (req, res, next) => {
   try {
-    // Y-model: aggregate directly from premade_bouquet_lines per Stock Item id.
-    // Same response shape as legacy { stockId: { qty: N, bouquets: [] } }.
-    if (getStockYModelEnabled()) {
-      const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
-      const allStockIds = allStock.map(s => s._pgId).filter(Boolean);
-      const details = await stockRepo.getPremadeReservationDetails(allStockIds);
-      const committed = {};
-      for (const [stockId, { totalQty, bouquets }] of details) {
-        if (totalQty > 0) committed[stockId] = { qty: totalQty, bouquets };
-      }
-      return res.json(committed);
-    }
-
-    const bouquets = await premadeBouquetRepo.list();
-    // Keyed by whatever Stock Item ID the line carries (may be a phantom rec
-    // ID from premade lines created in Airtable against a post-cutover UUID
-    // stock item — Airtable can't store UUIDs in linked fields).
-    const rawCommitted = {};
-    for (const bouquet of bouquets) {
-      const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
-      for (const line of lines) {
-        const stockId = line['Stock Item']?.[0];
-        if (!stockId) continue;
-        const qty = Number(line.Quantity || 0);
-        if (qty <= 0) continue;
-        if (!rawCommitted[stockId]) {
-          rawCommitted[stockId] = { qty: 0, bouquets: [], _flowerName: line['Flower Name'] || '' };
-        }
-        rawCommitted[stockId].qty += qty;
-        rawCommitted[stockId].bouquets.push({ bouquetId: bouquet.id, name: bouquet.Name || '?', qty });
-      }
-    }
-
-    // Resolve each Stock Item ID to the PG stock ID the frontend uses. For
-    // phantom recXXX that don't resolve, fall back to matching by flower name.
+    // Aggregate directly from premade_bouquet_lines per Stock Item id.
     const allStock = await stockRepo.list({ pg: { includeInactive: true, includeEmpty: true } });
-    const stockById   = new Map(allStock.map(s => [s.id, s]));
-    const stockByName = new Map(allStock.map(s => [(s['Display Name'] || '').toLowerCase(), s]));
-
+    const allStockIds = allStock.map(s => s._pgId).filter(Boolean);
+    const details = await stockRepo.getPremadeReservationDetails(allStockIds);
     const committed = {};
-    for (const [atId, entry] of Object.entries(rawCommitted)) {
-      const { _flowerName, ...data } = entry;
-      const pgId = stockById.has(atId)
-        ? atId
-        : stockByName.get((_flowerName || '').toLowerCase())?.id;
-      if (!pgId) continue;
-      if (!committed[pgId]) committed[pgId] = { qty: 0, bouquets: [] };
-      committed[pgId].qty += data.qty;
-      committed[pgId].bouquets.push(...data.bouquets);
+    for (const [stockId, { totalQty, bouquets }] of details) {
+      if (totalQty > 0) committed[stockId] = { qty: totalQty, bouquets };
     }
-
     res.json(committed);
   } catch (err) {
     next(err);
@@ -592,204 +548,7 @@ router.get('/:id/usage', async (req, res, next) => {
 
     // ── Y-model exact-ID path (issue #289, ADR-0007) ──
     // Each Batch is an addressable identity; no sibling aggregation.
-    if (getStockYModelEnabled()) {
-      const trail = await stockRepo.getUsageByExactId(stockItem._pgId || stockId);
-      return res.json({
-        stockItem: { id: stockItem.id, displayName, currentQty: stockItem['Current Quantity'] || 0 },
-        trail,
-      });
-    }
-
-    // Aggregate across sibling batches sharing the same base flower name.
-    // receiveIntoStock creates a new dated batch record for each receive,
-    // and order lines stay linked to whichever record existed at creation —
-    // so an order's usage and a PO's receipt often live on different stock
-    // records even though they refer to the same physical flower. The trace
-    // should show the full picture for the flower, not just this one record.
-    const dateBatchRe = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
-    const baseName = (displayName.match(dateBatchRe)?.[1] || displayName).trim();
-    const safeBase = sanitizeFormulaValue(baseName);
-    // Find all sibling stock records: the base record itself, plus any
-    // "<base> (dd.Mmm.)" dated batches.
-    let siblingStocks = [];
-    try {
-      const allForName = await stockRepo.list({
-        filterByFormula: `OR({Display Name} = '${safeBase}', FIND('${safeBase} (', {Display Name} & '') = 1)`,
-        fields: ['Display Name', 'Current Quantity'],
-        pg: { active: true, includeEmpty: true },
-      });
-      // PG mode returns all active stock (no formula support) — filter JS-side
-      // for the exact base name or "<base> (" dated-batch prefix.
-      siblingStocks = allForName.filter(s => {
-        const n = s['Display Name'] || '';
-        return n === baseName || n.startsWith(baseName + ' (');
-      });
-    } catch {
-      siblingStocks = [stockItem];
-    }
-    // Ensure the requested record is always in the set (in case the formula
-    // misses due to whitespace/punctuation differences).
-    if (!siblingStocks.some(s => s.id === stockId)) siblingStocks.push(stockItem);
-    const siblingIds = new Set(siblingStocks.map(s => s.id));
-    const siblingNames = siblingStocks.map(s => s['Display Name']).filter(Boolean);
-
-    // 1. Order lines — walk from the Orders side.
-    //
-    // Previous implementation filtered Order Lines by `Flower Name` text
-    // matching the sibling Display Names. That's fragile: if any past order
-    // was created with a subtly different Flower Name (legacy casing, extra
-    // whitespace, a rename after the line was stamped, a flower whose stock
-    // row was since renamed/deleted), the line is invisible to the trace
-    // even though its Stock Item link DID deduct qty via atomicStockAdjust.
-    //
-    // The Stock Item link is the authoritative relationship; `Flower Name` is
-    // just a display snapshot taken at creation time. So we fetch recent
-    // orders (past year + anything with no Order Date), pull their line IDs,
-    // then JS-filter lines whose Stock Item resolves to one of the siblings.
-    //
-    // Trade-off: two round-trips (Orders, Order Lines) instead of one, and
-    // a larger result set. For a small shop (<2000 orders/year) both queries
-    // return in well under a second via the rate-limited queue.
-    const orderCutoff = new Date(Date.now() - 365 * 86400000).toISOString().split('T')[0];
-    const recentOrders = await orderRepo.list({
-      pg: { dateFrom: orderCutoff },
-    }).catch(err => { console.error('[STOCK] usage orderRepo.list failed:', err.message); return []; });
-
-    // Filter _lines to those whose Stock Item resolves to one of our siblings
-    const matchedLines = [];
-    const orderMap = {};
-    for (const o of recentOrders) {
-      orderMap[o.id] = o;
-      for (const line of (o._lines || [])) {
-        if (siblingIds.has(line['Stock Item']?.[0])) {
-          matchedLines.push({ ...line, _orderId: o.id });
-        }
-      }
-    }
-
-    const matchedOrderIds = new Set(matchedLines.map(l => l._orderId));
-    const customerIds = [...new Set(
-      recentOrders.filter(o => matchedOrderIds.has(o.id)).flatMap(o => o.Customer || [])
-    )];
-    const custList = customerIds.length > 0 ? await customerRepo.findMany(customerIds) : [];
-    const customerMap = {};
-    for (const c of custList) {
-      customerMap[c.id] = c;
-      if (c.airtableId) customerMap[c.airtableId] = c;
-    }
-
-    const usageOrders = matchedLines.map(l => {
-      const orderId = l._orderId;
-      const o = orderId ? orderMap[orderId] : null;
-      const custId = o?.Customer?.[0];
-      const cust = custId ? customerMap[custId] : null;
-      return {
-        type: 'order',
-        date: o?.['Order Date'] || o?.['Required By'] || null,
-        requiredBy: o?.['Required By'] || null,
-        orderRecordId: orderId || '',
-        orderId: o?.['App Order ID'] || orderId || '',
-        customer: cust?.Name || cust?.Nickname || '',
-        status: o?.Status || '',
-        quantity: -(l.Quantity || 0),
-        flowerName: l['Flower Name'] || displayName,
-      };
-    });
-
-    // 2. Loss log — fetch recent entries and filter by Stock Item link in JS
-    let usageLosses = [];
-    try {
-      const ninetyDaysAgo = new Date(Date.now() - 90 * 86400000).toISOString().split('T')[0];
-      const allLosses = await stockLossRepo.list({ from: ninetyDaysAgo });
-      usageLosses = allLosses
-        .filter(l => siblingIds.has(l['Stock Item']?.[0]))
-        .map(l => ({
-          type: 'writeoff',
-          date: l.Date || null,
-          reason: l.Reason || '',
-          notes: l.Notes || '',
-          quantity: -(l.Quantity || 0),
-        }));
-    } catch (err) {
-      console.error('stock usage: loss log fetch failed', err);
-    }
-
-    // 3. Purchase records — Postgres. Purchases created by the PO evaluate
-    // flow carry a Notes marker. ADR-0003: the format changed in Phase 7 from
-    // "PO #recXXX L#recYYY primary" (Airtable era) to "PO #PO-20260508-1 L#<uuid>
-    // primary" (PG era — embeds the human-readable PO number directly).
-    // The regex matches both; resolution branches on whether the PO ref looks
-    // like a recXXX (lookup needed) or a PO-NNNNNNNN-N string (use directly).
-    let usagePurchases = [];
-    try {
-      const allPurchases = await stockPurchasesRepo.list({});
-      const linePurchases = allPurchases.filter(p => siblingIds.has(p.Flower?.[0]));
-
-      const poMarkerRe = /PO #([A-Za-z0-9_\-]+)\s+L#([A-Za-z0-9_\-]+)\s+(primary|substitute|alt)/;
-      const poRefSet = new Set();
-      for (const p of linePurchases) {
-        const m = p.Notes?.match(poMarkerRe);
-        if (m && m[1].startsWith('rec')) poRefSet.add(m[1]);
-      }
-      const poMap = {};
-      if (poRefSet.size > 0) {
-        try {
-          const poRecs = await stockOrderRepo.listByIds([...poRefSet]);
-          for (const po of poRecs) poMap[po.id] = po['Stock Order ID'] || '';
-        } catch { /* best effort — fall back to raw Notes */ }
-      }
-
-      usagePurchases = linePurchases.map(p => {
-        const m = p.Notes?.match(poMarkerRe);
-        const poRef = m?.[1] || null;
-        const poDisplayId = poRef
-          ? (poRef.startsWith('rec') ? (poMap[poRef] || '') : poRef)
-          : '';
-        const variant = m?.[3] || '';
-        return {
-          type: 'purchase',
-          date: p['Purchase Date'] || null,
-          quantity: +(p['Quantity Purchased'] || 0),
-          supplier: p.Supplier || '',
-          costPerUnit: p['Price Per Unit'] || 0,
-          notes: p.Notes || '',
-          poDisplayId,
-          variant,
-        };
-      });
-    } catch { /* best effort */ }
-
-    // 4. Active premade bouquet lines — stems physically locked in a premade
-    // that hasn't been sold/dissolved yet. These were deducted from qty when
-    // the premade was created; the trace must surface them or the arithmetic
-    // won't reconcile. Dissolved/consumed premades don't appear (the line
-    // record is deleted and the stems either flowed into an order or were
-    // returned to stock via a reverse atomicStockAdjust — both of which are
-    // already represented in the 'order' and 'purchase' trails respectively).
-    let usagePremades = [];
-    try {
-      const allBouquets = await premadeBouquetRepo.list();
-      for (const bouquet of allBouquets) {
-        const lines = await premadeBouquetRepo.getLinesByBouquetId(bouquet._pgId);
-        for (const l of lines) {
-          if (!siblingIds.has(l['Stock Item']?.[0])) continue;
-          usagePremades.push({
-            type: 'premade',
-            date: null,
-            quantity: -(Number(l.Quantity) || 0),
-            bouquetId: bouquet.id,
-            bouquetName: bouquet.Name || '?',
-            flowerName: l['Flower Name'] || displayName,
-          });
-        }
-      }
-    } catch { /* best effort */ }
-
-    // Combine and sort chronologically (newest first).
-    // Premade entries have null date — they sort to the top as "ongoing".
-    const trail = [...usageOrders, ...usageLosses, ...usagePurchases, ...usagePremades]
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-
+    const trail = await stockRepo.getUsageByExactId(stockItem._pgId || stockId);
     res.json({
       stockItem: { id: stockItem.id, displayName, currentQty: stockItem['Current Quantity'] || 0 },
       trail,

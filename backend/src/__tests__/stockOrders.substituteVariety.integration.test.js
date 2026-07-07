@@ -1,7 +1,7 @@
 // Integration tests for substitute Variety capture — C13 (ultracode audit).
 //
 // A PO substitute is a DIFFERENT free-text flower (Alt Flower Name) whose
-// structured Variety is unknown to the system. Under STOCK_Y_MODEL the new
+// structured Variety is unknown to the system. Previously the new
 // substitute stock card was created WITHOUT Type/Colour/Size/Cultivar, so it
 // was invisible in listGroupedByVariety (same failure class as #327/C3) — the
 // substituted stems "disappeared" from the grouped Stock view.
@@ -25,9 +25,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-let yModelEnabled = true;
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelEnabled,
   getConfig: () => undefined, // targetMarkup → falls back to 1
   getActiveSeasonalCategory: () => null,
   generateOrderId: async () => 'TEST-001',
@@ -43,7 +41,6 @@ let harness;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelEnabled = true;
 });
 afterEach(async () => {
   await teardownPgHarness(harness);
