@@ -5,16 +5,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
-import { useStockYModelFlag } from '@flower-studio/shared';
 import client from '../api/client.js';
 import t from '../translations.js';
 
 export default function StockEvaluationPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
-  // C13: under the Y-model, a new substitute flower needs a Variety identity or
-  // it is invisible in the grouped Stock view — capture it here at evaluation.
-  const yModelOn = useStockYModelFlag();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState(null);
@@ -35,10 +31,9 @@ export default function StockEvaluationPage() {
   }, []);
 
   useEffect(() => {
-    if (!yModelOn) return;
     client.get('/stock/distinct/type').then(r => setTypeOptions(r.data || [])).catch(() => {});
     client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
-  }, [yModelOn]);
+  }, []);
 
   useEffect(() => {
     client.get('/stock-orders/meta/lookups')
@@ -129,25 +124,23 @@ export default function StockEvaluationPage() {
   async function handleSubmitClick(orderId) {
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
-    // C13: under the Y-model a brand-new substitute must be classified (Type) —
-    // an unattributed card is invisible in the grouped stock view. The input
-    // marks Type required (asterisk); enforce it before submit.
-    if (yModelOn) {
-      const unclassified = [];
-      for (const line of order.lines) {
-        if (line['Eval Status'] === 'Processed') continue;
-        const ev = evalState[line.id] || {};
-        const altAccepted = Number(ev.altAccepted) || 0;
-        const altFlowerName = (line['Alt Flower Name'] || '').trim();
-        const isNew = altFlowerName && !knownStockNames.has(altFlowerName.toLowerCase());
-        if (altAccepted > 0 && isNew && !(ev.altType || '').trim()) {
-          unclassified.push(altFlowerName);
-        }
+    // C13: a brand-new substitute must be classified (Type) — an unattributed
+    // card is invisible in the grouped stock view. The input marks Type
+    // required (asterisk); enforce it before submit.
+    const unclassified = [];
+    for (const line of order.lines) {
+      if (line['Eval Status'] === 'Processed') continue;
+      const ev = evalState[line.id] || {};
+      const altAccepted = Number(ev.altAccepted) || 0;
+      const altFlowerName = (line['Alt Flower Name'] || '').trim();
+      const isNew = altFlowerName && !knownStockNames.has(altFlowerName.toLowerCase());
+      if (altAccepted > 0 && isNew && !(ev.altType || '').trim()) {
+        unclassified.push(altFlowerName);
       }
-      if (unclassified.length > 0) {
-        showToast(`${t.substituteTypeRequired}: ${unclassified.join(', ')}`, 'error');
-        return;
-      }
+    }
+    if (unclassified.length > 0) {
+      showToast(`${t.substituteTypeRequired}: ${unclassified.join(', ')}`, 'error');
+      return;
     }
     const newOnes = collectNewSubstitutes(order);
     if (newOnes.length > 0) {
@@ -411,9 +404,8 @@ export default function StockEvaluationPage() {
                                   )}
                                   {/* C13: classify a brand-new substitute so the new
                                       stock card carries a Variety identity and shows
-                                      in the grouped Y-model stock list. Flag-gated —
-                                      hidden in the legacy flat-stock world. */}
-                                  {isNewSubstitute && yModelOn && (
+                                      in the grouped stock list. */}
+                                  {isNewSubstitute && (
                                     <div className="space-y-1.5">
                                       <p className="text-[11px] text-indigo-600">{t.substituteVarietyHint}</p>
                                       <div className="grid grid-cols-2 gap-1.5">

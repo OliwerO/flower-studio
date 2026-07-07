@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { Truck, ShoppingCart, ClipboardCheck, Trash2 } from 'lucide-react';
 import {
   useDebouncedValue,
-  useStockYModelFlag,
   TypeGroupHeader,
   VarietyListItem,
   ShortfallSummary,
@@ -25,19 +24,9 @@ import StockFilterDrawer from '../components/StockFilterDrawer.jsx';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { useAuth } from '../context/AuthContext.jsx';
-import StockItem from '../components/StockItem.jsx';
 import ReceiveStockForm from '../components/ReceiveStockForm.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
-import PendingArrivalsSection from '../components/PendingArrivalsSection.jsx';
 import t from '../translations.js';
-
-const SORT_OPTIONS = [
-  { key: 'name',     label: () => t.sortByName },
-  { key: 'qty',      label: () => t.sortByQty },
-  { key: 'sell',     label: () => t.sortBySell },
-  { key: 'supplier', label: () => t.sortBySupplier },
-  { key: 'received', label: () => t.sortByReceived || 'Date' },
-];
 
 const VIEW_OPTIONS = [
   { key: 'all',       label: () => t.viewAll },
@@ -46,26 +35,15 @@ const VIEW_OPTIONS = [
   { key: 'slow',      label: () => t.viewSlowMovers },
 ];
 
-const SORT_FNS = {
-  name:     (a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''),
-  qty:      (a, b) => (Number(a['Current Quantity']) || 0) - (Number(b['Current Quantity']) || 0),
-  sell:     (a, b) => (Number(a['Current Sell Price']) || 0) - (Number(b['Current Sell Price']) || 0),
-  supplier: (a, b) => (a.Supplier || '').localeCompare(b.Supplier || ''),
-  received: (a, b) => (a['Last Restocked'] || '').localeCompare(b['Last Restocked'] || ''),
-};
-
 export default function StockPanelPage() {
   const navigate          = useNavigate();
   const { showToast }     = useToast();
   const { role }          = useAuth();
-  const yEnabled          = useStockYModelFlag();
   const [stock, setStock] = useState([]);
-  const [groups, setGroups] = useState([]); // Y-model: array from /stock?grouped=true
+  const [groups, setGroups] = useState([]); // array from /stock?grouped=true
   const [loading, setLoading]     = useState(true);
   const [showReceive, setShowReceive] = useState(false);
-  const [editMode, setEditMode]       = useState(false);
   const [showHelp, setShowHelp]       = useState(false);
-  const [committedMap, setCommittedMap] = useState({}); // stockId → { committed, orders }
   const [pendingPO, setPendingPO] = useState({}); // stockId → { ordered, plannedDate, pos[] }
   // Premade-bouquet reservations: { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
   const [premadeMap, setPremadeMap] = useState({});
@@ -103,8 +81,6 @@ export default function StockPanelPage() {
   // Debounce so the filter+sort compute over ~300 stock rows doesn't run on
   // every keystroke. Input stays responsive; results settle after 300ms.
   const debouncedSearch       = useDebouncedValue(search, 300);
-  const [sortKey, setSortKey] = useState('name');
-  const [sortAsc, setSortAsc] = useState(true);
   const [view, setView]       = useState('all');
   const [hideZero, setHideZero] = useState(true);
   // Layout: flat ungrouped list (default) vs grouped by Type. The owner wanted
@@ -129,42 +105,26 @@ export default function StockPanelPage() {
   const fetchStock = useCallback(async () => {
     setLoading(true);
     try {
-      if (yEnabled) {
-        // Y-model: fetch grouped stock + premade reservations + pending POs.
-        const [groupedRes, premadeRes, pendingPoRes] = await Promise.all([
-          client.get('/stock?grouped=true'),
-          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-          client.get('/stock/pending-po').catch(() => ({ data: {} })),
-        ]);
-        setGroups(groupedRes.data.groups || []);
-        setPremadeMap(premadeRes.data || {});
-        setPendingPO(pendingPoRes.data || {});
-      } else {
-        // Legacy flat list
-        const [stockRes, committedRes, premadeRes] = await Promise.all([
-          client.get('/stock?includeEmpty=true'),
-          client.get('/stock/committed'),
-          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-        ]);
-        setStock(stockRes.data);
-        setCommittedMap(committedRes.data);
-        setPremadeMap(premadeRes.data || {});
-      }
+      // Grouped stock (Variety view) + flat stock (feeds ReceiveStockForm's
+      // flower picker) + premade reservations + pending POs.
+      const [groupedRes, stockRes, premadeRes, pendingPoRes] = await Promise.all([
+        client.get('/stock?grouped=true'),
+        client.get('/stock?includeEmpty=true'),
+        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        client.get('/stock/pending-po').catch(() => ({ data: {} })),
+      ]);
+      setGroups(groupedRes.data.groups || []);
+      setStock(stockRes.data);
+      setPremadeMap(premadeRes.data || {});
+      setPendingPO(pendingPoRes.data || {});
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
     finally   { setLoading(false); }
-  }, [yEnabled]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { fetchStock(); }, [fetchStock]);
 
-  async function handleAdjust(id, delta) {
-    try {
-      const res = await client.post(`/stock/${id}/adjust`, { delta });
-      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
-    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
-  }
-
-  // Y-model quick-adjust: qty lives on the per-Batch row inside `groups`.
-  // Optimistically bump current_quantity, POST the delta, revert on failure.
+  // Quick-adjust: qty lives on the per-Batch row inside `groups`. Optimistically
+  // bump current_quantity, POST the delta, revert on failure.
   async function handleAdjustGroup(id, delta) {
     const bump = (rows, d) =>
       (rows || []).map(r =>
@@ -179,14 +139,6 @@ export default function StockPanelPage() {
     }
   }
 
-  async function handleWriteOff(id, quantity, reason) {
-    try {
-      const res = await client.post(`/stock/${id}/write-off`, { quantity, reason: reason || undefined });
-      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
-      showToast(`${quantity} stems written off`, 'success');
-    } catch (err) { showToast(err.response?.data?.error || t.writeOffError, 'error'); }
-  }
-
   async function handleReceive(data) {
     try {
       await client.post('/stock-purchases', data);
@@ -194,21 +146,6 @@ export default function StockPanelPage() {
       setShowReceive(false);
       fetchStock();
     } catch (err) { showToast(err.response?.data?.error || t.receiveError, 'error'); }
-  }
-
-  async function handlePatch(id, fields) {
-    try {
-      const res = await client.patch(`/stock/${id}`, fields);
-      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
-    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
-  }
-
-  async function handlePatchPrice(id, fields) {
-    try {
-      const res = await client.patch(`/stock/${id}`, fields);
-      setStock(prev => prev.map(s => s.id === id ? { ...s, ...res.data } : s));
-      showToast(t.stockUpdated, 'success');
-    } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
   // E2b: owner bulk-patch of a Variety-level field (Reorder Threshold / Lot Size)
@@ -236,12 +173,7 @@ export default function StockPanelPage() {
     } catch (err) { showToast(err.response?.data?.error || t.adjustError, 'error'); }
   }
 
-  function toggleSort(key) {
-    if (sortKey === key) setSortAsc(v => !v);
-    else { setSortKey(key); setSortAsc(true); }
-  }
-
-  // ── Y-model: derived Maps from premadeMap ──
+  // ── Derived Maps from premadeMap ──
   // premadesByStockId: Map<stockId (string), Array<{ id, name, qty }>>
   // reservations:      Map<stockId (string), number>
   // Both are derived from the same /stock/premade-committed response.
@@ -323,9 +255,8 @@ export default function StockPanelPage() {
   // hideZero=true  → hide zero-qty groups (same semantics as today)
   // hideZero=false → show all groups including zero-qty
 
-  // Filtered group list for Y-model path
+  // Filtered group list
   const filteredGroups = useMemo(() => {
-    if (!yEnabled) return [];
     let list = groups;
     // Search across Variety identity + every row's display name + supplier.
     const q = debouncedSearch.trim().toLowerCase();
@@ -345,9 +276,8 @@ export default function StockPanelPage() {
       list = list.filter(g => varietyMatchesFilter(g, reservationsMap, varietyFilter));
     }
     // View pills (Negative / Low / Slow) filter by per-Variety net — the same
-    // number the row badge shows. hideZero only applies in the 'all' view (the
-    // legacy flat list does the same: `hideZero && view === 'all'`), so a short
-    // variety with no on-hand stems still surfaces under Negative.
+    // number the row badge shows. hideZero only applies in the 'all' view, so a
+    // short variety with no on-hand stems still surfaces under Negative.
     if (view !== 'all') {
       list = list.filter(g => varietyGroupMatchesView(g, view, reservationsMap));
     } else if (hideZero) {
@@ -358,7 +288,7 @@ export default function StockPanelPage() {
       });
     }
     return list;
-  }, [groups, hideZero, view, yEnabled, reservationsMap, debouncedSearch, varietyFilter, varietyFilterCount]);
+  }, [groups, hideZero, view, reservationsMap, debouncedSearch, varietyFilter, varietyFilterCount]);
 
   // A Variety's age = its OLDEST dated on-hand batch (longest-sitting stems).
   // Only positive-qty batches count — Demand Entries (negative qty) are future
@@ -395,83 +325,15 @@ export default function StockPanelPage() {
     return arr.sort((a, b) => varietyLabel(a).localeCompare(varietyLabel(b)));
   }, [filteredGroups, flatSort, reservationsMap]);
 
-  // Filtered + sorted stock (legacy path)
-  const filteredStock = useMemo(() => {
-    const now = Date.now();
-    const SLOW_DAYS = 14;
 
-    let items = stock;
-
-    // Hide zero-stock items (default on, same as dashboard)
-    if (hideZero && view === 'all') {
-      // Keep zero-qty rows when premade bouquets still hold stems — those
-      // stems physically exist on the shelf and must stay visible so the
-      // owner/florist can reconcile them.
-      items = items.filter(s => {
-        const qty = Number(s['Current Quantity']) || 0;
-        if (qty !== 0) return true;
-        return (premadeMap[s.id]?.qty || 0) > 0;
-      });
-    }
-
-    // View filter
-    if (view === 'negative') {
-      items = items.filter(s => (Number(s['Current Quantity']) || 0) < 0);
-    } else if (view === 'low') {
-      items = items.filter(s => {
-        const qty = Number(s['Current Quantity']) || 0;
-        const threshold = Number(s['Reorder Threshold']) || 5;
-        return qty > 0 && qty <= threshold;
-      });
-    } else if (view === 'slow') {
-      items = items.filter(s => {
-        const qty = Number(s['Current Quantity']) || 0;
-        if (qty <= 0) return false;
-        const last = s['Last Restocked'];
-        if (!last) return true; // never restocked = slow
-        const age = now - new Date(last).getTime();
-        return age > SLOW_DAYS * 86400000;
-      });
-    }
-
-    // Search filter
-    if (debouncedSearch.trim()) {
-      const q = debouncedSearch.toLowerCase().trim();
-      items = items.filter(s =>
-        (s['Display Name'] || '').toLowerCase().includes(q) ||
-        (s.Supplier || '').toLowerCase().includes(q) ||
-        (s.Farmer || '').toLowerCase().includes(q)
-      );
-    }
-
-    // Sort — negative items pinned to top (they're the true "owe stems" signal)
-    const sortFn = SORT_FNS[sortKey] || SORT_FNS.name;
-    const sorted = [...items].sort((a, b) => {
-      const aNeg = (Number(a['Current Quantity']) || 0) < 0;
-      const bNeg = (Number(b['Current Quantity']) || 0) < 0;
-      if (aNeg !== bNeg) return aNeg ? -1 : 1;
-      const cmp = sortFn(a, b);
-      return sortAsc ? cmp : -cmp;
-    });
-
-    return sorted;
-  }, [stock, debouncedSearch, sortKey, sortAsc, view, hideZero, premadeMap]);
-
-  // Counts for view badges — under the Y-model the signal is the per-Variety net
-  // (matches the Negative/Low pills + the row badge), not a flat per-row qty<0.
+  // Counts for view badges — the signal is the per-Variety net (matches the
+  // Negative/Low pills + the row badge), not a flat per-row qty<0.
   const negativeCount = useMemo(() =>
-    yEnabled
-      ? groups.filter(g => varietyGroupMatchesView(g, 'negative', reservationsMap)).length
-      : stock.filter(s => (Number(s['Current Quantity']) || 0) < 0).length,
-  [yEnabled, groups, reservationsMap, stock]);
+    groups.filter(g => varietyGroupMatchesView(g, 'negative', reservationsMap)).length,
+  [groups, reservationsMap]);
   const lowCount = useMemo(() =>
-    yEnabled
-      ? groups.filter(g => varietyGroupMatchesView(g, 'low', reservationsMap)).length
-      : stock.filter(s => {
-          const qty = Number(s['Current Quantity']) || 0;
-          return qty > 0 && qty <= (Number(s['Reorder Threshold']) || 5);
-        }).length,
-  [yEnabled, groups, reservationsMap, stock]);
+    groups.filter(g => varietyGroupMatchesView(g, 'low', reservationsMap)).length,
+  [groups, reservationsMap]);
 
   // D3 round-2: reserve the Planned column only when at least one visible
   // Variety actually has pending order demand. Otherwise collapse it so
@@ -586,17 +448,6 @@ export default function StockPanelPage() {
           </button>
         )}
 
-        {/* Legacy per-stockId pending table (flag off). Under Y-model the
-            date-grouped PendingArrivalsPanel renders directly above the
-            ShortfallSummary instead — see below (CR-34). */}
-        {!yEnabled && (
-          <PendingArrivalsSection
-            stock={stock}
-            committedMap={committedMap}
-            onOrderClick={(id) => navigate(`/orders/${id}`)}
-          />
-        )}
-
         {/* Receive stock */}
         <button
           onClick={() => setShowReceive(!showReceive)}
@@ -653,59 +504,55 @@ export default function StockPanelPage() {
           ))}
         </div>
 
-        {/* Layout toggle (Flat ⇄ By type) + age sort on the left (Y-model);
+        {/* Layout toggle (Flat ⇄ By type) + age sort on the left;
             hide-zero / show-cleared on the right. */}
         <div className="flex items-center gap-2 mb-2">
-          {yEnabled && (
-            <>
-              {/* Flat ⇄ By-type segmented control — flat is the shop-floor default */}
-              <div className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 p-0.5">
-                <button
-                  onClick={() => setFlatView(true)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
-                  }`}
-                >{t.stockFlat || 'Flat'}</button>
-                <button
-                  onClick={() => setFlatView(false)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    !flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
-                  }`}
-                >{t.stockByType || 'By type'}</button>
-              </div>
-              {/* Sort — flat layout only. One compact pill that cycles
-                  A–Z → longest in stock → stock level (kept minimal so the
-                  control row doesn't overfill on a phone). */}
-              {flatView && (
-                <button
-                  onClick={() => setFlatSort(s => FLAT_SORTS[(FLAT_SORTS.indexOf(s) + 1) % FLAT_SORTS.length])}
-                  className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-1"
-                  aria-label={t.stockSortLabel || 'Sort'}
-                >
-                  <span className="text-ios-tertiary">⇅</span>
-                  {flatSort === 'name'
-                    ? (t.stockSortName || 'A–Z')
-                    : flatSort === 'age'
-                      ? (t.stockSortAge || 'Longest in stock')
-                      : (t.stockSortStock || 'Stock level')}
-                </button>
-              )}
-              {/* E1b: Variety filter drawer trigger (applies to Flat + By-type). */}
-              <button
-                data-testid="stock-filter-open"
-                onClick={() => setFilterDrawerOpen(true)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium active-scale inline-flex items-center gap-1 ${
-                  varietyFilterCount > 0
-                    ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
-                    : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
-                }`}
-                aria-label={t.filters}
-              >
-                <span className="text-ios-tertiary">⚲</span>
-                {t.filters}{varietyFilterCount > 0 ? ` (${varietyFilterCount})` : ''}
-              </button>
-            </>
+          {/* Flat ⇄ By-type segmented control — flat is the shop-floor default */}
+          <div className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 p-0.5">
+            <button
+              onClick={() => setFlatView(true)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
+              }`}
+            >{t.stockFlat || 'Flat'}</button>
+            <button
+              onClick={() => setFlatView(false)}
+              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                !flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
+              }`}
+            >{t.stockByType || 'By type'}</button>
+          </div>
+          {/* Sort — flat layout only. One compact pill that cycles
+              A–Z → longest in stock → stock level (kept minimal so the
+              control row doesn't overfill on a phone). */}
+          {flatView && (
+            <button
+              onClick={() => setFlatSort(s => FLAT_SORTS[(FLAT_SORTS.indexOf(s) + 1) % FLAT_SORTS.length])}
+              className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-1"
+              aria-label={t.stockSortLabel || 'Sort'}
+            >
+              <span className="text-ios-tertiary">⇅</span>
+              {flatSort === 'name'
+                ? (t.stockSortName || 'A–Z')
+                : flatSort === 'age'
+                  ? (t.stockSortAge || 'Longest in stock')
+                  : (t.stockSortStock || 'Stock level')}
+            </button>
           )}
+          {/* E1b: Variety filter drawer trigger (applies to Flat + By-type). */}
+          <button
+            data-testid="stock-filter-open"
+            onClick={() => setFilterDrawerOpen(true)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium active-scale inline-flex items-center gap-1 ${
+              varietyFilterCount > 0
+                ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
+                : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
+            }`}
+            aria-label={t.filters}
+          >
+            <span className="text-ios-tertiary">⚲</span>
+            {t.filters}{varietyFilterCount > 0 ? ` (${varietyFilterCount})` : ''}
+          </button>
           <button
             onClick={() => setHideZero(!hideZero)}
             className={`ml-auto px-3 py-1.5 rounded-full text-xs font-medium transition-colors active-scale ${
@@ -714,37 +561,16 @@ export default function StockPanelPage() {
                 : 'bg-gray-200 dark:bg-gray-600 text-ios-label dark:text-gray-200'
             }`}
           >
-            {yEnabled
-              ? (hideZero ? (t.showClearedRows || 'Show cleared') : (t.showClearedRows || 'Show cleared'))
-              : (hideZero ? (t.inStockOnly || 'In stock') : (t.showAll || 'All stock'))}
+            {t.showClearedRows || 'Show cleared'}
           </button>
         </div>
-
-        {/* Sort pills — legacy only; Y-model groups by type, then variety */}
-        {!yEnabled && (
-          <div className="flex gap-2 mb-4 overflow-x-auto">
-            {SORT_OPTIONS.map(s => (
-              <button
-                key={s.key}
-                onClick={() => toggleSort(s.key)}
-                className={`px-2.5 py-1 rounded-full text-[11px] font-medium whitespace-nowrap transition-colors active-scale ${
-                  sortKey === s.key
-                    ? 'bg-brand-100 text-brand-700'
-                    : 'bg-gray-50 text-ios-tertiary'
-                }`}
-              >
-                {s.label()} {sortKey === s.key && (sortAsc ? '↑' : '↓')}
-              </button>
-            ))}
-          </div>
-        )}
 
         {loading ? (
           <div className="flex items-center justify-center mt-20">
             <div className="w-8 h-8 border-2 border-brand-300 border-t-brand-600 rounded-full animate-spin" />
           </div>
-        ) : yEnabled ? (
-          /* ── Y-model: grouped Type → Variety list ── */
+        ) : (
+          /* ── Grouped Type → Variety list ── */
           filteredGroups.length === 0 ? (
             <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
           ) : (
@@ -821,59 +647,13 @@ export default function StockPanelPage() {
             )}
             </>
           )
-        ) : (
-          /* ── Legacy flat list ── */
-          filteredStock.length === 0 ? (
-            <p className="text-ios-tertiary text-sm text-center py-12">{t.noStockFound || 'No items found'}</p>
-          ) : (
-            <div className="ios-card overflow-hidden divide-y divide-ios-separator/40">
-              {filteredStock.map(item => (
-                <StockItem
-                  key={item.id}
-                  item={item}
-                  editMode={editMode}
-                  onAdjust={delta => handleAdjust(item.id, delta)}
-                  onWriteOff={(qty, reason) => handleWriteOff(item.id, qty, reason)}
-                  onPatch={fields => handlePatch(item.id, fields)}
-                  onPatchPrice={fields => handlePatchPrice(item.id, fields)}
-                  committedData={committedMap[item.id]}
-                  premadeData={premadeMap[item.id]}
-                  role={role}
-                />
-              ))}
-            </div>
-          )
-        )}
-
-        {/* Summary bar — legacy path only */}
-        {!loading && !yEnabled && filteredStock.length > 0 && (
-          <div className="mt-3 flex items-center justify-between px-2 text-xs text-ios-tertiary">
-            <span>{filteredStock.length} {t.stems}</span>
-            <span>
-              {filteredStock.reduce((s, i) => s + (Number(i['Current Quantity']) || 0), 0)} {t.stems} {t.sortByQty?.toLowerCase()}
-            </span>
-          </div>
-        )}
-
-        {/* Owner-only edit mode toggle — legacy path only */}
-        {role === 'owner' && !loading && !yEnabled && (
-          <button
-            onClick={() => setEditMode(!editMode)}
-            className={`w-full mt-4 h-11 rounded-2xl text-sm font-semibold transition-colors ${
-              editMode
-                ? 'bg-brand-600 text-white active:bg-brand-700'
-                : 'bg-ios-fill2 text-ios-secondary active:bg-ios-separator'
-            }`}
-          >
-            {editMode ? `✓ ${t.doneEditing}` : `✎ ${t.editStock}`}
-          </button>
         )}
       </main>
 
       {showHelp && <HelpPanel onClose={() => setShowHelp(false)} />}
 
-      {/* ── Y-model: Batch trace modal ── */}
-      {yEnabled && traceStockId && (
+      {/* Batch trace modal */}
+      {traceStockId && (
         <BatchTraceModal
           trail={traceLoading ? [] : (traceTrail || [])}
           t={t}
@@ -882,8 +662,8 @@ export default function StockPanelPage() {
         />
       )}
 
-      {/* ── Y-model: Variety trace modal — mirrors BatchTraceModal UX ── */}
-      {yEnabled && varietyTraceKey && (
+      {/* Variety trace modal — mirrors BatchTraceModal UX */}
+      {varietyTraceKey && (
         <div
           data-testid="variety-trace-modal-backdrop"
           className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4"
@@ -928,15 +708,13 @@ export default function StockPanelPage() {
       />
 
       {/* E1b: Variety filter drawer (Type / colour·cultivar / status / net). */}
-      {yEnabled && (
-        <StockFilterDrawer
-          open={filterDrawerOpen}
-          onClose={() => setFilterDrawerOpen(false)}
-          filter={varietyFilter}
-          onApply={(next) => setVarietyFilter(next)}
-          onReset={() => setVarietyFilter(clearVarietyFilter())}
-        />
-      )}
+      <StockFilterDrawer
+        open={filterDrawerOpen}
+        onClose={() => setFilterDrawerOpen(false)}
+        filter={varietyFilter}
+        onApply={(next) => setVarietyFilter(next)}
+        onReset={() => setVarietyFilter(clearVarietyFilter())}
+      />
     </div>
   );
 }
