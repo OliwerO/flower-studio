@@ -3,7 +3,7 @@
 
 import { useState } from 'react';
 import client from '../api/client.js';
-import { renderStockName, useStockYModelFlag, NewVarietyFields } from '@flower-studio/shared';
+import { renderStockName, NewVarietyFields } from '@flower-studio/shared';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 
@@ -37,7 +37,6 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
   const [newName, setNewName]         = useState('');
   const [newCategory, setNewCategory] = useState('Other');
   const [newAttrs, setNewAttrs]       = useState({ typeName: '', colour: '', sizeCm: '', cultivar: '' });
-  const yEnabled = useStockYModelFlag();
   const [qty, setQty]                 = useState('');
   const [price, setPrice]             = useState('');
   const [sellPrice, setSellPrice]     = useState('');
@@ -154,17 +153,15 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               </select>
             </Row>
           </div>
-          {yEnabled && (
-            <div className="mt-2">
-              <NewVarietyFields
-                form={newAttrs}
-                onChange={setNewAttrs}
-                t={t}
-                stockItems={stock}
-                idPrefix="nv-florist-receive"
-              />
-            </div>
-          )}
+          <div className="mt-2">
+            <NewVarietyFields
+              form={newAttrs}
+              onChange={setNewAttrs}
+              t={t}
+              stockItems={stock}
+              idPrefix="nv-florist-receive"
+            />
+          </div>
         </div>
       )}
 

@@ -10,14 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { renderStockName, VarietyAllocationPicker, VarietyAvailabilityLine, useStockYModelFlag, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields } from '@flower-studio/shared';
-
-const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function formatPoDate(dateStr) {
-  const d = new Date(dateStr);
-  if (isNaN(d)) return null;
-  return `${d.getDate()}.${PO_MONTHS[d.getMonth()]}.`;
-}
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields } from '@flower-studio/shared';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
@@ -212,7 +205,6 @@ export default function Step2Bouquet({
 }) {
   const { showToast } = useToast();
   const { role } = useAuth();
-  const yEnabled = useStockYModelFlag();
   // Determine if the order is for a future date (not today).
   // Future orders allow toggling between "use current stock" and "order new" per line.
   const todayIso = new Date().toISOString().split('T')[0];
@@ -342,9 +334,8 @@ export default function Step2Bouquet({
     );
   }, [visibleStock, flowerQuery, showOutOfStock, pendingPO]);
 
-  // Y-model: group filteredStock by Variety 4-tuple for the catalog list.
+  // Group filteredStock by Variety 4-tuple for the catalog list.
   const varGroups = useMemo(() => {
-    if (!yEnabled) return [];
     const groups = [...groupByVariety(adaptedStock.filter(a =>
       filteredStock.some(s => s.id === a.id)
     )).values()];
@@ -370,7 +361,7 @@ export default function Step2Bouquet({
     // (q) still reaches them so deliberate over-promising creates a buy signal.
     // A Variety already in the cart always stays visible so it can be adjusted.
     .filter(g => !!q || g.inCart || g.availability.effective > 0);
-  }, [yEnabled, adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines, reservations, todayIso]);
+  }, [adaptedStock, filteredStock, flowerQuery, pendingPO, orderLines, reservations, todayIso]);
 
   // CR-27: a cart line bound to one sub-row (e.g. a −8 Demand Entry) must reflect
   // the WHOLE Variety's availability, not that one row — otherwise it falsely
@@ -378,14 +369,13 @@ export default function Step2Bouquet({
   // every stock row id → its Variety availability (over ALL varieties, including
   // ones hidden from the catalog).
   const varietyAvailById = useMemo(() => {
-    if (!yEnabled) return {};
     const map = {};
     for (const [, group] of groupByVariety(adaptedStock)) {
       const avail = getVarietyAvailability(group.rows, reservations, arrivalsForVariety(group.rows, pendingPO, todayIso));
       for (const r of group.rows) map[r.id] = avail;
     }
     return map;
-  }, [yEnabled, adaptedStock, pendingPO, reservations, todayIso]);
+  }, [adaptedStock, pendingPO, reservations, todayIso]);
 
   // Net each cart line's available stock against earlier lines of the SAME
   // Variety so two lines never both claim the same on-hand stems (the "3 not in
@@ -393,11 +383,11 @@ export default function Step2Bouquet({
   // left for line i after earlier same-Variety lines took their share.
   const lineNets = useMemo(() => allocateLinesAgainstVariety(orderLines, (l) => {
     if (l.stockDeferred) return null; // future-PO lines don't pull current stock
-    const a = yEnabled ? varietyAvailById[l.stockItemId] : null;
+    const a = varietyAvailById[l.stockItemId];
     if (a) return { key: a, net: a.net };
     const si = stock.find(s => s.id === l.stockItemId);
     return { key: l.stockItemId ?? l.flowerName, net: Number(si?.['Current Quantity']) || 0 };
-  }), [orderLines, varietyAvailById, yEnabled, stock]);
+  }), [orderLines, varietyAvailById, stock]);
 
   function addOne(stockItem, amount = 1) {
     const add = Math.max(1, Number(amount) || 1);
@@ -617,9 +607,9 @@ export default function Step2Bouquet({
               <span className="text-sm font-medium text-indigo-700">+ {t.addNewFlower || 'Add new'} "{flowerQuery}"</span>
             </button>
           )}
-          {(yEnabled ? varGroups.length === 0 : filteredStock.length === 0) && !showCustomFlower ? (
+          {varGroups.length === 0 && !showCustomFlower ? (
             <p className="text-ios-tertiary text-sm text-center py-8">{t.noStockFound}</p>
-          ) : yEnabled ? (
+          ) : (
             varGroups.map(v => {
               const { key, displayName, availability, sell, inCart } = v;
               const out = availability.net <= 0;
@@ -653,54 +643,6 @@ export default function Step2Bouquet({
                 </button>
               );
             })
-          ) : (
-            filteredStock.map(s => {
-              const qty    = Number(s['Current Quantity']) || 0;
-              const inCart = orderLines.find(l => l.stockItemId === s.id);
-              const low    = qty > 0 && qty <= (s['Reorder Threshold'] || 5);
-              const out    = qty <= 0;
-              const poQty  = pendingPO[s.id]?.ordered || 0;
-              const poDate = pendingPO[s.id]?.plannedDate || null;
-              const poDateLabel = poDate ? formatPoDate(poDate) : null;
-              // Pending-PO flowers show their PO price, not the stale card sell (#377).
-              const rowPrice = resolveStockLinePrice(s, pendingPO[s.id]);
-              const rowSell = rowPrice.sellPricePerUnit || Number(s['Current Sell Price']) || 0;
-              const rowCost = rowPrice.costPricePerUnit || Number(s['Current Cost Price']) || 0;
-
-              return (
-                <button
-                  key={s.id}
-                  type="button"
-                  onClick={() => addOne(s)}
-                  className={`w-full flex items-center px-4 py-3 gap-3 text-left transition-colors active-scale
-                              ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className={`text-base font-medium truncate ${inCart ? 'text-brand-700' : out ? 'text-amber-700' : 'text-ios-label'}`}>
-                      {renderStockName(s['Display Name'], qty > 0 ? s['Last Restocked'] : null)}
-                    </div>
-                    <div className="text-sm text-ios-tertiary">
-                      <span className="font-bold text-brand-700">{rowSell.toFixed(0)} zł</span>
-                      {isOwner && <span> · {rowCost.toFixed(0)} zł {t.costPrice}</span>}
-                      <span> · {qty} pcs</span>
-                      {low && !out && <span className="text-ios-orange"> · low</span>}
-                      {qty < 0 && !poQty && (
-                        <span className="text-orange-600 font-medium"> · {t.addsToNextPO || 'next PO'}</span>
-                      )}
-                      {qty === 0 && !poQty && (
-                        <span className="text-amber-600 font-medium"> · {t.outOfStock || 'out'}</span>
-                      )}
-                      {poQty > 0 && <span className="text-blue-600 font-medium"> · +{poQty} {poDateLabel ? `→ ${poDateLabel}` : (t.onOrder || 'on order')}</span>}
-                    </div>
-                  </div>
-                  {inCart && (
-                    <span className="min-w-[24px] h-[24px] px-1.5 rounded-full bg-brand-600 text-white text-xs font-bold flex items-center justify-center">
-                      {inCart.quantity}
-                    </span>
-                  )}
-                </button>
-              );
-            })
           )}
         </div>
       </div>
@@ -716,15 +658,13 @@ export default function Step2Bouquet({
             placeholder={t.flowerName || 'Flower name'}
             className="field-input w-full text-sm"
           />
-          {yEnabled && (
-            <NewVarietyFields
-              form={customFlower}
-              onChange={setCustomFlower}
-              t={t}
-              stockItems={stock}
-              idPrefix="nv-florist-step2"
-            />
-          )}
+          <NewVarietyFields
+            form={customFlower}
+            onChange={setCustomFlower}
+            t={t}
+            stockItems={stock}
+            idPrefix="nv-florist-step2"
+          />
           <div className="grid grid-cols-2 gap-2">
             <select
               value={customFlower.supplier}
@@ -888,7 +828,7 @@ export default function Step2Bouquet({
                   isFutureOrder={isFutureOrder}
                   onToggleDeferred={(key) => toggleDeferred(key)}
                   pendingPO={pendingPO}
-                  varietyAvail={yEnabled ? varietyAvailById[l.stockItemId] : null}
+                  varietyAvail={varietyAvailById[l.stockItemId]}
                   siblingNet={lineNets[idx]}
                 />
               ))
@@ -938,8 +878,8 @@ export default function Step2Bouquet({
         </div>
       </div>
 
-      {/* Y-model picker — only when flag-on AND user tapped a multi-batch variety */}
-      {yEnabled && yPickerOpen && (
+      {/* Y-model picker — only when user tapped a multi-batch variety */}
+      {yPickerOpen && (
         <VarietyAllocationPicker
           stockItems={yPickerStockItems}
           reservations={reservations}

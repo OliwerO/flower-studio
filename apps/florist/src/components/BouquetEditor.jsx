@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import {
-  renderStockName, parseBatchName, findAllMatchingVariety,
-  BatchPickerModal, VarietyAllocationPicker, TierSwitchChip, useStockYModelFlag, useAuth,
+  renderStockName, parseBatchName,
+  VarietyAllocationPicker, TierSwitchChip, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
   allocateLinesAgainstVariety, NewVarietyFields,
 } from '@flower-studio/shared';
@@ -9,15 +9,12 @@ import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 
 export default function BouquetEditor({ editing, saving, detail, isTerminal, isOwner, originalPrice, onSaveClick, doSave }) {
-  const yEnabled = useStockYModelFlag();
   const { role } = useAuth();
   const { targetMarkup } = useConfigLists();
 
   const [showOutOfStock, setShowOutOfStock] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
-  const [pickerModalVariety, setPickerModalVariety] = useState(null);
-  const [pickerModalMatches, setPickerModalMatches] = useState([]);
-  // Y-model picker state: show VarietyAllocationPicker when yEnabled
+  // Y-model picker state: show VarietyAllocationPicker
   const [yPickerOpen, setYPickerOpen] = useState(false);
   const [yPickerQty, setYPickerQty] = useState(1);
   const [yPickerStockItems, setYPickerStockItems] = useState([]);
@@ -52,54 +49,34 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
     return { key: l.stockItemId ?? l.flowerName, net: Number(si?.['Current Quantity']) || 0 };
   }), [editing.editLines, editing.stockItems]);
 
-  // Group catalog: Y-model = one row per Variety 4-tuple; legacy = one row per base name
+  // Group catalog: one row per Variety 4-tuple
   const catalogVarieties = useMemo(() => {
     const q = flowerSearch.toLowerCase().trim();
-    if (yEnabled) {
-      const adapted = catalogItems.map(s => ({
-        ...s,
-        type_name: s.Type ?? null,
-        colour:    s.Colour ?? null,
-        size_cm:   s.Size ?? null,
-        cultivar:  s.Cultivar ?? null,
-        current_quantity: Number(s['Current Quantity']) || 0,
-      }));
-      const groups = [...groupByVariety(adapted).values()].map(g => ({
-        key:         g.key,
-        displayName: varietyDisplayName(g),
-        type_name:   g.type_name,
-        colour:      g.colour,
-        size_cm:     g.size_cm,
-        cultivar:    g.cultivar,
-        rows:        g.rows,
-        totalQty:    g.rows.reduce((s, r) => s + (Number(r['Current Quantity']) || 0), 0),
-        // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
-        sell:        resolveVarietySell(g.rows, editing.pendingPO),
-        poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
-        inCart:      g.rows.some(r => editing.editLines.some(l => l.stockItemId === r.id)),
-      }));
-      if (!q) return groups;
-      return groups.filter(g => g.displayName.toLowerCase().includes(q));
-    }
-    // Legacy: group by parseBatchName base name
-    const map = new Map();
-    for (const s of catalogItems) {
-      const { name: base } = parseBatchName(s['Display Name'] || '');
-      const key = base.toLowerCase();
-      if (!q || key.includes(q) || (s['Category'] || '').toLowerCase().includes(q)) {
-        if (!map.has(key)) {
-          map.set(key, { key, displayName: base, totalQty: 0, sell: Number(s['Current Sell Price']) || 0, poQty: 0, inCart: false, rows: [] });
-        }
-        const entry = map.get(key);
-        entry.totalQty += Number(s['Current Quantity']) || 0;
-        entry.poQty += editing.pendingPO?.[s.id]?.ordered || 0;
-        if (editing.editLines.find(l => l.stockItemId === s.id)) entry.inCart = true;
-        entry.rows.push(s);
-      }
-    }
-    // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
-    return [...map.values()].map(e => ({ ...e, sell: resolveVarietySell(e.rows, editing.pendingPO) }));
-  }, [catalogItems, flowerSearch, yEnabled, editing.pendingPO, editing.editLines]);
+    const adapted = catalogItems.map(s => ({
+      ...s,
+      type_name: s.Type ?? null,
+      colour:    s.Colour ?? null,
+      size_cm:   s.Size ?? null,
+      cultivar:  s.Cultivar ?? null,
+      current_quantity: Number(s['Current Quantity']) || 0,
+    }));
+    const groups = [...groupByVariety(adapted).values()].map(g => ({
+      key:         g.key,
+      displayName: varietyDisplayName(g),
+      type_name:   g.type_name,
+      colour:      g.colour,
+      size_cm:     g.size_cm,
+      cultivar:    g.cultivar,
+      rows:        g.rows,
+      totalQty:    g.rows.reduce((s, r) => s + (Number(r['Current Quantity']) || 0), 0),
+      // Pending-PO Variety shows its PO sell, not the stale card sell (#377).
+      sell:        resolveVarietySell(g.rows, editing.pendingPO),
+      poQty:       g.rows.reduce((s, r) => s + (editing.pendingPO?.[r.id]?.ordered || 0), 0),
+      inCart:      g.rows.some(r => editing.editLines.some(l => l.stockItemId === r.id)),
+    }));
+    if (!q) return groups;
+    return groups.filter(g => g.displayName.toLowerCase().includes(q));
+  }, [catalogItems, flowerSearch, editing.pendingPO, editing.editLines]);
 
   function addFromCatalog(s) {
     const existing = editing.editLines.findIndex(l => l.stockItemId === s.id);
@@ -214,15 +191,9 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                       key={key}
                       type="button"
                       onClick={() => {
-                        if (yEnabled) {
-                          setYPickerStockItems(v.rows);
-                          setYPickerOpen(true);
-                          setYPickerQty(1);
-                        } else {
-                          const allMatches = findAllMatchingVariety(editing.stockItems, displayName);
-                          setPickerModalVariety(displayName);
-                          setPickerModalMatches(allMatches);
-                        }
+                        setYPickerStockItems(v.rows);
+                        setYPickerOpen(true);
+                        setYPickerQty(1);
                       }}
                       className={`w-full flex items-center px-3 py-2.5 gap-2 text-left transition-colors active-scale
                                   ${out ? 'bg-amber-50/60' : inCart ? 'bg-brand-50/70' : 'active:bg-gray-50'}`}
@@ -255,15 +226,13 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
           {editing.newFlowerForm && (
             <div className="bg-indigo-50 rounded-xl px-3 py-3 space-y-2">
               <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {editing.newFlowerForm.name}</p>
-              {yEnabled && (
-                <NewVarietyFields
-                  form={editing.newFlowerForm}
-                  onChange={editing.setNewFlowerForm}
-                  t={t}
-                  stockItems={editing.stockItems}
-                  idPrefix="nv-florist"
-                />
-              )}
+              <NewVarietyFields
+                form={editing.newFlowerForm}
+                onChange={editing.setNewFlowerForm}
+                t={t}
+                stockItems={editing.stockItems}
+                idPrefix="nv-florist"
+              />
               <div className="grid grid-cols-2 gap-2">
                 <input
                   type="number"
@@ -345,14 +314,12 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
                         <div className="flex-1 min-w-0">
                           <span className="text-sm font-medium text-ios-label truncate block">{line.flowerName}</span>
                           <span className="text-xs text-ios-tertiary inline-flex items-baseline gap-1">
-                            {yEnabled
-                              ? <TierSwitchChip
-                                  currentSell={liveSell}
-                                  tiers={editing.getLineTiers(line)}
-                                  onPick={(stockId) => editing.switchLineTier(idx, stockId)}
-                                  t={t}
-                                />
-                              : <span>{liveSell.toFixed(0)} zł</span>}
+                            <TierSwitchChip
+                              currentSell={liveSell}
+                              tiers={editing.getLineTiers(line)}
+                              onPick={(stockId) => editing.switchLineTier(idx, stockId)}
+                              t={t}
+                            />
                             <span>× {line.quantity} =</span>
                             <strong className="text-brand-700">{lineSell.toFixed(0)} zł</strong>
                           </span>
@@ -435,42 +402,8 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
             ) : null;
           })()}
 
-          {/* Legacy picker — only rendered when flag is off (Pitfall #4: never gate out valid paths) */}
-          {!yEnabled && pickerModalVariety && (
-            <BatchPickerModal
-              baseName={pickerModalVariety}
-              matches={pickerModalMatches}
-              pendingPO={editing.pendingPO}
-              onSelectStock={s => {
-                const existing = editing.editLines.findIndex(l => l.stockItemId === s.id);
-                if (existing >= 0) {
-                  editing.incrementQty(existing);
-                } else {
-                  editing.addFlowerFromStock(s);
-                }
-                setPickerModalVariety(null);
-                setFlowerSearch('');
-              }}
-              onCreateDemand={() => {
-                editing.createDemandEntry(pickerModalVariety);
-                setPickerModalVariety(null);
-                setFlowerSearch('');
-              }}
-              onClose={() => setPickerModalVariety(null)}
-              t={{
-                batchPickerTitle:  t.batchPickerTitle,
-                demandEntry:       t.demandEntry,
-                demandEntryHint:   t.demandEntryHint,
-                demandEntryCreate: t.demandEntryCreate,
-                onOrder:           t.onOrder,
-                cancel:            t.cancel,
-                stems:             t.stems,
-              }}
-            />
-          )}
-
-          {/* Y-model picker — only rendered when flag is on */}
-          {yEnabled && yPickerOpen && (
+          {/* Y-model picker */}
+          {yPickerOpen && (
             <VarietyAllocationPicker
               stockItems={yPickerStockItems}
               reservations={new Map(
