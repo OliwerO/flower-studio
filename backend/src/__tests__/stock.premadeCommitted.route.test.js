@@ -1,15 +1,13 @@
 // Route tests for GET /stock/premade-committed — Task T2, issue #288 follow-up.
 //
-// Validates that the Y-model branch populates bouquets[] instead of returning
-// empty arrays. Shape must match the legacy branch exactly:
+// Validates the Y-model branch populates bouquets[]:
 //   { stockId: { qty: N, bouquets: [{ bouquetId, name, qty }] } }
 //
 // Coverage:
-//   • Y-model: stock used by 2 premades → bouquets[] has both entries with
-//     correct bouquetId, name, and per-bouquet qty.
-//   • Y-model: stock item not used by any premade is omitted from response.
-//   • Y-model: field names match legacy branch shape (bouquetId, name, qty).
-//   • Flag-off guard: legacy path still returns correct shape.
+//   • Stock used by 2 premades → bouquets[] has both entries with correct
+//     bouquetId, name, and per-bouquet qty.
+//   • Stock item not used by any premade is omitted from response.
+//   • Field names match the expected shape (bouquetId, name, qty).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
@@ -34,10 +32,7 @@ vi.mock('../db/index.js', () => ({
 // ── audit mock — no-op ──
 vi.mock('../db/audit.js', () => ({ recordAudit: vi.fn().mockResolvedValue(undefined) }));
 
-// ── configService mock — toggleable Y-model flag ──
-let yModelEnabled = false;
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled:    () => yModelEnabled,
   getConfig:                () => undefined,
   getActiveSeasonalCategory: () => null,
   generateOrderId:          async () => 'TEST-001',
@@ -67,7 +62,6 @@ let harness, app;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelEnabled = false;
   app = buildApp();
   vi.clearAllMocks();
 });
@@ -109,13 +103,7 @@ async function seedPremadeLine(bouquetId, stockId, quantity = 5) {
   return row;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Y-model flag-ON tests
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('GET /stock/premade-committed — Y-model (STOCK_Y_MODEL=true)', () => {
-  beforeEach(() => { yModelEnabled = true; });
-
+describe('GET /stock/premade-committed — Y-model', () => {
   it('stock used by 2 premades returns bouquets[] with both entries', async () => {
     const rose = await seedStock({ displayName: 'Rose Red' });
     const bq1  = await seedPremade('Morning Bunch');
@@ -193,17 +181,3 @@ describe('GET /stock/premade-committed — Y-model (STOCK_Y_MODEL=true)', () => 
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// Flag-OFF guard — legacy path must not regress
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('GET /stock/premade-committed — flag-off (STOCK_Y_MODEL=false)', () => {
-  it('returns 200 with correct outer shape (legacy path)', async () => {
-    const res = await supertest(app)
-      .get('/stock/premade-committed')
-      .set('x-test-role', 'owner');
-
-    expect(res.status).toBe(200);
-    expect(typeof res.body).toBe('object');
-  });
-});

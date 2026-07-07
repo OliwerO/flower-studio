@@ -27,9 +27,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-let yModelEnabled = true;
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelEnabled,
   getConfig: () => undefined,
   getActiveSeasonalCategory: () => null,
   generateOrderId: async () => 'TEST-001',
@@ -55,7 +53,6 @@ let harness, app;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelEnabled = true;
   app = buildApp();
 });
 afterEach(async () => {

@@ -16,7 +16,7 @@
 //
 // Scenarios ALREADY locked elsewhere and intentionally NOT duplicated here:
 //   • Required By → linked delivery date cascade (legacy + Y-model DE date):
-//     orderRepo.integration.test.js "updateOrder Required By cascade (STOCK_Y_MODEL)".
+//     orderRepo.integration.test.js "updateOrder Required By cascade (Y-model)".
 //   • Order status → delivery cascade for Out for Delivery / Delivered:
 //     orderRepo.integration.test.js "transitionStatus" describe block.
 //   • Delivery → Pickup conversion cancels the linked delivery (#317/#401):
@@ -39,8 +39,6 @@ vi.mock('../db/index.js', () => ({
 }));
 
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => false,
-  getStockXModelEnabled: () => false,
   getConfig: vi.fn(),
   updateConfig: vi.fn(),
   generateOrderId: vi.fn(),

@@ -1,14 +1,11 @@
 // Route tests for GET /stock?grouped=true (Task 2, issue #289).
 //
 // What we're proving:
-//   • flag-off: ?grouped=true ignored → flat shape returned
-//   • flag-off: ?grouped=true + flag on → returns { groups: [...] }
-//   • flag-on + no ?grouped → flat shape returned (back-compat)
-//   • flag-on + ?grouped=true → grouped shape returned
+//   • no ?grouped → flat shape returned (back-compat)
+//   • ?grouped=true → grouped { groups: [...] } shape returned
 //
 // Auth pattern: inject req.role via x-test-role header (same as
-// stock.varietyBackfill.routes.test.js). configService is mocked so
-// STOCK_Y_MODEL flag can be toggled per test.
+// stock.varietyBackfill.routes.test.js).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import express from 'express';
@@ -25,10 +22,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-// Mock configService so we can toggle the Y-model flag per describe block.
-let yModelEnabled = false;
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelEnabled,
   getConfig: () => undefined,
   getActiveSeasonalCategory: () => null,
   generateOrderId: async () => 'TEST-001',
@@ -54,7 +48,6 @@ let harness, app;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelEnabled = false; // default off
   app = buildApp();
   vi.clearAllMocks();
 });
@@ -86,31 +79,7 @@ async function seedLegacyStock(overrides = {}) {
   return row;
 }
 
-describe('GET /stock flag-off (STOCK_Y_MODEL=false)', () => {
-  it('returns flat array (existing shape) with no ?grouped param', async () => {
-    await seedLegacyStock({ displayName: 'Flat Rose', currentQuantity: 3 });
-
-    const res = await supertest(app).get('/stock');
-    expect(res.status).toBe(200);
-    expect(Array.isArray(res.body)).toBe(true);
-  });
-
-  it('ignores ?grouped=true when flag is off → still returns flat array', async () => {
-    await seedYModelStock({ currentQuantity: 5 });
-
-    const res = await supertest(app).get('/stock?grouped=true');
-    expect(res.status).toBe(200);
-    // Must be flat array, not { groups: [...] }
-    expect(Array.isArray(res.body)).toBe(true);
-    expect(res.body).not.toHaveProperty('groups');
-  });
-});
-
-describe('GET /stock flag-on (STOCK_Y_MODEL=true)', () => {
-  beforeEach(() => {
-    yModelEnabled = true;
-  });
-
+describe('GET /stock — grouped view', () => {
   it('returns flat array when ?grouped is absent (back-compat)', async () => {
     await seedLegacyStock({ currentQuantity: 4 });
 

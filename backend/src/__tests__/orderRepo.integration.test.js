@@ -27,12 +27,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-// ── configService mock — controls STOCK_Y_MODEL flag per test ──
-// Declared at module level so vi.mock (which is hoisted) can reference it.
-const yModelFlag = { enabled: false };
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelFlag.enabled,
-  getStockXModelEnabled: () => false,
   getConfig: vi.fn(),
   updateConfig: vi.fn(),
   generateOrderId: vi.fn(),
@@ -209,8 +204,6 @@ describe('createOrder', () => {
     // demand-entry row (qty=0, typed Variety), then binds the line to its id.
     // orderRepo.createOrder must accept the line (no orphan rejection) and
     // deepen the DE row's current_quantity by the ordered qty.
-    yModelFlag.enabled = true;
-
     // Insert a demand-entry stock row (qty 0, typed Variety — the Y-model shape).
     const [de] = await harness.db.insert(stock).values({
       airtableId: 'recDE1', displayName: 'Peony Pink',
@@ -239,8 +232,6 @@ describe('createOrder', () => {
     // (c) DE row's current_quantity is deepened by the ordered quantity
     const [deAfter] = await harness.db.select().from(stock).where(eq(stock.id, deId));
     expect(deAfter.currentQuantity).toBe(-3); // 0 - 3
-
-    yModelFlag.enabled = false;
   });
 
   it('(C1) deepens a pre-existing negative Demand Entry exactly ONCE — no double-decrement', async () => {
@@ -250,8 +241,6 @@ describe('createOrder', () => {
     // the same row again → 2× the line qty. This seed-row assertion is the blind
     // spot the CR-08 test missed: it seeded qty 0, which step 3b skips (>= 0), so
     // the line went through step 4 only and never exercised the double path.
-    yModelFlag.enabled = true;
-
     const demandDate = '2026-07-01';
     const [de] = await harness.db.insert(stock).values({
       airtableId: 'recDEc1', displayName: `Tulip (${demandDate})`,
@@ -279,8 +268,6 @@ describe('createOrder', () => {
     const sameVariety = await harness.db.select().from(stock)
       .where(and(eq(stock.typeName, 'Tulip'), eq(stock.date, demandDate)));
     expect(sameVariety).toHaveLength(1);
-
-    yModelFlag.enabled = false;
   });
 
   it('(CR-34) demand for a future order must NOT land on a pre-existing qty-0 DE dated earlier', async () => {
@@ -289,7 +276,6 @@ describe('createOrder', () => {
     // that row. Step 3b skips it (qty 0 >= 0 → can't tell DE from Batch), so
     // step 4 decrements it IN PLACE → demand lands on 06-25, not 07-03.
     // CORRECT: the demand must be homed to a DE dated to the order's required-by.
-    yModelFlag.enabled = true;
     const oldDate = '2026-06-25';
     const orderDate = '2026-07-03';
     const [de] = await harness.db.insert(stock).values({
@@ -315,8 +301,6 @@ describe('createOrder', () => {
     expect(oldDE.currentQuantity).toBe(0);             // old 06-25 DE untouched
     expect(futureDEs).toHaveLength(1);                 // a 07-03 DE was created
     expect(futureDEs[0].currentQuantity).toBe(-10);    // demand homed to 07-03
-
-    yModelFlag.enabled = false;
   });
 });
 
@@ -757,25 +741,19 @@ describe('list + getById', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// createOrder flag-on (STOCK_Y_MODEL)
+// createOrder — Demand Entry routing (Y-model)
 // ─────────────────────────────────────────────────────────────────────
 //
-// These tests verify that when STOCK_Y_MODEL is on, createOrder routes
-// DE-linked lines through getOrCreateDemandEntry, collapsing same-
-// (Variety, date) pairs into one Demand Entry row.
-//
-// The flag is read from getStockYModelEnabled() which reads the env var
-// at module load time. We mock configService.js to control it per-test.
+// These tests verify that createOrder routes DE-linked lines through
+// getOrCreateDemandEntry, collapsing same-(Variety, date) pairs into one
+// Demand Entry row.
 
-describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
+describe('createOrder — Demand Entry routing (Y-model)', () => {
   // Stock rows with typeName (Y-model rows) at qty < 0 (Demand Entries)
   let deStockId1;   // Peony Pink 60cm Sarah Bernhardt — will be the "existing DE"
   let deStockId2;   // Peony Pink 60cm (no cultivar) — different Variety
 
   beforeEach(async () => {
-    // Default: flag OFF (regression guard — existing tests unaffected)
-    yModelFlag.enabled = false;
-
     // Seed DE-shaped stock rows (typeName set, qty < 0)
     const [de1] = await harness.db.insert(stock).values({
       displayName: 'Peony Pink 60cm Sarah Bernhardt',
@@ -799,28 +777,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
     deStockId2 = de2.id;
   });
 
-  it('flag-off: existing stock deduction still works, no DE created per (Variety, date)', async () => {
-    yModelFlag.enabled = false;
-
-    await orderRepo.createOrder({
-      customer: 'recCust1',
-      customerRequest: 'Birthday',
-      deliveryType: 'Pickup',
-      orderLines: [
-        { stockItemId: stockId1, flowerName: 'Red Rose', quantity: 5, sellPricePerUnit: 15 },
-      ],
-      paymentStatus: 'Unpaid',
-      createdBy: 'florist',
-    }, config, { actor: { actorRole: 'florist' } });
-
-    // Stock deducted as normal
-    const [s] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
-    expect(s.currentQuantity).toBe(95); // started at 100, -5
-  });
-
-  it('flag-on: two orders same (Variety, Required By) → single DE row, two order_lines', async () => {
-    yModelFlag.enabled = true;
-
+  it('two orders same (Variety, Required By) → single DE row, two order_lines', async () => {
     // Order 1: line pointing at deStockId1 (which has typeName + qty<0)
     const { orderLines: lines1 } = await orderRepo.createOrder({
       customer: 'recCust1',
@@ -861,9 +818,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
     expect(deRow.date).toBe('2026-05-15');
   });
 
-  it('flag-on: two orders different Required By → two distinct DE rows', async () => {
-    yModelFlag.enabled = true;
-
+  it('two orders different Required By → two distinct DE rows', async () => {
     const { orderLines: lines1 } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'A',
       deliveryType: 'Pickup',
@@ -893,9 +848,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
     expect(de2.date).toBe('2026-05-20');
   });
 
-  it('flag-on: same Type/Colour/Size, different Cultivar → two distinct DEs', async () => {
-    yModelFlag.enabled = true;
-
+  it('same Type/Colour/Size, different Cultivar → two distinct DEs', async () => {
     const { orderLines: linesWithCultivar } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'C',
       deliveryType: 'Pickup',
@@ -921,9 +874,7 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
     expect(l1.stockItemId).not.toBe(l2.stockItemId);
   });
 
-  it('flag-on: Required By fallback — order with orderDate but no requiredBy → DE date = orderDate', async () => {
-    yModelFlag.enabled = true;
-
+  it('Required By fallback — order with orderDate but no requiredBy → DE date = orderDate', async () => {
     const { orderLines: lines } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'E',
       deliveryType: 'Pickup',
@@ -943,19 +894,16 @@ describe('createOrder flag-on (STOCK_Y_MODEL)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
-// updateOrder Required By cascade (STOCK_Y_MODEL)
+// updateOrder Required By cascade (Y-model)
 // ─────────────────────────────────────────────────────────────────────
 //
-// When flag is on and Required By changes, each order_line's linked DE
-// should have its date updated (sole-owner) or split (shared).
+// When Required By changes, each order_line's linked DE should have its
+// date updated (sole-owner) or split (shared).
 
-describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
+describe('updateOrder Required By cascade (Y-model)', () => {
   let deStockId;  // Y-model DE stock row
 
   beforeEach(async () => {
-    // Default: flag OFF
-    yModelFlag.enabled = false;
-
     // Seed a Y-model DE stock row
     const [de] = await harness.db.insert(stock).values({
       displayName: 'Peony Pink 60cm Sarah Bernhardt',
@@ -969,9 +917,7 @@ describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
     deStockId = de.id;
   });
 
-  it('flag-on: changing Required By on sole-owner DE → date updated in place', async () => {
-    yModelFlag.enabled = true;
-
+  it('changing Required By on sole-owner DE → date updated in place', async () => {
     // Create order with a line pointing at the DE
     const { order, orderLines: lines } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'A',
@@ -999,9 +945,7 @@ describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
     expect(updatedLine.stockItemId).toBe(originalDeId);
   });
 
-  it('flag-on: changing Required By on order sharing a DE → new DE created, line FK updated', async () => {
-    yModelFlag.enabled = true;
-
+  it('changing Required By on order sharing a DE → new DE created, line FK updated', async () => {
     // Create TWO orders sharing the same DE (same Variety + same Required By)
     const { order: order1, orderLines: lines1 } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'A',
@@ -1045,9 +989,7 @@ describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
     expect(oldDe.currentQuantity).toBe(-3);
   });
 
-  it('flag-on: changing Required By on Batch line → no DE affected', async () => {
-    yModelFlag.enabled = true;
-
+  it('changing Required By on Batch line → no DE affected', async () => {
     // Order with a legacy stock line (no typeName → Batch path)
     const { order } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'Batch test',
@@ -1070,9 +1012,7 @@ describe('updateOrder Required By cascade (STOCK_Y_MODEL)', () => {
     expect(after.date).toBeNull(); // no date column for legacy rows
   });
 
-  it('flag-off: updateOrder with Required By change → delivery cascade only (legacy)', async () => {
-    yModelFlag.enabled = false;
-
+  it('updateOrder with Required By change on a non-DE order → delivery cascade only', async () => {
     const { order } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'Delivery test',
       deliveryType: 'Delivery',
@@ -1273,7 +1213,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   }
 
   it('substitute case (no covering batch): releases the DE, net rises to 0, no batch touched', async () => {
-    yModelFlag.enabled = true;
     const anchorId = await seedAnchor();       // Peony Pink Variety, no batch exists
     const { order, lineStockId } = await makeOrder(anchorId, 11);
 
@@ -1289,7 +1228,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   });
 
   it('batch fully covers (incident post-relabel): consumes the batch, DE gone, net unchanged', async () => {
-    yModelFlag.enabled = true;
     const anchorId = await seedAnchor();
     // Order placed with no stock → DE -11. Batch arrives AFTER without absorbing it
     // (the mislabel incident: variety-key mismatch skipped ADR-0002 absorption).
@@ -1309,7 +1247,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   });
 
   it('partial cover: consumes all of a too-small batch, releases the DE, net rises to 0', async () => {
-    yModelFlag.enabled = true;
     const anchorId = await seedAnchor();
     const { order, lineStockId } = await makeOrder(anchorId, 11);
     const batchId = await seedBatch(5, '2026-07-06');   // too-small batch arrives after
@@ -1327,7 +1264,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   });
 
   it('shared DE (two orders same Variety+date): settling one releases only its qty', async () => {
-    yModelFlag.enabled = true;
     const anchorId = await seedAnchor();       // orders build the dated DE
     const a = await makeOrder(anchorId, 5, '2026-07-10');
     const b = await makeOrder(anchorId, 3, '2026-07-10');
@@ -1349,7 +1285,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   });
 
   it('idempotent: revert out of terminal then re-deliver does not double-consume', async () => {
-    yModelFlag.enabled = true;
     const anchorId = await seedAnchor();
     const { order } = await makeOrder(anchorId, 11);
     const batchId = await seedBatch(15, '2026-07-06');   // arrives after order → DE stuck open
@@ -1369,7 +1304,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   });
 
   it('delivery cascade: driver marking the DELIVERY Delivered settles the order demand', async () => {
-    yModelFlag.enabled = true;
     const anchorId = await seedAnchor();
     // A DELIVERY order (not pickup) → status flips via the delivery→order cascade,
     // NOT transitionStatus. Settlement must fire through that seam too.
@@ -1395,7 +1329,6 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
   });
 
   it('batch-bound line: terminal transition does not double-decrement (already consumed at create)', async () => {
-    yModelFlag.enabled = true;
     // stockId1 (Red Rose, qty 100) is a legacy Batch (no typeName) — consumed at create.
     const { order } = await orderRepo.createOrder({
       customer: 'recCust1', customerRequest: 'Roses', deliveryType: 'Pickup',
@@ -1410,23 +1343,5 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
 
     [s] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
     expect(s.currentQuantity).toBe(95);        // no-op — batch not touched again
-  });
-
-  it('flag-off: terminal transition leaves the row untouched (no settlement)', async () => {
-    yModelFlag.enabled = false;
-    const anchorId = await seedAnchor();
-    // Flag off → createOrder does classic deduction; confirm the transition itself
-    // never settles/soft-deletes when Y-model is disabled.
-    const { order } = await orderRepo.createOrder({
-      customer: 'recCust1', customerRequest: 'X', deliveryType: 'Pickup',
-      orderLines: [{ stockItemId: anchorId, flowerName: 'Peony', quantity: 11 }],
-      paymentStatus: 'Unpaid', createdBy: 'florist',
-    }, config, { actor: { actorRole: 'florist' } });
-
-    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
-    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
-
-    const [row] = await harness.db.select().from(stock).where(eq(stock.id, anchorId));
-    expect(row.deletedAt).toBeNull();          // untouched — settlement is flag-gated
   });
 });

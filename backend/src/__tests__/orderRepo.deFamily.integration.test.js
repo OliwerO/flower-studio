@@ -31,10 +31,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-const yModelFlag = { enabled: true };
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelFlag.enabled,
-  getStockXModelEnabled: () => false,
   getConfig: vi.fn(),
   updateConfig: vi.fn(),
   generateOrderId: vi.fn(),
@@ -55,7 +52,6 @@ let seq = 0;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelFlag.enabled = true;
   seq = 0;
 });
 afterEach(async () => {

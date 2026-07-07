@@ -28,10 +28,7 @@ vi.mock('../db/index.js', () => ({
   disconnectPostgres: async () => {},
 }));
 
-const yModelFlag = { enabled: true };
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelFlag.enabled,
-  getStockXModelEnabled: () => false,
   getConfig: (k) => ({ defaultDeliveryFee: 25, driverCostPerDelivery: 10 }[k] ?? 0),
   updateConfig: vi.fn(),
   generateOrderId: vi.fn(async () => `BLO-UF-${Math.floor(performance.now())}`),
@@ -54,7 +51,6 @@ let harness;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelFlag.enabled = true;
 });
 afterEach(async () => {
   await teardownPgHarness(harness);

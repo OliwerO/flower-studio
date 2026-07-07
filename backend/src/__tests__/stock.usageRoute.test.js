@@ -1,20 +1,17 @@
 // Route tests for GET /stock/:id/usage — Task 3, issue #289, ADR-0007.
 //
 // What we're proving:
-//   • flag-on, exact-ID filter: two Batches of same Variety → trace for batch1
+//   • Exact-ID filter: two Batches of same Variety → trace for batch1
 //     returns ONLY batch1 events; batch2 events MUST NOT appear.
-//   • flag-on, no events: empty trail returns { stockItem, trail: [] }.
-//   • flag-off, legacy path preserved: same fixture, flag off, sibling-
-//     aggregation path runs (both batches' events visible in the trace).
+//   • No events: empty trail returns { stockItem, trail: [] }.
 //   • Order events: correct field shape (customer name, orderId, quantity sign).
 //   • Premade events: premade_bouquet_lines matched by stock_id appear in trail.
 //
 // Implementation notes:
-//   • The legacy path in the route calls orderRepo.list (which lists PG orders),
-//     stockLossRepo.list, stockPurchasesRepo.list, premadeBouquetRepo.list —
-//     all of these depend on the real db. The test uses a real pglite harness
-//     so we run against actual SQL rather than brittle façade mocks.
-//   • configService is module-mocked so STOCK_Y_MODEL can be toggled per test.
+//   • orderRepo.list (which lists PG orders), stockLossRepo.list,
+//     stockPurchasesRepo.list, premadeBouquetRepo.list all depend on the real
+//     db. The test uses a real pglite harness so we run against actual SQL
+//     rather than brittle façade mocks.
 //   • Auth is injected via req.role header (x-test-role = owner).
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
@@ -45,10 +42,7 @@ vi.mock('../db/index.js', () => ({
 // ── audit mock — no-op ──
 vi.mock('../db/audit.js', () => ({ recordAudit: vi.fn().mockResolvedValue(undefined) }));
 
-// ── configService mock — toggleable Y-model flag ──
-let yModelEnabled = false;
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => yModelEnabled,
   getConfig:             () => undefined,
   getActiveSeasonalCategory: () => null,
   generateOrderId:       async () => 'TEST-001',
@@ -78,7 +72,6 @@ let harness, app;
 beforeEach(async () => {
   harness = await setupPgHarness();
   dbHolder.db = harness.db;
-  yModelEnabled = false;
   app = buildApp();
   vi.clearAllMocks();
 });
@@ -174,13 +167,7 @@ async function seedPremadeLine(bouquetId, stockId, overrides = {}) {
   return row;
 }
 
-// ════════════════════════════════════════════════════════════════════════════
-// Flag-ON tests
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('GET /stock/:id/usage — flag-on (STOCK_Y_MODEL=true)', () => {
-  beforeEach(() => { yModelEnabled = true; });
-
+describe('GET /stock/:id/usage — exact-ID trace (Y-model)', () => {
   it('exact-ID filter: order event for batch1 appears, batch2 order does NOT', async () => {
     const batch1 = await seedStock({ displayName: 'Rose Red (01.May.)', colour: 'Red' });
     const batch2 = await seedStock({ displayName: 'Rose Red (08.May.)', colour: 'Red' });
@@ -316,36 +303,3 @@ describe('GET /stock/:id/usage — flag-on (STOCK_Y_MODEL=true)', () => {
   });
 });
 
-// ════════════════════════════════════════════════════════════════════════════
-// Flag-OFF tests — legacy path must not regress
-// ════════════════════════════════════════════════════════════════════════════
-
-describe('GET /stock/:id/usage — flag-off (STOCK_Y_MODEL=false, legacy path)', () => {
-  it('returns 200 with stockItem + trail shape even in legacy mode', async () => {
-    // Seed a stock item with a classic non-batch display name so the legacy
-    // sibling-scan finds exactly one sibling (itself).
-    const batch = await seedStock({ displayName: 'Hydrangea Blue', typeName: null });
-
-    const res = await supertest(app)
-      .get(`/stock/${batch.id}/usage`)
-      .set('x-test-role', 'owner');
-
-    expect(res.status).toBe(200);
-    expect(res.body).toHaveProperty('stockItem');
-    expect(res.body).toHaveProperty('trail');
-    expect(Array.isArray(res.body.trail)).toBe(true);
-  });
-
-  it('legacy path: write-off linked to the same stock ID appears in the trail', async () => {
-    const batch = await seedStock({ displayName: 'Sunflower Yellow', typeName: null });
-    await seedLossLog(batch.id, { quantity: 4, reason: 'Too Old' });
-
-    const res = await supertest(app)
-      .get(`/stock/${batch.id}/usage`)
-      .set('x-test-role', 'owner');
-
-    expect(res.status).toBe(200);
-    const writeoffs = res.body.trail.filter(e => e.type === 'writeoff');
-    expect(writeoffs.length).toBeGreaterThanOrEqual(1);
-  });
-});

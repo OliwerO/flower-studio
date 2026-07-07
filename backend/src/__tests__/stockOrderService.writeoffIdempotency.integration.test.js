@@ -28,7 +28,6 @@ vi.mock('../db/index.js', () => ({
 }));
 
 vi.mock('../services/configService.js', () => ({
-  getStockYModelEnabled: () => false,
   getConfig: () => undefined, // targetMarkup → falls back to 1
   getActiveSeasonalCategory: () => null,
   generateOrderId: async () => 'TEST-001',

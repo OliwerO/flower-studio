@@ -16,7 +16,6 @@ import { db } from '../db/index.js';
 import { orders, orderLines, deliveries, stock, auditLog } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
 import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
-import { getStockYModelEnabled } from '../services/configService.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc, ilike } from 'drizzle-orm';
 
 // ── Backend mode stub ──
@@ -24,6 +23,19 @@ import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc, ilike } from 'd
 // remove the callers in orderService.js and wix.js.
 /** @deprecated Remove after Task 3+4 clean up orderService.js / wix.js */
 export function getBackendMode() { return 'postgres'; }
+
+// `stock.id` is a uuid column — comparing it directly against a legacy
+// Airtable `recXXX` id (or any other non-UUID string) throws a raw Postgres
+// "invalid input syntax for type uuid" error instead of a clean miss.
+// FEFO/DE routing (steps 3a/3b in createOrder, their mirrors in updateOrder)
+// only applies to rows already resolved to a real PG stock UUID, so guard
+// each lookup with this check and let non-UUID ids fall through to
+// stockRepo.adjustQuantity's dual-lookup (findPgByAirtableOrUuid), which
+// already handles recXXX ids and unknown ids as a clean 404.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isPgStockUuid(id) {
+  return typeof id === 'string' && UUID_RE.test(id);
+}
 
 // ── PATCH allowlists ──
 export const ORDER_WRITE_ALLOWED = [
@@ -604,16 +616,16 @@ export async function createOrder(params, config, opts = {}) {
       createdLines.push(lineRow);
     }
 
-    // 3a. Flag-on: FEFO routing for Batch-bound lines (#319).
+    // 3a. FEFO routing for Batch-bound lines (#319).
     //
     //     When the picker passes a Variety's representative stockItemId but
     //     siblings exist, reroute to the oldest non-negative Batch that
     //     fully covers (falls back to oldest period if none does). Skips
     //     DEs (qty < 0) — those are handled by step 3b below.
-    if (getStockYModelEnabled() && !skipStockDeduction) {
+    if (!skipStockDeduction) {
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (!line.stockItemId || line.stockDeferred) continue;
+        if (!line.stockItemId || line.stockDeferred || !isPgStockUuid(line.stockItemId)) continue;
 
         const [stockRow] = await tx.select({
           typeName:        stock.typeName,
@@ -647,16 +659,16 @@ export async function createOrder(params, config, opts = {}) {
       }
     }
 
-    // 3b. Flag-on: create/deepen Demand Entry for each line whose linked
+    // 3b. Create/deepen Demand Entry for each line whose linked
     //     stock row is a Y-model DE (typeName set AND qty < 0).
     //
     //     "Batch coverage" = stock row has typeName set AND qty >= 0 → skip
     //       (step 4's adjustQuantity handles it, same as legacy).
     //     "Legacy aggregate" = stock row has typeName null → skip
-    //       (flag-on only routes properly-attributed rows through DE path).
+    //       (only routes properly-attributed rows through DE path).
     //     "Y-model DE" = typeName set AND qty < 0 → route through DE, create/
     //       deepen dated DE, update order_line FK to canonical DE id.
-    if (getStockYModelEnabled()) {
+    {
       const demandDate = computeDemandDate({
         requiredBy: requiredBy || delivery?.date || null,
         orderDate:  new Date().toISOString().split('T')[0],
@@ -664,7 +676,7 @@ export async function createOrder(params, config, opts = {}) {
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        if (!line.stockItemId || line.stockDeferred) continue;
+        if (!line.stockItemId || line.stockDeferred || !isPgStockUuid(line.stockItemId)) continue;
 
         // Look up the stock row inside this transaction to check Variety + qty
         const [stockRow] = await tx.select({
@@ -865,9 +877,8 @@ export async function getOrderStatusHistory(orderId, runner = db) {
 // so a delivery marked Delivered by the driver settles exactly like a pickup marked
 // Picked Up. For each DE-bound, non-deferred line, reconcile its demand against real
 // stock (FEFO-consume) and release it — no-op + idempotent for non-DE lines.
-// Flag-gated; callers still guard on a FRESH entry into a fulfilled terminal.
+// Callers still guard on a FRESH entry into a fulfilled terminal.
 async function settleFulfilledOrderDemand(orderPgId, tx, actor) {
-  if (!getStockYModelEnabled()) return;
   const lineRows = await tx.select().from(orderLines)
     .where(and(eq(orderLines.orderId, orderPgId), isNull(orderLines.deletedAt)));
   for (const line of lineRows) {
@@ -1195,7 +1206,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
         // FEFO routing for new lines added during edit (#319). Mirrors step 3a
         // in createOrder. Existing-line quantity changes intentionally skip
         // FEFO — preserves the line's original audit trail.
-        if (getStockYModelEnabled() && line.stockItemId && !line.stockDeferred) {
+        if (line.stockItemId && !line.stockDeferred && isPgStockUuid(line.stockItemId)) {
           const [stockRow] = await tx.select({
             typeName:        stock.typeName,
             colour:          stock.colour,
@@ -1248,7 +1259,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
           // demand to the dated DE instead of letting step-4's raw adjustQuantity
           // drive the Batch negative (which would collide with a same-(variety,
           // date) DE on the unique index). Mirrors createOrder step 3b.
-          if (!line._deApplied && line.stockItemId) {
+          if (!line._deApplied && line.stockItemId && isPgStockUuid(line.stockItemId)) {
             const [b] = await tx.select({
               typeName: stock.typeName, colour: stock.colour,
               sizeCm: stock.sizeCm, cultivar: stock.cultivar,
@@ -1373,13 +1384,13 @@ export async function updateOrder(id, fields, opts = {}) {
       }
     }
 
-    // Flag-on Required By cascade → Demand Entry date update.
+    // Required By cascade → Demand Entry date update.
     // C4: gate on PRESENCE, not truthiness — clearing Required By (null/'')
     // must still cascade so the linked DEs de-schedule (updateDemandEntryDate
     // handles a null newDate by clearing the DE date in place). The old
     // `&& fields['Required By']` skipped clears and left DEs pinned to the
     // stale date.
-    if (getStockYModelEnabled() && 'Required By' in fields) {
+    if ('Required By' in fields) {
       const newDate = fields['Required By'] || null;
       // Fetch all order_lines for this order
       const orderLineRows = await tx.select({
