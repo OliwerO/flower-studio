@@ -30,9 +30,6 @@ router.get('/', authorize('orders'), (req, res) => {
     drivers:            resolvedDrivers,
     pinDrivers:         driverNames,
     config,
-    // Always true post-cutover (#291); field kept until the frontend hook is
-    // removed in the shared/apps PR, then delete.
-    stockYModelEnabled: true,
   });
 });
 
