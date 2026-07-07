@@ -2,14 +2,13 @@
 // Like a warehouse management screen: see every item, adjust quantities,
 // receive deliveries, track waste. All fields inline-editable.
 
-import { useState, useEffect, useCallback, useRef, Fragment, useMemo } from 'react';
-import client, { cachedGet } from '../api/client.js';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import {
-  stockBaseName, renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel,
+  renderDateTag, parseBatchName, LOSS_REASONS, reasonLabel,
   formatDateDMY,
-  useStockYModelFlag,
   TypeGroupHeader,
   VarietyListItem,
   ShortfallSummary,
@@ -29,30 +28,10 @@ import {
 import StockReceiveForm from './StockReceiveForm.jsx';
 import StockOrderPanel from './StockOrderPanel.jsx';
 import ReconciliationSection from './ReconciliationSection.jsx';
-import InlineEdit from './InlineEdit.jsx';
 import DatePicker from './DatePicker.jsx';
 import { SkeletonTable } from './Skeleton.jsx';
 
-function formatDateTag(dateStr, color = 'gray') {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d)) return dateStr;
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const label = `${d.getDate()}.${months[d.getMonth()]}.`;
-  const colors = {
-    indigo: 'bg-indigo-50 text-indigo-600 border-indigo-200',
-    amber: 'bg-amber-50 text-amber-600 border-amber-200',
-    gray: 'bg-gray-100 text-gray-500 border-gray-200',
-  };
-  return (
-    <span className={`inline-flex items-center text-[10px] font-medium border px-1.5 py-0.5 rounded-md ${colors[color] || colors.gray}`}>
-      {label}
-    </span>
-  );
-}
-
 export default function StockTab({ initialFilter, onNavigate, isActive = true }) {
-  const stockYModelEnabled          = useStockYModelFlag();
   const [stock, setStock]           = useState([]);
   const [groups, setGroups]         = useState([]); // Y-model: array from /stock?grouped=true
   const [loading, setLoading]       = useState(true);
@@ -89,11 +68,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [varietyOpening, setVarietyOpening]             = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading]   = useState(false);
   const [writeOffVariety, setWriteOffVariety] = useState(null); // write-off picker (modal)
-  // Per-row "Reconcile" button on premade chips. Gated on a backend setting
-  // (Settings → Stock → Stock repair tools) so it syncs across devices and
-  // stays hidden from the florist's daily flow by default. The setting is
-  // fetched alongside the normal stock data below.
-  const [showRepairTools, setShowRepairTools] = useState(false);
   const [wastePeriod, setWastePeriod] = useState('month'); // 'today' | 'month' | '30d' | '90d' | 'custom'
   const [wasteCustomFrom, setWasteCustomFrom] = useState('');
   const [wasteCustomTo, setWasteCustomTo] = useState('');
@@ -102,67 +76,41 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [wasteEditForm, setWasteEditForm] = useState({ quantity: '', reason: '' });
   const [wasteDeleteId, setWasteDeleteId] = useState(null);
   const [pendingPO, setPendingPO] = useState({});
-  const [committedMap, setCommittedMap] = useState({});
   // Premade-bouquet reservations per stock item:
   // { stockId: { qty, bouquets: [{ bouquetId, name, qty }] } }
   const [premadeMap, setPremadeMap] = useState({});
-  const [plannedCollapsed, setPlannedCollapsed] = useState(false);
-  const [expandedPlanned, setExpandedPlanned] = useState(null);
   const { showToast } = useToast();
-
-  const stockLoaded = useRef(false);
 
   const fetchStock = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      if (stockYModelEnabled) {
-        // Y-model: fetch grouped stock + premade reservations + pending POs in parallel.
-        // pendingPO feeds the Y-native PendingArrivalsPanel.
-        const [groupedRes, premadeRes, pendingPoRes, settingsRes] = await Promise.all([
-          client.get('/stock?grouped=true'),
-          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-          client.get('/stock/pending-po').catch(() => ({ data: {} })),
-          cachedGet('/settings').catch(() => ({ data: { config: {} } })),
-        ]);
-        setGroups(groupedRes.data.groups || []);
-        setPremadeMap(premadeRes.data || {});
-        setPendingPO(pendingPoRes.data || {});
-        setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
-      } else {
-        // Legacy flat list
-        const [stockRes, poRes, comRes, premadeRes, settingsRes] = await Promise.all([
-          client.get('/stock?includeEmpty=true'),
-          client.get('/stock/pending-po'),
-          client.get('/stock/committed'),
-          client.get('/stock/premade-committed').catch(() => ({ data: {} })),
-          cachedGet('/settings').catch(() => ({ data: { config: {} } })),
-        ]);
-        setStock(prev => {
-          if (!stockLoaded.current) return stockRes.data;
-          // Merge: update existing items in place, preserve local UI state
-          const newMap = new Map(stockRes.data.map(s => [s.id, s]));
-          const merged = prev.map(s => newMap.get(s.id) || s).filter(s => newMap.has(s.id));
-          for (const s of stockRes.data) {
-            if (!merged.find(m => m.id === s.id)) merged.push(s);
-          }
-          return merged;
-        });
-        setPendingPO(poRes.data);
-        setCommittedMap(comRes.data);
-        setPremadeMap(premadeRes.data || {});
-        setShowRepairTools(!!settingsRes.data?.config?.showStockRepairTools);
-        stockLoaded.current = true;
-      }
+      // Fetch grouped stock (the Variety browse view) + a flat list + premade
+      // reservations + pending POs in parallel. The flat `stock` list feeds
+      // StockReceiveForm's item picker / supplier list and StockOrderPanel's
+      // Type/Colour/Cultivar/Farmer datalists — those take a flat array, not
+      // Variety groups. (Before the Y-model cutover this flat fetch lived in
+      // the flag-off branch, so under Y-model those pickers were empty; mirrors
+      // florist StockPanelPage.) pendingPO feeds the PendingArrivalsPanel.
+      const [groupedRes, flatRes, premadeRes, pendingPoRes] = await Promise.all([
+        client.get('/stock?grouped=true'),
+        client.get('/stock?includeEmpty=true'),
+        client.get('/stock/premade-committed').catch(() => ({ data: {} })),
+        client.get('/stock/pending-po').catch(() => ({ data: {} })),
+      ]);
+      setGroups(groupedRes.data.groups || []);
+      setStock(flatRes.data || []);
+      setPremadeMap(premadeRes.data || {});
+      setPendingPO(pendingPoRes.data || {});
     } catch {
       if (!silent) showToast(t.error, 'error');
     } finally {
       setLoading(false);
     }
-  }, [showToast, stockYModelEnabled]);
+  }, [showToast]);
 
   useEffect(() => {
     if (!isActive) return undefined;
-    fetchStock(stockLoaded.current);
+    fetchStock(false);
     const interval = setInterval(() => { if (!document.hidden) fetchStock(true); }, 120000);
     function onVisible() { if (!document.hidden) fetchStock(true); }
     document.addEventListener('visibilitychange', onVisible);
@@ -236,26 +184,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
   }
 
-  async function adjustQty(id, delta) {
-    // Optimistic update: change local state immediately, revert on failure
-    setStock(prev => prev.map(item =>
-      item.id === id
-        ? { ...item, 'Current Quantity': (item['Current Quantity'] || 0) + delta }
-        : item
-    ));
-    try {
-      await client.post(`/stock/${id}/adjust`, { delta });
-    } catch {
-      // Revert the optimistic update
-      setStock(prev => prev.map(item =>
-        item.id === id
-          ? { ...item, 'Current Quantity': (item['Current Quantity'] || 0) - delta }
-          : item
-      ));
-      showToast(t.error, 'error');
-    }
-  }
-
   // Y-model quick-adjust: qty lives on the per-Batch row inside `groups`, not the
   // legacy flat `stock` array. Optimistically bump the matching row's
   // current_quantity, POST the delta, revert on failure.
@@ -269,16 +197,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
       await client.post(`/stock/${id}/adjust`, { delta });
     } catch {
       setGroups(prev => prev.map(g => ({ ...g, rows: bump(g.rows, -delta) })));
-      showToast(t.error, 'error');
-    }
-  }
-
-  async function patchStock(id, fields) {
-    try {
-      await client.patch(`/stock/${id}`, fields);
-      showToast(t.stockUpdated);
-      fetchStock();
-    } catch {
       showToast(t.error, 'error');
     }
   }
@@ -301,115 +219,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
       showToast(t.error, 'error');
     }
   }
-
-  async function writeOff(id, quantity, reason) {
-    try {
-      await client.post(`/stock/${id}/write-off`, { quantity, reason });
-      showToast(t.stockWrittenOff);
-      fetchStock();
-      fetchLossLog();
-    } catch {
-      showToast(t.error, 'error');
-    }
-  }
-
-  const [sortCol, setSortCol] = useState('name');
-  const [sortAsc, setSortAsc] = useState(false);
-
-  function toggleSort(col) {
-    if (sortCol === col) setSortAsc(!sortAsc);
-    else { setSortCol(col); setSortAsc(col === 'name'); }
-  }
-
-  // Client-side search
-  let filtered = search
-    ? stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(search.toLowerCase())
-        || (s.Supplier || '').toLowerCase().includes(search.toLowerCase())
-        || (s.Farmer || '').toLowerCase().includes(search.toLowerCase()))
-    : stock;
-
-  // View filters (waste view uses lossLog instead of stock table)
-  if (view === 'negative') {
-    filtered = filtered.filter(s => (s['Current Quantity'] || 0) < 0);
-  }
-  if (view === 'slow') {
-    const fourteenDaysAgo = Date.now() - 14 * 86400000;
-    filtered = filtered.filter(s =>
-      (s['Current Quantity'] || 0) > 0
-      && s['Last Restocked']
-      && new Date(s['Last Restocked']).getTime() < fourteenDaysAgo
-    );
-  }
-
-  // Hide zero-stock items (default on)
-  if (hideZero && view === 'all') {
-    // Keep zero-qty rows when premade bouquets still hold stems of that
-    // flower — the owner needs to see them to reconcile physical reality.
-    // Without this, ~30 stems locked in premades can be invisible.
-    filtered = filtered.filter(s => {
-      const qty = Number(s['Current Quantity']) || 0;
-      if (qty !== 0) return true;
-      return (premadeMap[s.id]?.qty || 0) > 0;
-    });
-  }
-
-  // Sort
-  const sortFns = {
-    name: (a, b) => (a['Display Name'] || '').localeCompare(b['Display Name'] || ''),
-    qty: (a, b) => (a['Current Quantity'] || 0) - (b['Current Quantity'] || 0),
-    cost: (a, b) => (a['Current Cost Price'] || 0) - (b['Current Cost Price'] || 0),
-    sell: (a, b) => (a['Current Sell Price'] || 0) - (b['Current Sell Price'] || 0),
-    supplier: (a, b) => (a.Supplier || '').localeCompare(b.Supplier || ''),
-    lastRestocked: (a, b) => {
-      const da = a['Last Restocked'] ? new Date(a['Last Restocked']).getTime() : 0;
-      const db = b['Last Restocked'] ? new Date(b['Last Restocked']).getTime() : 0;
-      return da - db;
-    },
-  };
-  if (sortFns[sortCol]) {
-    const fn = sortFns[sortCol];
-    filtered = [...filtered].sort((a, b) => {
-      // Always show negative stock on top regardless of sort column
-      const aNeg = (a['Current Quantity'] || 0) < 0 ? 1 : 0;
-      const bNeg = (b['Current Quantity'] || 0) < 0 ? 1 : 0;
-      if (aNeg !== bNeg) return bNeg - aNeg;
-      return sortAsc ? fn(a, b) : fn(b, a);
-    });
-  }
-
-  // Planned rows — flowers arriving from pending POs, cross-referenced with committed orders
-  const plannedRows = useMemo(() => {
-    const nameMap = {};
-    const stockQtyMap = {};
-    for (const s of stock) {
-      nameMap[s.id] = stockBaseName(s['Display Name']) || s['Purchase Name'] || '';
-      stockQtyMap[s.id] = Number(s['Current Quantity']) || 0;
-    }
-    let rows = Object.keys(pendingPO).map(stockId => {
-      const po = pendingPO[stockId] || { ordered: 0, pos: [], flowerName: '' };
-      const com = committedMap[stockId] || { committed: 0, orders: [] };
-      // Only count "New" orders as committed — Ready orders already have flowers composed
-      const newOrders = (com.orders || []).filter(o => o.status === 'New');
-      const fromEndpoint = newOrders.reduce((sum, o) => sum + (o.qty || 0), 0);
-      // Negative qty = demand baked into Current Quantity (CLAUDE.md pitfall stock-math).
-      // /stock/committed reads Airtable (frozen — issue #229). Use negative qty as fallback.
-      const committedQty = Math.max(fromEndpoint, Math.max(0, -(stockQtyMap[stockId] || 0)));
-      const stockName = nameMap[stockId] || '';
-      const poName = stockBaseName(po.flowerName) || '';
-      return {
-        stockId,
-        name: (poName.length >= stockName.length ? poName : stockName) || '—',
-        ordered: po.ordered,
-        committed: committedQty,
-        net: po.ordered - committedQty,
-        pos: po.pos || [],
-        orders: newOrders,
-        plannedDate: po.plannedDate || null,
-      };
-    }).filter(r => r.ordered > 0).sort((a, b) => a.name.localeCompare(b.name));
-    if (search) rows = rows.filter(r => r.name.toLowerCase().includes(search.toLowerCase()));
-    return rows;
-  }, [pendingPO, committedMap, stock, search]);
 
   // The old "Needed for Orders" panel has been removed. It was built on a
   // brittle assumption (all order lines reserve future demand not reflected in
@@ -446,7 +255,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
 
   // ── Y-model: filter groups by search + hideZero ──
   const filteredGroups = useMemo(() => {
-    if (!stockYModelEnabled) return [];
     let list = groups;
     const q = (search || '').trim().toLowerCase();
     if (q) {
@@ -474,7 +282,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
       });
     }
     return list;
-  }, [groups, hideZero, view, stockYModelEnabled, reservationsMap, search]);
+  }, [groups, hideZero, view, reservationsMap, search]);
 
   // D3 round-2: reserve the Planned column only when some visible Variety has
   // pending order demand; otherwise collapse it so In-premade sits next to
@@ -616,9 +424,9 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
             qty: s['Current Quantity'],
             supplier: s.Supplier,
           }))}
-          // Y-model: netted per-Variety shortfall suggestions (the legacy
-          // negativeStock list is empty under the flag — grouped fetch instead).
-          poSuggestions={stockYModelEnabled ? buildPoSuggestions(groups, pendingPO, premadeMap) : null}
+          // Netted per-Variety shortfall suggestions (the negativeStock list
+          // above is empty since `stock` is never populated — grouped fetch instead).
+          poSuggestions={buildPoSuggestions(groups, pendingPO, premadeMap)}
           stock={stock}
           autoCreate={initialFilter?.action === 'createPO'}
           onClose={() => setShowPurchaseOrders(false)}
@@ -832,8 +640,8 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
         );
       })()}
 
-      {/* ── Y-model: Type→Variety grouped list (flag-on) ── */}
-      {stockYModelEnabled && view !== 'waste' && !loading && (
+      {/* ── Type→Variety grouped list ── */}
+      {view !== 'waste' && !loading && (
         <div className="space-y-0">
           {filteredGroups.length === 0 ? (
             <p className="text-center text-sm text-ios-tertiary py-12">{t.noStockFound || 'No items found'}</p>
@@ -1090,165 +898,6 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
         </div>
       )}
 
-      {/* ── Three aligned stock tables: Planned → Needed → Available (flag-off) ── */}
-      {!stockYModelEnabled && view !== 'waste' && !loading && (
-        <div className="glass-card overflow-x-auto">
-          {/* ── PLANNED — flowers arriving from pending POs ── */}
-          {plannedRows.length > 0 && (
-            <table className="w-full text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
-              <colgroup>
-                <col style={{ width: '24%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-                <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '5%' }} />
-                <col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-                <col style={{ width: '6%' }} /><col style={{ width: '17%' }} />
-              </colgroup>
-              <thead>
-                <tr className="bg-indigo-50/60">
-                  <th colSpan={11} className="px-3 py-2 border-b border-indigo-100 text-left font-normal">
-                    <button onClick={() => setPlannedCollapsed(v => !v)} className="w-full flex items-center justify-between">
-                      <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
-                        {t.pendingArrivals} ({plannedRows.length})
-                      </span>
-                      <span className="text-xs text-indigo-400">{plannedCollapsed ? '▼' : '▲'}</span>
-                    </button>
-                  </th>
-                </tr>
-                {!plannedCollapsed && (
-                  <tr className="text-xs text-ios-tertiary border-b border-indigo-100 bg-indigo-50/20">
-                    <th className="text-left px-2 py-1.5 font-medium">{t.stockName}</th>
-                    <th className="text-left px-2 py-1.5 font-medium">{t.planned}</th>
-                    <th className="text-right px-2 py-1.5 font-medium">{t.ordered}</th>
-                    <th className="text-right px-2 py-1.5 font-medium">{t.committedToOrders}</th>
-                    <th className="text-right px-2 py-1.5 font-medium">{t.netQty}</th>
-                    <th colSpan={6}></th>
-                  </tr>
-                )}
-              </thead>
-              {!plannedCollapsed && (
-                <tbody>
-                  {plannedRows.map(row => (
-                    <Fragment key={row.stockId}>
-                      <tr
-                        className="border-b border-gray-100 hover:bg-indigo-50/20 cursor-pointer"
-                        onClick={() => setExpandedPlanned(expandedPlanned === row.stockId ? null : row.stockId)}
-                      >
-                        <td className="px-2 py-1.5 text-ios-label font-medium text-sm truncate">{row.name}</td>
-                        <td className="px-2 py-1.5">{formatDateTag(row.plannedDate, 'indigo')}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-base font-bold text-indigo-600">{row.ordered}</td>
-                        <td className="px-2 py-1.5 text-right tabular-nums text-amber-600 font-medium">
-                          {row.committed > 0 ? row.committed : '—'}
-                        </td>
-                        <td className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
-                          row.net > 0 ? 'text-green-600' : row.net < 0 ? 'text-red-600' : 'text-ios-label'
-                        }`}>
-                          {row.net > 0 ? '+' : ''}{row.net}
-                        </td>
-                        <td colSpan={6}></td>
-                      </tr>
-                      {expandedPlanned === row.stockId && row.orders.length > 0 && (
-                        <tr className="bg-amber-50/50">
-                          <td colSpan={11} className="px-6 py-1.5">
-                            <div className="space-y-0.5">
-                              {row.orders.map((o, i) => (
-                                <div key={i} className="flex items-center justify-between text-xs cursor-pointer hover:underline text-amber-700"
-                                     onClick={e => { e.stopPropagation(); onNavigate?.({ tab: 'orders', filter: { orderId: o.orderId } }); }}>
-                                  <span>#{o.appOrderId} — {o.customerName} ({o.requiredBy || '—'})</span>
-                                  <span className="tabular-nums font-medium">{o.qty} {t.stems}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </td>
-                        </tr>
-                      )}
-                    </Fragment>
-                  ))}
-                </tbody>
-              )}
-            </table>
-          )}
-
-          {/* ── AVAILABLE — current stock inventory ── */}
-          <table className="w-full text-sm whitespace-nowrap" style={{ tableLayout: 'fixed' }}>
-            <colgroup>
-              <col style={{ width: '24%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: '7%' }} /><col style={{ width: '7%' }} /><col style={{ width: '5%' }} />
-              <col style={{ width: '8%' }} /><col style={{ width: '7%' }} /><col style={{ width: '6%' }} />
-              <col style={{ width: '6%' }} /><col style={{ width: '17%' }} />
-            </colgroup>
-            <thead>
-              <tr className="bg-green-50/60">
-                <th colSpan={11} className="px-3 py-2 border-b border-green-100 text-left font-normal">
-                  <span className="text-xs font-semibold text-green-700 uppercase tracking-wide">
-                    {t.flowersInStock || 'Flowers in Stock'} ({filtered.length})
-                  </span>
-                </th>
-              </tr>
-              <tr className="text-xs text-ios-tertiary border-b border-gray-200 bg-gray-50/60">
-                {[
-                  { key: 'name',           label: t.stockName, align: 'left' },
-                  { key: 'lastRestocked',  label: t.receivedDate, align: 'left' },
-                  { key: 'qty',            label: t.available, align: 'right' },
-                  { key: 'cost',           label: t.costPrice, align: 'right' },
-                  { key: 'sell',           label: t.sellPrice, align: 'right' },
-                  { key: null,             label: t.markup, align: 'right' },
-                  { key: 'supplier',       label: t.supplier, align: 'left' },
-                  { key: null,             label: t.farmer, align: 'left' },
-                  { key: null,             label: t.lotSize, align: 'right' },
-                  { key: null,             label: t.threshold || 'Threshold', align: 'right' },
-                  { key: null,             label: '', align: 'right' },
-                ].map((col, i) => (
-                  <th key={i}
-                    onClick={col.key ? () => toggleSort(col.key) : undefined}
-                    className={`px-2 py-2 font-medium ${col.align === 'right' ? 'text-right' : 'text-left'} ${col.key ? 'cursor-pointer hover:text-ios-label select-none' : ''}`}
-                  >
-                    {col.label}
-                    {col.key && sortCol === col.key && (
-                      <span className="ml-0.5">{sortAsc ? '↑' : '↓'}</span>
-                    )}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(item => (
-                <StockRow
-                  key={item.id}
-                  item={item}
-                  premade={premadeMap[item.id]}
-                  showRepairTools={showRepairTools}
-                  onAdjust={adjustQty}
-                  onWriteOff={writeOff}
-                  onPatch={patchStock}
-                  onNavigate={onNavigate}
-                />
-              ))}
-            </tbody>
-            {(() => {
-              const inStock = filtered;
-              return inStock.length > 0 && (
-              <tfoot>
-                <tr className="border-t-2 border-gray-200 bg-gray-50/80 font-semibold text-xs">
-                  <td className="px-2 py-2 text-ios-label uppercase tracking-wide">
-                    {t.total || 'Total'} ({inStock.length})
-                  </td>
-                  <td></td>
-                  <td className="px-2 py-2 text-right text-ios-label text-base">
-                    {inStock.reduce((sum, s) => sum + (s['Current Quantity'] || 0), 0)}
-                  </td>
-                  <td className="px-2 py-2 text-right text-ios-label">
-                    {inStock.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Cost Price'] || 0), 0).toFixed(2)} {t.zl}
-                  </td>
-                  <td className="px-2 py-2 text-right text-ios-label">
-                    {inStock.reduce((sum, s) => sum + (s['Current Quantity'] || 0) * (s['Current Sell Price'] || 0), 0).toFixed(2)} {t.zl}
-                  </td>
-                  <td colSpan={6}></td>
-                </tr>
-              </tfoot>
-            ); })()}
-          </table>
-        </div>
-      )}
-
       {/* Order preview popup — opened from any trace order row/marker; sits
           above everything (z-60) so closing returns to the inline trace. */}
       <OrderQuickViewModal
@@ -1259,326 +908,5 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
         onOpenFull={(id) => { setQuickViewOrderId(null); onNavigate?.({ tab: 'orders', filter: { orderId: id } }); }}
       />
     </div>
-  );
-}
-
-// Inline date editor — click the tag to reveal a date input, blur to save.
-function InlineDate({ value, displayName, onSave, hideTag = false }) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState('');
-
-  function startEdit() {
-    setDraft(value ? value.split('T')[0] : '');
-    setEditing(true);
-  }
-
-  function commitEdit() {
-    setEditing(false);
-    const newVal = draft || null;
-    const oldVal = value ? value.split('T')[0] : null;
-    if (newVal !== oldVal) onSave(draft || null);
-  }
-
-  if (editing) {
-    return (
-      <input
-        type="date"
-        value={draft}
-        onChange={e => setDraft(e.target.value)}
-        onBlur={commitEdit}
-        onKeyDown={e => { if (e.key === 'Enter') e.target.blur(); }}
-        autoFocus
-        className="field-input text-xs w-28 py-0.5"
-      />
-    );
-  }
-
-  const dateTag = hideTag ? null : renderDateTag(displayName || null, value);
-  return (
-    <span onClick={startEdit} className="cursor-pointer" title={t.edit || 'Edit'}>
-      {dateTag || <span className="text-xs text-ios-tertiary/40">—</span>}
-    </span>
-  );
-}
-
-// Individual stock row — flat: name, qty, cost, sell, markup, supplier, farmer, lot, threshold, days in stock, actions
-function StockRow({ item, premade, showRepairTools, onAdjust, onWriteOff, onPatch, onNavigate }) {
-  const [showPremadeDetail, setShowPremadeDetail] = useState(false);
-  const [woQty, setWoQty]       = useState(1);
-  const [woReason, setWoReason] = useState('');
-  const [showWo, setShowWo]     = useState(false);
-  const [showUsage, setShowUsage] = useState(false);
-  const [usageTrail, setUsageTrail] = useState(null);
-  const [usageLoading, setUsageLoading] = useState(false);
-
-  function toggleUsage() {
-    if (showUsage) { setShowUsage(false); return; }
-    setShowUsage(true);
-    if (usageTrail) return; // already loaded
-    setUsageLoading(true);
-    client.get(`/stock/${item.id}/usage`)
-      .then(r => setUsageTrail(r.data.trail || []))
-      .catch(() => setUsageTrail([]))
-      .finally(() => setUsageLoading(false));
-  }
-
-  const qty = item['Current Quantity'] || 0;
-  const threshold = item['Reorder Threshold'] || 0;
-  const isLow = qty > 0 && qty <= threshold;
-  const isZero = qty === 0;
-  const isNegative = qty < 0;
-  // CR-17: premade stems are a SUBSET of physical qty, not extra. Lead the cell
-  // with the FREE (grabbable) count = qty − premade, and show premade
-  // non-additively. Health colour tracks free, not physical.
-  const premadeQty = premade?.qty || 0;
-  const freeQty = premadeQty > 0 ? qty - premadeQty : qty;
-  const freeLow = freeQty > 0 && freeQty <= threshold;
-  const freeZero = freeQty === 0;
-  const freeNeg = freeQty < 0;
-  const cost = item['Current Cost Price'] || 0;
-  const sell = item['Current Sell Price'] || 0;
-  const markup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
-  const lotSize = item['Lot Size'] || '';
-  const lastRestocked = item['Last Restocked'];
-  const rowColor = freeNeg ? 'bg-red-50' : freeZero ? 'bg-ios-red/8' : freeLow ? 'bg-ios-orange/8' : '';
-
-  return (
-    <>
-      <tr data-testid="stock-row" className={`border-b border-gray-100 ${rowColor} hover:bg-gray-50/50`}>
-        <td className="px-2 py-1.5 text-ios-label font-medium text-sm">{stockBaseName(item['Display Name'])}</td>
-        <td className="px-2 py-1.5">
-          <InlineDate value={lastRestocked} displayName={item['Display Name']} onSave={v => onPatch(item.id, { 'Last Restocked': v || null })} hideTag={isNegative} />
-        </td>
-        <td className={`px-2 py-1.5 text-right tabular-nums text-base font-bold ${
-          freeNeg ? 'text-red-600' : freeZero ? 'text-ios-red' : freeLow ? 'text-ios-orange' : 'text-ios-label'
-        }`}>
-          <div>{freeQty}</div>
-          {premadeQty > 0 && (
-            <button
-              onClick={e => { e.stopPropagation(); setShowPremadeDetail(v => !v); }}
-              className="text-[10px] font-medium text-indigo-600 hover:text-indigo-800 normal-case"
-              title={t.clickToSeePremades || 'Click to see which bouquets'}
-            >
-              · {premadeQty} {t.inPremade || 'in premade'}
-            </button>
-          )}
-        </td>
-        <td className="px-2 py-1.5 text-right">
-          <InlineEdit
-            value={cost > 0 ? String(cost.toFixed(2)) : ''}
-            type="number"
-            placeholder="—"
-            onSave={v => onPatch(item.id, { 'Current Cost Price': v ? Number(v) : 0 })}
-          />
-        </td>
-        <td className="px-2 py-1.5 text-right">
-          <InlineEdit
-            value={sell > 0 ? String(sell.toFixed(2)) : ''}
-            type="number"
-            placeholder="—"
-            onSave={v => onPatch(item.id, { 'Current Sell Price': v ? Number(v) : 0 })}
-          />
-        </td>
-        <td className="px-2 py-1.5 text-right">
-          {markup && (
-            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
-              Number(markup) >= 2.0 ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-            }`}>×{markup}</span>
-          )}
-        </td>
-        <td className="px-2 py-1.5 text-xs text-ios-secondary">{item.Supplier || '—'}</td>
-        <td className="px-2 py-1.5 text-xs text-ios-secondary">{item.Farmer || '—'}</td>
-        <td className="px-2 py-1.5 text-right">
-          <InlineEdit
-            value={lotSize ? String(lotSize) : ''}
-            type="number"
-            placeholder="—"
-            onSave={v => onPatch(item.id, { 'Lot Size': v ? Number(v) : 0 })}
-          />
-        </td>
-        <td className="px-2 py-1.5 text-right">
-          <InlineEdit
-            value={threshold ? String(threshold) : ''}
-            type="number"
-            placeholder="—"
-            onSave={v => onPatch(item.id, { 'Reorder Threshold': v ? Number(v) : 0 })}
-          />
-        </td>
-        <td className="px-2 py-1.5 text-right">
-          <div className="flex items-center justify-end gap-1">
-            <button onClick={() => onAdjust(item.id, -1)}
-              className="w-6 h-6 rounded bg-gray-100 text-ios-label text-xs hover:bg-gray-200">−</button>
-            <button onClick={() => onAdjust(item.id, 1)}
-              className="w-6 h-6 rounded bg-gray-100 text-ios-label text-xs hover:bg-gray-200">+</button>
-            {qty > 0 && (
-              <button onClick={() => setShowWo(!showWo)}
-                className="ml-0.5 px-1.5 py-0.5 rounded bg-ios-red/10 text-ios-red text-[10px] hover:bg-ios-red/20">
-                {t.writeOff}
-              </button>
-            )}
-            <button onClick={toggleUsage}
-              className={`ml-0.5 px-1.5 py-0.5 rounded text-[10px] ${showUsage ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`}>
-              {t.trace || 'Trace'}
-            </button>
-          </div>
-        </td>
-      </tr>
-      {showPremadeDetail && premade && premade.bouquets?.length > 0 && (
-        <tr className="bg-indigo-50/60">
-          <td colSpan={11} className="px-6 py-2">
-            <p className="text-[10px] text-indigo-600 uppercase font-semibold tracking-wide mb-1">
-              {t.lockedInPremades || 'Locked in premade bouquets'}
-            </p>
-            <div className="space-y-0.5">
-              {premade.bouquets.map((b, i) => (
-                <div key={i} className="flex items-center justify-between text-xs text-indigo-800">
-                  <span>{b.name}</span>
-                  <span className="tabular-nums font-medium">{b.qty} {t.stems || 'stems'}</span>
-                </div>
-              ))}
-            </div>
-            {/* Historical repair button — gated behind a Settings toggle so
-                it doesn't show in normal daily view. Owner enables it from
-                the Stock-tab toolbar when she needs to fix an item where
-                premade deduction never fired. Irreversible — confirms first. */}
-            {showRepairTools && (
-              <div className="mt-2 pt-2 border-t border-indigo-200 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-indigo-700">
-                  {t.reconcilePremadeHint || 'If stock looks too high, subtract premade qty'}: {qty} − {premade.qty} = {qty - premade.qty}
-                </span>
-                <button
-                  onClick={e => {
-                    e.stopPropagation();
-                    const target = qty - premade.qty;
-                    if (!window.confirm(
-                      `${t.reconcilePremadeConfirm || 'Subtract premade qty from Current Quantity?'}\n\n${item['Display Name']}: ${qty} → ${target}`,
-                    )) return;
-                    onAdjust(item.id, -premade.qty);
-                    setShowPremadeDetail(false);
-                  }}
-                  className="px-2.5 py-1 rounded-md bg-indigo-600 text-white text-[11px] font-semibold active-scale"
-                >
-                  {t.reconcilePremade || 'Reconcile'} −{premade.qty}
-                </button>
-              </div>
-            )}
-          </td>
-        </tr>
-      )}
-      {showUsage && (
-        <tr className="bg-blue-50/50">
-          <td colSpan={11} className="px-3 py-2">
-            {usageLoading ? (
-              <p className="text-xs text-ios-tertiary">{t.loading}...</p>
-            ) : !usageTrail || usageTrail.length === 0 ? (
-              <p className="text-xs text-ios-tertiary">{t.noUsageData || 'No usage history found.'}</p>
-            ) : (
-              <div className="max-h-60 overflow-y-auto">
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="text-[10px] text-ios-tertiary uppercase border-b border-blue-100">
-                      <th className="text-left py-1 pr-2">{t.date}</th>
-                      <th className="text-left py-1 pr-2">{t.deliveryDate}</th>
-                      <th className="text-left py-1 pr-2">{t.usageType || 'Type'}</th>
-                      <th className="text-left py-1 pr-2">{t.usageDetail || 'Details'}</th>
-                      <th className="text-right py-1">{t.quantity}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageTrail.map((entry, i) => (
-                      <tr key={i} className="border-b border-blue-50">
-                        <td className="py-1 pr-2 text-ios-secondary">
-                          {entry.date || (entry.type === 'premade' ? (t.ongoing || 'ongoing') : '—')}
-                        </td>
-                        <td className="py-1 pr-2 text-ios-secondary">
-                          {entry.type === 'order' && entry.requiredBy ? entry.requiredBy : '—'}
-                        </td>
-                        <td className="py-1 pr-2">
-                          {entry.type === 'order' && <span className="px-1.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-medium">{t.usageOrder || 'Order'}</span>}
-                          {entry.type === 'writeoff' && <span className="px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-medium">{t.writeOff}</span>}
-                          {entry.type === 'purchase' && <span className="px-1.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-medium">{t.usagePurchase || 'Purchase'}</span>}
-                          {entry.type === 'premade' && <span className="px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-medium">{t.usagePremade || 'Premade'}</span>}
-                        </td>
-                        <td className="py-1 pr-2 text-ios-label">
-                          {entry.type === 'order' && (
-                            <span
-                              className={entry.orderRecordId ? 'cursor-pointer text-brand-600 hover:underline' : ''}
-                              onClick={() => entry.orderRecordId && onNavigate?.({ tab: 'orders', filter: { orderId: entry.orderRecordId } })}
-                            >
-                              {entry.orderId} — {entry.customer} ({entry.status})
-                            </span>
-                          )}
-                          {entry.type === 'writeoff' && `${entry.reason}${entry.notes ? ': ' + entry.notes : ''}`}
-                          {entry.type === 'premade' && entry.bouquetName}
-                          {entry.type === 'purchase' && (
-                            <span>
-                              {entry.poDisplayId ? (
-                                <>
-                                  <span className="font-medium text-ios-label">{entry.poDisplayId}</span>
-                                  {' · '}{entry.supplier || '—'}
-                                  {entry.variant && entry.variant !== 'primary' && (
-                                    <span className="ml-1 px-1 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px]">
-                                      {entry.variant}
-                                    </span>
-                                  )}
-                                </>
-                              ) : (
-                                // Manual stock receive (no PO) — just show supplier + any notes
-                                <>{entry.supplier || '—'}{entry.notes ? ` — ${entry.notes}` : ''}</>
-                              )}
-                            </span>
-                          )}
-                        </td>
-                        <td className={`py-1 text-right font-medium tabular-nums ${entry.quantity > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {entry.quantity > 0 ? '+' : ''}{entry.quantity}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </td>
-        </tr>
-      )}
-      {showWo && (
-        <tr className="bg-ios-red/5">
-          <td colSpan={11} className="px-3 py-2">
-            <div className="flex items-center gap-2">
-              <input type="number" inputMode="numeric" min="1" max={qty} value={woQty}
-                onFocus={e => e.target.select()}
-                onChange={e => {
-                  const raw = e.target.value;
-                  if (raw === '') { setWoQty(''); return; }
-                  const n = parseInt(raw, 10);
-                  if (!isNaN(n) && n >= 0) setWoQty(Math.min(n, qty));
-                }}
-                onBlur={() => {
-                  const n = Number(woQty);
-                  if (!n || n < 1) setWoQty(1);
-                  else if (n > qty) setWoQty(qty);
-                }}
-                className="field-input w-16" />
-              <select value={woReason} onChange={e => setWoReason(e.target.value)}
-                className="field-input flex-1">
-                <option value="">{t.reason}</option>
-                <option value="Wilted">{t.reasonWilted || 'Wilted'}</option>
-                <option value="Damaged">{t.reasonDamaged || 'Broken at delivery'}</option>
-                <option value="Arrived Broken">{t.arrivedBroken || 'Arrived Broken'}</option>
-              </select>
-              <button
-                onClick={() => { onWriteOff(item.id, woQty, woReason); setShowWo(false); setWoQty(1); setWoReason(''); }}
-                className="px-3 py-1.5 rounded-lg bg-ios-red text-white text-xs font-semibold">
-                {t.confirm}
-              </button>
-              <button onClick={() => setShowWo(false)}
-                className="px-3 py-1.5 rounded-lg bg-white/50 text-xs">
-                {t.cancel}
-              </button>
-            </div>
-          </td>
-        </tr>
-      )}
-    </>
   );
 }
