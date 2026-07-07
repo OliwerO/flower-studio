@@ -2,7 +2,7 @@
 // GET enriches each row with flower name + supplier via LEFT JOIN on stock table.
 import { db } from '../db/index.js';
 import { stockLossLog, stock } from '../db/schema.js';
-import { and, isNull, gte, lte, eq, desc, sql } from 'drizzle-orm';
+import { and, isNull, gte, lte, eq, desc, sql, like } from 'drizzle-orm';
 
 function toWire(row) {
   return {
@@ -87,6 +87,18 @@ export async function update(id, { quantity, reason, notes, date }) {
 
 export async function remove(id) {
   await db.update(stockLossLog).set({ deletedAt: new Date() }).where(eq(stockLossLog.id, id));
+}
+
+// Idempotency: true if a loss row's notes contain this marker (ADR-0003
+// write-off extension). Deliberately ignores deletedAt — "was ever recorded"
+// is the idempotency question; a manually deleted row must not resurrect on
+// PO evaluate retry.
+export async function noteMarkerExists(marker) {
+  const [row] = await db.select({ id: stockLossLog.id })
+    .from(stockLossLog)
+    .where(like(stockLossLog.notes, `%${marker}%`))
+    .limit(1);
+  return row != null;
 }
 
 // Distinct write-off reasons with counts, sorted by count desc, soft-deleted

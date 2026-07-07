@@ -34,7 +34,7 @@ vi.mock('../services/configService.js', () => ({
 }));
 vi.mock('../services/notifications.js', () => ({ broadcast: () => {} }));
 
-import { __testing } from '../routes/stockOrders.js';
+import { __testing } from '../services/stockOrderService.js';
 
 const { findOrCreateSubstituteStock } = __testing;
 const TODAY = '2026-06-22';

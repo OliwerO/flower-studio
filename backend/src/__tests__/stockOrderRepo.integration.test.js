@@ -264,14 +264,3 @@ describe('stockOrderRepo line CRUD', () => {
     expect(byUuid).toHaveLength(1);
   });
 });
-
-describe('write-off retry idempotency (T9 review carry-over — captures pre-existing gap)', () => {
-  // The PO evaluate flow logs write-offs into stock_loss_log via fire-and-forget
-  // promises with NO marker-based skip guard. On EVAL_ERROR retry, write-offs
-  // re-run — duplicating loss rows. ADR-0003 marker idempotency was extended
-  // to receives (stock_purchases) only.
-  //
-  // This test documents the gap. Fixing it requires adding a marker to
-  // stockLossRepo.create + a lossMarkerExists analog. Tracked in BACKLOG.
-  it.todo('write-off should be idempotent on PO evaluate retry — pre-existing gap, see BACKLOG');
-});

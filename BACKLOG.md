@@ -63,7 +63,7 @@ All inert with `STOCK_Y_MODEL` off (current prod). The **#291 flag-flip cutover 
 
 **Standing investigations (have shadow data now to debug with):**
 - "Stock not deducted via bouquet edit" bug from memory — once shadow has a few days of data, query `audit_log` for stock updates triggered by bouquet edits and cross-reference with the suspicious orders. Far easier to diagnose now.
-- **PO evaluate write-off retry idempotency** — `stock_loss_log` rows duplicate when an evaluate retries after partial failure. ADR-0003 marker idempotency was extended to receives (`stock_purchases`) only. Fix: add a `lossMarker` column or `lossMarkerExists` analog to `stockLossRepo`, gate write-off logging in `stockOrders.js` evaluate the same way receives are gated. Captured by `it.todo` in `backend/src/__tests__/stockOrderRepo.integration.test.js`. Surfaced by Phase 7 T9 Opus review (2026-05-08).
+- [x] **PO evaluate write-off retry idempotency** — DONE 2026-07-07, W2 PR. Added `stockLossRepo.noteMarkerExists` (mirrors the purchase-side helper) and gated both write-off blocks in the (now service-side) evaluate flow the same way receives are gated per ADR-0003. `it.todo` in `backend/src/__tests__/stockOrderRepo.integration.test.js` replaced by real tests in `backend/src/__tests__/stockOrderService.writeoffIdempotency.integration.test.js`. Surfaced by Phase 7 T9 Opus review (2026-05-08).
 
 **Stale local branches to clean up** (low priority):
 - `feat/sql-migration-phase-1` (PR #156 merged via squash — local branch obsolete)

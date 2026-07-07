@@ -39,7 +39,7 @@ vi.mock('../services/configService.js', () => ({
 // notifications + orderService used elsewhere in the route but not the seam
 vi.mock('../services/notifications.js', () => ({ broadcast: () => {} }));
 
-import { __testing } from '../routes/stockOrders.js';
+import { __testing } from '../services/stockOrderService.js';
 import * as stockRepo from '../repos/stockRepo.js';
 
 const { receiveIntoStock } = __testing;

@@ -5,6 +5,27 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-07 — refactor(stock): extract stockOrderService + idempotent PO write-offs (W2)
+
+### Behavior fix — PO evaluate write-offs are now idempotent + awaited
+Write-off logging in the PO evaluate flow (`POST /stock-orders/:id/evaluate`) was a fire-and-forget promise (`stockRepo.getById(...).then(...).catch(console.error)`) with **no idempotency marker** — the receive side had ADR-0003 marker gating, the write-off side did not. On an Eval Error retry, write-offs re-ran and duplicated `stock_loss_log` rows; a write-off failure was silently swallowed (line still marked processed).
+
+Fixed by extending the ADR-0003 marker convention to write-offs:
+- New `stockLossRepo.noteMarkerExists(marker)` — same `LIKE '%marker%'` contains-match as the purchase-side helper, `deletedAt` deliberately ignored (a manually-deleted loss row must not resurrect on retry).
+- Write-off markers: `PO #<po-number> L#<line-uuid> primary|alt writeoff`, embedded in `stock_loss_log.notes` after the existing human-readable prefix.
+- Both write-off blocks (primary + substitute) are now **awaited** and **marker-gated**, and moved **inside** the per-line try/catch, before the line is marked `Eval Status: PROCESSED`. A write-off failure now surfaces as a line error → PO → Eval Error → retry, instead of a swallowed console error.
+- See `docs/adr/0003-po-marker-format-dual-format.md` — "Extended to write-offs (2026-07-07)".
+
+No schema change (uses the existing `stock_loss_log.notes` column).
+
+### Refactor — extracted `backend/src/services/stockOrderService.js`
+`backend/src/routes/stockOrders.js` (1100+ lines) mixed routing with business logic. Moved `resolveOrCreateStockItem`, `receiveIntoStock`, `findOrCreateSubstituteStock`, and the entire `/evaluate` handler body into the new service as `evaluatePurchaseOrder(poId, lines)` — a behavior-preserving extraction (copied verbatim, comments intact). `evaluatePurchaseOrder` returns a domain result (`{outcome: 'conflict'|'partial'|'complete', ...}`) that the route maps to the exact same HTTP response bodies as before (409 / 207 / 200). ADR-0002 absorption math in `receiveIntoStock` is untouched. `__testing` export moved to the service; the two tests that imported it (`stockOrders.receiveIntoStock.integration.test.js`, `stockOrders.substituteVariety.integration.test.js`) now import from `../services/stockOrderService.js`.
+
+### Tests
+Converted the `it.todo` in `stockOrderRepo.integration.test.js` ("write-off retry idempotency — pre-existing gap") into real integration tests: new `stockOrderService.writeoffIdempotency.integration.test.js` covers retry-does-not-duplicate (primary), independent primary/alt markers, and `noteMarkerExists` unit behavior (absent / present / soft-deleted-still-true).
+
+Verification: backend **999** (109 files), E2E **253**, lab-unit **77** — all green.
+
 ## 2026-07-06 — fix(stock): terminal orders settle their demand (#3) + owner classifies the substitute at shopping entry (#2) + SAFE demand-hygiene scripts
 
 The systemic follow-up promised in the phantom-demand reconciliation below, plus the substitute-classification follow-up (#2) and reusable verification tooling.
