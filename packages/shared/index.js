@@ -141,8 +141,6 @@ export { default as BatchArrivalList } from './components/BatchArrivalList.jsx';
 // table; matches the Y-model visual language of ShortfallSummary.
 export { default as PendingArrivalsPanel } from './components/PendingArrivalsPanel.jsx';
 
-// STOCK_Y_MODEL feature flag hook (Task 6)
-export { default as useStockYModelFlag } from './hooks/useStockYModelFlag.js';
 export { useVarietyTraceExpand } from './hooks/useVarietyTraceExpand.js';
 
 // Step-chart balance trace — shared by BatchTracePanel and VarietyTracePanel (S7)
