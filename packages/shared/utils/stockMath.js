@@ -121,6 +121,30 @@ export function varietyGroupMatchesView(group, view, reservations = new Map(), n
   return true;
 }
 
+// ── varietyGroupHasVisibleStock ─────────────────────────────────────────────
+// Predicate for the Stock-panel "hide zero" toggle (issue #533). A Variety
+// group whose rows net to a raw total of 0 is normally hidden — but a group
+// still has something worth showing when either:
+//   - it has stems reserved for a premade bouquet, or
+//   - it has an active (non-deleted) order-line consumer — `hasActiveConsumer`,
+//     computed server-side in `stockRepo.listGroupedByVariety` from a real
+//     order binding, not from the premades-only reservations Map.
+// Without the second check, a Variety that nets to zero purely because a
+// fresh receipt exactly covers a live (not-yet-due) order's demand vanishes
+// from the default view with no error — the #533 symptom (a florist "received"
+// a flower and it never appeared in stock).
+//
+// Mirrors the raw-sum totalQty used historically inline in each app (NOT
+// getVarietyTotals().net, which additionally subtracts premade reservations)
+// so this drop-in preserves prior hideZero behaviour exactly, plus the fix.
+export function varietyGroupHasVisibleStock(group, reservations = new Map()) {
+  const rows = group?.rows || [];
+  const totalQty = rows.reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+  if (totalQty !== 0) return true;
+  if (rows.some(r => (Number(reservations.get(r.id)) || 0) > 0)) return true;
+  return Boolean(group?.hasActiveConsumer);
+}
+
 /**
  * allocateVarietyCoverage — date-aware coverage of a Variety's dated demands by
  * on-hand stock + pending PO arrivals (CR-39).

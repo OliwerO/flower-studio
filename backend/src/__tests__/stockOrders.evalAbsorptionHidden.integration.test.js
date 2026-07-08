@@ -1,12 +1,25 @@
-// Repro candidate for #533 — a pre-sold (negative-qty) Variety that is
-// received during PO evaluation can NET TO ZERO after absorption and then drop
-// out of the default grouped Stock view (includeEmpty=false), so the florist
-// "received" it but it does not appear in stock. No error is shown.
+// Regression test for #533 — a florist received Hydrangea Pink during PO
+// evaluation, but it never showed up in the default Stock view. No error.
 //
-// receiveIntoStock absorption (ADR-0002): when the orig has negative qty,
-// batchQty = received + existingQty and the orig is zeroed. If received exactly
-// covers the backlog, BOTH rows end at 0. listGroupedByVariety hides a group
-// when totalQty===0 && reservedForPremades===0 && !hasActiveConsumer.
+// Prod investigation (2026-07-08, via check-variety-net.mjs + trace-order-stock.mjs
+// against claude_ro) found the REAL mechanism: a live order (202607-007,
+// required_by 2026-07-12) already held a Demand Entry of -5 for Hydrangea Pink.
+// A PO received exactly +5, so the Variety group netted to 0 — but the group was
+// still backed by a genuine open order, due four days later, not by any wrong or
+// orphaned demand. `stockRepo.listGroupedByVariety` already keeps a net-zero
+// group visible when it has an active order-line consumer (`hasActiveConsumer`,
+// added for #323) — but that field was never returned in the API response, and
+// both frontends' `hideZero` toggle (StockPanelPage.jsx / StockTab.jsx) only
+// exempted premade reservations, not order-line demand. The frontend's default
+// `/stock?grouped=true` fetch passes includeEmpty=false, so the backend correctly
+// keeps the group in the payload — but the frontend's OWN re-filter then hid it
+// anyway, discarding that protection. This is a visibility bug, not a stock-math
+// or wrong-allocation bug: the absorption math (ADR-0002) and the netting
+// (pitfall #8) are both working as designed.
+//
+// (An earlier draft of this test simulated an ORPHANED negative demand row with
+// no live order line at all — that scenario is correctly hidden by design, since
+// there is genuinely nothing left to show. It does not reproduce #533.)
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -29,7 +42,7 @@ vi.mock('../services/configService.js', () => ({
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
 import express from 'express';
 import supertest from 'supertest';
-import { stock } from '../db/schema.js';
+import { stock, orders, orderLines } from '../db/schema.js';
 
 const dbHolder = { db: null };
 vi.mock('../db/index.js', () => ({
@@ -66,18 +79,14 @@ afterEach(async () => {
   dbHolder.db = null;
 });
 
-describe('#533 — pre-sold Variety nets to zero after receive and vanishes from Stock view', () => {
-  // it.fails: this reproduces the CURRENT (broken) behaviour — the group is
-  // hidden after a net-to-zero receive. When the fix lands, flip this back to a
-  // normal `it` (the assertion will then pass, and it.fails would error).
-  it.fails('received stems for a fully-backordered flower are still visible in the grouped view', async () => {
-    // Owner already has a classified "Hydrangea Pink" variety, but it is
-    // pre-sold: negative on-hand demand of -12, and (post-settlement) no live
-    // order line references it. Seed that state directly.
+describe('#533 — receipt that nets a live-order Variety to zero stays visible', () => {
+  it('a fresh receipt that exactly covers a live (not-yet-due) order\'s demand ' +
+     'still appears in the grouped Stock view, flagged hasActiveConsumer', async () => {
+    // Pre-sold Demand Entry: -5 Hydrangea Pink.
     const [orig] = await harness.db.insert(stock).values({
       displayName:     'Hydrangea Pink',
       purchaseName:    'Hydrangea Pink',
-      currentQuantity: -12,
+      currentQuantity: -5,
       active:          true,
       date:            '2026-07-01',
       typeName:        'Hydrangea',
@@ -86,14 +95,32 @@ describe('#533 — pre-sold Variety nets to zero after receive and vanishes from
       cultivar:        null,
     }).returning();
 
-    // Before receiving, the pre-sold group IS visible (shown as a -12 shortfall).
-    const before = await stockRepo.listGroupedByVariety({ includeEmpty: false });
-    expect(before.find(g => g.type_name === 'Hydrangea'), 'shortfall visible before receive').toBeDefined();
+    // A REAL, still-open order binds to that demand — required 4 days out, like
+    // prod order 202607-007 (required_by 2026-07-12, evaluated 2026-07-08).
+    const [order] = await harness.db.insert(orders).values({
+      appOrderId:   '202607-533',
+      customerId:   'cust-533',
+      deliveryType: 'Delivery',
+      requiredBy:   '2026-07-12',
+      status:       'New',
+    }).returning();
+    await harness.db.insert(orderLines).values({
+      orderId:      order.id,
+      stockItemId:  orig.id,
+      flowerName:   'Hydrangea Pink',
+      quantity:     5,
+    });
 
-    // PO for 12 Hydrangea Pink — resolves to the existing card by name.
+    // Before receiving, the pre-sold group is visible (shown as a -5 shortfall).
+    const before = await stockRepo.listGroupedByVariety({ includeEmpty: false });
+    const beforeGroup = before.find(g => g.type_name === 'Hydrangea');
+    expect(beforeGroup, 'shortfall visible before receive').toBeDefined();
+    expect(beforeGroup.hasActiveConsumer).toBe(true);
+
+    // PO for 5 Hydrangea Pink — resolves to the existing card by name.
     const created = await agent().post('/api/stock-orders').send({
-      notes: 'hydrangea-presold',
-      lines: [{ stockItemId: orig.id, flowerName: 'Hydrangea Pink', quantity: 12, costPrice: 9, sellPrice: 22, supplier: 'Stefan' }],
+      notes: 'hydrangea-live-order',
+      lines: [{ stockItemId: orig.id, flowerName: 'Hydrangea Pink', quantity: 5, costPrice: 9, sellPrice: 22, supplier: 'Stefan' }],
     });
     expect(created.status).toBe(201);
     const poId = created.body.id;
@@ -101,24 +128,27 @@ describe('#533 — pre-sold Variety nets to zero after receive and vanishes from
 
     await agent().post(`/api/stock-orders/${poId}/send`).send({ driverName: 'Timur' });
     await agent().post(`/api/stock-orders/${poId}/driver-complete`);
-    await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`).send({ 'Quantity Found': 12 });
+    await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`).send({ 'Quantity Found': 5 });
     await agent().post(`/api/stock-orders/${poId}/approve-review`);
 
-    // Florist accepts all 12 — evaluation succeeds, no error.
+    // Florist accepts all 5 — evaluation succeeds, no error.
     const evaluated = await agent().post(`/api/stock-orders/${poId}/evaluate`).send({
-      lines: [{ lineId, quantityAccepted: 12, writeOffQty: 0 }],
+      lines: [{ lineId, quantityAccepted: 5, writeOffQty: 0 }],
     });
     expect(evaluated.status).toBe(200);
     expect(evaluated.body.success).toBe(true);
 
-    // The 12 received stems immediately covered the backlog: orig zeroed, new
-    // batch = 12 + (-12) = 0. The whole Variety group now totals 0 → it drops
-    // out of the default Stock view. The florist received Hydrangea Pink but it
-    // "did not appear in stock" and no error was shown. THIS is the #533 symptom.
+    // The 5 received stems net exactly against the live order's demand: the
+    // Variety group now totals 0, but the order (still New, due 2026-07-12) still
+    // needs those stems. The backend must keep the group visible AND expose
+    // hasActiveConsumer so the frontend's hideZero filter can do the same
+    // (packages/shared/utils/stockMath.js varietyGroupHasVisibleStock).
     const after = await stockRepo.listGroupedByVariety({ includeEmpty: false });
     const hydrangea = after.find(g => g.type_name === 'Hydrangea');
 
-    // What the owner expects: to see that Hydrangea Pink came in.
-    expect(hydrangea, 'Hydrangea Pink should appear in the Stock view after receiving 12 stems').toBeDefined();
+    expect(hydrangea, 'Hydrangea Pink should appear in the Stock view after receiving 5 stems').toBeDefined();
+    expect(hydrangea.hasActiveConsumer).toBe(true);
+    const totalQty = hydrangea.rows.reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
+    expect(totalQty).toBe(0);
   });
 });

@@ -20,6 +20,7 @@ import {
   WriteOffBatchPicker,
   buildPoSuggestions,
   varietyGroupMatchesView,
+  varietyGroupHasVisibleStock,
   getVarietyTotals,
   EMPTY_STOCK_FILTER,
   clearStockFilter,
@@ -275,11 +276,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     if (view !== 'all' && view !== 'waste') {
       list = list.filter(g => varietyGroupMatchesView(g, view, reservationsMap));
     } else if (hideZero && view === 'all') {
-      list = list.filter(g => {
-        const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
-        if (totalQty !== 0) return true;
-        return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
-      });
+      list = list.filter(g => varietyGroupHasVisibleStock(g, reservationsMap));
     }
     return list;
   }, [groups, hideZero, view, reservationsMap, search]);

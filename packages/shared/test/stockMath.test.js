@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, varietyGroupMatchesView } from '../utils/stockMath.js';
+import { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, varietyGroupMatchesView, varietyGroupHasVisibleStock } from '../utils/stockMath.js';
 
 // Model (see stockMath.js header): stock is deducted at order creation, so
 // Current Quantity already reflects every pending order's demand. `committed`
@@ -285,5 +285,43 @@ describe('varietyGroupMatchesView (Y-model Stock view pills)', () => {
     expect(varietyGroupMatchesView(fresh, 'slow', new Map(), NOW)).toBe(false);
     expect(varietyGroupMatchesView(never, 'slow', new Map(), NOW)).toBe(true);
     expect(varietyGroupMatchesView(depleted, 'slow', new Map(), NOW)).toBe(false);
+  });
+});
+
+describe('varietyGroupHasVisibleStock (#533)', () => {
+  it('is visible when raw totalQty is non-zero, regardless of consumer/reservation flags', () => {
+    const g = { rows: [{ id: 'a', current_quantity: 5 }] };
+    expect(varietyGroupHasVisibleStock(g)).toBe(true);
+  });
+
+  it('is visible at net zero when a premade reservation exists', () => {
+    const g = { rows: [{ id: 'a', current_quantity: 0 }] };
+    expect(varietyGroupHasVisibleStock(g, new Map([['a', 3]]))).toBe(true);
+  });
+
+  it('is visible at net zero when hasActiveConsumer is true — a fresh receipt exactly ' +
+     'covering a live order\'s demand must not vanish from the default view (#533)', () => {
+    // Batch +5 arrived, live Demand Entry -5 for a not-yet-due order — nets to 0,
+    // but the order still needs those stems. Backend sets hasActiveConsumer from
+    // a real (non-deleted) order_lines binding.
+    const g = {
+      rows: [
+        { id: 'batch', current_quantity: 5 },
+        { id: 'demand', current_quantity: -5 },
+      ],
+      hasActiveConsumer: true,
+    };
+    expect(varietyGroupHasVisibleStock(g, new Map())).toBe(true);
+  });
+
+  it('is hidden at net zero with no reservation and no active consumer', () => {
+    const g = {
+      rows: [
+        { id: 'batch', current_quantity: 5 },
+        { id: 'demand', current_quantity: -5 },
+      ],
+      hasActiveConsumer: false,
+    };
+    expect(varietyGroupHasVisibleStock(g, new Map())).toBe(false);
   });
 });
