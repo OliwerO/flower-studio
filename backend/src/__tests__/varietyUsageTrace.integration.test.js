@@ -283,6 +283,48 @@ describe('T5.2 — getUsageByVarietyKey', () => {
   });
 });
 
+describe('legacy recXXX customer_id does not abort the usage trace (2026-07-09 uuid-cast bug)', () => {
+  it('getUsageByExactId returns events for an order whose customer_id is a legacy Airtable rec id, not a UUID', async () => {
+    // orders.customer_id is TEXT and may still hold a pre-cutover Airtable
+    // recXXX id (never backfilled to a customers row). The customer JOIN
+    // must not assume every customer_id is a valid UUID.
+    const batch = await seedBatch({ displayName: 'Hydrangea Blue', currentQuantity: 5, typeName: 'Hydrangea', colour: 'Blue', date: '2026-07-08' });
+    const [legacyOrder] = await harness.db.insert(orders).values({
+      appOrderId:   'ORD-legacy-1',
+      customerId:   'recLegacyCust123', // NOT a uuid — must not throw on ::uuid cast
+      status:       'New',
+      deliveryType: 'Pickup',
+      orderDate:    '2026-07-08',
+      requiredBy:   '2026-07-12',
+    }).returning();
+    await seedOrderLine(legacyOrder.id, batch.id, 5, 'Hydrangea Blue');
+
+    await expect(stockRepo.getUsageByExactId(batch.id)).resolves.not.toThrow();
+    const trail = await stockRepo.getUsageByExactId(batch.id);
+    const orderEvent = trail.find(e => e.type === 'order');
+    expect(orderEvent).toBeDefined();
+    expect(orderEvent.orderId).toBe('ORD-legacy-1');
+    // No customer row to join → customer name/nick both empty, not a thrown error.
+    expect(orderEvent.customer).toBe('');
+  });
+
+  it('getUsageByVarietyKey returns events for the same legacy-customer scenario', async () => {
+    const batch = await seedBatch({ displayName: 'Hydrangea Green', currentQuantity: 5, typeName: 'Hydrangea', colour: 'Green', date: '2026-07-08' }); // sizeCm defaults to 60 in seedBatch
+    const [legacyOrder] = await harness.db.insert(orders).values({
+      appOrderId:   'ORD-legacy-2',
+      customerId:   'recLegacyCust456',
+      status:       'New',
+      deliveryType: 'Pickup',
+      orderDate:    '2026-07-08',
+      requiredBy:   '2026-07-12',
+    }).returning();
+    await seedOrderLine(legacyOrder.id, batch.id, 5, 'Hydrangea Green');
+
+    const result = await stockRepo.getUsageByVarietyKey('Hydrangea|Green|60|');
+    expect(result.events.some(e => e.type === 'order' && e.orderId === 'ORD-legacy-2')).toBe(true);
+  });
+});
+
 describe('T5.3 — listGroupedByVariety includeEmpty=false keeps Variety with active consumers', () => {
   it('includes a qty=0 Variety when an active order line references one of its rows', async () => {
     const customer = await seedCustomer();

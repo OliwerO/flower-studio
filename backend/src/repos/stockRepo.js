@@ -1305,9 +1305,16 @@ export async function getUsageByExactId(stockItemId) {
   // 1. Order lines — join to orders for date/status/appOrderId,
   //                  then join customers for name.
   //
-  // orders.customerId is TEXT (holds UUID string or legacy recXXX).
-  // customers.id is UUID. Drizzle doesn't handle the implicit TEXT↔UUID cast
-  // on the join condition; we use sql`` to cast explicitly.
+  // orders.customerId is TEXT (holds UUID string or legacy Airtable recXXX —
+  // never backfilled for pre-cutover orders). customers.id is UUID. Drizzle
+  // doesn't handle the implicit TEXT↔UUID cast on the join condition, so we
+  // use sql`` to cast explicitly — but the cast MUST go customers.id::text,
+  // not orders.customerId::uuid: casting a legacy recXXX string to uuid
+  // throws "invalid input syntax for type uuid" and aborts the whole trace
+  // for ANY variety touched by such an order (2026-07-09). Casting the UUID
+  // side to text always succeeds and simply fails to match, same convention
+  // as dataQueryPack's cross-type joins ("cast UUID→text so legacy recXXX
+  // rows don't abort the query").
   const orderRows = await db
     .select({
       orderId:        orders.id,
@@ -1323,7 +1330,7 @@ export async function getUsageByExactId(stockItemId) {
     })
     .from(orderLines)
     .innerJoin(orders,    eq(orderLines.orderId, orders.id))
-    .leftJoin(customers,  sql`${orders.customerId}::uuid = ${customers.id}`)
+    .leftJoin(customers,  sql`${customers.id}::text = ${orders.customerId}`)
     .where(and(
       eq(orderLines.stockItemId, stockItemId),
       isNull(orderLines.deletedAt),
