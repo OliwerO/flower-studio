@@ -31,7 +31,9 @@ export default function StockEvaluationPage() {
   }, []);
 
   useEffect(() => {
-    client.get('/stock/distinct/type').then(r => setTypeOptions(r.data || [])).catch(() => {});
+    // Column name must match stockRepo.VARIETY_COLUMNS — it's `typeName`, not `type`
+    // (a bare `type` 400s: "column type is not allowed", #532).
+    client.get('/stock/distinct/typeName').then(r => setTypeOptions(r.data || [])).catch(() => {});
     client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
   }, []);
 
