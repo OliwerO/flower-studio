@@ -14,6 +14,7 @@ import {
   LOSS_REASONS,
   reasonLabel,
   varietyGroupMatchesView,
+  varietyGroupHasVisibleStock,
   getVarietyTotals,
   EMPTY_VARIETY_FILTER,
   clearVarietyFilter,
@@ -281,11 +282,7 @@ export default function StockPanelPage() {
     if (view !== 'all') {
       list = list.filter(g => varietyGroupMatchesView(g, view, reservationsMap));
     } else if (hideZero) {
-      list = list.filter(g => {
-        const totalQty = (g.rows || []).reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
-        if (totalQty !== 0) return true;
-        return (g.rows || []).some(r => (reservationsMap.get(r.id) || 0) > 0);
-      });
+      list = list.filter(g => varietyGroupHasVisibleStock(g, reservationsMap));
     }
     return list;
   }, [groups, hideZero, view, reservationsMap, debouncedSearch, varietyFilter, varietyFilterCount]);

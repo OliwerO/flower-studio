@@ -1260,6 +1260,10 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
         date:             r.date ?? null,
       })),
       reservedForPremades,
+      // #533: expose the same active-consumer signal used above to decide
+      // backend visibility, so a net-zero group that's still backed by a live
+      // (non-deleted) order line stays visible in frontend hideZero filters too.
+      hasActiveConsumer,
     });
   }
 
