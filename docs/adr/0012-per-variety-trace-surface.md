@@ -1,5 +1,7 @@
 # Per-Variety trace surface unions per-Batch usage; absorption deferred, drift surfaced as "unaccounted stems"
 
+> _Renumbered from ADR-0008 on 2026-07-07 (#291) to resolve a collision with `0008-flower-studio-owns-product-names.md`. Earlier references to "ADR-0008" in the stock-trace / usage / drift context (e.g. in `CHANGELOG.md` and `docs/superpowers/plans/`) mean this ADR._
+
 PRD #324 T5. Extends the per-Batch trace of ADR-0007 to the whole Variety. A new endpoint `GET /api/stock/varieties/:key/usage` returns `{ variety, events, unaccountedStems }`, where `events` is the union of the existing per-Batch usage trails across every non-deleted Stock row (all Batches + Demand Entries) sharing the Variety 4-tuple key, sorted oldest→newest. A new shared presenter `VarietyTracePanel` renders it: inline under the expanded Variety row on the Dashboard, in a modal on the Florist app (matching each app's existing Batch-trace convention). The Owner taps a Variety header to see "everything that ever happened to this flower across all its batches."
 
 This is a **read-only** surface. It introduces no new table. Consumption events continue to come from the `order_line.stockItemId` FK (ADR-0007's authoritative link); the `order_line_consumptions` ledger named by the PRD #324 umbrella (slices T1–T4) is **not built here** — it is future work that will extend this surface, not replace it.

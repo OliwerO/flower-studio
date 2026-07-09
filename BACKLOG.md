@@ -31,7 +31,7 @@ Reports row counts in PG + audit activity. parity_log is no longer fed (shadow m
 - [x] #416 — DE-family lifecycle: release/soft-delete/route demand (C4/C5/C19/C25)
 - [x] #417 — substitute Variety capture at evaluation (C13)
 
-All inert with `STOCK_Y_MODEL` off (current prod). The **#291 flag-flip cutover is no longer gated by these findings** — remaining cutover prep is the owner browser-verify + #290 lab Playwright rehearsal below. Deferred non-blocking edges noted in the audit: C25 add-line on an already-de-scheduled order routes to a today-dated DE (mirrors createOrder); shared-DE clear de-schedules co-owners in place (documented decision).
+The **Y-model cutover is complete** — the flag was flipped on prod 2026-06-30 and the `STOCK_Y_MODEL` flag + dual-mode code were removed 2026-07-07 (#291, PRs #528/#529/#530/#531). The Y-model is now the only stock model. Deferred non-blocking edges noted in the audit: C25 add-line on an already-de-scheduled order routes to a today-dated DE (mirrors createOrder); shared-DE clear de-schedules co-owners in place (documented decision).
 
 **Open work items, ranked by when they unblock:**
 

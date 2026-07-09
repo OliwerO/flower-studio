@@ -5,6 +5,21 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-07 — chore(stock): STOCK_Y_MODEL cutover complete — flag + dual-mode code removed (#291)
+
+The Stock Y-model was flipped live on prod 2026-06-30 (`STOCK_Y_MODEL=true` on the `flower-studio-backend` Railway service). This change removes the now-dead flag and all dual-mode code, so the Y-model is the **only** stock model. No behavior change on prod (the flag was already true); this is dead-code + docs cleanup. Shipped as four stacked PRs:
+
+- **#528 (backend)** — removed all `getStockYModelEnabled()` branches in `orderRepo`, `routes/stock.js`, `premadeBouquetService` (the four `_*Legacy` functions deleted); deleted the getter + flag const from `configService`; removed the dead legacy aggregate blocks in the stock routes. Added an `isPgStockUuid` guard on the now-unconditional FEFO/DE routing so a line bound to a stale non-UUID (`recXXX`) stock id yields a clean 404 rollback instead of a raw uuid-cast 500.
+- **#529 (florist app)** — removed `useStockYModelFlag` from the 6 florist consumers; Y-model UI is unconditional.
+- **#530 (dashboard app)** — same for the 6 dashboard consumers; **also removed the obsolete premade-repair tooling** (`showStockRepairTools` setting, the StockTab "Reconcile premade" per-row button, dead translations) — under the reservation model premade deduction can't silently fail. Also restored the flat `stock` fetch in `StockTab.fetchStock` (`/stock?includeEmpty=true`) that fed the receive/PO pickers — it had lived only in the flag-off branch, so those pickers had been empty on prod since the cutover.
+- **#531 (shared)** — deleted `useStockYModelFlag` hook + test + export, and removed the `stockYModelEnabled` field from `GET /settings`.
+
+The **substitute-reconciliation** surface (`ReconciliationSection`, `SubstituteReconciliationPage`, `GET /stock/reconciliation`, `substitute_reconciliation_needed`) was deliberately kept — it is the live PO-evaluate-driven flow, not the removed flag path.
+
+Repo **code** grep for `STOCK_Y_MODEL` / `useStockYModelFlag` / `stockYModelEnabled` is now zero. Historical `docs/superpowers/plans/*` + `reports/*` retain their references as dated records. No schema/env change (the `STOCK_Y_MODEL` env var on Railway is now inert and can be deleted at will).
+
+---
+
 ## 2026-07-07 — refactor(stock): extract stockOrderService + idempotent PO write-offs (W2)
 
 ### Behavior fix — PO evaluate write-offs are now idempotent + awaited
@@ -554,7 +569,7 @@ The per-Variety usage trace (built in T5) now expands directly under each **Shor
 - `apps/dashboard/.../StockTab.jsx` + `apps/florist/.../StockPanelPage.jsx` — both cards now receive `fetchVarietyUsage={key => GET /stock/varieties/:key/usage}` (the existing endpoint); old per-`stockId` fetcher removed.
 
 ### No backend / schema / endpoint change
-Pure UI reuse of the existing `GET /stock/varieties/:key/usage` surface (ADR-0008). Consumption events still come from `order_line.stockItemId` (the `order_line_consumptions` ledger remains future work, PRD #324 T1). Absorption still surfaces as the drift footer.
+Pure UI reuse of the existing `GET /stock/varieties/:key/usage` surface (ADR-0012, formerly ADR-0008). Consumption events still come from `order_line.stockItemId` (the `order_line_consumptions` ledger remains future work, PRD #324 T1). Absorption still surfaces as the drift footer.
 ---
 
 ## 2026-06-09 — Per-florist payroll breakdown by custom date range (#378)
@@ -708,7 +723,7 @@ Closes the last unsplit flag-off/flag-on path in `premadeBouquetService`. `editP
 Read-only trace spanning every Batch + Demand Entry in a Variety. No schema change.
 
 ### Backend
-- `backend/src/repos/stockRepo.js` — new `getUsageByVarietyKey(key)`: resolves all non-deleted Stock rows matching the 4-tuple key, unions the existing per-row `getUsageByExactId` trails, returns `{ variety, events (date-asc, undated last), unaccountedStems }`. `unaccountedStems` is the signed sum of all event quantities (drift signal). Absorption events deferred — `audit_log` has no `transaction_id` to pair them; un-paired absorptions surface as drift (ADR-0008).
+- `backend/src/repos/stockRepo.js` — new `getUsageByVarietyKey(key)`: resolves all non-deleted Stock rows matching the 4-tuple key, unions the existing per-row `getUsageByExactId` trails, returns `{ variety, events (date-asc, undated last), unaccountedStems }`. `unaccountedStems` is the signed sum of all event quantities (drift signal). Absorption events deferred — `audit_log` has no `transaction_id` to pair them; un-paired absorptions surface as drift (ADR-0012, formerly ADR-0008).
 - `backend/src/routes/stock.js` — new `GET /stock/varieties/:key/usage` (registered before `/:id/usage` so `varieties` isn't captured as an id). Key is URL-encoded `Type|Colour|Size|Cultivar`.
 - `listGroupedByVariety` — qty=0 Variety groups with an active order consumer stay visible under `includeEmpty=false` (keeps the #323 absorption-anchor DE reachable).
 
@@ -720,7 +735,7 @@ Read-only trace spanning every Batch + Demand Entry in a Variety. No schema chan
 - Translations: `varietyTraceTitle`, `unaccountedStems` (EN + RU) on both apps.
 
 ### Why
-Answers "where did all my Peony Pink go?" in one tap instead of inspecting each Batch. Behind `STOCK_Y_MODEL` (off in prod). New ADR-0008.
+Answers "where did all my Peony Pink go?" in one tap instead of inspecting each Batch. Behind `STOCK_Y_MODEL` (off in prod at the time). New ADR-0012 (originally filed as ADR-0008).
 
 ### Verification
 - `backend/src/__tests__/varietyUsageTrace.integration.test.js` (4 pglite tests) + `packages/shared/test/VarietyTracePanel.test.jsx` (6) + a VarietyListItem opt-in test. Full backend + shared suites green; all 3 app builds green.
