@@ -77,11 +77,14 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     expect(panel).toHaveTextContent('10.00'); // s1 cost
   });
 
-  it('row tap-target still opens trace with the merged stockIds', () => {
+  it('row tap-target opens trace with the merged stockIds + the flattened row (varietyKey)', () => {
     const onRowClick = vi.fn();
     render(<BatchArrivalList groups={makeMergedGroup()} t={t} onRowClick={onRowClick} />);
     fireEvent.click(screen.getByTestId('batch-arrival-row'));
-    expect(onRowClick).toHaveBeenCalledWith(['s1', 's2']);
+    expect(onRowClick).toHaveBeenCalledWith(
+      ['s1', 's2'],
+      expect.objectContaining({ varietyKey: 'Rose|Pink|60|' }),
+    );
   });
 
   it('mixed-cost badge text comes from t.costMixedShort, not a hardcoded literal (CR-14)', () => {
@@ -198,5 +201,107 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     expect(screen.getByText(/6 in premade/)).toBeInTheDocument(); // labelled premade
     expect(screen.queryByText('+6')).toBeNull();               // never "+6" (the additive bug)
     expect(screen.queryByText('18')).toBeNull();               // physical total no longer the headline
+  });
+});
+
+// #533 follow-up — the flat table must show each Variety's REAL position
+// (net of committed demand), matching the by-Variety buckets, and must not
+// pile up zero-qty sibling rows from receive/substitute card creation.
+describe('BatchArrivalList — demand-aware Available (#533 follow-up)', () => {
+  // Prod shape 2026-07-08: Hydrangea Pink batch +5 (Jul 8) exactly offset by a
+  // Demand Entry −5 for an order due Jul 12. Physical 5, committed 5, net 0.
+  const hydrangea = () => [{
+    key: 'Hydrangea|Pink||',
+    type_name: 'Hydrangea', colour: 'Pink', size_cm: null, cultivar: null,
+    hasActiveConsumer: true,
+    rows: [
+      { id: 'batch',  current_quantity: 5,  current_sell_price: 60, current_cost_price: 20, supplier: 'Stefan', date: '2026-07-08' },
+      { id: 'demand', current_quantity: -5, current_sell_price: 60, date: '2026-07-12' },
+    ],
+  }];
+
+  it('Available = physical − committed, with a "committed · date" hint', () => {
+    render(<BatchArrivalList groups={hydrangea()} t={{ ...t, committed: 'Committed' }} />);
+    const row = screen.getByTestId('batch-arrival-row').parentElement;
+    expect(row).toHaveTextContent(/·\s*5 committed · 12\.07/); // hint names the claim + its date
+    expect(screen.getByText('0')).toBeInTheDocument();         // headline = net, not physical 5
+    expect(screen.queryByText('5', { selector: '.text-base' })).toBeNull();
+  });
+
+  it('hideEmpty keeps a fully-committed (net-zero) tier visible — tier-level #533', () => {
+    render(<BatchArrivalList groups={hydrangea()} t={t} hideEmpty />);
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(1);
+  });
+
+  it('a Variety with demand but NO batches still gets a (negative) shortfall row', () => {
+    const groups = [{
+      key: 'Peony|Coral||',
+      type_name: 'Peony', colour: 'Coral', size_cm: null, cultivar: null,
+      rows: [{ id: 'de1', current_quantity: -4, current_sell_price: 30, date: '2026-07-15' }],
+    }];
+    render(<BatchArrivalList groups={groups} t={t} hideEmpty />);
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(1);
+    expect(screen.getByText('-4')).toBeInTheDocument(); // pure shortfall is visible, not silently dropped
+  });
+
+  it('FEFO: committed drains the oldest tier first, remainder hits the newer tier', () => {
+    const groups = [{
+      key: 'Rose|Red||',
+      type_name: 'Rose', colour: 'Red', size_cm: null, cultivar: null,
+      rows: [
+        { id: 'old', current_quantity: 10, current_sell_price: 40, date: '2026-06-01' },
+        { id: 'new', current_quantity: 5,  current_sell_price: 60, date: '2026-07-01' },
+        { id: 'de',  current_quantity: -12, current_sell_price: 60, date: '2026-07-10' },
+      ],
+    }];
+    render(<BatchArrivalList groups={groups} t={t} />);
+    // old tier: 10 − 10 = 0; new tier: 5 − 2 = 3.
+    expect(screen.getByText('0')).toBeInTheDocument();
+    expect(screen.getByText('3')).toBeInTheDocument();
+    expect(screen.queryByText('10', { selector: '.text-base' })).toBeNull();
+  });
+
+  it('footer qty sums the displayed available (net), not raw physical', () => {
+    render(<BatchArrivalList groups={hydrangea()} t={{ ...t, total: 'Total' }} footer />);
+    const footer = screen.getByTestId('batch-arrival-footer');
+    expect(footer).toHaveTextContent('Total (1)');
+    // qty cell = 0 (net), not 5 (physical)
+    expect(footer.querySelectorAll('span')[2].textContent).toBe('0');
+  });
+
+  it('C: a zero-qty sibling card (substitute/orig) is hidden from the expansion — no 0-row duplicate', () => {
+    // Prod shape: "Rose Country Blues" substitute card (qty 0) + its dated batch
+    // (qty 20), created in the same evaluate — must read as ONE row, no chevron.
+    const groups = [{
+      key: 'Rose|Dark Pink||',
+      type_name: 'Rose', colour: 'Dark Pink', size_cm: null, cultivar: null,
+      rows: [
+        { id: 'card',  current_quantity: 0,  current_sell_price: 15, current_cost_price: 3.6, supplier: '4f', date: '2026-07-07' },
+        { id: 'batch', current_quantity: 20, current_sell_price: 15, current_cost_price: 3.6, supplier: '4f', date: '2026-07-07' },
+      ],
+    }];
+    render(<BatchArrivalList groups={groups} t={t} />);
+    expect(screen.getAllByTestId('batch-arrival-row')).toHaveLength(1);
+    expect(screen.getByText('20')).toBeInTheDocument();
+    // Only one meaningful constituent → no expand chevron at all.
+    expect(screen.queryByTestId('batch-row-expand')).toBeNull();
+  });
+
+  it('C: expansion still lists multiple POSITIVE constituents, zero-qty cards filtered out', () => {
+    const groups = [{
+      key: 'Rose|Pink|60|',
+      type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,
+      rows: [
+        { id: 'card', current_quantity: 0,  current_sell_price: 25, current_cost_price: 10, supplier: 'Akito', date: '2026-05-01' },
+        { id: 's1',   current_quantity: 10, current_sell_price: 25, current_cost_price: 10, supplier: 'Akito', date: '2026-05-10' },
+        { id: 's2',   current_quantity: 6,  current_sell_price: 25, current_cost_price: 12, supplier: 'Mondial', date: '2026-05-13' },
+      ],
+    }];
+    render(<BatchArrivalList groups={groups} t={t} />);
+    fireEvent.click(screen.getByTestId('batch-row-expand'));
+    const panel = screen.getByTestId('batch-row-detail');
+    expect(panel).toHaveTextContent('13.05.2026');
+    expect(panel).toHaveTextContent('10.05.2026');
+    expect(panel).not.toHaveTextContent('01.05.2026'); // the empty card row is gone
   });
 });

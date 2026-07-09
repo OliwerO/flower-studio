@@ -68,6 +68,12 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
   const [varietyDrift, setVarietyDrift]                 = useState(0);
   const [varietyOpening, setVarietyOpening]             = useState(0);
   const [varietyTraceLoading, setVarietyTraceLoading]   = useState(false);
+  // Flat-table trace: which merged row's trace panel is open (joined stockIds
+  // as row identity). The trace itself is the VARIETY trace — a flat row's
+  // per-tier ids miss the Variety's Demand Entries, so a tier-scoped trail
+  // produced a running balance that matched neither physical nor net (#533
+  // follow-up, "5 in the header, 3 in the trace").
+  const [flatTraceRow, setFlatTraceRow]                 = useState(null);
   const [writeOffVariety, setWriteOffVariety] = useState(null); // write-off picker (modal)
   const [wastePeriod, setWastePeriod] = useState('month'); // 'today' | 'month' | '30d' | '90d' | 'custom'
   const [wasteCustomFrom, setWasteCustomFrom] = useState('');
@@ -301,6 +307,26 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
       .then(trails => setTraceTrail(trails.flat()))
       .finally(() => setTraceLoading(false));
   }, [traceStockId]);
+
+  // Shared fetch for the Variety-level trace (by-Variety rows AND flat-table
+  // rows use the same endpoint so their numbers can never diverge).
+  async function fetchVarietyUsage(key) {
+    setVarietyTrail([]);
+    setVarietyUnaccounted(0);
+    setVarietyDrift(0);
+    setVarietyTraceLoading(true);
+    try {
+      const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
+      setVarietyTrail(res.data.events || []);
+      setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
+      setVarietyDrift(res.data.drift ?? 0);
+      setVarietyOpening(res.data.openingBalance ?? 0);
+    } catch {
+      setVarietyTrail([]);
+    } finally {
+      setVarietyTraceLoading(false);
+    }
+  }
 
   // ── Y-model: write-off handler ──
   // Write-off spread across a merged sell tier in FEFO order. `stockIds` is
@@ -723,29 +749,34 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                   // "In stock" filter (A): also drop 0-qty tiers within a
                   // surviving Variety, not just whole empty Varieties.
                   hideEmpty={hideZero && view === 'all'}
-                  onRowClick={(stockIds) => {
+                  onRowClick={(stockIds, row) => {
+                    // Flat row → the full VARIETY trace (same endpoint as the
+                    // by-Variety view). A tier-scoped per-id trail misses the
+                    // Variety's Demand Entries → balances that match nothing.
                     const joined = stockIds.join(',');
-                    setTraceStockId(prev => prev === joined ? null : joined);
+                    if (flatTraceRow === joined) { setFlatTraceRow(null); return; }
+                    setFlatTraceRow(joined);
+                    if (row?.varietyKey) fetchVarietyUsage(row.varietyKey);
                   }}
                   onPatchPriceBulk={patchPriceBulk}
-                  traceStockIds={traceStockId}
-                  traceNode={traceStockId ? (
+                  traceStockIds={flatTraceRow}
+                  traceNode={flatTraceRow ? (
                     <div className="px-4 py-3">
                       <div className="flex items-center justify-between mb-2">
-                        <span className="text-xs font-semibold text-blue-700 uppercase tracking-wide">
-                          {t.batchTraceTitle}
+                        <span className="text-xs font-semibold text-indigo-700 uppercase tracking-wide">
+                          {t.varietyTraceTitle ?? 'Variety history'}
                         </span>
                         <button
-                          onClick={() => { setTraceStockId(null); setTraceTrail(null); }}
-                          className="text-xs text-blue-400 hover:text-blue-600"
+                          onClick={() => setFlatTraceRow(null)}
+                          className="text-xs text-indigo-400 hover:text-indigo-600"
                         >
                           ✕
                         </button>
                       </div>
-                      {traceLoading ? (
+                      {varietyTraceLoading ? (
                         <p className="text-xs text-ios-tertiary">{t.loading}</p>
                       ) : (
-                        <BatchTracePanel trail={traceTrail || []} t={t} onOrderClick={(recordId) => setQuickViewOrderId(recordId)} />
+                        <VarietyTracePanel events={varietyTrail} unaccountedStems={varietyUnaccounted} drift={varietyDrift} openingBalance={varietyOpening} t={t} onOrderClick={(recordId) => setQuickViewOrderId(recordId)} />
                       )}
                     </div>
                   ) : null}
@@ -788,7 +819,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
-                          onVarietyTrace={async (key) => {
+                          onVarietyTrace={(key) => {
                             if (varietyTraceKey === key) {
                               // Toggle off
                               setVarietyTraceKey(null);
@@ -798,21 +829,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                               return;
                             }
                             setVarietyTraceKey(key);
-                            setVarietyTrail([]);
-                            setVarietyUnaccounted(0);
-                            setVarietyDrift(0);
-                            setVarietyTraceLoading(true);
-                            try {
-                              const res = await client.get(`/stock/varieties/${encodeURIComponent(key)}/usage`);
-                              setVarietyTrail(res.data.events || []);
-                              setVarietyUnaccounted(res.data.unaccountedStems ?? 0);
-                              setVarietyDrift(res.data.drift ?? 0);
-                              setVarietyOpening(res.data.openingBalance ?? 0);
-                            } catch {
-                              setVarietyTrail([]);
-                            } finally {
-                              setVarietyTraceLoading(false);
-                            }
+                            fetchVarietyUsage(key);
                           }}
                           onWriteOff={(v) => setWriteOffVariety(v)}
                           onAdjust={adjustGroupQty}

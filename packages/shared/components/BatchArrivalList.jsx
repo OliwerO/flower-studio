@@ -10,11 +10,16 @@
  *
  * Columns: Type · Variety · Available · Cost · Sell · Markup · Supplier.
  *
+ * Available is DEMAND-AWARE (#533 follow-up): it shows net (physical −
+ * committed) with a "N committed · date" hint, so a fully-promised Variety
+ * never reads as free stock. See flatten() below for the allocation rule.
+ *
  * Props:
  *   groups      — Variety groups (same shape consumed by VarietyListItem)
  *   t           — translations
- *   onRowClick  — callback(stockIds[]) — host opens trace / detail.
- *                 Receives the array of underlying stock_ids in the merged row.
+ *   onRowClick  — callback(stockIds[], row) — host opens trace / detail.
+ *                 Receives the underlying stock_ids plus the flattened row
+ *                 (row.varietyKey drives the Variety-level trace).
  *   today       — optional ISO date override
  */
 import { useMemo, useState } from 'react';
@@ -58,13 +63,14 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
   const setField = (patch) => onFilterChange && onFilterChange({ ...filter, ...patch });
 
   // hideEmpty (the dashboard "In stock" filter): drop merged rows with no
-  // on-hand stems and no premade reservation. The group-level filter keeps a
-  // Variety alive as long as ONE of its sell tiers has stock, but each other
-  // (0-qty, different-sell-price) tier still flattened to its own row here —
-  // that's the pile of "0 available" duplicates the owner saw. (issue A)
+  // on-hand stems, no premade reservation, AND no committed demand. The
+  // committed check is the tier-level #533 guard — a fully-committed tier
+  // (physical 5, net 0) must stay visible with its "committed" hint, and a
+  // pure-shortfall row (negative available) is actionable, not clutter. Old
+  // depleted 0-qty tiers (no reservation, no demand) still drop. (issue A)
   const rows = useMemo(() => {
     let all = flatten(groups, reservations, today_);
-    if (hideEmpty) all = all.filter(r => r.qty > 0 || r.reserved > 0);
+    if (hideEmpty) all = all.filter(r => r.physical > 0 || r.reserved > 0 || r.committed > 0);
     // E1: per-column filter, applied in memory on the flattened rows.
     all = all.filter(r => stockRowMatchesFilter(r, filter));
     return all;
@@ -246,7 +252,12 @@ function ColumnFilterControl({ colKey, filter, setField, t }) {
 function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
   const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
   const editable = !!onPatchPriceBulk;
-  const expandable = b.underlying.length > 1;
+  // C: zero-qty constituent rows (empty orig/substitute cards zeroed by the
+  // receive-absorption path) carry no stems — hiding them from the drill-down
+  // kills the "two rows, 0 and 20, same date/supplier" duplicates. They stay
+  // in stockIds so bulk price edits still reach the card.
+  const expandRows = useMemo(() => b.underlying.filter(u => u.qty > 0), [b.underlying]);
+  const expandable = expandRows.length > 1;
   const [expanded, setExpanded] = useState(false);
 
   function save(field, next) {
@@ -269,7 +280,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           type="button"
           data-testid="batch-arrival-row"
           data-stock-ids={b.stockIds.join(',')}
-          onClick={() => onRowClick && onRowClick(b.stockIds)}
+          onClick={() => onRowClick && onRowClick(b.stockIds, b)}
           className="absolute inset-0 z-0"
           aria-label={t.batchTraceTitle || 'Open trace'}
         />
@@ -296,7 +307,17 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
         </span>
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
-          <span className="text-base font-bold tabular-nums text-gray-900">{b.reserved > 0 ? b.qty - b.reserved : b.qty}</span>
+          {/* b.qty is already net of committed demand (#533 follow-up); reserved
+              stays a render-time subtraction (CR-17 subset display). A negative
+              number = genuine shortfall — more stems promised than on shelf. */}
+          <span className={`text-base font-bold tabular-nums ${(b.reserved > 0 ? b.qty - b.reserved : b.qty) < 0 ? 'text-red-600' : 'text-gray-900'}`}>
+            {b.reserved > 0 ? b.qty - b.reserved : b.qty}
+          </span>
+          {b.committed > 0 && (
+            <span className="text-[10px] text-amber-600 tabular-nums whitespace-nowrap">
+              · {b.committed} {(t.committed ?? 'committed').toLowerCase()}{b.demandDate ? ` · ${formatArrived(b.demandDate)}` : ''}
+            </span>
+          )}
           {b.reserved > 0 && (
             <span className="text-[10px] text-indigo-600 tabular-nums whitespace-nowrap">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
           )}
@@ -330,7 +351,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
         </span>
       </div>
       {expandable && expanded && (
-        <ExpandedDetails underlying={b.underlying} t={t} />
+        <ExpandedDetails underlying={expandRows} t={t} />
       )}
       {traceNode && (
         <div data-testid="batch-row-trace" className="bg-blue-50/60 border-t border-blue-100">
@@ -389,35 +410,60 @@ function formatArrived(iso) {
 // supplier differences, farmer differences, and arrival-date differences fold
 // into the merged row (stems are fungible in one physical bucket). Different
 // sell prices stay separate so the florist can still see what to charge.
+//
+// #533 follow-up — demand-aware Available: negative rows (Demand Entries) used
+// to be silently skipped, so a fully-committed Variety read as freely available
+// (physical 5, but every stem promised to a future order). Now each Variety's
+// committed demand is collected and FEFO-allocated across its sell tiers
+// (oldest arrival first — the order stems actually leave the shelf), and the
+// row's `qty` is the NET available (physical − committed) — the same number
+// the by-Variety buckets show. A Variety with demand but no batches at all
+// gets a synthesized shortfall row (negative available) instead of vanishing.
 function flatten(groups, reservations, today) {
   const merged = new Map();
+  // Per-Variety demand info, keyed by the group's variety key.
+  const byVariety = new Map();
   for (const g of groups ?? []) {
+    const varietyKey = g.key ?? [
+      g.type_name ?? '', g.colour ?? '',
+      g.size_cm != null ? String(g.size_cm) : '', g.cultivar ?? '',
+    ].join('|');
+    let v = byVariety.get(varietyKey);
+    if (!v) {
+      v = { committed: 0, demandDate: null, demandRows: [], tiers: [], g };
+      byVariety.set(varietyKey, v);
+    }
     for (const row of g.rows ?? []) {
       const qty = Number(row.current_quantity);
-      if (qty < 0) continue;
       const sell = readNum(row, 'Current Sell Price', 'current_sell_price');
       const cost = readNum(row, 'Current Cost Price', 'current_cost_price');
+      if (qty < 0) {
+        // Demand Entry — stems already promised to a future order. The
+        // EARLIEST demand date is the one worth surfacing (the soonest claim).
+        v.committed += -qty;
+        const d = row.date ?? null;
+        if (d && (!v.demandDate || d < v.demandDate)) v.demandDate = d;
+        v.demandRows.push({ id: row.id, sell, cost });
+        continue;
+      }
       const supplier = row.Supplier ?? row.supplier ?? null;
       const date = row.date ?? null;
-      const key = [
-        g.type_name ?? '',
-        g.colour ?? '',
-        g.size_cm != null ? String(g.size_cm) : '',
-        g.cultivar ?? '',
-        sell != null ? sell.toFixed(2) : '',
-      ].join('|');
+      const key = [varietyKey, sell != null ? sell.toFixed(2) : ''].join('|');
 
       let m = merged.get(key);
       if (!m) {
-        const varietyLabel = [g.colour, g.size_cm, g.cultivar].filter(v => v != null).join(' ');
+        const varietyLabel = [g.colour, g.size_cm, g.cultivar].filter(vv => vv != null).join(' ');
         m = {
           stockIds:  [],
+          varietyKey,
           type:      g.type_name ?? '—',
           colour:    g.colour ?? null,
           size_cm:   g.size_cm ?? null,
           cultivar:  g.cultivar ?? null,
           variety:   varietyLabel,
-          qty:       0,
+          physical:  0,
+          committed: 0,
+          demandDate: null,
           reserved:  0,
           newestDate: null,
           newestCost: null,
@@ -427,15 +473,16 @@ function flatten(groups, reservations, today) {
           sell,
         };
         merged.set(key, m);
+        v.tiers.push(m);
       }
       m.stockIds.push(row.id);
-      m.qty += qty;
+      m.physical += qty;
       m.reserved += reservations.get(row.id) ?? 0;
       m.underlying.push({ id: row.id, qty, cost, supplier, date });
       // CR-14: only POSITIVE-qty receives carry a cost basis. A zero-qty row
-      // (an absorbed demand entry, qty 0 — it clears the qty<0 guard above)
-      // holds a stray cost that must NOT count toward the mixed-cost badge or
-      // the displayed (newest) cost / supplier.
+      // (an absorbed demand entry or an empty orig/substitute card) holds a
+      // stray cost that must NOT count toward the mixed-cost badge or the
+      // displayed (newest) cost / supplier.
       if (qty > 0) {
         if (cost != null) m.costsSeen.add(cost.toFixed(2));
         if (supplier) m.suppliersSeen.add(supplier);
@@ -446,6 +493,57 @@ function flatten(groups, reservations, today) {
         } else if (!m.newestDate && cost != null && m.newestCost == null) {
           m.newestCost = cost;
         }
+      }
+    }
+  }
+
+  // FEFO-allocate each Variety's committed demand across its sell tiers:
+  // oldest arrival first; any remainder lands on the newest tier so a true
+  // shortfall shows as a negative available right where the action is.
+  for (const v of byVariety.values()) {
+    if (v.committed <= 0) continue;
+    const tiers = [...v.tiers].sort((a, b) => {
+      const da = a.newestDate ?? '9999-99-99';
+      const db = b.newestDate ?? '9999-99-99';
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+    let remaining = v.committed;
+    for (const tier of tiers) {
+      const share = Math.min(remaining, tier.physical);
+      if (share > 0) {
+        tier.committed += share;
+        tier.demandDate = v.demandDate;
+        remaining -= share;
+      }
+    }
+    if (remaining > 0) {
+      if (tiers.length > 0) {
+        const last = tiers[tiers.length - 1];
+        last.committed += remaining;
+        last.demandDate = v.demandDate;
+      } else {
+        // No batches at all — synthesize a shortfall row so the Variety is
+        // still visible in the flat table (pure demand, nothing received yet).
+        const d0 = v.demandRows[0] ?? {};
+        merged.set(`${v.g.key ?? ''}|__shortfall`, {
+          stockIds:  v.demandRows.map(r => r.id),
+          varietyKey: v.g.key ?? null,
+          type:      v.g.type_name ?? '—',
+          colour:    v.g.colour ?? null,
+          size_cm:   v.g.size_cm ?? null,
+          cultivar:  v.g.cultivar ?? null,
+          variety:   [v.g.colour, v.g.size_cm, v.g.cultivar].filter(vv => vv != null).join(' '),
+          physical:  0,
+          committed: remaining,
+          demandDate: v.demandDate,
+          reserved:  0,
+          newestDate: null,
+          newestCost: d0.cost ?? null,
+          costsSeen: new Set(),
+          suppliersSeen: new Set(),
+          underlying: [],
+          sell: d0.sell ?? null,
+        });
       }
     }
   }
@@ -462,12 +560,19 @@ function flatten(groups, reservations, today) {
     out.push({
       id:        m.stockIds[0],            // stable React key
       stockIds:  m.stockIds,
+      varietyKey: m.varietyKey,
       type:      m.type,
       colour:    m.colour,
       size_cm:   m.size_cm,
       cultivar:  m.cultivar,
       variety:   m.variety,
-      qty:       m.qty,
+      // `qty` is the number every consumer (column, sort, filter, footer)
+      // operates on — NET available, physical minus committed. Physical stays
+      // available as `physical` for anything that needs shelf count.
+      qty:       m.physical - m.committed,
+      physical:  m.physical,
+      committed: m.committed,
+      demandDate: m.demandDate,
       reserved:  m.reserved,
       cost,
       costMixed: m.costsSeen.size > 1,
