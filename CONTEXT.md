@@ -125,7 +125,7 @@ A bouquet listed in the Wix online store (website). Customers browse and order P
 _Avoid_: Wix product, catalog item, listing
 
 **Premade Bouquet**:
-A bouquet a Florist assembles before any customer order exists. Under the legacy model (`STOCK_Y_MODEL=false`), Batch quantity is decremented immediately on creation. Under the Y-model (`STOCK_Y_MODEL=true`, ADR-0005), Batch quantity is unchanged at build — the `premade_bouquet_lines` rows are the reservation ledger; the Batch is decremented only when the Premade Bouquet is sold and becomes an Order. Either way, the bouquet can be sold (an Order is created, the premade record + lines are deleted, standard Batch deduction runs) or dissolved (lines deleted; Batch unchanged in the Y-model, credited in legacy).
+A bouquet a Florist assembles before any customer order exists. Under the reservation model (ADR-0005), Batch quantity is unchanged at build — the `premade_bouquet_lines` rows are the reservation ledger; the Batch is decremented only when the Premade Bouquet is sold and becomes an Order. The bouquet can be sold (an Order is created, the premade record + lines are deleted, standard Batch deduction runs) or dissolved (lines deleted; Batch quantity unchanged).
 _Avoid_: Ready-made, walk-in bouquet, pre-built
 
 **Delivery Result**:
