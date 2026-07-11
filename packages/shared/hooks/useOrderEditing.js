@@ -266,10 +266,20 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
 
   async function addNewFlower() {
     if (!newFlowerForm) return;
-    const dup = findDuplicateStockItem(stockItems, newFlowerForm.name);
-    if (dup) {
-      showToast(t.flowerAlreadyExists || 'Flower already in stock — pick from the list', 'error');
-      addFlowerFromStock(dup);
+    // If this flower already exists as a Variety (in stock OR currently out of
+    // stock), reuse its record: create/deepen its Demand Entry at the entered
+    // price instead of POSTing a duplicate Stock Item. This is the owner's
+    // "new demand for an existing, out-of-stock flower" path — the sell/cost
+    // price she types here flows onto the demand and into the bouquet total.
+    // Prices are applied only when > 0; a blank leaves the record's price as-is.
+    const existingVariety = findAllMatchingVariety(stockItems, newFlowerForm.name);
+    if (existingVariety.length > 0) {
+      const opts = {};
+      const sell = Number(newFlowerForm.sellPrice);
+      const cost = Number(newFlowerForm.costPrice);
+      if (sell > 0) opts.sellPrice = sell;
+      if (cost > 0) opts.costPrice = cost;
+      await createDemandEntry(newFlowerForm.name, 1, opts);
       setNewFlowerForm(null);
       return;
     }
@@ -385,6 +395,36 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     const demandEntry = variety.find(s => parseBatchName(s['Display Name'] || '').batch === null);
 
     if (demandEntry) {
+      // Reuse the existing Demand Entry. When the owner explicitly set a price
+      // (opts.sellPrice / opts.costPrice > 0), persist it onto the demand record
+      // so the whole Variety re-prices and the sell price feeds the bouquet
+      // total, then add the line at that price. Blank/0 prices fall back to the
+      // record's stored price (the legacy add-at-current-price behaviour).
+      const setSell = Number(opts.sellPrice) > 0 ? Number(opts.sellPrice) : null;
+      const setCost = Number(opts.costPrice) > 0 ? Number(opts.costPrice) : null;
+      if (setSell != null || setCost != null) {
+        const body = {};
+        if (setSell != null) body['Current Sell Price'] = setSell;
+        if (setCost != null) body['Current Cost Price'] = setCost;
+        try {
+          const res = await apiClient.patch(`/stock/${demandEntry.id}`, body);
+          setStockItems(prev => prev.map(s => (s.id === demandEntry.id ? { ...s, ...res.data } : s)));
+        } catch {
+          // Price persist failed — still add the line at the entered price so
+          // the bouquet total is right; the record keeps its old price.
+        }
+        setEditLines(prev => [...prev, {
+          id: null,
+          stockItemId: demandEntry.id,
+          flowerName: demandEntry['Display Name'],
+          quantity: add,
+          _originalQty: 0,
+          costPricePerUnit: setCost != null ? setCost : (Number(demandEntry['Current Cost Price']) || 0),
+          sellPricePerUnit: setSell != null ? setSell : (Number(demandEntry['Current Sell Price']) || 0),
+        }]);
+        setFlowerSearch('');
+        return;
+      }
       addFlowerFromStock(demandEntry, add);
       return;
     }

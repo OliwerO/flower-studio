@@ -189,9 +189,15 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                       </button>
                     );
                 })}
+                {/* Shown when no IN-STOCK (or on-order) flower matches: covers
+                    brand-new flowers AND existing-but-out-of-stock ones, so the
+                    owner can create a new demand + set its price off the shelf. */}
                 {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
                   const { name } = parseBatchName(s['Display Name'] || '');
-                  return name.toLowerCase() === flowerSearch.trim().toLowerCase();
+                  if (name.toLowerCase() !== flowerSearch.trim().toLowerCase()) return false;
+                  const inStock = (Number(s['Current Quantity']) || 0) > 0
+                    || (editing.pendingPO?.[s.id]?.ordered || 0) > 0;
+                  return inStock;
                 }) && (
                   <button type="button"
                     onClick={() => editing.openNewFlowerForm(flowerSearch.trim())}
