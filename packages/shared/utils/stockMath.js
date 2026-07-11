@@ -122,27 +122,25 @@ export function varietyGroupMatchesView(group, view, reservations = new Map(), n
 }
 
 // ── varietyGroupHasVisibleStock ─────────────────────────────────────────────
-// Predicate for the Stock-panel "hide zero" toggle (issue #533). A Variety
-// group whose rows net to a raw total of 0 is normally hidden — but a group
-// still has something worth showing when either:
-//   - it has stems reserved for a premade bouquet, or
-//   - it has an active (non-deleted) order-line consumer — `hasActiveConsumer`,
-//     computed server-side in `stockRepo.listGroupedByVariety` from a real
-//     order binding, not from the premades-only reservations Map.
-// Without the second check, a Variety that nets to zero purely because a
-// fresh receipt exactly covers a live (not-yet-due) order's demand vanishes
-// from the default view with no error — the #533 symptom (a florist "received"
-// a flower and it never appeared in stock).
+// Predicate for the Stock-panel "hide zero" toggle. Decides whether a Variety
+// group is worth showing in the default (hide-zero) view. The signal the owner
+// cares about, driven by the per-Variety buckets from getVarietyTotals:
+//   - net !== 0 → SHOW. Either free stock to allocate (net > 0) or a genuine
+//     shortfall to buy (net < 0, e.g. a short Variety with no on-hand stems).
+//   - net === 0 but onHand > 0 → SHOW. Stems are physically sitting on the
+//     shelf, waiting for an upcoming customer order — the owner still wants to
+//     see them (a fresh receipt exactly covering a live order nets to zero but
+//     the stems are real; this also fixes the #533 "received a flower and it
+//     vanished" symptom without needing the server hasActiveConsumer flag).
+//   - net === 0 AND onHand === 0 → HIDE. Truly empty: nothing on hand, nothing
+//     planned, nothing reserved. These are the "0 net / 0 on hand" rows that
+//     cluttered the florist's list with no actionable information.
 //
-// Mirrors the raw-sum totalQty used historically inline in each app (NOT
-// getVarietyTotals().net, which additionally subtracts premade reservations)
-// so this drop-in preserves prior hideZero behaviour exactly, plus the fix.
+// getVarietyTotals subtracts premade reservations into net, so a Variety with
+// 0 on hand but stems promised to a premade reads as net < 0 and still shows.
 export function varietyGroupHasVisibleStock(group, reservations = new Map()) {
-  const rows = group?.rows || [];
-  const totalQty = rows.reduce((sum, r) => sum + (Number(r.current_quantity) || 0), 0);
-  if (totalQty !== 0) return true;
-  if (rows.some(r => (Number(reservations.get(r.id)) || 0) > 0)) return true;
-  return Boolean(group?.hasActiveConsumer);
+  const { onHand, net } = getVarietyTotals(group?.rows || [], reservations);
+  return net !== 0 || onHand > 0;
 }
 
 /**

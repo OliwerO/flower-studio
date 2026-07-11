@@ -166,10 +166,17 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
             </div>
 
             <div className="bg-white rounded-xl border border-gray-100 overflow-hidden divide-y divide-gray-50 max-h-64 overflow-y-auto">
-              {/* Add unlisted flower option — opens full price form (cost + sell) */}
+              {/* Add unlisted flower / new demand — opens full price form (cost +
+                  sell). Shown when no IN-STOCK (or on-order) flower matches the
+                  search: brand-new flowers AND existing-but-out-of-stock ones
+                  both surface here, so the owner can create a new demand and set
+                  its price even when the flower isn't currently on the shelf. */}
               {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
                 const { name } = parseBatchName(s['Display Name'] || '');
-                return name.toLowerCase() === flowerSearch.trim().toLowerCase();
+                if (name.toLowerCase() !== flowerSearch.trim().toLowerCase()) return false;
+                const inStock = (Number(s['Current Quantity']) || 0) > 0
+                  || (editing.pendingPO?.[s.id]?.ordered || 0) > 0;
+                return inStock;
               }) && (
                 <button
                   type="button"

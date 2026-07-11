@@ -288,40 +288,46 @@ describe('varietyGroupMatchesView (Y-model Stock view pills)', () => {
   });
 });
 
-describe('varietyGroupHasVisibleStock (#533)', () => {
-  it('is visible when raw totalQty is non-zero, regardless of consumer/reservation flags', () => {
+describe('varietyGroupHasVisibleStock', () => {
+  it('is visible when there is free stock on hand (net > 0)', () => {
     const g = { rows: [{ id: 'a', current_quantity: 5 }] };
     expect(varietyGroupHasVisibleStock(g)).toBe(true);
   });
 
-  it('is visible at net zero when a premade reservation exists', () => {
+  it('is visible for a shortfall with no on-hand stems (net < 0) — a short Variety ' +
+     'still needs to be bought', () => {
+    const g = { rows: [{ id: 'demand', current_quantity: -10 }] };
+    expect(varietyGroupHasVisibleStock(g, new Map())).toBe(true);
+  });
+
+  it('is visible at net zero when a premade reservation drives net negative', () => {
+    // 0 on hand, 3 stems promised to a premade → net -3 → surfaces as short.
     const g = { rows: [{ id: 'a', current_quantity: 0 }] };
     expect(varietyGroupHasVisibleStock(g, new Map([['a', 3]]))).toBe(true);
   });
 
-  it('is visible at net zero when hasActiveConsumer is true — a fresh receipt exactly ' +
-     'covering a live order\'s demand must not vanish from the default view (#533)', () => {
-    // Batch +5 arrived, live Demand Entry -5 for a not-yet-due order — nets to 0,
-    // but the order still needs those stems. Backend sets hasActiveConsumer from
-    // a real (non-deleted) order_lines binding.
+  it('is visible at net zero when stems are physically on hand — a fresh receipt ' +
+     'exactly covering a live order nets to 0 but the stems are real (waiting for an ' +
+     'upcoming order), so it must not vanish from the default view', () => {
+    // Batch +5, live Demand Entry -5 → net 0 but onHand 5. Shown regardless of any
+    // server hasActiveConsumer flag — the on-hand stems are the signal.
     const g = {
       rows: [
         { id: 'batch', current_quantity: 5 },
         { id: 'demand', current_quantity: -5 },
       ],
-      hasActiveConsumer: true,
     };
     expect(varietyGroupHasVisibleStock(g, new Map())).toBe(true);
   });
 
-  it('is hidden at net zero with no reservation and no active consumer', () => {
-    const g = {
-      rows: [
-        { id: 'batch', current_quantity: 5 },
-        { id: 'demand', current_quantity: -5 },
-      ],
-      hasActiveConsumer: false,
-    };
+  it('is hidden when truly empty — net 0 AND nothing on hand', () => {
+    // The "0 net / 0 on hand" rows that cluttered the florist stock list.
+    const g = { rows: [{ id: 'a', current_quantity: 0 }] };
     expect(varietyGroupHasVisibleStock(g, new Map())).toBe(false);
+  });
+
+  it('is hidden for an empty group with no rows', () => {
+    expect(varietyGroupHasVisibleStock({ rows: [] }, new Map())).toBe(false);
+    expect(varietyGroupHasVisibleStock({}, new Map())).toBe(false);
   });
 });

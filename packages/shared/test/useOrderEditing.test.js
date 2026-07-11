@@ -284,6 +284,124 @@ describe('createDemandEntry', () => {
       ]),
     );
   });
+
+  // ── Existing Demand Entry + explicit price (owner sets sell/cost) ─────────
+  it('existing Demand Entry + opts price: PATCHes the demand price and adds the line at it', async () => {
+    const existingEntry = {
+      id: 'stock-existing',
+      'Display Name': 'Rose',
+      'Current Cost Price': 5,
+      'Current Sell Price': 10,
+      'Current Quantity': -3,
+    };
+    const patch = vi.fn().mockResolvedValue({
+      data: { ...existingEntry, 'Current Sell Price': 25, 'Current Cost Price': 12 },
+    });
+    const props = makeHookProps({
+      apiClient: {
+        get:   vi.fn().mockResolvedValue({ data: [existingEntry] }),
+        post:  vi.fn(),
+        patch,
+      },
+    });
+    const { result } = renderHook(() => useOrderEditing(props));
+    await act(async () => { result.current.startEditing([]); });
+    await act(async () => {});
+
+    await act(async () => {
+      await result.current.createDemandEntry('Rose', 2, { sellPrice: 25, costPrice: 12 });
+    });
+
+    // Persisted the new price onto the demand record, no duplicate POST.
+    expect(patch).toHaveBeenCalledWith('/stock/stock-existing', {
+      'Current Sell Price': 25,
+      'Current Cost Price': 12,
+    });
+    expect(props.apiClient.post).not.toHaveBeenCalled();
+    // Line added at the owner's price, so it feeds the bouquet total.
+    expect(result.current.editLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stockItemId: 'stock-existing', quantity: 2, sellPricePerUnit: 25, costPricePerUnit: 12,
+      }),
+    ]));
+  });
+
+  // ── Existing Demand Entry + blank price: legacy add-at-current-price ──────
+  it('existing Demand Entry + no price: does NOT PATCH, keeps the record price', async () => {
+    const existingEntry = {
+      id: 'stock-existing',
+      'Display Name': 'Rose',
+      'Current Cost Price': 5,
+      'Current Sell Price': 10,
+      'Current Quantity': -3,
+    };
+    const patch = vi.fn();
+    const props = makeHookProps({
+      apiClient: {
+        get:   vi.fn().mockResolvedValue({ data: [existingEntry] }),
+        post:  vi.fn(),
+        patch,
+      },
+    });
+    const { result } = renderHook(() => useOrderEditing(props));
+    await act(async () => { result.current.startEditing([]); });
+    await act(async () => {});
+
+    await act(async () => {
+      await result.current.createDemandEntry('Rose', 1, { sellPrice: 0, costPrice: 0 });
+    });
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(result.current.editLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({ stockItemId: 'stock-existing' }),
+    ]));
+  });
+});
+
+describe('addNewFlower — reuse existing out-of-stock Variety (new demand + price)', () => {
+  it('deepens the existing Variety\'s demand at the entered price instead of creating a duplicate', async () => {
+    // A flower that already exists but is currently out of stock (undated,
+    // qty 0 → Demand Entry). Typing its name in the bouquet search surfaces the
+    // "+ Add new" form; submitting must reuse the record, not POST a new one.
+    const existingEntry = {
+      id: 'stock-existing',
+      'Display Name': 'Peony White',
+      'Current Cost Price': 4,
+      'Current Sell Price': 8,
+      'Current Quantity': 0,
+    };
+    const post  = vi.fn();
+    const patch = vi.fn().mockResolvedValue({
+      data: { ...existingEntry, 'Current Sell Price': 30, 'Current Cost Price': 15 },
+    });
+    const props = makeHookProps({
+      apiClient: {
+        get:  vi.fn().mockResolvedValue({ data: [existingEntry] }),
+        post,
+        patch,
+      },
+    });
+    const { result } = renderHook(() => useOrderEditing(props));
+    await act(async () => { result.current.startEditing([]); });
+    await act(async () => {});
+    post.mockClear();
+
+    act(() => result.current.openNewFlowerForm('Peony White'));
+    act(() => result.current.setNewFlowerForm(p => ({ ...p, costPrice: '15', sellPrice: '30' })));
+    await act(async () => { await result.current.addNewFlower(); });
+
+    // No duplicate stock item; demand price persisted; line added at the price.
+    expect(post).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith('/stock/stock-existing', {
+      'Current Sell Price': 30,
+      'Current Cost Price': 15,
+    });
+    expect(result.current.editLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stockItemId: 'stock-existing', sellPricePerUnit: 30, costPricePerUnit: 15,
+      }),
+    ]));
+  });
 });
 
 // ── Batch quantity cap (#311 AC3) ──────────────────────────────────────────

@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -251,6 +251,57 @@ export default function Step2Bouquet({
     });
   }
 
+  // Create a new demand for a flower, reusing an existing Variety when one
+  // already exists (in stock OR out of stock) so we never duplicate a flower
+  // record. When the owner set a price (> 0) it is persisted onto the reused
+  // record and used for the line, so the sell price feeds the bouquet total.
+  // A brand-new flower is created at qty 0 with its price. Confirmed behaviour:
+  // reuse existing variety + set price. Mirrors the florist Step2Bouquet.
+  async function createOrDeepenDemand({ displayName, variety = {}, costPrice = 0, sellPrice = 0, amount = 1 }) {
+    const name = (displayName || '').trim();
+    if (!name) return;
+    const add  = Math.max(1, Number(amount) || 1);
+    const cost = Number(costPrice) || 0;
+    const sell = Number(sellPrice) || 0;
+
+    const existing = findAllMatchingVariety(stock, name);
+    if (existing.length) {
+      const target = existing.find(s => parseBatchName(s['Display Name'] || '').batch === null) || existing[0];
+      let item = target;
+      const body = {};
+      if (sell > 0) body['Current Sell Price'] = sell;
+      if (cost > 0) body['Current Cost Price'] = cost;
+      if (Object.keys(body).length) {
+        try {
+          const res = await client.patch(`/stock/${target.id}`, body);
+          item = { ...target, ...res.data };
+          onStockRefresh?.();
+        } catch { /* fall through: still add the line at the entered price */ }
+      }
+      addOne({
+        id: item.id,
+        'Display Name': item['Display Name'],
+        'Current Cost Price': cost > 0 ? cost : (Number(item['Current Cost Price']) || 0),
+        'Current Sell Price': sell > 0 ? sell : (Number(item['Current Sell Price']) || 0),
+      }, add);
+      return;
+    }
+
+    try {
+      const res = await client.post('/stock', {
+        displayName: name,
+        typeName: (variety.type_name ?? variety.typeName ?? name),
+        colour:   variety.colour ?? null,
+        sizeCm:   variety.size_cm ?? variety.sizeCm ?? null,
+        cultivar: variety.cultivar ?? null,
+        costPrice: cost, sellPrice: sell, quantity: 0,
+      });
+      onStockRefresh?.();
+      addOne({ id: res.data.id, 'Display Name': res.data['Display Name'],
+               'Current Cost Price': cost, 'Current Sell Price': sell }, add);
+    } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+  }
+
   function changeQty(key, delta) {
     onLinesChange(lines =>
       lines
@@ -382,13 +433,33 @@ export default function Step2Bouquet({
         </div>
 
         <div className="ios-card overflow-hidden divide-y divide-white/40 max-h-64 overflow-y-auto">
-          {/* Add unlisted flower option */}
-          {flowerQuery.length >= 2 && !stock.some(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase()) && (
+          {/* Add unlisted flower / new demand — shown when no IN-STOCK (or
+              on-order) flower matches, so existing-but-out-of-stock flowers
+              surface it too (not just brand-new names). Opens the price form,
+              pre-filled from the existing record when there is one, so the owner
+              can create a new demand and set its sell/cost price off the shelf. */}
+          {flowerQuery.length >= 2 && !stock.some(s => {
+            if ((s['Display Name'] || '').toLowerCase() !== flowerQuery.toLowerCase()) return false;
+            const qty = Number(s['Current Quantity']) || 0;
+            const onOrder = pendingPO[s.id]?.ordered || 0;
+            return qty > 0 || onOrder > 0;
+          }) && (
             <button
               type="button"
               onClick={() => {
+                const existing = stock.find(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase());
                 setShowCustomFlower(true);
-                setCustomFlower({ name: flowerQuery, typeName: flowerQuery, colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+                setCustomFlower(existing ? {
+                  name:      existing['Display Name'],
+                  typeName:  existing.Type || existing['Display Name'],
+                  colour:    existing.Colour || '',
+                  sizeCm:    existing.Size != null ? String(existing.Size) : '',
+                  cultivar:  existing.Cultivar || '',
+                  supplier:  existing.Supplier || '',
+                  costPrice: existing['Current Cost Price'] ? String(existing['Current Cost Price']) : '',
+                  sellPrice: existing['Current Sell Price'] ? String(existing['Current Sell Price']) : '',
+                  lotSize:   '',
+                } : { name: flowerQuery, typeName: flowerQuery, colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
               }}
               className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
             >
@@ -451,7 +522,15 @@ export default function Step2Bouquet({
             stockItems={stock}
             idPrefix="nv-dash-step2"
           />
-          {customNameMatch && (() => {
+          {/* Quick "add as-is" shortcut — only when the matched flower is truly
+              IN STOCK (or on order). For an out-of-stock existing flower the
+              owner is here to set a price + create a demand (via the button
+              below), so the "already in stock — pick from the list" note would
+              be wrong and is suppressed. */}
+          {customNameMatch
+            && ((Number(customNameMatch['Current Quantity']) || 0) > 0
+                || (pendingPO[customNameMatch.id]?.ordered || 0) > 0)
+            && (() => {
             const matchPo = pendingPO[customNameMatch.id];
             const matchPoLabel = formatPoDate(matchPo?.plannedDate);
             return (
@@ -495,15 +574,18 @@ export default function Step2Bouquet({
               placeholder={`${t.sellPrice} (zł)`} className="field-input text-sm" />
           </div>
           <div className="flex gap-2">
-            <button type="button" disabled={!!customNameMatch} onClick={async () => {
+            <button type="button" onClick={async () => {
                 if (!customFlower.name.trim()) return;
-                // Block duplicate creation: if a stock item with this name already
-                // exists, add it from the catalog instead of POSTing a duplicate.
-                // This is what gets typed wrong (sell entered into the cost field)
-                // and corrupts the bouquet's snapshotted prices.
+                // If the flower already exists (typically out of stock), reuse its
+                // record: create/deepen its demand at the entered price rather than
+                // POSTing a duplicate. This is the owner's "new demand for an
+                // out-of-stock flower with a price" path (reuse + set price).
                 if (customNameMatch) {
-                  showToast(t.flowerAlreadyExists || 'Flower already in stock — pick from the list', 'error');
-                  addOne(customNameMatch);
+                  await createOrDeepenDemand({
+                    displayName: customFlower.name,
+                    costPrice: customFlower.costPrice,
+                    sellPrice: customFlower.sellPrice,
+                  });
                   setShowCustomFlower(false);
                   setFlowerQuery('');
                   return;
@@ -730,17 +812,12 @@ export default function Step2Bouquet({
             if (picked?.kind === 'fresh') {
               const v = picked.variety || {};
               const displayName = varietyDisplayName(v) || yPickerStockItems[0]?.['Display Name'] || picked.date || '';
-              try {
-                const res = await client.post('/stock', {
-                  displayName,
-                  typeName: v.type_name ?? null, colour: v.colour ?? null,
-                  sizeCm: v.size_cm ?? null, cultivar: v.cultivar ?? null,
-                  costPrice: opts?.costPrice ?? 0, sellPrice: opts?.sellPrice ?? 0, quantity: 0,
-                });
-                onStockRefresh?.();
-                addOne({ id: res.data.id, 'Display Name': res.data['Display Name'],
-                         'Current Cost Price': opts?.costPrice ?? 0, 'Current Sell Price': opts?.sellPrice ?? 0 }, add);
-              } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+              // Reuse an existing Variety when one already exists (never duplicate
+              // the flower record); persist the entered price and add the line.
+              await createOrDeepenDemand({
+                displayName, variety: v,
+                costPrice: opts?.costPrice ?? 0, sellPrice: opts?.sellPrice ?? 0, amount: add,
+              });
               setYPickerOpen(false); setFlowerQuery(''); return;
             }
             if (picked) {
