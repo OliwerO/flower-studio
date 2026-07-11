@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, NewVarietyFields } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, NewVarietyFields, createBouquetDemand } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -747,12 +747,28 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                           </button>
                         );
                       })}
+                    {/* Shown when no IN-STOCK flower matches — brand-new AND
+                        existing-but-out-of-stock flowers both surface it, so the
+                        owner can create a new demand + set its price off the shelf.
+                        Pre-fills the form from the existing record when there is one. */}
                     {flowerSearch.length >= 2 && !stockItems.some(s =>
                       (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
+                      && (Number(s['Current Quantity']) || 0) > 0
                     ) && (
                       <button type="button"
                         onClick={() => {
-                          setNewFlowerForm({ name: flowerSearch.trim(), typeName: flowerSearch.trim(), colour: '', sizeCm: '', cultivar: '', costPrice: '', sellPrice: '', lotSize: '', supplier: '' });
+                          const q = flowerSearch.trim();
+                          const existing = stockItems.find(s => (s['Display Name'] || '').toLowerCase() === q.toLowerCase());
+                          setNewFlowerForm(existing ? {
+                            name: existing['Display Name'],
+                            typeName: existing.Type || existing['Display Name'],
+                            colour: existing.Colour || '',
+                            sizeCm: existing.Size != null ? String(existing.Size) : '',
+                            cultivar: existing.Cultivar || '',
+                            costPrice: existing['Current Cost Price'] ? String(existing['Current Cost Price']) : '',
+                            sellPrice: existing['Current Sell Price'] ? String(existing['Current Sell Price']) : '',
+                            lotSize: '', supplier: existing.Supplier || '',
+                          } : { name: q, typeName: q, colour: '', sizeCm: '', cultivar: '', costPrice: '', sellPrice: '', lotSize: '', supplier: '' });
                           setAddingFlower(false);
                         }}
                         className="w-full text-left px-2 py-1.5 text-sm text-brand-600 font-medium border-t border-gray-100"
@@ -800,26 +816,30 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                   <div className="flex gap-2">
                     <button type="button"
                       onClick={async () => {
+                        const sizeRaw = newFlowerForm.sizeCm;
                         try {
-                          const sizeRaw = newFlowerForm.sizeCm;
-                          const res = await client.post('/stock', {
+                          // Reuse an existing Variety (never duplicate); persist the
+                          // entered price onto its demand and add the line at it.
+                          const { stockItem, line } = await createBouquetDemand({
+                            apiClient: client,
+                            stockItems,
                             displayName: newFlowerForm.name,
-                            typeName: (newFlowerForm.typeName ?? '').trim() || newFlowerForm.name,
-                            colour: (newFlowerForm.colour ?? '').trim() || null,
-                            sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
-                            cultivar: (newFlowerForm.cultivar ?? '').trim() || null,
+                            variety: {
+                              type_name: (newFlowerForm.typeName ?? '').trim() || newFlowerForm.name,
+                              colour: (newFlowerForm.colour ?? '').trim() || null,
+                              size_cm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+                              cultivar: (newFlowerForm.cultivar ?? '').trim() || null,
+                            },
                             costPrice: Number(newFlowerForm.costPrice) || 0,
                             sellPrice: Number(newFlowerForm.sellPrice) || 0,
-                            lotSize: Number(newFlowerForm.lotSize) || 1,
-                            supplier: newFlowerForm.supplier || '',
-                            quantity: 0,
+                            supplier: newFlowerForm.supplier,
+                            lotSize: newFlowerForm.lotSize,
                           });
-                          setEditLines(p => [...p, {
-                            id: null, stockItemId: res.data.id, flowerName: res.data['Display Name'],
-                            quantity: 1, _originalQty: 0,
-                            costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
-                            sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
-                          }]);
+                          setStockItems(prev => {
+                            const i = prev.findIndex(s => s.id === stockItem.id);
+                            return i >= 0 ? prev.map(s => (s.id === stockItem.id ? stockItem : s)) : [...prev, stockItem];
+                          });
+                          setEditLines(p => [...p, line]);
                         } catch {
                           setEditLines(p => [...p, {
                             id: null, stockItemId: null, flowerName: newFlowerForm.name,

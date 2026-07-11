@@ -92,6 +92,7 @@ export { publishFeedback } from './api/feedback.js';
 export { default as BatchPickerModal } from './components/BatchPickerModal.jsx';
 export { default as TierSwitchChip } from './components/TierSwitchChip.jsx';
 export { findAllMatchingVariety } from './hooks/useOrderEditing.js';
+export { createBouquetDemand } from './utils/createBouquetDemand.js';
 export { default as FeedbackModal } from './components/FeedbackModal.jsx';
 
 // Order termination seam (cancel + delete shared hook + confirm UI)

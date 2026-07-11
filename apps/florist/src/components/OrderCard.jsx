@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, createBouquetDemand } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -109,6 +109,10 @@ function OrderCard({
   const [stockAction, setStockAction] = useState(null); // null | 'pending' — shown before save when qty reduced
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
+  // New-demand price form: { name, costPrice, sellPrice } | null. Opened from
+  // "+ Add new" so the owner can create a demand for a flower off the shelf and
+  // set its sell/cost price (which feeds the bouquet total).
+  const [newDemand, setNewDemand] = useState(null);
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
   // Statuses this order has previously held — powers the florist "revert"
   // buttons in the expanded status controls (GET /orders/:id/status-history).
@@ -642,35 +646,28 @@ function OrderCard({
                                   </div>
                                 );
                               })}
-                            {/* Add unlisted flower */}
-                            {flowerSearch.length >= 2 && !stockItems.some(s =>
-                              (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
-                            ) && (
+                            {/* Add new / new demand — shown when no IN-STOCK (or
+                                on-order) flower matches: brand-new AND existing
+                                out-of-stock flowers surface it. Opens a small
+                                price form so the owner creates a demand and sets
+                                its sell/cost price (feeds the bouquet total). */}
+                            {flowerSearch.length >= 2 && !stockItems.some(s => {
+                              if ((s['Display Name'] || '').toLowerCase() !== flowerSearch.toLowerCase()) return false;
+                              const qty = Number(s['Current Quantity']) || 0;
+                              const onOrder = pendingPO?.[s.id]?.ordered || 0;
+                              return qty > 0 || onOrder > 0;
+                            }) && (
                               <div
-                                onPointerDown={async (e) => {
+                                onPointerDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  try {
-                                    const res = await client.post('/stock', {
-                                      // Y-model (pitfall #9): one-tap quick add has no
-                                      // attr form, so at least carry a non-null Type
-                                      // (= the name) so the row stays classifiable.
-                                      displayName: flowerSearch.trim(), typeName: flowerSearch.trim(), quantity: 0,
-                                    });
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: res.data.id,
-                                      flowerName: res.data['Display Name'],
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: 0, sellPricePerUnit: 0,
-                                    }]);
-                                  } catch {
-                                    setEditLines(p => [...p, {
-                                      id: null, stockItemId: null,
-                                      flowerName: flowerSearch.trim(),
-                                      quantity: 1, _originalQty: 0,
-                                      costPricePerUnit: 0, sellPricePerUnit: 0,
-                                    }]);
-                                  }
+                                  const q = flowerSearch.trim();
+                                  const existing = stockItems.find(s => (s['Display Name'] || '').toLowerCase() === q.toLowerCase());
+                                  setNewDemand({
+                                    name: q,
+                                    costPrice: existing?.['Current Cost Price'] ? String(existing['Current Cost Price']) : '',
+                                    sellPrice: existing?.['Current Sell Price'] ? String(existing['Current Sell Price']) : '',
+                                  });
                                   setFlowerSearch('');
                                   setAddingFlower(false);
                                 }}
@@ -680,6 +677,58 @@ function OrderCard({
                           </div>
                           <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
                             className="text-xs text-ios-tertiary">{t.cancel}</button>
+                        </div>
+                      )}
+
+                      {/* New-demand price form — create a demand for a flower off
+                          the shelf and set its sell/cost price. Reuses an existing
+                          Variety when one matches (never duplicates). */}
+                      {newDemand && (
+                        <div className="bg-indigo-50 rounded-xl px-3 py-3 space-y-2">
+                          <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {newDemand.name}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input
+                              type="number" step="0.01" inputMode="decimal"
+                              value={newDemand.costPrice}
+                              onChange={e => setNewDemand(p => ({ ...p, costPrice: e.target.value }))}
+                              placeholder={t.costPrice}
+                              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                            />
+                            <input
+                              type="number" step="0.01" inputMode="decimal"
+                              value={newDemand.sellPrice}
+                              onChange={e => setNewDemand(p => ({ ...p, sellPrice: e.target.value }))}
+                              placeholder={t.sellPrice}
+                              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const { line } = await createBouquetDemand({
+                                    apiClient: client,
+                                    stockItems,
+                                    displayName: newDemand.name,
+                                    costPrice: Number(newDemand.costPrice) || 0,
+                                    sellPrice: Number(newDemand.sellPrice) || 0,
+                                  });
+                                  setEditLines(p => [...p, line]);
+                                  onStockRefresh?.();
+                                } catch (err) {
+                                  showToast(err.response?.data?.error || t.error, 'error');
+                                }
+                                setNewDemand(null);
+                              }}
+                              className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
+                            >{t.addToCart}</button>
+                            <button
+                              type="button"
+                              onClick={() => setNewDemand(null)}
+                              className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm active-scale"
+                            >{t.cancel}</button>
+                          </div>
                         </div>
                       )}
 

@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, createBouquetDemand } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -152,6 +152,9 @@ export default function OrderDetailPage() {
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
+  // New-demand price form: { name, costPrice, sellPrice } | null. Lets the owner
+  // create a demand for a flower off the shelf and set its sell/cost price.
+  const [newDemand, setNewDemand] = useState(null);
   // Statuses this order has previously held — powers the florist's "revert"
   // buttons. Fetched from the audit trail (GET /orders/:id/status-history).
   const [prevStatuses, setPrevStatuses] = useState([]);
@@ -442,8 +445,83 @@ export default function OrderDetailPage() {
                               );
                             })}
                         </div>
+                        {/* Add new / new demand — shown when no IN-STOCK flower
+                            matches the search: brand-new AND existing-out-of-stock
+                            flowers surface it. Opens a price form so the owner can
+                            create a demand and set its sell/cost price. */}
+                        {flowerSearch.length >= 2 && !stockItems.some(s =>
+                          (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
+                          && (Number(s['Current Quantity']) || 0) > 0
+                        ) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const q = flowerSearch.trim();
+                              const existing = stockItems.find(s => (s['Display Name'] || '').toLowerCase() === q.toLowerCase());
+                              setNewDemand({
+                                name: q,
+                                costPrice: existing?.['Current Cost Price'] ? String(existing['Current Cost Price']) : '',
+                                sellPrice: existing?.['Current Sell Price'] ? String(existing['Current Sell Price']) : '',
+                              });
+                              setFlowerSearch('');
+                            }}
+                            className="w-full text-left px-2 py-2 text-sm text-brand-600 font-medium border-t border-gray-100"
+                          >+ {t.addNewFlower || 'Add new'} "{flowerSearch}"</button>
+                        )}
                         <button onClick={() => { setAddingFlower(false); setFlowerSearch(''); }}
                           className="text-xs text-ios-tertiary">{t.cancel}</button>
+                      </div>
+                    )}
+
+                    {/* New-demand price form (reuses an existing Variety when one
+                        matches; never duplicates). */}
+                    {newDemand && (
+                      <div className="bg-indigo-50 rounded-xl px-3 py-3 space-y-2">
+                        <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {newDemand.name}</p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="number" step="0.01" inputMode="decimal"
+                            value={newDemand.costPrice}
+                            onChange={e => setNewDemand(p => ({ ...p, costPrice: e.target.value }))}
+                            placeholder={t.costPrice}
+                            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                          />
+                          <input
+                            type="number" step="0.01" inputMode="decimal"
+                            value={newDemand.sellPrice}
+                            onChange={e => setNewDemand(p => ({ ...p, sellPrice: e.target.value }))}
+                            placeholder={t.sellPrice}
+                            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
+                          />
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const { line } = await createBouquetDemand({
+                                  apiClient: client,
+                                  stockItems,
+                                  displayName: newDemand.name,
+                                  costPrice: Number(newDemand.costPrice) || 0,
+                                  sellPrice: Number(newDemand.sellPrice) || 0,
+                                });
+                                setEditLines(p => [...p, line]);
+                                client.get('/stock?includeEmpty=true&includeInactive=true')
+                                  .then(r => setStockItems(r.data)).catch(() => {});
+                              } catch (err) {
+                                showToast(err.response?.data?.error || t.error, 'error');
+                              }
+                              setNewDemand(null);
+                            }}
+                            className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold"
+                          >{t.addToCart}</button>
+                          <button
+                            type="button"
+                            onClick={() => setNewDemand(null)}
+                            className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm"
+                          >{t.cancel}</button>
+                        </div>
                       </div>
                     )}
 
