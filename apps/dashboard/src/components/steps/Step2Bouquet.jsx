@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, createBouquetDemand } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -254,52 +254,30 @@ export default function Step2Bouquet({
   // Create a new demand for a flower, reusing an existing Variety when one
   // already exists (in stock OR out of stock) so we never duplicate a flower
   // record. When the owner set a price (> 0) it is persisted onto the reused
-  // record and used for the line, so the sell price feeds the bouquet total.
-  // A brand-new flower is created at qty 0 with its price. Confirmed behaviour:
-  // reuse existing variety + set price. Mirrors the florist Step2Bouquet.
-  async function createOrDeepenDemand({ displayName, variety = {}, costPrice = 0, sellPrice = 0, amount = 1 }) {
+  // Demand Entry and used for the line, so the sell price feeds the bouquet
+  // total. A brand-new flower is created at qty 0 with its price. Delegates to
+  // the shared createBouquetDemand util — single source of truth for
+  // create/deepen-a-demand, shared with useOrderEditing + the florist wizard,
+  // so this reuse-vs-create decision can't drift between surfaces.
+  async function createOrDeepenDemand({ displayName, variety = {}, costPrice = 0, sellPrice = 0, amount = 1, supplier, lotSize }) {
     const name = (displayName || '').trim();
     if (!name) return;
-    const add  = Math.max(1, Number(amount) || 1);
-    const cost = Number(costPrice) || 0;
-    const sell = Number(sellPrice) || 0;
-
-    const existing = findAllMatchingVariety(stock, name);
-    if (existing.length) {
-      const target = existing.find(s => parseBatchName(s['Display Name'] || '').batch === null) || existing[0];
-      let item = target;
-      const body = {};
-      if (sell > 0) body['Current Sell Price'] = sell;
-      if (cost > 0) body['Current Cost Price'] = cost;
-      if (Object.keys(body).length) {
-        try {
-          const res = await client.patch(`/stock/${target.id}`, body);
-          item = { ...target, ...res.data };
-          onStockRefresh?.();
-        } catch { /* fall through: still add the line at the entered price */ }
-      }
-      addOne({
-        id: item.id,
-        'Display Name': item['Display Name'],
-        'Current Cost Price': cost > 0 ? cost : (Number(item['Current Cost Price']) || 0),
-        'Current Sell Price': sell > 0 ? sell : (Number(item['Current Sell Price']) || 0),
-      }, add);
-      return;
-    }
-
+    const add = Math.max(1, Number(amount) || 1);
     try {
-      const res = await client.post('/stock', {
-        displayName: name,
-        typeName: (variety.type_name ?? variety.typeName ?? name),
-        colour:   variety.colour ?? null,
-        sizeCm:   variety.size_cm ?? variety.sizeCm ?? null,
-        cultivar: variety.cultivar ?? null,
-        costPrice: cost, sellPrice: sell, quantity: 0,
+      const { stockItem, line } = await createBouquetDemand({
+        apiClient: client, stockItems: stock, displayName: name, variety,
+        costPrice, sellPrice, quantity: add, supplier, lotSize,
       });
       onStockRefresh?.();
-      addOne({ id: res.data.id, 'Display Name': res.data['Display Name'],
-               'Current Cost Price': cost, 'Current Sell Price': sell }, add);
-    } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+      addOne({
+        id: stockItem.id,
+        'Display Name': stockItem['Display Name'],
+        'Current Cost Price': line.costPricePerUnit,
+        'Current Sell Price': line.sellPricePerUnit,
+      }, add);
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
   }
 
   function changeQty(key, delta) {
@@ -592,24 +570,27 @@ export default function Step2Bouquet({
                 }
                 try {
                   const sizeRaw = customFlower.sizeCm;
-                  const res = await client.post('/stock', {
+                  // Y-model Variety attrs (pitfall #9): typeName falls back to
+                  // the name so it is never blank (NOT NULL on prod). Delegates
+                  // to the shared util (single source of truth) — mirrors the
+                  // florist wizard's custom-form submit.
+                  const { stockItem } = await createBouquetDemand({
+                    apiClient: client, stockItems: stock,
                     displayName: customFlower.name.trim(),
-                    // Y-model Variety attrs (pitfall #9): typeName falls back to
-                    // the name so it is never blank (NOT NULL on prod).
-                    typeName: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
-                    colour: (customFlower.colour ?? '').trim() || null,
-                    sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
-                    cultivar: (customFlower.cultivar ?? '').trim() || null,
-                    supplier: customFlower.supplier || '',
+                    variety: {
+                      type_name: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
+                      colour: (customFlower.colour ?? '').trim() || null,
+                      size_cm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+                      cultivar: (customFlower.cultivar ?? '').trim() || null,
+                    },
                     costPrice: Number(customFlower.costPrice) || 0,
                     sellPrice: Number(customFlower.sellPrice) || 0,
-                    lotSize: Number(customFlower.lotSize) || 1,
-                    quantity: 0,
+                    supplier: customFlower.supplier,
+                    lotSize: customFlower.lotSize,
                   });
-                  const newItem = res.data;
-                  addOne({ id: newItem.id, 'Display Name': newItem['Display Name'],
-                    'Current Cost Price': newItem['Current Cost Price'] || 0,
-                    'Current Sell Price': newItem['Current Sell Price'] || 0 });
+                  addOne({ id: stockItem.id, 'Display Name': stockItem['Display Name'],
+                    'Current Cost Price': stockItem['Current Cost Price'] || 0,
+                    'Current Sell Price': stockItem['Current Sell Price'] || 0 });
                   setShowCustomFlower(false);
                   setFlowerQuery('');
                   onStockRefresh();

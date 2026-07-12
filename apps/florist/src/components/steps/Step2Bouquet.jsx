@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, createBouquetDemand } from '@flower-studio/shared';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
@@ -414,54 +414,30 @@ export default function Step2Bouquet({
   // Create a new demand for a flower, reusing an existing Variety when one
   // already exists (in stock OR out of stock) so we never duplicate a flower
   // record. When the owner set a price (> 0) it is persisted onto the reused
-  // record and used for the line, so the sell price feeds the bouquet total.
-  // A brand-new flower is created at qty 0 with its price. Confirmed behaviour:
-  // reuse existing variety + set price.
-  async function createOrDeepenDemand({ displayName, variety = {}, costPrice = 0, sellPrice = 0, amount = 1 }) {
+  // Demand Entry and used for the line, so the sell price feeds the bouquet
+  // total. A brand-new flower is created at qty 0 with its price. Delegates to
+  // the shared createBouquetDemand util — single source of truth for
+  // create/deepen-a-demand, shared with useOrderEditing + the dashboard
+  // wizard, so this reuse-vs-create decision can't drift between surfaces.
+  async function createOrDeepenDemand({ displayName, variety = {}, costPrice = 0, sellPrice = 0, amount = 1, supplier, lotSize }) {
     const name = (displayName || '').trim();
     if (!name) return;
-    const add  = Math.max(1, Number(amount) || 1);
-    const cost = Number(costPrice) || 0;
-    const sell = Number(sellPrice) || 0;
-
-    const existing = findAllMatchingVariety(stock, name);
-    if (existing.length) {
-      // Prefer the undated Demand Entry; else the first matching row.
-      const target = existing.find(s => parseBatchName(s['Display Name'] || '').batch === null) || existing[0];
-      let item = target;
-      const body = {};
-      if (sell > 0) body['Current Sell Price'] = sell;
-      if (cost > 0) body['Current Cost Price'] = cost;
-      if (Object.keys(body).length) {
-        try {
-          const res = await client.patch(`/stock/${target.id}`, body);
-          item = { ...target, ...res.data };
-          onStockRefresh?.();
-        } catch { /* fall through: still add the line at the entered price */ }
-      }
-      addOne({
-        id: item.id,
-        'Display Name': item['Display Name'],
-        'Current Cost Price': cost > 0 ? cost : (Number(item['Current Cost Price']) || 0),
-        'Current Sell Price': sell > 0 ? sell : (Number(item['Current Sell Price']) || 0),
-      }, add);
-      return;
-    }
-
-    // Brand-new flower → create the Variety (qty 0) carrying its price.
+    const add = Math.max(1, Number(amount) || 1);
     try {
-      const res = await client.post('/stock', {
-        displayName: name,
-        typeName: (variety.type_name ?? variety.typeName ?? name),
-        colour:   variety.colour ?? null,
-        sizeCm:   variety.size_cm ?? variety.sizeCm ?? null,
-        cultivar: variety.cultivar ?? null,
-        costPrice: cost, sellPrice: sell, quantity: 0,
+      const { stockItem, line } = await createBouquetDemand({
+        apiClient: client, stockItems: stock, displayName: name, variety,
+        costPrice, sellPrice, quantity: add, supplier, lotSize,
       });
       onStockRefresh?.();
-      addOne({ id: res.data.id, 'Display Name': res.data['Display Name'],
-               'Current Cost Price': cost, 'Current Sell Price': sell }, add);
-    } catch (err) { showToast(err.response?.data?.error || t.error, 'error'); }
+      addOne({
+        id: stockItem.id,
+        'Display Name': stockItem['Display Name'],
+        'Current Cost Price': line.costPricePerUnit,
+        'Current Sell Price': line.sellPricePerUnit,
+      }, add);
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
   }
 
   // lineKey can be stockItemId or flowerName (for unmatched imports)
@@ -813,31 +789,38 @@ export default function Step2Bouquet({
                   ? (customFlower.customSupplier || '').trim()
                   : customFlower.supplier || '';
                 try {
-                  // If new supplier entered, persist to settings for future use
+                  // If new supplier entered, persist to settings for future use.
+                  // Call-site concern — not the shared util's job.
                   if (customFlower.supplier === '__other__' && supplierValue && !configSuppliers.some(s => s.toLowerCase() === supplierValue.toLowerCase())) {
                     client.put('/settings/config', { suppliers: [...configSuppliers, supplierValue] }).catch(() => {});
                   }
                   const sizeRaw = customFlower.sizeCm;
-                  const res = await client.post('/stock', {
+                  // Y-model Variety attrs (pitfall #9): typeName falls back to
+                  // the name so it is never blank (NOT NULL on prod). Delegates
+                  // to the shared util (single source of truth) — it also
+                  // reuses an existing Variety it discovers here instead of
+                  // duplicating (never happens today since `dup` is checked
+                  // above, but keeps this path consistent with every other
+                  // create-a-demand call site).
+                  const { stockItem } = await createBouquetDemand({
+                    apiClient: client, stockItems: stock,
                     displayName: customFlower.name.trim(),
-                    // Y-model Variety attrs (pitfall #9): typeName falls back to
-                    // the name so it is never blank (NOT NULL on prod).
-                    typeName: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
-                    colour: (customFlower.colour ?? '').trim() || null,
-                    sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
-                    cultivar: (customFlower.cultivar ?? '').trim() || null,
-                    supplier: supplierValue,
+                    variety: {
+                      type_name: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
+                      colour: (customFlower.colour ?? '').trim() || null,
+                      size_cm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+                      cultivar: (customFlower.cultivar ?? '').trim() || null,
+                    },
                     costPrice: Number(customFlower.costPrice) || 0,
                     sellPrice: Number(customFlower.sellPrice) || 0,
-                    ...(Number(customFlower.lotSize) > 1 ? { lotSize: Number(customFlower.lotSize) } : {}),
-                    quantity: 0,
+                    supplier: supplierValue,
+                    lotSize: customFlower.lotSize,
                   });
-                  const newItem = res.data;
                   addOne({
-                    id: newItem.id,
-                    'Display Name': newItem['Display Name'],
-                    'Current Cost Price': newItem['Current Cost Price'] || 0,
-                    'Current Sell Price': newItem['Current Sell Price'] || 0,
+                    id: stockItem.id,
+                    'Display Name': stockItem['Display Name'],
+                    'Current Cost Price': stockItem['Current Cost Price'] || 0,
+                    'Current Sell Price': stockItem['Current Sell Price'] || 0,
                   });
                   setShowCustomFlower(false);
                   setFlowerQuery('');
