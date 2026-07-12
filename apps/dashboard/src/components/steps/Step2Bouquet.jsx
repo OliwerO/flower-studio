@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName, hasAvailableStockMatch, isStockItemAvailable } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 function formatPoDate(dateStr) {
@@ -438,12 +438,7 @@ export default function Step2Bouquet({
               surface it too (not just brand-new names). Opens the price form,
               pre-filled from the existing record when there is one, so the owner
               can create a new demand and set its sell/cost price off the shelf. */}
-          {flowerQuery.length >= 2 && !stock.some(s => {
-            if ((s['Display Name'] || '').toLowerCase() !== flowerQuery.toLowerCase()) return false;
-            const qty = Number(s['Current Quantity']) || 0;
-            const onOrder = pendingPO[s.id]?.ordered || 0;
-            return qty > 0 || onOrder > 0;
-          }) && (
+          {flowerQuery.length >= 2 && !hasAvailableStockMatch(stock, flowerQuery, pendingPO) && (
             <button
               type="button"
               onClick={() => {
@@ -528,8 +523,7 @@ export default function Step2Bouquet({
               below), so the "already in stock — pick from the list" note would
               be wrong and is suppressed. */}
           {customNameMatch
-            && ((Number(customNameMatch['Current Quantity']) || 0) > 0
-                || (pendingPO[customNameMatch.id]?.ordered || 0) > 0)
+            && isStockItemAvailable(customNameMatch, pendingPO)
             && (() => {
             const matchPo = pendingPO[customNameMatch.id];
             const matchPoLabel = formatPoDate(matchPo?.plannedDate);

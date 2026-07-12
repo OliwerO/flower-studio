@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, createBouquetDemand } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 
 const STATUS_STYLES = {
@@ -651,12 +651,7 @@ function OrderCard({
                                 out-of-stock flowers surface it. Opens a small
                                 price form so the owner creates a demand and sets
                                 its sell/cost price (feeds the bouquet total). */}
-                            {flowerSearch.length >= 2 && !stockItems.some(s => {
-                              if ((s['Display Name'] || '').toLowerCase() !== flowerSearch.toLowerCase()) return false;
-                              const qty = Number(s['Current Quantity']) || 0;
-                              const onOrder = pendingPO?.[s.id]?.ordered || 0;
-                              return qty > 0 || onOrder > 0;
-                            }) && (
+                            {flowerSearch.length >= 2 && !hasAvailableStockMatch(stockItems, flowerSearch, pendingPO) && (
                               <div
                                 onPointerDown={(e) => {
                                   e.preventDefault();
