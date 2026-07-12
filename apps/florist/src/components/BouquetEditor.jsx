@@ -3,7 +3,7 @@ import {
   renderStockName, parseBatchName,
   VarietyAllocationPicker, TierSwitchChip, useAuth,
   groupByVariety, varietyDisplayName, resolveStockLinePrice, resolveVarietySell,
-  allocateLinesAgainstVariety, NewVarietyFields,
+  allocateLinesAgainstVariety, NewVarietyFields, isStockItemAvailable,
 } from '@flower-studio/shared';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
@@ -174,9 +174,7 @@ export default function BouquetEditor({ editing, saving, detail, isTerminal, isO
               {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
                 const { name } = parseBatchName(s['Display Name'] || '');
                 if (name.toLowerCase() !== flowerSearch.trim().toLowerCase()) return false;
-                const inStock = (Number(s['Current Quantity']) || 0) > 0
-                  || (editing.pendingPO?.[s.id]?.ordered || 0) > 0;
-                return inStock;
+                return isStockItemAvailable(s, editing.pendingPO);
               }) && (
                 <button
                   type="button"

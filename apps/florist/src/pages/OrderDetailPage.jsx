@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, createBouquetDemand } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -152,6 +152,10 @@ export default function OrderDetailPage() {
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
   const [stockItems, setStockItems] = useState([]);
+  // Pending-PO demand keyed by stock item id — { [stockId]: { ordered, ... } }.
+  // Feeds the "+ Add new" gate (hasAvailableStockMatch) and PO-aware pricing,
+  // mirroring OrderCard / useOrderEditing.
+  const [pendingPO, setPendingPO] = useState({});
   // New-demand price form: { name, costPrice, sellPrice } | null. Lets the owner
   // create a demand for a flower off the shelf and set its sell/cost price.
   const [newDemand, setNewDemand] = useState(null);
@@ -364,6 +368,7 @@ export default function OrderDetailPage() {
                           // includeEmpty=true so negative-stock flowers are
                           // selectable in the picker (matches new-order wizard).
                           client.get('/stock?includeEmpty=true&includeInactive=true').then(r => setStockItems(r.data)).catch(() => {});
+                          client.get('/stock/pending-po').then(r => setPendingPO(r.data)).catch(() => {});
                         }
                       }}
                       className="text-xs text-brand-600 font-medium px-1"
@@ -445,14 +450,12 @@ export default function OrderDetailPage() {
                               );
                             })}
                         </div>
-                        {/* Add new / new demand — shown when no IN-STOCK flower
-                            matches the search: brand-new AND existing-out-of-stock
-                            flowers surface it. Opens a price form so the owner can
-                            create a demand and set its sell/cost price. */}
-                        {flowerSearch.length >= 2 && !stockItems.some(s =>
-                          (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
-                          && (Number(s['Current Quantity']) || 0) > 0
-                        ) && (
+                        {/* Add new / new demand — shown when no IN-STOCK (or
+                            on-order) flower matches the search: brand-new AND
+                            existing out-of-stock flowers surface it. Opens a price
+                            form so the owner can create a demand and set its
+                            sell/cost price. */}
+                        {flowerSearch.length >= 2 && !hasAvailableStockMatch(stockItems, flowerSearch, pendingPO) && (
                           <button
                             type="button"
                             onClick={() => {

@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, NewVarietyFields, createBouquetDemand } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, NewVarietyFields, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -747,14 +747,12 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                           </button>
                         );
                       })}
-                    {/* Shown when no IN-STOCK flower matches — brand-new AND
-                        existing-but-out-of-stock flowers both surface it, so the
-                        owner can create a new demand + set its price off the shelf.
-                        Pre-fills the form from the existing record when there is one. */}
-                    {flowerSearch.length >= 2 && !stockItems.some(s =>
-                      (s['Display Name'] || '').toLowerCase() === flowerSearch.toLowerCase()
-                      && (Number(s['Current Quantity']) || 0) > 0
-                    ) && (
+                    {/* Shown when no IN-STOCK (or on-order) flower matches —
+                        brand-new AND existing-but-out-of-stock flowers both
+                        surface it, so the owner can create a new demand + set its
+                        price off the shelf. Pre-fills the form from the existing
+                        record when there is one. */}
+                    {flowerSearch.length >= 2 && !hasAvailableStockMatch(stockItems, flowerSearch, pendingPO) && (
                       <button type="button"
                         onClick={() => {
                           const q = flowerSearch.trim();

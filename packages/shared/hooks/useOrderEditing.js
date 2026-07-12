@@ -548,14 +548,31 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     });
   }
 
-  // ── Computed (use live stock prices when available) ─────────────
+  // ── Computed ──────────────────────────────────────────────────
+  // The line's own price is the primary source: it's what the picker/editor
+  // displays for that row AND what gets PUT to /orders/:id/lines on save, so
+  // the total the owner sees must match it. The live stock record's price is
+  // only a fallback for lines that don't carry a price of their own.
+  //
+  // This used to prefer the live stock record first, which reads right after
+  // switchLineTier (line price is copied from the target record) and after a
+  // successful createDemandEntry re-price (ditto) — but it silently
+  // contradicted the line's own price in two real cases: (1) createDemandEntry
+  // deliberately keeps a line at the entered price when its price-persist PATCH
+  // fails ("still add the line at the entered price so the bouquet total is
+  // right" — see that comment), and (2) addFlowerFromStock prices a not-yet-
+  // arrived flower off its pending PO (resolveStockLinePrice, #377), which can
+  // differ from the stock record's stale last-received card price. Falling
+  // back to the record only when the line has no price of its own fixes both
+  // without touching the switchLineTier / successful-re-price paths, where line
+  // and record already agree.
   const editCostTotal = editLines.reduce((s, l) => {
     const si = l.stockItemId ? stockItems.find(x => x.id === l.stockItemId) : null;
-    return s + Number(si?.['Current Cost Price'] ?? l.costPricePerUnit ?? 0) * Number(l.quantity || 0);
+    return s + Number(l.costPricePerUnit ?? si?.['Current Cost Price'] ?? 0) * Number(l.quantity || 0);
   }, 0);
   const editSellTotal = editLines.reduce((s, l) => {
     const si = l.stockItemId ? stockItems.find(x => x.id === l.stockItemId) : null;
-    return s + Number(si?.['Current Sell Price'] ?? l.sellPricePerUnit ?? 0) * Number(l.quantity || 0);
+    return s + Number(l.sellPricePerUnit ?? si?.['Current Sell Price'] ?? 0) * Number(l.quantity || 0);
   }, 0);
   const editMargin = editSellTotal > 0
     ? Math.round(((editSellTotal - editCostTotal) / editSellTotal) * 100) : 0;

@@ -47,6 +47,7 @@ export {
 export { getEffectiveStock, hasStockShortfall, getVarietyTotals, getVarietyAvailability, arrivalsForVariety, allocateVarietyCoverage, allocateLinesAgainstVariety, varietyGroupMatchesView, varietyGroupHasVisibleStock } from './utils/stockMath.js';
 export { resolveStockLinePrice, resolveVarietySell } from './utils/stockLinePrice.js';
 export { shouldShowBouquetSection } from './utils/bouquetVisibility.js';
+export { isStockItemAvailable, hasAvailableStockMatch } from './utils/stockAvailability.js';
 export { getStatusOptions, ALL_ORDER_STATUSES, isStatusAllowedForFulfillment } from './utils/orderStatusOptions.js';
 export {
   matchesSearch,

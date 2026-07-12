@@ -4,7 +4,7 @@ import {
   parseBatchName,
   VarietyAllocationPicker, TierSwitchChip, useAuth,
   groupByVariety, varietyDisplayName, resolveVarietySell,
-  shouldShowBouquetSection, NewVarietyFields,
+  shouldShowBouquetSection, NewVarietyFields, isStockItemAvailable,
 } from '@flower-studio/shared';
 
 const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -195,9 +195,7 @@ export default function BouquetSection({ order, editing, isTerminal, saving, tar
                 {flowerSearch.length >= 2 && !editing.stockItems.some(s => {
                   const { name } = parseBatchName(s['Display Name'] || '');
                   if (name.toLowerCase() !== flowerSearch.trim().toLowerCase()) return false;
-                  const inStock = (Number(s['Current Quantity']) || 0) > 0
-                    || (editing.pendingPO?.[s.id]?.ordered || 0) > 0;
-                  return inStock;
+                  return isStockItemAvailable(s, editing.pendingPO);
                 }) && (
                   <button type="button"
                     onClick={() => editing.openNewFlowerForm(flowerSearch.trim())}
