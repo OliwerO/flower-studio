@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, findAllMatchingVariety, parseBatchName, hasAvailableStockMatch } from '@flower-studio/shared';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
@@ -638,10 +638,12 @@ export default function Step2Bouquet({
         </div>
 
         <div className="ios-card overflow-hidden divide-y divide-gray-100 max-h-64 overflow-y-auto">
-          {/* Add unlisted flower — for flowers not yet in the stock catalog.
-              Check against filteredStock (not full stock) so out-of-stock flowers
-              hidden by the "In stock only" filter still show the "Add new" option. */}
-          {flowerQuery.length >= 2 && !filteredStock.some(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase()) && (
+          {/* Add unlisted flower / new demand — shown when no IN-STOCK (or
+              on-order) flower matches: brand-new AND existing out-of-stock (incl.
+              negative-stock demand) flowers surface it. Checks against the full
+              `stock` list (not filteredStock) so the "In stock only" toggle and
+              any qty/PO filtering can't hide the option. */}
+          {flowerQuery.length >= 2 && !hasAvailableStockMatch(stock, flowerQuery, pendingPO) && (
             <button
               type="button"
               onClick={() => {
