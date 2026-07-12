@@ -510,6 +510,112 @@ describe('getLineCap + incrementQty cap (#311 AC3)', () => {
   });
 });
 
+// ── editCostTotal / editSellTotal must honor the line's own price ──────────
+// Regression coverage for the bug where the totals reducers preferred the
+// LIVE stock record's price over the line's own costPricePerUnit/
+// sellPricePerUnit, so the displayed total could silently contradict the
+// displayed per-line price. Two real scenarios below; see hook comment at
+// the totals block for the rationale.
+
+describe('editCostTotal / editSellTotal use the line\'s own price, not a stale live record', () => {
+  it('createDemandEntry: PATCH failure still totals at the entered price (not the stale record price)', async () => {
+    // Owner re-prices an existing Demand Entry (5 -> 12 cost, 10 -> 25 sell),
+    // but the PATCH to /stock/:id fails. createDemandEntry deliberately still
+    // adds the line at the entered price ("so the bouquet total is right") —
+    // the totals reducers must honor that, not fall back to the stale record.
+    const existingEntry = {
+      id: 'stock-existing',
+      'Display Name': 'Rose',
+      'Current Cost Price': 5,
+      'Current Sell Price': 10,
+      'Current Quantity': -3,
+    };
+    const props = makeHookProps({
+      apiClient: {
+        get:   vi.fn().mockResolvedValue({ data: [existingEntry] }),
+        post:  vi.fn(),
+        patch: vi.fn().mockRejectedValue(new Error('network error')),
+      },
+    });
+    const { result } = renderHook(() => useOrderEditing(props));
+    await act(async () => { result.current.startEditing([]); });
+    await act(async () => {});
+
+    await act(async () => {
+      await result.current.createDemandEntry('Rose', 2, { sellPrice: 25, costPrice: 12 });
+    });
+
+    // Line carries the entered price...
+    expect(result.current.editLines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        stockItemId: 'stock-existing', quantity: 2, sellPricePerUnit: 25, costPricePerUnit: 12,
+      }),
+    ]));
+    // ...and the totals must match it, not the stale record (5 cost / 10 sell).
+    expect(result.current.editCostTotal).toBe(24); // 12 * 2
+    expect(result.current.editSellTotal).toBe(50); // 25 * 2
+  });
+
+  it('addFlowerFromStock: totals use the pending-PO-resolved line price, not the stale card price (#377 at totals level)', async () => {
+    // A not-yet-arrived flower (Current Quantity <= 0) prices off its pending
+    // PO (resolveStockLinePrice, #377) — the line gets the PO price. The
+    // totals must reflect that same PO price, not the stock record's stale
+    // card price (last-received price, which can differ from the fresh PO).
+    const stockItem = {
+      id: 's1',
+      'Display Name': 'Peony White',
+      'Current Quantity': 0,
+      'Current Cost Price': 30, // stale card price
+      'Current Sell Price': 65, // stale card price
+    };
+    const pendingPO = { s1: { ordered: 10, sell: 60, cost: 25 } }; // fresh PO price
+    const props = {
+      orderId: 'ord-po',
+      apiClient: {
+        get: vi.fn((path) => {
+          if (path === '/stock/pending-po') return Promise.resolve({ data: pendingPO });
+          if (path === '/stock/premade-committed') return Promise.resolve({ data: {} });
+          if (path.startsWith('/stock')) return Promise.resolve({ data: [stockItem] });
+          return Promise.resolve({ data: {} });
+        }),
+        post: vi.fn(),
+      },
+      showToast: vi.fn(),
+      t: {},
+    };
+    const { result } = renderHook(() => useOrderEditing(props));
+    await act(async () => { result.current.startEditing([]); });
+    await act(async () => {});
+
+    act(() => { result.current.addFlowerFromStock(stockItem, 3); });
+
+    const line = result.current.editLines[0];
+    expect(line.sellPricePerUnit).toBe(60); // PO price, not the stale 65
+    expect(line.costPricePerUnit).toBe(25); // PO price, not the stale 30
+    // Totals must match the PO-resolved line price.
+    expect(result.current.editCostTotal).toBe(75);  // 25 * 3
+    expect(result.current.editSellTotal).toBe(180); // 60 * 3
+  });
+
+  it('still reflects a live stock price change when the line itself carries no price (startEditing default 0 with no stockItemId)', () => {
+    // Fallback case: a line with no recorded price (costPricePerUnit/
+    // sellPricePerUnit falsy/undefined) and no linked stock item still totals
+    // to 0 — there is nothing to fall back to. This pins the fallback order:
+    // line price wins when present; live stock price is only a secondary
+    // fallback when the line itself has no price AND no stockItemId.
+    const props = makeHookProps();
+    const { result } = renderHook(() => useOrderEditing(props));
+    act(() => {
+      result.current.startEditing([{
+        id: 'line-1', 'Stock Item': [], 'Flower Name': 'Custom', Quantity: 2,
+        'Cost Price Per Unit': 0, 'Sell Price Per Unit': 0,
+      }]);
+    });
+    expect(result.current.editCostTotal).toBe(0);
+    expect(result.current.editSellTotal).toBe(0);
+  });
+});
+
 describe('getLineTiers + switchLineTier (sell-tier switch, 2026-05-31)', () => {
   // Same Variety, three sibling sell tiers (25, 30) — qty>0 inclusion;
   // a fourth row at the same sell as one of the tiers gets folded in.
