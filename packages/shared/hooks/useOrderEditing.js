@@ -6,23 +6,18 @@
 // modules (API client, toast, translations).
 
 import { useState } from 'react';
-import parseBatchName from '../utils/parseBatchName.js';
 import { varietyDisplayName } from '../utils/varietyKey.js';
 import { resolveStockLinePrice } from '../utils/stockLinePrice.js';
+import { createBouquetDemand } from '../utils/createBouquetDemand.js';
+import { findAllMatchingVariety } from '../utils/varietyLookup.js';
 
 const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 
-// Returns all Stock Items whose base variety name matches baseName (case-insensitive).
-// Includes both dated Batches ("Rose (06.May.)") and undated Demand Entries ("Rose").
-// Exported for unit testing and use in picker components.
-export function findAllMatchingVariety(stockItems, baseName) {
-  const needle = (baseName || '').trim().toLowerCase();
-  if (!needle) return [];
-  return stockItems.filter(s => {
-    const { name } = parseBatchName(s['Display Name'] || '');
-    return name.trim().toLowerCase() === needle;
-  });
-}
+// Re-exported for back-compat — callers historically imported this from the
+// hook module (index.js still does). Lives in utils/varietyLookup.js so
+// createBouquetDemand (a plain util) can depend on it without a hook↔util
+// circular import.
+export { findAllMatchingVariety };
 
 // Returns false for depleted dated-Batch Stock Items that have no pending PO demand.
 // Exported so both the hook internals and BouquetEditor can share the same rule.
@@ -286,26 +281,25 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
     try {
       // Y-model Variety attrs (root pitfall #9): a new flower must carry its
       // 4-tuple. typeName falls back to the display name so it is never blank
-      // (NOT NULL on prod); blank optional attrs are sent as null.
+      // (NOT NULL on prod); blank optional attrs are sent as null. Delegates
+      // to the shared util — single source of truth for create/deepen-a-demand.
       const sizeRaw = newFlowerForm.sizeCm;
-      const res = await apiClient.post('/stock', {
+      const { stockItem, line } = await createBouquetDemand({
+        apiClient, stockItems,
         displayName: newFlowerForm.name,
-        typeName: (newFlowerForm.typeName ?? '').trim() || newFlowerForm.name,
-        colour: (newFlowerForm.colour ?? '').trim() || null,
-        sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
-        cultivar: (newFlowerForm.cultivar ?? '').trim() || null,
+        variety: {
+          type_name: (newFlowerForm.typeName ?? '').trim() || newFlowerForm.name,
+          colour: (newFlowerForm.colour ?? '').trim() || null,
+          size_cm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
+          cultivar: (newFlowerForm.cultivar ?? '').trim() || null,
+        },
         costPrice: Number(newFlowerForm.costPrice) || 0,
         sellPrice: Number(newFlowerForm.sellPrice) || 0,
-        lotSize: Number(newFlowerForm.lotSize) || 1,
-        supplier: newFlowerForm.supplier || '',
-        quantity: 0,
+        supplier: newFlowerForm.supplier,
+        lotSize: newFlowerForm.lotSize,
       });
-      setEditLines(prev => [...prev, {
-        id: null, stockItemId: res.data.id, flowerName: res.data['Display Name'],
-        quantity: 1, _originalQty: 0,
-        costPricePerUnit: Number(newFlowerForm.costPrice) || 0,
-        sellPricePerUnit: Number(newFlowerForm.sellPrice) || 0,
-      }]);
+      setStockItems(prev => [...prev, stockItem]);
+      setEditLines(prev => [...prev, line]);
     } catch {
       showToast(t.updateError || 'Error creating stock item', 'error');
       return;
@@ -370,6 +364,10 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   // Creates or deepens the single undated Demand Entry for a variety.
   // If one already exists, uses it (deepens aggregate negative qty).
   // If not, creates one inheriting price from the most recent Batch.
+  // Delegates to the shared createBouquetDemand util (single source of
+  // truth) via its `varietyDraft` calling convention, which mirrors this
+  // function's own pre-consolidation signature exactly — see the util's
+  // header comment for the string-vs-object distinction.
   //
   // varietyDraft: string (back-compat) OR
   //   { baseName?, type_name?, colour?, size_cm?, cultivar? }
@@ -379,101 +377,22 @@ export default function useOrderEditing({ orderId, apiClient, showToast, t }) {
   // varietyDisplayName.
   async function createDemandEntry(varietyDraft, amount = 1, opts = {}) {
     const add = Math.max(1, Number(amount) || 1);
-    // Normalise to a resolved display name + optional 4-tuple fields.
-    let displayName;
-    let tupleFields = null; // null = legacy path (omit from POST body)
-
-    if (typeof varietyDraft === 'string') {
-      displayName = varietyDraft;
-    } else {
-      const { baseName, type_name, colour, size_cm, cultivar } = varietyDraft;
-      displayName = baseName || varietyDisplayName({ type_name, colour, size_cm, cultivar });
-      tupleFields = { type_name, colour, size_cm, cultivar };
-    }
-
-    const variety = findAllMatchingVariety(stockItems, displayName);
-    const demandEntry = variety.find(s => parseBatchName(s['Display Name'] || '').batch === null);
-
-    if (demandEntry) {
-      // Reuse the existing Demand Entry. When the owner explicitly set a price
-      // (opts.sellPrice / opts.costPrice > 0), persist it onto the demand record
-      // so the whole Variety re-prices and the sell price feeds the bouquet
-      // total, then add the line at that price. Blank/0 prices fall back to the
-      // record's stored price (the legacy add-at-current-price behaviour).
-      const setSell = Number(opts.sellPrice) > 0 ? Number(opts.sellPrice) : null;
-      const setCost = Number(opts.costPrice) > 0 ? Number(opts.costPrice) : null;
-      if (setSell != null || setCost != null) {
-        const body = {};
-        if (setSell != null) body['Current Sell Price'] = setSell;
-        if (setCost != null) body['Current Cost Price'] = setCost;
-        try {
-          const res = await apiClient.patch(`/stock/${demandEntry.id}`, body);
-          setStockItems(prev => prev.map(s => (s.id === demandEntry.id ? { ...s, ...res.data } : s)));
-        } catch {
-          // Price persist failed — still add the line at the entered price so
-          // the bouquet total is right; the record keeps its old price.
-        }
-        setEditLines(prev => [...prev, {
-          id: null,
-          stockItemId: demandEntry.id,
-          flowerName: demandEntry['Display Name'],
-          quantity: add,
-          _originalQty: 0,
-          costPricePerUnit: setCost != null ? setCost : (Number(demandEntry['Current Cost Price']) || 0),
-          sellPricePerUnit: setSell != null ? setSell : (Number(demandEntry['Current Sell Price']) || 0),
-        }]);
-        setFlowerSearch('');
-        return;
-      }
-      addFlowerFromStock(demandEntry, add);
-      return;
-    }
-
-    const batches = variety.filter(s => parseBatchName(s['Display Name'] || '').batch !== null);
-    const mostRecentBatch = batches.reduce((best, s) => {
-      if (!best) return s;
-      const d = new Date(s['Last Restocked'] || 0);
-      return d > new Date(best['Last Restocked'] || 0) ? s : best;
-    }, null);
-
-    const costPrice = opts.costPrice != null ? Number(opts.costPrice) : (Number(mostRecentBatch?.['Current Cost Price']) || 0);
-    const sellPrice = opts.sellPrice != null ? Number(opts.sellPrice) : (Number(mostRecentBatch?.['Current Sell Price']) || 0);
-
-    const postBody = {
-      displayName: displayName.trim(),
-      quantity: 0,
-      costPrice,
-      sellPrice,
-    };
-
-    // 4-tuple path: include Variety attrs only when explicitly provided.
-    // Only include fields that were present on the draft (avoid sending
-    // undefined values — back-compat callers omit the whole key).
-    if (tupleFields !== null) {
-      const { type_name, colour, size_cm, cultivar } = tupleFields;
-      if (type_name !== undefined)  postBody.typeName = type_name;
-      if (colour    !== undefined)  postBody.colour   = colour;
-      if (size_cm   !== undefined)  postBody.sizeCm   = size_cm;
-      if (cultivar  !== undefined)  postBody.cultivar = cultivar;
-    }
-
     try {
-      const res = await apiClient.post('/stock', postBody);
-      setStockItems(prev => [...prev, res.data]);
-      setEditLines(prev => [...prev, {
-        id: null,
-        stockItemId: res.data.id,
-        flowerName: res.data['Display Name'],
+      const { stockItem, line } = await createBouquetDemand({
+        apiClient, stockItems, varietyDraft,
+        costPrice: opts.costPrice ?? 0,
+        sellPrice: opts.sellPrice ?? 0,
         quantity: add,
-        _originalQty: 0,
-        costPricePerUnit: costPrice,
-        sellPricePerUnit: sellPrice,
-      }]);
+      });
+      setStockItems(prev => {
+        const i = prev.findIndex(s => s.id === stockItem.id);
+        return i >= 0 ? prev.map(s => (s.id === stockItem.id ? stockItem : s)) : [...prev, stockItem];
+      });
+      setEditLines(prev => [...prev, line]);
+      setFlowerSearch('');
     } catch {
       showToast(t.updateError || 'Error creating demand entry', 'error');
-      return;
     }
-    setFlowerSearch('');
   }
 
   // Dissolve-premade workflow state. When the save would push stock below
