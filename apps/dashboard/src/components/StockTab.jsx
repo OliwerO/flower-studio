@@ -208,6 +208,16 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
     }
   }
 
+  // Flat-table 🗑 → open the shared write-off picker for the row's Variety.
+  // The flat row is a Variety+Sell tier; map it back to its parent group so the
+  // picker (WriteOffBatchPicker) can spread the write-off FEFO across batches —
+  // same modal the By-Variety 🗑 opens.
+  function handleFlatWriteOff(row) {
+    const ids = new Set(row?.stockIds || []);
+    const group = groups.find((g) => (g.rows || []).some((r) => ids.has(r.id)));
+    if (group) setWriteOffVariety(group);
+  }
+
   // Bulk price patch — re-prices every underlying stock_id of a merged Y-model
   // Stock row in one tap. `fields` keys: `cost` and/or `sell` (raw numbers).
   async function patchPriceBulk(stockIds, fields) {
@@ -760,6 +770,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                   }}
                   onPatchPriceBulk={patchPriceBulk}
                   onAdjust={adjustGroupQty}
+                  onWriteOff={handleFlatWriteOff}
                   traceStockIds={flatTraceRow}
                   traceNode={flatTraceRow ? (
                     <div className="px-4 py-3">

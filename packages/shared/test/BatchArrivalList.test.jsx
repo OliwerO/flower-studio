@@ -191,28 +191,24 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     expect(footer).toHaveTextContent('10'); // only the Rose qty
   });
 
-  it('Correct-count toggle only renders when onAdjust is wired (owner)', () => {
-    const { unmount } = render(<BatchArrivalList groups={makeSingleGroup()} t={t} />);
-    expect(screen.queryByTestId('batch-correct-toggle')).toBeNull();
-    unmount();
-    render(<BatchArrivalList groups={makeSingleGroup()} t={{ ...t, correctCount: 'Correct count' }} onAdjust={() => {}} />);
-    expect(screen.getByTestId('batch-correct-toggle')).toBeInTheDocument();
-    // +/- stay hidden until armed — a count never changes by accident.
-    expect(screen.queryByTestId('batch-adjust-inc')).toBeNull();
-  });
-
-  it('arming Correct count reveals per-row +/- adjust', () => {
+  it('no legacy Correct-count toggle — the +/- are always-visible now (2026-07-14)', () => {
     render(<BatchArrivalList groups={makeSingleGroup()} t={t} onAdjust={() => {}} />);
-    fireEvent.click(screen.getByTestId('batch-correct-toggle'));
-    expect(screen.getByTestId('batch-adjust-inc')).toBeInTheDocument();
-    expect(screen.getByTestId('batch-adjust-dec')).toBeInTheDocument();
+    expect(screen.queryByTestId('batch-correct-toggle')).toBeNull();
   });
 
-  it('clicking +/- fires onAdjust(stockId, ±1) without opening the trace', () => {
+  it('reserves an actions column only when onAdjust or onWriteOff is wired', () => {
+    const { unmount } = render(<BatchArrivalList groups={makeSingleGroup()} t={t} />);
+    expect(screen.queryByTestId('batch-actions-header')).toBeNull();
+    expect(screen.queryByTestId('batch-adjust-inc')).toBeNull();
+    unmount();
+    render(<BatchArrivalList groups={makeSingleGroup()} t={t} onAdjust={() => {}} />);
+    expect(screen.getByTestId('batch-actions-header')).toBeInTheDocument();
+  });
+
+  it('+/- are visible with no toggle and fire onAdjust(stockId, ±1) without opening the trace', () => {
     const onAdjust = vi.fn();
     const onRowClick = vi.fn();
     render(<BatchArrivalList groups={makeSingleGroup()} t={t} onAdjust={onAdjust} onRowClick={onRowClick} />);
-    fireEvent.click(screen.getByTestId('batch-correct-toggle'));
     fireEvent.click(screen.getByTestId('batch-adjust-inc'));
     expect(onAdjust).toHaveBeenCalledWith('p1', 1);
     fireEvent.click(screen.getByTestId('batch-adjust-dec'));
@@ -224,9 +220,30 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     // Merged Rose row: s1 (May 10) + s2 (May 13). Oldest in-stock = s1.
     const onAdjust = vi.fn();
     render(<BatchArrivalList groups={makeMergedGroup()} t={t} onAdjust={onAdjust} />);
-    fireEvent.click(screen.getByTestId('batch-correct-toggle'));
     fireEvent.click(screen.getByTestId('batch-adjust-dec'));
     expect(onAdjust).toHaveBeenCalledWith('s1', -1);
+  });
+
+  it('🗑 write-off button renders with onWriteOff and fires onWriteOff(row) with the row, not the trace', () => {
+    const onWriteOff = vi.fn();
+    const onRowClick = vi.fn();
+    render(<BatchArrivalList groups={makeMergedGroup()} t={t} onWriteOff={onWriteOff} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByTestId('batch-writeoff'));
+    expect(onWriteOff).toHaveBeenCalledTimes(1);
+    expect(onWriteOff.mock.calls[0][0].stockIds).toEqual(['s1', 's2']);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('hides row actions for a synthesized shortfall row with no in-stock batch', () => {
+    // A Variety with only a Demand Entry (negative qty) → no positive batch →
+    // fefoOldestId is null → nothing to recount or write off.
+    const shortfallOnly = [{
+      type_name: 'Tulip', colour: 'Red', size_cm: 40, cultivar: null,
+      rows: [{ id: 'de1', current_quantity: -5, current_sell_price: 15, date: '2026-06-01' }],
+    }];
+    render(<BatchArrivalList groups={shortfallOnly} t={t} onAdjust={() => {}} onWriteOff={() => {}} />);
+    expect(screen.queryByTestId('batch-adjust-inc')).toBeNull();
+    expect(screen.queryByTestId('batch-writeoff')).toBeNull();
   });
 
   it('premade shown as a SUBSET: leads with free (qty − reserved), never additive "+" (CR-17)', () => {

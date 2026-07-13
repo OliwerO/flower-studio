@@ -39,6 +39,9 @@ import { EMPTY_STOCK_FILTER, stockRowMatchesFilter } from '../utils/stockFilters
 // If you change these widths, update stockRowGrid.js in the same PR so the
 // ShortfallSummary and PendingArrivalsPanel cards stay aligned with this table.
 const GRID_COLS = 'grid-cols-[6rem_minmax(9rem,13rem)_4.75rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)]';
+// Same tracks + a trailing 7rem actions column (owner-only −/+ recount + 🗑
+// write-off). Kept as a full literal so Tailwind's scanner emits the class.
+const GRID_COLS_ACTIONS = 'grid-cols-[6rem_minmax(9rem,13rem)_4.75rem_3rem_3rem_3rem_3.5rem_minmax(4rem,1fr)_7rem]';
 
 const COLS = [
   { key: 'type',       label: 'type',       align: 'left'   },
@@ -51,15 +54,18 @@ const COLS = [
   { key: 'supplier',   label: 'supplier',   align: 'left'   },
 ];
 
-export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, onAdjust, today, traceStockIds, traceNode, hideEmpty = false, filter = EMPTY_STOCK_FILTER, onFilterChange, footer = false }) {
+export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, onAdjust, onWriteOff, today, traceStockIds, traceNode, hideEmpty = false, filter = EMPTY_STOCK_FILTER, onFilterChange, footer = false }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [sortKey, setSortKey] = useState('type');
   const [sortDir, setSortDir] = useState('asc');
-  // #4(a) parity: stem counts are not casually editable. When the host wires
-  // onAdjust (owner), a "Correct count" toggle arms per-row +/- so an honest
-  // recount stays possible but a count never changes by accident. Mirrors the
-  // florist By-Variety "Correct count" flow (2026-07-13, dashboard Gap 1).
-  const [correctMode, setCorrectMode] = useState(false);
+  // Owner-only row actions live in a trailing column (2026-07-14). The dashboard
+  // has the horizontal room the florist mobile list doesn't, so the +/- recount
+  // and the 🗑 write-off sit ALWAYS-VISIBLE on the right instead of behind the
+  // earlier "Correct count" toggle — owner-approved reversal of #4a's gating FOR
+  // THE FLAT TABLE ONLY (mouse target, deliberate; the florist By-Variety list
+  // keeps its toggle). Column reserved only when a handler is wired.
+  const hasActions = !!onAdjust || !!onWriteOff;
+  const grid = hasActions ? GRID_COLS_ACTIONS : GRID_COLS;
 
   // E1: per-column filtering is client-side (the grouped set is already loaded).
   // A column popover patches one field; the host owns the filter object so a
@@ -127,25 +133,7 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
 
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
-      {/* Owner-only "Correct count" toggle — arms per-row +/- (2026-07-13). */}
-      {onAdjust && (
-        <div className="flex justify-end px-4 py-1.5 border-b border-gray-100">
-          <button
-            type="button"
-            data-testid="batch-correct-toggle"
-            aria-pressed={correctMode}
-            onClick={() => setCorrectMode((m) => !m)}
-            className={`text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${
-              correctMode
-                ? 'bg-amber-500 text-white active:bg-amber-600'
-                : 'bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200'
-            }`}
-          >
-            {correctMode ? (t.correctCountDone ?? 'Done') : (t.correctCount ?? 'Correct count')}
-          </button>
-        </div>
-      )}
-      <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
+      <div className={`grid ${grid} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
         {COLS.map(c => {
           const active = sortKey === c.key;
           const arrow = active ? (sortDir === 'asc' ? '↑' : '↓') : '';
@@ -169,6 +157,7 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
             </div>
           );
         })}
+        {hasActions && <div key="actions" data-testid="batch-actions-header" className="flex items-center justify-end text-gray-400">{t.actions ?? ''}</div>}
       </div>
 
       {sortedRows.length === 0 ? (
@@ -185,10 +174,12 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
                 key={b.id}
                 b={b}
                 t={t}
+                grid={grid}
+                hasActions={hasActions}
                 onRowClick={onRowClick}
                 onPatchPriceBulk={onPatchPriceBulk}
                 onAdjust={onAdjust}
-                correctMode={correctMode}
+                onWriteOff={onWriteOff}
                 traceNode={isTraceActive ? traceNode : null}
               />
             );
@@ -200,13 +191,14 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
           over the visible rows — restores the number the owner lost moving off
           the legacy flat table. */}
       {footer && sortedRows.length > 0 && (
-        <div data-testid="batch-arrival-footer" className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-xs font-semibold bg-gray-50/80 border-t-2 border-gray-200`}>
+        <div data-testid="batch-arrival-footer" className={`grid ${grid} gap-3 px-4 py-2 text-xs font-semibold bg-gray-50/80 border-t-2 border-gray-200`}>
           <span className="uppercase tracking-wide text-gray-500">{t.total ?? 'Total'} ({totals.count})</span>
           <span></span>
           <span className="text-right tabular-nums text-gray-900">{totals.qty}</span>
           <span className="text-right tabular-nums text-gray-700">{totals.cost.toFixed(0)}</span>
           <span className="text-right tabular-nums text-gray-700">{totals.sell.toFixed(0)}</span>
           <span></span><span></span><span></span>
+          {hasActions && <span></span>}
         </div>
       )}
     </div>
@@ -274,7 +266,7 @@ function ColumnFilterControl({ colKey, filter, setField, t }) {
   }
 }
 
-function BatchRow({ b, t, onRowClick, onPatchPriceBulk, onAdjust, correctMode, traceNode }) {
+function BatchRow({ b, t, grid, hasActions, onRowClick, onPatchPriceBulk, onAdjust, onWriteOff, traceNode }) {
   const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
   const editable = !!onPatchPriceBulk;
   // C: zero-qty constituent rows (empty orig/substitute cards zeroed by the
@@ -284,11 +276,12 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, onAdjust, correctMode, t
   const expandRows = useMemo(() => b.underlying.filter(u => u.qty > 0), [b.underlying]);
   const expandable = expandRows.length > 1;
   const [expanded, setExpanded] = useState(false);
-  const showAdjust = correctMode && !!onAdjust;
-  // A merged row spans several receives; +/- credits/debits the FEFO-oldest
-  // in-stock batch — the one that'll be consumed next — matching the florist
-  // By-Variety Correct-count behaviour. Fall back to the first stock_id.
-  const adjustTargetId = fefoOldestId(b.underlying) ?? b.stockIds[0];
+  // A merged row spans several receives; +/- and write-off act on the
+  // FEFO-oldest in-stock batch — the one consumed next — matching the florist
+  // By-Variety Correct-count behaviour. Actions only make sense when the row has
+  // a real in-stock batch (a synthesized pure-shortfall row has none).
+  const adjustTargetId = fefoOldestId(b.underlying);
+  const canAct = adjustTargetId != null;
 
   function save(field, next) {
     if (next === b[field]) return;
@@ -303,7 +296,7 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, onAdjust, correctMode, t
   return (
     <li>
       <div
-        className={`relative w-full grid ${GRID_COLS} gap-3 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
+        className={`relative w-full grid ${grid} gap-3 px-4 py-2 text-sm text-left items-baseline active:bg-gray-50 transition-colors`}
       >
         {/* Background tap-target opens trace; price + chevron live above it via z-stacking */}
         <button
@@ -351,28 +344,6 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, onAdjust, correctMode, t
           {b.reserved > 0 && (
             <span className="text-[10px] text-indigo-600 tabular-nums whitespace-nowrap">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
           )}
-          {showAdjust && (
-            <span className="flex items-center gap-1 mt-1 pointer-events-auto">
-              <button
-                type="button"
-                data-testid="batch-adjust-dec"
-                onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, -1); }}
-                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
-                aria-label={t.decrease ?? 'Remove one stem'}
-              >
-                −
-              </button>
-              <button
-                type="button"
-                data-testid="batch-adjust-inc"
-                onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, 1); }}
-                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
-                aria-label={t.increase ?? 'Add one stem'}
-              >
-                +
-              </button>
-            </span>
-          )}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700" title={b.costMixed ? (t.costMixedTooltip ?? 'Mixed costs across receives — showing newest') : undefined}>
           {editable
@@ -401,6 +372,46 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, onAdjust, correctMode, t
         <span className="relative z-10 text-xs text-gray-600 truncate pointer-events-none" title={b.supplierAll && b.supplierAll.length > 1 ? b.supplierAll.join(', ') : undefined}>
           {b.supplier || '—'}
         </span>
+        {/* Trailing owner actions — always visible on the dashboard's wide row:
+            −/+ recount + 🗑 write-off, both acting on the FEFO-oldest batch.
+            pointer-events-auto lifts them above the full-row trace tap-target. */}
+        {hasActions && (
+          <span className="relative z-10 flex items-center justify-end gap-1 pointer-events-auto">
+            {onAdjust && canAct && (
+              <>
+                <button
+                  type="button"
+                  data-testid="batch-adjust-dec"
+                  onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, -1); }}
+                  className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none hover:bg-gray-300 active:bg-gray-400"
+                  aria-label={t.decrease ?? 'Remove one stem'}
+                >
+                  −
+                </button>
+                <button
+                  type="button"
+                  data-testid="batch-adjust-inc"
+                  onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, 1); }}
+                  className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none hover:bg-gray-300 active:bg-gray-400"
+                  aria-label={t.increase ?? 'Add one stem'}
+                >
+                  +
+                </button>
+              </>
+            )}
+            {onWriteOff && canAct && (
+              <button
+                type="button"
+                data-testid="batch-writeoff"
+                onClick={(e) => { e.stopPropagation(); onWriteOff(b); }}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-red-50 text-ios-red text-xs leading-none hover:bg-red-100 active:bg-red-200"
+                aria-label={t.writeOff ?? 'Write off'}
+              >
+                🗑
+              </button>
+            )}
+          </span>
+        )}
       </div>
       {expandable && expanded && (
         <ExpandedDetails underlying={expandRows} t={t} />
