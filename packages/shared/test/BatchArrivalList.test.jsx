@@ -191,6 +191,44 @@ describe('BatchArrivalList — merged-row drill-down (B3)', () => {
     expect(footer).toHaveTextContent('10'); // only the Rose qty
   });
 
+  it('Correct-count toggle only renders when onAdjust is wired (owner)', () => {
+    const { unmount } = render(<BatchArrivalList groups={makeSingleGroup()} t={t} />);
+    expect(screen.queryByTestId('batch-correct-toggle')).toBeNull();
+    unmount();
+    render(<BatchArrivalList groups={makeSingleGroup()} t={{ ...t, correctCount: 'Correct count' }} onAdjust={() => {}} />);
+    expect(screen.getByTestId('batch-correct-toggle')).toBeInTheDocument();
+    // +/- stay hidden until armed — a count never changes by accident.
+    expect(screen.queryByTestId('batch-adjust-inc')).toBeNull();
+  });
+
+  it('arming Correct count reveals per-row +/- adjust', () => {
+    render(<BatchArrivalList groups={makeSingleGroup()} t={t} onAdjust={() => {}} />);
+    fireEvent.click(screen.getByTestId('batch-correct-toggle'));
+    expect(screen.getByTestId('batch-adjust-inc')).toBeInTheDocument();
+    expect(screen.getByTestId('batch-adjust-dec')).toBeInTheDocument();
+  });
+
+  it('clicking +/- fires onAdjust(stockId, ±1) without opening the trace', () => {
+    const onAdjust = vi.fn();
+    const onRowClick = vi.fn();
+    render(<BatchArrivalList groups={makeSingleGroup()} t={t} onAdjust={onAdjust} onRowClick={onRowClick} />);
+    fireEvent.click(screen.getByTestId('batch-correct-toggle'));
+    fireEvent.click(screen.getByTestId('batch-adjust-inc'));
+    expect(onAdjust).toHaveBeenCalledWith('p1', 1);
+    fireEvent.click(screen.getByTestId('batch-adjust-dec'));
+    expect(onAdjust).toHaveBeenCalledWith('p1', -1);
+    expect(onRowClick).not.toHaveBeenCalled();
+  });
+
+  it('adjust targets the FEFO-oldest in-stock batch of a merged row', () => {
+    // Merged Rose row: s1 (May 10) + s2 (May 13). Oldest in-stock = s1.
+    const onAdjust = vi.fn();
+    render(<BatchArrivalList groups={makeMergedGroup()} t={t} onAdjust={onAdjust} />);
+    fireEvent.click(screen.getByTestId('batch-correct-toggle'));
+    fireEvent.click(screen.getByTestId('batch-adjust-dec'));
+    expect(onAdjust).toHaveBeenCalledWith('s1', -1);
+  });
+
   it('premade shown as a SUBSET: leads with free (qty − reserved), never additive "+" (CR-17)', () => {
     const groups = [{
       type_name: 'Hydrangea', colour: 'Blue', size_cm: 60, cultivar: null,

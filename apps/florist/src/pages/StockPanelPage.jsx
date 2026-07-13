@@ -352,6 +352,7 @@ export default function StockPanelPage() {
           hideType={false}
           isOwner={role === 'owner'}
           onEditField={role === 'owner' ? handleEditVarietyField : undefined}
+          onPatchPriceBulk={role === 'owner' ? handlePatchPriceBulk : undefined}
           // Florist: no always-on trace icon on the row (D4). Trace stays
           // reachable via tap-to-expand → Trace. Dashboard keeps the header icon.
           showHeaderTrace={false}

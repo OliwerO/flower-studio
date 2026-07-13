@@ -50,6 +50,7 @@ export default function VarietyListItem({
   showHeaderTrace = true, // D4: florist hides the always-on header trace icon; trace stays in the expand body
   showPlanned = true, // D3 round-2: parent sets false when NO visible Variety has planned demand → Planned column collapses so In-premade sits next to On-hand
   onEditField, // (stockIds, fields) — owner bulk-patch of Reorder Threshold / Lot Size across the Variety (E2b). Owner-only; edit fields render on expand.
+  onPatchPriceBulk, // (stockIds, {cost?,sell?}) — owner-only inline cost/sell edit on the financials line. Parity: florist has no Flat table, so price editing lives here (Gap 2, 2026-07-13).
   t,
 }) {
   const handleRowClick = onRowClick ?? onBatchClick;
@@ -277,13 +278,27 @@ export default function VarietyListItem({
         const intFmt = (v) => String(Math.round(v));
         return (
         <ul className="bg-gray-50 border-t border-gray-100">
-          {isOwner && (sell > 0 || cost > 0 || supplier) && (
+          {isOwner && (onPatchPriceBulk || sell > 0 || cost > 0 || supplier) && (
             <li
               data-testid="variety-owner-financials"
               className="flex flex-wrap items-center gap-x-4 gap-y-1 px-6 py-2 text-xs text-gray-600 border-b border-gray-100"
             >
-              <span>{t.costPrice ?? 'Cost'}: <span className="font-semibold tabular-nums text-gray-800">{cost.toFixed(2)}</span></span>
-              <span>{t.sellPrice ?? 'Sell'}: <span className="font-semibold tabular-nums text-gray-800">{sell.toFixed(2)}</span></span>
+              {/* Cost / Sell are inline-editable when the host wires onPatchPriceBulk
+                  (owner). Edits bulk-patch every underlying batch so the whole
+                  physical bucket re-prices in one tap — same rule as the dashboard
+                  Flat table. Read-only fallback keeps the display when no handler. */}
+              <span className="flex items-center gap-1">
+                {t.costPrice ?? 'Cost'}:{' '}
+                {onPatchPriceBulk
+                  ? <span className="font-semibold text-gray-800"><InlinePriceField value={cost > 0 ? cost : null} testid="variety-edit-cost" onSave={(v) => onPatchPriceBulk(allStockIds, { cost: v })} /></span>
+                  : <span className="font-semibold tabular-nums text-gray-800">{cost.toFixed(2)}</span>}
+              </span>
+              <span className="flex items-center gap-1">
+                {t.sellPrice ?? 'Sell'}:{' '}
+                {onPatchPriceBulk
+                  ? <span className="font-semibold text-gray-800"><InlinePriceField value={sell > 0 ? sell : null} testid="variety-edit-sell" onSave={(v) => onPatchPriceBulk(allStockIds, { sell: v })} /></span>
+                  : <span className="font-semibold tabular-nums text-gray-800">{sell.toFixed(2)}</span>}
+              </span>
               {markup && <span className="px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-medium tabular-nums">×{markup}</span>}
               {supplier && <span>{t.supplier ?? 'Supplier'}: <span className="text-gray-800">{supplier}</span></span>}
             </li>

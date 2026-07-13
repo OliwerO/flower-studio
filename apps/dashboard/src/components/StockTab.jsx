@@ -759,6 +759,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                     if (row?.varietyKey) fetchVarietyUsage(row.varietyKey);
                   }}
                   onPatchPriceBulk={patchPriceBulk}
+                  onAdjust={adjustGroupQty}
                   traceStockIds={flatTraceRow}
                   traceNode={flatTraceRow ? (
                     <div className="px-4 py-3">
@@ -816,6 +817,7 @@ export default function StockTab({ initialFilter, onNavigate, isActive = true })
                           isOwner={true}
                           showPlanned={anyPlanned}
                           onEditField={patchPriceBulk}
+                          onPatchPriceBulk={patchPriceBulk}
                           expanded={expandedKey === group.key}
                           onToggle={() => setExpandedKey(k => k === group.key ? null : group.key)}
                           onRowClick={(stockId) => setTraceStockId(prev => prev === stockId ? null : stockId)}
