@@ -463,6 +463,72 @@ describe('VarietyListItem owner financials on expand (CR-36)', () => {
   });
 });
 
+describe('VarietyListItem editable cost/sell (parity Gap 2, 2026-07-13)', () => {
+  const v = {
+    key: 'Peony|Pink|60|', type_name: 'Peony', colour: 'Pink', size_cm: 60, cultivar: 'Sarah Bernhardt',
+    rows: [
+      { id: 'b1', current_quantity: 25, date: '2026-06-10', 'Current Cost Price': 12, 'Current Sell Price': 42, Supplier: 'Stojek' },
+      { id: 'b2', current_quantity: 10, date: '2026-06-11', 'Current Cost Price': 12, 'Current Sell Price': 42, Supplier: 'Stojek' },
+    ],
+  };
+
+  it('renders cost/sell as read-only text when onPatchPriceBulk is absent', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-edit-cost')).toBeNull();
+    expect(screen.queryByTestId('variety-edit-sell')).toBeNull();
+    expect(screen.getByTestId('variety-owner-financials')).toHaveTextContent('42.00');
+  });
+
+  it('renders cost/sell as InlinePriceField for an owner WITH onPatchPriceBulk', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onPatchPriceBulk={() => {}} onToggle={() => {}} />);
+    expect(screen.getByTestId('variety-edit-cost')).toBeInTheDocument();
+    expect(screen.getByTestId('variety-edit-sell')).toBeInTheDocument();
+  });
+
+  it('hides the editors (and whole line) for a non-owner even with onPatchPriceBulk', () => {
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner={false} onPatchPriceBulk={() => {}} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-owner-financials')).toBeNull();
+  });
+
+  it('editing sell bulk-patches every batch id with { sell }', () => {
+    const onPatchPriceBulk = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onPatchPriceBulk={onPatchPriceBulk} onToggle={() => {}} />);
+    fireEvent.click(screen.getByTestId('variety-edit-sell'));
+    const input = screen.getByTestId('variety-edit-sell-input');
+    fireEvent.change(input, { target: { value: '48' } });
+    fireEvent.blur(input);
+    expect(onPatchPriceBulk).toHaveBeenCalledWith(['b1', 'b2'], { sell: 48 });
+  });
+
+  it('editing cost bulk-patches every batch id with { cost }', () => {
+    const onPatchPriceBulk = vi.fn();
+    render(<VarietyListItem variety={v} reservations={new Map()} t={t}
+      hideType expanded isOwner onPatchPriceBulk={onPatchPriceBulk} onToggle={() => {}} />);
+    fireEvent.click(screen.getByTestId('variety-edit-cost'));
+    const input = screen.getByTestId('variety-edit-cost-input');
+    fireEvent.change(input, { target: { value: '14' } });
+    fireEvent.blur(input);
+    expect(onPatchPriceBulk).toHaveBeenCalledWith(['b1', 'b2'], { cost: 14 });
+  });
+
+  it('shows the financials line so a price-less flower can have cost/sell SET', () => {
+    // No cost/sell/supplier at all — read-only path would hide the line, but an
+    // owner with onPatchPriceBulk still needs a place to enter the first price.
+    const priceless = {
+      key: 'Rose|Red|50|', type_name: 'Rose', colour: 'Red', size_cm: 50, cultivar: null,
+      rows: [{ id: 'r1', current_quantity: 5, date: '2026-06-10' }],
+    };
+    render(<VarietyListItem variety={priceless} reservations={new Map()} t={t}
+      hideType expanded isOwner onPatchPriceBulk={() => {}} onToggle={() => {}} />);
+    expect(screen.getByTestId('variety-owner-financials')).toBeInTheDocument();
+    expect(screen.getByTestId('variety-edit-sell')).toHaveTextContent('—');
+  });
+});
+
 describe('VarietyListItem reorder settings (E2b)', () => {
   const v = {
     key: 'Rose|Pink|60|', type_name: 'Rose', colour: 'Pink', size_cm: 60, cultivar: null,

@@ -23,7 +23,7 @@
  *   today       — optional ISO date override
  */
 import { useMemo, useState } from 'react';
-import { byDateDesc } from '../utils/sortByDate.js';
+import { byDateAsc, byDateDesc } from '../utils/sortByDate.js';
 import InlinePriceField from './InlinePriceField.jsx';
 import ColumnFilterPopover from './ColumnFilterPopover.jsx';
 import { EMPTY_STOCK_FILTER, stockRowMatchesFilter } from '../utils/stockFilters.js';
@@ -51,10 +51,15 @@ const COLS = [
   { key: 'supplier',   label: 'supplier',   align: 'left'   },
 ];
 
-export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, today, traceStockIds, traceNode, hideEmpty = false, filter = EMPTY_STOCK_FILTER, onFilterChange, footer = false }) {
+export default function BatchArrivalList({ groups, reservations = new Map(), t, onRowClick, onPatchPriceBulk, onAdjust, today, traceStockIds, traceNode, hideEmpty = false, filter = EMPTY_STOCK_FILTER, onFilterChange, footer = false }) {
   const today_ = today ?? new Date().toISOString().slice(0, 10);
   const [sortKey, setSortKey] = useState('type');
   const [sortDir, setSortDir] = useState('asc');
+  // #4(a) parity: stem counts are not casually editable. When the host wires
+  // onAdjust (owner), a "Correct count" toggle arms per-row +/- so an honest
+  // recount stays possible but a count never changes by accident. Mirrors the
+  // florist By-Variety "Correct count" flow (2026-07-13, dashboard Gap 1).
+  const [correctMode, setCorrectMode] = useState(false);
 
   // E1: per-column filtering is client-side (the grouped set is already loaded).
   // A column popover patches one field; the host owns the filter object so a
@@ -122,6 +127,24 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
 
   return (
     <div data-testid="batch-arrival-list" className="ios-card overflow-hidden">
+      {/* Owner-only "Correct count" toggle — arms per-row +/- (2026-07-13). */}
+      {onAdjust && (
+        <div className="flex justify-end px-4 py-1.5 border-b border-gray-100">
+          <button
+            type="button"
+            data-testid="batch-correct-toggle"
+            aria-pressed={correctMode}
+            onClick={() => setCorrectMode((m) => !m)}
+            className={`text-[11px] font-medium px-2 py-0.5 rounded-full transition-colors ${
+              correctMode
+                ? 'bg-amber-500 text-white active:bg-amber-600'
+                : 'bg-amber-50 text-amber-700 hover:bg-amber-100 active:bg-amber-200'
+            }`}
+          >
+            {correctMode ? (t.correctCountDone ?? 'Done') : (t.correctCount ?? 'Correct count')}
+          </button>
+        </div>
+      )}
       <div className={`grid ${GRID_COLS} gap-3 px-4 py-2 text-[10px] uppercase tracking-wide bg-gray-50 border-b border-gray-100 select-none`}>
         {COLS.map(c => {
           const active = sortKey === c.key;
@@ -164,6 +187,8 @@ export default function BatchArrivalList({ groups, reservations = new Map(), t, 
                 t={t}
                 onRowClick={onRowClick}
                 onPatchPriceBulk={onPatchPriceBulk}
+                onAdjust={onAdjust}
+                correctMode={correctMode}
                 traceNode={isTraceActive ? traceNode : null}
               />
             );
@@ -249,7 +274,7 @@ function ColumnFilterControl({ colKey, filter, setField, t }) {
   }
 }
 
-function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
+function BatchRow({ b, t, onRowClick, onPatchPriceBulk, onAdjust, correctMode, traceNode }) {
   const markup = b.cost > 0 && b.sell > 0 ? (b.sell / b.cost) : null;
   const editable = !!onPatchPriceBulk;
   // C: zero-qty constituent rows (empty orig/substitute cards zeroed by the
@@ -259,6 +284,11 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
   const expandRows = useMemo(() => b.underlying.filter(u => u.qty > 0), [b.underlying]);
   const expandable = expandRows.length > 1;
   const [expanded, setExpanded] = useState(false);
+  const showAdjust = correctMode && !!onAdjust;
+  // A merged row spans several receives; +/- credits/debits the FEFO-oldest
+  // in-stock batch — the one that'll be consumed next — matching the florist
+  // By-Variety Correct-count behaviour. Fall back to the first stock_id.
+  const adjustTargetId = fefoOldestId(b.underlying) ?? b.stockIds[0];
 
   function save(field, next) {
     if (next === b[field]) return;
@@ -320,6 +350,28 @@ function BatchRow({ b, t, onRowClick, onPatchPriceBulk, traceNode }) {
           )}
           {b.reserved > 0 && (
             <span className="text-[10px] text-indigo-600 tabular-nums whitespace-nowrap">· {b.reserved} {t.inPremade ?? 'in premade'}</span>
+          )}
+          {showAdjust && (
+            <span className="flex items-center gap-1 mt-1 pointer-events-auto">
+              <button
+                type="button"
+                data-testid="batch-adjust-dec"
+                onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, -1); }}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
+                aria-label={t.decrease ?? 'Remove one stem'}
+              >
+                −
+              </button>
+              <button
+                type="button"
+                data-testid="batch-adjust-inc"
+                onClick={(e) => { e.stopPropagation(); onAdjust(adjustTargetId, 1); }}
+                className="w-6 h-6 flex items-center justify-center rounded-full bg-gray-200 text-gray-700 text-sm leading-none active:bg-gray-300"
+                aria-label={t.increase ?? 'Add one stem'}
+              >
+                +
+              </button>
+            </span>
           )}
         </span>
         <span className="relative z-10 text-right tabular-nums text-gray-700" title={b.costMixed ? (t.costMixedTooltip ?? 'Mixed costs across receives — showing newest') : undefined}>
@@ -397,6 +449,15 @@ function formatDMY(iso) {
   if (!iso) return '';
   const m = String(iso).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}.${m[2]}.${m[1]}` : String(iso);
+}
+
+// FEFO-oldest in-stock underlying stock_id of a merged row: the batch consumed
+// next, so a +/- recount lands on the right physical lot. Only positive-qty
+// receives are candidates; undated sort last. Returns null when none in stock.
+function fefoOldestId(underlying) {
+  const inStock = (underlying ?? []).filter((u) => (Number(u.qty) || 0) > 0);
+  if (inStock.length === 0) return null;
+  return [...inStock].sort(byDateAsc)[0].id;
 }
 
 function formatArrived(iso) {
