@@ -90,6 +90,10 @@ _Avoid_: lot, shipment, delivery (Delivery is a different concept)
 A Stock Item with negative quantity representing committed future demand. Identified by the Variety + needed-by date (defaults to the linked Order's Required By with fallback Order Date → today). Created when stems are added to an order but no Batch covers the demand. At most one Demand Entry per (Variety, date) — superseding ADR-0002's "at most one per variety" invariant.
 _Avoid_: placeholder, open order, pre-order
 
+**Settlement**:
+What happens to an Order Line's Demand Entry when the Order reaches a terminal status (Delivered / Picked Up): the committed demand is fulfilled, so the line's contribution is released back toward zero and matching Batches are FEFO-consumed for the stems that physically shipped. A settled Demand Entry is **retained at quantity 0 as an audit marker** while an Order Line still references it (per ADR-0012's audit-marker-visibility rule) — it is never soft-deleted. A settled (zero-quantity) Demand Entry is inert: it is never FEFO-picked, reused by `getOrCreateDemandEntry`, or counted in the partial unique index (all gated on `quantity < 0`). Reversing a settled line's stock effect (edit / cancel / delete) is therefore a no-op.
+_Avoid_: closing, clearing, finalising (those don't convey "release demand + keep the marker")
+
 **Stem**:
 The unit of quantity for a Stock Item. "We have 15 stems of pink peonies."
 _Avoid_: Unit, piece, flower (too generic)

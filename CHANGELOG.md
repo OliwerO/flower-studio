@@ -5,6 +5,18 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-23 — fix(stock): settled Demand Entries kept visible; editing a delivered order no longer crashes (#556, ADR-0013)
+
+**Schema:** new nullable column `stock.settled_at` (`TIMESTAMPTZ`), migration `0022_stock_settled_at.sql`. `NULL` for every row except a Demand Entry whose full release brought it to `current_quantity >= 0`. Additive — no backfill required; existing rows keep `settled_at = NULL`.
+
+**Behavior:** terminal-order **Settlement** (`stockRepo.reverseLineStockEffect` release branch, shared by settle / cancel / delete / bouquet-edit remove) now stamps `settled_at` instead of soft-deleting a Demand Entry that reaches 0 — reverting the #516 soft-delete. The row stays visible (`deleted_at` stays `NULL`), so it remains a valid `order_line.stock_item_id` target and stays in the per-Variety trace (ADR-0012). `reverseLineStockEffect` now resolves the linked row *including* settled/soft-deleted state and no-ops on an already-settled row (moves no stock) instead of throwing `Stock record not found` — the #556 crash fix. A genuinely depleted Batch (both markers `NULL`) still returns stems normally. See `docs/adr/0013-settled-demand-entries-retained-as-audit-markers.md`.
+
+**Data repair (pending owner approval):** `backend/scripts/undelete-settled-des.mjs` (GUARDED, dry-run default, requires an explicit approval phrase for `--apply`) converts the pre-fix legacy soft-deleted settled DEs (34 rows on prod as of 2026-07-23, referenced by live order lines on terminal orders) into the new `settled_at` marker so those orders stop crashing on edit and their traces reappear. **Not yet run against prod.**
+
+**Verification:** backend Vitest full suite + the new `#556` reproduction/trace tests green; API E2E 253/253 (edit/cancel/delete/swap paths); `lab-api` runs in CI (Docker not available locally at author time).
+
+---
+
 ## 2026-07-07 — chore(stock): STOCK_Y_MODEL cutover complete — flag + dual-mode code removed (#291)
 
 The Stock Y-model was flipped live on prod 2026-06-30 (`STOCK_Y_MODEL=true` on the `flower-studio-backend` Railway service). This change removes the now-dead flag and all dual-mode code, so the Y-model is the **only** stock model. No behavior change on prod (the flag was already true); this is dead-code + docs cleanup. Shipped as four stacked PRs:
