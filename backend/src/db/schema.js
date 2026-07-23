@@ -111,6 +111,11 @@ export const stock = pgTable('stock', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt: timestamp('deleted_at', { withTimezone: true }),
+  // Settled Demand Entry marker (#556/#557, ADR-0013). Stamped when a
+  // terminal-order Settlement releases a Demand Entry to 0 — the row stays
+  // visible (deletedAt NULL) instead of being soft-deleted, so it remains a
+  // valid stock_item_id target and the per-Variety trace stays complete.
+  settledAt: timestamp('settled_at', { withTimezone: true }),
 }, (table) => ({
   // Unique mapping during cutover — backfill writes one row per Airtable rec.
   airtableIdx: uniqueIndex('stock_airtable_id_idx').on(table.airtableId),

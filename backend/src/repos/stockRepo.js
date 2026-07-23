@@ -272,12 +272,22 @@ export async function resolveBatchByFEFO(varietyKey, lineQty, tx) {
  * Reverse an order line's stock effect when the line goes away
  * (cancel / delete / bouquet-edit remove). Y-model aware:
  *
+ *  - Already-settled Demand Entry (settled_at set — ADR-0013) OR a legacy
+ *    soft-deleted row (deleted_at set, pre-#556): the demand was already
+ *    reconciled at a terminal transition. There is nothing physical left to
+ *    return or write off — NO-OP, moves no stock. This is the #556 fix: the
+ *    order line's stockItemId still points at this row (it was never
+ *    deleted, or a data-repair restored it), so it must resolve to a no-op
+ *    instead of falling through to the batch path, which used to throw
+ *    "Stock record not found" for the legacy soft-deleted case.
+ *
  *  - DE-bound line (linked stock row has typeName set AND currentQuantity < 0):
  *    the line represented future DEMAND, not physical stems. BOTH 'return' and
  *    'writeoff' release that demand (+qty toward zero) — there are no stems to
- *    lose (C19). If the DE reaches >= 0 it is SOFT-DELETED so it can never
- *    become a phantom 0-qty FEFO candidate (C5; FEFO selects currentQuantity >= 0
- *    and would otherwise treat a depleted DE as an empty Batch).
+ *    lose (C19). If the DE reaches >= 0 it is marked SETTLED (settled_at
+ *    stamped, ADR-0013) so it can never become a phantom 0-qty FEFO candidate
+ *    (C5; FEFO selects currentQuantity >= 0 and would otherwise treat a
+ *    depleted DE as an empty Batch) while staying visible in the trace.
  *
  *  - Batch / legacy line: 'return' adds the qty back to stock; 'writeoff' leaves
  *    the quantity decremented (the caller logs the physical loss) — unchanged.
@@ -293,9 +303,25 @@ export async function resolveBatchByFEFO(varietyKey, lineQty, tx) {
  */
 export async function reverseLineStockEffect(stockItemId, quantity, mode, tx, actor = { actorRole: 'system', actorPinLabel: null }) {
   const qty = Number(quantity) || 0;
-  // Resolve recXXX (legacy Airtable) OR uuid the same way adjustQuantity does —
-  // a raw eq(stock.id, recXXX) errors against the uuid column.
-  const row = await findPgByAirtableOrUuid(stockItemId, tx);
+  // Resolve INCLUDING settled/soft-deleted so a settled Demand Entry (or a
+  // legacy soft-deleted one) is recognised, not mistaken for a missing Batch.
+  const anyRow = await findPgByAirtableOrUuidAnyState(stockItemId, tx);
+
+  // Already-settled Demand Entry (new: settled_at set; legacy: soft-deleted)
+  // → the demand was reconciled at a terminal transition. Nothing physical
+  // to return or write off. No-op — moves no stock, never throws.
+  if (anyRow && (anyRow.settledAt || anyRow.deletedAt)) {
+    return {
+      kind: 'de',
+      stockId: anyRow.airtableId || anyRow.id,
+      newQty: Number(anyRow.currentQuantity),
+      released: false,
+    };
+  }
+
+  // Past this point anyRow (if present) is guaranteed neither settled nor
+  // soft-deleted (both cases returned above) — safe to treat as the live row.
+  const row = anyRow;
 
   const isDe = !!row && !!row.typeName && Number(row.currentQuantity) < 0;
 
@@ -312,14 +338,18 @@ export async function reverseLineStockEffect(stockItemId, quantity, mode, tx, ac
     });
     const newQty = Number(after.currentQuantity);
     if (newQty >= 0) {
-      // Demand fully satisfied/released — drop the row so it is never a phantom
-      // 0-qty FEFO candidate.
+      // Demand fully satisfied/released — settled. Keep the row VISIBLE
+      // (ADR-0013 audit marker) — stamp settled_at instead of soft-deleting
+      // (reverts #516). A settled row is inert for FEFO/get-or-create/the
+      // unique index (all gated on currentQuantity < 0), so it can never
+      // become a phantom 0-qty FEFO candidate, but it stays a valid
+      // stock_item_id target and stays in the per-Variety trace.
       await tx.update(stock)
-        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .set({ settledAt: new Date(), updatedAt: new Date() })
         .where(eq(stock.id, row.id));
       await tryAudit(tx, {
-        entityType: 'stock', entityId: after.id, action: 'delete',
-        before: { 'Current Quantity': after.currentQuantity }, after: null, ...actor,
+        entityType: 'stock', entityId: after.id, action: 'update',
+        before: { settled_at: null }, after: { settled_at: 'set' }, ...actor,
       });
     }
     return { kind: 'de', stockId: after.airtableId || after.id, newQty, released: true };
@@ -525,6 +555,19 @@ async function findPgByAirtableOrUuid(id, handle = db) {
   return row ?? null;
 }
 
+// Like findPgByAirtableOrUuid but does NOT filter deletedAt — resolves a row
+// regardless of settled/soft-deleted state. Used by reverseLineStockEffect
+// (ADR-0013) so a settled Demand Entry (or a legacy soft-deleted one) is
+// recognised and no-opped, rather than read as "not found" and mistaken for
+// a missing Batch.
+async function findPgByAirtableOrUuidAnyState(id, handle = db) {
+  if (!id || !handle) return null;
+  const isAirtableId = typeof id === 'string' && id.startsWith('rec');
+  const where = isAirtableId ? eq(stock.airtableId, id) : eq(stock.id, id);
+  const [row] = await handle.select().from(stock).where(where).limit(1);
+  return row ?? null;
+}
+
 // Audit helper that swallows errors. Production callers should always pass
 // a real actor.
 async function tryAudit(tx, args) {
@@ -610,6 +653,18 @@ export async function getById(id) {
     throw err;
   }
   return pgToResponse(row);
+}
+
+// Like getById but does NOT filter deletedAt/settledAt — used by the reverse
+// seam + tests to inspect a settled (or legacy soft-deleted) Demand Entry.
+// Returns the raw DB row (camelCase columns), not the Airtable-shaped wire
+// format, so callers can read `deletedAt` / `settledAt` / `currentQuantity`
+// directly (ADR-0013).
+export async function getByIdIncludingSettled(id) {
+  const isAirtableId = typeof id === 'string' && id.startsWith('rec');
+  const [row] = await db.select().from(stock)
+    .where(isAirtableId ? eq(stock.airtableId, id) : eq(stock.id, id)).limit(1);
+  return row ?? null;
 }
 
 // ── Create ──

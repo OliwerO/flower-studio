@@ -1221,9 +1221,11 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
     await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
     await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
 
-    // DE released + soft-deleted; no same-Variety batch to consume.
+    // DE released + settled (#556: kept visible, not soft-deleted); no
+    // same-Variety batch to consume.
     const [de] = await harness.db.select().from(stock).where(eq(stock.id, lineStockId));
-    expect(de.deletedAt).not.toBeNull();
+    expect(de.deletedAt).toBeNull();
+    expect(de.settledAt).not.toBeNull();
     expect(await peonyNet()).toBe(0);          // shortfall gone — substitute fulfilled it
   });
 
@@ -1242,7 +1244,8 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
     const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
     expect(batch.currentQuantity).toBe(4);     // 15 - 11 consumed
     const [de] = await harness.db.select().from(stock).where(eq(stock.id, lineStockId));
-    expect(de.deletedAt).not.toBeNull();       // DE settled + dropped
+    expect(de.deletedAt).toBeNull();           // DE settled (#556: kept visible, not dropped)
+    expect(de.settledAt).not.toBeNull();
     expect(await peonyNet()).toBe(4);          // net unchanged — DE was already reserving
   });
 
@@ -1259,7 +1262,8 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
     const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
     expect(batch.currentQuantity).toBe(0);     // drained, never negative (W2)
     const [de] = await harness.db.select().from(stock).where(eq(stock.id, lineStockId));
-    expect(de.deletedAt).not.toBeNull();
+    expect(de.deletedAt).toBeNull();           // settled (#556: kept visible, not soft-deleted)
+    expect(de.settledAt).not.toBeNull();
     expect(await peonyNet()).toBe(0);          // 6 uncovered → substitute; shortfall cleared
   });
 
@@ -1343,5 +1347,68 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
 
     [s] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
     expect(s.currentQuantity).toBe(95);        // no-op — batch not touched again
+  });
+
+  it('(#556) settling releases the DE to 0 but keeps it visible — settled_at set, not soft-deleted', async () => {
+    const anchorId = await seedAnchor();
+    const { order, lineStockId } = await makeOrder(anchorId, 11);
+    await seedBatch(15, '2026-07-06');   // covers fully → DE releases to exactly 0
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    const de = await stockRepo.getByIdIncludingSettled(lineStockId);
+    expect(de).not.toBeNull();
+    expect(de.deletedAt).toBeNull();          // NOT soft-deleted anymore
+    expect(Number(de.currentQuantity)).toBe(0);
+    expect(de.settledAt).not.toBeNull();      // marked settled instead
+  });
+
+  it('(#556) editing a Picked-Up order to remove the settled placeholder line does not throw and moves no stock', async () => {
+    const anchorId = await seedAnchor();
+    const { order, lineStockId } = await makeOrder(anchorId, 11);
+    const batchId = await seedBatch(15, '2026-07-06');
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    const deBefore = await stockRepo.getByIdIncludingSettled(lineStockId);
+    expect(Number(deBefore.currentQuantity)).toBe(0); // sanity: settled at 0
+
+    // Owner edits the terminal order and removes the (now settled) placeholder
+    // line — must NOT throw "Stock record not found" (the #556 crash).
+    await expect(orderRepo.editBouquetLines(order.id, {
+      lines: [],
+      removedLines: [{ stockItemId: lineStockId, quantity: 11, action: 'return' }],
+    }, true)).resolves.toBeDefined();
+
+    const deAfter = await stockRepo.getByIdIncludingSettled(lineStockId);
+    expect(Number(deAfter.currentQuantity)).toBe(0); // unchanged — no phantom +qty
+
+    const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(4);            // batch untouched by the no-op
+  });
+
+  it('(#556) adding a real Batch line to a terminal order still decrements that Batch normally', async () => {
+    const anchorId = await seedAnchor();
+    const { order } = await makeOrder(anchorId, 11);
+    await seedBatch(15, '2026-07-06'); // settles the Peony DE — unrelated to the new line below
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    // Owner adds a DIFFERENT, real dated Batch line to the now-terminal order.
+    const [ranBatch] = await harness.db.insert(stock).values({
+      displayName: 'Ranunculus (02.Aug.)', typeName: 'Ranunculus',
+      currentQuantity: 15, date: '2026-08-02', active: true,
+    }).returning();
+
+    await orderRepo.editBouquetLines(order.id, {
+      lines: [{ stockItemId: ranBatch.id, flowerName: 'Ranunculus', quantity: 5 }],
+      removedLines: [],
+    }, true);
+
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, ranBatch.id));
+    expect(after.currentQuantity).toBe(10); // 15 - 5, decremented normally
   });
 });

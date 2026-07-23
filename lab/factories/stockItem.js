@@ -10,7 +10,7 @@
 //         supplier, reorder_threshold, active, supplier_notes, dead_stems,
 //         lot_size, farmer, last_restocked, substitute_for,
 //         date, type_name, colour, size_cm, cultivar,
-//         created_at, updated_at, deleted_at
+//         created_at, updated_at, deleted_at, settled_at
 
 import { faker } from '@faker-js/faker';
 
@@ -94,6 +94,10 @@ export function makeStockItem(overrides = {}) {
     created_at: new Date(),
     updated_at: new Date(),
     deleted_at: null,
+    // Settled Demand Entry marker (#556/#557, ADR-0013). NULL for every
+    // factory-built row by default — pass `settled_at` in overrides to model
+    // a settled (kept-visible, qty-0) Demand Entry.
+    settled_at: null,
     // Apply column-level overrides last, excluding already-handled keys.
     ...columnOverrides,
     // Ensure derived values are always correct even if columnOverrides re-set them.

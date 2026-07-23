@@ -5,8 +5,12 @@
 // it exactly once, through the correct path. These tests pin the four findings:
 //
 //   C5  — cancel / delete of a DE-bound line releases the demand (+qty toward 0)
-//         and SOFT-DELETES the DE when it reaches 0, so it never becomes a
-//         phantom 0-qty FEFO candidate (FEFO selects currentQuantity >= 0).
+//         and marks the DE SETTLED (settled_at stamped) when it reaches 0,
+//         instead of soft-deleting it (#556, ADR-0013 — reverses this file's
+//         original soft-delete contract). A settled row is still never a
+//         phantom 0-qty FEFO candidate (FEFO/get-or-create/the unique index
+//         all gate on currentQuantity < 0), but it stays visible: a valid
+//         stock_item_id link and present in the per-Variety trace.
 //   C19 — write-off of a DE-bound removed line RELEASES the demand (a DE is
 //         future demand, not physical stems — nothing to lose). Previously the
 //         write-off branch only logged a loss and the demand leaked forever.
@@ -94,15 +98,16 @@ const liveDe = (id) => harness.db.select().from(stock)
   .where(and(eq(stock.id, id), isNull(stock.deletedAt))).then(r => r[0] ?? null);
 const anyDe = (id) => harness.db.select().from(stock).where(eq(stock.id, id)).then(r => r[0]);
 
-describe('(C5) cancel / delete release DE demand + soft-delete at zero', () => {
-  it('cancel: sole-consumer DE released to 0 → soft-deleted (no phantom)', async () => {
+describe('(C5) cancel / delete release DE demand + settle at zero (#556, ADR-0013)', () => {
+  it('cancel: sole-consumer DE released to 0 → settled (kept visible, not soft-deleted)', async () => {
     const { de, order } = await seedDeBoundOrder({ deQty: -5, lineQty: 5 });
 
     await orderRepo.cancelWithStockReturn(order.id, actor);
 
     const row = await anyDe(de.id);
     expect(row.currentQuantity).toBe(0);  // demand released
-    expect(row.deletedAt).not.toBeNull(); // soft-deleted → invisible to FEFO + grouping
+    expect(row.deletedAt).toBeNull();     // NOT soft-deleted (#556, ADR-0013)
+    expect(row.settledAt).not.toBeNull(); // marked settled instead — still invisible to FEFO (gated on qty<0)
   });
 
   it('cancel: partial release leaves DE negative and LIVE', async () => {
@@ -115,21 +120,22 @@ describe('(C5) cancel / delete release DE demand + soft-delete at zero', () => {
     expect(row.currentQuantity).toBe(-6); // -10 + 4
   });
 
-  it('delete: sole-consumer DE released to 0 → soft-deleted', async () => {
+  it('delete: sole-consumer DE released to 0 → settled (kept visible, not soft-deleted)', async () => {
     const { de, order } = await seedDeBoundOrder({ deQty: -3, lineQty: 3 });
 
     await orderRepo.deleteOrder(order.id, actor);
 
     const row = await anyDe(de.id);
     expect(row.currentQuantity).toBe(0);
-    expect(row.deletedAt).not.toBeNull();
+    expect(row.deletedAt).toBeNull();
+    expect(row.settledAt).not.toBeNull();
   });
 
-  it('shared DE: cancelling one consumer keeps it live; the last consumer soft-deletes it', async () => {
+  it('shared DE: cancelling one consumer keeps it live; the last consumer settles it', async () => {
     // One DE (-8) shared by two orders (5 + 3). Releasing one leaves the DE
     // negative + live; only the LAST consumer's release drives it to 0 →
-    // soft-delete. Proves the multi-consumer path never soft-deletes early and
-    // never strands live demand (refutes the multi-consumer phantom RISK).
+    // settled (#556, ADR-0013). Proves the multi-consumer path never settles
+    // early and never strands live demand (refutes the multi-consumer phantom RISK).
     const d = '2026-07-01';
     const [de] = await harness.db.insert(stock).values({
       displayName: `Tulip (${d})`, typeName: 'Tulip', currentQuantity: -8, date: d, active: true,
@@ -155,7 +161,8 @@ describe('(C5) cancel / delete release DE demand + soft-delete at zero', () => {
     await orderRepo.cancelWithStockReturn(o2.id, actor);
     row = await anyDe(de.id);
     expect(row.currentQuantity).toBe(0);  // -3 + 3
-    expect(row.deletedAt).not.toBeNull(); // last consumer released → soft-deleted
+    expect(row.deletedAt).toBeNull();     // last consumer released → settled, not soft-deleted
+    expect(row.settledAt).not.toBeNull();
   });
 });
 
@@ -170,7 +177,8 @@ describe('(C19) write-off of a DE-bound removed line releases the demand', () =>
 
     const row = await anyDe(de.id);
     expect(row.currentQuantity).toBe(0);  // released (was: stayed -5, demand leaked)
-    expect(row.deletedAt).not.toBeNull(); // soft-deleted at zero
+    expect(row.deletedAt).toBeNull();     // NOT soft-deleted (#556, ADR-0013)
+    expect(row.settledAt).not.toBeNull(); // marked settled at zero instead
   });
 });
 
