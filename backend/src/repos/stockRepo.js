@@ -312,14 +312,18 @@ export async function reverseLineStockEffect(stockItemId, quantity, mode, tx, ac
     });
     const newQty = Number(after.currentQuantity);
     if (newQty >= 0) {
-      // Demand fully satisfied/released — drop the row so it is never a phantom
-      // 0-qty FEFO candidate.
+      // Demand fully satisfied/released — settled. Keep the row VISIBLE
+      // (ADR-0013 audit marker) — stamp settled_at instead of soft-deleting
+      // (reverts #516). A settled row is inert for FEFO/get-or-create/the
+      // unique index (all gated on currentQuantity < 0), so it can never
+      // become a phantom 0-qty FEFO candidate, but it stays a valid
+      // stock_item_id target and stays in the per-Variety trace.
       await tx.update(stock)
-        .set({ deletedAt: new Date(), updatedAt: new Date() })
+        .set({ settledAt: new Date(), updatedAt: new Date() })
         .where(eq(stock.id, row.id));
       await tryAudit(tx, {
-        entityType: 'stock', entityId: after.id, action: 'delete',
-        before: { 'Current Quantity': after.currentQuantity }, after: null, ...actor,
+        entityType: 'stock', entityId: after.id, action: 'update',
+        before: { settled_at: null }, after: { settled_at: 'set' }, ...actor,
       });
     }
     return { kind: 'de', stockId: after.airtableId || after.id, newQty, released: true };
@@ -610,6 +614,18 @@ export async function getById(id) {
     throw err;
   }
   return pgToResponse(row);
+}
+
+// Like getById but does NOT filter deletedAt/settledAt — used by the reverse
+// seam + tests to inspect a settled (or legacy soft-deleted) Demand Entry.
+// Returns the raw DB row (camelCase columns), not the Airtable-shaped wire
+// format, so callers can read `deletedAt` / `settledAt` / `currentQuantity`
+// directly (ADR-0013).
+export async function getByIdIncludingSettled(id) {
+  const isAirtableId = typeof id === 'string' && id.startsWith('rec');
+  const [row] = await db.select().from(stock)
+    .where(isAirtableId ? eq(stock.airtableId, id) : eq(stock.id, id)).limit(1);
+  return row ?? null;
 }
 
 // ── Create ──
