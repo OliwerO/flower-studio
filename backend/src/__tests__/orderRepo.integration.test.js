@@ -1363,4 +1363,29 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
     expect(Number(de.currentQuantity)).toBe(0);
     expect(de.settledAt).not.toBeNull();      // marked settled instead
   });
+
+  it('(#556) editing a Picked-Up order to remove the settled placeholder line does not throw and moves no stock', async () => {
+    const anchorId = await seedAnchor();
+    const { order, lineStockId } = await makeOrder(anchorId, 11);
+    const batchId = await seedBatch(15, '2026-07-06');
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    const deBefore = await stockRepo.getByIdIncludingSettled(lineStockId);
+    expect(Number(deBefore.currentQuantity)).toBe(0); // sanity: settled at 0
+
+    // Owner edits the terminal order and removes the (now settled) placeholder
+    // line — must NOT throw "Stock record not found" (the #556 crash).
+    await expect(orderRepo.editBouquetLines(order.id, {
+      lines: [],
+      removedLines: [{ stockItemId: lineStockId, quantity: 11, action: 'return' }],
+    }, true)).resolves.toBeDefined();
+
+    const deAfter = await stockRepo.getByIdIncludingSettled(lineStockId);
+    expect(Number(deAfter.currentQuantity)).toBe(0); // unchanged — no phantom +qty
+
+    const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
+    expect(batch.currentQuantity).toBe(4);            // batch untouched by the no-op
+  });
 });
