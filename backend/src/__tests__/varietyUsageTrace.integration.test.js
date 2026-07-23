@@ -461,3 +461,39 @@ describe('S6 — getUsageByVarietyKey drift computation', () => {
     expect(result.openingBalance).toBe(0);
   });
 });
+
+// ── (#556) settled Demand Entries stay in the per-Variety trace (ADR-0013) ──
+//
+// Settlement now stamps settled_at instead of soft-deleting a fully-released
+// Demand Entry (Task A2), so it stays a non-deleted row. getUsageByVarietyKey
+// unions every non-deleted row in the Variety — it needs NO change to keep
+// surfacing a settled DE's order-consumption event.
+
+describe('(#556) settled Demand Entry stays in the per-Variety trace', () => {
+  it('getUsageByVarietyKey includes the order event from a settled (qty-0) Demand Entry', async () => {
+    const customer = await seedCustomer();
+
+    // A settled Demand Entry: qty 0, settled_at set, deleted_at NULL —
+    // exactly the row shape Task A2's settlement produces.
+    const [de] = await harness.db.insert(stock).values({
+      displayName:     'Ranunculus',
+      currentQuantity: 0,
+      typeName:        'Ranunculus',
+      colour:          'Pink',
+      sizeCm:          60,
+      cultivar:        null,
+      date:            null,
+      active:          true,
+      settledAt:       new Date(),
+    }).returning();
+
+    const ord = await seedOrder(customer.id, '2026-08-01');
+    await seedOrderLine(ord.id, de.id, 10, 'Ranunculus');
+
+    const result = await stockRepo.getUsageByVarietyKey('Ranunculus|Pink|60|');
+
+    const orderEvent = result.events.find(e => e.type === 'order');
+    expect(orderEvent).toBeDefined();
+    expect(orderEvent.quantity).toBe(-10);
+  });
+});

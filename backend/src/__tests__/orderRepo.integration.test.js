@@ -1388,4 +1388,27 @@ describe('transitionStatus — Y-model demand settlement (#3)', () => {
     const [batch] = await harness.db.select().from(stock).where(eq(stock.id, batchId));
     expect(batch.currentQuantity).toBe(4);            // batch untouched by the no-op
   });
+
+  it('(#556) adding a real Batch line to a terminal order still decrements that Batch normally', async () => {
+    const anchorId = await seedAnchor();
+    const { order } = await makeOrder(anchorId, 11);
+    await seedBatch(15, '2026-07-06'); // settles the Peony DE — unrelated to the new line below
+
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.READY);
+    await orderRepo.transitionStatus(order.id, ORDER_STATUS.PICKED_UP);
+
+    // Owner adds a DIFFERENT, real dated Batch line to the now-terminal order.
+    const [ranBatch] = await harness.db.insert(stock).values({
+      displayName: 'Ranunculus (02.Aug.)', typeName: 'Ranunculus',
+      currentQuantity: 15, date: '2026-08-02', active: true,
+    }).returning();
+
+    await orderRepo.editBouquetLines(order.id, {
+      lines: [{ stockItemId: ranBatch.id, flowerName: 'Ranunculus', quantity: 5 }],
+      removedLines: [],
+    }, true);
+
+    const [after] = await harness.db.select().from(stock).where(eq(stock.id, ranBatch.id));
+    expect(after.currentQuantity).toBe(10); // 15 - 5, decremented normally
+  });
 });
