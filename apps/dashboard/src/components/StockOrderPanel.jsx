@@ -305,9 +305,10 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
     }
   }
 
-  // Add a brand-new line to an existing PO — all required fields must be
-  // present up front (flower name, supplier, qty, cost). POSTs straight to
-  // the backend; no "temp local line" that can silently vanish on refresh.
+  // Add a brand-new line to an existing PO — flower name + quantity are
+  // required up front (identity rule, pitfall #6); supplier + cost/stem are
+  // optional and can be filled in later (#524). POSTs straight to the
+  // backend; no "temp local line" that can silently vanish on refresh.
   // Returns true on success so the inline form can collapse itself.
   // Issue #550: identity now mirrors DraftLineEditor — either an existing
   // Stock Item link (stockItemId) or a new-Variety Type/Colour/Size/Cultivar,
@@ -803,9 +804,10 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
                           + {t.addLine || 'Add line'}
                         </button>
                       ) : (
-                        // Sent/Shopping: off-plan flower, all fields required up front.
-                        // Full field set (issue #550) — Stock Item search +
-                        // new-Variety identity, same as DraftLineEditor.
+                          // Sent/Shopping: off-plan flower. Full field set (#550) —
+                          // Stock Item search + new-Variety identity, same as
+                          // DraftLineEditor. Identity + qty required; supplier
+                          // and cost/stem optional (#524).
                         <AddLineInlineForm
                           orderId={order.id}
                           onAdd={addPersistedLine}
@@ -1437,14 +1439,14 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
 // the "qty" input means LOTS (total stems = lots × lot size); otherwise
 // qty is raw stems. Cost is explicitly per-stem with a live total preview
 // so the owner sees exactly what she's committing before submit.
-// Flower identity mirrors DraftLineEditor too (issue #550): pick an existing
+// Flower identity mirrors DraftLineEditor (issue #550): pick an existing
 // Stock Item via search (auto-fills cost/sell/lot size/supplier), or type a
 // new Variety's Type/Colour/Size/Cultivar when nothing is linked — the exact
 // same StockSearchInput + Variety-identity block DraftLineEditor already
 // uses, so a line added to a Sent/Shopping PO carries the same identity a
 // Draft-PO line would (repo pitfall #6: every PO line needs a Stock Item
-// link or a Flower Name). All fields required up front; POST only fires on
-// submit — no silent drops.
+// link or a Flower Name). Identity + qty are required up front; supplier and
+// cost/stem are optional (#524). POST only fires on submit — no silent drops.
 // Sent/Shopping-only: an "off-plan" line bought at the supplier. Draft uses
 // the one-tap add button + DraftLineEditor instead — see the call site.
 function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup, status }) {
@@ -1496,12 +1498,10 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
   // Identity rule mirrors DraftLineEditor's isBlank check + the backend's own
   // gate on POST /:id/lines (pitfall #6): a Stock Item link, an explicit
   // Flower Name, or a new-Variety Type all count as identity.
+  // #524: supplier and cost/stem are optional — fill them in later via
+  // DraftLineEditor.
   const hasIdentity = !!(form.stockItemId || form.flowerName.trim() || form.type.trim());
-  const ready =
-    hasIdentity &&
-    form.supplier.trim() &&
-    totalStems > 0 &&
-    costPerStemNum > 0;
+  const ready = hasIdentity && totalStems > 0;
 
   async function submit() {
     if (!ready || submitting) return;
@@ -1551,7 +1551,7 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
         list={`sup-list-${orderId}`}
         value={form.supplier}
         onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-        placeholder={t.supplier || 'Supplier'}
+        placeholder={`${t.supplier || 'Supplier'} (${t.optional || 'optional'})`}
         className="field-input w-full text-sm"
       />
       <datalist id={`sup-list-${orderId}`}>
@@ -1607,7 +1607,7 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
           />
         </div>
         <div>
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.costPerStem || 'Cost/stem'}</label>
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.costPerStem || 'Cost/stem'} ({t.optional || 'optional'})</label>
           <input
             type="number"
             step="0.01"
