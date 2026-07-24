@@ -42,6 +42,22 @@ describe('VarietyListItem header', () => {
     expect(screen.getByText(/Sarah Bernhardt/)).toBeInTheDocument();
   });
 
+  it('(#376) renders a "substituted" tag when the Variety was substituted', () => {
+    const substituted = { ...variety, substitutedBy: 'Dahlia Peach' };
+    render(<VarietyListItem variety={substituted} reservations={new Map()} t={{ ...t, substitutedBy: 'замена' }}
+      hideType={true} expanded={false} onToggle={() => {}} />);
+    const tag = screen.getByTestId('variety-substituted');
+    expect(tag).toBeInTheDocument();
+    expect(tag).toHaveTextContent('замена');
+    expect(tag).toHaveTextContent('Dahlia Peach');
+  });
+
+  it('(#376) renders no substituted tag when substitutedBy is null', () => {
+    render(<VarietyListItem variety={{ ...variety, substitutedBy: null }} reservations={new Map()} t={t}
+      hideType={true} expanded={false} onToggle={() => {}} />);
+    expect(screen.queryByTestId('variety-substituted')).not.toBeInTheDocument();
+  });
+
   it('toggles expanded on header click', () => {
     const onToggle = vi.fn();
     render(<VarietyListItem variety={variety} reservations={new Map()} t={t}
