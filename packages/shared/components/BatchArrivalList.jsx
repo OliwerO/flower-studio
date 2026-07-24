@@ -328,6 +328,16 @@ function BatchRow({ b, t, grid, hasActions, onRowClick, onPatchPriceBulk, onAdju
           {b.size_cm != null && <span className="text-xs text-gray-600 tabular-nums shrink-0">{b.size_cm}cm</span>}
           {b.cultivar && <span className="text-xs text-gray-400 italic break-words">{b.cultivar}</span>}
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
+          {/* #376: substituted original — tagged so it reads as covered by a
+              substitute, not as free stock or an open shortfall. */}
+          {b.substitutedBy && (
+            <span
+              data-testid="batch-substituted"
+              className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 whitespace-nowrap"
+            >
+              {t.substitutedBy ?? 'substituted'} · {b.substitutedBy}
+            </span>
+          )}
         </span>
         <span className="relative z-10 text-right flex flex-col items-end leading-tight pointer-events-none">
           {/* b.qty is already net of committed demand (#533 follow-up); reserved
@@ -533,6 +543,9 @@ function flatten(groups, reservations, today) {
           size_cm:   g.size_cm ?? null,
           cultivar:  g.cultivar ?? null,
           variety:   varietyLabel,
+          // #376: carry the substituted-by link onto the flattened row so the
+          // Flat table can tag the original (parity with the By-Variety view).
+          substitutedBy: g.substitutedBy ?? null,
           physical:  0,
           committed: 0,
           demandDate: null,
@@ -605,6 +618,7 @@ function flatten(groups, reservations, today) {
           size_cm:   v.g.size_cm ?? null,
           cultivar:  v.g.cultivar ?? null,
           variety:   [v.g.colour, v.g.size_cm, v.g.cultivar].filter(vv => vv != null).join(' '),
+          substitutedBy: v.g.substitutedBy ?? null,
           physical:  0,
           committed: remaining,
           demandDate: v.demandDate,
@@ -638,6 +652,7 @@ function flatten(groups, reservations, today) {
       size_cm:   m.size_cm,
       cultivar:  m.cultivar,
       variety:   m.variety,
+      substitutedBy: m.substitutedBy ?? null, // #376
       // `qty` is the number every consumer (column, sort, filter, footer)
       // operates on — NET available, physical minus committed. Physical stays
       // available as `physical` for anything that needs shelf count.

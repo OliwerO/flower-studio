@@ -143,7 +143,19 @@ export default function VarietyListItem({
           className="flex-1 min-w-0 px-3 py-2 transition-colors active:bg-gray-50 cursor-pointer"
         >
           {/* Identity row — shared hierarchy via VarietyIdentity (#311). */}
-          <VarietyIdentity variety={variety} showType={!hideType} />
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <VarietyIdentity variety={variety} showType={!hideType} />
+            {/* #376: a substituted original is tagged so it reads as "covered by
+                a substitute", not as free stock or an open shortfall. */}
+            {variety.substitutedBy && (
+              <span
+                data-testid="variety-substituted"
+                className="inline-flex items-center rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-800 whitespace-nowrap"
+              >
+                {t.substitutedBy ?? 'substituted'} · {variety.substitutedBy}
+              </span>
+            )}
+          </div>
 
           {/* Narrative bucket line. Fixed-width grid (D3) so On-hand /
               Planned / In-premade line up vertically down the list. Each bucket

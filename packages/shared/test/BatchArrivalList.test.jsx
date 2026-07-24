@@ -43,6 +43,31 @@ function twoTypes() {
   ];
 }
 
+// A Not-Found original: a pure Demand Entry (negative qty, no batches) that was
+// substituted. Its group carries substitutedBy = the substitute display name.
+function substitutedGroup() {
+  return [{
+    key: 'Dahlia|Pink||', type_name: 'Dahlia', colour: 'Pink', size_cm: null, cultivar: null,
+    substitutedBy: 'Dahlia Peach',
+    rows: [{ id: 'd1', current_quantity: -10, current_sell_price: 20, current_cost_price: 8, date: '2026-08-01' }],
+  }];
+}
+
+describe('BatchArrivalList — substituted tag (#376)', () => {
+  it('tags a substituted original with the substitute display name', () => {
+    render(<BatchArrivalList groups={substitutedGroup()} t={{ ...t, substitutedBy: 'замена' }} />);
+    const tag = screen.getByTestId('batch-substituted');
+    expect(tag).toBeInTheDocument();
+    expect(tag).toHaveTextContent('замена');
+    expect(tag).toHaveTextContent('Dahlia Peach');
+  });
+
+  it('renders no substituted tag for a normal Variety', () => {
+    render(<BatchArrivalList groups={makeSingleGroup()} t={t} />);
+    expect(screen.queryByTestId('batch-substituted')).not.toBeInTheDocument();
+  });
+});
+
 describe('BatchArrivalList — merged-row drill-down (B3)', () => {
   it('renders a chevron only when the merged row covers >1 underlying stock', () => {
     render(<BatchArrivalList groups={[...makeMergedGroup(), ...makeSingleGroup()]} t={t} />);

@@ -1261,6 +1261,30 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
 
   if (groupMap.size === 0) return [];
 
+  // #376 — map each substituted original's stock id → the substitute's display
+  // name. A substitute Stock Item carries `substituteFor: [originalId, ...]`
+  // (set at PO evaluation by findOrCreateSubstituteStock). Surfacing the link
+  // on the ORIGINAL's group lets both stock views tag it "substituted (by X)"
+  // so it stops reading as available inventory / an open shortfall. Fetched
+  // over ALL non-deleted rows carrying a link — NOT just the grouped
+  // (type_name IS NOT NULL) set — so an UNclassified substitute (the legacy
+  // prod case, attr-less card) still tags its original. Keys are stringified so
+  // a uuid link matches row.id and a legacy recXXX link matches row.airtableId.
+  const substituteLinkRows = await db
+    .select({ displayName: stock.displayName, substituteFor: stock.substituteFor })
+    .from(stock)
+    .where(and(
+      isNull(stock.deletedAt),
+      sql`${stock.substituteFor} IS NOT NULL AND array_length(${stock.substituteFor}, 1) > 0`,
+    ));
+  const substituteByOriginalId = new Map();
+  for (const row of substituteLinkRows) {
+    const links = Array.isArray(row.substituteFor) ? row.substituteFor : [];
+    for (const origId of links) {
+      if (origId != null) substituteByOriginalId.set(String(origId), row.displayName);
+    }
+  }
+
   // Fetch premade reservations for all stock IDs in one query.
   const allStockIds = [...groupMap.values()].flatMap(g => g._pgIds);
   const reservations = await getPremadeReservations(allStockIds);
@@ -1299,6 +1323,15 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
     const hasActiveConsumer = g._pgIds.some(id => activeConsumerIds.has(String(id)));
     if (!includeEmpty && totalQty === 0 && reservedForPremades === 0 && !hasActiveConsumer) continue;
 
+    // #376 — if any row in this group is a substituted original, expose the
+    // substitute's display name so the frontend can tag it.
+    let substitutedBy = null;
+    for (const r of g._rows) {
+      const hit = substituteByOriginalId.get(String(r.id))
+        ?? (r.airtableId ? substituteByOriginalId.get(String(r.airtableId)) : undefined);
+      if (hit) { substitutedBy = hit; break; }
+    }
+
     result.push({
       key:                g.key,
       type_name:          g.type_name,
@@ -1315,6 +1348,8 @@ export async function listGroupedByVariety({ includeEmpty = false } = {}) {
         date:             r.date ?? null,
       })),
       reservedForPremades,
+      // #376: display name of the substitute bought for this original, or null.
+      substitutedBy,
       // #533: expose the same active-consumer signal used above to decide
       // backend visibility, so a net-zero group that's still backed by a live
       // (non-deleted) order line stays visible in frontend hideZero filters too.
