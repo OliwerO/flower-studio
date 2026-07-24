@@ -24,6 +24,26 @@ No schema change.
 **Backend:** `PATCH /orders/:id` now accepts `Customer` (`ORDERS_PATCH_ALLOWED` in `routes/orders.js`) — previously stripped by the route even though `orderRepo.updateOrder`'s own allow-list already supported it. Gated 403 for non-owner roles; 400 if the target customer id doesn't resolve via `customerRepo.getById` (orders.customer_id has no DB-level FK constraint, so an unvalidated id would otherwise silently orphan the order). No schema change.
 
 **Verification:** backend Vitest full suite green (1001/1001, 111 files) — 3 new cases in `orderRepo.integration.test.js` (persistence, no side effects on lines/stock/delivery, audit trail) + 6 new cases in `orders.customerReassign.route.test.js` (owner-only gate, existence check, shape normalization, happy path). Both apps build clean.
+## 2026-07-24 — feat(delivery): notify driver via Telegram when delivery time changes (#545)
+
+When an Owner or Florist changes a delivery's date/time — either by editing **Required By** or **Delivery Time** on the Order (which cascades to the linked delivery), or by editing **Delivery Date**/**Delivery Time** directly on the Delivery — the assigned Driver now gets a Telegram ping with the order reference, address, and OLD time → NEW time, in their registered language (ru/en/pl). Same bot, same registration flow as the existing driver-assignment notification (PR #369/ADR-0009) — no new env var, no new table.
+
+### Backend
+- `backend/src/constants/statuses.js` — new `DELIVERY_TERMINAL_STATUSES` export (`[Delivered, Cancelled]`) — Pending and Out for Delivery both still count as "in play" for a schedule correction.
+- `backend/src/services/driverNotifyService.js` — new `notifyDeliveryTimeChanged({ before, after, actorName })`. All guards live in this one function (not duplicated at the two call sites): no assigned driver, self-edit, terminal delivery status, no-op save (old date+time === new date+time), and unregistered driver all skip silently; never throws into the caller.
+- `backend/src/routes/orders.js` — PATCH `/:id` (no-status-change branch) snapshots the linked delivery before `orderRepo.updateOrder`'s Required-By/Delivery-Time cascade, then diffs against the post-cascade `_delivery` embed and fires `notifyDeliveryTimeChanged` (fire-and-forget, after the transaction commits).
+- `backend/src/routes/deliveries.js` — PATCH `/:id` fires `notifyDeliveryTimeChanged` when the request touches `Delivery Date`/`Delivery Time`, reusing the `before` snapshot already fetched for the assignment-notify diff.
+- No frontend changes — both apps already PATCH through these two routes (florist `OrderCard.patch`/`OrderDetailPage.patch` → order-side; `OrderCardExpanded.onPatchDelivery` / dashboard `OrderDetailPanel.patchDelivery` → delivery-side).
+
+### Tests
+- `backend/src/__tests__/driverNotifyService.test.js` — 13 new unit tests for `notifyDeliveryTimeChanged` (language coverage, no-op, unassigned, unregistered, both terminal statuses, Out-for-Delivery still fires, self-edit suppression, missing-`before` fallback, null-`after` no-throw, send-failure no-throw, HTML-escaping).
+- `backend/src/__tests__/orders.time-change-notify.integration.test.js` (NEW) + `backend/src/__tests__/deliveries.time-change-notify.integration.test.js` (NEW) — both mock only the outbound Telegram transport (`services/telegram.js`), letting the real route, `orderRepo` cascade, `driverNotifyService` guards, and `driverTelegramRepo` registration lookup run against the pglite harness — the strongest proof the no-op/terminal/unregistered guards hold end-to-end, not just at the unit layer.
+
+### No schema migration
+Pure code + a new JS constant. No env vars, no tables — reuses `driver_telegram_chats` (migration 0015) and the existing alerts bot token.
+
+### Verification
+Backend Vitest full suite (`--no-file-parallelism`) 112 files / 1021 tests green; `npm run harness` + `npm run test:e2e` 253/253 green; `npm run lab:test:unit` 77/77 and `npm run lab:test:api` 18/18 green.
 
 ---
 ## 2026-07-24 — feat(crm): Instagram + Telegram fields on Key Person records (#553)
