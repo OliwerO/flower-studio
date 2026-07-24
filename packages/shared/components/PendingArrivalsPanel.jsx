@@ -178,7 +178,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                             <span className="flex items-baseline gap-1.5 min-w-0 truncate">
                               {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
                               {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
-                              {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
+                              {f.cultivar && <span className="text-xs text-gray-600 truncate">{f.cultivar}</span>}
                               {!f.colour && f.size == null && !f.cultivar && <span className="text-gray-400">—</span>}
                             </span>
                           ) : (
@@ -261,7 +261,7 @@ export default function PendingArrivalsPanel({ pendingPO = {}, stock = [], t = {
                               <span className="font-semibold text-gray-900 shrink-0">{f.type}</span>
                               {f.colour && <span className="font-semibold text-gray-900">{f.colour}</span>}
                               {f.size != null && <span className="text-xs text-gray-600 tabular-nums">{f.size}cm</span>}
-                              {f.cultivar && <span className="text-xs text-gray-400 italic truncate">{f.cultivar}</span>}
+                              {f.cultivar && <span className="text-xs text-gray-600 truncate">{f.cultivar}</span>}
                             </>
                           ) : (
                             <span className="font-medium text-gray-700 truncate">{f.fallbackName}</span>

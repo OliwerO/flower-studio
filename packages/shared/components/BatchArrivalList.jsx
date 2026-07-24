@@ -326,7 +326,8 @@ function BatchRow({ b, t, grid, hasActions, onRowClick, onPatchPriceBulk, onAdju
         <span className="relative z-10 flex flex-wrap items-baseline gap-x-1.5 gap-y-0 min-w-0 pointer-events-none">
           {b.colour && <span className="font-semibold text-gray-900">{b.colour}</span>}
           {b.size_cm != null && <span className="text-xs text-gray-600 tabular-nums shrink-0">{b.size_cm}cm</span>}
-          {b.cultivar && <span className="text-xs text-gray-400 italic break-words">{b.cultivar}</span>}
+          {/* #536 — cultivar in the same font/style as Size (height) so it's legible. */}
+          {b.cultivar && <span className="text-xs text-gray-600 break-words">{b.cultivar}</span>}
           {!b.colour && !b.size_cm && !b.cultivar && <span className="text-gray-400">—</span>}
           {/* #376: substituted original — tagged so it reads as covered by a
               substitute, not as free stock or an open shortfall. */}

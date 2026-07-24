@@ -58,7 +58,10 @@ export default function VarietyIdentity({
         </span>
       )}
       {hasCultivar && (
-        <span className="text-xs font-normal italic text-gray-400 truncate">
+        // #536 — cultivar renders in the SAME font/size/weight as Size (height)
+        // so an entered cultivar is clearly legible (was italic gray-400 tertiary,
+        // which the owner read as "not shown"). Still only rendered when present.
+        <span className="text-xs font-normal text-gray-600 truncate">
           {variety.cultivar}
         </span>
       )}

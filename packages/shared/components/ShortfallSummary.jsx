@@ -165,7 +165,7 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                         <span className="flex items-baseline gap-1.5 min-w-0 truncate">
                           {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
                           {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
-                          {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
+                          {r.cultivar && <span className="text-xs text-gray-600 truncate">{r.cultivar}</span>}
                           {!r.colour && r.size_cm == null && !r.cultivar && <span className="text-gray-400">—</span>}
                         </span>
                         {/* col 3: amount (right-aligned) — stems still needed for the date */}
@@ -238,7 +238,7 @@ function DateRow({ date, rows, t, isOpen, toggle, getTrace, onVarietyClick, spli
                       {r.type_name && <span className="font-semibold text-gray-900 shrink-0">{r.type_name}</span>}
                       {r.colour && <span className="font-semibold text-gray-900">{r.colour}</span>}
                       {r.size_cm != null && <span className="text-xs text-gray-600 tabular-nums">{r.size_cm}cm</span>}
-                      {r.cultivar && <span className="text-xs text-gray-400 italic truncate">{r.cultivar}</span>}
+                      {r.cultivar && <span className="text-xs text-gray-600 truncate">{r.cultivar}</span>}
                       {!r.type_name && !r.colour && r.size_cm == null && !r.cultivar && (
                         <span className="font-medium text-gray-400 italic">—</span>
                       )}
