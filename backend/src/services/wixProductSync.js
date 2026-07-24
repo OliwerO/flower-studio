@@ -125,30 +125,55 @@ export async function fetchAllWixProducts() {
 }
 
 /**
- * Update a Wix product variant's price.
- * Uses the batch variants endpoint — variant ID goes in the body, not the URL.
+ * Update price for ALL changed variants of a Wix product in a single PATCH.
+ *
+ * Why batched: `PATCH stores/v1/products/{id}/variants` replaces the full
+ * variant collection named in the body — it is not a per-variant merge on
+ * Wix's side. Firing one PATCH per variant (the pre-#428 approach) let
+ * concurrent PQueue workers race on the SAME product: two in-flight calls
+ * for two different variants of one product each returned 200 OK, but Wix
+ * kept only the later write — the earlier variant's new price silently
+ * never landed, while `stats.pricesSynced` and the UI both reported clean
+ * success. `updateWixInventory` and `updateWixVariantVisibility` hit this
+ * exact endpoint shape and already solved it by batching every one of a
+ * product's variants into one call; this mirrors that fix for price.
+ *
+ * No-op (no fetch) when there is nothing to update — mirrors
+ * `updateWixVariantVisibility`'s empty-array guard.
+ *
+ * @param productId Wix product ID
+ * @param variantPrices Array of { variantId, price } — one per CHANGED variant
  */
-async function updateWixVariantPrice(productId, variantId, price) {
-  const res = await fetch(
-    `${WIX_API_URL}/stores/v1/products/${productId}/variants`,
-    {
-      method: 'PATCH',
-      headers: wixHeaders(),
-      body: JSON.stringify({
-        variants: [{
-          id: variantId,
-          variant: {
-            priceData: { price },
-          },
-        }],
-      }),
-    }
-  );
+async function updateWixVariantPrices(productId, variantPrices) {
+  if (variantPrices.length === 0) return;
 
-  if (!res.ok) {
+  const body = {
+    variants: variantPrices.map(v => ({
+      id: v.variantId,
+      variant: {
+        priceData: { price: v.price },
+      },
+    })),
+  };
+
+  // Retry transient 5xx like updateWixInventory / updateWixVariantVisibility —
+  // Wix's catalog write API has been observed returning transient errors
+  // (gRPC "deadline exceeded" on updateProduct, seen in sync_log the day
+  // before #428 was filed).
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const res = await fetch(
+      `${WIX_API_URL}/stores/v1/products/${productId}/variants`,
+      { method: 'PATCH', headers: wixHeaders(), body: JSON.stringify(body) }
+    );
+    if (res.ok) return;
     const text = await res.text();
     if (isProductNotFound(res.status, text)) throw new WixProductNotFoundError(productId);
-    throw new Error(`Wix price update failed for ${productId}/${variantId}: ${text}`);
+    if (res.status >= 500 && attempt < MAX_ATTEMPTS) {
+      await new Promise(r => setTimeout(r, 1000 * attempt));
+      continue;
+    }
+    throw new Error(`Wix price update failed for ${productId}: ${text}`);
   }
 }
 
@@ -158,7 +183,7 @@ async function updateWixVariantPrice(productId, variantId, price) {
  * Wix represents products in two shapes:
  *   1. Products WITH managed variants (e.g. Small / Medium / Large) — each
  *      variant has a real UUID and its own `priceData`. Use the batch
- *      variants endpoint via `updateWixVariantPrice` above.
+ *      variants endpoint via `updateWixVariantPrices` above.
  *   2. Products WITHOUT managed variants (simple single-SKU products) —
  *      Wix exposes a synthetic "default variant" with ID
  *      00000000-0000-0000-0000-000000000000 on READ, but the price lives
@@ -955,7 +980,8 @@ export async function runPull() {
  *
  * Phases (each runs sequentially relative to the next, but Wix API calls
  * inside a phase fan out with PUSH_CONCURRENCY workers):
- *   1. Prices              — variant or product-level price PATCH per row
+ *   1. Prices              — one batched PATCH per product (or product-level
+ *                            PATCH for simple/unmanaged products)
  *   2. Inventory           — one batched PATCH per product
  *   3. Categories          — permanent / seasonal / Available Today
  *   4. Descriptions + i18n — EN content + PL/RU/UK translation content
@@ -1002,10 +1028,15 @@ export async function runPush(onProgress = NO_PROGRESS) {
       }
     }
 
-    // Zero-UUID (module const) = Wix's default-variant placeholder for
-    // products without managed variants. Those need the product-level price
-    // endpoint, not the variant batch endpoint (see `updateWixProductPrice`).
-    const priceJobs = [];
+    // Grouped BY PRODUCT — same pattern as the Availability and Visibility
+    // phases further down this function (see updateWixVariantPrices'
+    // docblock for why: concurrent per-variant PATCHes against the same
+    // product raced and silently dropped sibling variants' price changes,
+    // #428). Zero-UUID (module const) is Wix's default-variant placeholder
+    // for products without managed variants — those go through the
+    // product-level price endpoint (see `updateWixProductPrice`), never the
+    // variant batch endpoint.
+    const priceJobsByProduct = new Map();
     for (const row of configRows) {
       const pid = row['Wix Product ID'];
       const vid = row['Wix Variant ID'];
@@ -1014,26 +1045,31 @@ export async function runPush(onProgress = NO_PROGRESS) {
       const airtablePrice = Number(row['Price'] || 0);
       const wixPrice = wixPriceMap.get(key);
       if (wixPrice === undefined || Math.abs(airtablePrice - wixPrice) <= 0.01) continue;
-      priceJobs.push({ pid, vid, key, airtablePrice, wixPrice, variantName: row['Variant Name'] });
+      if (!priceJobsByProduct.has(pid)) priceJobsByProduct.set(pid, []);
+      priceJobsByProduct.get(pid).push({ pid, vid, key, airtablePrice, wixPrice, variantName: row['Variant Name'] });
     }
-    log('summary', `Цены к обновлению: ${priceJobs.length}`);
+    const totalPriceJobs = [...priceJobsByProduct.values()].reduce((n, jobs) => n + jobs.length, 0);
+    log('summary', `Цены к обновлению: ${totalPriceJobs}`);
 
-    if (priceJobs.length > 0) {
+    if (priceJobsByProduct.size > 0) {
       const queue = new PQueue({ concurrency: PUSH_CONCURRENCY });
-      await Promise.all(priceJobs.map(job => queue.add(async () => {
-        const productName = wixProductNameById.get(job.pid) || job.pid;
-        const variantSuffix = job.variantName && job.vid !== ZERO_UUID ? ` / ${job.variantName}` : '';
+      await Promise.all([...priceJobsByProduct.entries()].map(([pid, jobs]) => queue.add(async () => {
+        const productName = wixProductNameById.get(pid) || pid;
         try {
-          if (job.vid === ZERO_UUID) {
-            await updateWixProductPrice(job.pid, job.airtablePrice);
-          } else {
-            await updateWixVariantPrice(job.pid, job.vid, job.airtablePrice);
+          const zeroJob = jobs.find(j => j.vid === ZERO_UUID);
+          const variantJobs = jobs.filter(j => j.vid !== ZERO_UUID);
+          if (zeroJob) await updateWixProductPrice(pid, zeroJob.airtablePrice);
+          if (variantJobs.length > 0) {
+            await updateWixVariantPrices(pid, variantJobs.map(j => ({ variantId: j.vid, price: j.airtablePrice })));
           }
-          stats.pricesSynced++;
-          log('item', `Цена · ${productName}${variantSuffix}: ${job.wixPrice}zł → ${job.airtablePrice}zł`);
+          stats.pricesSynced += jobs.length;
+          for (const job of jobs) {
+            const variantSuffix = job.variantName && job.vid !== ZERO_UUID ? ` / ${job.variantName}` : '';
+            log('item', `Цена · ${productName}${variantSuffix}: ${job.wixPrice}zł → ${job.airtablePrice}zł`);
+          }
         } catch (err) {
-          stats.errors.push(`Price ${job.key}: ${err.message}`);
-          log('item', `Ошибка цены · ${productName}${variantSuffix}: ${err.message}`, 'error');
+          for (const job of jobs) stats.errors.push(`Price ${job.key}: ${err.message}`);
+          log('item', `Ошибка цены · ${productName}: ${err.message}`, 'error');
         }
       })));
     }
