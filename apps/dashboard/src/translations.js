@@ -246,6 +246,8 @@ const en = {
   keyPersonNamePlaceholder: 'Name + contact',
   keyPersonPhone:           'Phone',
   keyPersonAddress:         'Address',
+  keyPersonInstagram:       'Instagram', // #553 — brand name stays latin
+  keyPersonTelegram:        'Telegram',  // #553 — brand name stays latin
   daysShort:                'd',
   monthsShort:              'mo',
   yearsShort:               'y',
@@ -1454,6 +1456,8 @@ const ru = {
   keyPersonNamePlaceholder: 'Имя + контакты',
   keyPersonPhone:           'Телефон',
   keyPersonAddress:         'Адрес',
+  keyPersonInstagram:       'Instagram', // #553 — brand name stays latin
+  keyPersonTelegram:        'Telegram',  // #553 — brand name stays latin
   daysShort:                'д',
   monthsShort:              'мес',
   yearsShort:               'г',

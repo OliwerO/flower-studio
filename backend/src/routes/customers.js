@@ -238,8 +238,8 @@ router.get('/:id/key-people', async (req, res, next) => {
 // POST /api/customers/:id/key-people — create a new key person for a customer
 router.post('/:id/key-people', async (req, res, next) => {
   try {
-    const { name, contactDetails, phone, address, importantDate, importantDateLabel } = req.body;
-    const person = await customerRepo.createKeyPerson(req.params.id, { name, contactDetails, phone, address, importantDate, importantDateLabel });
+    const { name, contactDetails, phone, address, instagram, telegram, importantDate, importantDateLabel } = req.body;
+    const person = await customerRepo.createKeyPerson(req.params.id, { name, contactDetails, phone, address, instagram, telegram, importantDate, importantDateLabel });
     res.status(201).json(person);
   } catch (err) {
     if (err.statusCode === 400) return res.status(400).json({ error: err.message });
@@ -250,8 +250,8 @@ router.post('/:id/key-people', async (req, res, next) => {
 // PATCH /api/customers/:id/key-people/:personId — partial update of a key person
 router.patch('/:id/key-people/:personId', async (req, res, next) => {
   try {
-    const { name, contactDetails, phone, address, importantDate, importantDateLabel } = req.body;
-    const person = await customerRepo.updateKeyPerson(req.params.personId, { name, contactDetails, phone, address, importantDate, importantDateLabel });
+    const { name, contactDetails, phone, address, instagram, telegram, importantDate, importantDateLabel } = req.body;
+    const person = await customerRepo.updateKeyPerson(req.params.personId, { name, contactDetails, phone, address, instagram, telegram, importantDate, importantDateLabel });
     res.json(person);
   } catch (err) {
     if (err.statusCode === 400 || err.statusCode === 404) return res.status(err.statusCode).json({ error: err.message });

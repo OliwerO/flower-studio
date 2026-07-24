@@ -19,6 +19,28 @@ No schema change.
 **Verification:** backend Vitest full suite (994 tests, 111 files) + new regression test `backend/src/__tests__/orders.pickupConversion.integration.test.js` (route-level, real pglite DB) green; API E2E 253/253; lab-unit 77/77; lab-api 18/18; `apps/florist` + `apps/dashboard` Vite builds green.
 
 ---
+## 2026-07-24 — feat(crm): Instagram + Telegram fields on Key Person records (#553)
+
+Owner request: when adding a recipient as a key person on a new Order, she wants dedicated inputs for their Instagram link and Telegram nickname, stored once and retrievable from the key person's profile — same shape as the phone/address address-book fields (CR-30, migration 0018). Both fields are optional and never block Order or Customer creation.
+
+**Schema:** `key_people` gains nullable `instagram` + `telegram` text columns, migration `0023_key_people_instagram_telegram.sql`. Additive → safe on prod, no backfill required.
+
+**Backend:** `customerRepo.createKeyPerson` / `listKeyPeople` / `updateKeyPerson` read + write both fields (empty string → null, same normalization as phone/address); `POST /api/customers/:id/key-people` and `PATCH /api/customers/:id/key-people/:personId` accept them.
+
+**Frontend (both apps, parity-locked):**
+- `Step1Customer.jsx` (dashboard + florist New Order wizard, Step 1) — the "add new recipient" form (shown while typing a brand-new key-person name with no autocomplete match) gains Instagram + Telegram inputs alongside phone/address; `POST`s them when set, and pre-fills them when picking an existing saved recipient from the autocomplete list.
+- `CustomerDetailView.jsx` / `KeyPersonChips.jsx` (dashboard + florist CRM) — Instagram + Telegram shown and inline-editable per key person (persist on blur via the existing key-person PATCH route, no new endpoint). Instagram renders as a clickable new-tab link when the stored value looks like a URL (`https?://…`); otherwise (e.g. a bare `@handle`) as plain text — no strict validation, the owner's paste is stored as-is. Telegram always renders as plain nickname text. Florist's `!canEdit` (non-owner) view-only branch mirrors the same display rules.
+- New translation keys `keyPersonInstagram` / `keyPersonTelegram` (ru + en, both apps) — brand names kept latin, matching the existing `sourceInstagram`/`sourceTelegram`/`instagram` convention.
+- `Step3Details.jsx` deliberately **not** touched — Instagram/Telegram are key-person profile fields, not delivery-fulfilment fields (unlike phone/address, which the courier needs), so there's nothing for the Step3 delivery pre-fill effect to consume. Also avoids any diff overlap with the concurrent recipient-auto-save work landing on that file.
+
+**Lab harness check:** grepped `lab/` for `key_people`/`keyPeople` — no factory exists (only prose in `lab/WORKFLOW.md`); `lab/factories/customer.js` doesn't reference key people either. Both new columns are nullable `ADD COLUMN`, so no factory update is required.
+
+**Tests / verification:**
+- `customerRepo.keyPeople.integration.test.js` (pglite, applies migration 0023) — extended with instagram/telegram create + list round-trip, back-compat null default, empty-string→null normalization, independence from phone/address, and full `updateKeyPerson` coverage (full update, partial update, explicit clear-to-null).
+- Backend `vitest run --no-file-parallelism`: **110 files / 999 tests passed**.
+- `npm run lab:test:unit`: **9 files / 77 tests passed**.
+- API E2E suite (`npm run harness` + `npm run test:e2e`, run on an isolated port to avoid colliding with a concurrent worktree session already holding the default harness port): **253/253 passed**.
+- Dashboard + florist `vite build`: both green.
 
 ## 2026-07-23 — fix(stock): settled Demand Entries kept visible; editing a delivered order no longer crashes (#556, ADR-0013)
 

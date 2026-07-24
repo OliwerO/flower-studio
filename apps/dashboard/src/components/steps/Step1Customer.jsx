@@ -25,6 +25,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
   const [kpName, setKpName]       = useState('');
   const [kpPhone, setKpPhone]     = useState('');
   const [kpAddress, setKpAddress] = useState('');
+  const [kpInstagram, setKpInstagram] = useState(''); // #553
+  const [kpTelegram, setKpTelegram]   = useState(''); // #553
   const [kpCreating, setKpCreating] = useState(false);
   const kpDebounceRef               = useRef(null);
 
@@ -61,6 +63,8 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
     setKpName('');
     setKpPhone('');
     setKpAddress('');
+    setKpInstagram('');
+    setKpTelegram('');
     setQuery('');
     setResults([]);
     setShowCreate(false);
@@ -85,8 +89,10 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
       setKpCreating(true);
       try {
         const reqBody = { name: kpName.trim() };
-        if (kpPhone.trim())   reqBody.phone   = kpPhone.trim();
-        if (kpAddress.trim()) reqBody.address = kpAddress.trim();
+        if (kpPhone.trim())     reqBody.phone     = kpPhone.trim();
+        if (kpAddress.trim())   reqBody.address   = kpAddress.trim();
+        if (kpInstagram.trim()) reqBody.instagram = kpInstagram.trim();
+        if (kpTelegram.trim())  reqBody.telegram  = kpTelegram.trim();
         const res = await client.post(`/customers/${chosenCustomer.id}/key-people`, reqBody);
         resolvedKpId    = res.data.id;
         resolvedPhone   = res.data.phone   || '';
@@ -368,7 +374,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                 value={kpName}
                 onChange={e => {
                   setKpName(e.target.value);
-                  if (kpId) { setKpPhone(''); setKpAddress(''); }
+                  if (kpId) { setKpPhone(''); setKpAddress(''); setKpInstagram(''); setKpTelegram(''); }
                   setKpId(null);
                   setKpQuery(e.target.value);
                 }}
@@ -378,7 +384,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
               />
               {kpName && (
                 <button
-                  onClick={() => { setKpName(''); setKpId(null); setKpQuery(''); setKpPhone(''); setKpAddress(''); }}
+                  onClick={() => { setKpName(''); setKpId(null); setKpQuery(''); setKpPhone(''); setKpAddress(''); setKpInstagram(''); setKpTelegram(''); }}
                   className="text-ios-tertiary text-sm"
                 >&#10005;</button>
               )}
@@ -388,7 +394,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                 {kpFiltered.map(p => (
                   <button
                     key={p.id}
-                    onClick={() => { setKpId(p.id); setKpName(p.name); setKpQuery(''); setKpPhone(p.phone || ''); setKpAddress(p.address || ''); }}
+                    onClick={() => { setKpId(p.id); setKpName(p.name); setKpQuery(''); setKpPhone(p.phone || ''); setKpAddress(p.address || ''); setKpInstagram(p.instagram || ''); setKpTelegram(p.telegram || ''); }}
                     className={`w-full text-left px-4 py-3 flex items-center gap-2 active:bg-ios-fill ${kpId === p.id ? 'bg-brand-50' : ''}`}
                   >
                     <div className="flex-1 min-w-0">
@@ -432,6 +438,26 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                   value={kpAddress}
                   onChange={e => setKpAddress(e.target.value)}
                   placeholder="ul. Kwiatowa 1, Krakow"
+                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
+                />
+              </div>
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.keyPersonInstagram}</span>
+                <input
+                  type="text"
+                  value={kpInstagram}
+                  onChange={e => setKpInstagram(e.target.value)}
+                  placeholder="@handle"
+                  className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
+                />
+              </div>
+              <div className="flex items-center px-4 py-3 gap-3">
+                <span className="text-sm text-ios-tertiary w-24 shrink-0">{t.keyPersonTelegram}</span>
+                <input
+                  type="text"
+                  value={kpTelegram}
+                  onChange={e => setKpTelegram(e.target.value)}
+                  placeholder="@handle"
                   className="flex-1 text-base bg-transparent outline-none text-ios-label placeholder-ios-tertiary/50"
                 />
               </div>

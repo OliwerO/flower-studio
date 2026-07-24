@@ -22,6 +22,13 @@ const SLOTS = [
   { nameField: 'Key person 2', dateField: 'Key person 2 (important DATE)' },
 ];
 
+// #553 — Instagram is stored as whatever was pasted (full URL or bare
+// @handle), no strict validation. Only render it as a clickable link when it
+// already looks like a URL; otherwise show it as plain text. Mirrors the
+// dashboard KeyPersonChips.jsx helper.
+const URL_RE = /^https?:\/\//i;
+const looksLikeUrl = v => URL_RE.test(v || '');
+
 export default function KeyPersonChips({ cust, onPatch, onPatchPerson, canEdit = false }) {
   // Index of the slot currently being filled via the "+ Add" button.
   const [addingSlot, setAddingSlot] = useState(null);
@@ -117,6 +124,29 @@ function KeyPersonSlot({ slot, cust, onPatch, person, onPatchPerson, canEdit, au
             <p className="text-xs text-ios-label">{person.address}</p>
           </div>
         )}
+        {person?.instagram && (
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonInstagram}</p>
+            {looksLikeUrl(person.instagram) ? (
+              <a
+                href={person.instagram}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs text-ios-blue break-all active:underline"
+              >
+                {person.instagram}
+              </a>
+            ) : (
+              <p className="text-xs text-ios-label break-all">{person.instagram}</p>
+            )}
+          </div>
+        )}
+        {person?.telegram && (
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonTelegram}</p>
+            <p className="text-xs text-ios-label break-all">{person.telegram}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -179,6 +209,40 @@ function KeyPersonSlot({ slot, cust, onPatch, person, onPatchPerson, canEdit, au
               type="text"
               defaultValue={person.address || ''}
               onBlur={e => onPatchPerson(person.id, { address: e.target.value || null })}
+              className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+                focus:border-brand-500 focus:outline-none py-0.5"
+            />
+          </div>
+          <div className="mt-1">
+            <div className="flex items-center justify-between">
+              <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonInstagram}</p>
+              {looksLikeUrl(person.instagram) && (
+                <a
+                  href={person.instagram}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-[10px] text-brand-600 active:underline"
+                >
+                  &#8599;
+                </a>
+              )}
+            </div>
+            <input
+              type="text"
+              defaultValue={person.instagram || ''}
+              onBlur={e => onPatchPerson(person.id, { instagram: e.target.value || null })}
+              placeholder="@handle"
+              className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
+                focus:border-brand-500 focus:outline-none py-0.5"
+            />
+          </div>
+          <div className="mt-1">
+            <p className="text-[10px] text-ios-tertiary mb-0.5">{t.keyPersonTelegram}</p>
+            <input
+              type="text"
+              defaultValue={person.telegram || ''}
+              onBlur={e => onPatchPerson(person.id, { telegram: e.target.value || null })}
+              placeholder="@handle"
               className="w-full text-sm text-ios-label bg-transparent border-b border-dashed border-gray-300
                 focus:border-brand-500 focus:outline-none py-0.5"
             />
