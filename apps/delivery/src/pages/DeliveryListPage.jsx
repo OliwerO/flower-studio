@@ -17,6 +17,11 @@ import MapView from '../components/MapView.jsx';
 import HelpPanel from '../components/HelpPanel.jsx';
 import { useNotifications } from '../hooks/useNotifications.js';
 import { FeedbackModal } from '@flower-studio/shared';
+// Status constants — single source of truth in backend/src/constants/statuses.js.
+// packages/shared doesn't re-export these (only duplicates a couple of status
+// arrays for other purposes), and editing packages/shared is out of scope for
+// this fix, so this imports the backend file directly via relative path.
+import { DELIVERY_STATUS, DELIVERY_RESULT, PO_STATUS } from '../../../../backend/src/constants/statuses.js';
 
 function todayStr() {
   const d = new Date();
@@ -107,8 +112,8 @@ export default function DeliveryListPage() {
   // Check for assigned stock pickups
   useEffect(() => {
     Promise.all([
-      client.get('/stock-orders?status=Sent').catch(() => ({ data: [] })),
-      client.get('/stock-orders?status=Shopping').catch(() => ({ data: [] })),
+      client.get(`/stock-orders?status=${PO_STATUS.SENT}`).catch(() => ({ data: [] })),
+      client.get(`/stock-orders?status=${PO_STATUS.SHOPPING}`).catch(() => ({ data: [] })),
     ]).then(([sent, shopping]) => {
       setPickupCount(sent.data.length + shopping.data.length);
     });
@@ -131,14 +136,14 @@ export default function DeliveryListPage() {
     }
 
     const groups = {
-      'Pending':          [],
-      'Out for Delivery': [],
-      'Delivered':        [],
+      [DELIVERY_STATUS.PENDING]:          [],
+      [DELIVERY_STATUS.OUT_FOR_DELIVERY]: [],
+      [DELIVERY_STATUS.DELIVERED]:        [],
     };
     todayList.forEach(d => {
-      const status = d['Status'] || 'Pending';
+      const status = d['Status'] || DELIVERY_STATUS.PENDING;
       if (groups[status]) groups[status].push(d);
-      else groups['Pending'].push(d);
+      else groups[DELIVERY_STATUS.PENDING].push(d);
     });
     const prioritySort = (a, b) => {
       const aIsMine = a['Assigned Driver'] === driverName ? 0 : 1;
@@ -146,9 +151,9 @@ export default function DeliveryListPage() {
       if (aIsMine !== bIsMine) return aIsMine - bIsMine;
       return (a['Courier Time'] || a['Delivery Time'] || '').localeCompare(b['Courier Time'] || b['Delivery Time'] || '');
     };
-    groups['Pending'].sort(prioritySort);
-    groups['Out for Delivery'].sort(prioritySort);
-    groups['Delivered'].sort(prioritySort);
+    groups[DELIVERY_STATUS.PENDING].sort(prioritySort);
+    groups[DELIVERY_STATUS.OUT_FOR_DELIVERY].sort(prioritySort);
+    groups[DELIVERY_STATUS.DELIVERED].sort(prioritySort);
 
     // Group future deliveries by date so the driver sees Tomorrow / Day after / ...
     const byDate = {};
@@ -172,11 +177,11 @@ export default function DeliveryListPage() {
   // Standard status change — optimistic update, revert on failure
   async function updateStatus(id, newStatus) {
     const patch = { Status: newStatus };
-    if (newStatus === 'Delivered') patch['Delivery Result'] = 'Success';
+    if (newStatus === DELIVERY_STATUS.DELIVERED) patch['Delivery Result'] = DELIVERY_RESULT.SUCCESS;
     // Optimistic: apply immediately
     const prevDeliveries = deliveries;
     setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
-    if (newStatus === 'Delivered') setSelectedId(null);
+    if (newStatus === DELIVERY_STATUS.DELIVERED) setSelectedId(null);
     try {
       const res = await client.patch(`/deliveries/${id}`, patch);
       setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...res.data } : d));
@@ -196,7 +201,7 @@ export default function DeliveryListPage() {
   async function handleDeliveryProblem(result) {
     const id = resultPickerId;
     setResultPickerId(null);
-    const patch = { Status: 'Delivered', 'Delivery Result': result };
+    const patch = { Status: DELIVERY_STATUS.DELIVERED, 'Delivery Result': result };
     // Optimistic
     const prevDeliveries = deliveries;
     setDeliveries(prev => prev.map(d => d.id === id ? { ...d, ...patch } : d));
@@ -222,13 +227,13 @@ export default function DeliveryListPage() {
 
   // Deliveries that need to appear on the map (not yet delivered)
   const activeDeliveries = useMemo(
-    () => deliveries.filter(d => d['Status'] !== 'Delivered'),
+    () => deliveries.filter(d => d['Status'] !== DELIVERY_STATUS.DELIVERED),
     [deliveries]
   );
 
-  const pendingCount = grouped['Pending'].length;
-  const outCount     = grouped['Out for Delivery'].length;
-  const doneCount    = grouped['Delivered'].length;
+  const pendingCount = grouped[DELIVERY_STATUS.PENDING].length;
+  const outCount     = grouped[DELIVERY_STATUS.OUT_FOR_DELIVERY].length;
+  const doneCount    = grouped[DELIVERY_STATUS.DELIVERED].length;
 
   if (showMap) {
     return (
@@ -301,14 +306,14 @@ export default function DeliveryListPage() {
         ) : (
           <>
             {/* Pending */}
-            {grouped['Pending'].length > 0 && (
+            {grouped[DELIVERY_STATUS.PENDING].length > 0 && (
               <section>
                 <p className="ios-label flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-ios-orange" />
                   {t.pending} ({pendingCount})
                 </p>
                 <div className="space-y-2">
-                  {grouped['Pending'].map(d => (
+                  {grouped[DELIVERY_STATUS.PENDING].map(d => (
                     <DeliveryCard
                       key={d.id}
                       delivery={d}
@@ -322,14 +327,14 @@ export default function DeliveryListPage() {
             )}
 
             {/* Out for Delivery */}
-            {grouped['Out for Delivery'].length > 0 && (
+            {grouped[DELIVERY_STATUS.OUT_FOR_DELIVERY].length > 0 && (
               <section>
                 <p className="ios-label flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-ios-blue" />
                   {t.outForDelivery} ({outCount})
                 </p>
                 <div className="space-y-2">
-                  {grouped['Out for Delivery'].map(d => (
+                  {grouped[DELIVERY_STATUS.OUT_FOR_DELIVERY].map(d => (
                     <DeliveryCard
                       key={d.id}
                       delivery={d}
@@ -343,14 +348,14 @@ export default function DeliveryListPage() {
             )}
 
             {/* Delivered */}
-            {grouped['Delivered'].length > 0 && (
+            {grouped[DELIVERY_STATUS.DELIVERED].length > 0 && (
               <section>
                 <p className="ios-label flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-ios-green" />
                   {t.delivered} ({doneCount})
                 </p>
                 <div className="space-y-2">
-                  {grouped['Delivered'].map(d => (
+                  {grouped[DELIVERY_STATUS.DELIVERED].map(d => (
                     <DeliveryCard
                       key={d.id}
                       delivery={d}
