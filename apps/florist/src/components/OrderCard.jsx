@@ -301,7 +301,15 @@ function OrderCard({
       setDetail(res.data);
       showToast(t.bouquetUpdated || 'Bouquet updated');
     } catch (err) {
-      showToast(err.response?.data?.error || t.updateError, 'error');
+      const backendError = err.response?.data?.error;
+      // Backend rejects non-owner bouquet edits outside New/Ready with a raw
+      // English 400 (orderRepo.js editBouquetLines, #339) — surface a clear
+      // RU explanation instead. The gate itself is unchanged.
+      if (err.response?.status === 400 && backendError?.includes('Cannot edit bouquet in')) {
+        showToast(t.bouquetEditLockedOutForDelivery, 'error');
+      } else {
+        showToast(backendError || t.updateError, 'error');
+      }
     } finally {
       setSaving(false);
     }
