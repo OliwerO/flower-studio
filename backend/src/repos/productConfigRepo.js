@@ -8,7 +8,7 @@
 
 import { db } from '../db/index.js';
 import { productConfig } from '../db/schema.js';
-import { eq, and, isNull, inArray, asc, sql } from 'drizzle-orm';
+import { eq, and, isNull, isNotNull, inArray, asc, sql } from 'drizzle-orm';
 
 // ── Wire-format mapper ─────────────────────────────────────────────────────
 
@@ -108,12 +108,23 @@ function toPg(fields) {
 
 /**
  * List all non-deleted product config rows.
- * @param {{ activeOnly?: boolean }} [filter]
+ *
+ * `wixLinkedOnly` excludes rows with no `Wix Product ID` — these are
+ * bouquets that were deactivated (or created) locally but never synced to
+ * Wix (issue #267: 19 such rows found on prod, ALL already `active=false`).
+ * Default is `false` (unfiltered) so existing callers — `wixProductSync.js`'s
+ * `runPull`/`runPush` phases — keep seeing every row, including unsynced
+ * ones, exactly as before. Only the owner-/florist-facing listing route
+ * (`GET /products`, which feeds the dashboard ProductsTab and the florist
+ * BouquetsPage) opts in, since a Wix-less row can never round-trip through
+ * push/pull anyway and only ever showed up there as a phantom "ghost" bouquet.
+ * @param {{ activeOnly?: boolean, wixLinkedOnly?: boolean }} [filter]
  * @returns {Promise<Array>} Wire-format objects ordered by productName, sortOrder.
  */
 export async function list(filter = {}) {
   const conditions = [isNull(productConfig.deletedAt)];
   if (filter.activeOnly) conditions.push(eq(productConfig.active, true));
+  if (filter.wixLinkedOnly) conditions.push(isNotNull(productConfig.wixProductId));
 
   const rows = await db
     .select()
