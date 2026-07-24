@@ -122,6 +122,12 @@ const en = {
   customerRequired: 'Please select or create a customer.',
   budget:           'Budget',
 
+  // Change customer (order reassignment, owner-only, #389)
+  changeCustomer:      'Change customer',
+  changeCustomerTitle: 'Change customer',
+  customerChanged:     'Customer changed',
+  noCustomersFound:    'No customers found',
+
   // Step 2 — Bouquet
   customerRequest:  'Customer request (description)',
   requestPlaceholder: 'E.g. pink roses, something soft and romantic...',
@@ -1055,6 +1061,12 @@ const ru = {
   saveCustomer:     'Сохранить клиента',
   customerRequired: 'Выберите или создайте клиента.',
   budget:           'Бюджет',
+
+  // Change customer (order reassignment, owner-only, #389)
+  changeCustomer:      'Сменить клиента',
+  changeCustomerTitle: 'Смена клиента',
+  customerChanged:     'Клиент изменён',
+  noCustomersFound:    'Клиенты не найдены',
 
   // Step 2 — Bouquet
   customerRequest:  'Запрос клиента (описание)',

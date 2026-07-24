@@ -10,6 +10,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
+import ChangeCustomerModal from '../components/ChangeCustomerModal.jsx';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -162,6 +163,9 @@ export default function OrderDetailPage() {
   // Statuses this order has previously held — powers the florist's "revert"
   // buttons. Fetched from the audit trail (GET /orders/:id/status-history).
   const [prevStatuses, setPrevStatuses] = useState([]);
+  // Owner-only "Change customer" modal (#389) — fixes misattributed orders
+  // after the fact, regardless of order status.
+  const [changingCustomer, setChangingCustomer] = useState(false);
 
   function loadStatusHistory() {
     client.get(`/orders/${id}/status-history`)
@@ -197,6 +201,26 @@ export default function OrderDetailPage() {
       showToast(msg, 'error');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Change customer (#389) — owner-only reassignment, works regardless of
+  // order status. Unlike patch(), we refetch the whole order afterward
+  // instead of merging the PATCH response: 'Customer Name'/'Customer Phone'/
+  // 'Customer Nickname' aren't stored on the order row at all — GET /orders/:id
+  // computes them live from the linked customer record — so a naive merge of
+  // the PATCH response (which only carries the raw Customer id array) would
+  // leave the OLD name/phone/nickname displayed (CLAUDE.md Pitfall #1: stale
+  // state from a partial merge).
+  async function handleChangeCustomer(customer) {
+    try {
+      await client.patch(`/orders/${id}`, { Customer: [customer.id] });
+      const res = await client.get(`/orders/${id}`);
+      setOrder(res.data);
+      setChangingCustomer(false);
+      showToast(t.customerChanged, 'success');
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
@@ -308,7 +332,15 @@ export default function OrderDetailPage() {
           <>
             {/* Customer info — who placed the order */}
             <div>
-              <p className="ios-label">Customer</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="ios-label !mb-0">Customer</p>
+                {isOwner && (
+                  <button
+                    onClick={() => setChangingCustomer(true)}
+                    className="text-xs text-brand-600 font-medium px-1"
+                  >{t.changeCustomer}</button>
+                )}
+              </div>
               <div className="ios-card px-4 py-2">
                 {customerId ? (
                   <button
@@ -989,6 +1021,15 @@ export default function OrderDetailPage() {
                   <OrderTerminationConfirm flow={term} t={t} allowDelete={isOwner} />
                 )}
               </div>
+            )}
+
+            {/* Change customer modal (#389) — owner-only reassignment */}
+            {changingCustomer && (
+              <ChangeCustomerModal
+                currentName={order['Customer Name']}
+                onClose={() => setChangingCustomer(false)}
+                onSelect={handleChangeCustomer}
+              />
             )}
           </>
         )}

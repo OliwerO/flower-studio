@@ -17,6 +17,13 @@ Frontend: `apps/florist/src/components/OrderCard.jsx` and `apps/dashboard/src/co
 No schema change.
 
 **Verification:** backend Vitest full suite (994 tests, 111 files) + new regression test `backend/src/__tests__/orders.pickupConversion.integration.test.js` (route-level, real pglite DB) green; API E2E 253/253; lab-unit 77/77; lab-api 18/18; `apps/florist` + `apps/dashboard` Vite builds green.
+## 2026-07-24 — feat(orders): owner can reassign an order's customer after the fact (#389)
+
+**Behavior:** new "Change customer" control on the order detail surface in both apps — florist `OrderCard.jsx` (expanded view) + `OrderDetailPage.jsx`, dashboard `OrderDetailPanel.jsx`. Owner-only (enforced server-side, not just hidden in the UI). Opens a customer-search modal (new app-local `ChangeCustomerModal.jsx` per app, reusing the new-order Step 1 search endpoint `GET /customers?search=`); on select, PATCHes `{ Customer: [id] }` and refetches the order so the displayed name/phone/nickname — computed live from the linked customer record, never stored on the order row — update correctly. Works regardless of order status, so a misattribution discovered after the sale completes can still be fixed.
+
+**Backend:** `PATCH /orders/:id` now accepts `Customer` (`ORDERS_PATCH_ALLOWED` in `routes/orders.js`) — previously stripped by the route even though `orderRepo.updateOrder`'s own allow-list already supported it. Gated 403 for non-owner roles; 400 if the target customer id doesn't resolve via `customerRepo.getById` (orders.customer_id has no DB-level FK constraint, so an unvalidated id would otherwise silently orphan the order). No schema change.
+
+**Verification:** backend Vitest full suite green (1001/1001, 111 files) — 3 new cases in `orderRepo.integration.test.js` (persistence, no side effects on lines/stock/delivery, audit trail) + 6 new cases in `orders.customerReassign.route.test.js` (owner-only gate, existence check, shape normalization, happy path). Both apps build clean.
 
 ---
 

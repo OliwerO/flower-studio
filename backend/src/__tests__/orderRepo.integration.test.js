@@ -1035,6 +1035,87 @@ describe('updateOrder Required By cascade (Y-model)', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────
+// updateOrder — Customer reassignment (#389)
+// ─────────────────────────────────────────────────────────────────────
+//
+// Owner-only "Change customer" affordance in the florist + dashboard apps.
+// ORDER_WRITE_ALLOWED already listed 'Customer' at the repo layer — these
+// tests pin that the FK actually moves and persists, and that nothing else
+// about the order (lines, stock, delivery) is disturbed by a pure
+// re-attribution. Note: orders carry no denormalized "Customer Name" /
+// "Customer Phone" column — GET /orders/:id computes those live from the
+// linked customer record — so reassigning the FK is the entire fix.
+
+describe('updateOrder — Customer reassignment (#389)', () => {
+  it('reassigns Customer to a new customer id and persists it', async () => {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCustOriginal', customerRequest: 'Wrong customer at intake',
+      deliveryType: 'Pickup', requiredBy: '2026-06-01',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 3 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    expect(order.Customer).toEqual(['recCustOriginal']);
+
+    const updated = await orderRepo.updateOrder(
+      order.id,
+      { Customer: ['recCustNew'] },
+      { actor: { actorRole: 'owner' } },
+    );
+    expect(updated.Customer).toEqual(['recCustNew']);
+
+    // Re-fetch from scratch — proves the write was persisted, not just echoed
+    // back from the update's own `.returning()`.
+    const reloaded = await orderRepo.getById(order.id);
+    expect(reloaded.Customer).toEqual(['recCustNew']);
+  });
+
+  it('leaves order lines, stock, and delivery untouched — pure re-attribution', async () => {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCustOriginal', customerRequest: 'Delivery test',
+      deliveryType: 'Delivery', requiredBy: '2026-06-01',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 4, sellPricePerUnit: 15, costPricePerUnit: 4.5 }],
+      delivery: { address: 'ul. Test 5', date: '2026-06-01', fee: 25, driver: 'Timur' },
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    const [stockBefore] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+
+    await orderRepo.updateOrder(order.id, { Customer: ['recCustNew'] }, { actor: { actorRole: 'owner' } });
+
+    const reloaded = await orderRepo.getById(order.id);
+    expect(reloaded.Customer).toEqual(['recCustNew']);
+    expect(reloaded._lines).toHaveLength(1);
+    expect(reloaded._lines[0].Quantity).toBe(4);
+    expect(reloaded._delivery['Delivery Address']).toBe('ul. Test 5');
+
+    const [stockAfter] = await harness.db.select().from(stock).where(eq(stock.id, stockId1));
+    expect(stockAfter.currentQuantity).toBe(stockBefore.currentQuantity);
+  });
+
+  it('records the before/after Customer in the audit trail', async () => {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCustOriginal', customerRequest: 'Audit test',
+      deliveryType: 'Pickup', requiredBy: '2026-06-01',
+      orderLines: [{ stockItemId: stockId1, flowerName: 'Red Rose', quantity: 1 }],
+      paymentStatus: 'Unpaid', createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    await orderRepo.updateOrder(order.id, { Customer: ['recCustNew'] }, { actor: { actorRole: 'owner' } });
+
+    const auditRows = await harness.db.select().from(auditLog)
+      .where(and(eq(auditLog.entityType, 'order'), eq(auditLog.entityId, order._pgId ?? order.id)));
+    const reassignAudit = auditRows.find(
+      a => a.action === 'update'
+        && JSON.stringify(a.diff?.after?.Customer) === JSON.stringify(['recCustNew']),
+    );
+    expect(reassignAudit).toBeTruthy();
+    expect(reassignAudit.diff?.before?.Customer).toEqual(['recCustOriginal']);
+    expect(reassignAudit.actorRole).toBe('owner');
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────
 // updateOrder Delivery→Pickup cascade (#317)
 // ─────────────────────────────────────────────────────────────────────
 //
