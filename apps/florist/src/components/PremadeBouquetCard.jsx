@@ -22,6 +22,74 @@ function timeAgo(iso) {
   return `${days}d`;
 }
 
+/**
+ * NameField — inline-editable bouquet name shown in the card header.
+ * Tapping switches to a text input (autofocus opens the keyboard on mobile);
+ * blur/Enter saves, Escape cancels. Mirrors the `PriceField` pattern in
+ * StockItem.jsx — self-contained stopPropagation so it can live inside the
+ * header row without also triggering the row's tap-to-expand handler.
+ * Fixes #456: the name used to be plain text with no tap affordance, so it
+ * required opening the separate "Edit" form just to rename.
+ */
+function NameField({ value, placeholder, onSave, disabled }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit(e) {
+    if (disabled) return;
+    e.stopPropagation();
+    setDraft(value || '');
+    setEditing(true);
+  }
+
+  function commitSave(e) {
+    e.stopPropagation();
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed === (value || '').trim()) return;
+    onSave(trimmed);
+  }
+
+  function cancelEdit(e) {
+    e.stopPropagation();
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        value={draft}
+        autoFocus
+        onClick={e => e.stopPropagation()}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commitSave}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.target.blur();
+          if (e.key === 'Escape') cancelEdit(e);
+        }}
+        className="flex-1 min-w-0 text-base font-semibold text-ios-label border border-brand-300 rounded-lg px-2 py-0.5 bg-white outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={startEdit}
+      disabled={disabled}
+      title={t.edit || 'Edit'}
+      className={`flex-1 min-w-0 text-base font-semibold text-ios-label truncate text-left active-scale ${
+        disabled
+          ? 'opacity-50 cursor-not-allowed'
+          : 'underline decoration-dotted decoration-ios-tertiary/40 underline-offset-2'
+      }`}
+    >
+      {value || placeholder}
+    </button>
+  );
+}
+
 export default function PremadeBouquetCard({ bouquet, isOwner, onRemoved, onUpdated, onMatchClicked }) {
   const { showToast } = useToast();
   const [expanded, setExpanded] = useState(false);
@@ -145,6 +213,27 @@ export default function PremadeBouquetCard({ bouquet, isOwner, onRemoved, onUpda
     ).slice(0, 20);
   }, [stock, flowerSearch]);
 
+  // Inline rename — used by the header's NameField, independent of the
+  // bigger "Edit" form (which also patches notes/price/lines). Same endpoint
+  // handleSave() uses for the name field, just fired immediately on blur.
+  async function handleNameSave(newName) {
+    if (!newName) {
+      showToast(t.premadeBouquetNameRequired, 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await client.patch(`/premade-bouquets/${bouquet.id}`, { name: newName });
+      onUpdated?.(res.data);
+      showToast(t.bouquetUpdated, 'success');
+    } catch (err) {
+      console.error('Failed to rename premade bouquet:', err);
+      showToast(err.response?.data?.error || t.error, 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSave() {
     setBusy(true);
     try {
@@ -201,20 +290,24 @@ export default function PremadeBouquetCard({ bouquet, isOwner, onRemoved, onUpda
 
   return (
     <div className="ios-card overflow-hidden">
-      {/* Header — tap to expand */}
-      <button
-        type="button"
+      {/* Header — tap to expand. The name itself is independently editable
+          (NameField stops propagation) so renaming doesn't require opening
+          the separate "Edit" form below (issue #456). */}
+      <div
         onClick={() => { if (!editing) setExpanded(v => !v); }}
-        className="w-full px-4 py-3 flex items-center gap-3 text-left active-scale"
+        className="w-full px-4 py-3 flex items-center gap-3 text-left cursor-pointer active-scale"
       >
         <div className="w-10 h-10 rounded-full bg-pink-100 text-pink-600 text-lg flex items-center justify-center shrink-0">
           💐
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
-            <span className="text-base font-semibold text-ios-label truncate">
-              {bouquet.Name || t.premadeBouquet}
-            </span>
+            <NameField
+              value={bouquet.Name}
+              placeholder={t.premadeBouquet}
+              onSave={handleNameSave}
+              disabled={editing}
+            />
             <span className="text-[11px] text-ios-tertiary shrink-0">
               · {t.premadeBouquetAge} {timeAgo(bouquet['Created At'])}
             </span>
@@ -228,7 +321,7 @@ export default function PremadeBouquetCard({ bouquet, isOwner, onRemoved, onUpda
           )}
         </div>
         <span className="text-ios-tertiary text-sm ml-1">{expanded ? '▲' : '▼'}</span>
-      </button>
+      </div>
 
       {/* Expanded body */}
       {expanded && !editing && (
