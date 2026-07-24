@@ -187,6 +187,57 @@ describe('listGroupedByVariety (issue #289)', () => {
     });
   });
 
+  describe('substitutedBy (issue #376)', () => {
+    it('a Variety whose row was substituted carries substitutedBy = the substitute display name', async () => {
+      // Original: a Not-Found Demand Entry (negative qty) that a driver could
+      // not source. It stays visible because an order line still references it.
+      const [orig] = await harness.db.insert(stock).values({
+        displayName: 'Dahlia Pink', currentQuantity: -10, active: true,
+        typeName: 'Dahlia', colour: 'Pink',
+      }).returning();
+      // Substitute: a DIFFERENT variety bought in its place, linked back to the
+      // original via Substitute For (the substitute Stock Item carries the link).
+      await harness.db.insert(stock).values({
+        displayName: 'Dahlia Peach', currentQuantity: 10, active: true,
+        typeName: 'Dahlia', colour: 'Peach', substituteFor: [orig.id],
+      }).returning();
+
+      const groups = await stockRepo.listGroupedByVariety({ includeEmpty: true });
+      const origGroup = groups.find(g => g.type_name === 'Dahlia' && g.colour === 'Pink');
+      const subGroup  = groups.find(g => g.type_name === 'Dahlia' && g.colour === 'Peach');
+
+      // The original reads as "substituted by Dahlia Peach".
+      expect(origGroup.substitutedBy).toBe('Dahlia Peach');
+      // The substitute itself is not a substituted original.
+      expect(subGroup.substitutedBy).toBeNull();
+    });
+
+    it('tags the original even when the substitute card is UNclassified (type_name NULL, excluded from grouping)', async () => {
+      // Legacy prod case: the substitute was never classified with a Variety
+      // 4-tuple, so its own row is NOT in the grouped (type_name IS NOT NULL)
+      // set — but the original must still read as substituted.
+      const [orig] = await harness.db.insert(stock).values({
+        displayName: 'Rose Red', currentQuantity: -8, active: true,
+        typeName: 'Rose', colour: 'Red',
+      }).returning();
+      await harness.db.insert(stock).values({
+        displayName: 'Ranunculus (13.May.)', currentQuantity: 8, active: true,
+        typeName: null, substituteFor: [orig.id], // attr-less → ungrouped
+      }).returning();
+
+      const groups = await stockRepo.listGroupedByVariety({ includeEmpty: true });
+      const origGroup = groups.find(g => g.type_name === 'Rose' && g.colour === 'Red');
+      expect(origGroup.substitutedBy).toBe('Ranunculus (13.May.)');
+    });
+
+    it('a normal Variety with no substitute link has substitutedBy = null', async () => {
+      await seedStock({ typeName: 'Rose', colour: 'Red', currentQuantity: 5 });
+
+      const groups = await stockRepo.listGroupedByVariety({ includeEmpty: true });
+      expect(groups[0].substitutedBy).toBeNull();
+    });
+  });
+
   describe('response shape', () => {
     it('each group has key, type_name, colour, size_cm, cultivar, rows (StockItem[]), reservedForPremades', async () => {
       await seedStock({ displayName: 'Peony Pink 50 Coral Charm', typeName: 'Peony', colour: 'Pink', sizeCm: 50, cultivar: 'Coral Charm', currentQuantity: 7 });
