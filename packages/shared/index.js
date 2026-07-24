@@ -145,6 +145,17 @@ export { default as PendingArrivalsPanel } from './components/PendingArrivalsPan
 
 export { useVarietyTraceExpand } from './hooks/useVarietyTraceExpand.js';
 
+// Write-off / waste log period filter model (issue #193) — shared by florist
+// WasteLogPage and dashboard StockLossSection so "This Week"/"This Month"
+// can't drift between the two surfaces.
+export {
+  WRITE_OFF_PERIODS,
+  DEFAULT_WRITE_OFF_PERIOD,
+  writeOffPeriodStart,
+  isInWriteOffPeriod,
+  writeOffPeriodLabel,
+} from './utils/writeOffPeriods.js';
+
 // Step-chart balance trace — shared by BatchTracePanel and VarietyTracePanel (S7)
 export { default as BalanceSparkline } from './components/BalanceSparkline.jsx';
 

@@ -9,6 +9,7 @@ import {
   LOSS_REASONS,
   reasonLabel,
   useToast,
+  isInWriteOffPeriod,
 } from '@flower-studio/shared';
 import client from '../api/client.js';
 import t from '../translations.js';
@@ -24,14 +25,10 @@ function todayISO() {
   d.setHours(0, 0, 0, 0);
   return d.toISOString().split('T')[0];
 }
-function periodStart(period) {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  if (period === 'week') d.setDate(d.getDate() - 7);
-  else if (period === 'month') d.setMonth(d.getMonth() - 1);
-  else if (period === 'all') return '1970-01-01';
-  return d.toISOString().split('T')[0];
-}
+// Today / Week / Month / All periods themselves are resolved by the shared
+// `isInWriteOffPeriod` util (issue #193) so this list stays in lock-step with
+// the dashboard's StockLossSection. Only the bonus "custom" range (a two-sided
+// from/to picked here) stays local — it isn't part of the shared model.
 
 // Groups entries by their Date field, producing sticky-header-friendly sections.
 function groupByDate(entries, t) {
@@ -95,19 +92,16 @@ export default function WasteLogPage() {
   useEffect(() => { loadAll(); }, []);
 
   // Filter — period is a date-range; reasons are multi-select chips.
-  // Custom range applies both a lower AND upper bound; presets only a lower one.
+  // Custom range applies both a lower AND upper bound; the shared Today/Week/
+  // Month/All presets apply only a lower one (see isInWriteOffPeriod).
   const filtered = useMemo(() => {
-    let from, to;
-    if (period === 'custom') {
-      if (!customFrom || !customTo) return []; // wait until both ends are chosen
-      from = customFrom; to = customTo;
-    } else {
-      from = periodStart(period); to = null;
-    }
+    if (period === 'custom' && (!customFrom || !customTo)) return []; // wait until both ends are chosen
     return entries.filter(e => {
       const d = e.Date || '';
-      if (d < from) return false;
-      if (to && d > to) return false;
+      const inPeriod = period === 'custom'
+        ? (d >= customFrom && d <= customTo)
+        : isInWriteOffPeriod(e.Date, period);
+      if (!inPeriod) return false;
       if (supplierFilter !== 'all' && (e.supplier || '—') !== supplierFilter) return false;
       if (selectedReasons.length > 0 && !selectedReasons.includes(e.Reason)) return false;
       return true;
