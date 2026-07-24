@@ -485,7 +485,7 @@ export default function StockPanelPage() {
             <button
               key={v.key}
               onClick={() => setView(v.key)}
-              className={`px-1.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors active-scale ${
+              className={`px-2 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors active-scale ${
                 view === v.key
                   ? 'bg-brand-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
@@ -509,13 +509,13 @@ export default function StockPanelPage() {
           <div className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 p-0.5">
             <button
               onClick={() => setFlatView(true)}
-              className={`px-1 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
                 flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
               }`}
             >{t.stockFlat || 'Flat'}</button>
             <button
               onClick={() => setFlatView(false)}
-              className={`px-1 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-2 py-1 rounded-full text-xs font-medium transition-colors ${
                 !flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
               }`}
             >{t.stockByType || 'By type'}</button>
@@ -526,7 +526,7 @@ export default function StockPanelPage() {
           {flatView && (
             <button
               onClick={() => setFlatSort(s => FLAT_SORTS[(FLAT_SORTS.indexOf(s) + 1) % FLAT_SORTS.length])}
-              className="px-1 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-0.5"
+              className="px-2 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-0.5"
               aria-label={t.stockSortLabel || 'Sort'}
             >
               <span className="text-ios-tertiary">⇅</span>
@@ -541,7 +541,7 @@ export default function StockPanelPage() {
           <button
             data-testid="stock-filter-open"
             onClick={() => setFilterDrawerOpen(true)}
-            className={`px-1 py-1 rounded-full text-xs font-medium active-scale inline-flex items-center gap-0.5 ${
+            className={`px-2 py-1.5 rounded-full text-xs font-medium active-scale inline-flex items-center gap-0.5 ${
               varietyFilterCount > 0
                 ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
                 : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
@@ -553,7 +553,7 @@ export default function StockPanelPage() {
           </button>
           <button
             onClick={() => setHideZero(!hideZero)}
-            className={`ml-auto px-1 py-1 rounded-full text-xs font-medium transition-colors active-scale ${
+            className={`ml-auto px-2 py-1.5 rounded-full text-xs font-medium transition-colors active-scale ${
               hideZero
                 ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
                 : 'bg-gray-200 dark:bg-gray-600 text-ios-label dark:text-gray-200'
