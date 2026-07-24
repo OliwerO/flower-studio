@@ -124,7 +124,11 @@ function OrderCard({
 
   const status     = order['Status'] || 'New';
   const styles     = STATUS_STYLES[status] || STATUS_STYLES['New'];
-  const isDelivery = order['Delivery Type'] === 'Delivery' || detail?.['Delivery Type'] === 'Delivery';
+  // Pitfall #1: prefer the refreshed local `detail` over the parent `order`
+  // prop once loaded, not an OR of both — an OR keeps reading "Delivery"
+  // from a stale parent prop after a Delivery → Pickup conversion until the
+  // parent list independently refetches (#554).
+  const isDelivery = (detail || order)['Delivery Type'] === 'Delivery';
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
   const request    = order['Customer Request'] || '';
   // Price Override replaces flower total only; delivery fee always added on top
@@ -1153,6 +1157,26 @@ function OrderCard({
                           const res = await client.post(`/orders/${order.id}/convert-to-delivery`, {});
                           setDetail(prev => ({ ...prev, 'Delivery Type': 'Delivery', delivery: res.data }));
                           onOrderUpdated?.(order.id, { 'Delivery Type': 'Delivery' });
+                          showToast(t.updated, 'success');
+                        } catch (err) {
+                          showToast(err.response?.data?.error || t.updateError, 'error');
+                        } finally {
+                          setSaving(false);
+                        }
+                      } else if (val === 'Pickup' && d['Delivery Type'] === 'Delivery') {
+                        // Delivery → Pickup: the backend cancels the linked delivery
+                        // and clears its fee/address in the same PATCH (#554), but the
+                        // PATCH response itself doesn't carry the recomputed Final
+                        // Price or the now-cancelled delivery sub-record. Refetch the
+                        // full detail so the fee and address disappear immediately
+                        // here — not just after a page refresh — and push the same
+                        // fresh data up to the parent list (pitfall #1).
+                        setSaving(true);
+                        try {
+                          await client.patch(`/orders/${order.id}`, { 'Delivery Type': 'Pickup' });
+                          const res = await client.get(`/orders/${order.id}`);
+                          setDetail(res.data);
+                          onOrderUpdated?.(order.id, res.data);
                           showToast(t.updated, 'success');
                         } catch (err) {
                           showToast(err.response?.data?.error || t.updateError, 'error');

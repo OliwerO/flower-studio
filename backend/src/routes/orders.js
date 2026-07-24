@@ -216,8 +216,16 @@ router.get('/', async (req, res, next) => {
         order['Bouquet Summary'] = lines.map(l => `${l.qty}× ${l.name}`).join(', ');
       }
 
+      // Only fold the linked delivery's fields onto the order when it's
+      // CURRENTLY a Delivery-type order. Unlike GET /:id (which nests a raw
+      // `.delivery` sub-object for the frontend to gate), this list endpoint
+      // flattens these fields directly onto the order, so it has to gate
+      // them itself. A Delivery → Pickup conversion cancels (rather than
+      // deletes) the linked delivery record, so without this gate a
+      // converted order kept showing its old address/fee here forever —
+      // even after a refresh (#554).
       const delivId = order['Deliveries']?.[0];
-      if (delivId && deliveryMap[delivId]) {
+      if (order['Delivery Type'] === 'Delivery' && delivId && deliveryMap[delivId]) {
         const d = deliveryMap[delivId];
         order['Delivery Date'] = d['Delivery Date'] || null;
         order['Delivery Time'] = d['Delivery Time'] || null;
@@ -228,7 +236,11 @@ router.get('/', async (req, res, next) => {
       }
 
       const sellTotal = order['Sell Total'] || totalByOrder[order.id] || 0;
-      const delivFee = Number(order['Delivery Fee'] || 0);
+      // Re-gate here too (belt-and-suspenders): `order['Delivery Fee']` can
+      // also come from the order's OWN (redundant) column set by a past
+      // convertToDelivery call. This self-heals any order converted to
+      // Pickup before this fix shipped, without needing a prod backfill.
+      const delivFee = order['Delivery Type'] === 'Delivery' ? Number(order['Delivery Fee'] || 0) : 0;
       // Price Override replaces flower total only; delivery fee always added on top
       order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
     }

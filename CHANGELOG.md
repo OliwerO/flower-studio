@@ -5,6 +5,21 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-24 — fix(orders): Delivery → Pickup conversion clears the fee, address, and driver info (#554)
+
+**Behavior fix:** converting an order from Delivery to Pickup in order details left the delivery fee counting toward the Final Price and the delivery address/recipient/driver info visible forever, even after a refresh. Two bugs, same root cause (a Delivery→Pickup conversion only *cancels* the linked delivery record — it doesn't delete it — so a Cancelled-but-intact delivery kept leaking its data):
+
+- `GET /api/orders` (the list endpoint powering the Orders tab, Today board, and every order-list view) computed `Delivery Fee`/`Final Price` from the linked delivery record unconditionally, with no check on the order's *current* `Delivery Type`. `GET /:id` already had this gate — the list endpoint now matches it. This is a read-time fix, so it self-heals any order that was converted before this shipped, no backfill needed.
+- `orderRepo.updateOrder`'s existing Delivery→Pickup cascade (#317/#401) only flipped the delivery record's `Status` to `Cancelled` — its fee, address, recipient name/phone, assigned driver, driver instructions, and driver payout survived untouched, as did the order's own redundant `Delivery Fee` column. All of these are now blanked in the same transaction as the cancel.
+
+Frontend: `apps/florist/src/components/OrderCard.jsx` and `apps/dashboard/src/components/OrderDetailPanel.jsx` now refetch the order detail immediately after a Delivery→Pickup PATCH (mirroring the existing Pickup→Delivery branch's pattern) instead of relying on a stale optimistic merge, so the fee/address disappear without needing a page refresh. `OrderCard.jsx`'s `isDelivery` also now strictly prefers the refreshed local `detail` over the parent list prop (pitfall #1) instead of OR-ing the two. `OrderDetailPanel.jsx`'s delivery-fee computation is now gated on Delivery Type at all (parity with the florist app, which already had this gate).
+
+No schema change.
+
+**Verification:** backend Vitest full suite (994 tests, 111 files) + new regression test `backend/src/__tests__/orders.pickupConversion.integration.test.js` (route-level, real pglite DB) green; API E2E 253/253; lab-unit 77/77; lab-api 18/18; `apps/florist` + `apps/dashboard` Vite builds green.
+
+---
+
 ## 2026-07-23 — fix(stock): settled Demand Entries kept visible; editing a delivered order no longer crashes (#556, ADR-0013)
 
 **Schema:** new nullable column `stock.settled_at` (`TIMESTAMPTZ`), migration `0022_stock_settled_at.sql`. `NULL` for every row except a Demand Entry whose full release brought it to `current_quantity >= 0`. Additive — no backfill required; existing rows keep `settled_at = NULL`.
