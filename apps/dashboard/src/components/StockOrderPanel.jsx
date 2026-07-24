@@ -329,10 +329,10 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
         costPrice: Number(costPrice) || 0,
         sellPrice: Number(sellPrice) || 0,
         lotSize: Number(lotSize) || 0,
-        type: (type || '').trim(),
-        colour: (colour || '').trim(),
+        type: (type || '').trim() || null,
+        colour: (colour || '').trim() || null,
         size: size ? Number(size) : null,
-        cultivar: (cultivar || '').trim(),
+        cultivar: (cultivar || '').trim() || null,
       });
       // If the PO is already in Shopping, the owner adds lines because the
       // flowers have been physically bought — mark Found All so the florist
@@ -1507,7 +1507,10 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
     if (!ready || submitting) return;
     setSubmitting(true);
     const ok = await onAdd(orderId, {
-      flowerName: form.flowerName,
+      // When the owner filled the new-Variety block, drop the free-typed search
+      // text so the backend composes the name from Type/Colour/Size/Cultivar —
+      // otherwise a partial search string ("peo") becomes the Variety name.
+      flowerName: form.type.trim() ? '' : form.flowerName,
       stockItemId: form.stockItemId,
       supplier: form.supplier,
       quantity: totalStems,

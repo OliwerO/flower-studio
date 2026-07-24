@@ -316,10 +316,10 @@ export default function PurchaseOrderPage() {
         costPrice: Number(costPrice) || 0,
         sellPrice: Number(sellPrice) || 0,
         lotSize: Number(lotSize) || 0,
-        type: (type || '').trim(),
-        colour: (colour || '').trim(),
+        type: (type || '').trim() || null,
+        colour: (colour || '').trim() || null,
         size: size ? Number(size) : null,
-        cultivar: (cultivar || '').trim(),
+        cultivar: (cultivar || '').trim() || null,
       });
       // Lines added during Shopping are for flowers already physically bought,
       // so mark Found All and stamp Quantity Found so the florist can see them.
@@ -1191,7 +1191,10 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
     if (!ready || submitting) return;
     setSubmitting(true);
     const ok = await onAdd(orderId, {
-      flowerName: form.flowerName,
+      // When the owner filled the new-Variety block, drop the free-typed search
+      // text so the backend composes the name from Type/Colour/Size/Cultivar —
+      // otherwise a partial search string ("peo") becomes the Variety name.
+      flowerName: form.type.trim() ? '' : form.flowerName,
       stockItemId: form.stockItemId,
       supplier: form.supplier,
       quantity: totalStems,
