@@ -69,6 +69,81 @@ describe('key_people phone + address (CR-30 C1)', () => {
   });
 });
 
+describe('createKeyPerson find-or-create dedupe (#517)', () => {
+  it('returns the existing row instead of inserting a duplicate when name+phone match exactly', async () => {
+    const first = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200' });
+    const second = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200' });
+
+    expect(second.id).toBe(first.id);
+    const list = await listKeyPeople(customerId);
+    expect(list).toHaveLength(1);
+  });
+
+  it('matches name case-insensitively and trimmed, and phone on digits only', async () => {
+    const first = await createKeyPerson(customerId, { name: '  Maria Kowalska  ', phone: '+48 500-100-200' });
+    const second = await createKeyPerson(customerId, { name: 'MARIA KOWALSKA', phone: '48500100200' });
+
+    expect(second.id).toBe(first.id);
+    const list = await listKeyPeople(customerId);
+    expect(list).toHaveLength(1);
+  });
+
+  it('matches on name+phone both blank (no phone given either time)', async () => {
+    const first = await createKeyPerson(customerId, { name: 'Babcia' });
+    const second = await createKeyPerson(customerId, { name: 'babcia' });
+
+    expect(second.id).toBe(first.id);
+    const list = await listKeyPeople(customerId);
+    expect(list).toHaveLength(1);
+  });
+
+  it('creates a separate row when the phone differs', async () => {
+    const first = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200' });
+    const second = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48999888777' });
+
+    expect(second.id).not.toBe(first.id);
+    const list = await listKeyPeople(customerId);
+    expect(list).toHaveLength(2);
+  });
+
+  it('creates a separate row when one has a phone and the other does not', async () => {
+    const first = await createKeyPerson(customerId, { name: 'Maria Kowalska' });
+    const second = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200' });
+
+    expect(second.id).not.toBe(first.id);
+    const list = await listKeyPeople(customerId);
+    expect(list).toHaveLength(2);
+  });
+
+  it('creates a separate row when the name differs (same phone)', async () => {
+    const first = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200' });
+    const second = await createKeyPerson(customerId, { name: 'Anna Nowak', phone: '+48500100200' });
+
+    expect(second.id).not.toBe(first.id);
+    const list = await listKeyPeople(customerId);
+    expect(list).toHaveLength(2);
+  });
+
+  it('does not dedupe across different customers', async () => {
+    const [otherCustomer] = await harness.db.insert(customers).values({ name: 'Other Customer' }).returning();
+
+    const first = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200' });
+    const second = await createKeyPerson(otherCustomer.id, { name: 'Maria Kowalska', phone: '+48500100200' });
+
+    expect(second.id).not.toBe(first.id);
+    expect(await listKeyPeople(customerId)).toHaveLength(1);
+    expect(await listKeyPeople(otherCustomer.id)).toHaveLength(1);
+  });
+
+  it('the address on a matched (deduped) row is unchanged — no silent overwrite', async () => {
+    const first = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200', address: 'ul. Kwiatowa 7' });
+    const second = await createKeyPerson(customerId, { name: 'Maria Kowalska', phone: '+48500100200', address: 'ul. Inna 99' });
+
+    expect(second.id).toBe(first.id);
+    expect(second.address).toBe('ul. Kwiatowa 7');
+  });
+});
+
 describe('updateKeyPerson (CR-30 C4)', () => {
   it('updates name + phone + address and reflects the change in listKeyPeople', async () => {
     const created = await createKeyPerson(customerId, {

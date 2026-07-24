@@ -13,7 +13,7 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
-import { stock, orders, orderLines, deliveries, auditLog } from '../db/schema.js';
+import { stock, orders, orderLines, deliveries, auditLog, customers, keyPeople } from '../db/schema.js';
 import { eq, and } from 'drizzle-orm';
 import { ORDER_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
 
@@ -124,6 +124,59 @@ describe('createOrder', () => {
     expect(audits.length).toBeGreaterThanOrEqual(4);
     expect(audits.find(a => a.entityType === 'order' && a.action === 'create')).toBeTruthy();
     expect(audits.find(a => a.entityType === 'delivery' && a.action === 'create')).toBeTruthy();
+  });
+
+  // #189/#517: the new-order wizard's Step 3 now captures a Florist Note at
+  // creation time (previously only editable post-creation) and may resolve a
+  // keyPersonId for a manually-typed recipient before submitting. Both fields
+  // were already plumbed through createOrder — this locks the contract in so
+  // a future refactor can't silently drop either one.
+  it('persists floristNote + keyPersonId at creation, readable both from the return value and a re-fetch', async () => {
+    // orders.key_person_id carries a real FK (orders_key_person_id_fk, migration
+    // 0006) → key_people(id) ON DELETE SET NULL, so this needs a real row.
+    const [cust] = await harness.db.insert(customers).values({ name: 'Anna Test' }).returning();
+    const [kp] = await harness.db.insert(keyPeople).values({ customerId: cust.id, name: 'Maria' }).returning();
+
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Birthday bouquet',
+      deliveryType: 'Pickup',
+      orderLines: [
+        { stockItemId: stockId1, flowerName: 'Red Rose', quantity: 3, sellPricePerUnit: 15, costPricePerUnit: 4.5 },
+      ],
+      notes: 'Customer note',
+      floristNote: 'Use the tall vase, customer is picking up at 5pm',
+      keyPersonId: kp.id,
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    expect(order['Florist Note']).toBe('Use the tall vase, customer is picking up at 5pm');
+    expect(order.keyPersonId).toBe(kp.id);
+
+    // Re-fetch to prove it's actually in the row, not just echoed in-memory.
+    const refetched = await orderRepo.getById(order.id);
+    expect(refetched['Florist Note']).toBe('Use the tall vase, customer is picking up at 5pm');
+    expect(refetched.keyPersonId).toBe(kp.id);
+  });
+
+  it('defaults floristNote and keyPersonId to null when omitted', async () => {
+    const { order } = await orderRepo.createOrder({
+      customer: 'recCust1',
+      customerRequest: 'Birthday bouquet',
+      deliveryType: 'Pickup',
+      orderLines: [
+        { stockItemId: stockId1, flowerName: 'Red Rose', quantity: 3, sellPricePerUnit: 15, costPricePerUnit: 4.5 },
+      ],
+      paymentStatus: 'Unpaid',
+      createdBy: 'florist',
+    }, config, { actor: { actorRole: 'florist' } });
+
+    // '' round-trips to null via orderResponseToPg's `fields['Florist Note'] || null`
+    // (pre-existing behavior, unchanged by this PR) — blank note reads the same as
+    // "never set one".
+    expect(order['Florist Note']).toBeNull();
+    expect(order.keyPersonId).toBeNull();
   });
 
   it('rolls back EVERYTHING if any line is orphan (no stockItemId)', async () => {

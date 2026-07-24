@@ -17,7 +17,7 @@ const emptyForm = {
   source: 'In-store', deliveryType: 'Pickup',
   requiredBy: '', recipientName: '', recipientPhone: '',
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
-  cardText: '', notes: '',
+  cardText: '', notes: '', floristNote: '',
   paymentStatus: 'Unpaid', paymentMethod: '', payment1Amount: '', deliveryFee: 35,
   // When set, the resulting order is created via POST /api/premade-bouquets/:id/match
   // instead of POST /api/orders. The bouquet's lines are copied server-side.
@@ -240,6 +240,28 @@ export default function NewOrderPage() {
 
     setSubmitting(true);
     try {
+      // #517: Step 1's key-person picker was skipped (keyPersonId still null)
+      // but the recipient was typed manually here in Step 3 — save it as a
+      // reusable Key Person on the customer so it pre-fills next time. Reuses
+      // the exact endpoint Step1Customer.jsx calls; the repo dedupes by
+      // name+phone server-side, so repeat orders for the same recipient never
+      // pile up duplicates. Non-fatal on failure — the order should still go
+      // through even if this convenience save fails.
+      let resolvedKeyPersonId = form.keyPersonId || null;
+      if (!resolvedKeyPersonId && form.customerId && form.deliveryType === 'Delivery'
+          && form.recipientName?.trim() && (form.recipientPhone?.trim() || form.deliveryAddress?.trim())) {
+        try {
+          const kpBody = { name: form.recipientName.trim() };
+          if (form.recipientPhone?.trim())  kpBody.phone   = form.recipientPhone.trim();
+          if (form.deliveryAddress?.trim()) kpBody.address = form.deliveryAddress.trim();
+          const kpRes = await client.post(`/customers/${form.customerId}/key-people`, kpBody);
+          resolvedKeyPersonId = kpRes.data.id;
+        } catch (err) {
+          console.error('Failed to save recipient as key person:', err);
+          showToast(err.response?.data?.error || t.error, 'error');
+        }
+      }
+
       const body = {
         customer:            form.customerId,
         customerRequest:     form.customerRequest,
@@ -248,13 +270,14 @@ export default function NewOrderPage() {
         deliveryType:        form.deliveryType,
         requiredBy:          form.requiredBy || null,
         notes:               form.notes,
+        floristNote:         form.floristNote || '',
         paymentStatus:       form.paymentStatus,
         paymentMethod:       form.paymentMethod,
         payment1Amount:      form.paymentStatus === 'Partial' && form.payment1Amount ? Number(form.payment1Amount) : null,
         payment1Method:      form.paymentStatus === 'Partial' && form.paymentMethod ? form.paymentMethod : null,
         priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
         orderLines:          form.orderLines,
-        keyPersonId:         form.keyPersonId || null,
+        keyPersonId:         resolvedKeyPersonId,
       };
       // Card text + date/time apply to both delivery and pickup
       body.cardText = form.cardText || '';

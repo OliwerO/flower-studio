@@ -368,15 +368,60 @@ export async function listKeyPeople(customerId) {
   }));
 }
 
+// Normalized comparison keys for the find-or-create dedupe below — trimmed,
+// case-insensitive name; phone reduced to digits only so "+48 500 100 200",
+// "48500100200" and "500-100-200" all collide.
+function normalizeKeyPersonName(name) {
+  return (name || '').trim().toLowerCase();
+}
+function normalizeKeyPersonPhone(phone) {
+  return (phone || '').replace(/\D/g, '');
+}
+
+// createKeyPerson is find-or-create (issue #517): both the Step1Customer
+// "type a new recipient" flow AND the Step3-manual-recipient auto-save (fired
+// on order submit when the Step 1 picker was skipped) POST here. Without
+// dedupe, placing repeat orders for the same recipient without ever using the
+// Step1 autocomplete would pile up a duplicate key_people row per order. Match
+// is scoped to this customer, by name (trimmed, case-insensitive) + phone
+// (digits-only) — an existing match short-circuits the insert and returns the
+// existing row unchanged (no field overwrite on match — use updateKeyPerson
+// for that). Safe to fold into the same endpoint both callers already use:
+// this repo function had exactly one caller (Step1Customer.jsx, both apps)
+// before #517, and that flow never depended on "always inserts a new row".
 export async function createKeyPerson(customerId, { name, contactDetails = null, phone = null, address = null, instagram = null, telegram = null, importantDate = null, importantDateLabel = null } = {}) {
   if (!name || !name.trim()) {
     const err = new Error('name is required');
     err.statusCode = 400;
     throw err;
   }
+  const trimmedName = name.trim();
+
+  const existing = await db.select().from(keyPeople)
+    .where(and(eq(keyPeople.customerId, customerId), isNull(keyPeople.deletedAt)));
+  const targetNameKey  = normalizeKeyPersonName(trimmedName);
+  const targetPhoneKey = normalizeKeyPersonPhone(phone);
+  const match = existing.find(r =>
+    normalizeKeyPersonName(r.name) === targetNameKey && normalizeKeyPersonPhone(r.phone) === targetPhoneKey,
+  );
+  if (match) {
+    return {
+      id:            match.id,
+      name:          match.name,
+      contactDetails: match.contactDetails ?? null,
+      phone:          match.phone ?? null,
+      address:        match.address ?? null,
+      instagram:      match.instagram ?? null,
+      telegram:       match.telegram ?? null,
+      importantDate:  match.importantDate ?? null,
+      importantDateLabel: match.importantDateLabel ?? null,
+      createdAt:     match.createdAt,
+    };
+  }
+
   const [row] = await db.insert(keyPeople).values({
     customerId,
-    name: name.trim(),
+    name: trimmedName,
     contactDetails: contactDetails || null,
     phone: phone || null,
     address: address || null,

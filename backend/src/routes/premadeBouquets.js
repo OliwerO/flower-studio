@@ -135,9 +135,9 @@ router.post('/:id/match', async (req, res, next) => {
   try {
     const {
       customer, customerRequest, source, communicationMethod, deliveryType,
-      delivery, notes, paymentStatus, paymentMethod, priceOverride,
+      delivery, notes, floristNote, paymentStatus, paymentMethod, priceOverride,
       requiredBy, cardText, deliveryTime,
-      payment1Amount, payment1Method,
+      payment1Amount, payment1Method, keyPersonId,
     } = req.body;
 
     if (!customer || typeof customer !== 'string') {
@@ -156,10 +156,10 @@ router.post('/:id/match', async (req, res, next) => {
     try {
       const result = await matchPremadeBouquetToOrder(req.params.id, {
         customer, customerRequest, source, communicationMethod, deliveryType,
-        delivery, notes,
+        delivery, notes, floristNote,
         paymentStatus: paymentStatus || PAYMENT_STATUS.UNPAID,
         paymentMethod, priceOverride, requiredBy, cardText, deliveryTime,
-        payment1Amount, payment1Method,
+        payment1Amount, payment1Method, keyPersonId: keyPersonId || null,
         createdBy: req.role === 'owner' ? 'Owner' : 'Florist',
         isOwner: req.role === 'owner',
       }, { getConfig, getDriverOfDay, generateOrderId });

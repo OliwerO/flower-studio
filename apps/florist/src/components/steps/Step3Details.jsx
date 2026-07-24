@@ -230,6 +230,23 @@ export default function Step3Details({ form, onChange }) {
         </div>
       </div>
 
+      {/* Florist note — internal, staff-only. Captured here at creation instead
+          of only via post-creation edit (#189). Green tint matches the same
+          field's treatment in OrderCard / OrderDetailPage so it reads as one
+          concept across the app. */}
+      <div>
+        <p className="ios-label">🌸 {t.floristNote}</p>
+        <div className="bg-green-50 border border-green-200 rounded-2xl px-4 py-3">
+          <textarea
+            value={form.floristNote}
+            onChange={e => onChange({ floristNote: e.target.value })}
+            placeholder={t.floristNotePlaceholder}
+            rows={3}
+            className="w-full text-base text-ios-label bg-transparent outline-none resize-none placeholder-ios-tertiary/50"
+          />
+        </div>
+      </div>
+
       {/* Payment status */}
       <SectionCard label={t.paymentStatus}>
         <Pills
