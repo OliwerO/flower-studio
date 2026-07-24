@@ -385,7 +385,7 @@ export default function StockPanelPage() {
         />
         {/* Write-off picker inline when this variety is selected */}
         {writeOffVariety?.key === group.key && (
-          <div className="px-4 pb-3">
+          <div className="px-2 pb-1.5">
             <WriteOffBatchPicker
               variety={group}
               reasons={writeOffReasons}
@@ -420,7 +420,7 @@ export default function StockPanelPage() {
         </div>
       </header>
 
-      <main className="max-w-2xl mx-auto px-4 py-5 pb-28">
+      <main className="max-w-2xl mx-auto px-2 py-2.5 pb-28">
 
         {/* Owner operations — a compact 2×2 tile grid replaces the stacked
             Purchase Orders + Waste Log buttons from before. Moved here in 2026-04
@@ -465,7 +465,7 @@ export default function StockPanelPage() {
         )}
 
         {/* Search */}
-        <div className="ios-card flex items-center px-4 gap-3 mb-3">
+        <div className="ios-card flex items-center px-2 gap-1.5 mb-1.5">
           <span className="text-ios-tertiary text-sm">🔍</span>
           <input
             type="text"
@@ -480,12 +480,12 @@ export default function StockPanelPage() {
         </div>
 
         {/* View filter pills */}
-        <div className="flex gap-2 mb-3 overflow-x-auto">
+        <div className="flex gap-1 mb-1.5 overflow-x-auto">
           {VIEW_OPTIONS.map(v => (
             <button
               key={v.key}
               onClick={() => setView(v.key)}
-              className={`px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors active-scale ${
+              className={`px-1.5 py-1 rounded-full text-xs font-medium whitespace-nowrap transition-colors active-scale ${
                 view === v.key
                   ? 'bg-brand-600 text-white'
                   : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
@@ -504,18 +504,18 @@ export default function StockPanelPage() {
 
         {/* Layout toggle (Flat ⇄ By type) + age sort on the left;
             hide-zero / show-cleared on the right. */}
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-1 mb-1">
           {/* Flat ⇄ By-type segmented control — flat is the shop-floor default */}
           <div className="inline-flex rounded-full bg-gray-100 dark:bg-gray-700 p-0.5">
             <button
               onClick={() => setFlatView(true)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-1 py-1 rounded-full text-xs font-medium transition-colors ${
                 flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
               }`}
             >{t.stockFlat || 'Flat'}</button>
             <button
               onClick={() => setFlatView(false)}
-              className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              className={`px-1 py-1 rounded-full text-xs font-medium transition-colors ${
                 !flatView ? 'bg-brand-600 text-white' : 'text-ios-secondary dark:text-gray-300'
               }`}
             >{t.stockByType || 'By type'}</button>
@@ -526,7 +526,7 @@ export default function StockPanelPage() {
           {flatView && (
             <button
               onClick={() => setFlatSort(s => FLAT_SORTS[(FLAT_SORTS.indexOf(s) + 1) % FLAT_SORTS.length])}
-              className="px-3 py-1.5 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-1"
+              className="px-1 py-1 rounded-full text-xs font-medium bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 active-scale inline-flex items-center gap-0.5"
               aria-label={t.stockSortLabel || 'Sort'}
             >
               <span className="text-ios-tertiary">⇅</span>
@@ -541,7 +541,7 @@ export default function StockPanelPage() {
           <button
             data-testid="stock-filter-open"
             onClick={() => setFilterDrawerOpen(true)}
-            className={`px-3 py-1.5 rounded-full text-xs font-medium active-scale inline-flex items-center gap-1 ${
+            className={`px-1 py-1 rounded-full text-xs font-medium active-scale inline-flex items-center gap-0.5 ${
               varietyFilterCount > 0
                 ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
                 : 'bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300'
@@ -553,7 +553,7 @@ export default function StockPanelPage() {
           </button>
           <button
             onClick={() => setHideZero(!hideZero)}
-            className={`ml-auto px-3 py-1.5 rounded-full text-xs font-medium transition-colors active-scale ${
+            className={`ml-auto px-1 py-1 rounded-full text-xs font-medium transition-colors active-scale ${
               hideZero
                 ? 'bg-brand-100 text-brand-700 ring-1 ring-brand-200'
                 : 'bg-gray-200 dark:bg-gray-600 text-ios-label dark:text-gray-200'
