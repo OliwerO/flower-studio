@@ -650,7 +650,7 @@ export default function OrderListPage() {
               className={`px-3 h-9 rounded-full bg-white border border-ios-separator shadow-sm text-xs font-medium flex items-center gap-1 whitespace-nowrap active-scale ${
                 fulfilmentSort !== 'default' ? 'text-brand-600' : 'text-ios-secondary'
               }`}
-              aria-label={t.sortByFulfilment || 'Sort by date'}
+              aria-pressed={fulfilmentSort !== 'default'}
             >
               <span className={fulfilmentSort !== 'default' ? 'text-brand-600' : 'text-ios-tertiary'}>
                 {fulfilmentSort === 'asc' ? '▲' : fulfilmentSort === 'desc' ? '▼' : '↕'}
