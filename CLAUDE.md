@@ -122,7 +122,7 @@ These bug patterns have been found and fixed. Follow these rules to avoid reintr
 ## Key Files
 - `BACKLOG.md` — feature tracking, open items, known issues
 - `CHANGELOG.md` — all changes, schema diffs, go-live checklist
-- `backend/src/constants/statuses.js` — single source of truth for all status enums
+- `backend/src/constants/statuses.js` — single source of truth for all status enums (imported by frontend builds too — must stay dependency-free: pure const exports only)
 - `backend/src/repos/` — data-access layer (orderRepo, stockRepo, etc.)
 - `backend/src/services/orderService.js` — order state machine + business logic
 - `backend/src/routes/` — all API endpoints

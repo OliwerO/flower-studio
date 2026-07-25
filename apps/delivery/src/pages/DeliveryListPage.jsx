@@ -112,8 +112,8 @@ export default function DeliveryListPage() {
   // Check for assigned stock pickups
   useEffect(() => {
     Promise.all([
-      client.get(`/stock-orders?status=${PO_STATUS.SENT}`).catch(() => ({ data: [] })),
-      client.get(`/stock-orders?status=${PO_STATUS.SHOPPING}`).catch(() => ({ data: [] })),
+      client.get(`/stock-orders?status=${encodeURIComponent(PO_STATUS.SENT)}`).catch(() => ({ data: [] })),
+      client.get(`/stock-orders?status=${encodeURIComponent(PO_STATUS.SHOPPING)}`).catch(() => ({ data: [] })),
     ]).then(([sent, shopping]) => {
       setPickupCount(sent.data.length + shopping.data.length);
     });
