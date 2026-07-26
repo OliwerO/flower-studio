@@ -235,6 +235,11 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
   const [busy, setBusy] = useState(false);
 
   const [editName, setEditName] = useState(bouquet.Name || '');
+  // Value editName was seeded with when the form opened. handleSave compares
+  // against THIS, not the live bouquet prop: the header's inline NameField can
+  // rename the bouquet while this form sits open, and comparing to the (now
+  // newer) prop would make Save push the stale name back over it (#456).
+  const [editNameInitial, setEditNameInitial] = useState(bouquet.Name || '');
   const [editNotes, setEditNotes] = useState(bouquet.Notes || '');
   const [editPriceOverride, setEditPriceOverride] = useState(bouquet['Price Override'] || '');
   const [editLines, setEditLines] = useState([]);
@@ -267,6 +272,7 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
   function startEditing() {
     setEditing(true);
     setEditName(bouquet.Name || '');
+    setEditNameInitial(bouquet.Name || '');
     setEditNotes(bouquet.Notes || '');
     setEditPriceOverride(bouquet['Price Override'] || '');
     setEditLines((bouquet.lines || []).map(l => ({
@@ -347,7 +353,7 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
     setBusy(true);
     try {
       const patch = {};
-      if (editName.trim() !== (bouquet.Name || '')) patch.name = editName.trim();
+      if (editName.trim() !== editNameInitial.trim()) patch.name = editName.trim();
       if ((editNotes || '') !== (bouquet.Notes || '')) patch.notes = editNotes;
       const overrideNum = editPriceOverride ? Number(editPriceOverride) : null;
       if (overrideNum !== (bouquet['Price Override'] || null)) patch.priceOverride = overrideNum;

@@ -46,6 +46,9 @@ function NameField({ value, placeholder, onSave, disabled }) {
     e.stopPropagation();
     setEditing(false);
     const trimmed = draft.trim();
+    // An empty name would be rejected by handleNameSave with a toast that lands
+    // after edit mode already closed — just cancel instead.
+    if (!trimmed) return;
     if (trimmed === (value || '').trim()) return;
     onSave(trimmed);
   }
@@ -294,7 +297,18 @@ export default function PremadeBouquetCard({ bouquet, isOwner, onRemoved, onUpda
           (NameField stops propagation) so renaming doesn't require opening
           the separate "Edit" form below (issue #456). */}
       <div
+        role="button"
+        tabIndex={0}
         onClick={() => { if (!editing) setExpanded(v => !v); }}
+        onKeyDown={e => {
+          // The header can't be a <button> — it contains NameField's <input>,
+          // which would be invalid nesting — so it carries button semantics.
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            if (!editing) setExpanded(v => !v);
+          }
+        }}
         className="w-full px-4 py-3 flex items-center gap-3 text-left cursor-pointer active-scale"
       >
         <div className="w-10 h-10 rounded-full bg-pink-100 text-pink-600 text-lg flex items-center justify-center shrink-0">
