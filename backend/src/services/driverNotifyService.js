@@ -3,10 +3,19 @@
 // suppress-self and skip-unregistered guards, per-language message composition,
 // and dispatch. Never throws into the caller — assignment must succeed even if
 // Telegram is down.
+//
+// notifyDeliveryTimeChanged (issue #545) extends the seam to schedule edits:
+// same target resolution + suppress-self / skip-unregistered guards, plus two
+// guards unique to a schedule edit (both live HERE, not at the two call sites
+// in routes/orders.js + routes/deliveries.js, so the two PATCH paths — order-
+// side Required By/Delivery Time cascade, and delivery-side direct edit —
+// can't drift): skip a terminal delivery (Delivered/Cancelled) and skip a
+// no-op save (old date/time === new date/time).
 import { getDriver } from '../repos/driverTelegramRepo.js';
 import { sendToChat, escapeHtml } from './telegram.js';
 import * as orderRepo from '../repos/orderRepo.js';
 import * as stockOrderRepo from '../repos/stockOrderRepo.js';
+import { DELIVERY_TERMINAL_STATUSES } from '../constants/statuses.js';
 
 export const SUPPORTED_LANGS = ['ru', 'en', 'pl'];
 const pickLang = (lang) => (SUPPORTED_LANGS.includes(lang) ? lang : 'ru');
@@ -18,6 +27,13 @@ export const M = {
     en: "🚚 You've been assigned a delivery",
     pl: '🚚 Przydzielono Ci dostawę',
   },
+  timeChangeHeader: {
+    ru: '🕐 Изменилось время доставки',
+    en: '🕐 Delivery time has changed',
+    pl: '🕐 Zmienił się czas dostawy',
+  },
+  was: { ru: 'Было', en: 'Was', pl: 'Było' },
+  now: { ru: 'Стало', en: 'Now', pl: 'Teraz' },
   poHeader: {
     ru: '🛒 Вам назначена закупка',
     en: "🛒 You've been assigned a purchase run",
@@ -71,6 +87,60 @@ export async function notifyDeliveryAssigned({ delivery, driverName, actorName }
     await sendToChat(target.chatId, text);
   } catch (err) {
     console.error('[DRIVER_NOTIFY] delivery-assigned failed:', err.message);
+  }
+}
+
+// Notify the assigned Driver that the delivery's date/time was edited after
+// the fact — same target resolution + language mechanism as
+// notifyDeliveryAssigned, but for a schedule correction rather than a fresh
+// assignment (issue #545, PRD in the linked GitHub issue).
+//
+// `before`/`after` are delivery-shaped records (Airtable-style keys —
+// 'Delivery Date', 'Delivery Time', 'Assigned Driver', 'Status', ...), the
+// same wire format orderRepo hands back everywhere else. `before` may be
+// null (fetch failed) — treated as "no prior value", which conservatively
+// still fires when `after` has a value (better to over-notify on a rare
+// fetch hiccup than silently miss a real change).
+//
+// Guards — ALL of them live here (not at the two call sites) so the
+// order-side cascade path and the delivery-side direct-edit path can never
+// diverge on when they fire:
+//   - no delivery / no assigned driver → nothing to notify
+//   - actor IS the assigned driver → self-edit, no self-ping
+//   - delivery already Delivered/Cancelled → driver doesn't need it anymore
+//   - old date+time === new date+time → no-op save, not a real change
+//   - driver not registered on Telegram → resolveTarget returns null
+export async function notifyDeliveryTimeChanged({ before, after, actorName }) {
+  try {
+    if (!after) return;
+    const driverName = after['Assigned Driver'] || '';
+    if (!driverName) return;
+    if (actorName && actorName === driverName) return; // self-edit
+    if (DELIVERY_TERMINAL_STATUSES.includes(after.Status)) return; // Delivered/Cancelled
+
+    const oldDate = before?.['Delivery Date'] || '';
+    const oldTime = before?.['Delivery Time'] || '';
+    const newDate = after['Delivery Date'] || '';
+    const newTime = after['Delivery Time'] || '';
+    if (oldDate === newDate && oldTime === newTime) return; // no-op save
+
+    const target = await resolveTarget(driverName);
+    if (!target) return;
+    const { lang } = target;
+    const orderNum = await orderNumberFor(after);
+    const addr = after['Delivery Address'] || '';
+    const oldStr = [oldDate, oldTime].filter(Boolean).join(' ');
+    const newStr = [newDate, newTime].filter(Boolean).join(' ');
+    const text = [
+      M.timeChangeHeader[lang],
+      orderNum ? `${M.order[lang]}: ${escapeHtml(orderNum)}` : '',
+      addr ? `${M.address[lang]}: ${escapeHtml(addr)}` : '',
+      oldStr ? `${M.was[lang]}: ${escapeHtml(oldStr)}` : '',
+      newStr ? `${M.now[lang]}: ${escapeHtml(newStr)}` : '',
+    ].filter(Boolean).join('\n');
+    await sendToChat(target.chatId, text);
+  } catch (err) {
+    console.error('[DRIVER_NOTIFY] time-change failed:', err.message);
   }
 }
 

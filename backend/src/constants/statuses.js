@@ -36,6 +36,16 @@ export const DELIVERY_STATUS = {
   CANCELLED:        'Cancelled',
 };
 
+// Terminal delivery statuses — the driver no longer needs schedule updates.
+// Mirrors TERMINAL_STATUSES for orders, but Delivery has no "Picked Up"
+// equivalent and Pending/Out for Delivery both count as "still in play" for
+// this purpose (issue #545 — a delivery en route can still have its time
+// window corrected and the driver should hear about it).
+export const DELIVERY_TERMINAL_STATUSES = [
+  DELIVERY_STATUS.DELIVERED,
+  DELIVERY_STATUS.CANCELLED,
+];
+
 // ── Payment statuses ──
 export const PAYMENT_STATUS = {
   PAID:    'Paid',

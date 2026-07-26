@@ -8,7 +8,7 @@ import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
 import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
 import { sendDeliveryCompleteAlert } from '../services/orderService.js';
-import { notifyDeliveryAssigned } from '../services/driverNotifyService.js';
+import { notifyDeliveryAssigned, notifyDeliveryTimeChanged } from '../services/driverNotifyService.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -185,12 +185,34 @@ router.patch('/:id', async (req, res, next) => {
     // Notify driver on genuine assignment change (diff-detect + suppress self-claim).
     // Fire-and-forget: never blocks the response.
     const newDriver = updated['Assigned Driver'] || '';
-    if (newDriver && newDriver !== priorDriver && !selfClaim) {
+    const assignmentChanged = Boolean(newDriver && newDriver !== priorDriver && !selfClaim);
+    if (assignmentChanged) {
       notifyDeliveryAssigned({
         delivery: updated,
         driverName: newDriver,
         actorName: req.driverName || '',
       }).catch(err => console.error('[DRIVER_NOTIFY] patch hook failed:', err.message));
+    }
+
+    // Notify driver when Delivery Date/Time was directly edited (issue #545).
+    // Pre-filter on "did this PATCH touch a schedule field" to skip the async
+    // call (and its Telegram-registration lookup) on unrelated PATCHes (Driver
+    // Notes, Delivery Result, etc). All the real guards — assigned, registered,
+    // non-terminal, actually-changed, self-edit — live inside
+    // notifyDeliveryTimeChanged, the same seam the order-side PATCH cascade
+    // (routes/orders.js) calls.
+    //
+    // Skipped when this SAME request also produced a fresh driver assignment
+    // (assignmentChanged, above) — the assignment message already states the
+    // current date/time, so a second "was X -> now Y" message would describe
+    // a schedule window the driver was never actually told about under the
+    // old time (review follow-up, issue #545).
+    if (('Delivery Date' in fields || 'Delivery Time' in fields) && !assignmentChanged) {
+      notifyDeliveryTimeChanged({
+        before,
+        after: updated,
+        actorName: req.driverName || '',
+      }).catch(err => console.error('[DRIVER_NOTIFY] time-change hook failed:', err.message));
     }
 
     res.json(updated);

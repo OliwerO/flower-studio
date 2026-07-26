@@ -17,7 +17,7 @@ import {
   editBouquetLines,
 } from '../services/orderService.js';
 import { broadcast } from '../services/notifications.js';
-import { notifyDeliveryAssigned } from '../services/driverNotifyService.js';
+import { notifyDeliveryAssigned, notifyDeliveryTimeChanged } from '../services/driverNotifyService.js';
 
 const router = Router();
 router.use(authorize('orders'));
@@ -538,7 +538,30 @@ router.patch('/:id', async (req, res, next) => {
 
     // No status change — orderRepo.updateOrder handles the linked-delivery
     // cascade for Required By / Delivery Time inside the same transaction.
+    // Snapshot the linked delivery's schedule BEFORE the cascade lands so we
+    // can diff old vs new after (issue #545 — notify the assigned driver when
+    // a schedule edit reaches the delivery via the order, not just via a
+    // direct delivery PATCH).
+    const touchesDeliverySchedule = 'Required By' in otherFields || 'Delivery Time' in otherFields;
+    const beforeDelivery = touchesDeliverySchedule
+      ? (await orderRepo.getById(req.params.id).catch(() => null))?._delivery || null
+      : null;
+
     const order = await orderRepo.updateOrder(req.params.id, otherFields, { actor: actorFromReq(req) });
+
+    if (touchesDeliverySchedule) {
+      // order._delivery is the POST-cascade snapshot — updateOrder re-reads
+      // the delivery row inside the same transaction after applying the
+      // cascade. Diff-detection + all remaining guards (assigned/registered/
+      // non-terminal/self-edit) live inside notifyDeliveryTimeChanged, the
+      // same seam routes/deliveries.js calls for a direct delivery-side edit.
+      notifyDeliveryTimeChanged({
+        before: beforeDelivery,
+        after: order._delivery || null,
+        actorName: req.driverName || '',
+      }).catch(err => console.error('[DRIVER_NOTIFY] order time-change hook failed:', err.message));
+    }
+
     if (order._lines !== undefined) { delete order._lines; delete order._delivery; }
 
     res.json(order);
