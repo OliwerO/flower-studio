@@ -12,9 +12,11 @@
 
 import { useState, useEffect, useRef } from 'react';
 import client from '../api/client.js';
+import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 
 export default function ChangeCustomerModal({ currentName, onClose, onSelect }) {
+  const { showToast }             = useToast();
   const [query, setQuery]         = useState('');
   const [results, setResults]     = useState([]);
   const [searching, setSearching] = useState(false);
@@ -29,7 +31,10 @@ export default function ChangeCustomerModal({ currentName, onClose, onSelect }) 
       try {
         const res = await client.get('/customers', { params: { search: query } });
         setResults(res.data);
-      } catch { /* ignore — transient search failure, user can retry the query */ }
+      } catch (err) {
+        console.error('Customer search failed:', err);
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
       finally { setSearching(false); }
     }, 400);
     return () => clearTimeout(debounceRef.current);

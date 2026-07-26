@@ -124,7 +124,7 @@ describe('PATCH /api/orders/:id — Customer reassignment (#389)', () => {
     expect(customerRepo.getById).toHaveBeenCalledWith('cust-new');
     expect(orderRepo.updateOrder).toHaveBeenCalledWith(
       'ord1',
-      { Customer: ['cust-new'] },
+      { Customer: ['cust-new'], keyPersonId: null },
       expect.objectContaining({ actor: expect.objectContaining({ actorRole: 'owner' }) }),
     );
   });
@@ -141,9 +141,44 @@ describe('PATCH /api/orders/:id — Customer reassignment (#389)', () => {
     expect(res.status).toBe(200);
     expect(orderRepo.updateOrder).toHaveBeenCalledWith(
       'ord1',
-      { Customer: ['cust-new'] },
+      { Customer: ['cust-new'], keyPersonId: null },
       expect.any(Object),
     );
+  });
+
+  it('clears the stale key-person link on reassignment (review fix) — otherwise a recipient tied to the OLD customer would prefill Step 3 for the new one', async () => {
+    customerRepo.getById.mockResolvedValue({ id: 'cust-new', Name: 'Anna Kowalska' });
+    orderRepo.updateOrder.mockResolvedValue({ id: 'ord1', Customer: ['cust-new'], keyPersonId: null });
+
+    const app = await buildApp('owner');
+    const res = await request(app)
+      .patch('/api/orders/ord1')
+      .send({ Customer: ['cust-new'] });
+
+    expect(res.status).toBe(200);
+    expect(orderRepo.updateOrder).toHaveBeenCalledWith(
+      'ord1',
+      expect.objectContaining({ keyPersonId: null }),
+      expect.any(Object),
+    );
+  });
+
+  it('does NOT touch keyPersonId when Customer is absent from the PATCH body', async () => {
+    orderRepo.updateOrder.mockResolvedValue({ id: 'ord1', 'Florist Note': 'Add ribbon' });
+
+    const app = await buildApp('florist');
+    const res = await request(app)
+      .patch('/api/orders/ord1')
+      .send({ 'Florist Note': 'Add ribbon' });
+
+    expect(res.status).toBe(200);
+    expect(orderRepo.updateOrder).toHaveBeenCalledWith(
+      'ord1',
+      { 'Florist Note': 'Add ribbon' },
+      expect.any(Object),
+    );
+    const calledFields = orderRepo.updateOrder.mock.calls[0][1];
+    expect('keyPersonId' in calledFields).toBe(false);
   });
 
   it('unrelated PATCH fields still work for a florist (no Customer key in body)', async () => {

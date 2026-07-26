@@ -490,6 +490,12 @@ router.patch('/:id', async (req, res, next) => {
         throw custErr;
       }
       otherFields.Customer = [newCustomerId];
+      // The order's key person (recipient/contact) belongs to the OLD customer.
+      // Carrying it across a reassignment would prefill a stranger's recipient
+      // details on the next edit — clear it so Step 3 starts fresh for the new
+      // customer. orderRepo.updateOrder / transitionStatus both honour
+      // `keyPersonId` via orderResponseToPg.
+      otherFields.keyPersonId = null;
     }
 
     if (newStatus) {
