@@ -91,7 +91,7 @@ utils/
 - Update this file's structure block when adding/removing exports — mismatch with `index.js` makes future Claude sessions write duplicate code.
 
 ## Notable invariants
-- `getEffectiveStock(qty)` is the **only** correct way to compute available stock anywhere in the codebase (florist `StockItem.jsx`, dashboard `StockTab.jsx`). Never inline `qty - committed` — see root CLAUDE.md pitfall stock-math for the painful history.
+- `getEffectiveStock(qty)` is the **only** correct way to compute per-row available stock anywhere in the codebase — never inline `qty - committed`. Its Y-model counterpart for per-Variety rollups is `getVarietyTotals` — never inline `qty − reserved`. Both live in `utils/stockMath.js`; see root CLAUDE.md pitfall stock-math for the painful history. Don't hardcode the consumer list here (it rots) — `grep -rn "getEffectiveStock\|getVarietyTotals" apps/ packages/` finds the live call sites.
 
 ## Skill Triggers
 

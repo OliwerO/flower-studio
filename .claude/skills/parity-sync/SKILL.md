@@ -23,7 +23,7 @@ This skill is the disciplined walk through every parity surface, every translati
 | Domain | Florist | Dashboard | Delivery |
 |---|---|---|---|
 | Order editing | `apps/florist/src/components/OrderCard.jsx` + `apps/florist/src/pages/OrderDetailPage.jsx` | `apps/dashboard/src/components/OrderDetailPanel.jsx` | — |
-| Stock management | `apps/florist/src/pages/StockPanelPage.jsx` + `apps/florist/src/components/StockItem.jsx` | `apps/dashboard/src/components/StockTab.jsx` | — |
+| Stock management | `apps/florist/src/pages/StockPanelPage.jsx` | `apps/dashboard/src/components/StockTab.jsx` | — |
 | PO management | `apps/florist/src/pages/PurchaseOrderPage.jsx` | `apps/dashboard/src/components/StockOrderPanel.jsx` | — |
 | Order creation | `apps/florist/src/pages/NewOrderPage.jsx` + `apps/florist/src/pages/steps/` | `apps/dashboard/src/components/NewOrderTab.jsx` + `apps/dashboard/src/components/newOrderSteps/` | — |
 | Bouquet editing | `apps/florist/src/components/BouquetEditor.jsx` | `apps/dashboard/src/components/order/BouquetSection.jsx` | — |

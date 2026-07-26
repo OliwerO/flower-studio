@@ -68,7 +68,7 @@ The "Available Today" carousel on `wix.com/blossom` is gated by Wix's `leadTime 
 
 ## Hard rules
 
-- **Concrete over abstract.** "Refactored stock math" is forbidden. "Replaced `qty - committed` with `getEffectiveStock(qty)` in `StockItem.jsx:71`" is required.
+- **Concrete over abstract.** "Refactored stock math" is forbidden. "Replaced `qty - committed` with `getEffectiveStock(qty)` in `packages/shared/utils/stockMath.js:328`" is required.
 - **No marketing.** No "robust", "comprehensive", "seamless", "production-ready". Just facts.
 - **No future tense.** Describe what *is* now, not what *will be*. "Tomorrow we will" goes in the PR description, not the summary.
 - **No comparison to past Claude work.** Owner doesn't care which session produced the prior version.
