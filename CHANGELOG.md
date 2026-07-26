@@ -44,6 +44,21 @@ Pure code + a new JS constant. No env vars, no tables — reuses `driver_telegra
 
 ### Verification
 Backend Vitest full suite (`--no-file-parallelism`) 112 files / 1021 tests green; `npm run harness` + `npm run test:e2e` 253/253 green; `npm run lab:test:unit` 77/77 and `npm run lab:test:api` 18/18 green.
+## 2026-07-24 — feat(orders): Florist Note captured at creation + manual recipients auto-saved as Key People (#189, #517)
+
+### #189 — Florist Note in the new-order wizard
+Step 3 (Details) of the new-order wizard (`Step3Details.jsx`, both apps) now has an optional **Florist Note** textarea, styled to match its existing green-tinted treatment in `OrderCard`/`OrderDetailPage`/`OrderDetailPanel`. Previously the field only existed as a post-creation edit — a florist typing a note mid-creation had to remember to add it again after saving. `floristNote` was already plumbed through `orderRepo.createOrder` end-to-end (no backend change needed there — only lacked a regression test, now added); the wizard now sends it. Also surfaced on the Step 4 review screen alongside the existing Notes row.
+
+### #517 — manually-typed recipients auto-save as Key People
+If a florist skips Step 1's key-person picker and types the recipient directly into Step 3 (name + phone and/or address), that recipient previously vanished after the order was placed — it never became a reusable Key Person, so repeat orders for the same person could never pre-fill. On submit, both wizards (`NewOrderPage.jsx` florist, `NewOrderTab.jsx` dashboard) now detect this case (customer present, Delivery type, `keyPersonId` still null, recipient name + phone/address present) and POST to the same `/customers/:id/key-people` endpoint Step 1 already uses, then thread the resolved id into the order as `keyPersonId` — the same mechanism the Step 1 path already uses. Non-fatal on failure (toast + log; order submission proceeds regardless).
+
+**Dedupe (server-side):** `customerRepo.createKeyPerson` is now find-or-create — before inserting, it looks for an existing key person on the same customer whose name (trimmed, case-insensitive) and phone (digits-only) both match, and returns that row instead of inserting a duplicate. This endpoint had exactly one caller before #517 (`Step1Customer.jsx`, both apps), and that flow never depended on "always creates a new row," so extending it in place — rather than adding a second endpoint — means both apps and both entry points (Step 1 typed-name, Step 3 auto-save) get dedupe for free, with no new client-side lookup logic to keep in sync.
+
+**Fixed in passing:** `POST /premade-bouquets/:id/match` (the "Sold"/premade-shortcut order-creation path) was silently dropping both `floristNote` and `keyPersonId` from the request body before calling `matchPremadeBouquetToOrder` — the wizard sends the same body shape to this endpoint when a premade bouquet is locked in, so without this fix both new fields would vanish specifically on that path. `routes/premadeBouquets.js` now forwards both.
+
+No schema change — `orders.florist_note` and `orders.key_person_id` (with its existing `orders_key_person_id_fk` → `key_people.id` FK, migration 0006) already existed and were already write-capable; this is wiring + a repo-level dedupe.
+
+**Verification:** backend Vitest full suite (111 files / 1004 tests), API E2E 253/253, lab-unit 77/77, lab-api 18/18, `packages/shared` 788/788, florist + dashboard `vite build` — all green.
 
 ---
 ## 2026-07-24 — feat(crm): Instagram + Telegram fields on Key Person records (#553)

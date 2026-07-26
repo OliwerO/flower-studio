@@ -72,6 +72,7 @@ export default function Step4Review({ form, orderTotal, deliveryFee, isOwner, on
         <Row label={t.paymentStatus} value={form.paymentStatus === 'Paid' ? t.paymentPaid : t.paymentUnpaid} />
         <Row label={t.paymentMethod} value={form.paymentMethod} />
         {form.notes && <Row label={t.orderNotes} value={form.notes} />}
+        {form.floristNote && <Row label={t.floristNote} value={form.floristNote} />}
       </Section>
 
       {/* Total */}

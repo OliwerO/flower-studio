@@ -18,7 +18,7 @@ const emptyForm = {
   source: 'In-store', deliveryType: 'Pickup',
   recipientName: '', recipientPhone: '',
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
-  cardText: '', notes: '',
+  cardText: '', notes: '', floristNote: '',
   paymentStatus: 'Unpaid', paymentMethod: '', deliveryFee: 35,
   // When set, the resulting order is created via POST /api/premade-bouquets/:id/match
   matchPremadeId: null,
@@ -191,6 +191,31 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
 
     setSubmitting(true);
     try {
+      // #517: Step 1's key-person picker was skipped (keyPersonId still null)
+      // but the recipient was typed manually here in Step 3 — save it as a
+      // reusable Key Person on the customer so it pre-fills next time. Reuses
+      // the exact endpoint Step1Customer.jsx calls; the repo dedupes by
+      // name+phone server-side, so repeat orders for the same recipient never
+      // pile up duplicates. Non-fatal on failure — the order should still go
+      // through even if this convenience save fails.
+      let resolvedKeyPersonId = form.keyPersonId || null;
+      if (!resolvedKeyPersonId && form.customerId && form.deliveryType === 'Delivery'
+          && form.recipientName?.trim() && (form.recipientPhone?.trim() || form.deliveryAddress?.trim())) {
+        try {
+          const kpBody = { name: form.recipientName.trim() };
+          if (form.recipientPhone?.trim())  kpBody.phone   = form.recipientPhone.trim();
+          if (form.deliveryAddress?.trim()) kpBody.address = form.deliveryAddress.trim();
+          const kpRes = await client.post(`/customers/${form.customerId}/key-people`, kpBody);
+          resolvedKeyPersonId = kpRes.data.id;
+        } catch (err) {
+          // Non-fatal: log only, no toast. The order below still submits and
+          // succeeds on this path — an error toast here would land right next
+          // to (or under) the success toast and read as "did this work?"
+          // when it did. This convenience save just doesn't get retried.
+          console.error('Failed to save recipient as key person:', err);
+        }
+      }
+
       const body = {
         customer:            form.customerId,
         customerRequest:     form.customerRequest,
@@ -201,11 +226,12 @@ export default function NewOrderTab({ onNavigate, initialFilter }) {
         deliveryTime:        form.deliveryTime || '',
         cardText:            form.cardText || '',
         notes:               form.notes,
+        floristNote:         form.floristNote || '',
         paymentStatus:       form.paymentStatus,
         paymentMethod:       form.paymentMethod,
         priceOverride:       form.priceOverride ? Number(form.priceOverride) : null,
         orderLines:          form.orderLines,
-        keyPersonId:         form.keyPersonId || null,
+        keyPersonId:         resolvedKeyPersonId,
       };
       if (form.deliveryType === 'Delivery') {
         body.delivery = {
