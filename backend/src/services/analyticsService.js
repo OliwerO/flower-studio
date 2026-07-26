@@ -14,6 +14,7 @@ import { db as pgDb } from '../db/index.js';
 import { orders as ordersTable } from '../db/schema.js';
 import { inArray, isNull, and as pgAnd, lt } from 'drizzle-orm';
 import { getConfig } from './configService.js';
+import { isDeliveryOrder } from '../utils/deliveryGate.js';
 
 /**
  * Compute the full analytics report for a date range.
@@ -58,7 +59,13 @@ export async function computeAnalytics({ from, to }) {
       orderSellTotals[order.id] = (orderSellTotals[order.id] || 0) + (line['Sell Price Per Unit'] || 0) * qty;
       orderCostTotals[order.id] = (orderCostTotals[order.id] || 0) + (line['Cost Price Per Unit'] || 0) * qty;
     }
-    if (order._delivery?.['Delivery Fee']) {
+    // Gate on the ORDER's current Delivery Type, not on "a delivery row exists".
+    // A Delivery → Pickup conversion only CANCELS the linked delivery (it is
+    // never soft-deleted, and its fee is deliberately left intact), so
+    // `_delivery` still carries the old fee forever — see CLAUDE.md pitfall
+    // cancelled-delivery-leak. Without this gate a converted order keeps
+    // inflating deliveryRevenue/totalRevenue in every historical report.
+    if (isDeliveryOrder(order) && order._delivery?.['Delivery Fee']) {
       deliveryFeeByOrder[order.id] = order._delivery['Delivery Fee'];
     }
   }
@@ -68,8 +75,13 @@ export async function computeAnalytics({ from, to }) {
 
   // Attach _driverPayout: sum of what we pay the courier per delivery.
   // Driver method → Driver Payout; Taxi method → Taxi Cost.
+  // Same Delivery-Type gate as the fee above — an order converted to Pickup
+  // was never couriered, so its stale payout must not be expensed (and must
+  // not drive deliveryProfit negative now that its fee is correctly excluded).
   for (const order of orders) {
-    order._driverPayout = Number(order._delivery?.['Driver Payout'] || 0) + Number(order._delivery?.['Taxi Cost'] || 0);
+    order._driverPayout = isDeliveryOrder(order)
+      ? Number(order._delivery?.['Driver Payout'] || 0) + Number(order._delivery?.['Taxi Cost'] || 0)
+      : 0;
   }
 
   const paidOrders = orders.filter(o => o['Payment Status'] !== PAYMENT_STATUS.UNPAID);
