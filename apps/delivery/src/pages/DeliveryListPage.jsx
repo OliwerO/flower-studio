@@ -25,11 +25,23 @@ function todayStr() {
     String(d.getDate()).padStart(2, '0');
 }
 
-function formatDateHeader() {
-  const d = new Date();
+// Parses a 'YYYY-MM-DD' string into a local Date. Avoids the day-shift that
+// `new Date('YYYY-MM-DD')` can cause in negative-UTC-offset timezones by
+// building the Date from local y/m/d components instead of UTC-parsing.
+function parseISODate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+// Humanizes a date as "day-of-week day month" (e.g. "Пт 25 июл"), sourced
+// from the driver's current UI language (translations.js Proxy). Defaults to
+// today; pass any Date (e.g. via parseISODate) to format other days — used
+// for both the today header and the upcoming-deliveries date labels so a raw
+// ISO string never reaches the driver (#404).
+function formatDateHeader(date = new Date()) {
   const days = t.dayNamesShort;
   const months = t.monthNamesShort;
-  return `${days[d.getDay()]} ${d.getDate()} ${months[d.getMonth()]}`;
+  return `${days[date.getDay()]} ${date.getDate()} ${months[date.getMonth()]}`;
 }
 
 export default function DeliveryListPage() {
@@ -373,7 +385,7 @@ export default function DeliveryListPage() {
                 {Object.entries(upcomingByDate).map(([date, list]) => (
                   <div key={date} className="space-y-2 mb-4">
                     <p className="text-xs font-semibold text-ios-tertiary uppercase mt-2">
-                      {date} ({list.length})
+                      {formatDateHeader(parseISODate(date))} ({list.length})
                     </p>
                     {list.map(d => (
                       <DeliveryCard
