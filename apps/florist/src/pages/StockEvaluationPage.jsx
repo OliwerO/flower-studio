@@ -8,6 +8,24 @@ import { useToast } from '../context/ToastContext.jsx';
 import client from '../api/client.js';
 import t from '../translations.js';
 
+// Broken/write-off and accept are two views of one pool of received stems
+// (received === accepted + writeOff). Editing either field recomputes the
+// other so they can never drift apart — this is the auto-decrement behavior
+// issue #537 asks for ("10 arrived, florist enters 1 broken -> accept
+// auto-updates 10 -> 9"), and it works the same way in reverse (editing
+// accept adjusts write-off) so a manual accept edit is never left
+// contradicting a stale write-off count. Both clamp to [0, received].
+// Shared by the primary line and the alt/substitute line below.
+function recomputeFromWriteOff(received, writeOffInput) {
+  const writeOff = Math.max(0, Math.min(Number(writeOffInput) || 0, received));
+  return { writeOff, accepted: Math.max(0, received - writeOff) };
+}
+
+function recomputeFromAccepted(received, acceptedInput) {
+  const accepted = Math.max(0, Math.min(Number(acceptedInput) || 0, received));
+  return { accepted, writeOff: Math.max(0, received - accepted) };
+}
+
 export default function StockEvaluationPage() {
   const navigate = useNavigate();
   const { showToast } = useToast();
@@ -93,15 +111,14 @@ export default function StockEvaluationPage() {
   }
 
   function handleWriteOffChange(lineId, writeOff, field = 'writeOff') {
-    const raw = Number(writeOff) || 0;
     if (field === 'writeOff') {
       const found = Number(orders.flatMap(o => o.lines).find(l => l.id === lineId)?.['Quantity Found']) || 0;
-      const wo = Math.max(0, Math.min(raw, found));
-      updateEval(lineId, { writeOff: wo, accepted: Math.max(0, found - wo) });
+      const { writeOff: wo, accepted } = recomputeFromWriteOff(found, writeOff);
+      updateEval(lineId, { writeOff: wo, accepted });
     } else {
       const altFound = Number(orders.flatMap(o => o.lines).find(l => l.id === lineId)?.['Alt Quantity Found']) || 0;
-      const wo = Math.max(0, Math.min(raw, altFound));
-      updateEval(lineId, { altWriteOff: wo, altAccepted: Math.max(0, altFound - wo) });
+      const { writeOff: wo, accepted: altAccepted } = recomputeFromWriteOff(altFound, writeOff);
+      updateEval(lineId, { altWriteOff: wo, altAccepted });
     }
   }
 
@@ -373,8 +390,8 @@ export default function StockEvaluationPage() {
                                 reason={ev.reason || 'Damaged'}
                                 max={found}
                                 onAcceptChange={val => {
-                                  const v = Math.max(0, Math.min(Number(val) || 0, found));
-                                  updateEval(line.id, { accepted: v, writeOff: Math.max(0, found - v) });
+                                  const { accepted: v, writeOff } = recomputeFromAccepted(found, val);
+                                  updateEval(line.id, { accepted: v, writeOff });
                                 }}
                                 onWriteOffChange={val => handleWriteOffChange(line.id, val, 'writeOff')}
                                 onReasonChange={val => updateEval(line.id, { reason: val })}
@@ -445,8 +462,8 @@ export default function StockEvaluationPage() {
                                     max={altFound}
                                     borderColor="border-indigo-200"
                                     onAcceptChange={val => {
-                                      const v = Math.max(0, Math.min(Number(val) || 0, altFound));
-                                      updateEval(line.id, { altAccepted: v, altWriteOff: Math.max(0, altFound - v) });
+                                      const { accepted: v, writeOff: altWriteOff } = recomputeFromAccepted(altFound, val);
+                                      updateEval(line.id, { altAccepted: v, altWriteOff });
                                     }}
                                     onWriteOffChange={val => handleWriteOffChange(line.id, val, 'altWriteOff')}
                                     onReasonChange={val => updateEval(line.id, { altReason: val })}
@@ -554,7 +571,7 @@ function AcceptWriteOffRow({ accepted, writeOff, reason, max, borderColor = 'bor
           value={writeOff}
           onChange={e => onWriteOffChange(e.target.value)}
           className="w-full text-center text-sm font-semibold border-amber-200 border rounded-xl px-2 py-2.5 bg-white outline-none"
-          min="0"
+          min="0" max={max}
         />
       </div>
       <div>
