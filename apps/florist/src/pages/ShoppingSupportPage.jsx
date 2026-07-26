@@ -150,7 +150,8 @@ export default function ShoppingSupportPage() {
   // The owner sometimes buys something not on the original list. The backend
   // already broadcasts stock_order_line_updated so the driver's app refreshes.
   // Driver Status = Found All because we only add a line that's already bought
-  // (all fields required up front — no "temp line" that can silently vanish).
+  // (name + qty required up front, supplier/cost optional — #524; no "temp
+  // line" that can silently vanish).
   // `quantity` here is the TOTAL STEMS (form pre-computes lots × lot size).
   async function addExtraLine(orderId, { flowerName, supplier, quantity, costPrice, lotSize }) {
     try {
@@ -732,8 +733,9 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
 // size > 1, the "qty" input is LOTS (so entering "1" for a lot of 10 means
 // 10 stems); when lot size is 0 or 1, "qty" is raw stems. Cost is explicitly
 // per-stem. Live display shows derived stem count and total cost so the
-// owner can sanity-check before submitting. All fields required; POST only
-// fires on submit, never from blur — no temp-local-line that can vanish.
+// owner can sanity-check before submitting. Flower name + qty are required;
+// supplier/cost are optional (#524). POST only fires on submit, never from
+// blur — no temp-local-line that can vanish.
 function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -756,11 +758,11 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
     setOpen(false);
   }
 
+  // #524: only identity (flower name) + quantity are required. Supplier and
+  // cost/stem are optional — the owner can fill them in later.
   const ready =
     form.flowerName.trim() &&
-    form.supplier.trim() &&
-    totalStems > 0 &&
-    costPerStemNum > 0;
+    totalStems > 0;
 
   async function submit() {
     if (!ready || submitting) return;
@@ -801,7 +803,7 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
         type="text"
         value={form.supplier}
         onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-        placeholder={t.shopping.supplier}
+        placeholder={`${t.shopping.supplier} (${t.optional || 'optional'})`}
         className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
       />
       {/* Lot size + qty row — qty is LOTS when lotSize > 1, else stems */}
@@ -831,7 +833,7 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
           />
         </div>
         <div className="flex-1 relative">
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.costPerStem}</label>
+          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.costPerStem} ({t.optional || 'optional'})</label>
           <input
             type="text"
             inputMode="decimal"
