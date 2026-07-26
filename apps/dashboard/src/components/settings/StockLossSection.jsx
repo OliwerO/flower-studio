@@ -1,8 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import t from '../../translations.js';
 import client from '../../api/client.js';
 import { Section } from './SettingsPrimitives.jsx';
-import { LOSS_REASONS, reasonLabel } from '@flower-studio/shared';
+import {
+  LOSS_REASONS,
+  reasonLabel,
+  WRITE_OFF_PERIODS,
+  isInWriteOffPeriod,
+} from '@flower-studio/shared';
 
 // Reason lookup used in rendered rows. Derived from the shared enum so this
 // file is never out of sync with the backend when a reason is added.
@@ -17,11 +22,29 @@ export default function StockLossSection() {
   const [editingId, setEditingId] = useState(null);
   const [editForm, setEditForm] = useState({ quantity: '', reason: '', notes: '', date: '' });
   const [deleteConfirm, setDeleteConfirm] = useState(null);
+  // Today / This Week / This Month / All (issue #193) — client-side filter
+  // over the already-loaded `entries` set, driven by the shared period model
+  // so this stays in lock-step with the florist WasteLogPage.
+  //
+  // Default here is 'all', NOT the shared DEFAULT_WRITE_OFF_PERIOD ('week') —
+  // deliberately asymmetric with florist. Before this filter existed, this
+  // section just showed its last 30 entries unfiltered; defaulting straight
+  // to 'week' would silently render an empty section on a quiet Monday with
+  // nothing written off yet this week, reading as "is this broken?" rather
+  // than "nothing to show yet." Florist keeps 'week' — it's a working tool
+  // checked constantly through the day, where a tighter default is the more
+  // useful start state.
+  const [period, setPeriod] = useState('all');
 
   useEffect(() => {
     client.get('/stock?active=true').then(r => setStock(r.data)).catch(() => {});
     client.get('/stock-loss').then(r => setEntries(r.data)).catch(() => {});
   }, []);
+
+  const filteredEntries = useMemo(
+    () => entries.filter(e => isInWriteOffPeriod(e.Date, period)),
+    [entries, period]
+  );
 
   function showMsg(msg) {
     setToast(msg);
@@ -125,7 +148,29 @@ export default function StockLossSection() {
         </div>
       )}
 
-      {entries.length > 0 && (
+      {/* Period filter — Today / This Week / This Month / All (issue #193) */}
+      <div className="flex flex-wrap gap-1.5 mb-2">
+        {WRITE_OFF_PERIODS.map(p => (
+          <button
+            key={p.key}
+            type="button"
+            onClick={() => setPeriod(p.key)}
+            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+              period === p.key
+                ? 'bg-brand-600 text-white'
+                : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+            }`}
+          >
+            {t[p.labelKey]}
+          </button>
+        ))}
+      </div>
+
+      {entries.length > 0 && filteredEntries.length === 0 && (
+        <p className="text-xs text-gray-400 mb-2">{t.noData}</p>
+      )}
+
+      {filteredEntries.length > 0 && (
         <div className="max-h-48 overflow-y-auto">
           <table className="w-full text-xs">
             <thead>
@@ -139,7 +184,7 @@ export default function StockLossSection() {
               </tr>
             </thead>
             <tbody>
-              {entries.slice(0, 30).map(e => (
+              {filteredEntries.slice(0, 30).map(e => (
                 editingId === e.id ? (
                   <tr key={e.id} className="border-b border-gray-50 bg-blue-50/50">
                     <td className="py-1"><input type="date" value={editForm.date} onChange={ev => setEditForm({ ...editForm, date: ev.target.value })} className="text-xs px-1 py-0.5 border rounded w-28" /></td>

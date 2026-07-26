@@ -9,6 +9,10 @@ import {
   LOSS_REASONS,
   reasonLabel,
   useToast,
+  isInWriteOffPeriod,
+  localIsoDate,
+  WRITE_OFF_PERIODS,
+  writeOffPeriodLabel,
 } from '@flower-studio/shared';
 import client from '../api/client.js';
 import t from '../translations.js';
@@ -17,27 +21,24 @@ import WasteEntryRow from '../components/waste/WasteEntryRow.jsx';
 import WasteAddSheet from '../components/waste/WasteAddSheet.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 
-// Reference point for relative dates so "today" / "yesterday" labels work
-// whether the user is in CEST or UTC.
+// Reference point for relative dates — always the LOCAL calendar day (never
+// UTC), via the shared localIsoDate helper, so "today"/"yesterday" labels
+// here agree with the shared period filter (isInWriteOffPeriod) near local
+// midnight in Europe/Warsaw. See the module doc comment at the top of
+// packages/shared/utils/writeOffPeriods.js for the bug this avoids.
 function todayISO() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().split('T')[0];
+  return localIsoDate(new Date());
 }
-function periodStart(period) {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  if (period === 'week') d.setDate(d.getDate() - 7);
-  else if (period === 'month') d.setMonth(d.getMonth() - 1);
-  else if (period === 'all') return '1970-01-01';
-  return d.toISOString().split('T')[0];
-}
+// Today / Week / Month / All periods themselves are resolved by the shared
+// `isInWriteOffPeriod` util (issue #193) so this list stays in lock-step with
+// the dashboard's StockLossSection. Only the bonus "custom" range (a two-sided
+// from/to picked here) stays local — it isn't part of the shared model.
 
 // Groups entries by their Date field, producing sticky-header-friendly sections.
 function groupByDate(entries, t) {
   const today = todayISO();
   const yd = new Date(); yd.setDate(yd.getDate() - 1);
-  const yesterday = yd.toISOString().split('T')[0];
+  const yesterday = localIsoDate(yd);
 
   const groups = new Map();
   for (const e of entries) {
@@ -95,19 +96,16 @@ export default function WasteLogPage() {
   useEffect(() => { loadAll(); }, []);
 
   // Filter — period is a date-range; reasons are multi-select chips.
-  // Custom range applies both a lower AND upper bound; presets only a lower one.
+  // Custom range applies both a lower AND upper bound; the shared Today/Week/
+  // Month/All presets apply only a lower one (see isInWriteOffPeriod).
   const filtered = useMemo(() => {
-    let from, to;
-    if (period === 'custom') {
-      if (!customFrom || !customTo) return []; // wait until both ends are chosen
-      from = customFrom; to = customTo;
-    } else {
-      from = periodStart(period); to = null;
-    }
+    if (period === 'custom' && (!customFrom || !customTo)) return []; // wait until both ends are chosen
     return entries.filter(e => {
       const d = e.Date || '';
-      if (d < from) return false;
-      if (to && d > to) return false;
+      const inPeriod = period === 'custom'
+        ? (d >= customFrom && d <= customTo)
+        : isInWriteOffPeriod(e.Date, period);
+      if (!inPeriod) return false;
       if (supplierFilter !== 'all' && (e.supplier || '—') !== supplierFilter) return false;
       if (selectedReasons.length > 0 && !selectedReasons.includes(e.Reason)) return false;
       return true;
@@ -125,10 +123,7 @@ export default function WasteLogPage() {
   }, [entries, supplierFilter]);
 
   const periodLabels = {
-    today:  t.wastePeriodToday,
-    week:   t.wastePeriodWeek,
-    month:  t.wastePeriodMonth,
-    all:    t.wastePeriodAll,
+    ...Object.fromEntries(WRITE_OFF_PERIODS.map(p => [p.key, writeOffPeriodLabel(t, p.key)])),
     custom: t.wastePeriodCustom,
   };
 
@@ -199,10 +194,7 @@ export default function WasteLogPage() {
         <FilterBar
           className="mb-2"
           chips={[
-            { value: 'today',  label: t.wastePeriodToday },
-            { value: 'week',   label: t.wastePeriodWeek },
-            { value: 'month',  label: t.wastePeriodMonth },
-            { value: 'all',    label: t.wastePeriodAll },
+            ...WRITE_OFF_PERIODS.map(p => ({ value: p.key, label: writeOffPeriodLabel(t, p.key) })),
             { value: 'custom', label: t.wastePeriodCustom },
           ]}
           value={period}

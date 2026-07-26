@@ -176,6 +176,13 @@ const en = {
   farmer:           'Farmer',
   wasteLog:         'Waste log',
   recentWriteOffs:  'Recent write-offs',
+  // Write-off period filter (issue #193) — keys match the florist app's
+  // WasteLogPage exactly so the shared WRITE_OFF_PERIODS list's labelKey
+  // resolves identically in both apps.
+  wastePeriodToday: 'Today',
+  wastePeriodWeek:  'Week',
+  wastePeriodMonth: 'Month',
+  wastePeriodAll:   'All',
   thisMonth:        'This month',
   last30d:          'Last 30 days',
   last90d:          'Last 3 months',
@@ -1390,6 +1397,10 @@ const ru = {
   farmer:           'Фермер',
   wasteLog:         'Журнал списаний',
   recentWriteOffs:  'Последние списания',
+  wastePeriodToday: 'Сегодня',
+  wastePeriodWeek:  'Неделя',
+  wastePeriodMonth: 'Месяц',
+  wastePeriodAll:   'Всё',
   thisMonth:        'Этот месяц',
   last30d:          'Последние 30 дней',
   last90d:          'Последние 3 месяца',
