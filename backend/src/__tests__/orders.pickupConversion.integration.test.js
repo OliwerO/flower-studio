@@ -130,17 +130,16 @@ describe('PATCH /api/orders/:id — Delivery → Pickup conversion clears the fe
     expect(patchRes.status).toBe(200);
     expect(patchRes.body['Delivery Type']).toBe('Pickup');
 
-    // ── DB assertions: the linked delivery is cancelled AND blanked ──
+    // ── DB assertions: the linked delivery is CANCELLED but otherwise intact ──
+    // Blanking its fields was reverted on review: a mis-tap would destroy the
+    // real address/fee/driver irrecoverably. The read-time Delivery Type gate
+    // is what keeps the stale data from ever surfacing.
     const [deliveryRow] = await harness.db.select().from(deliveries)
       .where(eq(deliveries.id, deliveryId));
     expect(deliveryRow.status).toBe(DELIVERY_STATUS.CANCELLED);
-    expect(deliveryRow.deliveryFee).toBeNull();
-    expect(deliveryRow.deliveryAddress).toBe('');
-    expect(deliveryRow.recipientName).toBe('');
-    expect(deliveryRow.recipientPhone).toBe('');
-    expect(deliveryRow.assignedDriver).toBeNull();
-    expect(deliveryRow.driverInstructions).toBe('');
-    expect(deliveryRow.driverPayout).toBeNull();
+    expect(Number(deliveryRow.deliveryFee)).toBe(25);
+    expect(deliveryRow.deliveryAddress).toBe('ul. Floriańska 1');
+    expect(deliveryRow.assignedDriver).toBe('Timur');
 
     // ── DB assertion: the order's own (redundant) Delivery Fee column is cleared ──
     const [orderRow] = await harness.db.select().from(orders).where(eq(orders.id, orderId));
@@ -176,5 +175,57 @@ describe('PATCH /api/orders/:id — Delivery → Pickup conversion clears the fe
       .where(eq(deliveries.id, deliveryId));
     expect(deliveryRow.status).toBe(DELIVERY_STATUS.PENDING);
     expect(Number(deliveryRow.deliveryFee)).toBe(25);
+  });
+
+  it('leaves an already-Delivered delivery alone — completed history is not cancelled by a later type flip', async () => {
+    await harness.db.update(deliveries)
+      .set({ status: DELIVERY_STATUS.DELIVERED })
+      .where(eq(deliveries.id, deliveryId));
+
+    const patchRes = await supertest(app)
+      .patch(`/api/orders/${orderId}`)
+      .send({ 'Delivery Type': 'Pickup' });
+    expect(patchRes.status).toBe(200);
+
+    const [deliveryRow] = await harness.db.select().from(deliveries)
+      .where(eq(deliveries.id, deliveryId));
+    expect(deliveryRow.status).toBe(DELIVERY_STATUS.DELIVERED);
+
+    // The order-level fee still clears, and the read gate still hides the
+    // delivery's fee — only the historical delivery record is preserved.
+    const detailRes = await supertest(app).get(`/api/orders/${orderId}`);
+    expect(detailRes.body['Final Price']).toBe(45);
+  });
+
+  it('is idempotent — converting twice does not error or re-cancel', async () => {
+    await supertest(app).patch(`/api/orders/${orderId}`).send({ 'Delivery Type': 'Pickup' });
+    const second = await supertest(app)
+      .patch(`/api/orders/${orderId}`)
+      .send({ 'Delivery Type': 'Pickup' });
+    expect(second.status).toBe(200);
+
+    const [deliveryRow] = await harness.db.select().from(deliveries)
+      .where(eq(deliveries.id, deliveryId));
+    expect(deliveryRow.status).toBe(DELIVERY_STATUS.CANCELLED);
+
+    const detailRes = await supertest(app).get(`/api/orders/${orderId}`);
+    expect(detailRes.body['Final Price']).toBe(45);
+  });
+
+  it('does not crash when the order has no live delivery record', async () => {
+    // Soft-delete the delivery, then convert: the cascade's lookup filters on
+    // deletedAt IS NULL, so it must find nothing and proceed cleanly.
+    await harness.db.update(deliveries)
+      .set({ deletedAt: new Date() })
+      .where(eq(deliveries.id, deliveryId));
+
+    const patchRes = await supertest(app)
+      .patch(`/api/orders/${orderId}`)
+      .send({ 'Delivery Type': 'Pickup' });
+    expect(patchRes.status).toBe(200);
+    expect(patchRes.body['Delivery Type']).toBe('Pickup');
+
+    const detailRes = await supertest(app).get(`/api/orders/${orderId}`);
+    expect(detailRes.body['Final Price']).toBe(45);
   });
 });

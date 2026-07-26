@@ -329,6 +329,9 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
           <Pills
             options={DELIVERY_TYPES}
             value={o['Delivery Type']}
+            // Parity with the florist app: a terminal order's fulfilment type is
+            // history. Flipping it would cancel an already-Delivered delivery.
+            disabled={saving || isTerminal}
             onChange={async v => {
               if (v === 'Delivery' && o['Delivery Type'] === 'Pickup' && !o.delivery) {
                 // Switching from Pickup to Delivery — create delivery record on-the-fly
