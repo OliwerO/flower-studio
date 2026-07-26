@@ -296,16 +296,30 @@ export default function PurchaseOrderPage() {
   // the line is persisted immediately. Returns true on success so the inline
   // form can collapse. Supersedes the old temp-local-line pattern which could
   // silently drop the line if the owner didn't enter a flower name.
-  async function addPersistedLine(orderId, { flowerName, supplier, quantity, costPrice, lotSize }) {
+  // Issue #550: identity now mirrors DraftLineEditor — either an existing
+  // Stock Item link (stockItemId) or a new-Variety Type/Colour/Size/Cultivar,
+  // in addition to a plain typed Flower Name. The backend endpoint already
+  // accepted all of these (see stockOrders.js POST /:id/lines) — only the
+  // frontend form was missing the fields.
+  async function addPersistedLine(orderId, {
+    flowerName, stockItemId, supplier, quantity, costPrice, sellPrice, lotSize,
+    type, colour, size, cultivar,
+  }) {
     try {
       const poStatus = orders.find(o => o.id === orderId)?.Status;
       const stems = Number(quantity) || 0;
       const created = await client.post(`/stock-orders/${orderId}/lines`, {
-        flowerName: flowerName.trim(),
-        supplier: supplier.trim(),
+        flowerName: (flowerName || '').trim(),
+        stockItemId: stockItemId || '',
+        supplier: (supplier || '').trim(),
         quantity: stems,
         costPrice: Number(costPrice) || 0,
+        sellPrice: Number(sellPrice) || 0,
         lotSize: Number(lotSize) || 0,
+        type: (type || '').trim() || null,
+        colour: (colour || '').trim() || null,
+        size: size ? Number(size) : null,
+        cultivar: (cultivar || '').trim() || null,
       });
       // Lines added during Shopping are for flowers already physically bought,
       // so mark Found All and stamp Quantity Found so the florist can see them.
@@ -688,10 +702,14 @@ export default function PurchaseOrderPage() {
                           </button>
                         ) : (
                           // Sent/Shopping: off-plan flower, all fields required up front.
+                          // Full field set (issue #550) — Stock Item search +
+                          // new-Variety identity, same as DraftLineEditor.
                           <AddLineInlineForm
                             orderId={order.id}
                             onAdd={addPersistedLine}
                             suppliers={SUPPLIERS}
+                            stock={stock}
+                            targetMarkup={targetMarkup}
                             status={order.Status}
                           />
                         )}
@@ -1103,33 +1121,68 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
 // Same logic as the DraftLineEditor qty/lotSize handling: when lot size > 1
 // the "qty" field means LOTS and total stems = lots × lot size; otherwise
 // qty is raw stems. Cost is explicitly per-stem with a live total preview.
-// All fields required up front; POST only fires on submit — no silent drops.
+// Flower identity mirrors DraftLineEditor (issue #550): pick an existing
+// Stock Item via search (auto-fills cost/sell/lot size/supplier), or type a
+// new Variety's Type/Colour/Size/Cultivar when nothing is linked — the exact
+// same StockSearchInput + Variety-identity block DraftLineEditor already
+// uses, so a line added to a Sent/Shopping PO carries the same identity a
+// Draft-PO line would (repo pitfall #6: every PO line needs a Stock Item
+// link or a Flower Name). All fields required up front; POST only fires on
+// submit — no silent drops.
 // Sent/Shopping-only: an "off-plan" line bought at the supplier. Draft uses
 // the one-tap add button + DraftLineEditor instead — see the call site.
-function AddLineInlineForm({ orderId, onAdd, suppliers = [], status }) {
+function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup, status }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [form, setForm] = useState({
-    flowerName: '',
-    supplier: '',
-    lotSize: '',
-    qty: '',
-    costPerStem: '',
+    flowerName: '', stockItemId: '', supplier: '', lotSize: '', qty: '',
+    costPerStem: '', sellPerStem: '',
+    // Y-model new-Variety identity (#304) — populated when no stockItemId
+    type: '', colour: '', size: '', cultivar: '',
   });
 
   const lotSizeNum = Number(form.lotSize) || 0;
   const qtyNum = Number(form.qty) || 0;
   const costPerStemNum = Number(form.costPerStem) || 0;
+  const sellPerStemNum = Number(form.sellPerStem) || 0;
   const totalStems = lotSizeNum > 1 ? qtyNum * lotSizeNum : qtyNum;
   const totalCost = totalStems * costPerStemNum;
+  const computedMarkup = costPerStemNum > 0 && sellPerStemNum > 0 ? (sellPerStemNum / costPerStemNum).toFixed(1) : null;
+  const stockItemLinked = !!form.stockItemId;
 
   function reset() {
-    setForm({ flowerName: '', supplier: '', lotSize: '', qty: '', costPerStem: '' });
+    setForm({
+      flowerName: '', stockItemId: '', supplier: '', lotSize: '', qty: '',
+      costPerStem: '', sellPerStem: '', type: '', colour: '', size: '', cultivar: '',
+    });
     setOpen(false);
   }
 
+  // Picking an existing Stock Item auto-fills cost/sell/lot size/supplier and
+  // clears any in-progress new-Variety fields — mirrors DraftLineEditor's
+  // handleStockSelect exactly.
+  function handleStockSelect(item) {
+    const itemCost = Number(item['Current Cost Price']) || 0;
+    const itemSell = Number(item['Current Sell Price']) || 0;
+    const itemLotSize = Number(item['Lot Size']) || 0;
+    setForm(f => ({
+      ...f,
+      flowerName: item['Display Name'],
+      stockItemId: item.id,
+      supplier: item.Supplier || '',
+      costPerStem: itemCost > 0 ? String(itemCost) : '',
+      sellPerStem: itemSell > 0 ? String(itemSell) : (itemCost > 0 && targetMarkup ? String(Math.round(itemCost * targetMarkup)) : ''),
+      lotSize: itemLotSize > 0 ? String(itemLotSize) : '',
+      type: '', colour: '', size: '', cultivar: '',
+    }));
+  }
+
+  // Identity rule mirrors DraftLineEditor's isBlank check + the backend's own
+  // gate on POST /:id/lines (pitfall #6): a Stock Item link, an explicit
+  // Flower Name, or a new-Variety Type all count as identity.
+  const hasIdentity = !!(form.stockItemId || form.flowerName.trim() || form.type.trim());
   const ready =
-    form.flowerName.trim() &&
+    hasIdentity &&
     form.supplier.trim() &&
     totalStems > 0 &&
     costPerStemNum > 0;
@@ -1138,11 +1191,20 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], status }) {
     if (!ready || submitting) return;
     setSubmitting(true);
     const ok = await onAdd(orderId, {
-      flowerName: form.flowerName,
+      // When the owner filled the new-Variety block, drop the free-typed search
+      // text so the backend composes the name from Type/Colour/Size/Cultivar —
+      // otherwise a partial search string ("peo") becomes the Variety name.
+      flowerName: form.type.trim() ? '' : form.flowerName,
+      stockItemId: form.stockItemId,
       supplier: form.supplier,
       quantity: totalStems,
       costPrice: costPerStemNum,
+      sellPrice: sellPerStemNum,
       lotSize: lotSizeNum,
+      type: form.type,
+      colour: form.colour,
+      size: form.size,
+      cultivar: form.cultivar,
     });
     setSubmitting(false);
     if (ok) reset();
@@ -1162,12 +1224,11 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], status }) {
   return (
     <div className="bg-brand-50/50 border border-brand-200 rounded-xl p-3 space-y-2">
       <p className="text-[11px] text-ios-tertiary">{t.shopping?.addExtraHint}</p>
-      <input
-        type="text"
+      <StockSearchInput
+        stock={stock}
         value={form.flowerName}
-        onChange={e => setForm(f => ({ ...f, flowerName: e.target.value }))}
-        placeholder={t.shopping?.flowerName || 'Flower name'}
-        className="field-input w-full text-sm"
+        onChange={name => setForm(f => ({ ...f, flowerName: name, stockItemId: '' }))}
+        onSelect={handleStockSelect}
       />
       <input
         type="text"
@@ -1180,6 +1241,31 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], status }) {
       <datalist id={`po-sup-${orderId}`}>
         {suppliers.map(s => <option key={s} value={s} />)}
       </datalist>
+
+      {/* Variety identity — only when no Stock Item is linked. Same block as
+          DraftLineEditor's new-Variety row (issue #550). */}
+      {!stockItemLinked && (
+        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
+          <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
+            {t.po?.newVariety ?? 'New variety'}
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <input type="text" value={form.type}
+              onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
+              className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
+            <input type="text" value={form.colour}
+              onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
+              className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
+            <input type="number" value={form.size}
+              onChange={e => setForm(f => ({ ...f, size: e.target.value }))}
+              className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
+            <input type="text" value={form.cultivar}
+              onChange={e => setForm(f => ({ ...f, cultivar: e.target.value }))}
+              className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
+          </div>
+        </div>
+      )}
+
       {/* Lot size + qty + cost/stem — qty auto-means lots when lotSize > 1 */}
       <div className="grid grid-cols-3 gap-2">
         <div>
@@ -1216,6 +1302,22 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], status }) {
           />
         </div>
       </div>
+
+      {/* Sell price — optional, mirrors DraftLineEditor's markup badge */}
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1 flex-1">
+          <span className="text-[10px] text-ios-tertiary shrink-0">{t.sellPrice || 'Sell'}:</span>
+          <input type="number" step="0.01" value={form.sellPerStem}
+            onChange={e => setForm(f => ({ ...f, sellPerStem: e.target.value }))}
+            className="field-input w-full text-sm text-right py-1" placeholder="0" />
+        </div>
+        {computedMarkup && (
+          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
+            Number(computedMarkup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
+          }`}>×{computedMarkup}</span>
+        )}
+      </div>
+
       {totalStems > 0 && (
         <div className="flex items-center justify-between bg-brand-50 rounded-lg px-3 py-1.5">
           <span className="text-xs text-brand-700">= {totalStems} {t.stems}</span>
