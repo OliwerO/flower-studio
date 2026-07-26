@@ -10,6 +10,9 @@ import {
   reasonLabel,
   useToast,
   isInWriteOffPeriod,
+  localIsoDate,
+  WRITE_OFF_PERIODS,
+  writeOffPeriodLabel,
 } from '@flower-studio/shared';
 import client from '../api/client.js';
 import t from '../translations.js';
@@ -18,12 +21,13 @@ import WasteEntryRow from '../components/waste/WasteEntryRow.jsx';
 import WasteAddSheet from '../components/waste/WasteAddSheet.jsx';
 import DatePicker from '../components/DatePicker.jsx';
 
-// Reference point for relative dates so "today" / "yesterday" labels work
-// whether the user is in CEST or UTC.
+// Reference point for relative dates — always the LOCAL calendar day (never
+// UTC), via the shared localIsoDate helper, so "today"/"yesterday" labels
+// here agree with the shared period filter (isInWriteOffPeriod) near local
+// midnight in Europe/Warsaw. See the module doc comment at the top of
+// packages/shared/utils/writeOffPeriods.js for the bug this avoids.
 function todayISO() {
-  const d = new Date();
-  d.setHours(0, 0, 0, 0);
-  return d.toISOString().split('T')[0];
+  return localIsoDate(new Date());
 }
 // Today / Week / Month / All periods themselves are resolved by the shared
 // `isInWriteOffPeriod` util (issue #193) so this list stays in lock-step with
@@ -34,7 +38,7 @@ function todayISO() {
 function groupByDate(entries, t) {
   const today = todayISO();
   const yd = new Date(); yd.setDate(yd.getDate() - 1);
-  const yesterday = yd.toISOString().split('T')[0];
+  const yesterday = localIsoDate(yd);
 
   const groups = new Map();
   for (const e of entries) {
@@ -119,10 +123,7 @@ export default function WasteLogPage() {
   }, [entries, supplierFilter]);
 
   const periodLabels = {
-    today:  t.wastePeriodToday,
-    week:   t.wastePeriodWeek,
-    month:  t.wastePeriodMonth,
-    all:    t.wastePeriodAll,
+    ...Object.fromEntries(WRITE_OFF_PERIODS.map(p => [p.key, writeOffPeriodLabel(t, p.key)])),
     custom: t.wastePeriodCustom,
   };
 
@@ -193,10 +194,7 @@ export default function WasteLogPage() {
         <FilterBar
           className="mb-2"
           chips={[
-            { value: 'today',  label: t.wastePeriodToday },
-            { value: 'week',   label: t.wastePeriodWeek },
-            { value: 'month',  label: t.wastePeriodMonth },
-            { value: 'all',    label: t.wastePeriodAll },
+            ...WRITE_OFF_PERIODS.map(p => ({ value: p.key, label: writeOffPeriodLabel(t, p.key) })),
             { value: 'custom', label: t.wastePeriodCustom },
           ]}
           value={period}

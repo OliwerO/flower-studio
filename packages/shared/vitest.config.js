@@ -12,5 +12,15 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: ['./test/setup.js'],
+    env: {
+      // Force a positive-UTC-offset zone (the studio's own timezone) so
+      // local-vs-UTC-day-boundary bugs (e.g. a revert to `.toISOString()`
+      // in writeOffPeriods.js) actually manifest under test. Under UTC
+      // (CI's default), local reads and `.toISOString()` reads never
+      // diverge, so this suite would silently pass a regression without
+      // this override — see the TZ regression lock tests in
+      // writeOffPeriods.test.js for the specific case this guards.
+      TZ: 'Europe/Warsaw',
+    },
   },
 });

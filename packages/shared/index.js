@@ -154,6 +154,7 @@ export {
   writeOffPeriodStart,
   isInWriteOffPeriod,
   writeOffPeriodLabel,
+  localIsoDate,
 } from './utils/writeOffPeriods.js';
 
 // Step-chart balance trace — shared by BatchTracePanel and VarietyTracePanel (S7)

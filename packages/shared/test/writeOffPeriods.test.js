@@ -5,6 +5,7 @@ import {
   writeOffPeriodStart,
   isInWriteOffPeriod,
   writeOffPeriodLabel,
+  localIsoDate,
 } from '../utils/writeOffPeriods.js';
 
 // Anchors used throughout — all constructed via the local-component `Date`
@@ -196,5 +197,30 @@ describe('writeOffPeriodLabel', () => {
 
   it('falls back to the raw (unknown) key when the period itself is unrecognized', () => {
     expect(writeOffPeriodLabel(t, 'bogus')).toBe('bogus');
+  });
+});
+
+// Regression lock (review follow-up, issue #193): the 31 tests above are all
+// built on the local-component `new Date(y, m, d, ...)` constructor, which
+// reads back identically under ANY process timezone (construction and every
+// internal read happen in the same local frame) — so on their own they could
+// never catch a revert back to `.toISOString()`. These two tests instead
+// anchor on a bare ISO date-TIME string with NO offset designator (no `Z`,
+// no `+HH:MM`) — per the JS Date spec that's parsed as LOCAL time, i.e.
+// relative to `process.env.TZ`, which packages/shared/vitest.config.js now
+// forces to 'Europe/Warsaw' (UTC+2 in July). Local 2026-07-20T00:30 is
+// 2026-07-19T22:30 UTC, so a `.toISOString()`-based implementation would
+// answer "2026-07-19" here (wrong day) while the correct local-component
+// read answers "2026-07-20". Without the forced TZ, this test would be
+// meaningless — see the vitest.config.js comment for why.
+describe('TZ regression lock (issue #193 review follow-up)', () => {
+  it('"today" resolves from the LOCAL calendar day, not the UTC day, at a time where they diverge', () => {
+    const localLateNight = new Date('2026-07-20T00:30:00'); // no offset — parsed against TZ
+    expect(writeOffPeriodStart('today', localLateNight)).toBe('2026-07-20');
+  });
+
+  it('localIsoDate reads the same local-not-UTC calendar day', () => {
+    const localLateNight = new Date('2026-07-20T00:30:00');
+    expect(localIsoDate(localLateNight)).toBe('2026-07-20');
   });
 });

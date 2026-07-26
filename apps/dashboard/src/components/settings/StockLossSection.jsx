@@ -6,7 +6,6 @@ import {
   LOSS_REASONS,
   reasonLabel,
   WRITE_OFF_PERIODS,
-  DEFAULT_WRITE_OFF_PERIOD,
   isInWriteOffPeriod,
 } from '@flower-studio/shared';
 
@@ -26,7 +25,16 @@ export default function StockLossSection() {
   // Today / This Week / This Month / All (issue #193) — client-side filter
   // over the already-loaded `entries` set, driven by the shared period model
   // so this stays in lock-step with the florist WasteLogPage.
-  const [period, setPeriod] = useState(DEFAULT_WRITE_OFF_PERIOD);
+  //
+  // Default here is 'all', NOT the shared DEFAULT_WRITE_OFF_PERIOD ('week') —
+  // deliberately asymmetric with florist. Before this filter existed, this
+  // section just showed its last 30 entries unfiltered; defaulting straight
+  // to 'week' would silently render an empty section on a quiet Monday with
+  // nothing written off yet this week, reading as "is this broken?" rather
+  // than "nothing to show yet." Florist keeps 'week' — it's a working tool
+  // checked constantly through the day, where a tighter default is the more
+  // useful start state.
+  const [period, setPeriod] = useState('all');
 
   useEffect(() => {
     client.get('/stock?active=true').then(r => setStock(r.data)).catch(() => {});

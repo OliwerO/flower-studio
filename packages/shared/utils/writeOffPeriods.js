@@ -56,8 +56,20 @@ function pad(n) {
   return String(n).padStart(2, '0');
 }
 
-// Local calendar date as `YYYY-MM-DD` — never touches UTC/.toISOString().
-function localIsoDate(d) {
+/**
+ * Local calendar date as `YYYY-MM-DD` — never touches UTC/`.toISOString()`.
+ * Exported so every "what's today/yesterday's local date" computation in
+ * either app routes through the same local-component read this module uses
+ * internally, instead of re-deriving a `setHours` + `.toISOString()` version
+ * that silently shifts a day in any positive-UTC-offset timezone (see the
+ * module doc comment above — this is exactly the bug the florist
+ * `WasteLogPage.jsx` day-grouping labels had before being routed through
+ * this helper).
+ *
+ * @param {Date} d
+ * @returns {string}
+ */
+export function localIsoDate(d) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
