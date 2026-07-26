@@ -81,7 +81,20 @@ export default function Step3Details({ form, onChange }) {
   const METHOD_LABELS = getMethodLabels();
   const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots, slotLeadTimeMinutes } = useConfigLists();
   const smartSlots = getAvailableSlots(timeSlots, form.deliveryDate, slotLeadTimeMinutes);
-  const set = key => val => onChange({ [key]: val });
+
+  // Review fix (#189/#517): if Step 1 picked a key person (e.g. "Maria") and
+  // the recipient name/phone is then hand-edited away from that person's own
+  // value (e.g. to "Anna"), the stale keyPersonId must not survive — it would
+  // silently win over the freshly typed text when the order is submitted.
+  // Clearing it here in the same update makes the typed value (not the old
+  // link) the source of truth. Only fires on a genuine divergence, so the
+  // CR-30 C3 pre-fill below (which copies keyPersonName/-Phone in verbatim)
+  // never trips it.
+  const setRecipientField = (field, keyPersonField) => val => {
+    const patch = { [field]: val };
+    if (form.keyPersonId && val !== form[keyPersonField]) patch.keyPersonId = null;
+    onChange(patch);
+  };
 
   // CR-30 C3: when a recipient (key person) is chosen and fulfilment is Delivery,
   // pre-fill the editable recipient fields from the chosen person — empty-only so we
@@ -179,10 +192,10 @@ export default function Step3Details({ form, onChange }) {
         <>
           <FormCard label={t.labelRecipient}>
             <Row label={t.recipientName}>
-              <TextInput value={form.recipientName} onChange={set('recipientName')} placeholder="Name" />
+              <TextInput value={form.recipientName} onChange={setRecipientField('recipientName', 'keyPersonName')} placeholder="Name" />
             </Row>
             <Row label={t.recipientPhone}>
-              <TextInput type="tel" value={form.recipientPhone} onChange={set('recipientPhone')} placeholder="+48..." />
+              <TextInput type="tel" value={form.recipientPhone} onChange={setRecipientField('recipientPhone', 'keyPersonPhone')} placeholder="+48..." />
             </Row>
             <Row label={t.deliveryFee} last>
               <div className="flex items-center justify-end gap-1">

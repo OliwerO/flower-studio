@@ -370,12 +370,16 @@ export async function listKeyPeople(customerId) {
 
 // Normalized comparison keys for the find-or-create dedupe below — trimmed,
 // case-insensitive name; phone reduced to digits only so "+48 500 100 200",
-// "48500100200" and "500-100-200" all collide.
+// "48500100200" and "500-100-200" all collide; address trimmed + lowercased
+// so stray whitespace/case doesn't cause a false miss.
 function normalizeKeyPersonName(name) {
   return (name || '').trim().toLowerCase();
 }
 function normalizeKeyPersonPhone(phone) {
   return (phone || '').replace(/\D/g, '');
+}
+function normalizeKeyPersonAddress(address) {
+  return (address || '').trim().toLowerCase();
 }
 
 // createKeyPerson is find-or-create (issue #517): both the Step1Customer
@@ -385,10 +389,31 @@ function normalizeKeyPersonPhone(phone) {
 // Step1 autocomplete would pile up a duplicate key_people row per order. Match
 // is scoped to this customer, by name (trimmed, case-insensitive) + phone
 // (digits-only) — an existing match short-circuits the insert and returns the
-// existing row unchanged (no field overwrite on match — use updateKeyPerson
-// for that). Safe to fold into the same endpoint both callers already use:
-// this repo function had exactly one caller (Step1Customer.jsx, both apps)
-// before #517, and that flow never depended on "always inserts a new row".
+// existing row (see the address-backfill note below — no OTHER field is
+// overwritten on match; use updateKeyPerson for that). Safe to fold into the
+// same endpoint both callers already use: this repo function had exactly one
+// caller (Step1Customer.jsx, both apps) before #517, and that flow never
+// depended on "always inserts a new row".
+//
+// Review fix: when BOTH the candidate row's phone and the incoming phone are
+// blank, name alone is too weak to dedupe on — "Мама" at home and "Мама" at
+// work are two different key people who happen to share a name and have no
+// phone on file. In that blank-phone case, also require a normalized-address
+// match before reusing the row. A real (non-blank) phone match still short-
+// circuits on name+phone alone, same as before. Symmetric with the above:
+// if the matched row has no address yet and this call supplies one, backfill
+// it onto the existing row (still never overwrites a real address already
+// on file).
+//
+// Wrapped in a transaction so the select and the insert/backfill-update are
+// atomic from the caller's point of view. This does NOT close a true
+// concurrent race — two simultaneous find-or-create calls for a brand-new
+// person could both miss the SELECT and both INSERT — because pglite has no
+// SELECT FOR UPDATE (see backend/CLAUDE.md) and there's no unique index on
+// (customer_id, normalized name/phone) to fall back on as a DB-level guard.
+// Accepted for now: the worst case is a duplicate row, not corrupted data,
+// and two florists creating the identical brand-new recipient in the same
+// instant is rare.
 export async function createKeyPerson(customerId, { name, contactDetails = null, phone = null, address = null, instagram = null, telegram = null, importantDate = null, importantDateLabel = null } = {}) {
   if (!name || !name.trim()) {
     const err = new Error('name is required');
@@ -397,51 +422,69 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
   }
   const trimmedName = name.trim();
 
-  const existing = await db.select().from(keyPeople)
-    .where(and(eq(keyPeople.customerId, customerId), isNull(keyPeople.deletedAt)));
-  const targetNameKey  = normalizeKeyPersonName(trimmedName);
-  const targetPhoneKey = normalizeKeyPersonPhone(phone);
-  const match = existing.find(r =>
-    normalizeKeyPersonName(r.name) === targetNameKey && normalizeKeyPersonPhone(r.phone) === targetPhoneKey,
-  );
-  if (match) {
-    return {
-      id:            match.id,
-      name:          match.name,
-      contactDetails: match.contactDetails ?? null,
-      phone:          match.phone ?? null,
-      address:        match.address ?? null,
-      instagram:      match.instagram ?? null,
-      telegram:       match.telegram ?? null,
-      importantDate:  match.importantDate ?? null,
-      importantDateLabel: match.importantDateLabel ?? null,
-      createdAt:     match.createdAt,
-    };
-  }
+  return await db.transaction(async (tx) => {
+    // Ordered so a match is deterministic (oldest row wins) if duplicates
+    // already exist on prod from before this dedupe existed.
+    const existing = await tx.select().from(keyPeople)
+      .where(and(eq(keyPeople.customerId, customerId), isNull(keyPeople.deletedAt)))
+      .orderBy(asc(keyPeople.createdAt));
+    const targetNameKey  = normalizeKeyPersonName(trimmedName);
+    const targetPhoneKey = normalizeKeyPersonPhone(phone);
+    const targetAddrKey  = normalizeKeyPersonAddress(address);
+    const match = existing.find(r => {
+      if (normalizeKeyPersonName(r.name) !== targetNameKey) return false;
+      const rPhoneKey = normalizeKeyPersonPhone(r.phone);
+      if (rPhoneKey !== targetPhoneKey) return false;
+      // Both sides blank — phone can't disambiguate, fall back to address.
+      if (!rPhoneKey && !targetPhoneKey) return normalizeKeyPersonAddress(r.address) === targetAddrKey;
+      return true;
+    });
+    if (match) {
+      let row = match;
+      if (!row.address && address) {
+        [row] = await tx.update(keyPeople)
+          .set({ address })
+          .where(eq(keyPeople.id, match.id))
+          .returning();
+      }
+      return {
+        id:            row.id,
+        name:          row.name,
+        contactDetails: row.contactDetails ?? null,
+        phone:          row.phone ?? null,
+        address:        row.address ?? null,
+        instagram:      row.instagram ?? null,
+        telegram:       row.telegram ?? null,
+        importantDate:  row.importantDate ?? null,
+        importantDateLabel: row.importantDateLabel ?? null,
+        createdAt:     row.createdAt,
+      };
+    }
 
-  const [row] = await db.insert(keyPeople).values({
-    customerId,
-    name: trimmedName,
-    contactDetails: contactDetails || null,
-    phone: phone || null,
-    address: address || null,
-    instagram: instagram || null,
-    telegram: telegram || null,
-    importantDate: importantDate || null,
-    importantDateLabel: importantDateLabel || null,
-  }).returning();
-  return {
-    id:            row.id,
-    name:          row.name,
-    contactDetails: row.contactDetails ?? null,
-    phone:          row.phone ?? null,
-    address:        row.address ?? null,
-    instagram:      row.instagram ?? null,
-    telegram:       row.telegram ?? null,
-    importantDate:  row.importantDate ?? null,
-    importantDateLabel: row.importantDateLabel ?? null,
-    createdAt:     row.createdAt,
-  };
+    const [row] = await tx.insert(keyPeople).values({
+      customerId,
+      name: trimmedName,
+      contactDetails: contactDetails || null,
+      phone: phone || null,
+      address: address || null,
+      instagram: instagram || null,
+      telegram: telegram || null,
+      importantDate: importantDate || null,
+      importantDateLabel: importantDateLabel || null,
+    }).returning();
+    return {
+      id:            row.id,
+      name:          row.name,
+      contactDetails: row.contactDetails ?? null,
+      phone:          row.phone ?? null,
+      address:        row.address ?? null,
+      instagram:      row.instagram ?? null,
+      telegram:       row.telegram ?? null,
+      importantDate:  row.importantDate ?? null,
+      importantDateLabel: row.importantDateLabel ?? null,
+      createdAt:     row.createdAt,
+    };
+  });
 }
 
 export async function updateKeyPerson(personId, changes = {}) {

@@ -257,8 +257,11 @@ export default function NewOrderPage() {
           const kpRes = await client.post(`/customers/${form.customerId}/key-people`, kpBody);
           resolvedKeyPersonId = kpRes.data.id;
         } catch (err) {
+          // Non-fatal: log only, no toast. The order below still submits and
+          // succeeds on this path — an error toast here would land right next
+          // to (or under) the success toast and read as "did this work?"
+          // when it did. This convenience save just doesn't get retried.
           console.error('Failed to save recipient as key person:', err);
-          showToast(err.response?.data?.error || t.error, 'error');
         }
       }
 
