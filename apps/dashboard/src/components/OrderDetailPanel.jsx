@@ -242,7 +242,12 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
       }, 0)
     : null;
   const lineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
-  const deliveryFee = Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0);
+  // Gate on Delivery Type (pitfall #2 — the delivery sub-record can still be
+  // attached, just Cancelled, after a Delivery → Pickup conversion; without
+  // this gate its fee kept contributing to the total shown here). Parity
+  // with florist OrderCard/OrderDetailPage, which already gate this (#554).
+  const isDelivery = o['Delivery Type'] === 'Delivery';
+  const deliveryFee = isDelivery ? Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0) : 0;
   // Prefer backend-enriched Final Price when NOT editing. It's the
   // authoritative order total and survives cases where o.orderLines goes
   // stale or empty (e.g. a partial-paid order that was cancelled and then
@@ -324,6 +329,9 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
           <Pills
             options={DELIVERY_TYPES}
             value={o['Delivery Type']}
+            // Parity with the florist app: a terminal order's fulfilment type is
+            // history. Flipping it would cancel an already-Delivered delivery.
+            disabled={saving || isTerminal}
             onChange={async v => {
               if (v === 'Delivery' && o['Delivery Type'] === 'Pickup' && !o.delivery) {
                 // Switching from Pickup to Delivery — create delivery record on-the-fly
@@ -331,6 +339,25 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                 try {
                   const res = await client.post(`/orders/${orderId}/convert-to-delivery`, {});
                   setOrder(prev => ({ ...prev, 'Delivery Type': 'Delivery', delivery: res.data }));
+                  showToast(t.orderUpdated);
+                  onUpdate();
+                } catch (err) {
+                  showToast(err.response?.data?.error || t.error, 'error');
+                } finally {
+                  setSaving(false);
+                }
+              } else if (v === 'Pickup' && o['Delivery Type'] === 'Delivery') {
+                // Delivery → Pickup: the backend cancels the linked delivery and
+                // clears its fee/address in the same PATCH (#554), but patchOrder()
+                // only merges the literal fields sent, not the server's recomputed
+                // Final Price or the now-cancelled delivery sub-record. Refetch the
+                // full detail so the fee and address disappear immediately here —
+                // not just after a page refresh.
+                setSaving(true);
+                try {
+                  await client.patch(`/orders/${orderId}`, { 'Delivery Type': 'Pickup' });
+                  const res = await client.get(`/orders/${orderId}`);
+                  setOrder(res.data);
                   showToast(t.orderUpdated);
                   onUpdate();
                 } catch (err) {

@@ -251,6 +251,7 @@ substitutes no longer silently fill in for the original, so the original can end
 - [ ] **Hardcoded strings** — scattered English strings not using `t.xxx` in DayToDayTab, DeliveryListPage
 - [ ] **Hardcoded categories/units** — StockTab uses inline arrays instead of `useConfigLists`
 - [ ] **StockPickupPage empty state** — shows `t.noDeliveries` instead of a stock-pickup-specific message
+- [ ] **Financial tab still counts converted-order delivery fees** (#554 follow-up, found in review 2026-07-25) — `analyticsService.js:72` and `routes/dashboard.js:115` read a linked delivery's fee/payout without gating on the order's current `Delivery Type`, so an order converted Delivery→Pickup keeps contributing its old fee to revenue/profit reports. The Orders list + detail views are gated (#554); analytics is not. 1 live prod order is affected today. Needs an owner call on whether historical reports should change retroactively before the gate is added.
 
 ### Owner-notes + customer call + driver nav (2026-04-21)
 - [x] Split owner-authored notes by audience: `Florist Note` (ORDERS) + `Driver Instructions` (DELIVERIES), each prominent on the right role's collapsed card; customer's note stays as `Notes Original`, driver's own note stays as `Driver Notes`.

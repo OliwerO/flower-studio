@@ -1338,7 +1338,19 @@ export async function updateOrder(id, fields, opts = {}) {
       err.statusCode = 404;
       throw err;
     }
+
+    // Delivery → Pickup: the order's own (redundant) Delivery Fee column
+    // must be cleared in the SAME write, not just gated at read time —
+    // several read paths (dashboard Today tab, analytics) fall back to this
+    // order-level column when it's set, and pitfall #2 ("prefer the
+    // delivery sub-record") only helps callers that remember to check it.
+    // Computed once here so both this write and the delivery cascade below
+    // share the same guard (#554).
+    const isConvertingToPickup = fields['Delivery Type'] === 'Pickup' && before.deliveryType === 'Delivery';
+
     const patch = orderResponseToPg(fields);
+    if (isConvertingToPickup) patch.deliveryFee = null;
+
     const [after] = await tx.update(orders)
       .set({ ...patch, updatedAt: new Date() })
       .where(eq(orders.id, before.id))
@@ -1367,19 +1379,37 @@ export async function updateOrder(id, fields, opts = {}) {
     }
 
     // Cascade: Delivery → Pickup conversion must cancel the linked delivery so
-    // the driver app stops showing it. Guard: only when the type genuinely
-    // transitions from Delivery to Pickup AND a non-cancelled delivery exists.
-    if (fields['Delivery Type'] === 'Pickup' && before.deliveryType === 'Delivery') {
+    // the driver app stops showing it (#317). Status is the ONLY field this
+    // cascade touches — the delivery's own fee/address/recipient/driver
+    // fields are left exactly as they were. Blanking them was tried and
+    // reverted on code review: it made an accidental mis-tap back to
+    // Delivery unrecoverable (the real address/fee/driver were gone for
+    // good), and it's unnecessary — every read path that could resurrect
+    // this data (list enrichment, `GET /:id`) already gates on the ORDER's
+    // CURRENT `Delivery Type` before trusting the delivery sub-record (see
+    // `backend/src/routes/orders.js` `GET /` and `GET /:id`), so a Cancelled
+    // delivery's stale fields simply never surface. That gate is the fix for
+    // #554 and it self-heals: converting fixes display immediately, no
+    // backfill needed.
+    // Guard: only when the type genuinely transitions from Delivery to
+    // Pickup, a non-cancelled delivery exists, AND that delivery hasn't
+    // already been DELIVERED — a completed delivery is a historical record
+    // and must never be cancelled by a later type-flip on the order.
+    if (isConvertingToPickup) {
       const [delivery] = await tx.select().from(deliveries)
         .where(and(eq(deliveries.orderId, after.id), isNull(deliveries.deletedAt)))
         .limit(1);
-      if (delivery && delivery.status !== DELIVERY_STATUS.CANCELLED) {
-        await tx.update(deliveries)
-          .set({ status: DELIVERY_STATUS.CANCELLED, updatedAt: new Date() })
-          .where(eq(deliveries.id, delivery.id));
+      if (delivery && delivery.status !== DELIVERY_STATUS.CANCELLED && delivery.status !== DELIVERY_STATUS.DELIVERED) {
+        const [updatedDelivery] = await tx.update(deliveries)
+          .set({
+            status:    DELIVERY_STATUS.CANCELLED,
+            updatedAt: new Date(),
+          })
+          .where(eq(deliveries.id, delivery.id))
+          .returning();
         await tryAudit(tx, {
           entityType: 'delivery', entityId: delivery.id, action: 'update',
-          before: { Status: delivery.status }, after: { Status: DELIVERY_STATUS.CANCELLED },
+          before: pgDeliveryToResponse(delivery), after: pgDeliveryToResponse(updatedDelivery),
           ...actor,
         });
       }
