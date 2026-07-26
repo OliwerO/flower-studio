@@ -113,7 +113,7 @@ flower-studio/
 │   │       ├── guideContent.js        # Help FAQ content
 │   │       ├── pages/                 # LoginPage, OrderListPage, NewOrderPage,
 │   │       │                          #   OrderDetailPage, StockPanelPage
-│   │       ├── components/            # OrderCard, StockItem, HelpPanel,
+│   │       ├── components/            # OrderCard, HelpPanel, BouquetEditor,
 │   │       │   └── steps/             #   Step1-4 order form wizard
 │   │       ├── context/               # AuthContext, ToastContext, LanguageContext
 │   │       ├── hooks/                 # useNotifications (SSE)

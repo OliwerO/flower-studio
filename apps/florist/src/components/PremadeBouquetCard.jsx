@@ -25,9 +25,9 @@ function timeAgo(iso) {
 /**
  * NameField — inline-editable bouquet name shown in the card header.
  * Tapping switches to a text input (autofocus opens the keyboard on mobile);
- * blur/Enter saves, Escape cancels. Mirrors the `PriceField` pattern in
- * StockItem.jsx — self-contained stopPropagation so it can live inside the
- * header row without also triggering the row's tap-to-expand handler.
+ * blur/Enter saves, Escape cancels. Self-contained stopPropagation so it can
+ * live inside the header row without also triggering the row's tap-to-expand
+ * handler.
  * Fixes #456: the name used to be plain text with no tap affordance, so it
  * required opening the separate "Edit" form just to rename.
  */

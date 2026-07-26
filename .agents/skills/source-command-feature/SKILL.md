@@ -43,7 +43,7 @@ The default `subagent-driven-development` skill spec runs spec-reviewer + code-q
 
 **Exception — keep per-task code-quality review** when the task touches a Known Pitfall area from `CLAUDE.md`:
 - Status workflows (`backend/src/constants/statuses.js`, any `*Service.js` state machine)
-- Stock math (`packages/shared/utils/stockMath.js`, `StockItem.jsx`, `StockTab.jsx`)
+- Stock math (`packages/shared/utils/stockMath.js`, `packages/shared/components/VarietyListItem.jsx`, `StockPanelPage.jsx`, `StockTab.jsx`)
 - Cancel-with-return (three lockstep files in CLAUDE.md Known Pitfalls #7)
 - Wix sync / webhook (`backend/src/services/wix*.js`, `backend/src/routes/wix*.js`)
 - Shadow-window writes (anything routed through `stockRepo` / `orderRepo` while a `*_BACKEND` flag is at `shadow`)
