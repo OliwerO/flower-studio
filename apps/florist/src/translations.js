@@ -267,6 +267,10 @@ const en = {
   addToCart:        'Add to bouquet',
   saveBouquet:      'Save bouquet',
   bouquetUpdated:   'Bouquet updated',
+  // #339: backend rejects non-owner bouquet edits once the order has left
+  // New/Ready (orderRepo.js editBouquetLines) — this replaces the raw
+  // English 400 with a clear explanation. Gate itself is unchanged.
+  bouquetEditLockedOutForDelivery: 'The bouquet can\'t be edited in the order\'s current status',
   dissolvePremadeTitle:   'Dissolve premade bouquets?',
   dissolvePremadeIntro:   'These flowers are locked in premade bouquets. Pick which to dissolve — the remaining stems return to stock and the bouquet is deleted.',
   dissolvePremadeNeed:    'Need',
@@ -1197,6 +1201,7 @@ const ru = {
   addToCart:        'Добавить в букет',
   saveBouquet:      'Сохранить букет',
   bouquetUpdated:   'Букет обновлён',
+  bouquetEditLockedOutForDelivery: 'Букет нельзя изменить в текущем статусе заказа',
   dissolvePremadeTitle:   'Разобрать заготовки?',
   dissolvePremadeIntro:   'Эти цветы заняты в заготовках. Выберите, какие разобрать — оставшиеся стебли вернутся в склад, а заготовка удалится.',
   dissolvePremadeNeed:    'Нужно',

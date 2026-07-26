@@ -1117,6 +1117,7 @@ export async function editBouquetLines(orderId, { lines = [], removedLines = [] 
     }
     const editableStatuses = [ORDER_STATUS.NEW, ORDER_STATUS.READY];
     if (!isOwner && !editableStatuses.includes(order.status)) {
+      // fix/339: apps/florist string-matches "Cannot edit bouquet in" to detect this exact error and show its RU toast — keep this message text byte-identical.
       const err = new Error(`Cannot edit bouquet in "${order.status}" status.`);
       err.statusCode = 400;
       throw err;
