@@ -394,7 +394,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
                 {kpFiltered.map(p => (
                   <button
                     key={p.id}
-                    onClick={() => { setKpId(p.id); setKpName(p.name); setKpQuery(''); setKpPhone(p.phone || ''); setKpAddress(p.address || ''); setKpInstagram(p.instagram || ''); setKpTelegram(p.telegram || ''); }}
+                    onClick={() => { setKpId(p.id); setKpName(p.name); setKpQuery(''); setKpPhone(p.phone || ''); setKpAddress(p.address || ''); }}
                     className={`w-full text-left px-4 py-3 flex items-center gap-2 active:bg-ios-fill ${kpId === p.id ? 'bg-brand-50' : ''}`}
                   >
                     <div className="flex-1 min-w-0">

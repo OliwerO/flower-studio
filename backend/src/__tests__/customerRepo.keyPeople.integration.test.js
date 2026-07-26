@@ -244,4 +244,17 @@ describe('updateKeyPerson — instagram + telegram (#553)', () => {
     expect(updated.instagram).toBeNull();
     expect(updated.telegram).toBeNull();
   });
+
+  it('clears instagram/telegram back to null when explicitly set to null (not just empty string)', async () => {
+    const created = await createKeyPerson(customerId, {
+      name: 'Y',
+      instagram: '@y',
+      telegram: 'y_handle',
+    });
+
+    const updated = await updateKeyPerson(created.id, { instagram: null, telegram: null });
+
+    expect(updated.instagram).toBeNull();
+    expect(updated.telegram).toBeNull();
+  });
 });
