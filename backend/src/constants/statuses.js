@@ -1,5 +1,10 @@
 // Centralized status constants for all workflow states.
 // Matches Airtable field values exactly (case-sensitive).
+//
+// NOTE: bundled into FRONTEND builds (apps/delivery/src/pages/DeliveryListPage.jsx,
+// apps/dashboard/src/components/DayToDayTab.jsx import it directly). Keep this file
+// dependency-free: no imports, no env reads, pure const exports — anything else
+// breaks the Vercel app builds with no local signal.
 
 // ── Order statuses ──
 // Flow: New → Ready → Out for Delivery → Delivered (delivery)

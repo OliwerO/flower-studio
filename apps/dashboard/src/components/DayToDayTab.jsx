@@ -10,6 +10,11 @@ import t from '../translations.js';
 import SummaryCard from './SummaryCard.jsx';
 import KanbanBoard from './KanbanBoard.jsx';
 import { DashboardSkeleton } from './Skeleton.jsx';
+// Status constants — single source of truth in backend/src/constants/statuses.js.
+// packages/shared doesn't re-export these (only duplicates a couple of status
+// arrays for other purposes), and editing packages/shared is out of scope for
+// this fix, so this imports the backend file directly via relative path.
+import { ORDER_STATUS, PAYMENT_STATUS } from '../../../../backend/src/constants/statuses.js';
 
 // "2026-03-08" → "Mar 8"
 function fmtDate(iso) {
@@ -19,12 +24,12 @@ function fmtDate(iso) {
 }
 
 const ALL_STATUSES = [
-  { key: 'New',              color: 'text-indigo-600' },
-  { key: 'Ready',            color: 'text-amber-600' },
-  { key: 'Out for Delivery', color: 'text-sky-600' },
-  { key: 'Delivered',        color: 'text-emerald-600' },
-  { key: 'Picked Up',        color: 'text-teal-600' },
-  { key: 'Cancelled',        color: 'text-rose-600' },
+  { key: ORDER_STATUS.NEW,              color: 'text-indigo-600' },
+  { key: ORDER_STATUS.READY,            color: 'text-amber-600' },
+  { key: ORDER_STATUS.OUT_FOR_DELIVERY, color: 'text-sky-600' },
+  { key: ORDER_STATUS.DELIVERED,        color: 'text-emerald-600' },
+  { key: ORDER_STATUS.PICKED_UP,        color: 'text-teal-600' },
+  { key: ORDER_STATUS.CANCELLED,        color: 'text-rose-600' },
 ];
 
 // Delivery type icon helper
@@ -210,8 +215,8 @@ export default function DayToDayTab({ onNavigate, isActive = true }) {
 
   // Compute paid/unpaid totals from recent orders (use Effective Price computed by backend)
   // Revenue still uses recentOrders (orders by Order Date); fulfillToday is for operational display
-  const paidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Paid');
-  const unpaidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === 'Unpaid');
+  const paidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === PAYMENT_STATUS.PAID);
+  const unpaidOrders = (data.recentOrders || []).filter(o => o['Payment Status'] === PAYMENT_STATUS.UNPAID);
   const unpaidTotal = unpaidOrders.reduce((sum, o) => sum + (o['Effective Price'] || 0), 0);
 
   // Sort helper: chronological by time slot start (e.g. "10:00-12:00" → "10:00")
@@ -251,14 +256,14 @@ export default function DayToDayTab({ onNavigate, isActive = true }) {
           value={`${data.todayRevenue.toFixed(0)} ${t.zl}`}
           detail={`${paidOrders.length} orders`}
           color="green"
-          onClick={() => nav('orders', { payment: 'Paid' })}
+          onClick={() => nav('orders', { payment: PAYMENT_STATUS.PAID })}
         />
         <SummaryCard
           label={t.unpaid}
           value={unpaidOrders.length > 0 ? `${unpaidTotal.toFixed(0)} ${t.zl}` : '✓'}
           detail={unpaidOrders.length > 0 ? `${unpaidOrders.length} orders` : 'All paid'}
           color={unpaidOrders.length > 0 ? 'red' : 'green'}
-          onClick={() => nav('orders', { payment: 'Unpaid' })}
+          onClick={() => nav('orders', { payment: PAYMENT_STATUS.UNPAID })}
         />
       </div>
 
@@ -432,7 +437,7 @@ export default function DayToDayTab({ onNavigate, isActive = true }) {
                     from.setDate(from.getDate() - bucket.daysBack);
                   }
                   const fmt = d => d.toISOString().split('T')[0];
-                  nav('orders', { payment: 'Unpaid', dateFrom: fmt(from), dateTo: fmt(to) });
+                  nav('orders', { payment: PAYMENT_STATUS.UNPAID, dateFrom: fmt(from), dateTo: fmt(to) });
                 }}
                 className={`rounded-xl px-3 py-2 text-center transition-all ${
                   bucket.data.count > 0 ? 'cursor-pointer hover:ring-2 hover:ring-brand-300 active-scale' : ''
