@@ -119,9 +119,16 @@ Return ONLY valid JSON with this exact structure (no markdown fences):
 });
 
 // ── GET /api/products — list all Product Config rows ──
+// wixLinkedOnly: exclude rows with no Wix Product ID. Those are bouquets
+// that were deactivated (or created) locally but never synced to Wix —
+// they can't be pushed/pulled and only ever showed up here as phantom
+// "ghost" bouquets that don't exist in the real Wix catalog (issue #267;
+// prod verification found 19 such rows, all already Active=false). Sync
+// phases in wixProductSync.js call productConfigRepo.list() unfiltered
+// (or with activeOnly), so they are unaffected by this route-level filter.
 router.get('/', async (req, res, next) => {
   try {
-    const rows = await productConfigRepo.list();
+    const rows = await productConfigRepo.list({ wixLinkedOnly: true });
     res.json(rows);
   } catch (err) { next(err); }
 });

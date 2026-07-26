@@ -36,6 +36,41 @@ describe('productConfigRepo', () => {
     expect(rows[0]['Product Name']).toBe('Red Rose');
   });
 
+  // Issue #267: rows with no Wix Product ID are bouquets deactivated (or
+  // created) locally that never synced to Wix. Prod verification found 19
+  // such rows, all Active=false. `list()` must keep including them by
+  // default — wixProductSync.js's runPull/runPush phases call `list()`
+  // unfiltered (or with `activeOnly`), and must see exactly what they saw
+  // before this fix. Only the owner-/florist-facing `GET /products` route
+  // opts in to `wixLinkedOnly` to hide these phantom rows from the UI.
+  it('list() still includes wix-unlinked rows by default (push/sync paths must be unaffected)', async () => {
+    await seed({ wixProductId: 'p1', wixVariantId: 'v1', productName: 'Synced Rose' });
+    await seed({ wixProductId: null, wixVariantId: null, productName: 'Phantom Rose', active: false });
+
+    const rows = await repo.list();
+    expect(rows).toHaveLength(2);
+    expect(rows.some(r => r['Product Name'] === 'Phantom Rose')).toBe(true);
+  });
+
+  it('list({ wixLinkedOnly: true }) excludes rows with no Wix Product ID', async () => {
+    await seed({ wixProductId: 'p1', wixVariantId: 'v1', productName: 'Synced Rose' });
+    await seed({ wixProductId: null, wixVariantId: null, productName: 'Phantom Rose', active: false });
+
+    const rows = await repo.list({ wixLinkedOnly: true });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]['Product Name']).toBe('Synced Rose');
+  });
+
+  it('list({ activeOnly: true, wixLinkedOnly: true }) composes both filters', async () => {
+    await seed({ wixProductId: 'p1', wixVariantId: 'v1', productName: 'Active Synced', active: true });
+    await seed({ wixProductId: 'p2', wixVariantId: 'v2', productName: 'Inactive Synced', active: false });
+    await seed({ wixProductId: null, wixVariantId: null, productName: 'Phantom Rose', active: false });
+
+    const rows = await repo.list({ activeOnly: true, wixLinkedOnly: true });
+    expect(rows).toHaveLength(1);
+    expect(rows[0]['Product Name']).toBe('Active Synced');
+  });
+
   it('setImage writes image URL to all variants of a product', async () => {
     await seed({ wixProductId: 'p1', wixVariantId: 'v1' });
     await seed({ wixProductId: 'p1', wixVariantId: 'v2' });
