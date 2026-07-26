@@ -515,6 +515,9 @@ const en = {
   activeOrders:       'Active',
   completedOrders:    'Completed',
   filterByDate:       'Filter by date',
+  sortByFulfilment:   'Sort by date',
+  sortFulfilmentAsc:  'Earliest first',
+  sortFulfilmentDesc: 'Latest first',
 
   // Stock shortfall
   stockShortfall:     'Stock Shortfall',
@@ -1442,6 +1445,9 @@ const ru = {
   activeOrders:       'Активные',
   completedOrders:    'Завершённые',
   filterByDate:       'По дате',
+  sortByFulfilment:   'Сортировка по дате',
+  sortFulfilmentAsc:  'Сначала ранние',
+  sortFulfilmentDesc: 'Сначала поздние',
 
   // Stock shortfall
   stockShortfall:     'Нехватка на складе',

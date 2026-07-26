@@ -77,6 +77,27 @@ function sortByEarliestNeeded(orders) {
   });
 }
 
+// Explicit fulfilment-date sort toggle (#247) — cycles default (existing
+// per-view sort above, unchanged) → ascending (earliest first) → descending
+// (latest first). Uses the SAME field precedence as the dashboard
+// OrdersTab.jsx "deliveryDate" column sort (PR #442) — Delivery Date,
+// falling back to Required By, then Delivery Time as a same-day tiebreak —
+// so both apps agree on what "the fulfilment date" means for an order.
+// Deliberately separate from sortByEarliestNeeded (which also tiebreaks on
+// status priority): the toggle's "default" state keeps using that function
+// unchanged; this one only runs once the florist picks Asc/Desc.
+const FULFILMENT_SORTS = ['default', 'asc', 'desc'];
+
+function sortByFulfilmentDate(orders, dir) {
+  const dirMul = dir === 'desc' ? -1 : 1;
+  return [...orders].sort((a, b) => {
+    const dateA = a['Delivery Date'] || a['Required By'] || '9999-12-31';
+    const dateB = b['Delivery Date'] || b['Required By'] || '9999-12-31';
+    const result = dateA.localeCompare(dateB) || (a['Delivery Time'] || '').localeCompare(b['Delivery Time'] || '');
+    return result * dirMul;
+  });
+}
+
 function todayISO() {
   return new Date().toISOString().split('T')[0];
 }
@@ -176,6 +197,14 @@ export default function OrderListPage() {
     };
   });
   const [filterOpen, setFilterOpen] = useState(false);
+
+  // Fulfilment-date sort override (#247) — session-persisted like filter/
+  // viewMode/status/date above (#338 pattern). 'default' defers to the
+  // existing per-view sort (sortByEarliestNeeded / sortByStatus).
+  const [fulfilmentSort, setFulfilmentSort] = useState(() => {
+    const saved = persistedList?.fulfilmentSort;
+    return FULFILMENT_SORTS.includes(saved) ? saved : 'default';
+  });
 
   // Stock shortfall data: { stockId: { committed, name, currentQty, effective, orders } }
   const [stockShortfalls, setStockShortfalls] = useState({});
@@ -327,8 +356,8 @@ export default function OrderListPage() {
   // customer from an order card) fully unmounts this page; without this the
   // florist's filter/view resets to defaults the moment they come back.
   useEffect(() => {
-    savePersistedListState({ filter, viewMode, status, date });
-  }, [filter, viewMode, status, date]);
+    savePersistedListState({ filter, viewMode, status, date, fulfilmentSort });
+  }, [filter, viewMode, status, date, fulfilmentSort]);
 
   // Owner: fetch dashboard data for today's summary + stock alerts
   useEffect(() => {
@@ -611,6 +640,28 @@ export default function OrderListPage() {
               {t.filters}{activeOrderFilterCount(filter) > 0 ? ` (${activeOrderFilterCount(filter)})` : ''}
             </button>
           )}
+          {/* Fulfilment-date sort toggle (#247) — cycles default → ascending
+              (earliest first) → descending (latest first). Mirrors the
+              dashboard OrdersTab.jsx column-sort visual language: a faint ↕
+              at rest, brand-coloured ▲/▼ once a direction is picked. */}
+          {viewMode !== VIEW_MODES.PREMADE && (
+            <button
+              onClick={() => setFulfilmentSort(s => FULFILMENT_SORTS[(FULFILMENT_SORTS.indexOf(s) + 1) % FULFILMENT_SORTS.length])}
+              className={`px-3 h-9 rounded-full bg-white border border-ios-separator shadow-sm text-xs font-medium flex items-center gap-1 whitespace-nowrap active-scale ${
+                fulfilmentSort !== 'default' ? 'text-brand-600' : 'text-ios-secondary'
+              }`}
+              aria-pressed={fulfilmentSort !== 'default'}
+            >
+              <span className={fulfilmentSort !== 'default' ? 'text-brand-600' : 'text-ios-tertiary'}>
+                {fulfilmentSort === 'asc' ? '▲' : fulfilmentSort === 'desc' ? '▼' : '↕'}
+              </span>
+              {fulfilmentSort === 'asc'
+                ? (t.sortFulfilmentAsc || 'Earliest first')
+                : fulfilmentSort === 'desc'
+                  ? (t.sortFulfilmentDesc || 'Latest first')
+                  : (t.sortByFulfilment || 'Sort by date')}
+            </button>
+          )}
         </div>
         <OrderFilterDrawer
           open={filterOpen}
@@ -689,9 +740,12 @@ export default function OrderListPage() {
           // Apply client-side predicate (customer/bouquet text, delivery type,
           // date range, price range) on top of the server-fetched set.
           const clientFiltered = base.filter(o => orderMatchesClientFilter(o, filter));
-          const displayOrders = viewMode === VIEW_MODES.ACTIVE
-            ? sortByEarliestNeeded(clientFiltered)
-            : sortByStatus(clientFiltered);
+          // fulfilmentSort 'default' keeps the existing per-view sort exactly as
+          // before (#247 — this toggle is additive, not a replacement); Asc/Desc
+          // overrides it with the explicit fulfilment-date comparator above.
+          const displayOrders = fulfilmentSort === 'default'
+            ? (viewMode === VIEW_MODES.ACTIVE ? sortByEarliestNeeded(clientFiltered) : sortByStatus(clientFiltered))
+            : sortByFulfilmentDate(clientFiltered, fulfilmentSort);
 
           if (displayOrders.length === 0) {
             return (
