@@ -25,6 +25,67 @@ function timeAgo(iso) {
   return `${days}d`;
 }
 
+/**
+ * NameField — inline-editable bouquet name shown in the row header.
+ * Tapping switches to a text input (autofocus, blur/Enter saves, Escape
+ * cancels) and stops propagation so it doesn't also toggle the row's
+ * expand/collapse. Florist-app parity fix for issue #456 — the name used to
+ * be plain text with no tap affordance there; mirrored here so both apps
+ * behave the same way.
+ */
+function NameField({ value, placeholder, onSave }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState('');
+
+  function startEdit(e) {
+    e.stopPropagation();
+    setDraft(value || '');
+    setEditing(true);
+  }
+
+  function commitSave(e) {
+    e.stopPropagation();
+    setEditing(false);
+    const trimmed = draft.trim();
+    if (trimmed === (value || '').trim()) return;
+    onSave(trimmed);
+  }
+
+  function cancelEdit(e) {
+    e.stopPropagation();
+    setEditing(false);
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        value={draft}
+        autoFocus
+        onClick={e => e.stopPropagation()}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commitSave}
+        onKeyDown={e => {
+          if (e.key === 'Enter') e.target.blur();
+          if (e.key === 'Escape') cancelEdit(e);
+        }}
+        className="w-40 text-sm font-medium text-ios-label border border-brand-300 rounded-lg px-1.5 py-0.5 bg-white outline-none"
+      />
+    );
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={startEdit}
+      title={t.edit || 'Edit'}
+      className="w-40 shrink-0 text-sm font-medium text-ios-label truncate text-left underline decoration-dotted decoration-gray-300 underline-offset-2"
+    >
+      {value || placeholder}
+    </button>
+  );
+}
+
 export default function PremadeBouquetList({ onMatchClicked }) {
   const { showToast } = useToast();
   // null = not yet loaded (show spinner); [] or [...] = loaded (render list).
@@ -60,6 +121,25 @@ export default function PremadeBouquetList({ onMatchClicked }) {
       setBouquets(prev => prev.filter(b => b.id !== id));
     } catch (err) {
       console.error('Failed to return premade:', err);
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
+  // Inline rename — used by the row header's NameField, independent of the
+  // "Edit bouquet" form inside PremadeExpanded (which also patches notes/
+  // price/lines). Same endpoint that form uses for the name field, just
+  // fired immediately on blur.
+  async function handleNameSave(bouquet, newName) {
+    if (!newName) {
+      showToast(t.premadeBouquetNameRequired, 'error');
+      return;
+    }
+    try {
+      const res = await client.patch(`/premade-bouquets/${bouquet.id}`, { name: newName });
+      setBouquets(prev => prev.map(x => x.id === res.data.id ? res.data : x));
+      showToast(t.bouquetUpdated, 'success');
+    } catch (err) {
+      console.error('Failed to rename premade bouquet:', err);
       showToast(err.response?.data?.error || t.error, 'error');
     }
   }
@@ -108,9 +188,11 @@ export default function PremadeBouquetList({ onMatchClicked }) {
               <span className="text-xs text-ios-tertiary w-20 shrink-0">
                 {t.premadeBouquetAge} {timeAgo(b['Created At'])}
               </span>
-              <span className="text-sm font-medium text-ios-label w-40 truncate">
-                {b.Name || t.premadeBouquet}
-              </span>
+              <NameField
+                value={b.Name}
+                placeholder={t.premadeBouquet}
+                onSave={(name) => handleNameSave(b, name)}
+              />
               <span className="text-xs text-ios-secondary flex-1 truncate">{summary || '—'}</span>
               <span className="text-sm font-semibold text-brand-600 shrink-0">
                 {Math.round(finalPrice)} zł
@@ -153,6 +235,11 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
   const [busy, setBusy] = useState(false);
 
   const [editName, setEditName] = useState(bouquet.Name || '');
+  // Value editName was seeded with when the form opened. handleSave compares
+  // against THIS, not the live bouquet prop: the header's inline NameField can
+  // rename the bouquet while this form sits open, and comparing to the (now
+  // newer) prop would make Save push the stale name back over it (#456).
+  const [editNameInitial, setEditNameInitial] = useState(bouquet.Name || '');
   const [editNotes, setEditNotes] = useState(bouquet.Notes || '');
   const [editPriceOverride, setEditPriceOverride] = useState(bouquet['Price Override'] || '');
   const [editLines, setEditLines] = useState([]);
@@ -185,6 +272,7 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
   function startEditing() {
     setEditing(true);
     setEditName(bouquet.Name || '');
+    setEditNameInitial(bouquet.Name || '');
     setEditNotes(bouquet.Notes || '');
     setEditPriceOverride(bouquet['Price Override'] || '');
     setEditLines((bouquet.lines || []).map(l => ({
@@ -265,7 +353,7 @@ function PremadeExpanded({ bouquet, onMatchClicked, onReturn, onUpdated }) {
     setBusy(true);
     try {
       const patch = {};
-      if (editName.trim() !== (bouquet.Name || '')) patch.name = editName.trim();
+      if (editName.trim() !== editNameInitial.trim()) patch.name = editName.trim();
       if ((editNotes || '') !== (bouquet.Notes || '')) patch.notes = editNotes;
       const overrideNum = editPriceOverride ? Number(editPriceOverride) : null;
       if (overrideNum !== (bouquet['Price Override'] || null)) patch.priceOverride = overrideNum;

@@ -44,6 +44,7 @@ import { createOrder } from '../services/orderService.js';
 import {
   createPremadeBouquet,
   matchPremadeBouquetToOrder,
+  updatePremadeBouquet,
 } from '../services/premadeBouquetService.js';
 
 beforeEach(() => {
@@ -79,6 +80,39 @@ describe('createPremadeBouquet', () => {
       lines: [{ stockItemId: 'x', flowerName: 'Rose', quantity: 0 }],
     })).rejects.toThrow(/quantity must be a positive number/);
     expect(premadeBouquetRepo.create).not.toHaveBeenCalled();
+  });
+});
+
+// Regression lock for issue #456 (florist "mix name" tap-to-edit fix):
+// PATCH /api/premade-bouquets/:id already accepted `name`, but it had no
+// direct test — a name-only rename would have silently regressed if a future
+// change to updatePremadeBouquet's field-mapping dropped it.
+describe('updatePremadeBouquet', () => {
+  it('maps patch.name onto the repo Name field and returns the refreshed bouquet', async () => {
+    premadeBouquetRepo.update.mockResolvedValue(undefined);
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Renamed Mix', 'Price Override': null,
+    });
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([]);
+
+    const result = await updatePremadeBouquet('recBouquet1', { name: 'Renamed Mix' });
+
+    expect(premadeBouquetRepo.update).toHaveBeenCalledWith('recBouquet1', { Name: 'Renamed Mix' });
+    expect(result.Name).toBe('Renamed Mix');
+  });
+
+  it('leaves other fields untouched when only the name is patched', async () => {
+    premadeBouquetRepo.update.mockResolvedValue(undefined);
+    premadeBouquetRepo.getById.mockResolvedValue({
+      id: 'recBouquet1', _pgId: 'uuid-bouquet-1', Name: 'Renamed Mix', Notes: 'kept', 'Price Override': 99,
+    });
+    premadeBouquetRepo.getLinesByBouquetId.mockResolvedValue([]);
+
+    await updatePremadeBouquet('recBouquet1', { name: 'Renamed Mix' });
+
+    // Only Name should be present in the patch sent to the repo — a name-only
+    // rename must not clobber notes/price with undefined.
+    expect(premadeBouquetRepo.update).toHaveBeenCalledWith('recBouquet1', { Name: 'Renamed Mix' });
   });
 });
 
