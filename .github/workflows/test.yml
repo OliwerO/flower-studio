@@ -55,7 +55,14 @@ jobs:
   unit:
     name: Backend unit tests (vitest)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Raised 10 → 20 on 2026-07-26. The suite passed in 589.75s on run
+    # 30200748052 and the job was killed by the 10-minute wall 0.07s after
+    # vitest printed "1085 passed" — a green suite reported as a red check.
+    # The pglite integration tests dominate the runtime (each boots a fresh
+    # in-process Postgres and replays every migration), so this grows with
+    # every new one. The durable fix is splitting unit vs integration into
+    # two parallel jobs; this ceiling just stops the false failures until then.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
 

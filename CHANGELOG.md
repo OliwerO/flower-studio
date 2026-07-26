@@ -5,12 +5,27 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-26 — fix(analytics, dashboard): phantom delivery fees on converted Pickup orders (#554 follow-up)
+
+**Behavior fix:** the two remaining readers that #554 did not cover were still counting a delivery fee for orders that had been converted from Delivery to Pickup. Same root cause as #554 (a conversion *cancels* the linked delivery record, it never deletes it — so a Cancelled-but-intact delivery keeps its fee):
+
+- **Financial tab** (`backend/src/services/analyticsService.js`, `computeAnalytics`) built its `deliveryFeeByOrder` map straight off `order._delivery['Delivery Fee']` with no type check, so a converted order kept inflating **delivery revenue and total revenue** in every historical report covering its date range. The `_driverPayout` attach immediately below had the same gap and is now gated too — gating the fee alone would have driven `deliveryProfit` negative for those orders.
+- **Today tab** (`backend/src/routes/dashboard.js`): `enrichOrder()` fell back to the delivery record's fee, inflating **today's revenue**; the unpaid-orders aging block read the order's own stale `Delivery Fee` column, inflating **unpaid-aging totals**.
+
+The gate is now a named shared seam — `isDeliveryOrder(order)` in `backend/src/utils/deliveryGate.js` — so a future ungated reader is one grep away instead of an inline string comparison scattered across files.
+
+This is a read-time fix, so it **self-heals retroactively**: orders converted before #554 shipped (whose order-level `Delivery Fee` column was never cleared) stop counting their fee immediately, with no backfill. Reported figures for affected periods will drop by the phantom amounts — that is the correction, not a regression.
+
+No schema change. No env change.
+
+**Verification:** new regression test `backend/src/__tests__/deliveryFeeTypeGate.integration.test.js` (4 cases, real pglite DB + real express router — seeds the exact post-conversion row shape and asserts the fee/payout are excluded while a genuine Delivery order's fee still counts) + `backend/src/__tests__/deliveryGate.test.js` (seam contract, fails closed on missing type). Full backend Vitest suite, API E2E suite, and lab unit/API gates green — see PR body for counts.
+
 ## 2026-07-24 — fix(orders): Delivery → Pickup conversion clears the fee, address, and driver info (#554)
 
 **Behavior fix:** converting an order from Delivery to Pickup in order details left the delivery fee counting toward the Final Price and the delivery address/recipient/driver info visible forever, even after a refresh. Two bugs, same root cause (a Delivery→Pickup conversion only *cancels* the linked delivery record — it doesn't delete it — so a Cancelled-but-intact delivery kept leaking its data):
 
 - `GET /api/orders` (the list endpoint powering the Orders tab, Today board, and every order-list view) computed `Delivery Fee`/`Final Price` from the linked delivery record unconditionally, with no check on the order's *current* `Delivery Type`. `GET /:id` already had this gate — the list endpoint now matches it. This is a read-time fix, so it self-heals any order that was converted before this shipped, no backfill needed.
-- `orderRepo.updateOrder`'s existing Delivery→Pickup cascade (#317/#401) only flipped the delivery record's `Status` to `Cancelled` — its fee, address, recipient name/phone, assigned driver, driver instructions, and driver payout survived untouched, as did the order's own redundant `Delivery Fee` column. All of these are now blanked in the same transaction as the cancel.
+- `orderRepo.updateOrder`'s existing Delivery→Pickup cascade (#317/#401) only flipped the delivery record's `Status` to `Cancelled`, leaving the order's own redundant `Delivery Fee` column set — that column is now cleared in the same transaction as the cancel. The **delivery record's** own fee/address/recipient/driver fields are deliberately left intact: blanking them was implemented and then reverted on code review before merge, because it made an accidental mis-tap back to Delivery unrecoverable. The read-time `Delivery Type` gate is the fix for those fields.
 
 Frontend: `apps/florist/src/components/OrderCard.jsx` and `apps/dashboard/src/components/OrderDetailPanel.jsx` now refetch the order detail immediately after a Delivery→Pickup PATCH (mirroring the existing Pickup→Delivery branch's pattern) instead of relying on a stale optimistic merge, so the fee/address disappear without needing a page refresh. `OrderCard.jsx`'s `isDelivery` also now strictly prefers the refreshed local `detail` over the parent list prop (pitfall #1) instead of OR-ing the two. `OrderDetailPanel.jsx`'s delivery-fee computation is now gated on Delivery Type at all (parity with the florist app, which already had this gate).
 
