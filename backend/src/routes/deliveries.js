@@ -185,7 +185,8 @@ router.patch('/:id', async (req, res, next) => {
     // Notify driver on genuine assignment change (diff-detect + suppress self-claim).
     // Fire-and-forget: never blocks the response.
     const newDriver = updated['Assigned Driver'] || '';
-    if (newDriver && newDriver !== priorDriver && !selfClaim) {
+    const assignmentChanged = Boolean(newDriver && newDriver !== priorDriver && !selfClaim);
+    if (assignmentChanged) {
       notifyDeliveryAssigned({
         delivery: updated,
         driverName: newDriver,
@@ -200,7 +201,13 @@ router.patch('/:id', async (req, res, next) => {
     // non-terminal, actually-changed, self-edit — live inside
     // notifyDeliveryTimeChanged, the same seam the order-side PATCH cascade
     // (routes/orders.js) calls.
-    if ('Delivery Date' in fields || 'Delivery Time' in fields) {
+    //
+    // Skipped when this SAME request also produced a fresh driver assignment
+    // (assignmentChanged, above) — the assignment message already states the
+    // current date/time, so a second "was X -> now Y" message would describe
+    // a schedule window the driver was never actually told about under the
+    // old time (review follow-up, issue #545).
+    if (('Delivery Date' in fields || 'Delivery Time' in fields) && !assignmentChanged) {
       notifyDeliveryTimeChanged({
         before,
         after: updated,

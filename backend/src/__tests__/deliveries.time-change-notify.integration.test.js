@@ -248,4 +248,23 @@ describe('delivery-side Delivery Time/Date change → driver Telegram notificati
 
     expect(sendToChat).not.toHaveBeenCalled();
   });
+
+  it('fires ONLY the assignment notification when one PATCH both assigns a driver and changes the schedule (review follow-up)', async () => {
+    await seedOrderAndDelivery({ assignedDriver: null }); // deliveryTime defaults to '10:00-12:00'
+    await registerDriver('Nikita');
+
+    const res = await supertest(app)
+      .patch(`/api/deliveries/${deliveryId}`)
+      .set('x-auth-pin', OWNER_PIN)
+      .send({ 'Assigned Driver': 'Nikita', 'Delivery Time': '14:00-16:00' });
+
+    expect(res.status).toBe(200);
+    await new Promise(r => setImmediate(r));
+
+    // Exactly one Telegram send — the assignment message — not a second
+    // "was 10:00-12:00 -> now 14:00-16:00" reschedule message on top of it.
+    expect(sendToChat).toHaveBeenCalledTimes(1);
+    const text = sendToChat.mock.calls[0][1];
+    expect(text).not.toContain('10:00-12:00'); // would only appear in the (suppressed) time-change "was" line
+  });
 });
