@@ -174,6 +174,19 @@ No env change.
 **Required checks:** the old check name "Backend unit tests (vitest)" no longer exists. `master` currently has **no branch protection and no rulesets** (`gh api .../branches/master/protection` → 404, `.../rulesets` → `[]`), so nothing was un-gated by the rename — but if protection is added later it must name both new checks.
 
 No schema, env, or deployment change.
+## 2026-07-26 — fix(wix): Pull no longer reverts a price the storefront hasn't taken yet (#428)
+
+**Behavior fix.** `runPull` used to overwrite `product_config.price` with whatever Wix reported, on every Pull, with no guard — there was no equivalent of the `localNameOwned` ADR-0008 protection that Product Name has. So a Pull taken before Wix reflected a Push silently re-stamped the stale Wix price over the owner's edit. Because `product_config` has no price history and price edits are not audit-logged, that erased the only record she had asked for a different price — the same owner-visible symptom as #428 ("I set it, it says success, and it's still wrong") reached through a different mechanism than the push race PR #572 fixes.
+
+Pull now mirrors a price **only when Wix's own price changed since the previous Pull**, compared against the new `product_config.wix_price_seen` baseline (ADR-0020). A genuine Wix-admin price edit still imports; a value Wix has not touched can never overwrite a local one. This is deliberately **not** a time-based cooldown — prod `sync_log` shows 7 push→clobber events between 2026-06-23 and 2026-07-22 with gaps from 49 seconds to 10.4 hours, so no window separates the two cases.
+
+**Schema (migration `0024_wix_price_seen.sql`, additive, no backfill):**
+- `product_config.wix_price_seen NUMERIC(10,2) NULL` — price Wix reported at the previous Pull. Written by `runPull` only; deliberately absent from `productConfigRepo`'s `EDITABLE_FIELD_MAP` so no route can forge the baseline. NULL means "no baseline yet" — the next Pull records one and skips that row's price mirror once, which is why no data backfill is needed.
+- `sync_log.prices_not_on_wix INTEGER NOT NULL DEFAULT 0` — per-run count of rows where local and Wix disagree while Wix has not moved, i.e. price edits the storefront has not taken. This bug survived two months partly because `sync_log` recorded counts but never divergence.
+
+**Frontend (both apps, parity):** the Pull button now shows an amber warning toast — "N prices not yet on the website — press Push" — instead of a green success, when `stats.pricesNotOnWix > 0`. `packages/shared/components/Toast.jsx` gains a `warning` (amber) variant; unknown/absent types still render green, so every existing `showToast` call is unaffected.
+
+**Verification:** see the PR body. New regression suite `backend/src/__tests__/wixProductSync.pullPriceGuard.test.js` (8 tests, Wix HTTP mocked), each confirmed to fail against pre-fix code.
 
 ## 2026-07-26 — fix(analytics, dashboard): phantom delivery fees on converted Pickup orders (#554 follow-up)
 

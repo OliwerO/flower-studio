@@ -246,7 +246,7 @@ export default function BouquetsPage() {
     setPulling(true);
     try {
       // Backend returns the stats object directly (no wrapping).
-      // Pull shape: { new, updated, deactivated, errors }
+      // Pull shape: { new, updated, deactivated, pricesNotOnWix, errors }
       const { data } = await client.post('/products/pull', {});
       // Defensive: runPull() in wixProductSync.js wraps its entire body in a
       // try/catch that pushes fatal errors into stats.errors and STILL returns
@@ -263,7 +263,16 @@ export default function BouquetsPage() {
       if (data?.updated) parts.push(`~${data.updated}`);
       if (data?.deactivated) parts.push(`−${data.deactivated}`);
       const summary = parts.length ? ` · ${parts.join(' ')}` : '';
-      showToast(`${t.pullSuccess || 'Updated from Wix'}${summary}`, 'success');
+      // `pricesNotOnWix` (#428): prices set here that Wix has not taken yet.
+      // Pull used to silently revert those to the stale Wix value; it now
+      // keeps them and reports the count, so a Push that never landed is
+      // visible instead of looking like the edit never happened. Amber, not
+      // green — the storefront is still wrong until she Pushes again.
+      if (data?.pricesNotOnWix > 0) {
+        showToast(`${data.pricesNotOnWix} ${t.pricesNotOnWix || 'prices not yet on the website'}`, 'warning');
+      } else {
+        showToast(`${t.pullSuccess || 'Updated from Wix'}${summary}`, 'success');
+      }
       await loadAll();
     } catch (err) {
       const msg = err.response?.data?.error || t.pullFailed || 'Pull failed';
