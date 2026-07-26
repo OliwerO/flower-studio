@@ -360,13 +360,15 @@ export async function listKeyPeople(customerId) {
     contactDetails: r.contactDetails ?? null,
     phone:          r.phone ?? null,
     address:        r.address ?? null,
+    instagram:      r.instagram ?? null,
+    telegram:       r.telegram ?? null,
     importantDate:  r.importantDate ?? null,
     importantDateLabel: r.importantDateLabel ?? null,
     createdAt:     r.createdAt,
   }));
 }
 
-export async function createKeyPerson(customerId, { name, contactDetails = null, phone = null, address = null, importantDate = null, importantDateLabel = null } = {}) {
+export async function createKeyPerson(customerId, { name, contactDetails = null, phone = null, address = null, instagram = null, telegram = null, importantDate = null, importantDateLabel = null } = {}) {
   if (!name || !name.trim()) {
     const err = new Error('name is required');
     err.statusCode = 400;
@@ -378,6 +380,8 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
     contactDetails: contactDetails || null,
     phone: phone || null,
     address: address || null,
+    instagram: instagram || null,
+    telegram: telegram || null,
     importantDate: importantDate || null,
     importantDateLabel: importantDateLabel || null,
   }).returning();
@@ -387,6 +391,8 @@ export async function createKeyPerson(customerId, { name, contactDetails = null,
     contactDetails: row.contactDetails ?? null,
     phone:          row.phone ?? null,
     address:        row.address ?? null,
+    instagram:      row.instagram ?? null,
+    telegram:       row.telegram ?? null,
     importantDate:  row.importantDate ?? null,
     importantDateLabel: row.importantDateLabel ?? null,
     createdAt:     row.createdAt,
@@ -410,6 +416,8 @@ export async function updateKeyPerson(personId, changes = {}) {
   if (changes.contactDetails !== undefined) set.contactDetails = changes.contactDetails || null;
   if (changes.phone !== undefined) set.phone = changes.phone || null;
   if (changes.address !== undefined) set.address = changes.address || null;
+  if (changes.instagram !== undefined) set.instagram = changes.instagram || null;
+  if (changes.telegram !== undefined) set.telegram = changes.telegram || null;
   if (changes.importantDate !== undefined) {
     if (changes.importantDate != null && changes.importantDate !== '') {
       if (!ISO_DATE_RE.test(changes.importantDate)) {
@@ -449,6 +457,8 @@ export async function updateKeyPerson(personId, changes = {}) {
     contactDetails: row.contactDetails ?? null,
     phone:          row.phone ?? null,
     address:        row.address ?? null,
+    instagram:      row.instagram ?? null,
+    telegram:       row.telegram ?? null,
     importantDate:  row.importantDate ?? null,
     importantDateLabel: row.importantDateLabel ?? null,
     createdAt:     row.createdAt,

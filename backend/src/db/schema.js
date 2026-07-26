@@ -309,6 +309,8 @@ export const keyPeople = pgTable('key_people', {
   contactDetails:     text('contact_details'),
   phone:              text('phone'),      // recipient phone — reusable address book (CR-30)
   address:            text('address'),    // recipient delivery address (CR-30)
+  instagram:          text('instagram'),  // key person's Instagram link/handle (#553)
+  telegram:           text('telegram'),   // key person's Telegram nickname (#553)
   importantDate:      date('important_date'),
   importantDateLabel: text('important_date_label'),
   createdAt:          timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

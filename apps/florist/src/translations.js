@@ -813,6 +813,8 @@ const en = {
   importantDate:             'Important date',
   keyPersonPhone:            'Phone',
   keyPersonAddress:          'Address',
+  keyPersonInstagram:        'Instagram', // #553 — brand name stays latin
+  keyPersonTelegram:         'Telegram',  // #553 — brand name stays latin
 
   // Timeline
   timeline:                  'Timeline',
@@ -1750,6 +1752,8 @@ const ru = {
   importantDate:             'Важная дата',
   keyPersonPhone:            'Телефон',
   keyPersonAddress:          'Адрес',
+  keyPersonInstagram:        'Instagram', // #553 — brand name stays latin
+  keyPersonTelegram:         'Telegram',  // #553 — brand name stays latin
 
   // Timeline
   timeline:                  'История',
