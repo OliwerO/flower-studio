@@ -38,7 +38,10 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
       try {
         const res = await client.get('/customers', { params: { search: query } });
         setResults(res.data);
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error('Customer search failed:', err);
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
       finally { setSearching(false); }
     }, 400);
     return () => clearTimeout(debounceRef.current);
@@ -51,7 +54,10 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
       try {
         const res = await client.get(`/customers/${chosenCustomer.id}/key-people`);
         setKpResults(res.data);
-      } catch { /* ignore */ }
+      } catch (err) {
+        console.error('Failed to load key people:', err);
+        showToast(err.response?.data?.error || t.error, 'error');
+      }
     }, 200);
     return () => clearTimeout(kpDebounceRef.current);
   }, [chosenCustomer?.id]);
@@ -76,7 +82,10 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
     try {
       const res = await client.post('/customers', newCustomer);
       selectCustomer(res.data);
-    } catch { /* ignore */ }
+    } catch (err) {
+      console.error('Failed to create customer:', err);
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
     finally { setSaving(false); }
   }
 
