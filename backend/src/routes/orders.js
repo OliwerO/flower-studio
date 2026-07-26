@@ -27,6 +27,10 @@ const ORDERS_PATCH_ALLOWED = [
   'Notes Original', 'Florist Note', 'Greeting Card Text', 'Customer Request',
   'Delivery Type', 'Required By', 'Source', 'Delivery Fee', 'Delivery Time',
   'Payment 1 Amount', 'Payment 1 Method', 'Payment 2 Amount', 'Payment 2 Method',
+  // Customer reassignment (#389) — owner-only, enforced in the handler below.
+  // Fixes misattributed orders after the fact (wrong profile picked at
+  // intake, walk-in booked under someone else's account, etc.).
+  'Customer',
 ];
 
 // GET /api/orders?status=New&dateFrom=2025-01-01&dateTo=2025-01-31&source=Instagram&forDate=2025-01-15
@@ -461,6 +465,38 @@ router.patch('/:id', async (req, res, next) => {
   try {
     const safeFields = pickAllowed(req.body, ORDERS_PATCH_ALLOWED);
     const { Status: newStatus, ...otherFields } = safeFields;
+
+    // Customer reassignment (#389) — owner-only. Attribution feeds CRM
+    // history + marketing ROI, so florist staff can't silently rewrite it.
+    // Normalize to the [id] shape orderRepo expects, and confirm the target
+    // customer actually exists before writing the FK: orders.customer_id is
+    // a plain text column with no DB-level FK constraint (Phase 5 legacy
+    // recXXX support), so a stale/typo'd id would otherwise "succeed" and
+    // silently orphan the order from any real customer.
+    if ('Customer' in otherFields) {
+      if (req.role !== 'owner') {
+        return res.status(403).json({ error: 'Only the owner can change the customer on an order.' });
+      }
+      const newCustomerId = Array.isArray(otherFields.Customer) ? otherFields.Customer[0] : otherFields.Customer;
+      if (!newCustomerId || typeof newCustomerId !== 'string') {
+        return res.status(400).json({ error: 'Customer must be a valid customer id.' });
+      }
+      try {
+        await customerRepo.getById(newCustomerId);
+      } catch (custErr) {
+        if (custErr.statusCode === 404) {
+          return res.status(400).json({ error: 'Selected customer was not found.' });
+        }
+        throw custErr;
+      }
+      otherFields.Customer = [newCustomerId];
+      // The order's key person (recipient/contact) belongs to the OLD customer.
+      // Carrying it across a reassignment would prefill a stranger's recipient
+      // details on the next edit — clear it so Step 3 starts fresh for the new
+      // customer. orderRepo.updateOrder / transitionStatus both honour
+      // `keyPersonId` via orderResponseToPg.
+      otherFields.keyPersonId = null;
+    }
 
     if (newStatus) {
       try {

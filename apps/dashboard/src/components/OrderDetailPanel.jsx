@@ -9,6 +9,7 @@ import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, NewVarietyFields, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
+import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
 // Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
 function parseBatchName(displayName) {
@@ -61,6 +62,10 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   // stock negative for a flower that's locked in a premade.
   const [premadeMap, setPremadeMap] = useState({});
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
+  // "Change customer" modal (#389) — reassigns the order's customer link
+  // regardless of order status. Dashboard is owner-only end to end, so no
+  // extra role gate is needed here (unlike the florist app).
+  const [changingCustomer, setChangingCustomer] = useState(false);
   const { showToast } = useToast();
 
   useEffect(() => {
@@ -187,6 +192,27 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
     }
   }
 
+  // Change customer (#389) — reassigns the order's customer link, works
+  // regardless of order status. Unlike patchOrder(), we refetch the whole
+  // order afterward instead of merging the PATCH response: 'Customer Name'/
+  // 'Customer Phone'/'Customer Nickname' aren't stored on the order row at
+  // all — GET /orders/:id computes them live from the linked customer
+  // record — so a naive merge of the PATCH response (which only carries the
+  // raw Customer id array) would leave the OLD name/phone/nickname displayed
+  // (CLAUDE.md Pitfall #1: stale state from a partial merge).
+  async function handleChangeCustomer(customer) {
+    try {
+      await client.patch(`/orders/${orderId}`, { Customer: [customer.id] });
+      const res = await client.get(`/orders/${orderId}`);
+      setOrder(res.data);
+      setChangingCustomer(false);
+      showToast(t.customerChanged);
+      onUpdate();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
   // Termination flow — cancel + delete paths behind shared seam.
   // CLAUDE.md Pitfall #7: all three termination sites use this hook.
   // cancelOnly note: hook does NOT toast on success — onSuccess shows t.updated here
@@ -278,28 +304,40 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
     <div className="border-t border-gray-100 px-4 py-4 bg-gray-50/70 space-y-5">
       {/* Customer — clickable link that jumps to the Customers tab with this
            customer pre-selected. Keeps the owner from having to search by name
-           after opening an order (a frequent pain point during busy days). */}
-      {customerDisplayName && (
-        <Section label={t.customer}>
-          {customerId && onNavigate ? (
-            <button
-              type="button"
-              onClick={() => onNavigate({ tab: 'customers', filter: { selectedId: customerId } })}
-              className="text-sm font-medium text-ios-blue hover:underline flex items-center gap-1.5"
-              title={t.openInCustomersTab}
-            >
-              <span aria-hidden="true">👤</span>
-              <span>{customerDisplayName}</span>
-              {o['Customer Nickname'] && o['Customer Nickname'] !== customerDisplayName && (
-                <span className="text-ios-tertiary font-normal">({o['Customer Nickname']})</span>
-              )}
-              <span className="text-ios-tertiary" aria-hidden="true">›</span>
-            </button>
+           after opening an order (a frequent pain point during busy days).
+           Section always renders (not gated on customerDisplayName) so the
+           "Change customer" (#389) affordance stays reachable even for the
+           rare order whose customer link failed to resolve to a display name. */}
+      <Section label={t.customer}>
+        <div className="flex items-center justify-between gap-3">
+          {customerDisplayName ? (
+            customerId && onNavigate ? (
+              <button
+                type="button"
+                onClick={() => onNavigate({ tab: 'customers', filter: { selectedId: customerId } })}
+                className="text-sm font-medium text-ios-blue hover:underline flex items-center gap-1.5 min-w-0"
+                title={t.openInCustomersTab}
+              >
+                <span aria-hidden="true">👤</span>
+                <span className="truncate">{customerDisplayName}</span>
+                {o['Customer Nickname'] && o['Customer Nickname'] !== customerDisplayName && (
+                  <span className="text-ios-tertiary font-normal">({o['Customer Nickname']})</span>
+                )}
+                <span className="text-ios-tertiary" aria-hidden="true">›</span>
+              </button>
+            ) : (
+              <span className="text-sm font-medium text-ios-label">{customerDisplayName}</span>
+            )
           ) : (
-            <span className="text-sm font-medium text-ios-label">{customerDisplayName}</span>
+            <span className="text-sm text-ios-tertiary italic">—</span>
           )}
-        </Section>
-      )}
+          <button
+            type="button"
+            onClick={() => setChangingCustomer(true)}
+            className="text-xs text-brand-600 font-medium shrink-0"
+          >{t.changeCustomer}</button>
+        </div>
+      </Section>
 
       {/* Status — CR-31: a delivery order can only terminate as "Delivered",
           a pickup order only as "Picked Up". Strip the mismatched terminal for
@@ -1278,6 +1316,14 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
           confirm: t.dissolvePremadeConfirm || 'Dissolve',
         }}
       />
+      {/* Change customer modal (#389) */}
+      {changingCustomer && (
+        <ChangeCustomerModal
+          currentName={customerDisplayName}
+          onClose={() => setChangingCustomer(false)}
+          onSelect={handleChangeCustomer}
+        />
+      )}
     </div>
   );
 }

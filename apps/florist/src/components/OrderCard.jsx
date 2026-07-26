@@ -13,6 +13,7 @@ import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
 import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
+import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
 const STATUS_STYLES = {
   'New':              { label: 'bg-indigo-50 text-indigo-600' },
@@ -117,6 +118,9 @@ function OrderCard({
   // Statuses this order has previously held — powers the florist "revert"
   // buttons in the expanded status controls (GET /orders/:id/status-history).
   const [prevStatuses, setPrevStatuses] = useState([]);
+  // Owner-only "Change customer" modal (#389) — fixes misattributed orders
+  // after the fact, regardless of order status.
+  const [changingCustomer, setChangingCustomer] = useState(false);
 
   const navigate   = useNavigate();
   // Customer linked record from Airtable — array of IDs, take the first.
@@ -212,6 +216,29 @@ function OrderCard({
       showToast(msg, 'error');
     } finally {
       setSaving(false);
+    }
+  }
+
+  // Change customer (#389) — owner-only reassignment, works regardless of
+  // order status. Unlike patch(), we refetch the whole order afterward
+  // instead of merging the PATCH response: 'Customer Name'/'Customer Phone'/
+  // 'Customer Nickname' aren't stored on the order row at all — GET
+  // /orders/:id computes them live from the linked customer record — so a
+  // naive merge of the PATCH response (which only carries the raw Customer
+  // id array) would leave the OLD name/phone/nickname displayed (CLAUDE.md
+  // Pitfall #1: stale state from a partial merge). onOrderUpdated propagates
+  // the fresh full record up to OrderListPage so the collapsed-card `order`
+  // prop converges to the same value as `detail` on the next render.
+  async function handleChangeCustomer(customer) {
+    try {
+      await client.patch(`/orders/${order.id}`, { Customer: [customer.id] });
+      const res = await client.get(`/orders/${order.id}`);
+      setDetail(res.data);
+      onOrderUpdated?.(order.id, res.data);
+      setChangingCustomer(false);
+      showToast(t.customerChanged, 'success');
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
     }
   }
 
@@ -423,17 +450,27 @@ function OrderCard({
         )}
       </div>
 
-      {customerId ? (
-        <button
-          onClick={(e) => { e.stopPropagation(); navigate(`/customers/${customerId}`); }}
-          className="text-base font-semibold text-ios-blue active:underline flex items-center gap-1"
-        >
-          <span>{d['Customer Name'] || order['Customer Name'] || '—'}</span>
-          <span className="text-ios-tertiary text-sm" aria-hidden="true">›</span>
-        </button>
-      ) : (
-        <p className="text-base font-semibold text-ios-label">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
-      )}
+      <div className="flex items-center justify-between gap-2">
+        {customerId ? (
+          <button
+            onClick={(e) => { e.stopPropagation(); navigate(`/customers/${customerId}`); }}
+            className="text-base font-semibold text-ios-blue active:underline flex items-center gap-1 min-w-0"
+          >
+            <span className="truncate">{d['Customer Name'] || order['Customer Name'] || '—'}</span>
+            <span className="text-ios-tertiary text-sm shrink-0" aria-hidden="true">›</span>
+          </button>
+        ) : (
+          <p className="text-base font-semibold text-ios-label truncate">{d['Customer Name'] || order['Customer Name'] || '—'}</p>
+        )}
+        {/* Change customer (#389) — owner-only, only surfaced once expanded
+            (matches every other edit affordance on this card). */}
+        {expanded && isOwner && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setChangingCustomer(true); }}
+            className="text-xs text-brand-600 font-medium shrink-0"
+          >{t.changeCustomer}</button>
+        )}
+      </div>
       {request && (
         <p className={`text-sm text-ios-tertiary mt-0.5 ${expanded ? '' : 'line-clamp-1'}`}>{request}</p>
       )}
@@ -1527,6 +1564,14 @@ function OrderCard({
           confirm: t.dissolvePremadeConfirm || 'Dissolve',
         }}
       />
+      {/* Change customer modal (#389) — owner-only reassignment */}
+      {changingCustomer && (
+        <ChangeCustomerModal
+          currentName={d['Customer Name'] || order['Customer Name']}
+          onClose={() => setChangingCustomer(false)}
+          onSelect={handleChangeCustomer}
+        />
+      )}
     </div>
   );
 }

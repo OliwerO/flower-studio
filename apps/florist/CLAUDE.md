@@ -38,6 +38,7 @@ The florist should see all relevant information at a glance — what to prepare 
 | DatePicker.jsx | iOS-style calendar dropdown (portal-rendered). Duplicated in dashboard — TODO move to shared. |
 | TimePicker.jsx | Time slot picker that consumes `getAvailableSlots` from shared. |
 | TextImportModal.jsx | AI text parsing — paste customer message, get structured order draft |
+| ChangeCustomerModal.jsx | Owner-only customer-search modal (#389) — reassigns an order's linked customer, launched from `OrderCard.jsx` (expanded view) and `OrderDetailPage.jsx`. Reuses the Step1Customer search endpoint (`GET /customers?search=`); on select, PATCHes `{ Customer: [id] }` then the caller refetches the order (name/phone/nickname are computed live from the customer record, never stored on the order). |
 | ReceiveStockForm.jsx | Record incoming supplier deliveries with batch tracking. |
 | PendingArrivalsSection.jsx | Pending PO line summary on stock panel — surfaces in-flight purchases. |
 | PremadeBouquetCard.jsx | Card for premade bouquet templates. |
