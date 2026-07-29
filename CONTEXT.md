@@ -106,9 +106,26 @@ _Avoid_: Allocation (Allocation is the engine's *proposed* plan in the picker; C
 The engine's proposed plan in the order-line picker before the Florist confirms — a ranked option emitted by `stockAllocationEngine` of kind `batch`, `merge`, `fresh`, or `split`. A `split` Allocation carries two or more sub-allocations covering one Order Line from multiple Stock Items. Once the Florist confirms, the Allocation crystallises into one or more Consumptions in the ledger.
 _Avoid_: Reservation (premade bouquets reserve; orders consume), Plan
 
+**Lot**:
+The wholesaler's bundle — the fixed number of Stems a Supplier sells together (a lot of 10 Peonies, a lot of 25 Roses). `Lot Size` is that stems-per-bundle count, stored per Stock Item and per Stock Order line. A Lot is a *purchasing unit*, not an inventory row — it has no date, no quantity of its own, and is not a Batch.
+_Avoid_: Pack, bunch, batch (a Batch is a dated inventory row — see Batch)
+
+**Packages**:
+How many Lots the Owner is ordering of one Stock Order line. Purely a way of expressing quantity: `Stems = Packages × Lot Size`. Never stored — Stems is the stored quantity, and Packages is derived back from it for display wherever a Lot Size exists. The Owner thinks in Packages when placing an order and in Stems everywhere afterwards.
+_Avoid_: Pkgs (fine as a UI abbreviation, not as prose), boxes, units
+
 **Stock Order**:
-A procurement order to replenish inventory. Lifecycle: Draft → Sent → Shopping → Reviewing → Evaluating → Complete. Owner creates and plans the order; Driver shops and collects flowers; Owner enters actual quantities and substitutes (Reviewing); Florist marks damaged stems to reconcile incoming stock (Evaluating).
+A procurement order to replenish inventory. Lifecycle: Draft → Sent → Shopping → Reviewing → Evaluating → Complete, plus Cancelled (see Stock Order Termination). Owner creates and plans the order; Driver shops and collects flowers; Owner enters actual quantities and substitutes (Reviewing); Florist marks damaged stems to reconcile incoming stock (Evaluating).
 _Avoid_: Purchase Order, PO, supply order
+
+**Stock Order Termination**:
+Ending a Stock Order, or one of its lines, before it completes. Which of the two kinds applies is decided by whether the Driver has started shopping, not by the Owner:
+
+- **Before Shopping** (Draft or Sent) — **Deletion**. The order or line is removed outright, leaving no trace. Nothing physical has happened yet. Deleting a Sent order still notifies the assigned Driver, since they were already told about the run.
+- **From Shopping onward** — **Cancellation**. The record is kept: a cancelled line stays visible struck-through, a cancelled order stays in the Owner's list behind a filter and disappears from the Driver's app. A cancelled Stock Order produces no pending arrivals.
+
+Cancellation is only meaningful for stems that have not been bought. A line the Driver has already found cannot be cancelled — those Stems physically exist and are received, then written off if unwanted. Cancelling a whole order mid-shopping therefore means *stop shopping and come back with what you have*: still-Pending lines are cancelled, and if any line already has Stems found the order moves to **Reviewing** rather than Cancelled, so what was bought still gets received. A Cancelled Stock Order can be reopened to Draft — it never touched stock, so nothing needs unwinding.
+_Avoid_: Killing, voiding, abandoning; do not use the Order-level terms Termination / Cancellation / Deletion without the "Stock Order" qualifier — those describe a customer Order and carry a stock-return choice this does not.
 
 **Substitute**:
 An alternative flower used in a Stock Order when the originally planned stem was unavailable at the market. Entered by the Owner during the Reviewing stage.
@@ -147,8 +164,12 @@ An internal note from the Owner to the Florist, visible in the Florist app. Used
 _Avoid_: Internal note, staff note
 
 **Driver Note**:
-An internal note from the Owner to the Driver, visible in the Delivery app. Used to pass delivery instructions or context.
+An internal note from the Owner to the Driver, visible in the Delivery app. Used to pass instructions or context. Exists on two entities: on a **Delivery** (instructions for that one drop) and on a **Stock Order** (instructions for the whole shopping run — how to pay, which stall, what to prioritise). Editable by the Owner at any status, not only at creation. Everything the Owner writes there is visible to the Driver — there is no Owner-private note on a Stock Order.
 _Avoid_: Delivery note, internal note
+
+**Market Note**:
+A note the *Driver* writes on a Stock Order line at the market, explaining a Partial or Not Found result ("stall was closed", "only 8 left"). Distinct from the Owner's line-level instruction, which it must never overwrite — the two are separate fields on the line. Read by the Owner during Reviewing.
+_Avoid_: Driver note (a Driver Note travels Owner → Driver; this travels Driver → Owner), comment
 
 ### People around the customer
 
