@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DateTag, buildPoSuggestions } from '@flower-studio/shared';
+import { DateTag, buildPoSuggestions, PoLineIdentity } from '@flower-studio/shared';
 import t from '../translations.js';
 
 const STATUS_COLORS = {
@@ -987,16 +987,25 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     }`}>
       {/* Header: Flower name + remove */}
       <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <StockSearchInput stock={stock}
-            value={flowerName}
-            onChange={name => setFlowerName(name)}
-            onSelect={handleStockSelect}
-            onBlur={name => {
-              if (name && name !== (line['Flower Name'] || '')) {
-                onUpdate(line.id, { 'Flower Name': name });
-              }
-            }} />
+        <div className="flex-1 min-w-0">
+          {/* #594: once the line is linked its identity is immutable (#593) —
+              show it read-only plus the Variety the receive will resolve to,
+              so a name/link divergence is visible before the driver shops.
+              Changing the flower = remove this line and add a new one (✕). */}
+          {/* florist PO strings live under `t.po`, unlike the dashboard's flat `t` */}
+          {stockItemLinked ? (
+            <PoLineIdentity line={line} stock={stock} t={t.po ?? t} />
+          ) : (
+            <StockSearchInput stock={stock}
+              value={flowerName}
+              onChange={name => setFlowerName(name)}
+              onSelect={handleStockSelect}
+              onBlur={name => {
+                if (name && name !== (line['Flower Name'] || '')) {
+                  onUpdate(line.id, { 'Flower Name': name });
+                }
+              }} />
+          )}
         </div>
         <button onClick={() => onRemove(line.id)} className="w-7 h-7 rounded-full bg-red-50 text-red-400 active:bg-red-100 active:text-red-600 text-sm flex items-center justify-center">✕</button>
       </div>

@@ -6,7 +6,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DateTag } from '@flower-studio/shared';
+import { DateTag, PoLineIdentity } from '@flower-studio/shared';
 
 const STATUS_COLORS = {
   Draft:        'bg-gray-100 text-gray-700',
@@ -1270,18 +1270,26 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     <div className={`rounded-lg px-3 py-2 space-y-1.5 ${isBlank ? 'bg-amber-50 ring-1 ring-amber-300' : 'bg-gray-50'}`}>
       {/* Row 1: Item + Qty + Supplier + Remove */}
       <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <StockSearchInput
-            stock={stock}
-            value={flowerName}
-            onChange={name => setFlowerName(name)}
-            onSelect={handleStockSelect}
-            onBlur={name => {
-              if (name && name !== (line['Flower Name'] || '')) {
-                onUpdate(line.id, { 'Flower Name': name });
-              }
-            }}
-          />
+        <div className="flex-1 min-w-0">
+          {/* #594: once the line is linked its identity is immutable (#593) —
+              show it read-only plus the Variety the receive will resolve to,
+              so a name/link divergence is visible before the driver shops.
+              Changing the flower = remove this line and add a new one (✕). */}
+          {stockItemLinked ? (
+            <PoLineIdentity line={line} stock={stock} t={t} />
+          ) : (
+            <StockSearchInput
+              stock={stock}
+              value={flowerName}
+              onChange={name => setFlowerName(name)}
+              onSelect={handleStockSelect}
+              onBlur={name => {
+                if (name && name !== (line['Flower Name'] || '')) {
+                  onUpdate(line.id, { 'Flower Name': name });
+                }
+              }}
+            />
+          )}
         </div>
         <input
           type="number"

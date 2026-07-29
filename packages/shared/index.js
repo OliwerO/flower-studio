@@ -118,6 +118,7 @@ export { default as NewVarietyFields } from './components/NewVarietyFields.jsx';
 
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.
 export { default as VarietyIdentity } from './components/VarietyIdentity.jsx';
+export { default as PoLineIdentity } from './components/PoLineIdentity.jsx';
 
 // Type group sticky collapsible header for Y-model Stock list (issue #289)
 export { default as TypeGroupHeader } from './components/TypeGroupHeader.jsx';
