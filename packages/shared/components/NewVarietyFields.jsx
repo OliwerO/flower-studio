@@ -15,9 +15,13 @@ import { useMemo } from 'react';
  * so entries stay consistent (no new fetch — derived in-memory).
  *
  * Props: form ({ typeName, colour, sizeCm, cultivar }), onChange (setNewFlowerForm
- * updater), t, stockItems (for datalist suggestions), idPrefix (unique datalist id).
+ * updater), t, stockItems (for datalist suggestions), idPrefix (unique datalist id),
+ * sizeOptions (optional — Variety-aware size suggestions; the Stock Order line
+ * form passes the sizes actually stocked for the chosen Type, so "pick a
+ * different size" reads as choosing an existing Variety rather than inventing
+ * one. Defaults to none, leaving every other call site unchanged).
  */
-export default function NewVarietyFields({ form, onChange, t, stockItems = [], idPrefix = 'nv' }) {
+export default function NewVarietyFields({ form, onChange, t, stockItems = [], idPrefix = 'nv', sizeOptions = [] }) {
   const { types, colours, cultivars } = useMemo(() => {
     const ty = new Set(), co = new Set(), cu = new Set();
     for (const s of stockItems) {
@@ -67,6 +71,7 @@ export default function NewVarietyFields({ form, onChange, t, stockItems = [], i
         <input
           type="number"
           inputMode="numeric"
+          list={sizeOptions.length > 0 ? `${idPrefix}-sizes` : undefined}
           value={form.sizeCm ?? ''}
           onChange={(e) => set('sizeCm', e.target.value)}
           placeholder={t.flowerSizeCm ?? 'Size cm'}
@@ -77,6 +82,9 @@ export default function NewVarietyFields({ form, onChange, t, stockItems = [], i
       <datalist id={`${idPrefix}-types`}>{types.map((x) => <option key={x} value={x} />)}</datalist>
       <datalist id={`${idPrefix}-colours`}>{colours.map((x) => <option key={x} value={x} />)}</datalist>
       <datalist id={`${idPrefix}-cultivars`}>{cultivars.map((x) => <option key={x} value={x} />)}</datalist>
+      {sizeOptions.length > 0 && (
+        <datalist id={`${idPrefix}-sizes`}>{sizeOptions.map((x) => <option key={x} value={x} />)}</datalist>
+      )}
     </div>
   );
 }

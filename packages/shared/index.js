@@ -186,6 +186,16 @@ export { varietyFinancials } from './utils/varietyFinancials.js';
 // Y-model New-PO-form pre-fill: netted per-Variety shortfall suggestions (nets all open POs).
 export { buildPoSuggestions } from './utils/buildPoSuggestions.js';
 
+// Unified Stock Order line form + its pure logic (plan 2026-07-29, ADR-0014).
+// One editor for every line-entry surface; Packages derived, Variety re-resolved.
+export { default as PoLineForm } from './components/PoLineForm.jsx';
+export { default as StockSearchInput } from './components/StockSearchInput.jsx';
+export {
+  findVarietyMatch, resolveVarietyLink, linkAgreesWithAttrs,
+  derivePackages, stemsFromPackages,
+  lineAttrsToTuple, stockItemToTuple,
+} from './utils/poLineVariety.js';
+
 // Mono bouquet suggested price = minStems × key-flower sell price. Shared by
 // dashboard ProductCard and florist VariantList so the math can't drift.
 export { suggestedMonoPrice } from './utils/productPricing.js';
