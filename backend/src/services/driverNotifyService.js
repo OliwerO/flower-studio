@@ -39,6 +39,16 @@ export const M = {
     en: "🛒 You've been assigned a purchase run",
     pl: '🛒 Przydzielono Ci zakupy',
   },
+  poCancelledHeader: {
+    ru: '🚫 Закупка отменена',
+    en: '🚫 Purchase run cancelled',
+    pl: '🚫 Zakupy odwołane',
+  },
+  poCancelledBody: {
+    ru: 'Не нужно её покупать.',
+    en: 'No need to buy it.',
+    pl: 'Nie trzeba tego kupować.',
+  },
   order:   { ru: 'Заказ',  en: 'Order',   pl: 'Zamówienie' },
   date:    { ru: 'Дата',   en: 'Date',    pl: 'Data' },
   address: { ru: 'Адрес',  en: 'Address', pl: 'Adres' },
@@ -186,5 +196,32 @@ export async function notifyPoAssigned({ stockOrderId, driverName }) {
     await sendToChat(target.chatId, text);
   } catch (err) {
     console.error('[DRIVER_NOTIFY] po-assigned failed:', err.message);
+  }
+}
+
+/**
+ * Tell the assigned Driver a purchase run is off (ADR-0015).
+ *
+ * Fires for BOTH kinds of termination — a Draft/Sent order deleted outright and
+ * a Shopping order cancelled — because from the Driver's side they are the same
+ * event: the run they were messaged about is no longer happening. A deleted
+ * order is already gone by the time this runs, so the caller passes the details
+ * it captured beforehand rather than an id to look up.
+ */
+export async function notifyPoCancelled({ driverName, poRef = '', plannedDate = '' }) {
+  try {
+    if (!driverName) return;
+    const target = await resolveTarget(driverName);
+    if (!target) return;
+    const { lang } = target;
+    const text = [
+      M.poCancelledHeader[lang],
+      poRef ? `${M.order[lang]}: ${escapeHtml(poRef)}` : '',
+      plannedDate ? `${M.date[lang]}: ${escapeHtml(plannedDate)}` : '',
+      M.poCancelledBody[lang],
+    ].filter(Boolean).join('\n');
+    await sendToChat(target.chatId, text);
+  } catch (err) {
+    console.error('[DRIVER_NOTIFY] po-cancelled failed:', err.message);
   }
 }

@@ -57,6 +57,10 @@ export const VALID_PAYMENT_STATUSES = Object.values(PAYMENT_STATUS);
 
 // ── Purchase Order (Stock Order) statuses ──
 // Flow: Draft → Sent → Shopping → Reviewing → Evaluating → Complete
+//
+// CANCELLED is reachable only from Shopping (ADR-0015). Before the driver
+// starts shopping a Stock Order is DELETED outright — nothing physical has
+// happened, so there is nothing to keep a record of. Reopens to Draft.
 export const PO_STATUS = {
   DRAFT:      'Draft',
   SENT:       'Sent',
@@ -65,6 +69,7 @@ export const PO_STATUS = {
   EVALUATING: 'Evaluating',
   EVAL_ERROR: 'Eval Error',
   COMPLETE:   'Complete',
+  CANCELLED:  'Cancelled',
 };
 
 export const VALID_PO_STATUSES = Object.values(PO_STATUS);

@@ -171,16 +171,22 @@ export default function StockPickupPage() {
             let payments = {};
             try { payments = JSON.parse(order['Supplier Payments'] || '{}'); } catch {}
 
-            const allResolved = order.lines.every(l => l['Driver Status'] && l['Driver Status'] !== 'Pending');
+            const liveLines = order.lines.filter(l => !l['Cancelled At']);
+            const allResolved = liveLines.every(l => l['Driver Status'] && l['Driver Status'] !== 'Pending');
 
             return (
               <div key={order.id} className="space-y-3">
-                <div className="flex items-center gap-2">
+                <div className="space-y-2">
                   <span className="text-xs font-semibold text-ios-tertiary uppercase">
                     PO #{order['Stock Order ID'] || '—'}
                   </span>
                   {order.Notes && (
-                    <span className="text-xs text-ios-secondary truncate">{order.Notes}</span>
+                    <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2">
+                      <p className="text-[10px] uppercase tracking-wide text-amber-700 font-semibold mb-0.5">
+                        {t.ownerNote || 'From the owner'}
+                      </p>
+                      <p className="text-sm text-amber-900 whitespace-pre-wrap">{order.Notes}</p>
+                    </div>
                   )}
                 </div>
 
@@ -263,6 +269,21 @@ export default function StockPickupPage() {
 
 // Individual line item with 3-option driver flow
 function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppliers = [] }) {
+  // Cancelled by the owner mid-run (ADR-0015). Shown struck through rather than
+  // removed — a row silently disappearing from the list while you are standing
+  // at the stall is worse than one marked "skip this".
+  if (line['Cancelled At']) {
+    return (
+      <div className="px-4 py-3 flex items-center gap-2 opacity-60">
+        <div className="w-2.5 h-2.5 rounded-full bg-gray-300" />
+        <span className="text-sm line-through text-ios-secondary">{line['Flower Name']}</span>
+        <span className="ml-auto text-[11px] px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">
+          {t.lineCancelled || 'cancelled'}
+        </span>
+      </div>
+    );
+  }
+
   // Derived values must be computed BEFORE any useState that references them.
   // const declarations are NOT hoisted (Temporal Dead Zone) — reading lotSize
   // before this line crashed the entire page render.
@@ -275,7 +296,7 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
   const hasAltData = !!line['Alt Supplier'] || !!line['Alt Flower Name'];
   const hasAnyDetails = (Number(line['Quantity Found']) > 0 && status !== 'Found All')
     || hasAltData
-    || !!line.Notes;
+    || !!line['Driver Notes'];
 
   const [expanded, setExpanded] = useState(hasAnyDetails && (status === 'Partial' || status === 'Not Found'));
   const [qtyFound, setQtyFound] = useState(line['Quantity Found'] || '');
@@ -285,7 +306,10 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
   const [altSupplier, setAltSupplier] = useState(line['Alt Supplier'] || '');
   const [altQty, setAltQty] = useState(line['Alt Quantity Found'] || '');
   const [showAlt, setShowAlt] = useState(hasAltData);
-  const [note, setNote] = useState(line.Notes || '');
+  // The driver's Market Note. Writes `Driver Notes`, NOT `Notes` — the latter
+  // is the owner's instruction TO the driver, and until 2026-07-29 both wrote
+  // the same column, so typing here destroyed what she asked for.
+  const [note, setNote] = useState(line['Driver Notes'] || '');
 
   // Resync local form state when the parent delivers a fresh line via
   // SSE/poll — e.g. when the owner edited the line in Shopping Support.
@@ -300,12 +324,12 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
     setAltFlowerName(line['Alt Flower Name'] || '');
     setAltSupplier(line['Alt Supplier'] || '');
     setAltQty(line['Alt Quantity Found'] || '');
-    setNote(line.Notes || '');
+    setNote(line['Driver Notes'] || '');
     const altPresent = !!line['Alt Supplier'] || !!line['Alt Flower Name'];
     setShowAlt(altPresent);
     const newStatus = line['Driver Status'] || 'Pending';
     if ((newStatus === 'Partial' || newStatus === 'Not Found') &&
-        (Number(line['Quantity Found']) > 0 || altPresent || !!line.Notes)) {
+        (Number(line['Quantity Found']) > 0 || altPresent || !!line['Driver Notes'])) {
       setExpanded(true);
     }
   }, [line]);
@@ -328,7 +352,7 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
   function saveDetails() {
     const fields = {
       'Quantity Found': Number(qtyFound) || 0,
-      Notes: note,
+      'Driver Notes': note,
     };
     if (showAlt) {
       fields['Alt Flower Name'] = altFlowerName;
