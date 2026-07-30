@@ -43,11 +43,13 @@ describe('buildPoSuggestions', () => {
     expect(out[0]).toMatchObject({
       stockItemId: 'r-orig',          // attaches to the undated orig, not the DE
       flowerName: 'Ranunculus Orange 40cm',
-      quantity: 5,                    // committed demand, nothing on hand
-      costPrice: '17.45',
-      sellPrice: '16',
-      sellPriceManual: true,
-      type: '', colour: '', size: '', cultivar: '', // identity omitted when linking to orig
+      qty: '5',                       // committed demand, nothing on hand
+      costPerStem: '17.45',
+      sellPerStem: '16',
+      // Identity is carried even on a linked line (ADR-0014) — the form shows
+      // the Variety regardless of the link, and blank attrs would make it
+      // detach on the first keystroke.
+      type: 'Ranunculus', colour: 'Orange', size: '40', cultivar: '',
     });
   });
 
@@ -78,7 +80,7 @@ describe('buildPoSuggestions', () => {
     const pendingPO = { 'p-orig': { ordered: 3, plannedDate: '2026-06-16', pos: [{ quantity: 3, plannedDate: '2026-06-16' }] } };
     const out = buildPoSuggestions(groups, pendingPO, {});
     expect(out).toHaveLength(1);
-    expect(out[0].quantity).toBe(4); // 7 demand − 3 incoming
+    expect(out[0].qty).toBe('4'); // 7 demand − 3 incoming
   });
 
   it('carries Variety identity (no stockItemId) when the Variety has no undated orig', () => {
@@ -91,7 +93,7 @@ describe('buildPoSuggestions', () => {
     expect(out[0]).toMatchObject({
       stockItemId: '',
       flowerName: 'Gypsophila White 60cm Xlence',
-      quantity: 5,
+      qty: '5',
       type: 'Gypsophila', colour: 'White', size: '60', cultivar: 'Xlence',
     });
   });
@@ -126,6 +128,6 @@ describe('buildPoSuggestions', () => {
     const premadeMap = { 'h-b': { qty: 3 } }; // 3 of the 5 locked to premades → only 2 free
     const out = buildPoSuggestions(groups, {}, premadeMap);
     expect(out).toHaveLength(1);
-    expect(out[0].quantity).toBe(3); // 5 demand − (5 onHand − 3 reserved) = 3
+    expect(out[0].qty).toBe('3'); // 5 demand − (5 onHand − 3 reserved) = 3
   });
 });

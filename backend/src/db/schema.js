@@ -567,6 +567,14 @@ export const stockOrderLines = pgTable('stock_order_lines', {
   colour:                   text('colour'),
   sizeCm:                   integer('size_cm'),
   cultivar:                 text('cultivar'),
+  // Stock Order termination (ADR-0015). Set only from Shopping onward — before
+  // that a line is deleted outright. A cancelled line stays visible and is
+  // excluded from order totals and pending arrivals.
+  cancelledAt:              timestamp('cancelled_at', { withTimezone: true }),
+  // The Driver's Market Note, written at the stall. Distinct from `notes`,
+  // which is the Owner's instruction TO the driver — they shared one column
+  // until 2026-07-29 and the Driver's text silently overwrote the Owner's.
+  driverNotes:              text('driver_notes').notNull().default(''),
   createdAt:                timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
   airtableIdx: uniqueIndex('stock_order_lines_airtable_id_idx').on(t.airtableId).where(isNotNull(t.airtableId)),

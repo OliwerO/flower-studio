@@ -1,9 +1,21 @@
 // PendingArrivalsSection — shows flowers arriving from pending POs
 // cross-referenced with committed orders. Mobile card layout.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import client from '../api/client.js';
+import { useNotifications } from '../hooks/useNotifications.js';
 import t from '../translations.js';
+
+// Events that change what is actually incoming. The backend already broadcasts
+// all three; this component just never listened, so deleting or cancelling a PO
+// line left "planned delivery" showing on the Stock screen until the component
+// happened to remount. That is the bug the owner hit — the API was correct
+// throughout, the screen was holding a snapshot from mount.
+const ARRIVAL_EVENTS = new Set([
+  'stock_order_line_updated',
+  'stock_order_deleted',
+  'stock_pickup_assigned',
+]);
 
 export default function PendingArrivalsSection({ stock, committedMap, onOrderClick }) {
   const [pendingPO, setPendingPO] = useState({});
@@ -11,12 +23,18 @@ export default function PendingArrivalsSection({ stock, committedMap, onOrderCli
   const [collapsed, setCollapsed] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
 
-  useEffect(() => {
+  const refetch = useCallback(() => {
     client.get('/stock/pending-po')
       .then(r => setPendingPO(r.data))
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
+
+  useEffect(() => { refetch(); }, [refetch]);
+
+  useNotifications(undefined, evt => {
+    if (ARRIVAL_EVENTS.has(evt?.type)) refetch();
+  });
 
   const nameMap = useMemo(() => {
     const m = {};

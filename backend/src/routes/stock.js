@@ -192,6 +192,11 @@ router.get('/committed', async (req, res, next) => {
 // Used by bouquet builders so florists can see what's coming and plan accordingly.
 router.get('/pending-po', async (req, res, next) => {
   try {
+    // Deliberately an allow-list, NOT "everything except Complete". PO_STATUS
+    // gained CANCELLED in 2026-07-29 (ADR-0015) and is excluded here by
+    // construction — a cancelled Stock Order must stop producing pending
+    // arrivals. Do not switch this to a deny-list; pinned by
+    // stock.pendingPoCancelled.integration.test.js.
     const pendingStatuses = [
       PO_STATUS.DRAFT, PO_STATUS.SENT, PO_STATUS.SHOPPING,
       PO_STATUS.REVIEWING, PO_STATUS.EVALUATING, PO_STATUS.EVAL_ERROR,
@@ -210,7 +215,11 @@ router.get('/pending-po', async (req, res, next) => {
     const allLines = [];
     for (const po of allPendingPOs) {
       const ls = linesByPo.get(po._pgId) || [];
-      for (const l of ls) allLines.push({ ...l, _poPgId: po._pgId });
+      // A cancelled line is not incoming — the driver was told to skip it.
+      for (const l of ls) {
+        if (l['Cancelled At']) continue;
+        allLines.push({ ...l, _poPgId: po._pgId });
+      }
     }
 
     const poMap = {};

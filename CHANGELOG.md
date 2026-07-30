@@ -5,6 +5,30 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-30 — feat(stock-orders): one line form, termination model, Owner/Driver note split
+
+Three related changes to Stock Orders, from an owner testing session. Design in `docs/superpowers/plans/2026-07-29-stock-order-form-unification.md`; decisions in **ADR-0014** and **ADR-0015**.
+
+**One line form.** The four line-entry surfaces (new-order rows, saved-Draft editor, add-line on a Sent order, the off-plan form on shopping supervision) had drifted into four different field sets — only one showed Packages, one had no flower picker at all, and none showed a Variety once a Stock Item was linked. All seven surfaces across both owner apps now render the shared `PoLineForm`.
+
+- **The Variety block is always visible and pre-filled** from the picked flower, instead of being hidden behind a "new variety" gate. Editing any attribute re-resolves the link: a match re-links to that card and adopts its price/lot/supplier, no match detaches the line (ADR-0014). This is a **safety property** — `stockOrderService` skips Variety resolution on a linked line, so a linked-but-edited line would have received stems into the wrong card (the #558 failure).
+- **Packages is derived, never stored** — `quantity_needed` stays the single stored quantity every downstream reader trusts; Packages is reconstructed from it wherever a Lot Size exists.
+- The Draft blank-line shortcut is retired: adding a line is fill-then-save on every status.
+
+**Termination (ADR-0015).** Before the driver starts shopping (Draft or Sent) a Stock Order and its lines are **deleted** outright; from Shopping onward they are **cancelled** and the record is kept. The boundary lands on the driver's first keystroke, because a line PATCH from them auto-transitions Sent → Shopping. Deleting a Sent order sends the driver a Telegram — they had already been told about the run. Cancelling mid-shopping means "stop shopping, come back with what you have": still-Pending lines are cancelled, and if any line already has stems found the order routes to **Reviewing** rather than Cancelled, so the bought stems are still received. A line the driver already found cannot be cancelled at all. A Cancelled Stock Order reopens to Draft and produces no pending arrivals.
+
+**Owner and Driver notes are separate fields.** They shared one column, so the driver's "было только 8" silently destroyed the owner's "возьми потемнее" with no trace. The order-level note is now an explicit Driver Note — editable at any status (it used to be settable only on the create form) and shown as a full card at the top of the driver's run instead of a truncated grey line beside the PO number.
+
+**Also fixed:** `'Stock Item'` was missing from the line PATCH allow-list, so the Draft picker's flower link had been silently dropped on every pick since the endpoint was written — the link was only ever written later, at evaluation, by name resolution. And the florist Stock screen's pending-arrivals panel fetched once on mount and ignored the SSE events the backend already broadcasts, so deleted or cancelled lines kept showing as incoming until the screen remounted. Both fixed and regression-locked.
+
+**Reconciled with #593 / #594 (2026-07-30).** Those landed on master while this was being built and decide the same question the opposite way: a line's flower identity is **immutable once the line is linked or the order leaves Draft** (owner decision 2026-07-24 — changing it is a REPLACE, not an edit), enforced by a 409. Both target #558. They are now kept together rather than one overriding the other: **while a line is being composed** (the new-order rows before they are saved, and a Draft line with no link yet) the Variety block is editable and re-resolves as described above; **once locked** it renders master's read-only `PoLineIdentity`, which also surfaces the Variety the receive will actually resolve to. `PoLineForm` takes `identityLocked`, and the blur-flush omits identity fields in that state so a price edit can't trip the 409. ADR-0014 carries the narrowing note.
+
+**Schema:** migration `0024_stock_order_termination.sql` adds `stock_order_lines.cancelled_at` (nullable) and `stock_order_lines.driver_notes` (NOT NULL DEFAULT ''), plus a partial index on cancelled lines. Additive and backward-compatible — no backfill, existing rows keep working. `PO_STATUS` gains `CANCELLED`.
+
+No env change.
+
+**Verification:** backend Vitest 1104 passing (123 files) incl. three new suites — `stockOrders.termination.integration.test.js` (12 cases), `stock.pendingPoCancelled.integration.test.js` (4), `stockOrders.lineStockItemPatch.integration.test.js` (3); shared 866 passing incl. `poLineVariety` (31) and `PoLineForm` (14), with an invariant walk asserting a stock link never disagrees with the attributes shown; API E2E 253/253; lab unit 77 + lab API 18; all three apps build.
+
 ## 2026-07-26 — fix(analytics, dashboard): phantom delivery fees on converted Pickup orders (#554 follow-up)
 
 **Behavior fix:** the two remaining readers that #554 did not cover were still counting a delivery fee for orders that had been converted from Delivery to Pickup. Same root cause as #554 (a conversion *cancels* the linked delivery record, it never deletes it — so a Cancelled-but-intact delivery keeps its fee):

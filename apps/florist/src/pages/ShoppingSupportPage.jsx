@@ -7,6 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
+import useConfigLists from '../hooks/useConfigLists.js';
+import { PoLineForm } from '@flower-studio/shared';
 import client, { getClientPin } from '../api/client.js';
 import t from '../translations.js';
 
@@ -22,6 +24,7 @@ function parseDecimal(v) {
 }
 
 export default function ShoppingSupportPage() {
+  const { suppliers: SUPPLIERS, targetMarkup } = useConfigLists();
   const navigate = useNavigate();
   const { showToast } = useToast();
   const [orders, setOrders] = useState([]);
@@ -39,9 +42,13 @@ export default function ShoppingSupportPage() {
   // existing Type instead of free-typing one (which once mislabelled a batch).
   const [typeOptions, setTypeOptions] = useState([]);
   const [colourOptions, setColourOptions] = useState([]);
+  const [stock, setStock] = useState([]);
   useEffect(() => {
     client.get('/stock/distinct/type').then(r => setTypeOptions(r.data || [])).catch(() => {});
     client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
+    // The off-plan line form is the shared PoLineForm now, which searches and
+    // re-resolves Varieties against the loaded stock list (ADR-0014).
+    client.get('/stock?includeEmpty=true').then(r => setStock(r.data || [])).catch(() => {});
   }, []);
 
   // ── Fetch active POs (same pattern as StockPickupPage) ──
@@ -153,15 +160,24 @@ export default function ShoppingSupportPage() {
   // (name + qty required up front, supplier/cost optional — #524; no "temp
   // line" that can silently vanish).
   // `quantity` here is the TOTAL STEMS (form pre-computes lots × lot size).
-  async function addExtraLine(orderId, { flowerName, supplier, quantity, costPrice, lotSize }) {
+  async function addExtraLine(orderId, line) {
     try {
-      const stems = Number(quantity) || 0;
+      const stems = Number(line.qty) || 0;
       const created = await client.post(`/stock-orders/${orderId}/lines`, {
-        flowerName: flowerName.trim(),
-        supplier: supplier.trim(),
+        flowerName: (line.flowerName || '').trim(),
+        stockItemId: line.stockItemId || '',
+        supplier: (line.supplier || '').trim(),
         quantity: stems,
-        costPrice: parseDecimal(costPrice),
-        lotSize: Number(lotSize) || 0,
+        costPrice: parseDecimal(line.costPerStem),
+        sellPrice: parseDecimal(line.sellPerStem),
+        lotSize: Number(line.lotSize) || 0,
+        // Variety identity — this form could not capture it at all before, so
+        // an off-plan flower landed attr-less and the grouped Stock view could
+        // not classify it (pitfall #9).
+        type: (line.type || '').trim() || null,
+        colour: (line.colour || '').trim() || null,
+        size: line.size !== '' && line.size != null ? Number(line.size) : null,
+        cultivar: (line.cultivar || '').trim() || null,
       });
       // Mark the new line as Found All immediately — the owner only adds lines
       // for flowers she's already bought, and we need the florist to see them.
@@ -379,6 +395,9 @@ export default function ShoppingSupportPage() {
                   <AddExtraLineForm
                     orderId={order.id}
                     onAdd={addExtraLine}
+                    stock={stock}
+                    suppliers={SUPPLIERS}
+                    targetMarkup={targetMarkup}
                     fillAllHint={t.shopping.fillAllFields}
                   />
                 )}
@@ -736,44 +755,28 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
 // owner can sanity-check before submitting. Flower name + qty are required;
 // supplier/cost are optional (#524). POST only fires on submit, never from
 // blur — no temp-local-line that can vanish.
-function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
+// The off-plan line form. Was the outlier of the four: free-text flower name,
+// no picker, no Variety block, no sell price — so a flower bought at the market
+// landed attr-less and unclassifiable (pitfall #9). Now the same PoLineForm as
+// every other surface, in `shopping` mode (no Farmer, no line note).
+function AddExtraLineForm({ orderId, onAdd, fillAllHint, stock = [], suppliers = [], targetMarkup = 0 }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    flowerName: '',
-    supplier: '',
-    lotSize: '',       // stems per lot; blank/0 means loose stems
-    qty: '',           // lots if lotSize > 1, else stems
-    costPerStem: '',
-  });
-
-  const lotSizeNum = Number(form.lotSize) || 0;
-  const qtyNum = Number(form.qty) || 0;
-  const costPerStemNum = Number(form.costPerStem) || 0;
-  const totalStems = lotSizeNum > 1 ? qtyNum * lotSizeNum : qtyNum;
-  const totalCost = totalStems * costPerStemNum;
+  const [form, setForm] = useState(blankLine);
 
   function reset() {
-    setForm({ flowerName: '', supplier: '', lotSize: '', qty: '', costPerStem: '' });
+    setForm(blankLine());
     setOpen(false);
   }
 
-  // #524: only identity (flower name) + quantity are required. Supplier and
-  // cost/stem are optional — the owner can fill them in later.
-  const ready =
-    form.flowerName.trim() &&
-    totalStems > 0;
+  // #524: identity + quantity only. Supplier and cost are filled in later.
+  const hasIdentity = !!(form.stockItemId || form.flowerName.trim() || form.type.trim());
+  const ready = hasIdentity && (Number(form.qty) || 0) > 0;
 
   async function submit() {
     if (!ready || submitting) return;
     setSubmitting(true);
-    const ok = await onAdd(orderId, {
-      flowerName: form.flowerName,
-      supplier: form.supplier,
-      quantity: totalStems,
-      costPrice: costPerStemNum,
-      lotSize: lotSizeNum,
-    });
+    const ok = await onAdd(orderId, form);
     setSubmitting(false);
     if (ok) reset();
   }
@@ -792,75 +795,17 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
   return (
     <div className="ios-card px-4 py-3 space-y-2 border border-brand-200">
       <p className="text-[11px] text-ios-tertiary">{t.shopping.addExtraHint}</p>
-      <input
-        type="text"
-        value={form.flowerName}
-        onChange={e => setForm(f => ({ ...f, flowerName: e.target.value }))}
-        placeholder={t.shopping.flowerName}
-        className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
+      <PoLineForm
+        value={form}
+        onChange={patch => setForm(f => ({ ...f, ...patch }))}
+        stock={stock}
+        suppliers={suppliers}
+        targetMarkup={targetMarkup}
+        t={t}
+        mode="shopping"
+        idPrefix={`po-extra-${orderId}`}
       />
-      <input
-        type="text"
-        value={form.supplier}
-        onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-        placeholder={`${t.shopping.supplier} (${t.optional || 'optional'})`}
-        className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
-      />
-      {/* Lot size + qty row — qty is LOTS when lotSize > 1, else stems */}
-      <div className="flex gap-2">
-        <div className="flex-1">
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.lotSize}</label>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={form.lotSize}
-            onChange={e => setForm(f => ({ ...f, lotSize: e.target.value }))}
-            placeholder="1"
-            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
-          />
-        </div>
-        <div className="flex-1">
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">
-            {lotSizeNum > 1 ? t.shopping.lotsFound : t.shopping.qtyFound}
-          </label>
-          <input
-            type="number"
-            inputMode="numeric"
-            value={form.qty}
-            onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
-            placeholder="0"
-            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
-          />
-        </div>
-        <div className="flex-1 relative">
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.costPerStem} ({t.optional || 'optional'})</label>
-          <input
-            type="text"
-            inputMode="decimal"
-            value={form.costPerStem}
-            onChange={e => setForm(f => ({ ...f, costPerStem: e.target.value }))}
-            placeholder="0"
-            className="w-full text-sm border border-gray-200 dark:border-gray-600 rounded-xl px-3 py-2.5 pr-7 bg-white dark:bg-dark-elevated outline-none"
-          />
-          <span className="absolute right-2.5 top-7 text-xs text-ios-tertiary">zł</span>
-        </div>
-      </div>
-      {/* Live derived totals — same feedback pattern as the DraftLineEditor */}
-      {totalStems > 0 && (
-        <div className="flex items-center justify-between bg-brand-50 dark:bg-brand-900/30 rounded-lg px-3 py-1.5">
-          <span className="text-xs text-brand-700 dark:text-brand-300">
-            = {totalStems} {t.stems}
-          </span>
-          {totalCost > 0 && (
-            <span className="text-sm font-semibold text-brand-700 dark:text-brand-300">
-              {t.shopping.totalCost}: {totalCost.toFixed(2)} zł
-            </span>
-          )}
-        </div>
-      )}
-      {!ready && (
-        <p className="text-[11px] text-amber-600">{fillAllHint}</p>
-      )}
+      {!ready && <p className="text-[11px] text-amber-600">{fillAllHint}</p>}
       <div className="flex gap-2 pt-1">
         <button
           onClick={submit}
@@ -879,4 +824,13 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint }) {
       </div>
     </div>
   );
+}
+
+function blankLine() {
+  return {
+    stockItemId: '', flowerName: '', qty: '', lotSize: '',
+    supplier: '', costPerStem: '', sellPerStem: '',
+    farmer: '', notes: '',
+    type: '', colour: '', size: '', cultivar: '',
+  };
 }

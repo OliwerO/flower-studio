@@ -38,6 +38,12 @@ const TEST_ENV = {
   PIN_FLORIST:                       '2222',
   PIN_DRIVER_TIMUR:                  '3333',
   PIN_DRIVER_NIKITA:                 '4444',
+  // Auth state is in-memory (shared AuthContext — no localStorage), so every
+  // UI E2E test logs in through the numpad again. The production guard of 5
+  // attempts / 15 min would reject the sixth test in a suite — and once
+  // tripped it rejects correct PINs too, so the whole run fails with
+  // "Неверный PIN". Raised here only; production leaves it unset at 5.
+  AUTH_PIN_MAX_ATTEMPTS:             '10000',
 
   // Port — 3002 to avoid collision with a real local backend on 3001.
   PORT:                              process.env.PORT || '3002',

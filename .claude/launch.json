@@ -16,6 +16,26 @@
       "cwd": "apps/florist"
     },
     {
+      "name": "harness",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["backend/scripts/start-test-backend.js"],
+      "port": 3002
+    },
+    {
+      "name": "florist-harness",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "VITE_API_PROXY_TARGET=http://localhost:3002 node node_modules/vite/bin/vite.js --port 5176"],
+      "port": 5176,
+      "cwd": "apps/florist"
+    },
+    {
+      "name": "dashboard-harness",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "VITE_API_PROXY_TARGET=http://localhost:3002 node node_modules/vite/bin/vite.js --port 5177"],
+      "port": 5177,
+      "cwd": "apps/dashboard"
+    },
+    {
       "name": "delivery",
       "runtimeExecutable": "node",
       "runtimeArgs": ["node_modules/vite/bin/vite.js"],
