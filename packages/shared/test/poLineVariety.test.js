@@ -127,6 +127,19 @@ describe('resolveVarietyLink — the ADR-0014 rule', () => {
     const r = resolveVarietyLink(STOCK, { type: 'Peony', colour: 'White', size: 60, cultivar: 'Sarah B.' });
     expect(r.stockItemId).toBe('');
     expect(r.matched).toBeNull();
+  });
+
+  it('renames the line when detaching, so the old card\'s name cannot stick', () => {
+    // Caught by the UI click-through: after changing Pink → White the line still
+    // read "Peony Pink 60cm". Evaluation names a brand-new Variety from the
+    // line's Flower Name, so that would have created a WHITE peony card called
+    // "Peony Pink 60cm".
+    const r = resolveVarietyLink(STOCK, { type: 'Peony', colour: 'White', size: 60, cultivar: 'Sarah B.' });
+    expect(r.adopt.flowerName).toBe('Peony White 60cm Sarah B.');
+  });
+
+  it('leaves the name alone when there is no Type to compose one from', () => {
+    const r = resolveVarietyLink(STOCK, { type: '', colour: 'White' });
     expect(r.adopt).toEqual({});
   });
 

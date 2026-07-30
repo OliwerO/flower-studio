@@ -4,10 +4,20 @@ import { resolveRoleByPin } from '../utils/driverPins.js';
 
 const router = Router();
 
-// 5 attempts per 15 minutes per IP — prevents brute-forcing 4-digit PINs
+// 5 attempts per 15 minutes per IP — prevents brute-forcing 4-digit PINs.
+//
+// Overridable ONLY so the test harness can raise it: auth state is in-memory
+// (see shared AuthContext — no localStorage, no session), so every UI E2E test
+// has to log in through the numpad again. Five attempts means the sixth test in
+// a suite is rejected, and once the window trips it rejects CORRECT PINs too —
+// which is why `florist-order-creation.spec.js` sat skipped and unrunnable.
+// `start-test-backend.js` sets this; production never does, so the default
+// stands and the brute-force guard is unchanged there.
+const MAX_PIN_ATTEMPTS = Number(process.env.AUTH_PIN_MAX_ATTEMPTS) || 5;
+
 const pinLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5,
+  max: MAX_PIN_ATTEMPTS,
   message: { error: 'Too many PIN attempts. Try again in 15 minutes.' },
   standardHeaders: true,
   legacyHeaders: false,

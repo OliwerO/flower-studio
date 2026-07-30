@@ -20,7 +20,7 @@
  */
 
 import parseBatchName from './parseBatchName.js';
-import { varietyKey } from './varietyKey.js';
+import { varietyKey, varietyDisplayName } from './varietyKey.js';
 
 /** '' / undefined / whitespace-only → null. Mirrors varietyKey's `norm`. */
 const normText = (v) => {
@@ -116,7 +116,19 @@ export function findVarietyMatch(stockItems, attrs) {
  */
 export function resolveVarietyLink(stockItems, attrs, { targetMarkup } = {}) {
   const matched = findVarietyMatch(stockItems, attrs);
-  if (!matched) return { matched: null, stockItemId: '', adopt: {} };
+  if (!matched) {
+    // Detaching must also drop the name the old card supplied. Otherwise a
+    // line whose Colour was changed Pink → White keeps reading "Peony Pink
+    // 60cm", and since evaluation names a brand-new Variety from the line's
+    // Flower Name, it would create a WHITE peony card called "Peony Pink 60cm".
+    const tuple = lineAttrsToTuple(attrs);
+    const composed = tuple.type_name ? varietyDisplayName(tuple) : '';
+    return {
+      matched: null,
+      stockItemId: '',
+      adopt: composed ? { flowerName: composed } : {},
+    };
+  }
 
   const cost = Number(matched['Current Cost Price']) || 0;
   const sell = Number(matched['Current Sell Price']) || 0;
