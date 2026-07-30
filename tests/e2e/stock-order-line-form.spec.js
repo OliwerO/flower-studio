@@ -72,22 +72,30 @@ test.describe('Stock Order line form', () => {
     await expect(line.locator('[data-testid="po-cost"]')).toHaveValue('5.2');
   });
 
-  test('changing Colour to something you do not stock detaches the line', async ({ page }) => {
-    // The #558 guard. Evaluation ignores Variety attrs on a LINKED line, so a
-    // line showing White while still linked to the Pink card would receive
-    // White stems into Pink. Detaching is what keeps that impossible.
+  test('changing Colour to something you do not stock asks before creating it', async ({ page }) => {
+    // ADR-0016. Silently minting a Variety from a typo is what fragmented stock
+    // (#562), so a no-match edit is not applied until the owner confirms — and
+    // cancelling puts the previous flower back.
     await seedPeonySizes();
     const line = await openNewOrderForm(page);
     await pickFlower(line, page, 'Peony Pink 60', 'Peony Pink 60cm');
 
     await line.locator('[data-testid="nv-colour"]').fill('White');
+    await expect(line.locator('[data-testid="po-new-variety-prompt"]')).toBeVisible();
 
-    await expect(line.locator('[data-testid="po-variety-badge"]')).toHaveText(/новый сорт|new variety/i);
+    // Cancel restores the flower we came from — no half-applied identity.
+    await line.locator('[data-testid="po-new-variety-cancel"]').click();
+    await expect(line.locator('[data-testid="po-new-variety-prompt"]')).toBeHidden();
+    await expect(line.locator('[data-testid="nv-colour"]')).toHaveValue('Pink');
+
+    // Confirming is the only path that creates one.
+    await line.locator('[data-testid="nv-colour"]').fill('White');
+    await line.locator('[data-testid="po-new-variety-confirm"]').click();
     await expect(line.locator('[data-testid="nv-colour"]')).toHaveValue('White');
+    await expect(line.locator('[data-testid="po-variety-badge"]')).toHaveText(/новый сорт|new variety/i);
 
-    // The name must follow the Variety, not linger from the card we just left.
-    // Evaluation names a brand-new Variety from this field, so a stale
-    // "Peony Pink 60cm" would create a WHITE peony card under a pink name.
+    // The name must follow the Variety, not linger from the card we left —
+    // evaluation names a new Variety from this field.
     await expect(line.locator('[data-testid="stock-search-input"]'))
       .toHaveValue('Peony White 60cm Sarah B.');
   });

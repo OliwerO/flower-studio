@@ -195,7 +195,7 @@ export {
   findVarietyMatch, resolveVarietyLink, linkAgreesWithAttrs,
   derivePackages, stemsFromPackages,
   lineAttrsToTuple, stockItemToTuple,
-  apiLineToCanonical, canonicalToApiFields, canonicalDiffToApiFields, IDENTITY_KEYS,
+  apiLineToCanonical, canonicalToApiFields, canonicalDiffToApiFields,
 } from './utils/poLineVariety.js';
 
 // Mono bouquet suggested price = minStems × key-flower sell price. Shared by

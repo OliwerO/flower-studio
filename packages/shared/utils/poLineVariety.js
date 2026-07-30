@@ -241,18 +241,17 @@ export function canonicalToApiFields(c = {}) {
  * to send a diff — PATCHing every field on every edit would let a stale value
  * from one field clobber a concurrent change to another.
  */
-export const IDENTITY_KEYS = ['flowerName', 'stockItemId', 'type', 'colour', 'size', 'cultivar'];
-
-export function canonicalDiffToApiFields(prev = {}, next = {}, { omitIdentity = false } = {}) {
+export function canonicalDiffToApiFields(prev = {}, next = {}) {
   const out = {};
   for (const key of Object.keys(API_FIELDS)) {
-    // A locked line 409s on ANY identity write (#593), including one that only
-    // looks like a change because of a formatting difference. The form already
-    // renders identity read-only there, so never send it.
-    if (omitIdentity && IDENTITY_KEYS.includes(key)) continue;
     if (String(prev[key] ?? '') === String(next[key] ?? '')) continue;
     out[API_FIELDS[key]] = apiValue(key, next);
   }
+  // Hybrid rule (owner decision 2026-07-30): the backend refuses an identity
+  // that matches no existing Variety, so a DELIBERATE new-variety create has to
+  // say so. `isNewVariety` is set only after the owner confirms the prompt in
+  // PoLineForm; it is a control flag, never a stored column.
+  if (next.isNewVariety && Object.keys(out).length > 0) out['New Variety'] = true;
   return out;
 }
 

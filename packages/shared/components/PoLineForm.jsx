@@ -1,7 +1,6 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import NewVarietyFields from './NewVarietyFields.jsx';
 import StockSearchInput from './StockSearchInput.jsx';
-import PoLineIdentity from './PoLineIdentity.jsx';
 import {
   resolveVarietyLink,
   derivePackages,
@@ -20,20 +19,12 @@ import {
  *
  * Two behaviours are load-bearing:
  *
- *   Variety block is ALWAYS visible WHILE THE LINE IS STILL BEING COMPOSED
- *   (ADR-0014). Picking a flower fills Type/Colour/Size/Cultivar from its card
- *   instead of hiding them, and editing any attr re-resolves the link: a match
- *   re-links, no match detaches. A line must never stay linked to a card whose
- *   Variety differs from what it displays — evaluation skips attrs on a linked
- *   line, so that would receive stems into the wrong card (#558).
- *
- *   Once the line is LOCKED, identity is read-only (#593, narrowing ADR-0014).
- *   Master's rule: a line's flower is immutable after it is linked or the order
- *   leaves Draft, because changing it is a REPLACE — remove the line, add a new
- *   one. The backend 409s any identity change on a locked line, so the form must
- *   not offer one. `PoLineIdentity` renders the identity read-only and surfaces
- *   the Variety the receive will ACTUALLY resolve to. Everything else on the
- *   line — quantities, prices, supplier, notes — stays editable.
+ *   Variety block is ALWAYS visible (ADR-0014). Picking a flower fills
+ *   Type/Colour/Size/Cultivar from its card instead of hiding them. Editing any
+ *   attr re-resolves the link: a match re-links, no match detaches. A line must
+ *   never stay linked to a card whose Variety differs from what it displays —
+ *   evaluation skips attrs on a linked line, so that would receive stems into
+ *   the wrong card (#558).
  *
  *   Packages is derived, never stored (D1). `qty` (stems) is the stored
  *   quantity. Editing Packages sets stems; editing stems lets Packages show a
@@ -53,13 +44,6 @@ import {
  * @param {'draft'|'sent'|'shopping'} mode  Toggles OPTIONAL FIELD VISIBILITY only —
  *                                never layout, never the quantity math.
  * @param {string}   idPrefix     Unique prefix for datalist ids on the page.
- * @param {boolean}  identityLocked  True once the line is linked or the order
- *                   has left Draft (#593). Swaps the picker + Variety block for
- *                   the read-only `PoLineIdentity`. Hosts editing a PERSISTED
- *                   line must pass this; the pre-save composing surfaces (the
- *                   new-order rows, the add-line form) never do — nothing is
- *                   persisted yet, so there is no lock to respect.
- * @param {object}   line         The persisted line, for `PoLineIdentity`.
  */
 export default function PoLineForm({
   value,
@@ -70,8 +54,6 @@ export default function PoLineForm({
   t = {},
   mode = 'draft',
   idPrefix = 'po-line',
-  identityLocked = false,
-  line = null,
 }) {
   const lotSize   = Number(value.lotSize) || 0;
   const stems     = Number(value.qty) || 0;
@@ -140,11 +122,44 @@ export default function PoLineForm({
     return patch;
   }
 
-  // ADR-0014: every attr edit re-resolves the link. `adopt` only carries values
+  // Pending "create a new variety?" confirmation (hybrid rule, ADR-0016).
+  const [newVarietyPrompt, setNewVarietyPrompt] = useState(null);
+
+  // Every attr edit re-resolves the link (ADR-0014); `adopt` only carries values
   // the matched card actually has, so a match never blanks something typed.
+  //
+  // Hybrid rule (owner decision 2026-07-30, ADR-0016): a match re-links silently
+  // — that is the routine "Peony 60cm → 70cm" case. NO match on a line that was
+  // linked does NOT silently detach any more: detaching mints a brand-new
+  // Variety at evaluation, and doing that from a typo is what fragmented stock
+  // before (#562). Instead the owner is asked to confirm, and only the confirmed
+  // path sets `isNewVariety` (→ `New Variety: true`, which the backend requires).
   function handleAttrsChange(nextAttrs) {
-    const { stockItemId, adopt } = resolveVarietyLink(stock, nextAttrs, { targetMarkup });
-    onChange({ ...nextAttrs, stockItemId, ...adopt });
+    const { matched, stockItemId, adopt } = resolveVarietyLink(stock, nextAttrs, { targetMarkup });
+    if (!matched && value.stockItemId) {
+      setNewVarietyPrompt({ attrs: nextAttrs, previous: { ...value } });
+      return;
+    }
+    setNewVarietyPrompt(null);
+    onChange({ ...nextAttrs, stockItemId, ...adopt, isNewVariety: false });
+  }
+
+  function confirmNewVariety() {
+    const { attrs } = newVarietyPrompt;
+    setNewVarietyPrompt(null);
+    // Take the name from resolveVarietyLink's no-match branch, which composes
+    // it from the tuple. Carrying the old card's name here would create a WHITE
+    // peony card called "Peony Pink 60cm" — evaluation names a brand-new
+    // Variety from this field. Caught by the browser click-through, which is
+    // the only layer that exercises confirm-then-save end to end.
+    const { adopt } = resolveVarietyLink(stock, attrs, { targetMarkup });
+    onChange({ ...attrs, ...adopt, stockItemId: '', isNewVariety: true });
+  }
+
+  function cancelNewVariety() {
+    const { previous } = newVarietyPrompt;
+    setNewVarietyPrompt(null);
+    onChange({ ...previous });
   }
 
   const varietyForm = {
@@ -175,42 +190,71 @@ export default function PoLineForm({
 
   return (
     <div className="space-y-2" data-testid="po-line-form">
-      {identityLocked ? (
-        /* Locked (#593): the flower cannot change here — changing it is a
-           REPLACE (remove the line, add a new one), and the backend 409s any
-           identity write. Show what it is and what it will receive into. */
-        <PoLineIdentity line={line ?? {}} stock={stock} t={t.po ?? t} />
-      ) : (
-        <>
-          <StockSearchInput
-            stock={stock}
-            value={value.flowerName}
-            t={t}
-            onChange={(name) => onChange({ flowerName: name, stockItemId: '' })}
-            onSelect={handleStockSelect}
-          />
+      <StockSearchInput
+        stock={stock}
+        value={value.flowerName}
+        t={t}
+        onChange={(name) => onChange({ flowerName: name, stockItemId: '' })}
+        onSelect={handleStockSelect}
+      />
 
-          {/* Variety identity — visible and editable while composing (ADR-0014). */}
-          <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
-                {tx('variety', 'Variety')}
+      {/* Variety identity — always visible (ADR-0014), never gated on the link. */}
+      <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
+            {tx('variety', 'Variety')}
+          </span>
+          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.cls}`} data-testid="po-variety-badge">
+            {badge.text}
+          </span>
+        </div>
+        <NewVarietyFields
+          form={varietyForm}
+          onChange={handleVarietyUpdater}
+          t={t}
+          stockItems={stock}
+          idPrefix={`${idPrefix}-nv`}
+          sizeOptions={sizeOptions}
+        />
+
+        {/* Hybrid rule: an identity that matches nothing is not applied until
+            the owner confirms it really is a new variety. Cancelling restores
+            the previous flower, so a typo can never fragment stock (#562). */}
+        {newVarietyPrompt && (
+          <div
+            data-testid="po-new-variety-prompt"
+            className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"
+          >
+            <p className="mb-1.5">
+              {tx('newVarietyConfirm', 'No such flower yet. Create it as a new variety?')}
+              {' '}
+              <span className="font-semibold">
+                {[newVarietyPrompt.attrs.type, newVarietyPrompt.attrs.colour,
+                  newVarietyPrompt.attrs.size ? `${newVarietyPrompt.attrs.size}cm` : null,
+                  newVarietyPrompt.attrs.cultivar].filter(Boolean).join(' ')}
               </span>
-              <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.cls}`} data-testid="po-variety-badge">
-                {badge.text}
-              </span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="po-new-variety-confirm"
+                onClick={confirmNewVariety}
+                className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-medium text-white active:bg-amber-600"
+              >
+                {tx('newVarietyCreate', 'Create new')}
+              </button>
+              <button
+                type="button"
+                data-testid="po-new-variety-cancel"
+                onClick={cancelNewVariety}
+                className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-300 active:bg-amber-100"
+              >
+                {tx('cancel', 'Cancel')}
+              </button>
             </div>
-            <NewVarietyFields
-              form={varietyForm}
-              onChange={handleVarietyUpdater}
-              t={t}
-              stockItems={stock}
-              idPrefix={`${idPrefix}-nv`}
-              sizeOptions={sizeOptions}
-            />
           </div>
-        </>
-      )}
+        )}
+      </div>
 
       {/* Stems / Lot / Packages. Packages is derived — editing it sets stems. */}
       <div className="grid grid-cols-3 gap-2">

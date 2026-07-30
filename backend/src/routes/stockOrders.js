@@ -302,7 +302,10 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
 
     // Unknown keys are a hard error. Silently dropping them is precisely how the
     // picker's 'Stock Item' vanished for months while every request returned 200.
-    const known = new Set([...allowed, ...IDENTITY_FIELDS]);
+    // 'New Variety' is a CONTROL flag, not a column: it opts an identity change
+    // out of the must-match-an-existing-Variety rule. Accepted here so it does
+    // not 400, deliberately absent from `writable` so it is never persisted.
+    const known = new Set([...allowed, ...IDENTITY_FIELDS, 'New Variety']);
     const unknown = Object.keys(req.body).filter((k) => !known.has(k));
     if (unknown.length > 0) {
       return res.status(400).json({
@@ -311,35 +314,94 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
     }
 
     const existingLine = await stockOrderRepo.getLineById(req.params.lineId);
-    const identityLocked = !!existingLine['Stock Item']?.[0] || po.Status !== PO_STATUS.DRAFT;
 
-    if (identityLocked) {
-      // Compare values, not mere presence: both apps re-send the unchanged
-      // name/link alongside a quantity edit, and that must stay a no-op.
-      const norm = (key, value) => {
-        if (key === 'Stock Item') {
-          const first = Array.isArray(value) ? value[0] : value;
-          return first == null || first === '' ? null : String(first);
-        }
-        if (value == null || value === '') return null;
-        return typeof value === 'string' ? value.trim() : String(value);
-      };
-      const changed = IDENTITY_FIELDS.filter(
-        (key) => key in req.body && norm(key, req.body[key]) !== norm(key, existingLine[key]),
-      );
-      if (changed.length > 0) {
-        return res.status(409).json({
-          error: `Cannot change a line's flower (${changed.join(', ')}) once it is linked or the PO has been sent. `
-               + 'Remove the line and add a new one instead.',
-        });
+    // Compare values, not mere presence: every editor re-sends the unchanged
+    // name/link alongside a quantity edit, and that must stay a no-op.
+    const norm = (key, value) => {
+      if (key === 'Stock Item') {
+        const first = Array.isArray(value) ? value[0] : value;
+        return first == null || first === '' ? null : String(first);
       }
+      if (value == null || value === '') return null;
+      return typeof value === 'string' ? value.trim() : String(value);
+    };
+    const identityChanged = IDENTITY_FIELDS.filter(
+      (key) => key in req.body && norm(key, req.body[key]) !== norm(key, existingLine[key]),
+    );
+
+    // ── Identity may only ever move to a Variety that ALREADY EXISTS ──
+    // Owner decision 2026-07-30, superseding both the hard lock (#593) and
+    // ADR-0014's silent detach. Editing a Variety attr re-resolves the line
+    // onto the matching Stock Item (so "Peony 60cm → 70cm" is one edit, not a
+    // delete-and-retype); an identity that matches NOTHING is refused, because
+    // silently minting a Variety from a typo is what fragmented stock before
+    // ("Pink Peonies" vs "Peony/Pink", #562). Creating a genuinely new Variety
+    // stays possible but must be deliberate: the client re-sends with
+    // `New Variety: true` after the owner confirms.
+    // Only a line that is CURRENTLY LINKED can drift onto the wrong card — an
+    // unlinked line is still being composed and its Variety is resolved (or
+    // created) at evaluation, so leave that flow alone.
+    const wasLinked = !!existingLine['Stock Item']?.[0];
+    if (wasLinked && identityChanged.length > 0 && !req.body['New Variety']) {
+      const pickedId = 'Stock Item' in req.body ? norm('Stock Item', req.body['Stock Item']) : undefined;
+
+      let target = null;
+      if (pickedId) {
+        // (a) The owner picked a card explicitly. THAT card is the truth — its
+        // attrs are adopted onto the line, so the link and the four attrs can
+        // never disagree (the #558 invariant), and a caller that sends only a
+        // link is not silently reverted to the line's stale attrs.
+        target = await stockRepo.getById(pickedId).catch(() => null);
+        if (!target) {
+          return res.status(409).json({
+            error: 'That flower no longer exists. Pick one you already have.',
+            code: 'VARIETY_NOT_FOUND',
+          });
+        }
+      } else {
+        // (b) An attribute was edited. Re-resolve the whole tuple onto an
+        // existing Variety; matching nothing is refused, because silently
+        // minting a Variety from a typo is what fragmented stock before (#562).
+        const merged = (key) => (key in req.body ? req.body[key] : existingLine[key]);
+        const typeName = norm('Type', merged('Type'));
+        const sizeRaw  = norm('Size', merged('Size'));
+        const matches = typeName
+          ? await stockRepo.list({
+            pg: {
+              typeName,
+              colour:   norm('Colour', merged('Colour')),
+              sizeCm:   sizeRaw != null ? Number(sizeRaw) : null,
+              cultivar: norm('Cultivar', merged('Cultivar')),
+              includeEmpty: true,
+              includeInactive: true,
+            },
+          })
+          : [];
+        if (matches.length === 0) {
+          return res.status(409).json({
+            error: 'No existing flower matches that Type / Colour / Size / Cultivar. '
+                 + 'Pick one you already have, or confirm creating it as a new variety.',
+            code: 'VARIETY_NOT_FOUND',
+          });
+        }
+        // Prefer the undated card — the Variety's canonical row, and the one
+        // buildPoSuggestions links shortfall lines to (mirrors findVarietyMatch
+        // in packages/shared/utils/poLineVariety.js).
+        target = matches.find(m => !/\((\d|20\d\d-)/.test(m['Display Name'] || '')) || matches[0];
+      }
+
+      // Name, link and the four attrs always move together.
+      req.body['Stock Item'] = [target._pgId || target.id];
+      if (!('Flower Name' in req.body)) req.body['Flower Name'] = target['Display Name'];
+      req.body.Type     = target.Type ?? null;
+      req.body.Colour   = target.Colour ?? null;
+      req.body.Size     = target.Size ?? null;
+      req.body.Cultivar = target.Cultivar ?? null;
     }
 
-    // While the line is still unlocked (Draft + unlinked) the owner is composing
-    // it, so the FIRST assignment of a Stock Item must actually persist. It was
-    // absent from `allowed` entirely, so a Draft pick set the name and dropped
-    // the link — leaving the line to be auto-resolved by display name later.
-    const writable = identityLocked ? allowed : [...allowed, 'Stock Item'];
+    // 'Stock Item' is writable — a first assignment on a Draft line, and a
+    // re-link resolved above, both have to persist.
+    const writable = [...allowed, 'Stock Item'];
     const fields = {};
     for (const key of writable) {
       if (key in req.body) fields[key] = req.body[key];

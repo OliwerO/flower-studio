@@ -1,18 +1,12 @@
 # Editing a Variety attribute on a Stock Order line re-resolves the Stock Item link
 
-> **Narrowed 2026-07-30 by #593 / #594** (owner decision 2026-07-24, which
-> predates this ADR and landed on master while it was being written). Identity
-> is **immutable once the line is linked or the order has left Draft** —
-> changing the flower there is a REPLACE (remove the line, add a new one), and
-> `PATCH /stock-orders/:id/lines/:lineId` returns 409. Everything below
-> therefore applies **only while the line is still being composed**: the
-> new-order rows before they are POSTed, and a Draft line that has no Stock Item
-> link yet. On a locked line the form renders the read-only `PoLineIdentity`
-> instead, which also surfaces the Variety the receive will resolve to. The two
-> decisions target the same failure (#558) from opposite ends and are kept
-> together deliberately: re-resolution keeps identity consistent *while* it can
-> still change, and the lock stops it changing once anything downstream depends
-> on it.
+> **Superseded 2026-07-30 by ADR-0016.** The silent detach described below —
+> a no-match edit dropping the link so evaluation mints a Variety — turned a
+> typo into stock fragmentation (#562). ADR-0016 keeps the re-resolution but
+> refuses a no-match edit until the Owner explicitly confirms "create as a new
+> variety". The hard identity lock from #593, which this ADR was briefly
+> narrowed by, is superseded too: identity may move, but only onto a Variety
+> that already exists. Read ADR-0016 for the rule in force.
 
 A Stock Order line shows the full Variety four-tuple (Type, Colour, Size, Cultivar) at all times, pre-filled from the picked Stock Item rather than hidden behind a "new Variety" gate. Whenever the Owner edits one of those four attributes, the line re-matches the whole tuple against existing stock: a match silently re-links the line to that Stock Item, and no match detaches the line (clears `stockItemId`) and marks it as a new Variety. A line therefore never carries a Stock Item link whose Variety differs from the attributes displayed on it.
 

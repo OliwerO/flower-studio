@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-30 — feat(stock-orders): a PO line's flower moves only between existing Varieties (ADR-0016)
+
+**Behavior change**, superseding two designs shipped hours earlier. Editing a Stock Order line's flower re-resolves it onto the **existing** Variety matching the four attributes shown — so swapping Peony 60cm → 70cm is one edit. An identity matching **nothing** is refused (`409 VARIETY_NOT_FOUND`) until the Owner confirms "create as a new variety", which re-sends with `New Variety: true`.
+
+This closes both halves of the problem the earlier attempts each left open:
+
+- **ADR-0014's silent detach** turned a mistyped Cultivar into a brand-new Variety at evaluation (#562) — the fragmentation family behind #319.
+- **#593's hard lock** refused every identity change once a line was linked, so a routine size swap cost a delete-and-retype, losing the line's quantity, cost and supplier.
+
+Enforced **server-side**, deliberately: #558 shipped because a client-sent field was silently dropped by the backend, so a client-only guard would not hold for Ask Blossom, the delivery app, or any future caller. `PoLineIdentity` (#594) is retained but no longer rendered — with the lock gone there is no read-only state for it to occupy.
+
+**Fixed while landing this:** the confirmed-create path kept the name of the card it had just left, so confirming White on a line showing "Peony Pink 60cm" would have created a *White* peony card under the pink name — the same divergence class as #558. Caught by the browser click-through, which is the only layer that exercises confirm-then-save end to end.
+
+No schema change. No env change.
+
+**Verification:** backend Vitest 1112 passing (124 files), shared 881, API E2E 253/253, Playwright UI specs 6/6, lab unit 77 + API 18, all three apps build.
+
 ## 2026-07-30 — feat(stock-orders): one line form, termination model, Owner/Driver note split
 
 Three related changes to Stock Orders, from an owner testing session. Design in `docs/superpowers/plans/2026-07-29-stock-order-form-unification.md`; decisions in **ADR-0014** and **ADR-0015**.
