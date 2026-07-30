@@ -393,18 +393,43 @@ router.get('/pending-po', async (req, res, next) => {
 
 // POST /api/stock — create a new stock item (florist quick-add during spontaneous delivery)
 // Body: { displayName, category, quantity, costPrice, sellPrice?, supplier?, unit?,
-//         typeName?, colour?, sizeCm?, cultivar? }
+//         typeName?, colour?, sizeCm?, cultivar?, newVariety? }
 // The 4-tuple Variety attrs (typeName/colour/sizeCm/cultivar) are optional pass-through
 // fields added for issue #287. sizeCm is coerced to integer or null; empty strings for
-// string attrs normalise to null. No further validation beyond coercion.
+// string attrs normalise to null.
+//
+// **This is the single create-a-flower door** — seven screens across the three
+// apps funnel into it (both receive forms, both new-order wizards, both
+// order-detail "+ Add new" blocks, and the shared bouquet-demand helper). It
+// therefore MATCHES before it creates (#562): if the posted identity already
+// exists, the existing card is returned (200) instead of a duplicate being
+// minted (201). Minting a genuinely new Variety stays possible — it just has to
+// be asked for, with `newVariety: true`.
+//
+// Safe to do silently because every caller posts `quantity: 0` and then logs the
+// real movement against `res.data.id` (a `/stock-purchases` receipt, or an order
+// line). Nothing is lost by handing back the real card; what is avoided is
+// `Pink Peonies / Pink` sitting beside `Peony / Pink` with the stems split
+// across both (#319, #558's sibling).
 router.post('/', async (req, res, next) => {
   try {
     const {
       displayName, category, quantity, costPrice, sellPrice, supplier, unit, lotSize, farmer,
       // Stock Y-model 4-tuple Variety attrs (camelCase wire → Airtable-style field names)
       typeName, colour, sizeCm, cultivar,
+      // Explicit "yes, this really is a new flower" — set by the screens that
+      // ask the user to confirm. Absent means "resolve if you can".
+      newVariety,
     } = req.body;
     if (!displayName) return res.status(400).json({ error: 'displayName is required' });
+
+    if (newVariety !== true) {
+      const existing = await stockRepo.findVarietyMatch({ displayName, typeName, colour, sizeCm, cultivar });
+      if (existing) {
+        console.log(`[STOCK] POST /stock resolved "${displayName}" onto existing ${existing.id} ("${existing['Display Name']}") instead of creating a duplicate`);
+        return res.status(200).json(existing);
+      }
+    }
 
     const fields = {
       'Display Name':       displayName,

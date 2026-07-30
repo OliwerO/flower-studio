@@ -26,6 +26,7 @@ import {
   auditLog,
 } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
+import { normaliseIdentityValue, normaliseSize, pickCanonical, isDatedBatchName } from '../utils/varietyIdentity.js';
 import { and, eq, ilike, isNull, inArray, gt, sql, desc } from 'drizzle-orm';
 
 /**
@@ -586,6 +587,13 @@ export async function list(options = {}) {
   return listFromPg(options);
 }
 
+// Case- and whitespace-insensitive equality for a Variety text attribute.
+// Only the column goes through lower(btrim(...)); the value is normalised in
+// JS so it binds as a plain parameter.
+function ciEq(column, value) {
+  return sql`lower(btrim(${column})) = ${String(value).trim().toLowerCase()}`;
+}
+
 async function listFromPg(options = {}) {
   if (!db) throw new Error('stockRepo.list: postgres backend selected but DATABASE_URL not configured');
 
@@ -595,11 +603,16 @@ async function listFromPg(options = {}) {
   if (pg.includeEmpty !== true)    filters.push(gt(stock.currentQuantity, 0));
   if (pg.category)                 filters.push(eq(stock.category, String(pg.category)));
   if (pg.displayName)              filters.push(ilike(stock.displayName, String(pg.displayName)));
-  // Variety 4-tuple filter — used by PO evaluation to find existing Stock Items by identity.
-  if (pg.typeName)                 filters.push(eq(stock.typeName, String(pg.typeName)));
-  if ('colour' in pg)              filters.push(pg.colour ? eq(stock.colour, String(pg.colour)) : isNull(stock.colour));
+  // Variety 4-tuple filter — used by PO evaluation and `POST /stock` to find
+  // existing Stock Items by identity. Text attrs compare case- and whitespace-
+  // insensitively (#562): `peony` and ` Peony ` are the same flower to a human,
+  // and treating them as different is exactly how duplicate cards get minted.
+  // Identity stays strict and null-aware otherwise (ADR-0006) — a blank Colour
+  // matches only a blank Colour, never "any".
+  if (pg.typeName)                 filters.push(ciEq(stock.typeName, pg.typeName));
+  if ('colour' in pg)              filters.push(pg.colour ? ciEq(stock.colour, pg.colour) : isNull(stock.colour));
   if ('sizeCm' in pg)              filters.push(pg.sizeCm != null ? eq(stock.sizeCm, Number(pg.sizeCm)) : isNull(stock.sizeCm));
-  if ('cultivar' in pg)            filters.push(pg.cultivar ? eq(stock.cultivar, String(pg.cultivar)) : isNull(stock.cultivar));
+  if ('cultivar' in pg)            filters.push(pg.cultivar ? ciEq(stock.cultivar, pg.cultivar) : isNull(stock.cultivar));
   if (Array.isArray(pg.ids) && pg.ids.length) {
     // Accept either airtable ids or uuids in the same array.
     const recs = pg.ids.filter(x => typeof x === 'string' && x.startsWith('rec'));
@@ -626,6 +639,54 @@ async function listFromPg(options = {}) {
 
   const rows = await q;
   return rows.map(pgToResponse);
+}
+
+// ── findVarietyMatch — "does this flower already exist?" ──
+//
+// The lookup behind the create-a-flower door (#562). Given a posted identity it
+// returns the canonical Stock Item that already carries it, or null.
+//
+//   • the Variety 4-tuple wins when a Type is given (ADR-0006 strict, null-aware);
+//   • otherwise it falls back to the display name, which is all the older
+//     free-text screens have;
+//   • both compare case- and whitespace-insensitively — `peony`, ` Peony ` and
+//     `Peony` are one flower;
+//   • inactive and zero-quantity cards count (deactivating a flower must not
+//     silently re-open the duplicate door);
+//   • dated Batches never count — `Peony Pink (24.Jul.)` is one delivery, not
+//     the Variety's canonical card (pitfall `batch-variety-attrs`).
+export async function findVarietyMatch({ typeName, colour, sizeCm, cultivar, displayName } = {}) {
+  if (!db) throw new Error('stockRepo.findVarietyMatch: postgres backend selected but DATABASE_URL not configured');
+
+  // A caller naming a dated Batch ("Peony Pink (24.Jul.)") is asking for that
+  // delivery row specifically — the receive paths do this. Never resolve it
+  // onto the canonical card, or the batch would silently never be created.
+  if (isDatedBatchName(displayName)) return null;
+
+  const filters = [isNull(stock.deletedAt)];
+  const type = normaliseIdentityValue(typeName);
+
+  if (type) {
+    filters.push(ciEq(stock.typeName, typeName));
+    const c = normaliseIdentityValue(colour);
+    filters.push(c ? ciEq(stock.colour, colour) : isNull(stock.colour));
+    const s = normaliseSize(sizeCm);
+    filters.push(s != null ? eq(stock.sizeCm, s) : isNull(stock.sizeCm));
+    const cv = normaliseIdentityValue(cultivar);
+    filters.push(cv ? ciEq(stock.cultivar, cultivar) : isNull(stock.cultivar));
+  } else if (normaliseIdentityValue(displayName)) {
+    filters.push(ciEq(stock.displayName, displayName));
+  } else {
+    return null;
+  }
+
+  const rows = await db
+    .select()
+    .from(stock)
+    .where(and(...filters))
+    .orderBy(sql`${stock.createdAt} ASC NULLS LAST`);
+
+  return pickCanonical(rows.map(pgToResponse));
 }
 
 const SORT_FIELD_MAP = {

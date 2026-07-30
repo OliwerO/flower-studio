@@ -5,6 +5,24 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-30 — fix(stock): the create-a-flower door matches before it creates (#562)
+
+**Behaviour change on `POST /api/stock`.** The endpoint used to enforce one rule — "displayName is not empty" — and every screen that can invent a flower funnels into it: both receive forms, both new-order wizards, both order-detail "+ Add new" blocks, and the shared `createBouquetDemand`. So typing `Pink Peonies` created a second flower beside the real `Peony / Pink` (with Type literally `Pink Peonies`), and `peony` created one beside `Peony`. Stock then splits across two cards and neither shows the true count — the shape behind #562, #319 and #558.
+
+The door now **resolves before it creates**. `stockRepo.findVarietyMatch` looks the posted identity up — the Variety 4-tuple when a Type is given, else the display name — case- and whitespace-insensitively, and the route returns that existing card with **200** instead of minting a duplicate with **201**. Creating a genuinely new Variety still works; it just has to be asked for with `newVariety: true`.
+
+**No client changes were needed and none are expected to break:** every caller posts `quantity: 0` and then logs the real movement separately against `res.data.id` (a `/stock-purchases` receipt, or an order line), so handing back the real card loses nothing. Callers that branch on `res.status === 201` would now see 200 on a resolve — none do today.
+
+Identity stays strict and null-aware (ADR-0006): a blank Colour matches only a blank Colour. A **dated Batch is never a match** — `Peony Pink (24.Jul.)` is one delivery, not the canonical card — and a caller posting a dated name (the receive paths) is left alone. Soft-deleted cards never resurrect; inactive and zero-quantity ones do match, or deactivating a flower would silently re-open the duplicate door.
+
+`stockRepo.list`'s 4-tuple filters share the same case-insensitive comparison, so PO evaluation stops missing `Peony` when a line was typed `peony`.
+
+**Also fixed:** the florist shopping-supervision screen asked for `/stock/distinct/type` (the column is `typeName`), the 400 was swallowed, and its Type dropdown had therefore been rendering **empty in production** — the one screen built to make the florist pick an existing Type offered no options at all. Both option fetches now log their failure instead of degrading silently.
+
+Screen-level work (dropdowns, explicit confirm) is inventoried in `docs/superpowers/reports/2026-07-30-variety-entry-surface-inventory.md`. No schema change, no env change.
+
+---
+
 ## 2026-07-30 — feat(stock-orders): a PO line's flower moves only between existing Varieties (ADR-0016)
 
 **Behavior change**, superseding two designs shipped hours earlier. Editing a Stock Order line's flower re-resolves it onto the **existing** Variety matching the four attributes shown — so swapping Peony 60cm → 70cm is one edit. An identity matching **nothing** is refused (`409 VARIETY_NOT_FOUND`) until the Owner confirms "create as a new variety", which re-sends with `New Variety: true`.

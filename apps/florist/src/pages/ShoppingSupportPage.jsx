@@ -44,8 +44,17 @@ export default function ShoppingSupportPage() {
   const [colourOptions, setColourOptions] = useState([]);
   const [stock, setStock] = useState([]);
   useEffect(() => {
-    client.get('/stock/distinct/type').then(r => setTypeOptions(r.data || [])).catch(() => {});
-    client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
+    // The column name is the PG-side one — `typeName`, not `type`. Asking for
+    // `type` 400s, and the failure used to be swallowed, so this datalist has
+    // been rendering EMPTY in production: the one screen built to make the
+    // florist pick an existing Type offered no options at all (#562 survey,
+    // row 9). Surface the failure now (pitfall #5) rather than degrade silently.
+    client.get('/stock/distinct/typeName')
+      .then(r => setTypeOptions(r.data || []))
+      .catch(err => console.error('[ShoppingSupport] Type options failed to load:', err?.response?.data?.error || err.message));
+    client.get('/stock/distinct/colour')
+      .then(r => setColourOptions(r.data || []))
+      .catch(err => console.error('[ShoppingSupport] Colour options failed to load:', err?.response?.data?.error || err.message));
     // The off-plan line form is the shared PoLineForm now, which searches and
     // re-resolves Varieties against the loaded stock list (ADR-0014).
     client.get('/stock?includeEmpty=true').then(r => setStock(r.data || [])).catch(() => {});
