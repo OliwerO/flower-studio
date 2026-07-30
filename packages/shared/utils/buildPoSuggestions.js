@@ -54,25 +54,28 @@ export function buildPoSuggestions(groups = [], pendingPO = {}, premadeMap = {})
     const cost = fin.cost != null && fin.cost > 0 ? fin.cost : 0;
     const sell = fin.sell != null && fin.sell > 0 ? fin.sell : 0;
 
+    // Emitted in PoLineForm's canonical line shape, so the New-Stock-Order form
+    // can hand a suggestion straight to the shared editor with no adapter.
+    // `packages` is absent by design — it is derived from qty ÷ lotSize now.
     out.push({
       stockItemId: orig ? orig.id : '',
       flowerName,
-      quantity,
-      lotSize: Number(canonical['Lot Size']) || 0,
-      packages: 0,
+      qty: String(quantity),
+      lotSize: String(Number(canonical['Lot Size']) || 0),
       supplier: fin.supplier || canonical.Supplier || '',
-      costPrice: cost > 0 ? String(cost) : '',
-      sellPrice: sell > 0 ? String(sell) : '',
-      sellPriceManual: sell > 0,
+      costPerStem: cost > 0 ? String(cost) : '',
+      sellPerStem: sell > 0 ? String(sell) : '',
       farmer: canonical.Farmer || '',
       notes: '',
-      // Carry the 4-tuple identity only when there is no orig card to link to
-      // (new-Variety PO line, #304). When linking to an orig, leave blank so the
-      // line is a plain stock-linked line.
-      type: orig ? '' : (g.type_name || ''),
-      colour: orig ? '' : (g.colour || ''),
-      size: orig ? '' : (g.size_cm != null ? String(g.size_cm) : ''),
-      cultivar: orig ? '' : (g.cultivar || ''),
+      // Always carry the 4-tuple, linked or not (ADR-0014). The line form shows
+      // Variety identity regardless of whether a Stock Item is attached, and
+      // re-resolves the link when an attr is edited. Blanking these on a linked
+      // line — the behaviour before #304's successor — made the form detach on
+      // the owner's first keystroke, since empty attrs match no Variety.
+      type: g.type_name || '',
+      colour: g.colour || '',
+      size: g.size_cm != null ? String(g.size_cm) : '',
+      cultivar: g.cultivar || '',
     });
   }
   return out;

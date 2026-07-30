@@ -7,6 +7,9 @@ import {
   derivePackages,
   stemsFromPackages,
   linkAgreesWithAttrs,
+  apiLineToCanonical,
+  canonicalToApiFields,
+  canonicalDiffToApiFields,
 } from '../utils/poLineVariety.js';
 
 // A small stock set mirroring the shapes the PO screens actually load:
@@ -207,5 +210,61 @@ describe('packages ⇄ stems', () => {
   it('yields no stems when packages or lot are absent', () => {
     expect(stemsFromPackages(0, 10)).toBe(0);
     expect(stemsFromPackages(4, 0)).toBe(0);
+  });
+});
+
+describe('API ⇄ canonical adapters', () => {
+  const API_LINE = {
+    id: 'ln-1', 'Flower Name': 'Peony Pink 60cm', 'Stock Item': ['sp-1'],
+    'Quantity Needed': 40, 'Lot Size': 10, Supplier: 'Zielona', Farmer: 'Kowalski',
+    'Cost Price': 4.5, 'Sell Price': 14, Notes: 'darker ones',
+    Type: 'Peony', Colour: 'Pink', Size: 60, Cultivar: 'Sarah B.',
+  };
+
+  it('round-trips a persisted line through canonical form', () => {
+    const c = apiLineToCanonical(API_LINE);
+    expect(c).toMatchObject({
+      flowerName: 'Peony Pink 60cm', stockItemId: 'sp-1',
+      qty: '40', lotSize: '10', costPerStem: '4.5', sellPerStem: '14',
+      type: 'Peony', colour: 'Pink', size: '60', cultivar: 'Sarah B.',
+    });
+    expect(canonicalToApiFields(c)).toMatchObject({
+      'Flower Name': 'Peony Pink 60cm', 'Stock Item': ['sp-1'],
+      'Quantity Needed': 40, 'Lot Size': 10, 'Cost Price': 4.5, 'Sell Price': 14,
+      Type: 'Peony', Colour: 'Pink', Size: 60, Cultivar: 'Sarah B.',
+    });
+  });
+
+  it('unwraps a missing Stock Item link to an empty string', () => {
+    expect(apiLineToCanonical({ 'Stock Item': [] }).stockItemId).toBe('');
+    expect(apiLineToCanonical({}).stockItemId).toBe('');
+  });
+
+  it('sends blank Variety attrs as NULL, not empty string', () => {
+    // ADR-0006 identity is NULL-aware; '' would become a distinct Variety.
+    const api = canonicalToApiFields({ type: 'Eucalyptus', colour: '', size: '', cultivar: '   ' });
+    expect(api.Colour).toBeNull();
+    expect(api.Size).toBeNull();
+    expect(api.Cultivar).toBeNull();
+    expect(api.Type).toBe('Eucalyptus');
+  });
+
+  it('sends a detached line as an empty Stock Item array', () => {
+    expect(canonicalToApiFields({ stockItemId: '' })['Stock Item']).toEqual([]);
+  });
+
+  it('diffs only the fields that changed', () => {
+    const prev = apiLineToCanonical(API_LINE);
+    const next = { ...prev, qty: '60', colour: 'White', stockItemId: '' };
+    expect(canonicalDiffToApiFields(prev, next)).toEqual({
+      'Quantity Needed': 60,
+      Colour: 'White',
+      'Stock Item': [],
+    });
+  });
+
+  it('produces an empty diff when nothing moved', () => {
+    const c = apiLineToCanonical(API_LINE);
+    expect(canonicalDiffToApiFields(c, { ...c })).toEqual({});
   });
 });
