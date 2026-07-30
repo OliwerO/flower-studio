@@ -198,3 +198,33 @@ function linkedTo(item) {
     supplier: item.Supplier ?? '',
   };
 }
+
+describe('PoLineForm — locked identity (#593)', () => {
+  const LINKED_LINE = {
+    id: 'ln-1', 'Flower Name': 'Peony Pink 60cm', 'Stock Item': ['sp-1'],
+    Type: 'Peony', Colour: 'Pink', Size: 60,
+  };
+
+  it('replaces the picker and Variety inputs with the read-only identity block', () => {
+    // Changing a linked line's flower is a REPLACE (remove + re-add), so the
+    // form must not offer an edit the backend will reject with a 409.
+    render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} identityLocked line={LINKED_LINE} />);
+
+    expect(screen.queryByTestId('stock-search-input')).toBeNull();
+    expect(screen.queryByTestId('nv-type')).toBeNull();
+    expect(screen.queryByTestId('po-variety-badge')).toBeNull();
+  });
+
+  it('keeps quantities and prices editable on a locked line', () => {
+    // Only identity is frozen — the owner still corrects how much and for how
+    // much right up until the order is evaluated.
+    const seen = [];
+    render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} identityLocked line={LINKED_LINE}
+                    onLine={(l) => seen.push(l)} />);
+
+    fireEvent.change(screen.getByTestId('po-qty'), { target: { value: '80' } });
+    expect(seen.at(-1).qty).toBe('80');
+    expect(screen.getByTestId('po-cost')).toBeInTheDocument();
+    expect(screen.getByTestId('po-packages')).toBeInTheDocument();
+  });
+});

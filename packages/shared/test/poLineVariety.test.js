@@ -281,3 +281,24 @@ describe('API ⇄ canonical adapters', () => {
     expect(canonicalDiffToApiFields(c, { ...c })).toEqual({});
   });
 });
+
+describe('locked-line diffs (#593)', () => {
+  const prev = apiLineToCanonical({
+    'Flower Name': 'Peony Pink 60cm', 'Stock Item': ['sp-1'],
+    'Quantity Needed': 40, Type: 'Peony', Colour: 'Pink', Size: 60,
+  });
+
+  it('omits every identity field when the line is locked', () => {
+    // The backend 409s ANY identity write once a line is linked or the order
+    // has left Draft. The form renders identity read-only there, so a stray
+    // formatting difference must not turn a price edit into a rejected PATCH.
+    const next = { ...prev, qty: '60', colour: 'White', flowerName: 'Whatever', stockItemId: '' };
+    expect(canonicalDiffToApiFields(prev, next, { omitIdentity: true }))
+      .toEqual({ 'Quantity Needed': 60 });
+  });
+
+  it('still sends identity while the line is unlocked', () => {
+    const next = { ...prev, colour: 'White' };
+    expect(canonicalDiffToApiFields(prev, next)).toEqual({ Colour: 'White' });
+  });
+});

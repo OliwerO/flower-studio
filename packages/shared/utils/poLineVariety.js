@@ -241,9 +241,15 @@ export function canonicalToApiFields(c = {}) {
  * to send a diff — PATCHing every field on every edit would let a stale value
  * from one field clobber a concurrent change to another.
  */
-export function canonicalDiffToApiFields(prev = {}, next = {}) {
+export const IDENTITY_KEYS = ['flowerName', 'stockItemId', 'type', 'colour', 'size', 'cultivar'];
+
+export function canonicalDiffToApiFields(prev = {}, next = {}, { omitIdentity = false } = {}) {
   const out = {};
   for (const key of Object.keys(API_FIELDS)) {
+    // A locked line 409s on ANY identity write (#593), including one that only
+    // looks like a change because of a formatting difference. The form already
+    // renders identity read-only there, so never send it.
+    if (omitIdentity && IDENTITY_KEYS.includes(key)) continue;
     if (String(prev[key] ?? '') === String(next[key] ?? '')) continue;
     out[API_FIELDS[key]] = apiValue(key, next);
   }

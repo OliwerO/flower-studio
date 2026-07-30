@@ -283,33 +283,77 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       // silently destroyed the Owner's "возьми потемнее".
       'Driver Notes',
       'Flower Name', 'Supplier', 'Lot Size', 'Farmer',
-      // The Stock Item link. Omitted from this list until 2026-07-29, which
-      // meant the Draft line editor's flower picker sent `Stock Item` on every
-      // pick and had it silently stripped — the link only ever got written at
-      // evaluation, by name/4-tuple resolution. ADR-0014 makes the link
-      // something the owner actively changes (re-link on an attr edit, detach
-      // when the Variety is new), so it has to round-trip.
-      'Stock Item',
       // Y-model Variety identity for new-Variety lines (issue #304)
       'Type', 'Colour', 'Size', 'Cultivar',
       // Substitute Variety identity classified at shopping entry (#2)
       'Alt Type', 'Alt Colour', 'Alt Size', 'Alt Cultivar',
     ];
+
+    // #593 (root cause of #558): a line's flower identity is IMMUTABLE once the
+    // line is linked to a Stock Item or the PO has left Draft. Changing the
+    // flower is a REPLACE (remove the line, add a new one) — owner decision
+    // 2026-07-24 — because a partial identity write is what split this record
+    // three ways: the name said "Hydrangea White" while the Variety attrs and
+    // the stock link still said Blue, so Pending Arrivals and the receive
+    // (link-authoritative) disagreed with the evaluation screen (name-authoritative).
+    // 'Stock Item' is deliberately NOT in `allowed` — it is accepted here only
+    // so a re-link attempt is REJECTED loudly instead of silently dropped.
+    const IDENTITY_FIELDS = ['Flower Name', 'Stock Item', 'Type', 'Colour', 'Size', 'Cultivar'];
+
+    // Unknown keys are a hard error. Silently dropping them is precisely how the
+    // picker's 'Stock Item' vanished for months while every request returned 200.
+    const known = new Set([...allowed, ...IDENTITY_FIELDS]);
+    const unknown = Object.keys(req.body).filter((k) => !known.has(k));
+    if (unknown.length > 0) {
+      return res.status(400).json({
+        error: `Unknown field(s) on stock order line: ${unknown.join(', ')}.`,
+      });
+    }
+
+    const existingLine = await stockOrderRepo.getLineById(req.params.lineId);
+    const identityLocked = !!existingLine['Stock Item']?.[0] || po.Status !== PO_STATUS.DRAFT;
+
+    if (identityLocked) {
+      // Compare values, not mere presence: both apps re-send the unchanged
+      // name/link alongside a quantity edit, and that must stay a no-op.
+      const norm = (key, value) => {
+        if (key === 'Stock Item') {
+          const first = Array.isArray(value) ? value[0] : value;
+          return first == null || first === '' ? null : String(first);
+        }
+        if (value == null || value === '') return null;
+        return typeof value === 'string' ? value.trim() : String(value);
+      };
+      const changed = IDENTITY_FIELDS.filter(
+        (key) => key in req.body && norm(key, req.body[key]) !== norm(key, existingLine[key]),
+      );
+      if (changed.length > 0) {
+        return res.status(409).json({
+          error: `Cannot change a line's flower (${changed.join(', ')}) once it is linked or the PO has been sent. `
+               + 'Remove the line and add a new one instead.',
+        });
+      }
+    }
+
+    // While the line is still unlocked (Draft + unlinked) the owner is composing
+    // it, so the FIRST assignment of a Stock Item must actually persist. It was
+    // absent from `allowed` entirely, so a Draft pick set the name and dropped
+    // the link — leaving the line to be auto-resolved by display name later.
+    const writable = identityLocked ? allowed : [...allowed, 'Stock Item'];
     const fields = {};
-    for (const key of allowed) {
+    for (const key of writable) {
       if (key in req.body) fields[key] = req.body[key];
     }
     if (Object.keys(fields).length === 0) {
-      return res.json(await stockOrderRepo.getLineById(req.params.lineId));
+      return res.json(existingLine);
     }
 
     if ('Flower Name' in fields && typeof fields['Flower Name'] === 'string' && fields['Flower Name'].length < 2) {
-      const existing = await stockOrderRepo.getLineById(req.params.lineId);
-      const hasStockItem = !!existing['Stock Item']?.[0];
-      const currentName = existing['Flower Name'] || '';
+      const hasStockItem = !!existingLine['Stock Item']?.[0];
+      const currentName = existingLine['Flower Name'] || '';
       if (hasStockItem && currentName.length >= 2) {
         delete fields['Flower Name'];
-        if (Object.keys(fields).length === 0) return res.json(existing);
+        if (Object.keys(fields).length === 0) return res.json(existingLine);
       }
     }
 

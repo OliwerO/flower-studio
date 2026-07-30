@@ -736,8 +736,14 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, onCancel, poStatus, 
     savedRef.current = next;
   }, [line]);
 
+  // #593: identity is immutable once the line is linked or the order has left
+  // Draft — changing the flower is a REPLACE (remove the line, add a new one),
+  // and the backend 409s any identity write. The form renders identity
+  // read-only in that state; this keeps the PATCH honest about it.
+  const identityLocked = !!line['Stock Item']?.[0] || poStatus !== 'Draft';
+
   function flush() {
-    const fields = canonicalDiffToApiFields(savedRef.current, draft);
+    const fields = canonicalDiffToApiFields(savedRef.current, draft, { omitIdentity: identityLocked });
     if (Object.keys(fields).length === 0) return;
     savedRef.current = draft;
     onUpdate(line.id, fields);
@@ -789,6 +795,8 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, onCancel, poStatus, 
         t={t}
         mode="draft"
         idPrefix={`po-line-${line.id}`}
+        identityLocked={identityLocked}
+        line={line}
       />
       {isBlank && (
         <p className="text-[11px] text-amber-700">
