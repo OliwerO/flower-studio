@@ -19,6 +19,7 @@ const STATUS_COLORS = {
   Reviewing:  'bg-orange-100 text-orange-700',
   Evaluating: 'bg-purple-100 text-purple-700',
   Complete:   'bg-emerald-100 text-emerald-700',
+  Cancelled:  'bg-gray-200 text-gray-500',
 };
 
 const STATUS_LABELS = {
@@ -28,6 +29,7 @@ const STATUS_LABELS = {
   Reviewing: () => t.po?.reviewing || 'Reviewing',
   Evaluating: () => t.po?.evaluating || 'Evaluating',
   Complete: () => t.po?.complete || 'Complete',
+  Cancelled: () => t.po?.cancelledStatus || 'Cancelled',
 };
 
 export default function PurchaseOrderPage() {
@@ -55,6 +57,7 @@ export default function PurchaseOrderPage() {
   const [formDriver, setFormDriver] = useState('');
   const [formPlannedDate, setFormPlannedDate] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [showCancelled, setShowCancelled] = useState(false);
 
   // Driver selection per expanded PO
   const [editDrivers, setEditDrivers] = useState({});
@@ -260,11 +263,41 @@ export default function PurchaseOrderPage() {
     }
   }
 
-  async function deleteDraftPO(orderId) {
+  // Termination (ADR-0015). Before the driver starts shopping the order is
+  // deleted outright; from Shopping onward it is cancelled, which keeps the
+  // record and — when stems are already bought — routes it to Reviewing so
+  // they still get received.
+  async function terminatePO(orderId, status) {
+    const cancelling = status === 'Shopping';
+    const prompt = cancelling
+      ? (t.po?.cancelConfirm || 'Cancel this purchase run? The driver will be told.')
+      : (t.po?.deleteConfirm || 'Delete this PO?');
+    if (!confirm(prompt)) return;
     try {
-      await client.delete(`/stock-orders/${orderId}`);
-      showToast(t.po?.deleted || 'PO deleted', 'success');
+      if (cancelling) {
+        const res = await client.post(`/stock-orders/${orderId}/cancel`);
+        // "Cancel" does not always land on Cancelled — say which happened.
+        showToast(
+          res.data.keptLines > 0
+            ? (t.po?.cancelledToReviewing || 'Cancelled — already-bought lines moved to review')
+            : (t.po?.cancelled || 'Purchase run cancelled'),
+          'success',
+        );
+      } else {
+        await client.delete(`/stock-orders/${orderId}`);
+        showToast(t.po?.deleted || 'PO deleted', 'success');
+      }
       fetchOrders();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
+  async function cancelLine(orderId, lineId) {
+    try {
+      await client.post(`/stock-orders/${orderId}/lines/${lineId}/cancel`);
+      const res = await client.get(`/stock-orders/${orderId}`);
+      setExpandedLines(res.data.lines || []);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
     }
@@ -330,6 +363,17 @@ export default function PurchaseOrderPage() {
             <span className="ml-2 px-2 py-0.5 rounded-full bg-white/20 text-xs">{negativeStock.length}</span>
           )}
         </button>
+
+        {orders.some(o => o.Status === 'Cancelled') && (
+          <button
+            onClick={() => setShowCancelled(v => !v)}
+            className="text-xs text-ios-tertiary underline"
+          >
+            {showCancelled
+              ? (t.po?.hideCancelled || 'Hide cancelled')
+              : (t.po?.showCancelled || 'Show cancelled')}
+          </button>
+        )}
 
         {/* ── New PO Form ── */}
         {showForm && (
@@ -418,7 +462,9 @@ export default function PurchaseOrderPage() {
           <p className="text-sm text-ios-tertiary text-center py-12">{t.po?.noOrders || 'No purchase orders'}</p>
         ) : (
           <div className="space-y-2">
-            {orders.map(order => {
+            {/* Cancelled runs are kept but hidden by default — the owner has
+                enough on this screen. Toggled by the pill above. */}
+            {orders.filter(o => showCancelled || o.Status !== 'Cancelled').map(order => {
               // Cost total from pre-fetched lines (backend returns them when
               // we pass ?include=lines). Owner sees at a glance how much cash
               // this PO will need; avoids mentally summing the line prices.
@@ -461,7 +507,29 @@ export default function PurchaseOrderPage() {
                 {/* Expanded detail */}
                 {expandedId === order.id && (
                   <div className="border-t border-gray-100 px-4 py-3 space-y-3">
-                    {order.Notes && <p className="text-xs text-ios-secondary">{order.Notes}</p>}
+                    {/* The Driver Note (D6) — what the driver sees at the top
+                        of their run. Editable at any status; it used to be
+                        settable only on the create form. */}
+                    <div>
+                      <label className="text-[10px] uppercase tracking-wide text-ios-tertiary block mb-0.5">
+                        {t.po?.driverNote || 'Note for the driver'}
+                      </label>
+                      <textarea
+                        defaultValue={order.Notes || ''}
+                        rows={2}
+                        placeholder={t.po?.driverNotePlaceholder || 'e.g. pay in cash, stall on the left'}
+                        onBlur={async e => {
+                          if (e.target.value === (order.Notes || '')) return;
+                          try {
+                            await client.patch(`/stock-orders/${order.id}`, { Notes: e.target.value });
+                            setOrders(prev => prev.map(o => o.id === order.id ? { ...o, Notes: e.target.value } : o));
+                          } catch (err) {
+                            showToast(err.response?.data?.error || t.error, 'error');
+                          }
+                        }}
+                        className="field-input w-full text-sm"
+                      />
+                    </div>
 
                     {['Draft', 'Sent', 'Shopping'].includes(order.Status) && (
                       <div className="flex items-center gap-2">
@@ -492,6 +560,8 @@ export default function PurchaseOrderPage() {
                             stock={stock}
                             onUpdate={(lineId, fields) => updateDraftLine(order.id, lineId, fields)}
                             onRemove={(lineId) => removeDraftLine(order.id, lineId)}
+                            onCancel={(lineId) => cancelLine(order.id, lineId)}
+                            poStatus={order.Status}
                             targetMarkup={targetMarkup}
                             suppliers={SUPPLIERS}
                           />
@@ -534,12 +604,12 @@ export default function PurchaseOrderPage() {
                             className="px-4 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-semibold active-scale">
                             {order.Status === 'Draft' ? (t.po?.sendToDriver || 'Send') : (t.po?.reassignDriver || t.po?.sendToDriver || 'Reassign')}
                           </button>
-                          {order.Status === 'Draft' && (
-                            <button onClick={() => { if (confirm(t.po?.deleteConfirm || 'Delete this draft PO?')) deleteDraftPO(order.id); }}
-                              className="px-3 py-2.5 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium active-scale">
-                              {t.po?.deletePO || 'Delete'}
-                            </button>
-                          )}
+                          <button onClick={() => terminatePO(order.id, order.Status)}
+                            className="px-3 py-2.5 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium active-scale">
+                            {order.Status === 'Shopping'
+                              ? (t.po?.cancelPO || 'Cancel')
+                              : (t.po?.deletePO || 'Delete')}
+                          </button>
                         </div>
                       </>
                     ) : (
@@ -654,7 +724,7 @@ export default function PurchaseOrderPage() {
 // state and flush as ONE diffed PATCH when focus leaves the whole editor —
 // the previous version fired a PATCH per field on every blur, which is how a
 // half-typed "h" once overwrote "Hydrangea".
-function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
+function DraftLineEditor({ line, stock, onUpdate, onRemove, onCancel, poStatus, targetMarkup, suppliers }) {
   const [draft, setDraft] = useState(() => apiLineToCanonical(line));
   const savedRef = useRef(draft);
 
@@ -677,6 +747,23 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
   // refuses the PO until it has identity, so surface it on the line itself.
   const isBlank = !draft.flowerName.trim() && !draft.stockItemId && !draft.type.trim();
 
+  // Cancelled mid-shopping (ADR-0015) — kept visible, struck through, not
+  // editable. It still counts as a record of what was asked for.
+  if (line['Cancelled At']) {
+    return (
+      <div className="rounded-2xl border border-gray-200 bg-gray-50 px-3.5 py-3 flex items-center gap-2 opacity-70">
+        <span className="text-sm line-through text-ios-secondary flex-1">{line['Flower Name']}</span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+          {t.po?.lineCancelled || 'cancelled'}
+        </span>
+      </div>
+    );
+  }
+
+  // Before shopping a line is deleted outright; from Shopping onward it is
+  // cancelled, so the driver sees "skip this" rather than a row vanishing.
+  const cancelling = poStatus === 'Shopping';
+
   return (
     <div
       // Fires only when focus leaves the editor entirely, not when it moves
@@ -688,7 +775,8 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     >
       <div className="flex items-center justify-end">
         <button
-          onClick={() => onRemove(line.id)}
+          onClick={() => (cancelling ? onCancel?.(line.id) : onRemove(line.id))}
+          title={cancelling ? (t.po?.cancelLine || 'Cancel this line') : (t.po?.removeLine || 'Remove')}
           className="w-7 h-7 rounded-full bg-red-50 text-red-400 active:bg-red-100 active:text-red-600 text-sm flex items-center justify-center"
         >✕</button>
       </div>

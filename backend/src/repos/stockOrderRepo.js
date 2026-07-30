@@ -161,6 +161,11 @@ export function lineToWire(row) {
     'Sell Price':          Number(row.sellPrice),
     Farmer:                row.farmer,
     Notes:                 row.notes,
+    // The Driver's Market Note — separate from Notes, which is the Owner's
+    // instruction TO the driver. They shared one column until 2026-07-29.
+    'Driver Notes':        row.driverNotes ?? '',
+    // Stock Order termination (ADR-0015) — set only from Shopping onward.
+    'Cancelled At':        row.cancelledAt ?? null,
     'Alt Flower Name':     row.substituteFlowerName,
     'Alt Flower Status':   row.substituteStatus,
     'Alt Quantity Found':  row.substituteQuantityFound,
@@ -194,6 +199,13 @@ function lineToPg(fields) {
   if ('Sell Price' in fields)          out.sellPrice                = String(Number(fields['Sell Price']) || 0);
   if ('Farmer' in fields)              out.farmer                   = fields.Farmer || '';
   if ('Notes' in fields)               out.notes                    = fields.Notes || '';
+  if ('Driver Notes' in fields)        out.driverNotes              = fields['Driver Notes'] || '';
+  // Drizzle's timestamp column is in `date` mode — it needs a Date, and an ISO
+  // string reaches the driver as a value with no .toISOString().
+  if ('Cancelled At' in fields) {
+    const raw = fields['Cancelled At'];
+    out.cancelledAt = raw ? (raw instanceof Date ? raw : new Date(raw)) : null;
+  }
   if ('Alt Flower Name' in fields)     out.substituteFlowerName     = fields['Alt Flower Name'] || '';
   if ('Alt Flower Status' in fields)   out.substituteStatus         = fields['Alt Flower Status'] || '';
   if ('Alt Quantity Found' in fields)  out.substituteQuantityFound  = Number(fields['Alt Quantity Found']) || 0;

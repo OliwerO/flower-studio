@@ -94,6 +94,8 @@ const en = {
   foundAlternative:     'Found a substitute flower instead?',
   altFlowerName:        'Substitute flower name',
   totalPaidAt:          'Total paid at',
+  ownerNote:            'From the owner',
+  lineCancelled:        'cancelled',
   doneShopping:         'Done shopping',
   need:                 'need',
   doneShoppingConfirm:  'Mark shopping as complete?',
@@ -246,6 +248,8 @@ const ru = {
   yes:                  'Да',
   no:                   'Нет',
   note:                 'Заметка',
+  ownerNote:            'От владелицы',
+  lineCancelled:        'отменено',
   stockPickupAssigned:  'Назначена закупка',
 
   // Sorting

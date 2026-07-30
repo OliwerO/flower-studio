@@ -12,7 +12,7 @@ import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 import { broadcast } from '../services/notifications.js';
 import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS } from '../constants/statuses.js';
 import { getConfig, getDriverOfDay } from '../services/configService.js';
-import { notifyPoAssigned } from '../services/driverNotifyService.js';
+import { notifyPoAssigned, notifyPoCancelled } from '../services/driverNotifyService.js';
 import { resolveOrCreateStockItem, evaluatePurchaseOrder } from '../services/stockOrderService.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
@@ -35,10 +35,14 @@ function composeFlowerName({ flowerName, type, colour, size, cultivar } = {}) {
 const ALLOWED_TRANSITIONS = {
   [PO_STATUS.DRAFT]:      [PO_STATUS.SENT],
   [PO_STATUS.SENT]:       [PO_STATUS.SHOPPING, PO_STATUS.REVIEWING, PO_STATUS.DRAFT],
-  [PO_STATUS.SHOPPING]:   [PO_STATUS.REVIEWING],
+  [PO_STATUS.SHOPPING]:   [PO_STATUS.REVIEWING, PO_STATUS.CANCELLED],
   [PO_STATUS.REVIEWING]:  [PO_STATUS.EVALUATING],
   [PO_STATUS.EVALUATING]: [PO_STATUS.EVAL_ERROR, PO_STATUS.COMPLETE],
   [PO_STATUS.EVAL_ERROR]: [PO_STATUS.EVALUATING],
+  // Reopen. A cancelled Stock Order never touched stock — no Batches, no
+  // Demand Entries, no ADR-0003 markers — so there is nothing to unwind
+  // (ADR-0015). Covers "driver sick Thursday, same lines Friday".
+  [PO_STATUS.CANCELLED]:  [PO_STATUS.DRAFT],
 };
 
 const router = Router();
@@ -274,6 +278,10 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       'Driver Status', 'Quantity Found', 'Alt Supplier', 'Alt Quantity Found',
       'Alt Flower Name', 'Cost Price', 'Sell Price', 'Alt Cost',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
+      // The Driver's Market Note. `Notes` stays the Owner's instruction — the
+      // two shared one column until 2026-07-29, so the Driver's "было только 8"
+      // silently destroyed the Owner's "возьми потемнее".
+      'Driver Notes',
       'Flower Name', 'Supplier', 'Lot Size', 'Farmer',
       // The Stock Item link. Omitted from this list until 2026-07-29, which
       // meant the Draft line editor's flower picker sent `Stock Item` on every
@@ -398,6 +406,11 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
 // Reviewing/Evaluating/Complete are "closed books" — don't mutate past records.
 const EDITABLE_PO_STATUSES = [PO_STATUS.DRAFT, PO_STATUS.SENT, PO_STATUS.SHOPPING];
 
+// Termination splits on Shopping (ADR-0015): delete before, cancel after. The
+// boundary lands on the driver's first keystroke, because a line PATCH from
+// them auto-transitions Sent → Shopping (see the Driver Status hook above).
+const DELETABLE_PO_STATUSES = [PO_STATUS.DRAFT, PO_STATUS.SENT];
+
 router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await stockOrderRepo.getById(req.params.id);
@@ -454,17 +467,112 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
   }
 });
 
-// DELETE /api/stock-orders/:id — delete an entire Draft PO (owner only).
-// Removes all its lines first, then the PO header.
+// DELETE /api/stock-orders/:id — delete a Stock Order outright (owner only).
+//
+// Allowed before the driver starts shopping (Draft or Sent) — nothing physical
+// has happened, so there is nothing to keep a record of (ADR-0015). From
+// Shopping onward the driver is at a market stall and the order must be
+// CANCELLED instead, which keeps the record and preserves anything bought.
+//
+// A Sent order has already pushed a Telegram to the driver, so deleting one
+// tells them the run is off. The order is gone by then, hence the capture
+// before the delete.
 router.delete('/:id', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await stockOrderRepo.getById(req.params.id);
-    if (po.Status !== PO_STATUS.DRAFT) {
-      return res.status(400).json({ error: `Only Draft POs can be deleted. This PO is "${po.Status}".` });
+    if (!DELETABLE_PO_STATUSES.includes(po.Status)) {
+      return res.status(400).json({
+        error: `A "${po.Status}" Stock Order cannot be deleted — cancel it instead.`,
+      });
     }
+    const wasSent = po.Status === PO_STATUS.SENT;
+    const driverName = po['Assigned Driver'] || '';
+    const poRef = po['Stock Order ID'] || '';
+    const plannedDate = po['Planned Date'] || '';
+
     await stockOrderRepo.deleteById(req.params.id);  // CASCADE handles lines
     broadcast({ type: 'stock_order_deleted', stockOrderId: req.params.id });
+
+    if (wasSent && driverName) {
+      notifyPoCancelled({ driverName, poRef, plannedDate })
+        .catch(err => console.error('[DRIVER_NOTIFY] po delete hook failed:', err.message));
+    }
     res.json({ deleted: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/stock-orders/:id/cancel — cancel a Shopping Stock Order (owner only).
+//
+// "Stop shopping and come back with what you have" (ADR-0015). Still-Pending
+// lines are cancelled. If any line already has stems found, those flowers are
+// in the van and were paid for, so the order routes to REVIEWING — cancelling
+// them would erase the record of the purchase, not the purchase itself. Only
+// when nothing has been found does the order become CANCELLED.
+router.post('/:id/cancel', authorize('stock-orders', ['owner']), async (req, res, next) => {
+  try {
+    const po = await stockOrderRepo.getById(req.params.id);
+    if (po.Status !== PO_STATUS.SHOPPING) {
+      return res.status(400).json({
+        error: `Only a "${PO_STATUS.SHOPPING}" Stock Order can be cancelled. This one is "${po.Status}" — `
+             + (DELETABLE_PO_STATUSES.includes(po.Status) ? 'delete it instead.' : 'it is past cancellation.'),
+      });
+    }
+
+    const lines = await stockOrderRepo.getLinesByPoId(po._pgId);
+    const live = lines.filter(l => !l['Cancelled At']);
+    const found = live.filter(l => (Number(l['Quantity Found']) || 0) > 0);
+    const pending = live.filter(l => (Number(l['Quantity Found']) || 0) === 0);
+
+    const cancelledAt = new Date().toISOString();
+    for (const l of pending) {
+      await stockOrderRepo.updateLine(l.id, { 'Cancelled At': cancelledAt });
+    }
+
+    const nextStatus = found.length > 0 ? PO_STATUS.REVIEWING : PO_STATUS.CANCELLED;
+    const updated = await stockOrderRepo.update(req.params.id, { Status: nextStatus });
+
+    broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id });
+    if (po['Assigned Driver']) {
+      notifyPoCancelled({
+        driverName: po['Assigned Driver'],
+        poRef: po['Stock Order ID'] || '',
+        plannedDate: po['Planned Date'] || '',
+      }).catch(err => console.error('[DRIVER_NOTIFY] po cancel hook failed:', err.message));
+    }
+
+    res.json({ ...updated, cancelledLines: pending.length, keptLines: found.length });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/stock-orders/:id/lines/:lineId/cancel — cancel one line (owner only).
+//
+// Shopping-only: before that the line is deleted outright. Refused once the
+// driver has found stems — those exist physically, so the honest path is to
+// receive them and write off what is unwanted (ADR-0015).
+router.post('/:id/lines/:lineId/cancel', authorize('stock-orders', ['owner']), async (req, res, next) => {
+  try {
+    const po = await stockOrderRepo.getById(req.params.id);
+    if (po.Status !== PO_STATUS.SHOPPING) {
+      return res.status(400).json({
+        error: `Lines can only be cancelled while the Stock Order is "${PO_STATUS.SHOPPING}". This one is "${po.Status}".`,
+      });
+    }
+    const line = await stockOrderRepo.getLineById(req.params.lineId);
+    if (!line) return res.status(404).json({ error: 'Line not found.' });
+    if ((Number(line['Quantity Found']) || 0) > 0) {
+      return res.status(400).json({
+        error: 'The driver already bought this — receive it and write off what you do not want.',
+      });
+    }
+    const updated = await stockOrderRepo.updateLine(req.params.lineId, {
+      'Cancelled At': new Date().toISOString(),
+    });
+    broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: req.params.lineId });
+    res.json(updated);
   } catch (err) {
     next(err);
   }
@@ -474,8 +582,10 @@ router.delete('/:id', authorize('stock-orders', ['owner']), async (req, res, nex
 router.delete('/:id/lines/:lineId', authorize('stock-orders', ['owner']), async (req, res, next) => {
   try {
     const po = await stockOrderRepo.getById(req.params.id);
-    if (!EDITABLE_PO_STATUSES.includes(po.Status)) {
-      return res.status(400).json({ error: `Cannot remove lines from a "${po.Status}" PO.` });
+    if (!DELETABLE_PO_STATUSES.includes(po.Status)) {
+      return res.status(400).json({
+        error: `Lines can no longer be deleted from a "${po.Status}" Stock Order — cancel the line instead.`,
+      });
     }
     await stockOrderRepo.deleteLineById(req.params.lineId);
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: req.params.lineId });

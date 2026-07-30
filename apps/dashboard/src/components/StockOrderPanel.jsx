@@ -18,6 +18,7 @@ const STATUS_COLORS = {
   Evaluating:   'bg-purple-100 text-purple-700',
   'Eval Error': 'bg-red-100 text-red-700',
   Complete:     'bg-emerald-100 text-emerald-700',
+  Cancelled:    'bg-gray-200 text-gray-500',
 };
 
 export default function StockOrderPanel({ negativeStock, poSuggestions, stock, autoCreate, onClose }) {
@@ -32,6 +33,7 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
 
   // New PO form state
   const [formLines, setFormLines] = useState([]);
+  const [showCancelled, setShowCancelled] = useState(false);
   const [formNotes, setFormNotes] = useState('');
   const [formDriver, setFormDriver] = useState('Nikita');
   const [formPlannedDate, setFormPlannedDate] = useState('');
@@ -292,11 +294,41 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
     }
   }
 
-  async function deleteDraftPO(orderId) {
+  // Termination (ADR-0015). Before the driver starts shopping the order is
+  // deleted outright; from Shopping onward it is cancelled, which keeps the
+  // record and — when stems are already bought — routes it to Reviewing so
+  // they still get received. Mirrors the florist app.
+  async function terminatePO(orderId, status) {
+    const cancelling = status === 'Shopping';
+    const prompt = cancelling
+      ? (t.cancelPOConfirm || 'Cancel this purchase run? The driver will be told.')
+      : (t.deletePOConfirm || 'Delete this PO?');
+    if (!confirm(prompt)) return;
     try {
-      await client.delete(`/stock-orders/${orderId}`);
-      showToast(t.poDeleted || 'PO deleted', 'success');
+      if (cancelling) {
+        const res = await client.post(`/stock-orders/${orderId}/cancel`);
+        // "Cancel" does not always land on Cancelled — say which happened.
+        showToast(
+          res.data.keptLines > 0
+            ? (t.poCancelledToReviewing || 'Cancelled — already-bought lines moved to review')
+            : (t.poCancelled || 'Purchase run cancelled'),
+          'success',
+        );
+      } else {
+        await client.delete(`/stock-orders/${orderId}`);
+        showToast(t.poDeleted || 'PO deleted', 'success');
+      }
       fetchOrders();
+    } catch (err) {
+      showToast(err.response?.data?.error || t.error, 'error');
+    }
+  }
+
+  async function cancelLine(orderId, lineId) {
+    try {
+      await client.post(`/stock-orders/${orderId}/lines/${lineId}/cancel`);
+      const res = await client.get(`/stock-orders/${orderId}`);
+      setExpandedLines(res.data.lines || []);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
     }
@@ -504,7 +536,8 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
         <p className="text-sm text-ios-tertiary text-center py-8">{t.noStockOrders}</p>
       ) : (
         <div className="space-y-2">
-          {orders.map(order => {
+          {/* Cancelled runs are kept but hidden by default. */}
+          {orders.filter(o => showCancelled || o.Status !== 'Cancelled').map(order => {
             // Cost total from pre-fetched lines (backend returns them via
             // ?include=lines). Owner can scan PO list and see cash needed
             // per run without expanding each row.
@@ -545,9 +578,29 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
               {/* Expanded detail */}
               {expandedId === order.id && (
                 <div className="border-t border-gray-100 px-4 py-3 space-y-2">
-                  {order.Notes && (
-                    <p className="text-xs text-ios-secondary">{order.Notes}</p>
-                  )}
+                  {/* The Driver Note (D6) — what the driver sees at the top of
+                      their run. Editable at any status; it used to be settable
+                      only on the create form. */}
+                  <div>
+                    <label className="text-[10px] uppercase tracking-wide text-ios-tertiary block mb-0.5">
+                      {t.driverNote || 'Note for the driver'}
+                    </label>
+                    <textarea
+                      defaultValue={order.Notes || ''}
+                      rows={2}
+                      placeholder={t.driverNotePlaceholder || 'e.g. pay in cash, stall on the left'}
+                      onBlur={async e => {
+                        if (e.target.value === (order.Notes || '')) return;
+                        try {
+                          await client.patch(`/stock-orders/${order.id}`, { Notes: e.target.value });
+                          setOrders(prev => prev.map(o => o.id === order.id ? { ...o, Notes: e.target.value } : o));
+                        } catch (err) {
+                          showToast(err.response?.data?.error || t.error, 'error');
+                        }
+                      }}
+                      className="field-input w-full text-sm"
+                    />
+                  </div>
 
                   {['Draft', 'Sent', 'Shopping'].includes(order.Status) && (
                     <div className="flex items-center gap-2">
@@ -579,6 +632,8 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
                           orderId={order.id}
                           onUpdate={(lineId, fields) => updateDraftLine(order.id, lineId, fields)}
                           onRemove={(lineId) => removeDraftLine(order.id, lineId)}
+                          onCancel={(lineId) => cancelLine(order.id, lineId)}
+                          poStatus={order.Status}
                           targetMarkup={targetMarkup}
                           suppliers={SUPPLIERS}
                         />
@@ -625,14 +680,14 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
                         >
                           {order.Status === 'Draft' ? t.sendToDriver : (t.reassignDriver || t.sendToDriver)}
                         </button>
-                        {order.Status === 'Draft' && (
-                          <button
-                            onClick={() => { if (confirm(t.deletePOConfirm || 'Delete this draft PO?')) deleteDraftPO(order.id); }}
-                            className="px-3 py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium"
-                          >
-                            {t.deletePO || 'Delete PO'}
-                          </button>
-                        )}
+                        <button
+                          onClick={() => terminatePO(order.id, order.Status)}
+                          className="px-3 py-2 rounded-xl bg-ios-red/10 text-ios-red text-sm font-medium"
+                        >
+                          {order.Status === 'Shopping'
+                            ? (t.cancelPO || 'Cancel')
+                            : (t.deletePO || 'Delete PO')}
+                        </button>
                       </div>
                     </>
                   ) : (
@@ -881,7 +936,7 @@ function AltLineEditor({ line, stock, suppliers, editable, onSave }) {
 // state and flush as ONE diffed PATCH when focus leaves the whole editor —
 // the previous version fired a PATCH per field on every blur, which is how a
 // half-typed "h" once overwrote "Hydrangea". Mirrors the florist app exactly.
-function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
+function DraftLineEditor({ line, stock, onUpdate, onRemove, onCancel, poStatus, targetMarkup, suppliers }) {
   const [draft, setDraft] = useState(() => apiLineToCanonical(line));
   const savedRef = useRef(draft);
 
@@ -900,6 +955,20 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
 
   const isBlank = !draft.flowerName.trim() && !draft.stockItemId && !draft.type.trim();
 
+  // Cancelled mid-shopping (ADR-0015) — kept visible, struck through.
+  if (line['Cancelled At']) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 flex items-center gap-2 opacity-70">
+        <span className="text-sm line-through text-ios-secondary flex-1">{line['Flower Name']}</span>
+        <span className="text-[11px] px-2 py-0.5 rounded-full bg-gray-200 text-gray-600">
+          {t.lineCancelled || 'cancelled'}
+        </span>
+      </div>
+    );
+  }
+
+  const cancelling = poStatus === 'Shopping';
+
   return (
     <div
       onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) flush(); }}
@@ -909,7 +978,8 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
     >
       <div className="flex items-center justify-end">
         <button
-          onClick={() => onRemove(line.id)}
+          onClick={() => (cancelling ? onCancel?.(line.id) : onRemove(line.id))}
+          title={cancelling ? (t.cancelLine || 'Cancel this line') : (t.removeLine || 'Remove')}
           className="w-7 h-7 rounded-full bg-red-50 text-red-400 hover:bg-red-100 hover:text-red-600 text-sm flex items-center justify-center"
         >✕</button>
       </div>
