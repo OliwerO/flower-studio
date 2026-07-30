@@ -11,10 +11,15 @@
 // produced the live #558 incident (line read "Hydrangea White", was bound to
 // the Hydrangea Blue card, and 10 stems were received as Blue).
 //
-// Owner decision (2026-07-24): changing a line's flower is a REPLACE, not an
-// edit — remove the line and add a new one. So the fix locks identity rather
-// than re-linking it, and the route stops silently dropping unknown keys (a
-// dropped field that returns 200 is what let this ship unnoticed).
+// Owner decision (2026-07-30, superseding the 2026-07-24 hard lock): a line's
+// identity may MOVE, but only ever onto a Variety that already exists. Editing
+// an attr re-resolves the line onto the matching Stock Item (so "Peony 60cm →
+// 70cm" is one edit, not a delete-and-retype); an identity matching nothing is
+// refused with VARIETY_NOT_FOUND, because silently minting a Variety from a
+// typo is what fragmented stock before (#562). Creating a genuinely new Variety
+// stays possible via an explicit `New Variety: true` confirmation.
+// The route also stops silently dropping unknown keys — a dropped field that
+// returns 200 is what let #558 ship unnoticed.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
@@ -39,6 +44,7 @@ import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
 import express from 'express';
 import supertest from 'supertest';
 import { stock } from '../db/schema.js';
+import { eq } from 'drizzle-orm';
 
 const dbHolder = { db: null };
 vi.mock('../db/index.js', () => ({
@@ -100,7 +106,7 @@ async function createPoWithLinkedLine(card) {
 }
 
 describe('PATCH /stock-orders/:id/lines/:lineId — identity lock (#593 / #558)', () => {
-  it('(#558) rejects re-pointing a linked line at a different flower, and changes nothing', async () => {
+  it('(#558) re-points a linked line onto another EXISTING Variety and keeps name+link in sync', async () => {
     const blue  = await seedCard('Hydrangea Blue',  'Hydrangea', 'Blue');
     const white = await seedCard('Hydrangea White', 'Hydrangea', 'White');
     const { poId, line } = await createPoWithLinkedLine(blue);
@@ -113,10 +119,26 @@ describe('PATCH /stock-orders/:id/lines/:lineId — identity lock (#593 / #558)'
       'Cost Price': 16.28,
     });
 
-    expect(res.status).toBe(409);
-    expect(res.body.error).toMatch(/remove the line/i);
+    expect(res.status).toBe(200);
 
-    // The line must be untouched — including the money fields that rode along.
+    // Name, attrs and link all move together — the #558 split is impossible.
+    const after = await agent().get(`/api/stock-orders/${poId}`);
+    const row = after.body.lines.find((l) => l.id === line.id);
+    expect(row['Flower Name']).toBe('Hydrangea White');
+    expect(row['Stock Item']).toEqual([white.id]);
+    expect(row.Colour).toBe('White');
+  });
+
+  it('(#558) REFUSES a flower that does not exist yet, leaving the line untouched', async () => {
+    const blue = await seedCard('Hydrangea Blue', 'Hydrangea', 'Blue');
+    const { poId, line } = await createPoWithLinkedLine(blue);
+
+    const res = await agent().patch(`/api/stock-orders/${poId}/lines/${line.id}`)
+      .send({ Colour: 'Lilac' });
+
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('VARIETY_NOT_FOUND');
+
     const after = await agent().get(`/api/stock-orders/${poId}`);
     const row = after.body.lines.find((l) => l.id === line.id);
     expect(row['Flower Name']).toBe('Hydrangea Blue');
@@ -126,16 +148,24 @@ describe('PATCH /stock-orders/:id/lines/:lineId — identity lock (#593 / #558)'
     expect(row.Supplier).toBe('Stefan');
   });
 
-  it('rejects changing Type/Colour on a linked line', async () => {
-    const blue = await seedCard('Hydrangea Blue', 'Hydrangea', 'Blue');
-    const { poId, line } = await createPoWithLinkedLine(blue);
+  it('(the routine case) an attr edit onto an existing Variety re-links in one step', async () => {
+    // The owner stocks Peony in 60cm and 70cm; swapping size must not force a
+    // delete-and-retype — this is why the hard lock was superseded.
+    const p60 = await seedCard('Peony Pink 60', 'Peony', 'Pink');
+    const p70 = await seedCard('Peony Pink 70', 'Peony', 'Pink');
+    await harness.db.update(stock).set({ sizeCm: 60 }).where(eq(stock.id, p60.id));
+    await harness.db.update(stock).set({ sizeCm: 70 }).where(eq(stock.id, p70.id));
+    const { poId, line } = await createPoWithLinkedLine(p60);
+    await agent().patch(`/api/stock-orders/${poId}/lines/${line.id}`).send({ Size: 60 });
 
     const res = await agent().patch(`/api/stock-orders/${poId}/lines/${line.id}`)
-      .send({ Colour: 'White' });
+      .send({ Size: 70 });
 
-    expect(res.status).toBe(409);
+    expect(res.status).toBe(200);
     const after = await agent().get(`/api/stock-orders/${poId}`);
-    expect(after.body.lines.find((l) => l.id === line.id).Colour).toBe('Blue');
+    const row = after.body.lines.find((l) => l.id === line.id);
+    expect(row['Stock Item']).toEqual([p70.id]);
+    expect(row.Size).toBe(70);
   });
 
   it('still allows editing quantity / cost / supplier on a linked line', async () => {

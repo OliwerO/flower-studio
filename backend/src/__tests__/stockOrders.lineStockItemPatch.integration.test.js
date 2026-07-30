@@ -109,7 +109,7 @@ describe('PATCH /stock-orders/:id/lines/:lineId — Stock Item link', () => {
     expect(detail.body.lines[0]['Stock Item']).toEqual([pink.id]);
   });
 
-  it('detaches the link when the form sends an empty array (ADR-0014)', async () => {
+  it('refuses an identity that matches no existing Variety, and allows it once confirmed', async () => {
     const pink = await makeStockItem({
       displayName: 'Peony Pink 60cm', typeName: 'Peony', colour: 'Pink', sizeCm: 60,
     });
@@ -118,9 +118,23 @@ describe('PATCH /stock-orders/:id/lines/:lineId — Stock Item link', () => {
     await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`)
       .send({ 'Stock Item': [pink.id], Type: 'Peony', Colour: 'Pink', Size: 60 });
 
-    // Owner changes Colour to a Variety that does not exist → the form detaches.
-    const detached = await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`)
+    // Owner changes Colour to a Variety that does not exist. Under the hybrid
+    // rule (owner decision 2026-07-30) this is REFUSED rather than silently
+    // detaching — a typo must never mint a second Variety (#562).
+    const refused = await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`)
       .send({ 'Stock Item': [], Colour: 'White' });
+
+    expect(refused.status).toBe(409);
+    expect(refused.body.code).toBe('VARIETY_NOT_FOUND');
+
+    // Still pointing at the Pink card — nothing moved.
+    const unchanged = await agent().get(`/api/stock-orders/${poId}`);
+    expect(unchanged.body.lines[0].Colour).toBe('Pink');
+    expect(unchanged.body.lines[0]['Stock Item']).toEqual([pink.id]);
+
+    // Confirming it as a NEW variety is the deliberate escape hatch.
+    const detached = await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`)
+      .send({ 'Stock Item': [], Colour: 'White', 'New Variety': true });
 
     expect(detached.status).toBe(200);
     expect(detached.body['Stock Item']).toEqual([]);

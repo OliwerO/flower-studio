@@ -94,16 +94,37 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
     expect(screen.getByTestId('po-variety-badge')).toHaveTextContent('from stock card');
   });
 
-  it('detaches when an edit produces a Variety that does not exist', () => {
+  it('asks before creating a Variety that does not exist, and applies nothing until confirmed', () => {
+    // Hybrid rule (owner decision 2026-07-30): a no-match edit on a LINKED line
+    // is not applied silently — minting a Variety from a typo is what fragmented
+    // stock before (#562). The owner confirms, or the line snaps back.
     const seen = [];
     render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
 
     fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
 
+    expect(screen.getByTestId('po-new-variety-prompt')).toBeInTheDocument();
+    expect(seen).toHaveLength(0);                       // nothing applied yet
+
+    fireEvent.click(screen.getByTestId('po-new-variety-confirm'));
+
     const last = seen.at(-1);
     expect(last.stockItemId).toBe('');
     expect(last.colour).toBe('White');
-    expect(screen.getByTestId('po-variety-badge')).toHaveTextContent('new variety');
+    expect(last.isNewVariety).toBe(true);               // → 'New Variety: true'
+    expect(screen.queryByTestId('po-new-variety-prompt')).not.toBeInTheDocument();
+  });
+
+  it('cancelling the new-variety prompt restores the previous flower', () => {
+    const seen = [];
+    render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
+
+    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    fireEvent.click(screen.getByTestId('po-new-variety-cancel'));
+
+    const last = seen.at(-1);
+    expect(last.stockItemId).toBe(PINK_60.id);
+    expect(last.colour).toBe('Pink');
   });
 
   it('never leaves a stock link attached to a Variety it disagrees with (#558)', () => {
@@ -115,10 +136,15 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
     fireEvent.change(screen.getByTestId('stock-search-input'), { target: { value: 'Peony Pink 60' } });
     fireEvent.mouseDown(screen.getByText('Peony Pink 60cm'));
     fireEvent.change(screen.getByTestId('nv-size'), { target: { value: '70' } });
+    // A no-match edit now raises the confirm prompt instead of applying, so
+    // confirm it to keep walking the same sequence.
     fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    if (screen.queryByTestId('po-new-variety-confirm')) {
+      fireEvent.click(screen.getByTestId('po-new-variety-confirm'));
+    }
     fireEvent.change(screen.getByTestId('nv-cultivar'), { target: { value: 'Duchesse' } });
 
-    expect(seen.length).toBeGreaterThan(3);
+    expect(seen.length).toBeGreaterThanOrEqual(3);
     for (const line of seen) {
       expect(linkAgreesWithAttrs(STOCK, line.stockItemId, line)).toBe(true);
     }

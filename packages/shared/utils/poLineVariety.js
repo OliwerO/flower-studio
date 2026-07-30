@@ -235,6 +235,11 @@ export function canonicalDiffToApiFields(prev = {}, next = {}) {
     if (String(prev[key] ?? '') === String(next[key] ?? '')) continue;
     out[API_FIELDS[key]] = apiValue(key, next);
   }
+  // Hybrid rule (owner decision 2026-07-30): the backend refuses an identity
+  // that matches no existing Variety, so a DELIBERATE new-variety create has to
+  // say so. `isNewVariety` is set only after the owner confirms the prompt in
+  // PoLineForm; it is a control flag, never a stored column.
+  if (next.isNewVariety && Object.keys(out).length > 0) out['New Variety'] = true;
   return out;
 }
 

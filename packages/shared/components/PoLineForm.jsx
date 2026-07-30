@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import NewVarietyFields from './NewVarietyFields.jsx';
 import StockSearchInput from './StockSearchInput.jsx';
 import {
@@ -122,11 +122,38 @@ export default function PoLineForm({
     return patch;
   }
 
-  // ADR-0014: every attr edit re-resolves the link. `adopt` only carries values
+  // Pending "create a new variety?" confirmation (hybrid rule, ADR-0016).
+  const [newVarietyPrompt, setNewVarietyPrompt] = useState(null);
+
+  // Every attr edit re-resolves the link (ADR-0014); `adopt` only carries values
   // the matched card actually has, so a match never blanks something typed.
+  //
+  // Hybrid rule (owner decision 2026-07-30, ADR-0016): a match re-links silently
+  // — that is the routine "Peony 60cm → 70cm" case. NO match on a line that was
+  // linked does NOT silently detach any more: detaching mints a brand-new
+  // Variety at evaluation, and doing that from a typo is what fragmented stock
+  // before (#562). Instead the owner is asked to confirm, and only the confirmed
+  // path sets `isNewVariety` (→ `New Variety: true`, which the backend requires).
   function handleAttrsChange(nextAttrs) {
-    const { stockItemId, adopt } = resolveVarietyLink(stock, nextAttrs, { targetMarkup });
-    onChange({ ...nextAttrs, stockItemId, ...adopt });
+    const { matched, stockItemId, adopt } = resolveVarietyLink(stock, nextAttrs, { targetMarkup });
+    if (!matched && value.stockItemId) {
+      setNewVarietyPrompt({ attrs: nextAttrs, previous: { ...value } });
+      return;
+    }
+    setNewVarietyPrompt(null);
+    onChange({ ...nextAttrs, stockItemId, ...adopt, isNewVariety: false });
+  }
+
+  function confirmNewVariety() {
+    const { attrs } = newVarietyPrompt;
+    setNewVarietyPrompt(null);
+    onChange({ ...attrs, stockItemId: '', isNewVariety: true });
+  }
+
+  function cancelNewVariety() {
+    const { previous } = newVarietyPrompt;
+    setNewVarietyPrompt(null);
+    onChange({ ...previous });
   }
 
   const varietyForm = {
@@ -183,6 +210,44 @@ export default function PoLineForm({
           idPrefix={`${idPrefix}-nv`}
           sizeOptions={sizeOptions}
         />
+
+        {/* Hybrid rule: an identity that matches nothing is not applied until
+            the owner confirms it really is a new variety. Cancelling restores
+            the previous flower, so a typo can never fragment stock (#562). */}
+        {newVarietyPrompt && (
+          <div
+            data-testid="po-new-variety-prompt"
+            className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"
+          >
+            <p className="mb-1.5">
+              {tx('newVarietyConfirm', 'No such flower yet. Create it as a new variety?')}
+              {' '}
+              <span className="font-semibold">
+                {[newVarietyPrompt.attrs.type, newVarietyPrompt.attrs.colour,
+                  newVarietyPrompt.attrs.size ? `${newVarietyPrompt.attrs.size}cm` : null,
+                  newVarietyPrompt.attrs.cultivar].filter(Boolean).join(' ')}
+              </span>
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                data-testid="po-new-variety-confirm"
+                onClick={confirmNewVariety}
+                className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-medium text-white active:bg-amber-600"
+              >
+                {tx('newVarietyCreate', 'Create new')}
+              </button>
+              <button
+                type="button"
+                data-testid="po-new-variety-cancel"
+                onClick={cancelNewVariety}
+                className="rounded-full bg-white px-2.5 py-1 text-[11px] font-medium text-amber-800 ring-1 ring-amber-300 active:bg-amber-100"
+              >
+                {tx('cancel', 'Cancel')}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Stems / Lot / Packages. Packages is derived — editing it sets stems. */}
