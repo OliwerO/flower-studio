@@ -66,6 +66,11 @@ export default function PoLineForm({
   const linked = !!value.stockItemId;
   const hasType = !!String(value.type || '').trim();
 
+  // The two apps shape their Stock Order strings differently — the florist app
+  // nests them under `t.po` / `t.shopping`, the dashboard keeps them flat. Read
+  // both rather than forcing a translations refactor into this change.
+  const tx = (key, fallback) => t.po?.[key] ?? t.shopping?.[key] ?? t[key] ?? fallback;
+
   // Size suggestions are Variety-aware: once a Type is chosen, offer the sizes
   // actually stocked for it. This is the "choose a size or keep the one from
   // the card" path — picking an existing size re-links rather than creating.
@@ -104,6 +109,19 @@ export default function PoLineForm({
     });
   }
 
+  // Typing a cost fills the sell price from the target markup, but only when
+  // sell is still empty — a sell the Owner (or a matched card) already supplied
+  // is never overwritten. This replaces the hosts' `sellPriceManual` flag with
+  // "is the field empty?", which needs no extra state to stay correct.
+  function withMarkupSuggestion(nextCost) {
+    const patch = { costPerStem: nextCost };
+    const n = Number(nextCost) || 0;
+    if (n > 0 && targetMarkup && !String(value.sellPerStem ?? '').trim()) {
+      patch.sellPerStem = String(Math.round(n * targetMarkup));
+    }
+    return patch;
+  }
+
   // ADR-0014: every attr edit re-resolves the link. `adopt` only carries values
   // the matched card actually has, so a match never blanks something typed.
   function handleAttrsChange(nextAttrs) {
@@ -129,10 +147,10 @@ export default function PoLineForm({
   }
 
   const badge = linked
-    ? { text: t.po?.varietyLinked ?? 'from stock card', cls: 'bg-emerald-100 text-emerald-700' }
+    ? { text: tx('varietyLinked', 'from stock card'), cls: 'bg-emerald-100 text-emerald-700' }
     : hasType
-      ? { text: t.po?.newVariety ?? 'new variety',      cls: 'bg-amber-100 text-amber-700' }
-      : { text: t.po?.varietyNone ?? 'not selected',    cls: 'bg-gray-100 text-gray-600' };
+      ? { text: tx('newVariety', 'new variety'),      cls: 'bg-amber-100 text-amber-700' }
+      : { text: tx('varietyNone', 'not selected'),    cls: 'bg-gray-100 text-gray-600' };
 
   const numCls = 'field-input w-full text-sm';
   const lblCls = 'text-[10px] text-ios-tertiary uppercase mb-0.5 block';
@@ -151,7 +169,7 @@ export default function PoLineForm({
       <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
         <div className="flex items-center justify-between">
           <span className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
-            {t.po?.variety ?? 'Variety'}
+            {tx('variety', 'Variety')}
           </span>
           <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${badge.cls}`} data-testid="po-variety-badge">
             {badge.text}
@@ -170,7 +188,7 @@ export default function PoLineForm({
       {/* Stems / Lot / Packages. Packages is derived — editing it sets stems. */}
       <div className="grid grid-cols-3 gap-2">
         <div>
-          <label className={lblCls}>{t.po?.qtyNeeded ?? 'Needed'}</label>
+          <label className={lblCls}>{tx('qtyNeeded', 'Needed')}</label>
           <input
             type="number" inputMode="numeric" min="0" className={numCls}
             value={value.qty ?? ''} placeholder="0"
@@ -179,7 +197,7 @@ export default function PoLineForm({
           />
         </div>
         <div>
-          <label className={lblCls}>{t.shopping?.lotSize ?? t.lotSize ?? 'Lot size'}</label>
+          <label className={lblCls}>{tx('lotSize', 'Lot size')}</label>
           <input
             type="number" inputMode="numeric" min="0" className={numCls}
             value={value.lotSize ?? ''} placeholder="1"
@@ -188,7 +206,7 @@ export default function PoLineForm({
           />
         </div>
         <div>
-          <label className={lblCls}>{t.po?.packages ?? 'Pkgs'}</label>
+          <label className={lblCls}>{tx('packages', 'Pkgs')}</label>
           <input
             type="number" inputMode="decimal" min="0" step="0.5" className={numCls}
             value={packages ?? ''} placeholder="—"
@@ -203,12 +221,12 @@ export default function PoLineForm({
         <div className="flex items-center justify-between bg-brand-50 rounded-lg px-3 py-1.5" data-testid="po-stems-line">
           <span className="text-xs text-brand-700">
             {packages != null
-              ? `${packages} × ${lotSize} = ${stems} ${t.stems ?? 'pcs'}`
-              : `${stems} ${t.stems ?? 'pcs'}`}
+              ? `${packages} × ${lotSize} = ${stems} ${tx('stems', 'pcs')}`
+              : `${stems} ${tx('stems', 'pcs')}`}
           </span>
           {totalCost > 0 && (
             <span className="text-sm font-semibold text-brand-700">
-              {t.shopping?.totalCost ?? 'Total'}: {totalCost.toFixed(2)} zł
+              {tx('totalCost', 'Total')}: {totalCost.toFixed(2)} zł
             </span>
           )}
         </div>
@@ -216,17 +234,17 @@ export default function PoLineForm({
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={lblCls}>{t.costPrice ?? 'Cost'} / {t.stems ?? 'pc'}</label>
+          <label className={lblCls}>{tx('costPrice', 'Cost')} / {tx('stems', 'pc')}</label>
           <input
             type="number" step="0.01" min="0" className={numCls}
             value={value.costPerStem ?? ''} placeholder="0"
-            onChange={(e) => onChange({ costPerStem: e.target.value })}
+            onChange={(e) => onChange(withMarkupSuggestion(e.target.value))}
             data-testid="po-cost"
           />
         </div>
         <div>
           <label className={lblCls}>
-            {t.sellPrice ?? 'Sell'} / {t.stems ?? 'pc'}
+            {tx('sellPrice', 'Sell')} / {tx('stems', 'pc')}
             {markup && (
               <span className={`ml-1 px-1 rounded-full ${
                 Number(markup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
@@ -244,7 +262,7 @@ export default function PoLineForm({
 
       <div className="grid grid-cols-2 gap-2">
         <div>
-          <label className={lblCls}>{t.supplier ?? 'Supplier'}</label>
+          <label className={lblCls}>{tx('supplier', 'Supplier')}</label>
           <input
             type="text" list={`${idPrefix}-suppliers`} className={numCls}
             value={value.supplier ?? ''}
@@ -257,7 +275,7 @@ export default function PoLineForm({
         </div>
         {mode !== 'shopping' && (
           <div>
-            <label className={lblCls}>{t.farmer ?? 'Farmer'}</label>
+            <label className={lblCls}>{tx('farmer', 'Farmer')}</label>
             <input
               type="text" className={numCls}
               value={value.farmer ?? ''}
@@ -270,7 +288,7 @@ export default function PoLineForm({
 
       {mode !== 'shopping' && (
         <div>
-          <label className={lblCls}>{t.po?.notes ?? 'Notes'}</label>
+          <label className={lblCls}>{tx('notes', 'Notes')}</label>
           <input
             type="text" className={numCls}
             value={value.notes ?? ''}

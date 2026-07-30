@@ -94,7 +94,7 @@ When a feature is added to the florist app, it should also be added to the dashb
 **Parallel implementations to keep in sync:**
 - Order editing: `OrderCard.jsx` + `OrderDetailPage.jsx` (florist) ↔ `OrderDetailPanel.jsx` (dashboard)
 - Stock management: `StockPanelPage.jsx` (florist) ↔ `StockTab.jsx` (dashboard) — both render each row via the shared `VarietyListItem.jsx` (Y-model), so row-level changes land in `packages/shared/components/`; only the page-level chrome (filters, view pills, receive/write-off entry) is duplicated
-- PO management: `PurchaseOrderPage.jsx` (florist) ↔ `StockOrderPanel.jsx` (dashboard)
+- PO management: `PurchaseOrderPage.jsx` (florist) ↔ `StockOrderPanel.jsx` (dashboard). **Every line-entry surface in both apps renders the shared `PoLineForm`** (`packages/shared/components/`) — the new-order rows, the saved-Draft line editor, the add-line form, and the florist `ShoppingSupportPage` off-plan form. Those were four divergent forms until 2026-07-29 (different field sets, only one with Packages, one with no flower picker at all). Do NOT add a field to one host's line UI — add it to `PoLineForm`, where `mode` (`draft`/`sent`/`shopping`) toggles optional field *visibility* only, never layout or the quantity math. See ADR-0014 for why the Variety block stays visible on a linked line and re-resolves on edit.
 - Order creation: `NewOrderPage.jsx` + `steps/` (florist) ↔ `NewOrderTab.jsx` + `steps/` (dashboard)
 - Bouquet editing: `BouquetEditor.jsx` (florist) ↔ `BouquetSection.jsx` (dashboard)
 - CRM: `CustomerListPage.jsx` + `CustomerDetailPage.jsx` (florist) ↔ `CustomersTab.jsx` + `CustomerDetailView.jsx` (dashboard)

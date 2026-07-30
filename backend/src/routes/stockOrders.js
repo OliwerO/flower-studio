@@ -275,6 +275,13 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       'Alt Flower Name', 'Cost Price', 'Sell Price', 'Alt Cost',
       'Quantity Accepted', 'Write Off Qty', 'Notes', 'Quantity Needed',
       'Flower Name', 'Supplier', 'Lot Size', 'Farmer',
+      // The Stock Item link. Omitted from this list until 2026-07-29, which
+      // meant the Draft line editor's flower picker sent `Stock Item` on every
+      // pick and had it silently stripped — the link only ever got written at
+      // evaluation, by name/4-tuple resolution. ADR-0014 makes the link
+      // something the owner actively changes (re-link on an attr edit, detach
+      // when the Variety is new), so it has to round-trip.
+      'Stock Item',
       // Y-model Variety identity for new-Variety lines (issue #304)
       'Type', 'Colour', 'Size', 'Cultivar',
       // Substitute Variety identity classified at shopping entry (#2)

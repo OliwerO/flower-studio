@@ -1,12 +1,15 @@
 // PurchaseOrderPage — mobile-optimized PO management for the owner in the florist app.
 // Full lifecycle: create POs, edit drafts, send to driver, track status, manage payments.
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DateTag, buildPoSuggestions } from '@flower-studio/shared';
+import {
+  DateTag, buildPoSuggestions, PoLineForm,
+  apiLineToCanonical, canonicalDiffToApiFields,
+} from '@flower-studio/shared';
 import t from '../translations.js';
 
 const STATUS_COLORS = {
@@ -91,40 +94,19 @@ export default function PurchaseOrderPage() {
   // Negative stock items for pre-filling new POs
   const negativeStock = stock.filter(s => (Number(s['Current Quantity']) || 0) < 0);
 
-  // Owner ask 2026-05-31: suggest existing Type / Colour / Cultivar / Farmer
-  // values when typing on a new-Variety PO line, to prevent duplicates from
-  // misspellings ("Peon" vs "Peony"). Sourced from current Stock; refreshed
-  // when /stock fetch lands.
-  const typeSuggestions = useMemo(
-    () => Array.from(new Set(stock.map(s => s['Type'] ?? s.type_name).filter(Boolean))).sort(),
-    [stock],
-  );
-  const colourSuggestions = useMemo(
-    () => Array.from(new Set(stock.map(s => s['Colour'] ?? s.colour).filter(Boolean))).sort(),
-    [stock],
-  );
-  const cultivarSuggestions = useMemo(
-    () => Array.from(new Set(stock.map(s => s['Cultivar'] ?? s.cultivar).filter(Boolean))).sort(),
-    [stock],
-  );
-  const farmerSuggestions = useMemo(
-    () => Array.from(new Set(stock.map(s => s['Farmer'] ?? s.farmer).filter(Boolean))).sort(),
-    [stock],
-  );
-
+  // PoLineForm's canonical line shape — the same shape buildPoSuggestions emits,
+  // so a suggested line and a hand-added one are indistinguishable to the form.
   function emptyLine() {
     return {
-      stockItemId: '', flowerName: '', quantity: 1, lotSize: 0, packages: 0,
-      supplier: '', costPrice: '', sellPrice: '', sellPriceManual: false,
+      stockItemId: '', flowerName: '', qty: '1', lotSize: '0',
+      supplier: '', costPerStem: '', sellPerStem: '',
       farmer: '', notes: '',
-      // Y-model new-Variety identity (#304) — populated when no stockItemId
       type: '', colour: '', size: '', cultivar: '',
     };
   }
 
-  // Pre-fill from negative stock: Qty = raw shortfall in stems (matches
-  // owner's demand reading). Pkgs stays 0 — owner decides how many lots she
-  // actually wants to buy. Stored Quantity Needed = pkgs > 0 ? pkgs*lot : qty.
+  // Pre-fill from the netted per-Variety shortfall, in stems. The form shows
+  // the equivalent package count beside it (derived, never stored — D1).
   function startNewPO() {
     // Pre-fill from netted per-Variety shortfalls (drops Varieties covered by
     // on-hand stock or already on an open PO, incl. late ones).
@@ -136,54 +118,14 @@ export default function PurchaseOrderPage() {
     setShowForm(true);
   }
 
+  // A plain merge now — PoLineForm owns the Packages ⇄ stems math, the
+  // stock-pick adoption and the markup suggestion that used to live here.
   function updateFormLine(idx, patch) {
-    setFormLines(prev => prev.map((l, i) => {
-      if (i !== idx) return l;
-      const merged = { ...l, ...patch };
-      // Owner ask 2026-05-31: when both Pkgs and LotSize are set, Qty reflects
-      // the total stems that will actually be ordered (pkgs * lotSize). Owner
-      // can still type Qty manually; only Pkgs / LotSize edits trigger the
-      // auto-sync.
-      const touchedPkgsOrLot = 'packages' in patch || 'lotSize' in patch;
-      if (touchedPkgsOrLot) {
-        const pkgs = Number(merged.packages) || 0;
-        const ls = Number(merged.lotSize) || 0;
-        if (pkgs > 0 && ls > 0) merged.quantity = pkgs * ls;
-      }
-      return merged;
-    }));
+    setFormLines(prev => prev.map((l, i) => (i === idx ? { ...l, ...patch } : l)));
   }
 
   function removeFormLine(idx) {
     setFormLines(prev => prev.filter((_, i) => i !== idx));
-  }
-
-  function handleStockSelect(idx, stockItem) {
-    const cost = Number(stockItem['Current Cost Price']) || 0;
-    const sell = Number(stockItem['Current Sell Price']) || 0;
-    updateFormLine(idx, {
-      stockItemId: stockItem.id,
-      flowerName: stockItem['Display Name'],
-      lotSize: Number(stockItem['Lot Size']) || 0,
-      costPrice: cost > 0 ? String(cost) : '',
-      sellPrice: sell > 0 ? String(sell) : (cost > 0 && targetMarkup ? String(Math.round(cost * targetMarkup)) : ''),
-      sellPriceManual: sell > 0,
-      supplier: stockItem.Supplier || '',
-      farmer: stockItem.Farmer || '',
-    });
-  }
-
-  function handleLineCostChange(idx, value) {
-    const patch = { costPrice: value };
-    const line = formLines[idx];
-    if (!line.sellPriceManual && value && targetMarkup) {
-      patch.sellPrice = String(Math.round(Number(value) * targetMarkup));
-    }
-    updateFormLine(idx, patch);
-  }
-
-  function handleLineSellChange(idx, value) {
-    updateFormLine(idx, { sellPrice: value, sellPriceManual: true });
   }
 
   async function createPO() {
@@ -194,29 +136,28 @@ export default function PurchaseOrderPage() {
         notes: formNotes,
         driver: formDriver,
         plannedDate: formPlannedDate || null,
-        // Stored Quantity Needed = total stems. If owner filled Packages,
-        // that overrides raw Qty: totalStems = pkgs * lotSize. Otherwise the
-        // raw stem demand from the Qty field is stored as-is. Mirrors the
-        // dashboard StockOrderPanel new-PO form.
-        lines: formLines.filter(l => l.flowerName || l.type).map(l => {
-          const ls = Number(l.lotSize) || 0;
-          const pkgs = Number(l.packages) || 0;
-          const rawQty = Number(l.quantity) || 0;
-          const quantity = pkgs > 0 && ls > 0 ? pkgs * ls : rawQty;
-          // Auto-compose Flower Name from Variety identity when user typed
-          // Type/Colour/Size/Cultivar rather than picking an existing Stock Item.
-          const composedName = l.flowerName?.trim() || [
+        // `qty` is already total stems — Packages is a display-only view of it
+        // (plan D1), so there is no pkgs × lot reconciliation to do here.
+        lines: formLines.filter(l => l.flowerName || l.type).map(l => ({
+          stockItemId: l.stockItemId || '',
+          // Compose a name from the Variety when the owner typed identity
+          // instead of picking a card. The backend composes too, but sending a
+          // name keeps the line readable if it is inspected before evaluation.
+          flowerName: l.flowerName?.trim() || [
             l.type, l.colour, l.size ? `${l.size}cm` : null, l.cultivar,
-          ].filter(Boolean).join(' ');
-          return {
-            ...l,
-            flowerName: composedName,
-            quantity,
-            costPrice: Number(l.costPrice) || 0,
-            sellPrice: Number(l.sellPrice) || 0,
-            size: l.size ? Number(l.size) : null,
-          };
-        }),
+          ].filter(Boolean).join(' '),
+          quantity:  Number(l.qty) || 0,
+          lotSize:   Number(l.lotSize) || 0,
+          costPrice: Number(l.costPerStem) || 0,
+          sellPrice: Number(l.sellPerStem) || 0,
+          supplier:  l.supplier || '',
+          farmer:    l.farmer || '',
+          notes:     l.notes || '',
+          type:      (l.type || '').trim() || null,
+          colour:    (l.colour || '').trim() || null,
+          size:      l.size !== '' && l.size != null ? Number(l.size) : null,
+          cultivar:  (l.cultivar || '').trim() || null,
+        })),
       });
       showToast(t.po?.created || 'PO created');
       setShowForm(false);
@@ -273,25 +214,6 @@ export default function PurchaseOrderPage() {
     }
   }
 
-  // Draft-only one-tap add: POST a blank line so the owner can fill it inline
-  // via DraftLineEditor. Backend allows missing identity for Draft POs;
-  // /send refuses Draft→Sent until every line has a name or stock item link.
-  async function addBlankDraftLine(orderId) {
-    try {
-      await client.post(`/stock-orders/${orderId}/lines`, {
-        flowerName: '',
-        quantity: 1,
-        costPrice: 0,
-        lotSize: 0,
-      });
-      const res = await client.get(`/stock-orders/${orderId}`);
-      setExpandedLines(res.data.lines || []);
-    } catch (err) {
-      console.error('PO blank-line add failed:', err.response?.data || err.message);
-      showToast(err.response?.data?.error || t.error, 'error');
-    }
-  }
-
   // Add a brand-new line to an existing PO — identity + quantity are required
   // up front; supplier + cost/stem are optional and can be filled in later
   // (#524). Returns true on success so the inline form can collapse.
@@ -300,25 +222,24 @@ export default function PurchaseOrderPage() {
   // addition to a plain typed Flower Name. The backend endpoint already
   // accepted all of these (see stockOrders.js POST /:id/lines) — only the
   // frontend form was missing the fields.
-  async function addPersistedLine(orderId, {
-    flowerName, stockItemId, supplier, quantity, costPrice, sellPrice, lotSize,
-    type, colour, size, cultivar,
-  }) {
+  async function addPersistedLine(orderId, line) {
     try {
       const poStatus = orders.find(o => o.id === orderId)?.Status;
-      const stems = Number(quantity) || 0;
+      const stems = Number(line.qty) || 0;
       const created = await client.post(`/stock-orders/${orderId}/lines`, {
-        flowerName: (flowerName || '').trim(),
-        stockItemId: stockItemId || '',
-        supplier: (supplier || '').trim(),
+        flowerName: (line.flowerName || '').trim(),
+        stockItemId: line.stockItemId || '',
+        supplier: (line.supplier || '').trim(),
+        farmer: (line.farmer || '').trim(),
+        notes: (line.notes || '').trim(),
         quantity: stems,
-        costPrice: Number(costPrice) || 0,
-        sellPrice: Number(sellPrice) || 0,
-        lotSize: Number(lotSize) || 0,
-        type: (type || '').trim() || null,
-        colour: (colour || '').trim() || null,
-        size: size ? Number(size) : null,
-        cultivar: (cultivar || '').trim() || null,
+        costPrice: Number(line.costPerStem) || 0,
+        sellPrice: Number(line.sellPerStem) || 0,
+        lotSize: Number(line.lotSize) || 0,
+        type: (line.type || '').trim() || null,
+        colour: (line.colour || '').trim() || null,
+        size: line.size !== '' && line.size != null ? Number(line.size) : null,
+        cultivar: (line.cultivar || '').trim() || null,
       });
       // Lines added during Shopping are for flowers already physically bought,
       // so mark Found All and stamp Quantity Found so the florist can see them.
@@ -377,35 +298,16 @@ export default function PurchaseOrderPage() {
     }
   }
 
-  // Grand total — pkgs overrides qty when filled (totalStems = pkgs × lotSize),
-  // else Qty is taken as raw stems.
-  const grandCost = formLines.reduce((sum, l) => {
-    const qty = Number(l.quantity) || 0;
-    const ls = Number(l.lotSize) || 0;
-    const pkgs = Number(l.packages) || 0;
-    const totalStems = pkgs > 0 && ls > 0 ? pkgs * ls : qty;
-    return sum + totalStems * (Number(l.costPrice) || 0);
-  }, 0);
+  // `qty` is total stems outright — Packages is derived for display only (D1).
+  const grandCost = formLines.reduce(
+    (sum, l) => sum + (Number(l.qty) || 0) * (Number(l.costPerStem) || 0),
+    0,
+  );
 
   const allDrivers = drivers.length > 0 ? drivers : configDrivers.length > 0 ? configDrivers : ['Nikita'];
 
   return (
     <div className="min-h-screen">
-      {/* Typeahead suggestion sources for new-variety + farmer inputs (issue: dup
-          spellings like "Peon" vs "Peony"). datalist is HTML5-native; the
-          browser handles substring filtering as the user types. */}
-      <datalist id="po-type-suggestions">
-        {typeSuggestions.map(s => <option key={s} value={s} />)}
-      </datalist>
-      <datalist id="po-colour-suggestions">
-        {colourSuggestions.map(s => <option key={s} value={s} />)}
-      </datalist>
-      <datalist id="po-cultivar-suggestions">
-        {cultivarSuggestions.map(s => <option key={s} value={s} />)}
-      </datalist>
-      <datalist id="po-farmer-suggestions">
-        {farmerSuggestions.map(s => <option key={s} value={s} />)}
-      </datalist>
       <header className="glass-nav px-4 py-3 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <button onClick={() => navigate('/stock')} className="text-brand-600 font-medium text-base active-scale">
@@ -435,119 +337,24 @@ export default function PurchaseOrderPage() {
             <p className="text-sm font-semibold text-ios-label">{t.po?.newOrder}</p>
 
             {/* Lines */}
-            {formLines.map((line, idx) => {
-              const ls = Number(line.lotSize) || 0;
-              const lineQty = Number(line.quantity) || 0;
-              const linePkgs = Number(line.packages) || 0;
-              const totalStems = linePkgs > 0 && ls > 0 ? linePkgs * ls : lineQty;
-              const lineCost = Number(line.costPrice) || 0;
-              const lineSell = Number(line.sellPrice) || 0;
-              const lineMarkup = lineCost > 0 && lineSell > 0 ? (lineSell / lineCost).toFixed(1) : null;
-              return (
-                <div key={idx} className="border border-gray-200 rounded-xl p-3 space-y-2">
-                  {/* Flower name search */}
-                  <div className="flex items-center gap-2">
-                    <div className="flex-1">
-                      <StockSearchInput
-                        stock={stock}
-                        value={line.flowerName}
-                        onChange={val => updateFormLine(idx, { flowerName: val, stockItemId: '' })}
-                        onSelect={item => handleStockSelect(idx, item)}
-                      />
-                    </div>
-                    <button onClick={() => removeFormLine(idx)} className="text-ios-red text-sm px-1">✕</button>
-                  </div>
-                  {/* Qty (stem demand) + Lot + Pkgs (lots override) + Supplier */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-ios-tertiary">{t.quantity || 'Qty'}:</span>
-                      <input type="number" value={line.quantity}
-                        onChange={e => updateFormLine(idx, { quantity: Number(e.target.value) })}
-                        className="field-input w-16 text-center text-sm" min="1" />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-ios-tertiary">{t.lotSize}:</span>
-                      <input type="number" value={line.lotSize || ''}
-                        onChange={e => updateFormLine(idx, { lotSize: Number(e.target.value) || 0 })}
-                        className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-ios-tertiary">{t.po?.packages || 'Pkgs'}:</span>
-                      <input type="number" value={line.packages || ''}
-                        onChange={e => updateFormLine(idx, { packages: Number(e.target.value) || 0 })}
-                        className="field-input w-14 text-center text-xs" min="0" placeholder="—" />
-                    </div>
-                    {linePkgs > 0 && ls > 0 && (
-                      <span className="text-xs text-ios-secondary font-medium">
-                        = {linePkgs} × {ls} = {totalStems}
-                      </span>
-                    )}
-                    <select value={line.supplier}
-                      onChange={e => updateFormLine(idx, { supplier: e.target.value })}
-                      className="field-input flex-1 min-w-[100px] text-sm">
-                      <option value="">{t.supplier || 'Supplier'}...</option>
-                      {SUPPLIERS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </div>
-                  {/* Cost + Sell + Markup */}
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-ios-tertiary">{t.costPrice}:</span>
-                      <input type="number" step="0.01" value={line.costPrice}
-                        onChange={e => handleLineCostChange(idx, e.target.value)}
-                        className="field-input w-20 text-sm text-right" placeholder="0" />
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <span className="text-[10px] text-ios-tertiary">{t.sellPrice}:</span>
-                      <input type="number" step="0.01" value={line.sellPrice}
-                        onChange={e => handleLineSellChange(idx, e.target.value)}
-                        className="field-input w-20 text-sm text-right"
-                        placeholder={lineCost && targetMarkup ? String(Math.round(lineCost * targetMarkup)) : '0'} />
-                    </div>
-                    {lineMarkup && (
-                      <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full ${
-                        Number(lineMarkup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-                      }`}>×{lineMarkup}</span>
-                    )}
-                  </div>
-                  {/* Farmer + Notes */}
-                  <div className="flex items-center gap-2">
-                    <input type="text" value={line.farmer || ''}
-                      list="po-farmer-suggestions"
-                      onChange={e => updateFormLine(idx, { farmer: e.target.value })}
-                      className="field-input flex-1 text-sm" placeholder={t.farmer || 'Farmer'} />
-                    <input type="text" value={line.notes || ''}
-                      onChange={e => updateFormLine(idx, { notes: e.target.value })}
-                      className="field-input flex-1 text-sm" placeholder={t.po?.notes || 'Notes'} />
-                  </div>
-                  {/* Variety identity row — only when no Stock Item link */}
-                  {!line.stockItemId && (
-                    <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
-                      <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
-                        {t.po?.newVariety ?? 'New variety'}
-                      </p>
-                      <div className="grid grid-cols-2 gap-2">
-                        <input type="text" value={line.type || ''}
-                          list="po-type-suggestions"
-                          onChange={e => updateFormLine(idx, { type: e.target.value })}
-                          className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
-                        <input type="text" value={line.colour || ''}
-                          list="po-colour-suggestions"
-                          onChange={e => updateFormLine(idx, { colour: e.target.value })}
-                          className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
-                        <input type="number" value={line.size || ''}
-                          onChange={e => updateFormLine(idx, { size: e.target.value })}
-                          className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
-                        <input type="text" value={line.cultivar || ''}
-                          list="po-cultivar-suggestions"
-                          onChange={e => updateFormLine(idx, { cultivar: e.target.value })}
-                          className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
-                      </div>
-                    </div>
-                  )}
+            {formLines.map((line, idx) => (
+              <div key={idx} className="border border-gray-200 rounded-xl p-3 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-ios-tertiary">#{idx + 1}</span>
+                  <button onClick={() => removeFormLine(idx)} className="text-ios-red text-sm px-1">✕</button>
                 </div>
-              );
-            })}
+                <PoLineForm
+                  value={line}
+                  onChange={patch => updateFormLine(idx, patch)}
+                  stock={stock}
+                  suppliers={SUPPLIERS}
+                  targetMarkup={targetMarkup}
+                  t={t}
+                  mode="draft"
+                  idPrefix={`po-new-${idx}`}
+                />
+              </div>
+            ))}
 
             <button onClick={() => setFormLines(prev => [...prev, emptyLine()])}
               className="text-brand-600 text-sm font-medium">
@@ -689,30 +496,17 @@ export default function PurchaseOrderPage() {
                             suppliers={SUPPLIERS}
                           />
                         ))}
-                        {order.Status === 'Draft' ? (
-                          // Draft: one-tap add. Backend allows blank line,
-                          // owner fills it via DraftLineEditor. /send blocks
-                          // Draft→Sent until every line has identity.
-                          <button
-                            onClick={() => addBlankDraftLine(order.id)}
-                            className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-xl active:bg-brand-100 active-scale"
-                          >
-                            + {t.po?.addLine || 'Add line'}
-                          </button>
-                        ) : (
-                          // Sent/Shopping: off-plan flower. Full field set (#550) —
-                          // Stock Item search + new-Variety identity, same as
-                          // DraftLineEditor. Identity + qty required; supplier
-                          // and cost/stem optional (#524).
-                          <AddLineInlineForm
-                            orderId={order.id}
-                            onAdd={addPersistedLine}
-                            suppliers={SUPPLIERS}
-                            stock={stock}
-                            targetMarkup={targetMarkup}
-                            status={order.Status}
-                          />
-                        )}
+                        {/* One add-line form on every editable status (D8).
+                            Draft used to POST a blank row and let the owner
+                            fill it in place — the only path that could leave an
+                            identity-less line behind. */}
+                        <AddLineInlineForm
+                          orderId={order.id}
+                          onAdd={addPersistedLine}
+                          suppliers={SUPPLIERS}
+                          stock={stock}
+                          targetMarkup={targetMarkup}
+                        />
 
                         {/* Cost total from the live expanded-lines state so it
                             tracks in-progress edits, not the stale snapshot on
@@ -855,259 +649,59 @@ export default function PurchaseOrderPage() {
   );
 }
 
-// ── Stock search dropdown (mobile-optimized) ──
-function StockSearchInput({ stock, value, onChange, onSelect, onBlur: onBlurCb }) {
-  const [query, setQuery] = useState(value || '');
-  const [open, setOpen] = useState(false);
-  // Track whether the user selected from the dropdown — skip onBlur save
-  // to avoid a race between the select PATCH and a redundant blur PATCH.
-  const selectedRef = useRef(false);
-
-  useEffect(() => { setQuery(value || ''); }, [value]);
-
-  const filtered = query
-    ? (stock || []).filter(s =>
-        (s['Display Name'] || '').toLowerCase().includes(query.toLowerCase())
-      ).slice(0, 6)
-    : [];
-
-  const exactMatch = query && (stock || []).some(s =>
-    (s['Display Name'] || '').toLowerCase() === query.toLowerCase()
-  );
-
-  return (
-    <div className="relative">
-      <input type="text" value={query}
-        onChange={e => { setQuery(e.target.value); onChange(e.target.value); setOpen(true); }}
-        onFocus={() => { if (query) setOpen(true); }}
-        onBlur={() => {
-          setTimeout(() => setOpen(false), 200);
-          if (!selectedRef.current) onBlurCb?.(query);
-          selectedRef.current = false;
-        }}
-        placeholder={t.po?.flowerSearch || 'Search...'}
-        className="field-input w-full text-sm" />
-      {open && query && (
-        <div className="absolute z-30 top-full left-0 right-0 mt-1 bg-white border border-gray-200 rounded-xl shadow-lg max-h-48 overflow-y-auto">
-          {filtered.map(s => (
-            <button key={s.id} type="button"
-              onMouseDown={() => { selectedRef.current = true; onSelect(s); setQuery(s['Display Name']); setOpen(false); }}
-              className="w-full text-left px-3 py-2.5 text-sm active:bg-gray-50 border-b border-gray-50">
-              <span className="font-medium">{s['Display Name']}</span>
-              <span className="text-xs text-ios-secondary ml-1">({s['Current Quantity'] ?? 0})</span>
-            </button>
-          ))}
-          {!exactMatch && query.length >= 2 && (
-            <button type="button"
-              onMouseDown={() => { selectedRef.current = true; onChange(query); setOpen(false); }}
-              className="w-full text-left px-3 py-2.5 text-sm border-t border-gray-100 text-brand-600 font-medium active:bg-brand-50">
-              + {t.po?.addNewFlower || 'Add'} "{query}"
-            </button>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Draft line editor (mobile layout) ──
+// ── Draft line editor ─────────────────────────────────────────────────────
+// Wraps the shared PoLineForm around a persisted line. Edits live in local
+// state and flush as ONE diffed PATCH when focus leaves the whole editor —
+// the previous version fired a PATCH per field on every blur, which is how a
+// half-typed "h" once overwrote "Hydrangea".
 function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppliers }) {
-  const storedLs = Number(line['Lot Size']) || 0;
-  const storedQty = Number(line['Quantity Needed']) || 1;
-  // Display qty as lots (user enters lots, not stems)
-  const initLots = storedLs > 1 ? Math.max(1, Math.round(storedQty / storedLs)) : storedQty;
-  const [qty, setQty] = useState(initLots);
-  const [costPrice, setCostPrice] = useState(line['Cost Price'] || '');
-  const [sellPrice, setSellPrice] = useState(line['Sell Price'] || '');
-  const [sellPriceManual, setSellPriceManual] = useState(Number(line['Sell Price']) > 0);
-  const [farmer, setFarmer] = useState(line.Farmer || '');
-  const [notes, setNotes] = useState(line.Notes || '');
-  const [lotSize, setLotSize] = useState(storedLs);
-  // Local flower name — avoids PATCHing partial names on every keystroke
-  // which caused a race condition where "Hydrangea" got overwritten with "h".
-  const [flowerName, setFlowerName] = useState(line['Flower Name'] || '');
-  useEffect(() => { setFlowerName(line['Flower Name'] || ''); }, [line['Flower Name']]);
+  const [draft, setDraft] = useState(() => apiLineToCanonical(line));
+  const savedRef = useRef(draft);
 
-  // Y-model Variety identity for new-Variety lines (issue #304). Visible only
-  // when no Stock Item is linked. Local state mirrors line fields so we don't
-  // PATCH on every keystroke.
-  const [vType,     setVType]     = useState(line.Type     || '');
-  const [vColour,   setVColour]   = useState(line.Colour   || '');
-  const [vSize,     setVSize]     = useState(line.Size != null ? String(line.Size) : '');
-  const [vCultivar, setVCultivar] = useState(line.Cultivar || '');
+  // Re-seed when the server sends a different version of this line (a refetch
+  // after an add/remove elsewhere in the PO).
+  useEffect(() => {
+    const next = apiLineToCanonical(line);
+    setDraft(next);
+    savedRef.current = next;
+  }, [line]);
 
-  const cost = Number(costPrice) || 0;
-  const sell = Number(sellPrice) || 0;
-  const computedMarkup = cost > 0 && sell > 0 ? (sell / cost).toFixed(1) : null;
-  const totalStems = lotSize > 1 ? qty * lotSize : qty;
-  const totalLineCost = totalStems * cost;
-
-  function handleStockSelect(item) {
-    const itemCost = Number(item['Current Cost Price']) || 0;
-    const itemSell = Number(item['Current Sell Price']) || 0;
-    setCostPrice(itemCost > 0 ? String(itemCost) : '');
-    setSellPrice(itemSell > 0 ? String(itemSell) : (itemCost > 0 && targetMarkup ? String(Math.round(itemCost * targetMarkup)) : ''));
-    setSellPriceManual(itemSell > 0);
-    setFarmer(item.Farmer || '');
-    setLotSize(Number(item['Lot Size']) || 0);
-    setFlowerName(item['Display Name']);
-    onUpdate(line.id, {
-      'Flower Name': item['Display Name'],
-      'Stock Item': [item.id],
-      Supplier: item.Supplier || '',
-      'Cost Price': itemCost,
-      'Sell Price': itemSell || (itemCost > 0 && targetMarkup ? Math.round(itemCost * targetMarkup) : 0),
-      'Lot Size': Number(item['Lot Size']) || 0,
-      'Quantity Needed': qty,
-      Farmer: item.Farmer || '',
-    });
+  function flush() {
+    const fields = canonicalDiffToApiFields(savedRef.current, draft);
+    if (Object.keys(fields).length === 0) return;
+    savedRef.current = draft;
+    onUpdate(line.id, fields);
   }
 
-  function handleCostChange(value) {
-    setCostPrice(value);
-    if (!sellPriceManual && value && targetMarkup) {
-      setSellPrice(String(Math.round(Number(value) * targetMarkup)));
-    }
-  }
-
-  function handleSellChange(value) {
-    setSellPrice(value);
-    setSellPriceManual(true);
-  }
-
-  // A line lacks identity if no Stock Item, no Flower Name, AND no new-Variety
-  // Type. /send refuses Draft→Sent while any such line exists; surface that
-  // state visually with an amber ring + hint so the owner sees what's missing.
-  const stockItemLinked = Array.isArray(line['Stock Item']) && line['Stock Item'].length > 0;
-  const isBlank = !flowerName.trim() && !stockItemLinked && !vType.trim();
+  // A line with no Stock Item, no name and no Type cannot be sent — /send
+  // refuses the PO until it has identity, so surface it on the line itself.
+  const isBlank = !draft.flowerName.trim() && !draft.stockItemId && !draft.type.trim();
 
   return (
-    <div className={`rounded-2xl border shadow-sm px-3.5 py-3 space-y-3 ${
-      isBlank ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-100'
-    }`}>
-      {/* Header: Flower name + remove */}
-      <div className="flex items-center gap-2">
-        <div className="flex-1">
-          <StockSearchInput stock={stock}
-            value={flowerName}
-            onChange={name => setFlowerName(name)}
-            onSelect={handleStockSelect}
-            onBlur={name => {
-              if (name && name !== (line['Flower Name'] || '')) {
-                onUpdate(line.id, { 'Flower Name': name });
-              }
-            }} />
-        </div>
-        <button onClick={() => onRemove(line.id)} className="w-7 h-7 rounded-full bg-red-50 text-red-400 active:bg-red-100 active:text-red-600 text-sm flex items-center justify-center">✕</button>
+    <div
+      // Fires only when focus leaves the editor entirely, not when it moves
+      // between fields inside it — one PATCH per edit session.
+      onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget)) flush(); }}
+      className={`rounded-2xl border shadow-sm px-3.5 py-3 space-y-2 ${
+        isBlank ? 'bg-amber-50 border-amber-300' : 'bg-white border-gray-100'
+      }`}
+    >
+      <div className="flex items-center justify-end">
+        <button
+          onClick={() => onRemove(line.id)}
+          className="w-7 h-7 rounded-full bg-red-50 text-red-400 active:bg-red-100 active:text-red-600 text-sm flex items-center justify-center"
+        >✕</button>
       </div>
-
-      {/* Quantity row */}
-      <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5 bg-gray-50 rounded-xl px-2.5 py-1.5">
-          <input type="number" value={qty}
-            onChange={e => setQty(Number(e.target.value) || 0)}
-            onBlur={() => {
-              const stems = lotSize > 1 ? qty * lotSize : qty;
-              onUpdate(line.id, { 'Quantity Needed': stems });
-            }}
-            className="w-10 text-center text-sm font-bold bg-transparent outline-none" min="1" />
-          <span className="text-ios-tertiary text-xs">×</span>
-          <input type="number" value={lotSize || ''}
-            onChange={e => setLotSize(Number(e.target.value) || 0)}
-            onBlur={() => {
-              onUpdate(line.id, { 'Lot Size': lotSize, 'Quantity Needed': lotSize > 1 ? qty * lotSize : qty });
-            }}
-            className="w-10 text-center text-sm bg-transparent outline-none" min="0" placeholder="lot" />
-        </div>
-        {lotSize > 1 && qty > 0 && (
-          <span className="text-base font-bold text-brand-700">
-            = {qty * lotSize} <span className="text-xs font-normal text-ios-tertiary">{t.stems || 'pcs'}</span>
-          </span>
-        )}
-        <div className="ml-auto">
-          <select value={line.Supplier || ''}
-            onChange={e => onUpdate(line.id, { Supplier: e.target.value })}
-            className="field-input text-sm py-1.5">
-            <option value="">{t.supplier || 'Supplier'}...</option>
-            {(suppliers || []).map(s => <option key={s} value={s}>{s}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* Prices row */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 flex-1">
-          <span className="text-[10px] text-ios-tertiary shrink-0">{t.costPrice || 'Cost'}:</span>
-          <input type="number" step="0.01" value={costPrice}
-            onChange={e => handleCostChange(e.target.value)}
-            onBlur={() => onUpdate(line.id, { 'Cost Price': Number(costPrice) || 0, 'Sell Price': Number(sellPrice) || 0 })}
-            className="field-input w-full text-sm text-right py-1" placeholder="0" />
-        </div>
-        <div className="flex items-center gap-1 flex-1">
-          <span className="text-[10px] text-ios-tertiary shrink-0">{t.sellPrice || 'Sell'}:</span>
-          <input type="number" step="0.01" value={sellPrice}
-            onChange={e => handleSellChange(e.target.value)}
-            onBlur={() => onUpdate(line.id, { 'Sell Price': Number(sellPrice) || 0 })}
-            className="field-input w-full text-sm text-right py-1" placeholder="0" />
-        </div>
-        {computedMarkup && (
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-            Number(computedMarkup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-          }`}>×{computedMarkup}</span>
-        )}
-      </div>
-
-      {/* Farmer + Notes row */}
-      <div className="flex items-center gap-2">
-        <input type="text" value={farmer}
-          onChange={e => setFarmer(e.target.value)}
-          onBlur={() => onUpdate(line.id, { Farmer: farmer })}
-          className="field-input flex-1 text-sm py-1" placeholder={t.farmer || 'Farmer'} />
-        <input type="text" value={notes}
-          onChange={e => setNotes(e.target.value)}
-          onBlur={() => onUpdate(line.id, { Notes: notes })}
-          className="field-input flex-1 text-sm py-1" placeholder={t.po?.notes || 'Notes'} />
-      </div>
-
-      {/* Variety identity row — only when no Stock Item link */}
-      {!stockItemLinked && (
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
-            {t.po?.newVariety ?? 'New variety'}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="text" value={vType}
-              onChange={e => setVType(e.target.value)}
-              onBlur={() => onUpdate(line.id, { Type: vType.trim() })}
-              className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
-            <input type="text" value={vColour}
-              onChange={e => setVColour(e.target.value)}
-              onBlur={() => onUpdate(line.id, { Colour: vColour.trim() })}
-              className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
-            <input type="number" value={vSize}
-              onChange={e => setVSize(e.target.value)}
-              onBlur={() => onUpdate(line.id, { Size: vSize ? Number(vSize) : null })}
-              className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
-            <input type="text" value={vCultivar}
-              onChange={e => setVCultivar(e.target.value)}
-              onBlur={() => onUpdate(line.id, { Cultivar: vCultivar.trim() })}
-              className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
-          </div>
-        </div>
-      )}
-
-      {/* Clearly-labeled per-line total (image #15 feedback) */}
-      {totalLineCost > 0 && (
-        <div className="flex items-center justify-end gap-2 pt-1 border-t border-gray-100 text-sm">
-          <span className="text-[11px] uppercase tracking-wide text-ios-tertiary">
-            {t.po?.totalLineCost ?? t.totalCost ?? 'Total cost'}
-          </span>
-          <span className="font-semibold tabular-nums text-ios-label">
-            {totalLineCost.toFixed(2)} {t.zl ?? 'zł'}
-          </span>
-        </div>
-      )}
-
+      <PoLineForm
+        value={draft}
+        onChange={patch => setDraft(d => ({ ...d, ...patch }))}
+        stock={stock}
+        suppliers={suppliers}
+        targetMarkup={targetMarkup}
+        t={t}
+        mode="draft"
+        idPrefix={`po-line-${line.id}`}
+      />
       {isBlank && (
         <p className="text-[11px] text-amber-700">
           {t.po?.blankLineHint || 'Pick a flower or type a name before sending the PO.'}
@@ -1118,92 +712,29 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, targetMarkup, suppli
 }
 
 // ── Inline add-line form ──────────────────────────────────────────────────
-// Same logic as the DraftLineEditor qty/lotSize handling: when lot size > 1
-// the "qty" field means LOTS and total stems = lots × lot size; otherwise
-// qty is raw stems. Cost is explicitly per-stem with a live total preview.
-// Flower identity mirrors DraftLineEditor (issue #550): pick an existing
-// Stock Item via search (auto-fills cost/sell/lot size/supplier), or type a
-// new Variety's Type/Colour/Size/Cultivar when nothing is linked — the exact
-// same StockSearchInput + Variety-identity block DraftLineEditor already
-// uses, so a line added to a Sent/Shopping PO carries the same identity a
-// Draft-PO line would (repo pitfall #6: every PO line needs a Stock Item
-// link or a Flower Name). Identity + qty are required up front; supplier and
-// cost/stem are optional (#524). POST only fires on submit — no silent drops.
-// Sent/Shopping-only: an "off-plan" line bought at the supplier. Draft uses
-// the one-tap add button + DraftLineEditor instead — see the call site.
-function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup, status }) {
+// Used on every status now (plan D8): fill the form, then Save. The Draft
+// one-tap "add a blank row and fill it in place" shortcut is gone — it was the
+// only surface that could leave an identity-less line behind, and having Draft
+// behave differently from Sent was the complaint that started this work.
+function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup }) {
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [form, setForm] = useState({
-    flowerName: '', stockItemId: '', supplier: '', lotSize: '', qty: '',
-    costPerStem: '', sellPerStem: '',
-    // Y-model new-Variety identity (#304) — populated when no stockItemId
-    type: '', colour: '', size: '', cultivar: '',
-  });
-
-  const lotSizeNum = Number(form.lotSize) || 0;
-  const qtyNum = Number(form.qty) || 0;
-  const costPerStemNum = Number(form.costPerStem) || 0;
-  const sellPerStemNum = Number(form.sellPerStem) || 0;
-  const totalStems = lotSizeNum > 1 ? qtyNum * lotSizeNum : qtyNum;
-  const totalCost = totalStems * costPerStemNum;
-  const computedMarkup = costPerStemNum > 0 && sellPerStemNum > 0 ? (sellPerStemNum / costPerStemNum).toFixed(1) : null;
-  const stockItemLinked = !!form.stockItemId;
+  const [form, setForm] = useState(emptyCanonicalLine);
 
   function reset() {
-    setForm({
-      flowerName: '', stockItemId: '', supplier: '', lotSize: '', qty: '',
-      costPerStem: '', sellPerStem: '', type: '', colour: '', size: '', cultivar: '',
-    });
+    setForm(emptyCanonicalLine());
     setOpen(false);
   }
 
-  // Picking an existing Stock Item auto-fills cost/sell/lot size/supplier and
-  // clears any in-progress new-Variety fields — mirrors DraftLineEditor's
-  // handleStockSelect exactly.
-  function handleStockSelect(item) {
-    const itemCost = Number(item['Current Cost Price']) || 0;
-    const itemSell = Number(item['Current Sell Price']) || 0;
-    const itemLotSize = Number(item['Lot Size']) || 0;
-    setForm(f => ({
-      ...f,
-      flowerName: item['Display Name'],
-      stockItemId: item.id,
-      supplier: item.Supplier || '',
-      costPerStem: itemCost > 0 ? String(itemCost) : '',
-      sellPerStem: itemSell > 0 ? String(itemSell) : (itemCost > 0 && targetMarkup ? String(Math.round(itemCost * targetMarkup)) : ''),
-      lotSize: itemLotSize > 0 ? String(itemLotSize) : '',
-      type: '', colour: '', size: '', cultivar: '',
-    }));
-  }
-
-  // Identity rule mirrors DraftLineEditor's isBlank check + the backend's own
-  // gate on POST /:id/lines (pitfall #6): a Stock Item link, an explicit
-  // Flower Name, or a new-Variety Type all count as identity.
-  // #524: supplier and cost/stem are optional — fill them in later via
-  // DraftLineEditor.
+  // Identity mirrors the backend gate on POST /:id/lines (pitfall #6): a Stock
+  // Item link, a typed Flower Name, or a new-Variety Type all count.
   const hasIdentity = !!(form.stockItemId || form.flowerName.trim() || form.type.trim());
-  const ready = hasIdentity && totalStems > 0;
+  const ready = hasIdentity && (Number(form.qty) || 0) > 0;
 
   async function submit() {
     if (!ready || submitting) return;
     setSubmitting(true);
-    const ok = await onAdd(orderId, {
-      // When the owner filled the new-Variety block, drop the free-typed search
-      // text so the backend composes the name from Type/Colour/Size/Cultivar —
-      // otherwise a partial search string ("peo") becomes the Variety name.
-      flowerName: form.type.trim() ? '' : form.flowerName,
-      stockItemId: form.stockItemId,
-      supplier: form.supplier,
-      quantity: totalStems,
-      costPrice: costPerStemNum,
-      sellPrice: sellPerStemNum,
-      lotSize: lotSizeNum,
-      type: form.type,
-      colour: form.colour,
-      size: form.size,
-      cultivar: form.cultivar,
-    });
+    const ok = await onAdd(orderId, form);
     setSubmitting(false);
     if (ok) reset();
   }
@@ -1221,114 +752,17 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
 
   return (
     <div className="bg-brand-50/50 border border-brand-200 rounded-xl p-3 space-y-2">
-      <p className="text-[11px] text-ios-tertiary">{t.shopping?.addExtraHint}</p>
-      <StockSearchInput
+      <PoLineForm
+        value={form}
+        onChange={patch => setForm(f => ({ ...f, ...patch }))}
         stock={stock}
-        value={form.flowerName}
-        onChange={name => setForm(f => ({ ...f, flowerName: name, stockItemId: '' }))}
-        onSelect={handleStockSelect}
+        suppliers={suppliers}
+        targetMarkup={targetMarkup}
+        t={t}
+        mode="sent"
+        idPrefix={`po-add-${orderId}`}
       />
-      <input
-        type="text"
-        list={`po-sup-${orderId}`}
-        value={form.supplier}
-        onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}
-        placeholder={`${t.shopping?.supplier || t.supplier || 'Supplier'} (${t.optional || 'optional'})`}
-        className="field-input w-full text-sm"
-      />
-      <datalist id={`po-sup-${orderId}`}>
-        {suppliers.map(s => <option key={s} value={s} />)}
-      </datalist>
-
-      {/* Variety identity — only when no Stock Item is linked. Same block as
-          DraftLineEditor's new-Variety row (issue #550). */}
-      {!stockItemLinked && (
-        <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-2 space-y-1.5">
-          <p className="text-[10px] uppercase tracking-wide text-indigo-600 font-semibold">
-            {t.po?.newVariety ?? 'New variety'}
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="text" value={form.type}
-              onChange={e => setForm(f => ({ ...f, type: e.target.value }))}
-              className="field-input text-sm py-1" placeholder={t.po?.type ?? 'Type *'} />
-            <input type="text" value={form.colour}
-              onChange={e => setForm(f => ({ ...f, colour: e.target.value }))}
-              className="field-input text-sm py-1" placeholder={t.po?.colour ?? 'Colour'} />
-            <input type="number" value={form.size}
-              onChange={e => setForm(f => ({ ...f, size: e.target.value }))}
-              className="field-input text-sm py-1" placeholder={t.po?.size ?? 'Size (cm)'} />
-            <input type="text" value={form.cultivar}
-              onChange={e => setForm(f => ({ ...f, cultivar: e.target.value }))}
-              className="field-input text-sm py-1" placeholder={t.po?.cultivar ?? 'Cultivar'} />
-          </div>
-        </div>
-      )}
-
-      {/* Lot size + qty + cost/stem — qty auto-means lots when lotSize > 1 */}
-      <div className="grid grid-cols-3 gap-2">
-        <div>
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping?.lotSize || t.lotSize}</label>
-          <input
-            type="number"
-            value={form.lotSize}
-            onChange={e => setForm(f => ({ ...f, lotSize: e.target.value }))}
-            placeholder="1"
-            className="field-input w-full text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">
-            {lotSizeNum > 1 ? (t.shopping?.lotsFound || 'Lots') : (t.po?.qtyNeeded || 'Qty')}
-          </label>
-          <input
-            type="number"
-            value={form.qty}
-            onChange={e => setForm(f => ({ ...f, qty: e.target.value }))}
-            placeholder="0"
-            className="field-input w-full text-sm"
-          />
-        </div>
-        <div>
-          <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping?.costPerStem || 'Cost/stem'} ({t.optional || 'optional'})</label>
-          <input
-            type="number"
-            step="0.01"
-            value={form.costPerStem}
-            onChange={e => setForm(f => ({ ...f, costPerStem: e.target.value }))}
-            placeholder="zł"
-            className="field-input w-full text-sm"
-          />
-        </div>
-      </div>
-
-      {/* Sell price — optional, mirrors DraftLineEditor's markup badge */}
-      <div className="flex items-center gap-2">
-        <div className="flex items-center gap-1 flex-1">
-          <span className="text-[10px] text-ios-tertiary shrink-0">{t.sellPrice || 'Sell'}:</span>
-          <input type="number" step="0.01" value={form.sellPerStem}
-            onChange={e => setForm(f => ({ ...f, sellPerStem: e.target.value }))}
-            className="field-input w-full text-sm text-right py-1" placeholder="0" />
-        </div>
-        {computedMarkup && (
-          <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-full shrink-0 ${
-            Number(computedMarkup) >= targetMarkup ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'
-          }`}>×{computedMarkup}</span>
-        )}
-      </div>
-
-      {totalStems > 0 && (
-        <div className="flex items-center justify-between bg-brand-50 rounded-lg px-3 py-1.5">
-          <span className="text-xs text-brand-700">= {totalStems} {t.stems}</span>
-          {totalCost > 0 && (
-            <span className="text-sm font-semibold text-brand-700">
-              {t.shopping?.totalCost || 'Total'}: {totalCost.toFixed(2)} zł
-            </span>
-          )}
-        </div>
-      )}
-      {!ready && (
-        <p className="text-[11px] text-amber-600">{t.shopping?.fillAllFields}</p>
-      )}
+      {!ready && <p className="text-[11px] text-amber-600">{t.shopping?.fillAllFields}</p>}
       <div className="flex gap-2">
         <button
           onClick={submit}
@@ -1347,4 +781,15 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
       </div>
     </div>
   );
+}
+
+// PoLineForm's canonical shape, blank. Shared by the add-line form here and the
+// new-Stock-Order form's `emptyLine`.
+function emptyCanonicalLine() {
+  return {
+    stockItemId: '', flowerName: '', qty: '', lotSize: '',
+    supplier: '', costPerStem: '', sellPerStem: '',
+    farmer: '', notes: '',
+    type: '', colour: '', size: '', cultivar: '',
+  };
 }

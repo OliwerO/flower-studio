@@ -160,6 +160,84 @@ export function stemsFromPackages(packages, lotSize) {
   return Math.round(p * ls);
 }
 
+/** Every canonical field, paired with the API field it maps to. */
+const API_FIELDS = {
+  flowerName:  'Flower Name',
+  stockItemId: 'Stock Item',
+  supplier:    'Supplier',
+  farmer:      'Farmer',
+  notes:       'Notes',
+  lotSize:     'Lot Size',
+  qty:         'Quantity Needed',
+  costPerStem: 'Cost Price',
+  sellPerStem: 'Sell Price',
+  type:        'Type',
+  colour:      'Colour',
+  size:        'Size',
+  cultivar:    'Cultivar',
+};
+
+/** A persisted PO line (Airtable-shaped wire format) → PoLineForm's shape. */
+export function apiLineToCanonical(line = {}) {
+  const stockItem = Array.isArray(line['Stock Item']) ? line['Stock Item'][0] : null;
+  return {
+    flowerName:  line['Flower Name'] || '',
+    stockItemId: stockItem || '',
+    supplier:    line.Supplier || '',
+    farmer:      line.Farmer || '',
+    notes:       line.Notes || '',
+    lotSize:     String(Number(line['Lot Size']) || 0),
+    qty:         String(Number(line['Quantity Needed']) || 0),
+    costPerStem: Number(line['Cost Price']) ? String(Number(line['Cost Price'])) : '',
+    sellPerStem: Number(line['Sell Price']) ? String(Number(line['Sell Price'])) : '',
+    type:        line.Type || '',
+    colour:      line.Colour || '',
+    size:        line.Size != null ? String(line.Size) : '',
+    cultivar:    line.Cultivar || '',
+  };
+}
+
+/** One canonical field → its API representation. */
+function apiValue(key, c) {
+  switch (key) {
+    case 'stockItemId': return c.stockItemId ? [c.stockItemId] : [];
+    case 'lotSize':     return Number(c.lotSize) || 0;
+    case 'qty':         return Number(c.qty) || 0;
+    case 'costPerStem': return Number(c.costPerStem) || 0;
+    case 'sellPerStem': return Number(c.sellPerStem) || 0;
+    // Variety attrs are nullable: '' must reach the API as NULL, not '', or the
+    // 4-tuple stops being NULL-aware and strict identity breaks (ADR-0006).
+    case 'size':        return c.size !== '' && c.size != null ? Number(c.size) : null;
+    case 'type':
+    case 'colour':
+    case 'cultivar':    return String(c[key] || '').trim() || null;
+    default:            return c[key] ?? '';
+  }
+}
+
+/** Canonical line → the full API field set (used when creating a line). */
+export function canonicalToApiFields(c = {}) {
+  const out = {};
+  for (const key of Object.keys(API_FIELDS)) out[API_FIELDS[key]] = apiValue(key, c);
+  return out;
+}
+
+/**
+ * API fields for the canonical keys that actually changed.
+ *
+ * The Draft line editor flushes on blur rather than per keystroke, so it needs
+ * to send a diff — PATCHing every field on every edit would let a stale value
+ * from one field clobber a concurrent change to another.
+ */
+export function canonicalDiffToApiFields(prev = {}, next = {}) {
+  const out = {};
+  for (const key of Object.keys(API_FIELDS)) {
+    if (String(prev[key] ?? '') === String(next[key] ?? '')) continue;
+    out[API_FIELDS[key]] = apiValue(key, next);
+  }
+  return out;
+}
+
 /**
  * Does this line's Stock Item link agree with the attrs displayed on it?
  *
