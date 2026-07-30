@@ -224,3 +224,21 @@ function linkedTo(item) {
     supplier: item.Supplier ?? '',
   };
 }
+
+describe('PoLineForm — confirmed new Variety takes its own name (ADR-0016)', () => {
+  it('renames the line when the owner confirms the create', () => {
+    // Evaluation names a brand-new Variety from the line's Flower Name. Keeping
+    // the name of the card we just left would file White peonies under
+    // "Peony Pink 60cm" — the divergence class behind #558.
+    const seen = [];
+    render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
+
+    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    fireEvent.click(screen.getByTestId('po-new-variety-confirm'));
+
+    const last = seen.at(-1);
+    expect(last.isNewVariety).toBe(true);
+    expect(last.stockItemId).toBe('');
+    expect(last.flowerName).toBe('Peony White 60cm');
+  });
+});

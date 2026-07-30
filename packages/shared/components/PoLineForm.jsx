@@ -147,7 +147,13 @@ export default function PoLineForm({
   function confirmNewVariety() {
     const { attrs } = newVarietyPrompt;
     setNewVarietyPrompt(null);
-    onChange({ ...attrs, stockItemId: '', isNewVariety: true });
+    // Take the name from resolveVarietyLink's no-match branch, which composes
+    // it from the tuple. Carrying the old card's name here would create a WHITE
+    // peony card called "Peony Pink 60cm" — evaluation names a brand-new
+    // Variety from this field. Caught by the browser click-through, which is
+    // the only layer that exercises confirm-then-save end to end.
+    const { adopt } = resolveVarietyLink(stock, attrs, { targetMarkup });
+    onChange({ ...attrs, ...adopt, stockItemId: '', isNewVariety: true });
   }
 
   function cancelNewVariety() {
