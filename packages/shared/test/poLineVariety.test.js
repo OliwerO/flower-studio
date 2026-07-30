@@ -282,23 +282,24 @@ describe('API ⇄ canonical adapters', () => {
   });
 });
 
-describe('locked-line diffs (#593)', () => {
+describe('new-variety flag (ADR-0016)', () => {
   const prev = apiLineToCanonical({
     'Flower Name': 'Peony Pink 60cm', 'Stock Item': ['sp-1'],
     'Quantity Needed': 40, Type: 'Peony', Colour: 'Pink', Size: 60,
   });
 
-  it('omits every identity field when the line is locked', () => {
-    // The backend 409s ANY identity write once a line is linked or the order
-    // has left Draft. The form renders identity read-only there, so a stray
-    // formatting difference must not turn a price edit into a rejected PATCH.
-    const next = { ...prev, qty: '60', colour: 'White', flowerName: 'Whatever', stockItemId: '' };
-    expect(canonicalDiffToApiFields(prev, next, { omitIdentity: true }))
-      .toEqual({ 'Quantity Needed': 60 });
+  it('sends New Variety only once the owner has confirmed the create', () => {
+    // The backend refuses an identity matching no existing Variety, so a
+    // deliberate create has to announce itself. Without the flag the same edit
+    // is a 409 — which is the point: a typo cannot mint a Variety.
+    const confirmed = { ...prev, colour: 'White', stockItemId: '', isNewVariety: true };
+    expect(canonicalDiffToApiFields(prev, confirmed)['New Variety']).toBe(true);
+
+    const unconfirmed = { ...prev, colour: 'White', stockItemId: '' };
+    expect(canonicalDiffToApiFields(prev, unconfirmed)).not.toHaveProperty('New Variety');
   });
 
-  it('still sends identity while the line is unlocked', () => {
-    const next = { ...prev, colour: 'White' };
-    expect(canonicalDiffToApiFields(prev, next)).toEqual({ Colour: 'White' });
+  it('never sends the flag on an empty diff', () => {
+    expect(canonicalDiffToApiFields(prev, { ...prev, isNewVariety: true })).toEqual({});
   });
 });
