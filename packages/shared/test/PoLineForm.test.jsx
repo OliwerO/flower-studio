@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
+import { setVarietyValue } from './helpers/varietyInput.js';
 import { useState } from 'react';
 import PoLineForm from '../components/PoLineForm.jsx';
 import { linkAgreesWithAttrs } from '../utils/poLineVariety.js';
@@ -86,7 +87,7 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
     const seen = [];
     render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
 
-    fireEvent.change(screen.getByTestId('nv-size'), { target: { value: '70' } });
+    setVarietyValue('nv-size', '70');
 
     const last = seen.at(-1);
     expect(last.stockItemId).toBe('sp-2');
@@ -101,7 +102,7 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
     const seen = [];
     render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
 
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    setVarietyValue('nv-colour', 'White');
 
     expect(screen.getByTestId('po-new-variety-prompt')).toBeInTheDocument();
     expect(seen).toHaveLength(0);                       // nothing applied yet
@@ -119,7 +120,7 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
     const seen = [];
     render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
 
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    setVarietyValue('nv-colour', 'White');
     fireEvent.click(screen.getByTestId('po-new-variety-cancel'));
 
     const last = seen.at(-1);
@@ -135,14 +136,14 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
 
     fireEvent.change(screen.getByTestId('stock-search-input'), { target: { value: 'Peony Pink 60' } });
     fireEvent.mouseDown(screen.getByText('Peony Pink 60cm'));
-    fireEvent.change(screen.getByTestId('nv-size'), { target: { value: '70' } });
+    setVarietyValue('nv-size', '70');
     // A no-match edit now raises the confirm prompt instead of applying, so
     // confirm it to keep walking the same sequence.
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    setVarietyValue('nv-colour', 'White');
     if (screen.queryByTestId('po-new-variety-confirm')) {
       fireEvent.click(screen.getByTestId('po-new-variety-confirm'));
     }
-    fireEvent.change(screen.getByTestId('nv-cultivar'), { target: { value: 'Duchesse' } });
+    setVarietyValue('nv-cultivar', 'Duchesse');
 
     expect(seen.length).toBeGreaterThanOrEqual(3);
     for (const line of seen) {
@@ -158,10 +159,9 @@ describe('PoLineForm — re-resolution (ADR-0014)', () => {
   });
 
   it('offers only the sizes stocked for the chosen Type', () => {
-    const { container } = render(
-      <Harness initial={{ ...EMPTY, type: 'Peony' }} idPrefix="x" />,
-    );
-    const sizes = [...container.querySelectorAll('#x-nv-sizes option')].map((o) => o.value);
+    render(<Harness initial={{ ...EMPTY, type: 'Peony' }} />);
+    fireEvent.click(screen.getByTestId('nv-size-toggle'));
+    const sizes = screen.getAllByTestId('nv-size-option').map((o) => o.textContent);
     expect(sizes).toEqual(['60', '70']);
   });
 });
@@ -233,7 +233,7 @@ describe('PoLineForm — confirmed new Variety takes its own name (ADR-0016)', (
     const seen = [];
     render(<Harness initial={{ ...EMPTY, ...linkedTo(PINK_60) }} onLine={(l) => seen.push(l)} />);
 
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'White' } });
+    setVarietyValue('nv-colour', 'White');
     fireEvent.click(screen.getByTestId('po-new-variety-confirm'));
 
     const last = seen.at(-1);

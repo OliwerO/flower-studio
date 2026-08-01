@@ -20,7 +20,7 @@ const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 export { findAllMatchingVariety };
 
 // Returns false for depleted dated-Batch Stock Items that have no pending PO demand.
-// Exported so both the hook internals and BouquetEditor can share the same rule.
+// Exported so both the hook internals and its hosts can share the same rule.
 export function isStockItemVisible(stockItem, pendingPO = {}) {
   const qty = Number(stockItem['Current Quantity']) || 0;
   const name = stockItem['Display Name'] || '';

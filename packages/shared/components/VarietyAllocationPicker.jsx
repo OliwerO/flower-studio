@@ -8,7 +8,8 @@ import VarietyIdentity from './VarietyIdentity.jsx';
 import VarietyAvailabilityLine from './VarietyAvailabilityLine.jsx';
 
 /**
- * Hybrid two-stage Variety picker — replaces BatchPickerModal under STOCK_Y_MODEL.
+ * Hybrid two-stage Variety picker — replaced the per-Batch modal under STOCK_Y_MODEL
+ * (issue #288; that modal was deleted once its last host went with it, 2026-08-02).
  * Stage 1 = single search bar with cross-field substring match across the 4-tuple
  * Variety identity (ADR-0006); one row per Variety.
  * Stage 2 = inline allocation panel rendering engine options (batch / merge / fresh).

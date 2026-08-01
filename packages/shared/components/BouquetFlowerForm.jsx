@@ -51,6 +51,7 @@ import { resolveVariety, seedVarietyFromQuery, normaliseSize } from '../utils/va
 export const BOUQUET_FLOWER_FORM_KEYS = [
   'newVarietyConfirm', 'newVarietyCreate', 'varietyLinked', 'varietyNone',
   'newVariety', 'varietyRefine', 'varietySuggestions', 'varietyTypeRequired',
+  'varietyValueCreate',
   'flowerName', 'addToCart', 'cancel', 'costPrice', 'sellPrice',
 ];
 
@@ -362,7 +363,6 @@ export default function BouquetFlowerForm({
           onChange={updateForm}
           t={t}
           stockItems={stockItems}
-          idPrefix={`${idPrefix}-nv`}
           sizeOptions={sizeOptions}
         />
       )}

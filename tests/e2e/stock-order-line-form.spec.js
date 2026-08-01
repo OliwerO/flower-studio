@@ -39,6 +39,23 @@ test.describe('Stock Order line form', () => {
     await page.getByRole('button', { name: displayName, exact: false }).first().click();
   }
 
+  /**
+   * Set a Variety attribute the way a person does (#610).
+   *
+   * The 4-tuple fields are `ValueCombobox`es now, so typing alone commits
+   * nothing — an unknown value takes a deliberate click on the create row, and
+   * a known one is snapped to its stored casing when the field closes. A spec
+   * that just `fill()`s is testing a control that no longer exists.
+   */
+  async function setVariety(line, field, value) {
+    const input = line.locator(`[data-testid="nv-${field}"]`);
+    await input.fill(value);
+    const create = line.locator(`[data-testid="nv-${field}-create"]`);
+    const isNew = await create.waitFor({ state: 'visible', timeout: 500 }).then(() => true, () => false);
+    if (isNew) await create.click();
+    else await input.blur();
+  }
+
   test('picking a flower fills the Variety block instead of hiding it', async ({ page }) => {
     // The bug this feature exists to fix: the block was gated on !stockItemId,
     // so choosing a flower hid its own identity.
@@ -65,7 +82,7 @@ test.describe('Stock Order line form', () => {
     const line = await openNewOrderForm(page);
     await pickFlower(line, page, 'Peony Pink 60', 'Peony Pink 60cm');
 
-    await line.locator('[data-testid="nv-size"]').fill('70');
+    await setVariety(line, 'size', '70');
 
     await expect(line.locator('[data-testid="po-variety-badge"]')).toHaveText(/карточки склада|stock card/i);
     await expect(line.locator('[data-testid="stock-search-input"]')).toHaveValue('Peony Pink 70cm');
@@ -80,7 +97,7 @@ test.describe('Stock Order line form', () => {
     const line = await openNewOrderForm(page);
     await pickFlower(line, page, 'Peony Pink 60', 'Peony Pink 60cm');
 
-    await line.locator('[data-testid="nv-colour"]').fill('White');
+    await setVariety(line, 'colour', 'White');
     await expect(line.locator('[data-testid="po-new-variety-prompt"]')).toBeVisible();
 
     // Cancel restores the flower we came from — no half-applied identity.
@@ -89,7 +106,7 @@ test.describe('Stock Order line form', () => {
     await expect(line.locator('[data-testid="nv-colour"]')).toHaveValue('Pink');
 
     // Confirming is the only path that creates one.
-    await line.locator('[data-testid="nv-colour"]').fill('White');
+    await setVariety(line, 'colour', 'White');
     await line.locator('[data-testid="po-new-variety-confirm"]').click();
     await expect(line.locator('[data-testid="nv-colour"]')).toHaveValue('White');
     await expect(line.locator('[data-testid="po-variety-badge"]')).toHaveText(/новый сорт|new variety/i);
@@ -137,6 +154,35 @@ test.describe('Stock Order line form', () => {
                       'po-qty', 'po-lot', 'po-packages', 'po-cost', 'po-sell']) {
       await expect(addForm.locator(`[data-testid="${id}"]`)).toBeVisible();
     }
+  });
+
+  test('a Variety attribute is picked from a list, and a near-miss cannot invent one', async ({ page }) => {
+    // #610. The owner met four plain-looking boxes, typed `DA` for Dahlia, and
+    // free-text is how `dahlia` lands beside `Dahlia` — two cards, one flower,
+    // neither showing the true count. So: the list opens and shows what she
+    // already uses, a differently-cased match snaps to the stored spelling, and
+    // a value that matches nothing is not committed by typing alone.
+    await seedPeonySizes();
+    const line = await openNewOrderForm(page);
+    await pickFlower(line, page, 'Peony Pink 60', 'Peony Pink 60cm');
+
+    // The list is real and shows the Colours already in stock.
+    await line.locator('[data-testid="nv-colour-toggle"]').click();
+    await expect(line.locator('[data-testid="nv-colour-option"]', { hasText: /^Pink$/ })).toBeVisible();
+
+    // A differently-cased match snaps to the stored casing — never a rival value.
+    const colour = line.locator('[data-testid="nv-colour"]');
+    await colour.fill('pink');
+    await colour.blur();
+    await expect(colour).toHaveValue('Pink');
+
+    // A typo commits nothing: leaving the field puts the real value back, and
+    // the line is still linked to the flower she picked.
+    await colour.fill('Pnk');
+    await colour.blur();
+    await expect(colour).toHaveValue('Pink');
+    await expect(line.locator('[data-testid="po-new-variety-prompt"]')).toBeHidden();
+    await expect(line.locator('[data-testid="po-variety-badge"]')).toHaveText(/карточки склада|stock card/i);
   });
 });
 

@@ -1,6 +1,6 @@
 // Single source of truth for the "+ Add new (create demand)" gate in every
-// bouquet flower picker (florist OrderCard / OrderDetailPage / BouquetEditor /
-// steps/Step2Bouquet, dashboard OrderDetailPanel / order/BouquetSection /
+// bouquet flower picker (florist OrderCard / OrderDetailPage /
+// steps/Step2Bouquet, dashboard OrderDetailPanel /
 // steps/Step2Bouquet). Typing a flower name shows the "create demand with
 // price" affordance UNLESS an exact-name Stock Item is already available —
 // either physically on the shelf (Current Quantity > 0) or arriving via a

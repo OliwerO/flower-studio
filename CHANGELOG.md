@@ -5,6 +5,22 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — feat(stock): a Variety attribute is picked from a list, not typed (#610)
+
+**The other half of the owner's `DA` report.** #605 stopped the search box from naming her flowers. It did not change what the Type / Colour / Size / Cultivar fields *are* — and her actual complaint was that they are "type fields". They were: `<input list>` + `<datalist>`, which is a suggestion, not a picker. It renders as a plain text box, on her browser it never opened at all (**#587**, closed by this), and text that matched nothing was committed the moment she looked away.
+
+For these four fields that is not a cosmetic problem. **They are the flower's identity**, so a typo or a case variant does not mislabel one card — it mints a second one, and her stock splits across both with neither showing the true count. That is the same shape as #562 and #558.
+
+**What she gets now.** Every Variety field opens a real list of the values she already uses, filtered as she types. A value that already exists snaps to its stored spelling — typing `white` gives `White`, never a rival `white`. A value that matches nothing is offered as a distinct "+ Добавить «Dahlia»" row and is committed **only** when she chooses it (click, or Enter while it is highlighted); leaving the field puts the previous value back rather than inventing one. With an empty catalogue there is nothing to pick, so it is honestly a plain text box.
+
+This lands on every surface at once — `NewVarietyFields` is the single 4-tuple editor, mounted by the bouquet form, the PO line form, and both receive forms.
+
+**Dead code removed.** `apps/florist/src/components/OrderCardExpanded.jsx`, `apps/florist/src/components/BouquetEditor.jsx` and `apps/dashboard/src/components/order/BouquetSection.jsx` had no importers — each still carried its own divergent add-a-flower block, and root `CLAUDE.md` listed the last two as a live parity pair, pointing a future audit at corpses (the trap already recorded for `StockItem.jsx` in pitfall #8). `packages/shared/components/BatchPickerModal.jsx` went with them: deprecated since #288 and unreachable once its last two hosts were gone. Every doc comment naming a deleted file was corrected in the same pass.
+
+**Test infrastructure fix.** `playwright.config.js` never set `VITE_OWNER_PIN` for the dashboard dev server, so the dashboard renders a "Configuration Error" page instead of the app — both `explorer-ui.spec.js` specs had been failing on master for anyone running `npm run test:ui`, and no CI job runs that suite, so nothing caught it. Now set to the harness's own owner PIN; both specs pass.
+
+No schema change, no env change, no API change.
+
 ## 2026-07-30 — feat(orders): one add-a-flower form, and the search box stops naming flowers (#605)
 
 **What the owner hit.** She typed `DA` looking for Dahlia, pressed "+ Add new", and `DA` became the flower's **name** — then the Type, Colour and Size boxes turned out to be free text, with nothing offering what she already had. Both halves are fixed here.

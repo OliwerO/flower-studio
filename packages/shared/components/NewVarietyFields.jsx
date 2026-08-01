@@ -1,8 +1,9 @@
 import { useMemo } from 'react';
+import ValueCombobox from './ValueCombobox.jsx';
 
 /**
  * NewVarietyFields — the Y-model Variety 4-tuple inputs (Type / Colour / Size /
- * Cultivar) for the "Add new flower" form in the bouquet builder.
+ * Cultivar) for every "create a new flower" form.
  *
  * Under STOCK_Y_MODEL a brand-new flower created from order intake MUST carry
  * its Variety attrs, or it lands as an attr-less Stock row that the grouped
@@ -11,80 +12,88 @@ import { useMemo } from 'react';
  * so a flower the owner didn't have yet (e.g. "red roses") was created blind.
  *
  * Type is required (it is NOT NULL on prod and drives grouping). Colour / Size /
- * Cultivar are optional. Datalists suggest existing values from the loaded stock
- * so entries stay consistent (no new fetch — derived in-memory).
+ * Cultivar are optional — and a blank one is a real, distinct identity under
+ * ADR-0006, not a wildcard.
+ *
+ * **Each field is a `ValueCombobox`, not a text box** (#610). These four values
+ * ARE the flower's identity, so a typo or a case variant does not produce a
+ * slightly-wrong label — it produces a second flower, and stock splits across
+ * two cards that each show a fraction of the truth (#562 / #558). The owner
+ * reported these as "type fields" after typing `DA` and meeting four blanks;
+ * they now open a list of what she already uses, snap `white` onto `White`, and
+ * take a deliberate click to add a value that is genuinely new.
  *
  * Props: form ({ typeName, colour, sizeCm, cultivar }), onChange (setNewFlowerForm
- * updater), t, stockItems (for datalist suggestions), idPrefix (unique datalist id),
+ * updater), t, stockItems (options derived from these in-memory — no fetch),
  * sizeOptions (optional — Variety-aware size suggestions; the Stock Order line
  * form passes the sizes actually stocked for the chosen Type, so "pick a
  * different size" reads as choosing an existing Variety rather than inventing
- * one. Defaults to none, leaving every other call site unchanged).
+ * one. Defaults to every size seen in the loaded stock).
  */
-export default function NewVarietyFields({ form, onChange, t, stockItems = [], idPrefix = 'nv', sizeOptions = [] }) {
-  const { types, colours, cultivars } = useMemo(() => {
-    const ty = new Set(), co = new Set(), cu = new Set();
+export default function NewVarietyFields({ form, onChange, t, stockItems = [], sizeOptions = [] }) {
+  const { types, colours, cultivars, sizes } = useMemo(() => {
+    const ty = new Set(), co = new Set(), cu = new Set(), sz = new Set();
     for (const s of stockItems) {
       const tn = s['Type'] ?? s.type_name;
       const c = s['Colour'] ?? s.colour;
       const cv = s['Cultivar'] ?? s.cultivar;
+      const size = s['Size'] ?? s.size_cm;
       if (tn) ty.add(String(tn));
       if (c) co.add(String(c));
       if (cv) cu.add(String(cv));
+      if (size != null && size !== '' && Number.isFinite(Number(size))) sz.add(Number(size));
     }
     const sort = (set) => [...set].sort((a, b) => a.localeCompare(b));
-    return { types: sort(ty), colours: sort(co), cultivars: sort(cu) };
+    return {
+      types: sort(ty),
+      colours: sort(co),
+      cultivars: sort(cu),
+      sizes: [...sz].sort((a, b) => a - b).map(String),
+    };
   }, [stockItems]);
 
-  const set = (k, v) => onChange((p) => ({ ...p, [k]: v }));
-  const cls = 'text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none';
+  const set = (k) => (v) => onChange((p) => ({ ...p, [k]: v }));
+  const sizeList = sizeOptions.length > 0 ? sizeOptions.map(String) : sizes;
 
   return (
     <div className="space-y-2" data-testid="new-variety-fields">
       <div className="grid grid-cols-2 gap-2">
-        <input
-          list={`${idPrefix}-types`}
+        <ValueCombobox
           value={form.typeName ?? ''}
-          onChange={(e) => set('typeName', e.target.value)}
+          onChange={set('typeName')}
+          options={types}
           placeholder={`${t.flowerType ?? 'Type'} *`}
-          className={cls}
-          data-testid="nv-type"
+          testId="nv-type"
+          t={t}
         />
-        <input
-          list={`${idPrefix}-colours`}
+        <ValueCombobox
           value={form.colour ?? ''}
-          onChange={(e) => set('colour', e.target.value)}
+          onChange={set('colour')}
+          options={colours}
           placeholder={t.flowerColour ?? 'Colour'}
-          className={cls}
-          data-testid="nv-colour"
+          testId="nv-colour"
+          t={t}
         />
       </div>
       <div className="grid grid-cols-2 gap-2">
-        <input
-          list={`${idPrefix}-cultivars`}
+        <ValueCombobox
           value={form.cultivar ?? ''}
-          onChange={(e) => set('cultivar', e.target.value)}
+          onChange={set('cultivar')}
+          options={cultivars}
           placeholder={t.flowerCultivar ?? 'Cultivar'}
-          className={cls}
-          data-testid="nv-cultivar"
+          testId="nv-cultivar"
+          t={t}
         />
-        <input
-          type="number"
-          inputMode="numeric"
-          list={sizeOptions.length > 0 ? `${idPrefix}-sizes` : undefined}
+        <ValueCombobox
           value={form.sizeCm ?? ''}
-          onChange={(e) => set('sizeCm', e.target.value)}
+          onChange={set('sizeCm')}
+          options={sizeList}
           placeholder={t.flowerSizeCm ?? 'Size cm'}
-          className={cls}
-          data-testid="nv-size"
+          testId="nv-size"
+          numeric
+          t={t}
         />
       </div>
-      <datalist id={`${idPrefix}-types`}>{types.map((x) => <option key={x} value={x} />)}</datalist>
-      <datalist id={`${idPrefix}-colours`}>{colours.map((x) => <option key={x} value={x} />)}</datalist>
-      <datalist id={`${idPrefix}-cultivars`}>{cultivars.map((x) => <option key={x} value={x} />)}</datalist>
-      {sizeOptions.length > 0 && (
-        <datalist id={`${idPrefix}-sizes`}>{sizeOptions.map((x) => <option key={x} value={x} />)}</datalist>
-      )}
     </div>
   );
 }

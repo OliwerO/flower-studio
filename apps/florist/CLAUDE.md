@@ -29,10 +29,9 @@ The florist should see all relevant information at a glance — what to prepare 
 ## Key Components (src/components/)
 | Component | Purpose |
 |-----------|---------|
-| OrderCard.jsx | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component (1300+ L — split candidate; uses `OrderCardSummary.jsx` + `OrderCardExpanded.jsx`). Order Cancellation flows through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared (no inline handler). |
+| OrderCard.jsx | Expandable order card — inline status/payment editing, bouquet editor, delivery fields. Largest component (1300+ L — split candidate; uses `OrderCardSummary.jsx`). Adds a flower via the shared `BouquetFlowerForm`. Order Cancellation flows through `useOrderTerminationFlow` + `OrderTerminationConfirm` from shared (no inline handler). |
 | OrderFilterDrawer.jsx | Mobile bottom-sheet filter drawer for the order list. Uses shared `Sheet` + the shared `orderFilters` model (`EMPTY_ORDER_FILTER`, `buildOrderQueryParams`, `orderMatchesClientFilter`, `activeOrderFilterCount`, `clearOrderFilter`). Mirrors the dashboard `OrdersTab.jsx` per-column popovers. Wired into `OrderListPage.jsx` — the Filters button + active-count badge appear next to the status sub-filter tabs in Active and Completed views. |
 | StockFilterDrawer.jsx | Mobile bottom-sheet filter drawer for the Y-model By-Variety Stock list (E1b). Uses shared `Sheet` + the shared `varietyFilters` model (Variety-level: Type / colour·cultivar / status short·tight·free / net range). Opened by the `Filters (n)` pill in `StockPanelPage.jsx`; applies to both Flat + By-type views. Stock analogue of `OrderFilterDrawer`. |
-| BouquetEditor.jsx | Flower catalog search + cart with qty controls, cost/margin visibility, price override |
 | BottomNav.jsx | Tab bar — role-based tabs (florist sees Hours; owner sees Shopping) |
 | DatePicker.jsx | iOS-style calendar dropdown (portal-rendered). Duplicated in dashboard — TODO move to shared. |
 | TimePicker.jsx | Time slot picker that consumes `getAvailableSlots` from shared. |

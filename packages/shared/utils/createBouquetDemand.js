@@ -3,7 +3,7 @@
 // that adds a flower to a bouquet funnels through here: the inline editors
 // (florist OrderCard + OrderDetailPage, dashboard OrderDetailPanel), the
 // grouped editors via `useOrderEditing.addNewFlower`/`createDemandEntry`
-// (BouquetEditor / BouquetSection), and the NewOrder wizards' Step2Bouquet
+// (via the shared BouquetFlowerForm), and the NewOrder wizards' Step2Bouquet
 // (florist + dashboard).
 //
 // Behaviour (confirmed with the owner; Y-model per ADR-0005/0006):

@@ -32,7 +32,7 @@ The owner needs two things: (1) daily operational control — same visibility as
 | ReconciliationSection.jsx | Owner reconciliation of PO substitutions inside StockOrderPanel. |
 | KanbanBoard.jsx | Drag-style board for Today tab — orders grouped by status columns. |
 | StockReceiveForm.jsx | Record incoming supplier deliveries with batch tracking. |
-| BouquetSection.jsx / DeliverySection.jsx | Sub-sections of OrderDetailPanel for bouquet editing and delivery info. |
+| DeliverySection.jsx | Sub-section of OrderDetailPanel for delivery info. (Its bouquet sibling was deleted 2026-08-02 — unreferenced since the panel moved to the shared `BouquetFlowerForm`.) |
 | PremadeBouquetCreateModal.jsx / PremadeBouquetList.jsx | Premade bouquet template editor + listing. |
 | TextImportModal.jsx | AI paste-import (mirror of florist's) — opened from the new-order FAB; `POST /intake/parse` → draft → `NewOrderTab` prefill. |
 | ChangeCustomerModal.jsx | Customer-search modal (#389) — reassigns an order's linked customer, launched from `OrderDetailPanel.jsx`. Dashboard is owner-only end to end so the modal itself has no extra role gate. Reuses the Step1Customer search endpoint (`GET /customers?search=`); on select, PATCHes `{ Customer: [id] }` then the caller refetches the order (name/phone/nickname are computed live from the customer record, never stored on the order). |
