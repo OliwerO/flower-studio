@@ -90,7 +90,6 @@ export { default as ProductTranslationEditor } from './components/ProductTransla
 export { resizeImageBlob }               from './utils/imageResize.js';
 export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
 export { publishFeedback } from './api/feedback.js';
-export { default as BatchPickerModal } from './components/BatchPickerModal.jsx';
 export { default as TierSwitchChip } from './components/TierSwitchChip.jsx';
 // Re-exported from the util, not from `useOrderEditing` — routing it through the
 // hook dragged that whole module (which no app imports any more) into every
@@ -133,6 +132,7 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 // Variety allocation picker — Stage 1 typeahead (issue #288)
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
 export { default as NewVarietyFields } from './components/NewVarietyFields.jsx';
+export { default as ValueCombobox } from './components/ValueCombobox.jsx';
 export { default as BouquetFlowerForm, BOUQUET_FLOWER_FORM_KEYS } from './components/BouquetFlowerForm.jsx';
 
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.

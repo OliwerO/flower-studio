@@ -213,7 +213,6 @@ export default function PoLineForm({
           onChange={handleVarietyUpdater}
           t={t}
           stockItems={stock}
-          idPrefix={`${idPrefix}-nv`}
           sizeOptions={sizeOptions}
         />
 

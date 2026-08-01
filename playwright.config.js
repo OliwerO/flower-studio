@@ -82,7 +82,11 @@ export default defineConfig({
       url: 'http://localhost:5175/',
       reuseExistingServer: !process.env.CI,
       timeout: 30_000,
-      env: { VITE_API_PROXY_TARGET: 'http://localhost:3002' },
+      // The dashboard has no login screen — it auto-authenticates from
+      // VITE_OWNER_PIN and otherwise renders a "Configuration Error" page.
+      // Without this every dashboard spec fails before it can click anything.
+      // '1111' is the harness's owner PIN (start-test-backend.js), not a secret.
+      env: { VITE_API_PROXY_TARGET: 'http://localhost:3002', VITE_OWNER_PIN: '1111' },
     },
   ],
 });

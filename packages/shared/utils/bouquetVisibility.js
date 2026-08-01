@@ -1,6 +1,6 @@
 // Single source of truth for whether an order's bouquet-composition section
 // should render — shared by every order-detail surface (florist OrderCard /
-// OrderDetailPage / BouquetEditor, dashboard OrderDetailPanel) so the four
+// OrderDetailPage, dashboard OrderDetailPanel) so the
 // parallel sites can never drift.
 //
 // Show the section when the order still has lines, OR when the bouquet is

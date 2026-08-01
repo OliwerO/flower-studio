@@ -11,6 +11,7 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { setVarietyValue } from './helpers/varietyInput.js';
 import BouquetFlowerForm from '../components/BouquetFlowerForm.jsx';
 
 const PEONY_PINK_60 = {
@@ -80,8 +81,8 @@ describe('the search query is a seed, never an identity', () => {
 
   it('composes the name from the classification for a genuinely new flower', () => {
     mount({ seedQuery: 'Pink Peonies' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'Peach' } });
+    setVarietyValue('nv-type', 'Ranunculus');
+    setVarietyValue('nv-colour', 'Peach');
     expect(screen.getByTestId('bff-resolved-name')).toHaveTextContent('Ranunculus Peach');
   });
 });
@@ -123,8 +124,8 @@ describe('resolving an existing flower', () => {
 describe('creating a genuinely new Variety', () => {
   it('raises the confirm instead of submitting, and names what will be created', () => {
     mount({ seedQuery: 'ranunculus peach' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'Peach' } });
+    setVarietyValue('nv-type', 'Ranunculus');
+    setVarietyValue('nv-colour', 'Peach');
     fireEvent.click(screen.getByTestId('bff-submit'));
 
     const prompt = screen.getByTestId('bff-new-variety-prompt');
@@ -135,8 +136,8 @@ describe('creating a genuinely new Variety', () => {
 
   it('confirming posts the classification with newVariety and the composed name', async () => {
     mount({ seedQuery: 'ranunculus peach' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'Peach' } });
+    setVarietyValue('nv-type', 'Ranunculus');
+    setVarietyValue('nv-colour', 'Peach');
     fireEvent.click(screen.getByTestId('bff-submit'));
     fireEvent.click(screen.getByTestId('bff-new-variety-confirm'));
 
@@ -151,7 +152,7 @@ describe('creating a genuinely new Variety', () => {
 
   it('cancelling writes nothing and keeps everything she typed', () => {
     mount({ seedQuery: 'ranunculus peach' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
+    setVarietyValue('nv-type', 'Ranunculus');
     fireEvent.click(screen.getByTestId('bff-submit'));
     fireEvent.click(screen.getByTestId('bff-new-variety-cancel'));
 
@@ -163,18 +164,18 @@ describe('creating a genuinely new Variety', () => {
 
   it('editing after raising the confirm withdraws it — she must re-see what she is creating', () => {
     mount({ seedQuery: 'ranunculus peach' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
+    setVarietyValue('nv-type', 'Ranunculus');
     fireEvent.click(screen.getByTestId('bff-submit'));
     expect(screen.getByTestId('bff-new-variety-prompt')).toBeInTheDocument();
 
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'Coral' } });
+    setVarietyValue('nv-colour', 'Coral');
     expect(screen.queryByTestId('bff-new-variety-prompt')).toBeNull();
   });
 
   it('typing a Type that already exists takes the confirm away again', () => {
     mount({ seedQuery: 'ranunculus peach' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'peony' } });
-    fireEvent.change(screen.getByTestId('nv-colour'), { target: { value: 'WHITE' } });
+    setVarietyValue('nv-type', 'peony');
+    setVarietyValue('nv-colour', 'WHITE');
     expect(screen.getByTestId('bff-variety-badge')).toHaveTextContent('из карточки склада');
   });
 });
@@ -183,7 +184,7 @@ describe('failure and chrome', () => {
   it('a failed create surfaces the backend message and adds nothing', async () => {
     apiClient.post.mockRejectedValue({ response: { data: { error: 'Нет связи' } } });
     mount({ seedQuery: 'ranunculus peach' });
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
+    setVarietyValue('nv-type', 'Ranunculus');
     fireEvent.click(screen.getByTestId('bff-submit'));
     fireEvent.click(screen.getByTestId('bff-new-variety-confirm'));
 
@@ -250,7 +251,7 @@ describe('failure and chrome', () => {
     // editable, pre-filled and silently discarded.
     expect(screen.queryByTestId('bff-supplier')).toBeNull();
 
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
+    setVarietyValue('nv-type', 'Ranunculus');
     expect(screen.getByTestId('bff-supplier')).toBeInTheDocument();
   });
 
@@ -264,7 +265,7 @@ describe('failure and chrome', () => {
         showToast={showToast} onCreated={onCreated} onCancel={onCancel}
       />,
     );
-    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Peony' } });
+    setVarietyValue('nv-type', 'Peony');
     fireEvent.click(screen.getByTestId('bff-submit'));
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalled());

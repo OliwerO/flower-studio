@@ -13,7 +13,7 @@
 //   apps/florist/src/pages/OrderListPage.jsx    → new-order-button
 //   apps/florist/src/pages/NewOrderPage.jsx     → step-customer, step-bouquet, step-details, step-review, submit-order
 //   apps/florist/src/components/Step1Customer.jsx → customer-search, customer-row
-//   apps/florist/src/components/BouquetEditor.jsx → flower-search, add-flower-{stockId}, qty-{stockId}
+//   apps/florist/src/components/steps/Step2Bouquet.jsx → flower-search, add-flower-{stockId}, qty-{stockId}
 //
 // Why this is the design-doc happy-path: covers the full create-order flow
 // through three nested components (login, list, wizard) and exercises the
