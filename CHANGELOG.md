@@ -5,6 +5,25 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-07-30 — feat(orders): one add-a-flower form, and the search box stops naming flowers (#605)
+
+**What the owner hit.** She typed `DA` looking for Dahlia, pressed "+ Add new", and `DA` became the flower's **name** — then the Type, Colour and Size boxes turned out to be free text, with nothing offering what she already had. Both halves are fixed here.
+
+**The rule now in force: the typed search string is a seed for the form, never an identity.** All five bouquet "+ Add new" surfaces used to turn the raw query into the flower's Type and its name — that is how `Pink Peonies` became a Type sitting beside the real `Peony / Pink` (#562). The query is now decomposed against Types, Colours, Sizes and Cultivars that **already exist**, and when it can't be classified the form refuses to guess: Type is required and submit stays disabled until she picks one.
+
+**The name is always derived** — a matched flower keeps its own name, otherwise the name is composed from Type · Colour · Size · Cultivar. So the name and the classification can no longer disagree (that divergence is what caused #558), and the confirmation dialog names the exact card that will be created.
+
+**One form, five screens.** Florist order card + order detail page, dashboard order panel, and both new-order wizards now render the shared `BouquetFlowerForm`. The two florist order editors had **no Variety fields at all** before this — the flower was one free-typed blob, and any florist could create one. They get the full classification via a phone-friendly disclosure that opens exactly when the query could not be classified, so the common path stays two taps.
+
+**Three states she can read at a glance:** gray "не выбран" (no Type, can't submit), emerald "из карточки склада" (this is a flower you have — reused silently, no dialog), amber "Новый сорт" (nothing matches — explicit confirm required). Existing Varieties also appear as tappable chips, because a dropdown on a phone is invisible until you tap into the field. A flower that exists only as a dated delivery counts as existing — prompting "create new?" while she is holding the stems would be a lie.
+
+**Behaviour changes worth knowing:**
+- A failed create no longer silently adds a bouquet line with no stock record behind it (dashboard). She now gets the error and the form stays open.
+- Supplier and lot size show only while creating a new flower; on the reuse path they were being discarded on save.
+- A sell price the form filled in from a card is refreshed when the cost changes; only a sell price she typed herself is left alone. Previously re-pricing a flower silently kept the old margin.
+
+No schema change, no env change. Client-side matching is pinned to the server's by `backend/src/__tests__/varietyIdentity.parity.test.js` — the confirmed-create path bypasses the server's own duplicate guard (#603), so the two must never disagree.
+
 ## 2026-07-30 — fix(stock): the create-a-flower door matches before it creates (#562)
 
 **Behaviour change on `POST /api/stock`.** The endpoint used to enforce one rule — "displayName is not empty" — and every screen that can invent a flower funnels into it: both receive forms, both new-order wizards, both order-detail "+ Add new" blocks, and the shared `createBouquetDemand`. So typing `Pink Peonies` created a second flower beside the real `Peony / Pink` (with Type literally `Pink Peonies`), and `peony` created one beside `Peony`. Stock then splits across two cards and neither shows the true count — the shape behind #562, #319 and #558.
