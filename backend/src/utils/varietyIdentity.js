@@ -49,14 +49,16 @@ export function sameVariety(a, b) {
 }
 
 // Of several rows carrying one identity, pick the card a create should resolve
-// onto: the canonical undated one, oldest first so repeated calls are stable.
-// Returns null when every candidate is a dated Batch — the canonical card does
-// not exist yet and the caller should create it.
+// onto: the first undated one **in the order given**. Returns null when every
+// candidate is a dated Batch — the canonical card does not exist yet and the
+// caller should create it.
+//
+// The caller supplies preference order: `findVarietyMatch` orders by
+// `created_at ASC`, so the oldest card wins there. Sorting here is not possible
+// — `pgToResponse` does not emit a creation timestamp, so these rows carry no
+// date to sort by. The client mirror (`packages/shared/utils/varietyIdentity.js`)
+// takes the host's stock-array order for the same reason.
 export function pickCanonical(rows) {
   const canonical = (rows || []).filter(r => !isDatedBatchName(r['Display Name']));
-  if (canonical.length === 0) return null;
-  return canonical.reduce((best, r) => {
-    const t = (x) => new Date(x['Created At'] || x.createdAt || 0).getTime();
-    return t(r) < t(best) ? r : best;
-  }, canonical[0]);
+  return canonical.length ? canonical[0] : null;
 }
