@@ -59,6 +59,18 @@ export async function createBouquetDemand({
   quantity = 1,
   supplier,   // optional — only used when creating a brand-new Demand Entry
   lotSize,    // optional — only used when creating a brand-new Demand Entry; sent only when > 0
+  // ── #605: the caller has already resolved the identity ──
+  resolvedStockItem, // optional — a card the caller resolved by IDENTITY (the
+                     // 4-tuple), not by name. When it is an undated row, reuse
+                     // it directly and skip the base-name lookup below, so the
+                     // flower the user was shown and the record actually written
+                     // cannot disagree. The name lookup can't see through a
+                     // renamed card or a case difference; `resolveVariety` can.
+  newVariety,        // optional — set true ONLY after an explicit user confirm.
+                     // Sends `newVariety: true`, which makes the server skip its
+                     // match-before-create guard (#603) and mint a new Variety.
+                     // Never default this: it is the one path that can still
+                     // create a duplicate.
 }) {
   // ── Resolve the flower name + how to build the Variety 4-tuple on create ──
   let name;
@@ -86,7 +98,15 @@ export async function createBouquetDemand({
   const sell = Number(sellPrice) || 0;
 
   const existing = findAllMatchingVariety(stockItems, name);
-  const demandEntry = existing.find(s => parseBatchName(s['Display Name'] || '').batch === null);
+  // An identity-resolved card wins over the base-name lookup. The lookup matches
+  // on NAME, so it misses a card whose name drifted from its Variety (#558's
+  // shape) and it can't see a case difference the server would match on.
+  const resolvedUndated =
+    resolvedStockItem && parseBatchName(resolvedStockItem['Display Name'] || '').batch === null
+      ? resolvedStockItem
+      : null;
+  const demandEntry =
+    resolvedUndated || existing.find(s => parseBatchName(s['Display Name'] || '').batch === null);
 
   if (demandEntry) {
     // Reuse the undated Demand Entry — the Y-model's aggregate-demand row
@@ -156,6 +176,9 @@ export async function createBouquetDemand({
 
   if (supplier != null && String(supplier).trim() !== '') postBody.supplier = String(supplier).trim();
   if (Number(lotSize) > 0) postBody.lotSize = Number(lotSize);
+  // The confirmed-create escape hatch (#605). Omitted unless explicitly true, so
+  // every unconfirmed call still gets the server's match-before-create (#603).
+  if (newVariety === true) postBody.newVariety = true;
 
   const res = await apiClient.post('/stock', postBody);
   return {
