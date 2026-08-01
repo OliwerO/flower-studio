@@ -206,12 +206,12 @@ describe('failure and chrome', () => {
   });
 
   it('optional fields appear only when the host asks for them', () => {
-    const { rerender } = mount({ seedQuery: 'peony' });
+    const { rerender } = mount({ seedQuery: 'Ranunculus Peach' });
     expect(screen.queryByTestId('bff-supplier')).toBeNull();
 
     rerender(
       <BouquetFlowerForm
-        seedQuery="peony" stockItems={STOCK} apiClient={apiClient} t={t}
+        seedQuery="Ranunculus Peach" stockItems={STOCK} apiClient={apiClient} t={t}
         showToast={showToast} onCreated={onCreated} onCancel={onCancel}
         fields={{ supplier: true, lotSize: true }} suppliers={['Zielona']}
       />,
@@ -220,7 +220,7 @@ describe('failure and chrome', () => {
     expect(screen.getByTestId('bff-lot')).toBeInTheDocument();
   });
 
-  it('suggests a sell price from cost without ever overwriting a typed one', () => {
+  it('suggests a sell price from cost, and never overwrites one she typed', () => {
     mount({ seedQuery: 'peony', targetMarkup: 3 });
     fireEvent.change(screen.getByTestId('bff-cost'), { target: { value: '5' } });
     fireEvent.blur(screen.getByTestId('bff-cost'));
@@ -230,6 +230,46 @@ describe('failure and chrome', () => {
     fireEvent.change(screen.getByTestId('bff-cost'), { target: { value: '6' } });
     fireEvent.blur(screen.getByTestId('bff-cost'));
     expect(screen.getByTestId('bff-sell')).toHaveValue(20);
+  });
+
+  it('re-prices a PRE-FILLED sell when the cost changes — that value is the card\'s, not hers', () => {
+    // The commonest path through this form: a flower she already stocks got
+    // more expensive. Sell was pre-filled from the card, so leaving it stale
+    // would silently cut the margin on every such line.
+    mount({ seedQuery: 'Peony Pink 60cm', targetMarkup: 3 });
+    expect(screen.getByTestId('bff-sell')).toHaveValue(12);   // adopted from the card
+
+    fireEvent.change(screen.getByTestId('bff-cost'), { target: { value: '10' } });
+    fireEvent.blur(screen.getByTestId('bff-cost'));
+    expect(screen.getByTestId('bff-sell')).toHaveValue(30);
+  });
+
+  it('hides supplier and lot size once a flower resolves — they only apply to a new card', () => {
+    mount({ seedQuery: 'peony pink 60', fields: { supplier: true, lotSize: true } });
+    // Resolved: createBouquetDemand patches prices only, so these would be
+    // editable, pre-filled and silently discarded.
+    expect(screen.queryByTestId('bff-supplier')).toBeNull();
+
+    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Ranunculus' } });
+    expect(screen.getByTestId('bff-supplier')).toBeInTheDocument();
+  });
+
+  it('with no stock loaded it never offers the confirm — it defers to the server', async () => {
+    // The host's /stock fetch failed. Everything reads as new because there is
+    // nothing to match against. Confirming here would send `newVariety: true`,
+    // which bypasses the server's own duplicate guard (#603).
+    render(
+      <BouquetFlowerForm
+        seedQuery="Peony" stockItems={[]} apiClient={apiClient} t={t}
+        showToast={showToast} onCreated={onCreated} onCancel={onCancel}
+      />,
+    );
+    fireEvent.change(screen.getByTestId('nv-type'), { target: { value: 'Peony' } });
+    fireEvent.click(screen.getByTestId('bff-submit'));
+
+    await waitFor(() => expect(apiClient.post).toHaveBeenCalled());
+    expect(screen.queryByTestId('bff-new-variety-prompt')).toBeNull();
+    expect(apiClient.post.mock.calls[0][1]).not.toHaveProperty('newVariety');
   });
 
   it('cancel is the host\'s business', () => {

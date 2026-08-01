@@ -119,9 +119,12 @@ export async function createBouquetDemand({
       try {
         const res = await apiClient.patch(`/stock/${demandEntry.id}`, body);
         item = { ...demandEntry, ...res.data };
-      } catch {
+      } catch (err) {
         // Persist failed — still add the line at the entered price so the
-        // bouquet total is right; the record keeps its old price.
+        // bouquet total is right; the record keeps its old price. Deliberate,
+        // but log it: the order is then saved at a price no other screen
+        // agrees with, and silence makes that untraceable (pitfall #5).
+        console.error(`createBouquetDemand: price PATCH failed for ${demandEntry.id}`, err);
       }
     }
     return {

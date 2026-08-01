@@ -54,10 +54,20 @@ export const BOUQUET_FLOWER_FORM_KEYS = [
   'flowerName', 'addToCart', 'cancel', 'costPrice', 'sellPrice',
 ];
 
+// The form seeds itself ONCE, from `seedQuery`, in a `useState` initializer —
+// there is deliberately no effect re-syncing it, or every keystroke behind the
+// form would blow away what the user has typed into it.
+//
+// The consequence every host must respect: **mount this with
+// `key={<the seed>}`**. A host that leaves the form mounted while its picker is
+// still reachable can change `seedQuery` without remounting, and the form would
+// then show — and commit — the previous flower while every label says the new
+// one. That is the wrong-flower class (#558/#562) this component exists to
+// close, so it is worth the one prop. Caught in review on four of the five
+// hosts before they shipped.
 export default function BouquetFlowerForm({
   seedQuery = '',
   seedStockItem = null,
-  nameEditable = false,
   stockItems = [],
   apiClient,
   quantity = 1,
@@ -75,6 +85,11 @@ export default function BouquetFlowerForm({
   const [refineOpen, setRefineOpen] = useState(() => !form.typeName);
   const [confirming, setConfirming] = useState(false);
   const [saving, setSaving] = useState(false);
+  // A sell price the form pre-filled from a card is NOT "hers" — the markup
+  // suggestion may still refresh it. Only a sell she typed is off-limits.
+  // Without this, the commonest path (re-price a flower you already stock: cost
+  // goes up, sell was pre-filled from the card) silently keeps the old margin.
+  const [sellTouched, setSellTouched] = useState(false);
 
   // The florist app nests some of these under `t.po`; the dashboard keeps them
   // flat. Read both rather than forcing a translations refactor into this change.
@@ -146,13 +161,28 @@ export default function BouquetFlowerForm({
 
   function applySuggestion(g) {
     setConfirming(false);
-    setForm(p => ({
-      ...p,
-      typeName: g.type_name ? String(g.type_name) : '',
-      colour:   g.colour ? String(g.colour) : '',
-      sizeCm:   g.size_cm != null ? String(g.size_cm) : '',
-      cultivar: g.cultivar ? String(g.cultivar) : '',
-    }));
+    setForm((p) => {
+      const next = {
+        ...p,
+        typeName: g.type_name ? String(g.type_name) : '',
+        colour:   g.colour ? String(g.colour) : '',
+        sizeCm:   g.size_cm != null ? String(g.size_cm) : '',
+        cultivar: g.cultivar ? String(g.cultivar) : '',
+      };
+      // Show the chosen flower's own prices when nothing has been typed, so the
+      // form states what the line will cost instead of leaving her to guess.
+      // Blank fields already inherit these downstream — this only makes it visible.
+      const card = resolveVariety(stockItems, next).match;
+      if (card) {
+        if (!String(p.costPrice || '').trim() && Number(card['Current Cost Price']) > 0) {
+          next.costPrice = String(card['Current Cost Price']);
+        }
+        if (!sellTouched && Number(card['Current Sell Price']) > 0) {
+          next.sellPrice = String(card['Current Sell Price']);
+        }
+      }
+      return next;
+    });
   }
 
   // Any edit invalidates a pending confirm — she must re-see what she is creating.
@@ -196,15 +226,23 @@ export default function BouquetFlowerForm({
   }
 
   function handleSubmit() {
-    if (state === 'new') { setConfirming(true); return; }
+    // When the host has no stock loaded (its `/stock` fetch failed, and several
+    // hosts swallow that), EVERY flower reads as new — the client has nothing to
+    // match against. Confirming there would send `newVariety: true`, which
+    // deliberately bypasses the server's own match-before-create guard (#603)
+    // and mints a duplicate of a flower she already owns. So when we are blind,
+    // submit WITHOUT the flag and let the server decide: it resolves or creates,
+    // which is exactly the behaviour these screens had before this form existed.
+    if (state === 'new' && stockItems.length > 0) { setConfirming(true); return; }
     save(false);
   }
 
-  // Suggest a sell price from cost once, without ever overwriting a typed one.
+  // Suggest a sell price from cost, without ever overwriting one she typed.
+  // A blank sell, or one this form pre-filled from a card, is fair game.
   function handleCostBlur() {
-    if (!(targetMarkup > 0)) return;
+    if (!(targetMarkup > 0) || sellTouched) return;
     const cost = Number(form.costPrice) || 0;
-    if (cost > 0 && !String(form.sellPrice || '').trim()) {
+    if (cost > 0) {
       setForm(p => ({ ...p, sellPrice: String(Math.round(cost * targetMarkup * 100) / 100) }));
     }
   }
@@ -218,32 +256,20 @@ export default function BouquetFlowerForm({
 
   return (
     <div className="space-y-2" data-testid="bouquet-flower-form">
-      {/* What will actually be written — name + how it resolved. */}
+      {/* The name that will actually be written — always derived, never typed.
+          A free-text name field was tried here and removed on review: the write
+          path composes the name from the classification (or takes the matched
+          card's), so an editable box accepted input it then discarded. Worse,
+          it is the control that produced the bug — the owner typed `DA` into a
+          search box and got a flower called `DA`. */}
       <div className="flex items-center gap-2 flex-wrap">
-        {nameEditable ? (
-          <input
-            value={form.name ?? ''}
-            onChange={(e) => updateForm(p => ({ ...p, name: e.target.value }))}
-            placeholder={tx('flowerName', 'Flower name')}
-            className={`${inputCls} flex-1 min-w-[8rem]`}
-            data-testid="bff-name"
-          />
-        ) : (
-          <span className="text-sm font-medium text-gray-900 flex-1" data-testid="bff-resolved-name">
-            {resolvedName || tx('varietyTypeRequired', 'Choose a type first')}
-          </span>
-        )}
+        <span className="text-sm font-medium text-gray-900 flex-1" data-testid="bff-resolved-name">
+          {resolvedName || tx('varietyTypeRequired', 'Choose a type first')}
+        </span>
         <span className={`text-[11px] px-2 py-0.5 rounded-full ${badge.cls}`} data-testid="bff-variety-badge">
           {badge.label}
         </span>
       </div>
-      {/* When a card matched, name it explicitly — on the wizards the editable
-          name field can differ from the card the line will actually bind to. */}
-      {nameEditable && resolution.match && (
-        <p className="text-[11px] text-emerald-700" data-testid="bff-resolved-name">
-          {resolution.match['Display Name']}
-        </p>
-      )}
 
       {suggestions.length > 0 && state !== 'linked' && (
         <div data-testid="bff-suggestions">
@@ -277,14 +303,18 @@ export default function BouquetFlowerForm({
         <input
           type="number" inputMode="decimal" step="0.01"
           value={form.sellPrice ?? ''}
-          onChange={(e) => updateForm(p => ({ ...p, sellPrice: e.target.value }))}
+          onChange={(e) => { setSellTouched(true); updateForm(p => ({ ...p, sellPrice: e.target.value })); }}
           placeholder={tx('sellPrice', 'Sell')}
           className={inputCls}
           data-testid="bff-sell"
         />
       </div>
 
-      {(fields.supplier || fields.lotSize) && (
+      {/* Supplier and Lot size describe a card being CREATED. On the reuse path
+          `createBouquetDemand` patches prices only, so rendering them against a
+          flower she already has would show editable, pre-filled values that are
+          silently discarded on save. Hide them rather than lie. */}
+      {state !== 'linked' && (fields.supplier || fields.lotSize) && (
         <div className="grid grid-cols-2 gap-2">
           {fields.supplier && (
             <>

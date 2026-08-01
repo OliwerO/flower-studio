@@ -5,15 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, NewVarietyFields, hasAvailableStockMatch, isStockItemAvailable, createBouquetDemand } from '@flower-studio/shared';
-
-const PO_MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-function formatPoDate(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  if (isNaN(d)) return null;
-  return `${d.getDate()}.${PO_MONTHS[d.getMonth()]}.`;
-}
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, BouquetFlowerForm, hasAvailableStockMatch, createBouquetDemand } from '@flower-studio/shared';
 
 // Owner-only inline override for cost/sell when a flower is out of stock.
 // Onblur commits through the parent's line mutator. Empty draft means "no
@@ -94,12 +86,16 @@ export default function Step2Bouquet({
     if (!requiredBy) return false;
     return requiredBy > todayIso;
   })();
-  const { targetMarkup } = useConfigLists();
+  const { suppliers: configSuppliers, targetMarkup } = useConfigLists();
   const { showToast } = useToast();
   const [flowerQuery, setFlowerQuery] = useState('');
   const [showCost, setShowCost]       = useState(false);
   const [showCustomFlower, setShowCustomFlower] = useState(false);
-  const [customFlower, setCustomFlower] = useState({ name: '', typeName: '', colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
+  // What the owner typed when she tapped "+ Добавить новый". It SEEDS the shared
+  // form and nothing else — the form resolves the identity against stock itself
+  // (#605). Captured at open time so typing in the search box behind the form
+  // can't re-seed it mid-edit.
+  const [customSeed, setCustomSeed] = useState('');
   // Pending purchase orders — drives the "arrives DD.Mmm" badge in the picker
   // so the owner can grab a flower that's on order instead of typing it again
   // and creating a duplicate stock card.
@@ -166,17 +162,6 @@ export default function Step2Bouquet({
       return true;
     });
   }, [stock, onlyPhysicallyAvailable]);
-
-  // Surface a pending PO match for a flower name typed in the custom-flower
-  // form so we can offer a 1-tap "use the existing card" path. Matches the
-  // catalog's case-insensitive Display Name lookup.
-  const customNameMatch = useMemo(() => {
-    const needle = customFlower.name.trim().toLowerCase();
-    if (!needle) return null;
-    return stock.find(s =>
-      (s['Display Name'] || '').trim().toLowerCase() === needle
-    ) || null;
-  }, [stock, customFlower.name]);
 
   // Group visibleStock by Variety 4-tuple for the catalog list.
   const varGroups = useMemo(() => {
@@ -278,6 +263,35 @@ export default function Step2Bouquet({
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
     }
+  }
+
+  // A supplier the owner typed that we've never seen is remembered for next
+  // time. Call-site concern — not the shared form's job. Non-blocking: the
+  // flower is already created and in the cart, so a failed settings write must
+  // not fail the add. It is still logged rather than swallowed (pitfall #5).
+  function rememberSupplier(supplier) {
+    const value = String(supplier || '').trim();
+    if (!value) return;
+    if (configSuppliers.some(s => s.toLowerCase() === value.toLowerCase())) return;
+    client.put('/settings/config', { suppliers: [...configSuppliers, value] })
+      .catch(err => console.error('Step2Bouquet: failed to remember supplier', value, err));
+  }
+
+  // The shared form did the write; the wizard still owns its own cart-line
+  // convention (carries stockDeferred, no _originalQty) — hence addOne, not the
+  // line the util returns.
+  function handleNewFlowerCreated({ stockItem, line, form }) {
+    addOne({
+      id: stockItem.id,
+      'Display Name': stockItem['Display Name'],
+      'Current Cost Price': line.costPricePerUnit,
+      'Current Sell Price': line.sellPricePerUnit,
+    });
+    rememberSupplier(form.supplier);
+    setShowCustomFlower(false);
+    setCustomSeed('');
+    setFlowerQuery('');
+    onStockRefresh?.();
   }
 
   function changeQty(key, delta) {
@@ -413,26 +427,21 @@ export default function Step2Bouquet({
         <div className="ios-card overflow-hidden divide-y divide-white/40 max-h-64 overflow-y-auto">
           {/* Add unlisted flower / new demand — shown when no IN-STOCK (or
               on-order) flower matches, so existing-but-out-of-stock flowers
-              surface it too (not just brand-new names). Opens the price form,
-              pre-filled from the existing record when there is one, so the owner
-              can create a new demand and set its sell/cost price off the shelf. */}
-          {flowerQuery.length >= 2 && !hasAvailableStockMatch(stock, flowerQuery, pendingPO) && (
+              surface it too (not just brand-new names). Opens the shared form
+              with the query as its seed; the form resolves the identity and
+              reuses an existing Variety rather than duplicating it. */}
+          {flowerQuery.trim().length >= 2 && !hasAvailableStockMatch(stock, flowerQuery, pendingPO) && (
             <button
               type="button"
               onClick={() => {
-                const existing = stock.find(s => (s['Display Name'] || '').toLowerCase() === flowerQuery.toLowerCase());
+                // Hand the raw query to the form as a SEED and stop there. The
+                // form decomposes it against flowers that already exist, shows
+                // what it resolved to, and refuses to guess a Type when it
+                // can't (#605). The host must not pre-fill identity here — that
+                // is how "Pink Peonies" became a Type (#562) and how typing
+                // "DA" produced a flower named and typed "DA".
+                setCustomSeed(flowerQuery);
                 setShowCustomFlower(true);
-                setCustomFlower(existing ? {
-                  name:      existing['Display Name'],
-                  typeName:  existing.Type || existing['Display Name'],
-                  colour:    existing.Colour || '',
-                  sizeCm:    existing.Size != null ? String(existing.Size) : '',
-                  cultivar:  existing.Cultivar || '',
-                  supplier:  existing.Supplier || '',
-                  costPrice: existing['Current Cost Price'] ? String(existing['Current Cost Price']) : '',
-                  sellPrice: existing['Current Sell Price'] ? String(existing['Current Sell Price']) : '',
-                  lotSize:   '',
-                } : { name: flowerQuery, typeName: flowerQuery, colour: '', sizeCm: '', cultivar: '', supplier: '', costPrice: '', sellPrice: '', lotSize: '' });
               }}
               className="w-full flex items-center px-4 py-3 gap-3 text-left bg-indigo-50/60 active:bg-indigo-100 transition-colors"
             >
@@ -478,130 +487,31 @@ export default function Step2Bouquet({
       </div>
       )}
 
-      {/* Custom flower form */}
+      {/* Add-a-flower form — the shared BouquetFlowerForm (#605).
+          The typed query only SEEDS it. The form owns the whole identity
+          decision: it decomposes the query against Varieties that already
+          exist, shows what it resolved to, and takes an explicit confirm
+          before minting a new one. Do NOT re-add a name/Type pre-fill, a
+          second create call, or an "already in stock" banner here — the
+          emerald badge says that correctly (by identity, not by name) and
+          the normal submit already reuses the resolved card. */}
       {!premadeLocked && showCustomFlower && (
         <div className="ios-card px-4 py-3 space-y-2">
           <p className="text-sm font-semibold text-ios-label">{t.addNewFlower || 'Add new flower'}</p>
-          <input
-            value={customFlower.name}
-            onChange={e => setCustomFlower(p => ({ ...p, name: e.target.value }))}
-            placeholder={t.flowerName || 'Flower name'}
-            className="field-input w-full text-sm"
-          />
-          <NewVarietyFields
-            form={customFlower}
-            onChange={setCustomFlower}
-            t={t}
+          <BouquetFlowerForm
+            key={customSeed}
+            seedQuery={customSeed}
             stockItems={stock}
-            idPrefix="nv-dash-step2"
+            apiClient={client}
+            fields={{ supplier: true, lotSize: true }}
+            suppliers={configSuppliers}
+            targetMarkup={targetMarkup}
+            idPrefix="bff-dash-step2"
+            t={t}
+            showToast={showToast}
+            onCreated={handleNewFlowerCreated}
+            onCancel={() => { setShowCustomFlower(false); setCustomSeed(''); }}
           />
-          {/* Quick "add as-is" shortcut — only when the matched flower is truly
-              IN STOCK (or on order). For an out-of-stock existing flower the
-              owner is here to set a price + create a demand (via the button
-              below), so the "already in stock — pick from the list" note would
-              be wrong and is suppressed. */}
-          {customNameMatch
-            && isStockItemAvailable(customNameMatch, pendingPO)
-            && (() => {
-            const matchPo = pendingPO[customNameMatch.id];
-            const matchPoLabel = formatPoDate(matchPo?.plannedDate);
-            return (
-              <div className="rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-800">
-                {t.flowerAlreadyExists || 'Already in stock — pick from the list'}
-                {matchPo?.ordered > 0 && (
-                  <span> · +{matchPo.ordered}{' '}
-                    {matchPoLabel ? `${t.arrivesOn || 'arrives'} ${matchPoLabel}` : (t.onOrder || 'on order')}
-                  </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => {
-                    addOne(customNameMatch);
-                    setShowCustomFlower(false);
-                    setFlowerQuery('');
-                  }}
-                  className="ml-2 underline font-semibold"
-                >
-                  {t.addToCart || 'Add to bouquet'}
-                </button>
-              </div>
-            );
-          })()}
-          <div className="grid grid-cols-2 gap-2">
-            <input value={customFlower.supplier} onChange={e => setCustomFlower(p => ({ ...p, supplier: e.target.value }))}
-              placeholder={t.supplier || 'Supplier'} className="field-input text-sm" />
-            <input type="number" value={customFlower.lotSize} onChange={e => setCustomFlower(p => ({ ...p, lotSize: e.target.value }))}
-              placeholder={t.lotSize || 'Lot size'} className="field-input text-sm" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            <input type="number" value={customFlower.costPrice} onChange={e => {
-                const cost = e.target.value;
-                setCustomFlower(p => ({
-                  ...p, costPrice: cost,
-                  sellPrice: cost && targetMarkup ? String(Math.round(Number(cost) * targetMarkup)) : p.sellPrice,
-                }));
-              }}
-              placeholder={`${t.costPrice} (zł)`} className="field-input text-sm" />
-            <input type="number" value={customFlower.sellPrice} onChange={e => setCustomFlower(p => ({ ...p, sellPrice: e.target.value }))}
-              placeholder={`${t.sellPrice} (zł)`} className="field-input text-sm" />
-          </div>
-          <div className="flex gap-2">
-            <button type="button" onClick={async () => {
-                if (!customFlower.name.trim()) return;
-                // If the flower already exists (typically out of stock), reuse its
-                // record: create/deepen its demand at the entered price rather than
-                // POSTing a duplicate. This is the owner's "new demand for an
-                // out-of-stock flower with a price" path (reuse + set price).
-                if (customNameMatch) {
-                  await createOrDeepenDemand({
-                    displayName: customFlower.name,
-                    costPrice: customFlower.costPrice,
-                    sellPrice: customFlower.sellPrice,
-                  });
-                  setShowCustomFlower(false);
-                  setFlowerQuery('');
-                  return;
-                }
-                try {
-                  const sizeRaw = customFlower.sizeCm;
-                  // Y-model Variety attrs (pitfall #9): typeName falls back to
-                  // the name so it is never blank (NOT NULL on prod). Delegates
-                  // to the shared util (single source of truth) — mirrors the
-                  // florist wizard's custom-form submit.
-                  const { stockItem } = await createBouquetDemand({
-                    apiClient: client, stockItems: stock,
-                    displayName: customFlower.name.trim(),
-                    variety: {
-                      type_name: (customFlower.typeName ?? '').trim() || customFlower.name.trim(),
-                      colour: (customFlower.colour ?? '').trim() || null,
-                      size_cm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
-                      cultivar: (customFlower.cultivar ?? '').trim() || null,
-                    },
-                    costPrice: Number(customFlower.costPrice) || 0,
-                    sellPrice: Number(customFlower.sellPrice) || 0,
-                    supplier: customFlower.supplier,
-                    lotSize: customFlower.lotSize,
-                  });
-                  addOne({ id: stockItem.id, 'Display Name': stockItem['Display Name'],
-                    'Current Cost Price': stockItem['Current Cost Price'] || 0,
-                    'Current Sell Price': stockItem['Current Sell Price'] || 0 });
-                  setShowCustomFlower(false);
-                  setFlowerQuery('');
-                  onStockRefresh();
-                } catch (err) {
-                  // Show error — do NOT fall back to a stockItemId-less line.
-                  // Every flower in an order must have a stock record so demand,
-                  // PO generation, and stock deduction stay consistent.
-                  const msg = err.response?.data?.error || t.error;
-                  showToast(msg, 'error');
-                }
-              }}
-              className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
-            >{t.addToCart || 'Add to bouquet'}</button>
-            <button type="button" onClick={() => setShowCustomFlower(false)}
-              className="px-4 py-2.5 rounded-xl bg-gray-100 text-ios-secondary text-sm"
-            >{t.cancel}</button>
-          </div>
         </div>
       )}
 
