@@ -234,3 +234,94 @@ describe('createBouquetDemand', () => {
     });
   });
 });
+
+// ── #605: identity-resolved reuse + the confirmed-create escape hatch ──
+//
+// The base-name lookup this util has always used matches on NAME. That misses a
+// card whose name drifted from its Variety (the #558 shape) and cannot see a
+// case difference the server WOULD match on. `resolvedStockItem` lets the caller
+// hand over a card it resolved by identity, so the flower the user was shown and
+// the record actually written can never disagree.
+describe('createBouquetDemand — resolvedStockItem / newVariety (#605)', () => {
+  const RENAMED_CARD = {
+    id: 'de-renamed', 'Display Name': 'Пион Розовый 60cm',
+    Type: 'Peony', Colour: 'Pink', Size: 60,
+    'Current Cost Price': 4, 'Current Sell Price': 12, 'Current Quantity': 0,
+  };
+
+  it('reuses a resolved card the name lookup would never have found', async () => {
+    const patch = vi.fn().mockResolvedValue({ data: { ...RENAMED_CARD, 'Current Sell Price': 20 } });
+    const apiClient = { patch, post: vi.fn() };
+
+    const { line } = await createBouquetDemand({
+      apiClient,
+      stockItems: [RENAMED_CARD],
+      displayName: 'Peony Pink 60cm',   // does NOT equal the card's name
+      resolvedStockItem: RENAMED_CARD,
+      sellPrice: 20,
+    });
+
+    expect(apiClient.post).not.toHaveBeenCalled();
+    expect(patch).toHaveBeenCalledWith('/stock/de-renamed', { 'Current Sell Price': 20 });
+    expect(line.stockItemId).toBe('de-renamed');
+    expect(line.flowerName).toBe('Пион Розовый 60cm'); // the card's name, not the typed one
+  });
+
+  it('ignores a resolved DATED batch and creates the undated Demand Entry instead', async () => {
+    const batch = { ...RENAMED_CARD, id: 'batch-1', 'Display Name': 'Peony Pink 60cm (24.Jul.)' };
+    const apiClient = {
+      patch: vi.fn(),
+      post: vi.fn().mockResolvedValue({ data: { id: 'de-new', 'Display Name': 'Peony Pink 60cm' } }),
+    };
+
+    await createBouquetDemand({
+      apiClient, stockItems: [batch], displayName: 'Peony Pink 60cm',
+      resolvedStockItem: batch, variety: { type_name: 'Peony', colour: 'Pink', size_cm: 60 },
+    });
+
+    expect(apiClient.patch).not.toHaveBeenCalled();
+    expect(apiClient.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('sends newVariety only when explicitly confirmed', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { id: 'de-new', 'Display Name': 'Ranunculus Peach' } });
+    await createBouquetDemand({
+      apiClient: { patch: vi.fn(), post }, stockItems: [],
+      displayName: 'Ranunculus Peach',
+      variety: { type_name: 'Ranunculus', colour: 'Peach' },
+      newVariety: true,
+    });
+    expect(post.mock.calls[0][1].newVariety).toBe(true);
+  });
+
+  it('back-compat: without either param the POST body is byte-identical to before', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { id: 'de-new', 'Display Name': 'Ranunculus Peach' } });
+    await createBouquetDemand({
+      apiClient: { patch: vi.fn(), post }, stockItems: [],
+      displayName: 'Ranunculus Peach',
+      variety: { type_name: 'Ranunculus', colour: 'Peach' },
+      costPrice: 7, sellPrice: 21,
+    });
+    // Whole-object assertion, not toMatchObject — a stray key must fail here.
+    expect(post.mock.calls[0][1]).toEqual({
+      displayName: 'Ranunculus Peach',
+      quantity: 0,
+      costPrice: 7,
+      sellPrice: 21,
+      typeName: 'Ranunculus',
+      colour: 'Peach',
+      sizeCm: null,
+      cultivar: null,
+    });
+    expect(post.mock.calls[0][1]).not.toHaveProperty('newVariety');
+  });
+
+  it('newVariety: false is not sent — only an explicit true opts out of the server guard', async () => {
+    const post = vi.fn().mockResolvedValue({ data: { id: 'de-new', 'Display Name': 'X' } });
+    await createBouquetDemand({
+      apiClient: { patch: vi.fn(), post }, stockItems: [],
+      displayName: 'X', variety: { type_name: 'X' }, newVariety: false,
+    });
+    expect(post.mock.calls[0][1]).not.toHaveProperty('newVariety');
+  });
+});

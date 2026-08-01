@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, createBouquetDemand, hasAvailableStockMatch } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
@@ -110,10 +110,14 @@ function OrderCard({
   const [stockAction, setStockAction] = useState(null); // null | 'pending' — shown before save when qty reduced
   const [addingFlower, setAddingFlower] = useState(false);
   const [flowerSearch, setFlowerSearch] = useState('');
-  // New-demand price form: { name, costPrice, sellPrice } | null. Opened from
-  // "+ Add new" so the owner can create a demand for a flower off the shelf and
-  // set its sell/cost price (which feeds the bouquet total).
-  const [newDemand, setNewDemand] = useState(null);
+  // Seed for the shared BouquetFlowerForm: the raw text typed into the picker,
+  // or null when the form is closed. It is a SEED ONLY — the form decomposes it
+  // against Varieties that already exist and never turns it into a name or Type.
+  const [newFlowerQuery, setNewFlowerQuery] = useState(null);
+  // Cards created by that form. `stockItems` is a prop owned by OrderListPage,
+  // so a created card cannot be merged there; without this the new line's price
+  // lookup misses and the row renders "—" until the parent's refetch lands.
+  const [extraStock, setExtraStock] = useState([]);
   const [dissolveCandidates, setDissolveCandidates] = useState(null);
   // Statuses this order has previously held — powers the florist "revert"
   // buttons in the expanded status controls (GET /orders/:id/status-history).
@@ -121,6 +125,20 @@ function OrderCard({
   // Owner-only "Change customer" modal (#389) — fixes misattributed orders
   // after the fact, regardless of order status.
   const [changingCustomer, setChangingCustomer] = useState(false);
+
+  // Every editor-scope stock read goes through this, so a card created OR
+  // re-priced in this session is visible to the picker, the price lookups and
+  // the shortfall check immediately.
+  //
+  // `extraStock` WINS the merge — it is the freshly-written record. The parent
+  // owns `stockItems` and refreshes it through a 15s-cached GET, so for most of
+  // this editing session the prop still holds the pre-edit copy. Preferring the
+  // prop (as this did) meant re-pricing an existing flower showed the OLD sell
+  // price in the row and the live total while saving the NEW one. Same merge
+  // direction as `OrderDetailPage` and the dashboard panel.
+  const editorStock = extraStock.length === 0
+    ? stockItems
+    : [...new Map([...stockItems, ...extraStock].map(s => [s.id, s])).values()];
 
   const navigate   = useNavigate();
   // Customer linked record from Airtable — array of IDs, take the first.
@@ -316,7 +334,7 @@ function OrderCard({
       // re-enters here via confirmDissolveAndSave with skipShortfallCheck = true.
       if (!skipShortfallCheck) {
         const shortfalls = computePremadeShortfalls({
-          editLines, finalRemoved, stockItems, premadeMap,
+          editLines, finalRemoved, stockItems: editorStock, premadeMap,
         });
         if (shortfalls.length > 0) {
           setDissolveCandidates({ shortfalls, pendingAction: action });
@@ -328,6 +346,9 @@ function OrderCard({
       await client.put(`/orders/${order.id}/lines`, { lines: editLines, removedLines: finalRemoved });
       setEditingBouquet(false);
       setStockAction(null);
+      setAddingFlower(false);
+      setFlowerSearch('');
+      setNewFlowerQuery(null);
       const res = await client.get(`/orders/${order.id}`);
       setDetail(res.data);
       showToast(t.bouquetUpdated || 'Bouquet updated');
@@ -378,7 +399,7 @@ function OrderCard({
     sum + (l['Sell Price Per Unit'] || 0) * (l.Quantity || 0), 0);
   const editingLineTotal = editingBouquet
     ? editLines.reduce((sum, l) => {
-        const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
+        const si = l.stockItemId ? editorStock.find(s => s.id === l.stockItemId) : null;
         // Pending-PO flowers price off their PO, not the stale card sell (#377).
         const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
         return sum + price * Number(l.quantity || 0);
@@ -566,6 +587,7 @@ function OrderCard({
                         setRemovedLines([]);
                         setAddingFlower(false);
                         setFlowerSearch('');
+                        setNewFlowerQuery(null);
                         setEditingBouquet(true);
                         // Stock + premade map come in as props (hoisted to
                         // OrderListPage). If the parent's list looks empty —
@@ -581,7 +603,7 @@ function OrderCard({
                   {editingBouquet ? (
                     <div className="bg-gray-50 rounded-xl px-3 py-3 space-y-2">
                       {editLines.map((line, idx) => {
-                        const si = line.stockItemId ? stockItems.find(s => s.id === line.stockItemId) : null;
+                        const si = line.stockItemId ? editorStock.find(s => s.id === line.stockItemId) : null;
                         // Pending-PO flowers price off their PO, not the stale card sell (#377).
                         const liveSell = resolveStockLinePrice(si, pendingPO[line.stockItemId]).sellPricePerUnit
                           || Number(line.sellPricePerUnit) || 0;
@@ -613,7 +635,7 @@ function OrderCard({
                       {/* Live flower total — updates as quantities change */}
                       {editLines.length > 0 && (() => {
                         const liveSellTotal = editLines.reduce((sum, l) => {
-                          const si = l.stockItemId ? stockItems.find(s => s.id === l.stockItemId) : null;
+                          const si = l.stockItemId ? editorStock.find(s => s.id === l.stockItemId) : null;
                           // Pending-PO flowers price off their PO, not the stale card sell (#377).
                           const price = resolveStockLinePrice(si, pendingPO[l.stockItemId]).sellPricePerUnit || Number(l.sellPricePerUnit) || 0;
                           return sum + price * Number(l.quantity || 0);
@@ -651,7 +673,7 @@ function OrderCard({
                             autoFocus />
                           <div className="max-h-36 overflow-y-auto divide-y divide-gray-50">
                             {/* Stock results — positive OR negative qty; hide empties */}
-                            {flowerSearch.length >= 1 && stockItems
+                            {flowerSearch.length >= 1 && editorStock
                               .filter(s => {
                                 const name = (s['Display Name'] || '').toLowerCase();
                                 const q = flowerSearch.toLowerCase();
@@ -697,21 +719,19 @@ function OrderCard({
                               })}
                             {/* Add new / new demand — shown when no IN-STOCK (or
                                 on-order) flower matches: brand-new AND existing
-                                out-of-stock flowers surface it. Opens a small
-                                price form so the owner creates a demand and sets
-                                its sell/cost price (feeds the bouquet total). */}
-                            {flowerSearch.length >= 2 && !hasAvailableStockMatch(stockItems, flowerSearch, pendingPO) && (
+                                out-of-stock flowers surface it. Opens the shared
+                                BouquetFlowerForm below, seeded with the query. */}
+                            {flowerSearch.trim().length >= 2 && !hasAvailableStockMatch(editorStock, flowerSearch, pendingPO) && (
                               <div
+                                // onPointerDown (NOT onClick) is load-bearing: this row sits
+                                // inside the card's tap-to-expand region, whose own click
+                                // handler would swallow the tap. Do not "clean up" to onClick.
                                 onPointerDown={(e) => {
                                   e.preventDefault();
                                   e.stopPropagation();
-                                  const q = flowerSearch.trim();
-                                  const existing = stockItems.find(s => (s['Display Name'] || '').toLowerCase() === q.toLowerCase());
-                                  setNewDemand({
-                                    name: q,
-                                    costPrice: existing?.['Current Cost Price'] ? String(existing['Current Cost Price']) : '',
-                                    sellPrice: existing?.['Current Sell Price'] ? String(existing['Current Sell Price']) : '',
-                                  });
+                                  // The typed text is only a SEED — BouquetFlowerForm decides
+                                  // the flower's identity against stock that already exists.
+                                  setNewFlowerQuery(flowerSearch.trim());
                                   setFlowerSearch('');
                                   setAddingFlower(false);
                                 }}
@@ -724,55 +744,41 @@ function OrderCard({
                         </div>
                       )}
 
-                      {/* New-demand price form — create a demand for a flower off
-                          the shelf and set its sell/cost price. Reuses an existing
-                          Variety when one matches (never duplicates). */}
-                      {newDemand && (
+                      {/* New-flower form — the shared BouquetFlowerForm owns the
+                          identity decision (resolve an existing Variety, or an
+                          explicit confirm before minting a new one) and the write.
+                          Dense: the 4-tuple hides behind a disclosure that opens
+                          only when the query could not be classified. */}
+                      {newFlowerQuery != null && (
                         <div className="bg-indigo-50 rounded-xl px-3 py-3 space-y-2">
-                          <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}: {newDemand.name}</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <input
-                              type="number" step="0.01" inputMode="decimal"
-                              value={newDemand.costPrice}
-                              onChange={e => setNewDemand(p => ({ ...p, costPrice: e.target.value }))}
-                              placeholder={t.costPrice}
-                              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
-                            />
-                            <input
-                              type="number" step="0.01" inputMode="decimal"
-                              value={newDemand.sellPrice}
-                              onChange={e => setNewDemand(p => ({ ...p, sellPrice: e.target.value }))}
-                              placeholder={t.sellPrice}
-                              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 bg-white outline-none"
-                            />
-                          </div>
-                          <div className="flex gap-2">
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  const { line } = await createBouquetDemand({
-                                    apiClient: client,
-                                    stockItems,
-                                    displayName: newDemand.name,
-                                    costPrice: Number(newDemand.costPrice) || 0,
-                                    sellPrice: Number(newDemand.sellPrice) || 0,
-                                  });
-                                  setEditLines(p => [...p, line]);
-                                  onStockRefresh?.();
-                                } catch (err) {
-                                  showToast(err.response?.data?.error || t.error, 'error');
-                                }
-                                setNewDemand(null);
-                              }}
-                              className="flex-1 py-2 rounded-xl bg-brand-600 text-white text-sm font-semibold active-scale"
-                            >{t.addToCart}</button>
-                            <button
-                              type="button"
-                              onClick={() => setNewDemand(null)}
-                              className="px-4 py-2 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm active-scale"
-                            >{t.cancel}</button>
-                          </div>
+                          <p className="text-sm font-semibold text-indigo-800">{t.addNewFlower}</p>
+                          <BouquetFlowerForm
+                            key={newFlowerQuery}
+                            seedQuery={newFlowerQuery}
+                            stockItems={editorStock}
+                            apiClient={client}
+                            dense
+                            idPrefix="bff-florist-card"
+                            t={t}
+                            showToast={showToast}
+                            onCreated={({ stockItem, line }) => {
+                              if (stockItem) {
+                                setExtraStock(prev => {
+                                  const i = prev.findIndex(s => s.id === stockItem.id);
+                                  if (i === -1) return [...prev, stockItem];
+                                  const next = prev.slice();
+                                  next[i] = stockItem;
+                                  return next;
+                                });
+                              }
+                              setEditLines(p => [...p, line]);
+                              setNewFlowerQuery(null);
+                              // Let the parent list converge too — `extraStock` above
+                              // is what keeps this card correct until it does.
+                              onStockRefresh?.();
+                            }}
+                            onCancel={() => setNewFlowerQuery(null)}
+                          />
                         </div>
                       )}
 
@@ -841,7 +847,7 @@ function OrderCard({
                         }} disabled={saving}
                           className="flex-1 py-2.5 rounded-xl bg-brand-600 text-white text-sm font-semibold"
                         >{saving ? '...' : (t.save || 'Save')}</button>
-                        <button onClick={() => { setEditingBouquet(false); setRemoveIdx(null); setStockAction(null); }}
+                        <button onClick={() => { setEditingBouquet(false); setRemoveIdx(null); setStockAction(null); setAddingFlower(false); setFlowerSearch(''); setNewFlowerQuery(null); }}
                           className="px-4 py-2.5 rounded-xl bg-gray-100 dark:bg-gray-700 text-ios-secondary dark:text-gray-300 text-sm"
                         >{t.cancel}</button>
                       </div>

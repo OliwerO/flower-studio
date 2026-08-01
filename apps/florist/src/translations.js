@@ -271,6 +271,12 @@ const en = {
   sell:                'Sell',
   arrivesOn:        'arrives',
   addToCart:        'Add to bouquet',
+  // Shared BouquetFlowerForm (#605) — the one "add a flower to a bouquet" form.
+  newVarietyConfirm:   'No such flower yet. Create it as a new variety?',
+  newVarietyCreate:    'Create new',
+  varietyRefine:       'Refine',
+  varietySuggestions:  'You already have',
+  varietyTypeRequired: 'Choose a type first',
   saveBouquet:      'Save bouquet',
   bouquetUpdated:   'Bouquet updated',
   // #339: backend rejects non-owner bouquet edits once the order has left
@@ -1230,6 +1236,12 @@ const ru = {
   sell:                'Цена',
   arrivesOn:        'прибудет',
   addToCart:        'Добавить в букет',
+  // Shared BouquetFlowerForm (#605) — the one "add a flower to a bouquet" form.
+  newVarietyConfirm:   'Такого цветка ещё нет. Создать новый сорт?',
+  newVarietyCreate:    'Создать новый',
+  varietyRefine:       'Уточнить',
+  varietySuggestions:  'У вас уже есть',
+  varietyTypeRequired: 'Сначала укажите тип',
   saveBouquet:      'Сохранить букет',
   bouquetUpdated:   'Букет обновлён',
   bouquetEditLockedOutForDelivery: 'Букет нельзя изменить в текущем статусе заказа',

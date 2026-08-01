@@ -74,11 +74,14 @@ describe('isDatedBatchName', () => {
 });
 
 describe('pickCanonical', () => {
-  it('ignores dated Batches and returns the oldest canonical card', () => {
+  // Order-based by contract: the caller supplies preference order, because the
+  // wire row carries no creation timestamp to sort by. `findVarietyMatch` gets
+  // that order from `ORDER BY created_at ASC` in SQL.
+  it('ignores dated Batches and returns the first canonical card in the given order', () => {
     const rows = [
-      { id: 'batch', 'Display Name': 'Peony Pink (24.Jul.)', 'Created At': '2026-07-24' },
-      { id: 'newer', 'Display Name': 'Peony Pink',           'Created At': '2026-07-10' },
-      { id: 'older', 'Display Name': 'Peony Pink',           'Created At': '2026-01-02' },
+      { id: 'batch', 'Display Name': 'Peony Pink (24.Jul.)' },
+      { id: 'older', 'Display Name': 'Peony Pink' },
+      { id: 'newer', 'Display Name': 'Peony Pink' },
     ];
     expect(pickCanonical(rows).id).toBe('older');
   });

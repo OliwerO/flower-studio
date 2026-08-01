@@ -92,8 +92,26 @@ export { uploadBouquetImage, removeBouquetImage } from './api/uploadImage.js';
 export { publishFeedback } from './api/feedback.js';
 export { default as BatchPickerModal } from './components/BatchPickerModal.jsx';
 export { default as TierSwitchChip } from './components/TierSwitchChip.jsx';
-export { findAllMatchingVariety } from './hooks/useOrderEditing.js';
+// Re-exported from the util, not from `useOrderEditing` — routing it through the
+// hook dragged that whole module (which no app imports any more) into every
+// app's bundle for one 17-line function.
+export { findAllMatchingVariety } from './utils/varietyLookup.js';
 export { createBouquetDemand } from './utils/createBouquetDemand.js';
+// Variety identity, client side (#605). Mirrors backend/src/utils/varietyIdentity.js
+// — see that file and the parity test before changing any of these.
+// Named `resolveVariety`, not `findVarietyMatch`: that name is already taken by
+// `poLineVariety`, which is the PO-line lookup and compares case-SENSITIVELY.
+export {
+  resolveVariety,
+  seedVarietyFromQuery,
+  identityKey,
+  stockItemIdentity,
+  sameVariety,
+  pickCanonical,
+  isDatedBatchName,
+  normaliseIdentityValue,
+  normaliseSize,
+} from './utils/varietyIdentity.js';
 export { default as FeedbackModal } from './components/FeedbackModal.jsx';
 
 // Order termination seam (cancel + delete shared hook + confirm UI)
@@ -115,6 +133,7 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 // Variety allocation picker — Stage 1 typeahead (issue #288)
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
 export { default as NewVarietyFields } from './components/NewVarietyFields.jsx';
+export { default as BouquetFlowerForm, BOUQUET_FLOWER_FORM_KEYS } from './components/BouquetFlowerForm.jsx';
 
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.
 export { default as VarietyIdentity } from './components/VarietyIdentity.jsx';
