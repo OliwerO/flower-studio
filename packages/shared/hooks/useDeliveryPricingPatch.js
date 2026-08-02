@@ -30,27 +30,43 @@ export default function useDeliveryPricingPatch(storedValue, onCommit, delayMs =
     band: v.band ?? null,
   });
 
-  const [pending, setPending] = useState(() => normalise(storedValue));
-  const committedRef = useRef(pending);
-  const debounced = useDebouncedValue(pending, delayMs);
+  const normalised = normalise(storedValue);
+  const [pending, setPending] = useState(normalised);
+  const [prevStored, setPrevStored] = useState(normalised);
+  const committedRef = useRef(normalised);
 
-  // Re-sync the local buffer when the host's stored value changes from
-  // elsewhere (a fresh fetch after some other edit) — never from our own commits.
-  //
-  // `band` is compared by JSON.stringify, not raw reference: a caller that
-  // builds the storedValue object inline (e.g. `{ ..., band: o.delivery?.[...] }`
-  // constructed fresh on every render) gets a NEW `band` object reference
-  // each render even when its content is unchanged. Depending on that
-  // reference directly means this effect never stabilizes — it re-fires
-  // every render, calls setPending with a new object, which triggers
-  // another render, forever. Content comparison is what "changed
-  // externally" actually means here.
-  useEffect(() => {
-    const next = normalise(storedValue);
-    setPending(next);
-    committedRef.current = next;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [storedValue.fee, storedValue.cost, storedValue.distanceKm, JSON.stringify(storedValue.band)]);
+  // "Adjust state during render" (React's documented pattern for storing
+  // information from previous renders) instead of syncing via useEffect.
+  // Why this matters here specifically: OrderDetailPanel fetches `order`
+  // async, so `storedValue` starts all-null and only becomes real once the
+  // fetch resolves. An effect-based resync runs one render/commit AFTER
+  // that change — but DeliveryPricingFields mounts for the FIRST time on
+  // THAT SAME render (its `isDelivery && o.delivery` gate just turned
+  // true), and it seeds its own mount-time quote-guard from `value` via a
+  // useRef initializer, which only ever runs once. If this hook's `value`
+  // is still the stale all-null `pending` on that render (because the
+  // resync effect hasn't run yet — effects always run after render), the
+  // child permanently seeds wrong, its quote effect fires, and a fabricated
+  // cost silently overwrites the real stored value once the debounce
+  // settles. Comparing storedValue against `prevStored` inline in the
+  // render body and calling setState synchronously lets React abort this
+  // render and restart it with corrected state BEFORE committing anything
+  // or running any child's first render — so DeliveryPricingFields never
+  // observes a stale value in the first place. A useLayoutEffect would NOT
+  // fix this: layout effects still run strictly after render.
+  const changed =
+    normalised.fee !== prevStored.fee ||
+    normalised.cost !== prevStored.cost ||
+    normalised.distanceKm !== prevStored.distanceKm ||
+    JSON.stringify(normalised.band) !== JSON.stringify(prevStored.band);
+
+  if (changed) {
+    setPending(normalised);
+    setPrevStored(normalised);
+    committedRef.current = normalised;
+  }
+
+  const debounced = useDebouncedValue(pending, delayMs);
 
   useEffect(() => {
     const prev = committedRef.current;
