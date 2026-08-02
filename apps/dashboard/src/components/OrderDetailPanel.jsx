@@ -634,6 +634,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                 role for terminal-status edits in editBouquetLines(). */}
             {!editingBouquet && (
               <button
+                data-testid="edit-bouquet"
                 onClick={() => {
                   setEditLines(o.orderLines.map(l => ({
                     id: l.id, stockItemId: l['Stock Item']?.[0] || null,
@@ -746,12 +747,13 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
 
               {/* Add flower picker — shows stock catalog immediately */}
               {!addingFlower ? (
-                <button onClick={() => setAddingFlower(true)}
+                <button data-testid="add-flower-button" onClick={() => setAddingFlower(true)}
                   className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg hover:bg-brand-100"
                 >+ {t.addFlower}</button>
               ) : (
                 <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
                   <input type="text" value={flowerSearch}
+                    data-testid="flower-search"
                     onChange={e => setFlowerSearch(e.target.value)}
                     placeholder={t.flowerSearch}
                     className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
@@ -787,6 +789,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                         const { name: fn, batch } = parseBatchName(s['Display Name']);
                         return (
                           <button key={s.id} type="button"
+                            data-testid={`add-flower-${s.id}`}
                             onClick={() => {
                               setEditLines(p => [...p, {
                                 id: null, stockItemId: s.id, flowerName: s['Display Name'],
@@ -820,6 +823,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                         the form's job now, not this button's. */}
                     {flowerSearch.trim().length >= 2 && !hasAvailableStockMatch(stockItems, flowerSearch, pendingPO) && (
                       <button type="button"
+                        data-testid="add-new-flower"
                         onClick={() => {
                           setNewFlowerQuery(flowerSearch.trim());
                           setAddingFlower(false);
@@ -948,6 +952,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
 
               <div className="flex gap-2 pt-1">
                 <button
+                  data-testid="save-bouquet"
                   onClick={() => {
                     const hasQtyReductions = editLines.some(l => l._originalQty > 0 && l.quantity < l._originalQty);
                     if (hasQtyReductions && stockAction !== 'pending') {

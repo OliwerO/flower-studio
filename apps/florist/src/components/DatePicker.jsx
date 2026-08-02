@@ -119,6 +119,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
       {/* Trigger button */}
       <button
         type="button"
+        data-testid="date-picker-trigger"
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-end gap-2 text-base bg-transparent outline-none text-right"
       >
@@ -186,6 +187,7 @@ export default function DatePicker({ value, onChange, placeholder = 'Select date
                 <button
                   key={day}
                   type="button"
+                  data-testid={`date-picker-day-${dateStr}`}
                   onClick={() => selectDay(day)}
                   className={[
                     'w-9 h-9 mx-auto flex items-center justify-center rounded-full text-sm transition-colors',

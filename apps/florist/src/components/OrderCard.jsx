@@ -424,6 +424,8 @@ function OrderCard({
   return (
     <div
       onClick={toggle}
+      data-testid="order-card"
+      data-order-id={order.id}
       className={`bg-white rounded-2xl shadow-sm px-4 py-4 transition-colors cursor-pointer ${
         expanded ? 'ring-2 ring-brand-200' : 'active:bg-ios-fill'
       }`}
@@ -576,7 +578,7 @@ function OrderCard({
                   <div className="flex items-center justify-between mb-1">
                     <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide">{t.labelBouquet}</p>
                     {(!isTerminal || isOwner) && !editingBouquet && (
-                      <button onClick={async () => {
+                      <button data-testid="edit-bouquet" onClick={async () => {
                         setEditLines(detail.orderLines.map(l => ({
                           id: l.id, stockItemId: l['Stock Item']?.[0] || null,
                           flowerName: l['Flower Name'], quantity: l.Quantity,
@@ -661,12 +663,13 @@ function OrderCard({
 
                       {/* Add flower picker */}
                       {!addingFlower ? (
-                        <button onClick={() => setAddingFlower(true)}
+                        <button data-testid="add-flower-button" onClick={() => setAddingFlower(true)}
                           className="w-full py-2 text-sm text-brand-600 font-medium bg-brand-50 rounded-lg active:bg-brand-100"
                         >+ {t.addFlower || 'Add flower'}</button>
                       ) : (
                         <div className="bg-white rounded-xl border border-gray-200 p-2 space-y-1">
                           <input type="text" value={flowerSearch}
+                            data-testid="flower-search"
                             onChange={e => setFlowerSearch(e.target.value)}
                             placeholder={t.flowerSearch || 'Search...'}
                             className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 outline-none"
@@ -694,6 +697,7 @@ function OrderCard({
                                 const stockSell = addPrice.sellPricePerUnit;
                                 return (
                                   <div key={s.id}
+                                    data-testid={`add-flower-${s.id}`}
                                     onPointerDown={e => {
                                       e.preventDefault();
                                       e.stopPropagation();
@@ -723,6 +727,7 @@ function OrderCard({
                                 BouquetFlowerForm below, seeded with the query. */}
                             {flowerSearch.trim().length >= 2 && !hasAvailableStockMatch(editorStock, flowerSearch, pendingPO) && (
                               <div
+                                data-testid="add-new-flower"
                                 // onPointerDown (NOT onClick) is load-bearing: this row sits
                                 // inside the card's tap-to-expand region, whose own click
                                 // handler would swallow the tap. Do not "clean up" to onClick.
@@ -833,7 +838,7 @@ function OrderCard({
                       })()}
 
                       <div className="flex gap-2 pt-1">
-                        <button onClick={() => {
+                        <button data-testid="save-bouquet" onClick={() => {
                           // Only ask about spare flowers for INLINE quantity reductions.
                           // Lines removed via ✕ already chose return/writeoff per-line,
                           // so a second confirmation would be redundant.
