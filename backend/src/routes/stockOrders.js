@@ -13,7 +13,7 @@ import { broadcast } from '../services/notifications.js';
 import { PO_STATUS, VALID_PO_STATUSES, PO_LINE_STATUS } from '../constants/statuses.js';
 import { getConfig, getDriverOfDay } from '../services/configService.js';
 import { notifyPoAssigned, notifyPoCancelled } from '../services/driverNotifyService.js';
-import { resolveOrCreateStockItem, evaluatePurchaseOrder } from '../services/stockOrderService.js';
+import { resolveLineStockItem, evaluatePurchaseOrder } from '../services/stockOrderService.js';
 
 const VALID_STATUSES = VALID_PO_STATUSES;
 
@@ -126,6 +126,25 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
       return res.status(400).json({ error: 'At least one line must have quantity > 0.' });
     }
 
+    // Resolve every line's flower BEFORE writing anything (#607). A line whose
+    // identity matches no existing Variety is refused, and refusing halfway
+    // through would leave a half-built PO behind — so the whole batch resolves
+    // first and `resolveLineStockItem` throws 409 VARIETY_NOT_FOUND before the
+    // first row exists.
+    const resolvedIds = [];
+    for (const line of lines) {
+      try {
+        resolvedIds.push(line.stockItemId || await resolveLineStockItem(line));
+      } catch (err) {
+        if (err.code !== 'VARIETY_NOT_FOUND') throw err;
+        // Answered here, not through the error handler: that masks every
+        // message as "Internal server error" in production and drops `code`,
+        // which is the whole signal both PO editors use to offer the
+        // "create it as a new variety" confirm.
+        return res.status(409).json({ error: err.message, code: err.code });
+      }
+    }
+
     const today = new Date().toISOString().split('T')[0];
     const seq = await stockOrderRepo.nextPoSequence(today);
     const poNumber = `PO-${today.replace(/-/g, '')}-${seq}`;
@@ -140,21 +159,13 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
     });
 
     const createdLines = [];
-    for (const line of lines || []) {
-      // Y-model new-Variety intent (#304): when the line carries Type+attrs we
-      // skip the legacy auto-resolve so we don't pre-create a Stock Item with
-      // a free-text display name. Evaluation later creates the Variety properly.
+    for (const [i, line] of lines.entries()) {
+      // Y-model new-Variety intent (#304): the line carries its own
+      // Type/Colour/Size/Cultivar, and the Stock Item is created at evaluation
+      // with full Y-model identity rather than pre-created here off a
+      // free-text name.
       const hasNewVarietyIntent = !!(line.type && String(line.type).trim());
-      let resolvedStockItemId = line.stockItemId || null;
-      if (!resolvedStockItemId && line.flowerName && !hasNewVarietyIntent) {
-        try {
-          resolvedStockItemId = await resolveOrCreateStockItem(line.flowerName, {
-            costPrice: line.costPrice, sellPrice: line.sellPrice, supplier: line.supplier,
-          });
-        } catch (err) {
-          console.error(`[STOCK-ORDER] Auto-link/create failed for "${line.flowerName}":`, err.message);
-        }
-      }
+      const resolvedStockItemId = resolvedIds[i];
       let lotSize = Number(line.lotSize) || 0;
       if (!lotSize && resolvedStockItemId) {
         try {
@@ -181,6 +192,10 @@ router.post('/', authorize('stock-orders', ['owner']), async (req, res, next) =>
           Size:     line.size ?? null,
           Cultivar: line.cultivar ?? null,
         } : {}),
+        // Record her confirmation, but only where it still means something: a
+        // line that resolved onto a card she already has is not a new flower,
+        // whatever the client sent (#607).
+        'New Variety': !resolvedStockItemId && !!line.newVariety,
       };
       if (line.farmer) lineFields.Farmer = line.farmer;
       if (line.notes)  lineFields.Notes = line.notes;
@@ -302,9 +317,10 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
 
     // Unknown keys are a hard error. Silently dropping them is precisely how the
     // picker's 'Stock Item' vanished for months while every request returned 200.
-    // 'New Variety' is a CONTROL flag, not a column: it opts an identity change
-    // out of the must-match-an-existing-Variety rule. Accepted here so it does
-    // not 400, deliberately absent from `writable` so it is never persisted.
+    // 'New Variety' both opts an identity change out of the
+    // must-match-an-existing-Variety rule AND is now persisted (#607) — send
+    // and evaluation are days apart from this edit and need her answer, not
+    // just the request that carried it.
     const known = new Set([...allowed, ...IDENTITY_FIELDS, 'New Variety']);
     const unknown = Object.keys(req.body).filter((k) => !known.has(k));
     if (unknown.length > 0) {
@@ -397,11 +413,19 @@ router.patch('/:id/lines/:lineId', authorize('stock-orders'), async (req, res, n
       req.body.Colour   = target.Colour ?? null;
       req.body.Size     = target.Size ?? null;
       req.body.Cultivar = target.Cultivar ?? null;
+      // It resolved onto a flower she already has, so it is not a new one —
+      // whatever a stale confirmation on the line said.
+      req.body['New Variety'] = false;
     }
 
+    // A line that carries a link is not a new flower, so a first-time pick on
+    // an unlinked Draft line clears any confirmation it was carrying too.
+    if (norm('Stock Item', req.body['Stock Item']) != null) req.body['New Variety'] = false;
+
     // 'Stock Item' is writable — a first assignment on a Draft line, and a
-    // re-link resolved above, both have to persist.
-    const writable = [...allowed, 'Stock Item'];
+    // re-link resolved above, both have to persist. 'New Variety' is writable
+    // for the same reason: the confirmation has to outlive the request (#607).
+    const writable = [...allowed, 'Stock Item', 'New Variety'];
     const fields = {};
     for (const key of writable) {
       if (key in req.body) fields[key] = req.body[key];
@@ -475,7 +499,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     const {
       stockItemId: rawStockItemId, flowerName, quantity, supplier,
       costPrice, sellPrice, lotSize,
-      type, colour, size, cultivar,
+      type, colour, size, cultivar, newVariety,
     } = req.body;
     // Identity rule (root CLAUDE.md known-pitfall #6): every PO line must have
     // either a Stock Item link or a Flower Name *by the time the PO is sent*.
@@ -485,18 +509,18 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
     if (!rawStockItemId && !flowerName?.trim() && !type?.trim() && po.Status !== PO_STATUS.DRAFT) {
       return res.status(400).json({ error: 'PO line must have a stock item or flower name.' });
     }
-    // Y-model new-Variety lines (issue #304) skip the legacy auto-resolve so
-    // we don't pre-create a Stock Item with a free-text display name and no
-    // Variety attrs. The line carries Type/Colour/Size/Cultivar; evaluation
-    // resolves to a Stock Item with full Y-model identity at receive time.
+    // Y-model new-Variety lines (issue #304) carry their own
+    // Type/Colour/Size/Cultivar; the Stock Item is created at evaluation with
+    // full Y-model identity rather than pre-created here off a free-text name.
+    // Either way the flower is RESOLVED first and a no-match is refused (#607).
     const hasNewVarietyIntent = !!(type && type.trim());
-    let resolvedStockItemId = rawStockItemId || null;
-    if (!resolvedStockItemId && flowerName && !hasNewVarietyIntent) {
-      try {
-        resolvedStockItemId = await resolveOrCreateStockItem(flowerName, { costPrice, sellPrice, supplier });
-      } catch (err) {
-        console.error(`[STOCK-ORDER] Auto-link/create failed for "${flowerName}":`, err.message);
-      }
+    let resolvedStockItemId;
+    try {
+      resolvedStockItemId = rawStockItemId
+        || await resolveLineStockItem({ flowerName, type, colour, size, cultivar, newVariety });
+    } catch (err) {
+      if (err.code !== 'VARIETY_NOT_FOUND') throw err;
+      return res.status(409).json({ error: err.message, code: err.code });
     }
     const line = await stockOrderRepo.createLine({
       'Stock Orders':    [po._pgId],
@@ -514,6 +538,7 @@ router.post('/:id/lines', authorize('stock-orders', ['owner']), async (req, res,
         Size:     size ?? null,
         Cultivar: cultivar ?? null,
       } : {}),
+      'New Variety': !resolvedStockItemId && !!newVariety,
     });
     broadcast({ type: 'stock_order_line_updated', stockOrderId: req.params.id, lineId: line.id });
     res.json(line);
@@ -678,6 +703,32 @@ router.post('/:id/send', authorize('stock-orders', ['owner']), async (req, res, 
       if (blankCount > 0) {
         return res.status(400).json({
           error: `Fill flower name on ${blankCount} blank line(s) before sending.`,
+        });
+      }
+
+      // Every line's flower must be REAL before the driver leaves (#607).
+      // Composition refuses a complete line that matches nothing, but a Draft
+      // line is also built up field by field through PATCH, and blocking each
+      // intermediate edit would fight the owner mid-typing. Send is the moment
+      // it has to be settled: a line still matching no existing Variety, with
+      // no recorded "yes, this is new", would otherwise reach evaluation and
+      // fail there — days later, with the stems already in the van.
+      const unresolved = [];
+      for (const l of lines) {
+        if (Array.isArray(l['Stock Item']) && l['Stock Item'].length > 0) continue;
+        if (l['New Variety']) continue;
+        const match = await resolveLineStockItem({
+          flowerName: l['Flower Name'], type: l.Type, colour: l.Colour,
+          size: l.Size, cultivar: l.Cultivar, newVariety: true, // never throw here
+        });
+        if (match) await stockOrderRepo.updateLine(l.id, { 'Stock Item': [match] });
+        else unresolved.push(String(l['Flower Name'] || l.Type || '').trim());
+      }
+      if (unresolved.length > 0) {
+        return res.status(409).json({
+          error: `No existing flower matches: ${unresolved.join(', ')}. `
+               + 'Pick one you already have, or confirm creating it as a new variety.',
+          code: 'VARIETY_NOT_FOUND',
         });
       }
     }

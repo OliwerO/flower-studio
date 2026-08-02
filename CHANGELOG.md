@@ -5,6 +5,18 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — feat(stock): a purchase-order line buys a flower you have, or one you meant to add (#607)
+
+**The last three places that could invent a flower.** Everything before this closed the paths a person types into. These three were the server itself, and they were the widest: typing a flower name onto a purchase-order line and leaving the classification blank created a flower whose *type* was the whole phrase — the way `Pink Peonies` came to sit beside `Peony / Pink`. The same thing happened again at evaluation, where an unmatched line quietly created a card with no one being asked, and an older line carrying only a name (`Roses red 50`) became a flower typed `Roses red 50`, invisible in the grouped stock view and impossible to merge with the real Rose / Red / 50.
+
+**What she sees now.** Putting a flower on a purchase order works the way adding one to a bouquet already does: it finds the flower she has — whatever the spelling, including flowers she has deactivated — and when nothing matches, it asks. A line she has confirmed as new says so on the line and stays confirmed through to the day the stems arrive. If she never answered, the order will not send: "no existing flower matches" names the line, rather than letting her find out at the market. And a line that turns out to match something she already stocks quietly links itself on the way out, no question asked.
+
+**Why the confirmation is now stored.** Composing an order, sending it and receiving it happen days apart, and receiving is where the flower is actually created. Until now her "yes, this is new" lived only in the request that carried it, so by the time the stems arrived nobody knew whether a flower was deliberate or a typo. It is now recorded on the line — and dropped the moment the line resolves onto a flower she already has, so an old answer cannot linger.
+
+**One thing that will now refuse where it used to create:** receiving a line that carries only a typed name and no classification. There is nothing to file it under, so it comes back as a line error for her to classify rather than creating a flower named after the shopping list. Production had **no open purchase-order lines** at all when this shipped (checked read-only, 2026-08-02), so nothing in flight was affected.
+
+**Schema:** migration `0025_po_line_new_variety.sql` adds `stock_order_lines.new_variety boolean NOT NULL DEFAULT false`. Additive, no backfill, no env change. **API:** `POST /stock-orders` and `POST /stock-orders/:id/lines` accept `newVariety`; both, plus `POST /stock-orders/:id/send`, can now answer **409 `VARIETY_NOT_FOUND`** — the same code and shape the line PATCH has answered since #602. ADR-0016 amended.
+
 ## 2026-08-02 — feat(stock): a substitute resolves to a flower you have, not a new one (#606)
 
 **The last create-a-flower path that still went by name.** When a purchase order comes back with something different from what was ordered, whoever was at the market types the substitute's name by hand. The system then looked for an existing flower card by **exact name only** — the Type and Colour captured at evaluation were used to label the *new* card, never to find an existing one. So `Ranunkulus` and `ranunculus` became two flowers, and a substitute plainly classified as `Peony / Pink / 60cm` became a third under whatever words happened to be typed.

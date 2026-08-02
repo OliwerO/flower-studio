@@ -206,6 +206,11 @@ export function apiLineToCanonical(line = {}) {
     colour:      line.Colour || '',
     size:        line.Size != null ? String(line.Size) : '',
     cultivar:    line.Cultivar || '',
+    // The stored confirmation (#607). Reading it back matters: the editor
+    // re-seeds from the server after any refetch, and without this a confirmed
+    // line would look unconfirmed and the next edit would send `false`,
+    // silently withdrawing an answer she already gave.
+    isNewVariety: !!line['New Variety'],
   };
 }
 
@@ -250,8 +255,16 @@ export function canonicalDiffToApiFields(prev = {}, next = {}) {
   // Hybrid rule (owner decision 2026-07-30): the backend refuses an identity
   // that matches no existing Variety, so a DELIBERATE new-variety create has to
   // say so. `isNewVariety` is set only after the owner confirms the prompt in
-  // PoLineForm; it is a control flag, never a stored column.
-  if (next.isNewVariety && Object.keys(out).length > 0) out['New Variety'] = true;
+  // PoLineForm. Since #607 the server also STORES the answer on the line —
+  // send and evaluation happen days later and need it, not just the request
+  // that carried it.
+  // Two ways it travels. As a genuine change of answer it diffs like any other
+  // field, so confirming on its own still reaches the server (the confirm is
+  // often the LAST thing she does, with every attr already flushed). And when
+  // it rides along with an identity change it must be in the SAME request, or
+  // the server refuses that request before it ever sees the confirmation.
+  if (!!prev.isNewVariety !== !!next.isNewVariety) out['New Variety'] = !!next.isNewVariety;
+  else if (next.isNewVariety && Object.keys(out).length > 0) out['New Variety'] = true;
   return out;
 }
 

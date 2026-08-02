@@ -77,10 +77,13 @@ afterEach(async () => {
 
 // Create a Draft PO with one seed line (so /send has a valid identity to
 // check) and immediately send it to a driver.
+// A line naming a flower she does not stock is refused unless she confirms it
+// (#607). These tests are about the post-send add rules, not that gate, so the
+// fixtures send the confirmation both PO editors send.
 async function createSentPO() {
   const created = await agent().post('/api/stock-orders').send({
     notes: '#550-regression',
-    lines: [{ flowerName: 'Seed Line', quantity: 1, costPrice: 1 }],
+    lines: [{ flowerName: 'Seed Line', type: 'Seed', quantity: 1, costPrice: 1, newVariety: true }],
   });
   expect(created.status).toBe(201);
   const poId = created.body.id;
@@ -96,7 +99,7 @@ describe('POST /stock-orders/:id/lines — post-send identity (#550)', () => {
 
     const added = await agent().post(`/api/stock-orders/${poId}/lines`).send({
       type: 'Tulip', colour: 'Yellow', size: 40, cultivar: null,
-      quantity: 20, costPrice: 3, supplier: 'Stefan',
+      quantity: 20, costPrice: 3, supplier: 'Stefan', newVariety: true,
     });
 
     expect(added.status).toBe(200);
@@ -137,7 +140,7 @@ describe('POST /stock-orders/:id/lines — post-send identity (#550)', () => {
     const poId = await createSentPO();
     const added = await agent().post(`/api/stock-orders/${poId}/lines`).send({
       type: 'Peony', colour: 'Pink', size: 55, cultivar: 'Sarah Bernhardt',
-      quantity: 12, costPrice: 8, sellPrice: 20, supplier: 'Stefan',
+      quantity: 12, costPrice: 8, sellPrice: 20, supplier: 'Stefan', newVariety: true,
     });
     expect(added.status).toBe(200);
     const lineId = added.body.id;

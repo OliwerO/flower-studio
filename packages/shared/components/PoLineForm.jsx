@@ -143,6 +143,22 @@ export default function PoLineForm({
     onChange({ ...nextAttrs, stockItemId, ...adopt, isNewVariety: false });
   }
 
+  // A line that was NEVER linked needs the same confirmation (#607) — the
+  // server now refuses an unconfirmed unknown flower at /send, and evaluation
+  // will not create one either. But this line is still being composed, so the
+  // question cannot BLOCK the way it does above: asking "create Peony?" the
+  // moment a Type is picked, before a Colour exists, and restoring on Cancel
+  // would throw away what she just typed. So the edit lands and the question
+  // sits beside it until answered — and it withdraws itself the moment the
+  // identity resolves to something she already has.
+  const unlinkedNeedsConfirm = !linked
+    && hasType
+    && stock.length > 0
+    && !value.isNewVariety
+    && !resolveVarietyLink(stock, {
+      type: value.type, colour: value.colour, size: value.size, cultivar: value.cultivar,
+    }, { targetMarkup }).matched;
+
   function confirmNewVariety() {
     const { attrs } = newVarietyPrompt;
     setNewVarietyPrompt(null);
@@ -251,6 +267,37 @@ export default function PoLineForm({
               </button>
             </div>
           </div>
+        )}
+
+        {/* The never-linked case: applied already, still unanswered. */}
+        {unlinkedNeedsConfirm && (
+          <div
+            data-testid="po-new-variety-notice"
+            className="mt-2 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-2 text-xs text-amber-900"
+          >
+            <p className="mb-1.5">
+              {tx('newVarietyConfirm', 'No such flower yet. Create it as a new variety?')}
+              {' '}
+              <span className="font-semibold">
+                {[value.type, value.colour, value.size ? `${value.size}cm` : null, value.cultivar]
+                  .filter(Boolean).join(' ')}
+              </span>
+            </p>
+            <button
+              type="button"
+              data-testid="po-new-variety-notice-confirm"
+              onClick={() => onChange({ isNewVariety: true })}
+              className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-medium text-white active:bg-amber-600"
+            >
+              {tx('newVarietyCreate', 'Create new')}
+            </button>
+          </div>
+        )}
+
+        {!linked && hasType && value.isNewVariety && (
+          <p className="mt-1.5 text-[11px] text-amber-700" data-testid="po-new-variety-confirmed">
+            {tx('newVarietyCreate', 'Create new')}
+          </p>
         )}
       </div>
 
