@@ -5,6 +5,22 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — chore(stock): the pre-validation duplicates are gone (owner-approved prod cleanup, RUN)
+
+**This one was run against production on 2026-08-02, with the owner's approval.** Everything above stops NEW duplicates being created; this folds the ones already stored, from before the create-a-flower door started matching.
+
+**What changed on her screens.** Thirteen duplicate flower cards became one card each — `Peony Pin` folded into `Peony Pink`, `Mattiola Pink` into `Matthiola Pink`, three spellings of `Oxypetalum blue` into one, and the same for Dahlia Coral, Hydrangea Pink, Lisianthus White and Oxypetalum white. Four flowers whose *type* was really their whole name were reclassified — `Pink Peonies` is now Peony / Pink (owner's call), and `Alstromeria White`, `Freesia White`, `Lisianthus Lavender` were split into type + colour. And `Pan Zbigniew Dalie` and `Pan Zbigniew` are now one supplier, `Pan Zbigniew`, across stock cards, purchase-order lines, substitutions, purchases, the three orders whose payment records named him, and the supplier list the pickers read from.
+
+**Nothing physical moved.** Total stems before 5, after 5. Every folded card sat at zero. Dated delivery rows were left completely alone — a delivery is history, not a duplicate.
+
+**Verified after the run:** 0 references left pointing at a retired card (order lines, PO lines, loss log, purchases, premades, substitute links all checked); 0 true 4-tuple duplicates remaining; and no NEW dangling references introduced — the pre-existing count of references to long-retired batches is unchanged in every table.
+
+The losers were **soft-deleted**, not removed, and a full pre-run snapshot of every affected table was taken first, so the whole operation is reversible.
+
+`backend/scripts/merge-duplicate-varieties.mjs` (DESTRUCTIVE) is idempotent — a second dry run finds nothing to do. It is kept for the next time, not because one is expected.
+
+Still outstanding, not part of this run: two stock cards whose supplier is literally `-`.
+
 ## 2026-08-02 — feat(stock): supplier is a picker, and receiving resolves before it creates (#604)
 
 **Supplier.** She tested the new Variety pickers and reported the field they missed: supplier was still free text on the bouquet flower form, the purchase-order line form, the dashboard's alternative-supplier field and the driver's shopping screen. Prod already shows what that costs — `Pan Zbigniew` and `Pan Zbigniew Dalie` are two separate suppliers in every report, and `-` is a third. All four now pick from the suppliers actually in use, with a deliberate tap to add a genuinely new one.
