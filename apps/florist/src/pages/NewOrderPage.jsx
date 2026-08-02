@@ -19,6 +19,10 @@ const emptyForm = {
   deliveryAddress: '', deliveryDate: '', deliveryTime: '',
   cardText: '', notes: '', floristNote: '',
   paymentStatus: 'Unpaid', paymentMethod: '', payment1Amount: '', deliveryFee: 35,
+  // Computed delivery cost (issue #618 / ADR-0019) — set by DeliveryPricingFields'
+  // quote lookup (or a manual owner override), threaded through to POST /orders
+  // as delivery.cost/distanceKm/distanceBand alongside the existing fee.
+  deliveryCost: null, distanceKm: null, distanceBand: null,
   // When set, the resulting order is created via POST /api/premade-bouquets/:id/match
   // instead of POST /api/orders. The bouquet's lines are copied server-side.
   matchPremadeId: null,
@@ -292,6 +296,7 @@ export default function NewOrderPage() {
           address: form.deliveryAddress, recipientName: form.recipientName,
           recipientPhone: form.recipientPhone, date: form.deliveryDate,
           time: form.deliveryTime, cardText: form.cardText, fee: form.deliveryFee,
+          cost: form.deliveryCost, distanceKm: form.distanceKm, distanceBand: form.distanceBand,
         };
       }
       // Route through the match endpoint when the wizard is locked to a premade
@@ -439,7 +444,7 @@ export default function NewOrderPage() {
             onUnlinkPremade={handleUnlinkPremade}
           />
         )}
-        {step === 2 && <Step3Details form={form} onChange={updateForm} />}
+        {step === 2 && <Step3Details form={form} onChange={updateForm} apiClient={client} />}
         {step === 3 && (
           <Step4Review
             form={form}
