@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import NewVarietyFields from './NewVarietyFields.jsx';
+import ValueCombobox from './ValueCombobox.jsx';
 import StockSearchInput from './StockSearchInput.jsx';
 import {
   resolveVarietyLink,
@@ -43,7 +44,6 @@ import {
  * @param {object}   t            Translations.
  * @param {'draft'|'sent'|'shopping'} mode  Toggles OPTIONAL FIELD VISIBILITY only —
  *                                never layout, never the quantity math.
- * @param {string}   idPrefix     Unique prefix for datalist ids on the page.
  */
 export default function PoLineForm({
   value,
@@ -53,7 +53,6 @@ export default function PoLineForm({
   targetMarkup = 0,
   t = {},
   mode = 'draft',
-  idPrefix = 'po-line',
 }) {
   const lotSize   = Number(value.lotSize) || 0;
   const stems     = Number(value.qty) || 0;
@@ -333,15 +332,14 @@ export default function PoLineForm({
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className={lblCls}>{tx('supplier', 'Supplier')}</label>
-          <input
-            type="text" list={`${idPrefix}-suppliers`} className={numCls}
+          <ValueCombobox
             value={value.supplier ?? ''}
-            onChange={(e) => onChange({ supplier: e.target.value })}
-            data-testid="po-supplier"
+            onChange={(next) => onChange({ supplier: next })}
+            options={suppliers}
+            testId="po-supplier"
+            className={numCls}
+            t={t}
           />
-          <datalist id={`${idPrefix}-suppliers`}>
-            {suppliers.map((s) => <option key={s} value={s} />)}
-          </datalist>
         </div>
         {mode !== 'shopping' && (
           <div>

@@ -812,7 +812,6 @@ function AddExtraLineForm({ orderId, onAdd, fillAllHint, stock = [], suppliers =
         targetMarkup={targetMarkup}
         t={t}
         mode="shopping"
-        idPrefix={`po-extra-${orderId}`}
       />
       {!ready && <p className="text-[11px] text-amber-600">{fillAllHint}</p>}
       <div className="flex gap-2 pt-1">

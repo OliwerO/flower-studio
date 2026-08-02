@@ -274,6 +274,10 @@ const en = {
   // Shared BouquetFlowerForm (#605) — the one "add a flower to a bouquet" form.
   newVarietyConfirm:   'No such flower yet. Create it as a new variety?',
   newVarietyCreate:    'Create new',
+  varietyLinked:       'from stock card',
+  varietyNone:         'not selected',
+  newVariety:          'New variety',
+  flowerName:          'Flower name',
   varietyValueCreate:  'Add',
   varietyRefine:       'Refine',
   varietySuggestions:  'You already have',
@@ -1240,6 +1244,10 @@ const ru = {
   // Shared BouquetFlowerForm (#605) — the one "add a flower to a bouquet" form.
   newVarietyConfirm:   'Такого цветка ещё нет. Создать новый сорт?',
   newVarietyCreate:    'Создать новый',
+  varietyLinked:       'из карточки склада',
+  varietyNone:         'не выбран',
+  newVariety:          'Новый сорт',
+  flowerName:          'Название цветка',
   varietyValueCreate:  'Добавить',
   varietyRefine:       'Уточнить',
   varietySuggestions:  'У вас уже есть',

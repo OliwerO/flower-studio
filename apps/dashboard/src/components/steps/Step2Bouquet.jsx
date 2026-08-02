@@ -505,7 +505,6 @@ export default function Step2Bouquet({
             fields={{ supplier: true, lotSize: true }}
             suppliers={configSuppliers}
             targetMarkup={targetMarkup}
-            idPrefix="bff-dash-step2"
             t={t}
             showToast={showToast}
             onCreated={handleNewFlowerCreated}

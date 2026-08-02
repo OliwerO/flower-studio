@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import NewVarietyFields from './NewVarietyFields.jsx';
+import ValueCombobox from './ValueCombobox.jsx';
 import { createBouquetDemand } from '../utils/createBouquetDemand.js';
 import { varietyDisplayName, groupByVariety } from '../utils/varietyKey.js';
 import { resolveVariety, seedVarietyFromQuery, normaliseSize } from '../utils/varietyIdentity.js';
@@ -76,7 +77,6 @@ export default function BouquetFlowerForm({
   suppliers = [],
   targetMarkup = 0,
   dense = false,
-  idPrefix = 'bff',
   t = {},
   showToast,
   onCreated,
@@ -318,19 +318,15 @@ export default function BouquetFlowerForm({
       {state !== 'linked' && (fields.supplier || fields.lotSize) && (
         <div className="grid grid-cols-2 gap-2">
           {fields.supplier && (
-            <>
-              <input
-                list={`${idPrefix}-suppliers`}
-                value={form.supplier ?? ''}
-                onChange={(e) => updateForm(p => ({ ...p, supplier: e.target.value }))}
-                placeholder={tx('supplier', 'Supplier')}
-                className={inputCls}
-                data-testid="bff-supplier"
-              />
-              <datalist id={`${idPrefix}-suppliers`}>
-                {suppliers.map((s) => <option key={s} value={s} />)}
-              </datalist>
-            </>
+            <ValueCombobox
+              value={form.supplier ?? ''}
+              onChange={(next) => updateForm(p => ({ ...p, supplier: next }))}
+              options={suppliers}
+              placeholder={tx('supplier', 'Supplier')}
+              testId="bff-supplier"
+              className={inputCls}
+              t={t}
+            />
           )}
           {fields.lotSize && (
             <input

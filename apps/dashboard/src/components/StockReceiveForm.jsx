@@ -8,7 +8,7 @@ import client from '../api/client.js';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { NewVarietyFields } from '@flower-studio/shared';
+import { NewVarietyFields, VarietyResolveNotice } from '@flower-studio/shared';
 
 const NEW_ITEM_VALUE = '__new__';
 const NEW_SUPPLIER_VALUE = '__new_supplier__';
@@ -16,9 +16,12 @@ const NEW_SUPPLIER_VALUE = '__new_supplier__';
 export default function StockReceiveForm({ stock, onDone }) {
   const { suppliers: SUPPLIERS, categories: CATEGORIES, targetMarkup } = useConfigLists();
   const [itemId, setItemId]       = useState('');
-  const [newName, setNewName]     = useState('');
   const [newCategory, setNewCategory] = useState('Other');
   const [newAttrs, setNewAttrs]   = useState({ typeName: '', colour: '', sizeCm: '', cultivar: '' });
+  // Resolution of the 4-tuple against loaded stock (#604) — the flower's
+  // NAME comes from here, never from a free-typed box.
+  const [resolution, setResolution] = useState({ state: 'none', match: null, resolvedName: '' });
+  const [varietyConfirmed, setVarietyConfirmed] = useState(false);
   const [quantity, setQuantity]   = useState('');
   const [costPrice, setCostPrice] = useState('');
   const [sellPrice, setSellPrice] = useState('');
@@ -33,7 +36,11 @@ export default function StockReceiveForm({ stock, onDone }) {
   const isNew = itemId === NEW_ITEM_VALUE;
   const isNewSup = supplier === NEW_SUPPLIER_VALUE;
   const supplierValue = isNewSup ? newSupplier.trim() : supplier;
-  const canSave = isNew ? (newName.trim() && quantity) : (itemId && quantity);
+  // Type is required and no longer falls back to the typed name: that fallback
+  // is what produced cards whose Type is `Pink Peonies` (#562).
+  const canSave = isNew
+    ? (quantity && resolution.state !== 'none' && (resolution.state !== 'new' || varietyConfirmed))
+    : (itemId && quantity);
 
   // All known suppliers from stock + config
   const allSuppliers = useMemo(() => {
@@ -104,11 +111,11 @@ export default function StockReceiveForm({ stock, onDone }) {
       if (isNew) {
         const sizeRaw = newAttrs.sizeCm;
         const res = await client.post('/stock', {
-          displayName: newName.trim(),
+          // Derived from the classification — a name and a 4-tuple that
+          // disagree is the #558 divergence class.
+          displayName: resolution.resolvedName,
           category: newCategory,
-          // Y-model Variety attrs (pitfall #9): typeName falls back to the name
-          // so it is never blank (NOT NULL on prod).
-          typeName: (newAttrs.typeName ?? '').trim() || newName.trim(),
+          typeName: (newAttrs.typeName ?? '').trim(),
           colour: (newAttrs.colour ?? '').trim() || null,
           sizeCm: sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
           cultivar: (newAttrs.cultivar ?? '').trim() || null,
@@ -117,6 +124,8 @@ export default function StockReceiveForm({ stock, onDone }) {
           sellPrice: sell,
           supplier: supplierValue,
           farmer: farmer.trim() || undefined,
+          // Only a confirmed create bypasses the server's duplicate guard (#603).
+          ...(resolution.state === 'new' && varietyConfirmed ? { newVariety: true } : {}),
         });
         finalItemId = res.data.id;
       }
@@ -170,25 +179,28 @@ export default function StockReceiveForm({ stock, onDone }) {
         {isNew ? (
           <>
             <div>
-              <label className="text-xs text-ios-tertiary mb-1 block">{t.stockName}</label>
-              <input value={newName} onChange={e => setNewName(e.target.value)}
-                placeholder={t.stockName}
-                className="field-input block w-full" />
-            </div>
-            <div>
               <label className="text-xs text-ios-tertiary mb-1 block">{t.category}</label>
               <select value={newCategory} onChange={e => setNewCategory(e.target.value)}
                 className="field-input block w-full">
                 {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
-            <NewVarietyFields
-              form={newAttrs}
-              onChange={setNewAttrs}
-              t={t}
-              stockItems={stock}
-              idPrefix="nv-dash-receive"
-            />
+            <div className="col-span-2 space-y-2">
+              <NewVarietyFields
+                form={newAttrs}
+                onChange={setNewAttrs}
+                t={t}
+                stockItems={stock}
+              />
+              <VarietyResolveNotice
+                form={newAttrs}
+                stockItems={stock}
+                confirmed={varietyConfirmed}
+                onConfirmedChange={setVarietyConfirmed}
+                onResolve={setResolution}
+                t={t}
+              />
+            </div>
           </>
         ) : (
           <>

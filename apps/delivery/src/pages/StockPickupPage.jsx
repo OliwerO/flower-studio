@@ -9,6 +9,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import client, { getClientPin } from '../api/client.js';
 import { StockPickupSkeleton } from '../components/Skeleton.jsx';
 import t from '../translations.js';
+import { ValueCombobox } from '@flower-studio/shared';
 
 export default function StockPickupPage() {
   const navigate = useNavigate();
@@ -349,14 +350,18 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
     }
   }
 
-  function saveDetails() {
+  // `overrides` lets a caller save a value in the same tick it sets state —
+  // the supplier picker commits and saves together, and `altSupplier` would
+  // still hold the previous value here. The onBlur callers pass an event, whose
+  // `.altSupplier` is undefined, so they fall through to state as before.
+  function saveDetails(overrides = {}) {
     const fields = {
       'Quantity Found': Number(qtyFound) || 0,
       'Driver Notes': note,
     };
     if (showAlt) {
       fields['Alt Flower Name'] = altFlowerName;
-      fields['Alt Supplier'] = altSupplier;
+      fields['Alt Supplier'] = overrides.altSupplier ?? altSupplier;
       fields['Alt Quantity Found'] = Number(altQty) || 0;
     }
     onUpdate(orderId, line.id, fields);
@@ -526,18 +531,18 @@ function PickupLineItem({ line, orderId, onUpdate, isSaving, flowers = [], suppl
               </datalist>
 
               <div className="grid grid-cols-2 gap-2">
-                <input
-                  type="text"
-                  list={`alt-suppliers-${line.id}`}
+                {/* Picker, not free text (#610) — a driver typing a supplier
+                    name by hand is how one supplier becomes two in the books.
+                    Commit saves; blur reverts, so onBlur would save nothing. */}
+                <ValueCombobox
                   value={altSupplier}
-                  onChange={e => setAltSupplier(e.target.value)}
-                  onBlur={saveDetails}
+                  onChange={next => { setAltSupplier(next); saveDetails({ altSupplier: next }); }}
+                  options={suppliers}
                   placeholder={t.altSupplier}
-                  className="text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                  testId={`alt-supplier-${line.id}`}
+                  className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+                  t={t}
                 />
-                <datalist id={`alt-suppliers-${line.id}`}>
-                  {suppliers.map(s => <option key={s} value={s} />)}
-                </datalist>
                 <input
                   type="number"
                   value={altQty}

@@ -758,7 +758,6 @@ function OrderCard({
                             stockItems={editorStock}
                             apiClient={client}
                             dense
-                            idPrefix="bff-florist-card"
                             t={t}
                             showToast={showToast}
                             onCreated={({ stockItem, line }) => {

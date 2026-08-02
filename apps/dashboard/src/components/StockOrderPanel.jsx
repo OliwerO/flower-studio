@@ -7,6 +7,7 @@ import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
 import {
+  ValueCombobox,
   DateTag, PoLineForm, apiLineToCanonical, canonicalDiffToApiFields,
 } from '@flower-studio/shared';
 
@@ -442,7 +443,6 @@ export default function StockOrderPanel({ negativeStock, poSuggestions, stock, a
                     targetMarkup={targetMarkup}
                     t={t}
                     mode="draft"
-                    idPrefix={`po-new-${line._idx}`}
                   />
                 </div>
               ))}
@@ -893,18 +893,19 @@ function AltLineEditor({ line, stock, suppliers, editable, onSave }) {
         </div>
         <div>
           <label className="text-[10px] text-ios-tertiary uppercase">{t.altSupplier || 'Supplier'}</label>
-          <input
-            type="text"
-            list={`owner-alt-suppliers-${line.id}`}
+          {/* Picker, not free text (#610): a supplier typed slightly differently
+              is a second supplier in every report she reads. Committing IS the
+              save here — the combobox reverts uncommitted text on blur, so an
+              onBlur save would persist nothing. */}
+          <ValueCombobox
             value={altSupplier}
-            onChange={e => setAltSupplier(e.target.value)}
-            onBlur={() => onSave({ 'Alt Supplier': altSupplier })}
-            className="field-input w-full text-sm"
+            onChange={next => { setAltSupplier(next); onSave({ 'Alt Supplier': next }); }}
+            options={suppliers || []}
             placeholder={t.altSupplier || 'Supplier'}
+            testId={`owner-alt-supplier-${line.id}`}
+            className="field-input w-full text-sm"
+            t={t}
           />
-          <datalist id={`owner-alt-suppliers-${line.id}`}>
-            {(suppliers || []).map(s => <option key={s} value={s} />)}
-          </datalist>
         </div>
         <div>
           <label className="text-[10px] text-ios-tertiary uppercase">{t.altAmount || 'Qty'}</label>
@@ -995,7 +996,6 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, onCancel, poStatus, 
         targetMarkup={targetMarkup}
         t={t}
         mode="draft"
-        idPrefix={`po-line-${line.id}`}
       />
       {isBlank && (
         <p className="text-[11px] text-amber-700">
@@ -1052,7 +1052,6 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
         targetMarkup={targetMarkup}
         t={t}
         mode="sent"
-        idPrefix={`po-add-${orderId}`}
       />
       {!ready && <p className="text-[11px] text-amber-600">{t.fillAllFields}</p>}
       <div className="flex gap-2">

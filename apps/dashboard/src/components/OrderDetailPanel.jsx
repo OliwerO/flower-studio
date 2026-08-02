@@ -854,7 +854,6 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                     suppliers={suppliers}
                     targetMarkup={targetMarkup}
                     dense={false}
-                    idPrefix="bff-dash-odp"
                     t={t}
                     showToast={showToast}
                     onCreated={({ stockItem, line }) => {

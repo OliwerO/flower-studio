@@ -3,9 +3,10 @@
 
 import { useState } from 'react';
 import client from '../api/client.js';
-import { renderStockName, NewVarietyFields } from '@flower-studio/shared';
+import { renderStockName, NewVarietyFields, VarietyResolveNotice } from '@flower-studio/shared';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
+import { useToast } from '../context/ToastContext.jsx';
 
 const NEW_ITEM_VALUE = '__new__';
 const NEW_SUPPLIER_VALUE = '__new_supplier__';
@@ -34,15 +35,20 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
 export default function ReceiveStockForm({ stock, onSave, onCancel }) {
   const { categories: CATEGORIES, suppliers: configSuppliers } = useConfigLists();
   const [stockItemId, setStockItemId] = useState('');
-  const [newName, setNewName]         = useState('');
   const [newCategory, setNewCategory] = useState('Other');
   const [newAttrs, setNewAttrs]       = useState({ typeName: '', colour: '', sizeCm: '', cultivar: '' });
+  // Resolution of the 4-tuple against loaded stock (#604) — the flower's NAME
+  // comes from here, never from a free-typed box.
+  const [resolution, setResolution]   = useState({ state: 'none', match: null, resolvedName: '' });
+  const [varietyConfirmed, setVarietyConfirmed] = useState(false);
+  const [search, setSearch]           = useState('');
   const [qty, setQty]                 = useState('');
   const [price, setPrice]             = useState('');
   const [sellPrice, setSellPrice]     = useState('');
   const [supplierId, setSupplierId]   = useState('');
   const [newSupplier, setNewSupplier] = useState('');
   const [saving, setSaving]           = useState(false);
+  const { showToast } = useToast();
 
   // Unique supplier names from existing stock items + config list
   const knownSuppliers = [...new Set([
@@ -54,7 +60,18 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
   const supplierValue = isNewSupplier ? newSupplier.trim() : supplierId;
 
   const isNew = stockItemId === NEW_ITEM_VALUE;
-  const canSave = isNew ? newName.trim() && qty : stockItemId && qty;
+  // Type is required and no longer falls back to the typed name — that fallback
+  // is what produced cards whose Type is `Pink Peonies` (#562).
+  const canSave = isNew
+    ? Boolean(qty) && resolution.state !== 'none' && (resolution.state !== 'new' || varietyConfirmed)
+    : Boolean(stockItemId && qty);
+
+  // The list is every flower she owns; without a filter, finding one on a phone
+  // means scrolling past all of them, which is why creating felt faster.
+  const q = search.trim().toLowerCase();
+  const visibleStock = q
+    ? stock.filter(s => (s['Display Name'] || '').toLowerCase().includes(q))
+    : stock;
 
   async function handleSubmit() {
     if (!canSave) return;
@@ -66,11 +83,11 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
         // Create the stock item first, then log receipt
         const sizeRaw = newAttrs.sizeCm;
         const res = await client.post('/stock', {
-          displayName: newName.trim(),
+          // Derived from the classification — a name and a 4-tuple that
+          // disagree is the #558 divergence class.
+          displayName: resolution.resolvedName,
           category:    newCategory,
-          // Y-model Variety attrs (pitfall #9): a newly-received flower must
-          // carry its 4-tuple; typeName falls back to the name (NOT NULL on prod).
-          typeName:    (newAttrs.typeName ?? '').trim() || newName.trim(),
+          typeName:    (newAttrs.typeName ?? '').trim(),
           colour:      (newAttrs.colour ?? '').trim() || null,
           sizeCm:      sizeRaw !== '' && sizeRaw != null ? Number(sizeRaw) : null,
           cultivar:    (newAttrs.cultivar ?? '').trim() || null,
@@ -78,6 +95,8 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
           costPrice:   Number(price) || 0,
           sellPrice:   Number(sellPrice) || 0,
           supplier:    supplierValue || undefined,
+          // Only a confirmed create bypasses the server's duplicate guard (#603).
+          ...(resolution.state === 'new' && varietyConfirmed ? { newVariety: true } : {}),
         });
         itemId = res.data.id;
       }
@@ -93,10 +112,12 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
 
       // If genuinely new supplier, persist to settings so it's available everywhere
       if (isNewSupplier && supplierValue && !configSuppliers.some(s => s.toLowerCase() === supplierValue.toLowerCase())) {
-        client.put('/settings/config', { suppliers: [...configSuppliers, supplierValue] }).catch(() => {});
+        client.put('/settings/config', { suppliers: [...configSuppliers, supplierValue] })
+          .catch(err => console.error('Failed to persist new supplier:', err));
       }
     } catch (err) {
       console.error('ReceiveStockForm error:', err);
+      showToast(err.response?.data?.error || t.receiveError, 'error');
     } finally {
       setSaving(false);
     }
@@ -108,8 +129,15 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
       {/* Flower selection */}
       <div>
         <p className="ios-label">{t.searchFlowers}</p>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder={t.searchFlowers}
+          className="w-full mb-2 text-base border border-gray-200 rounded-xl px-3 py-2.5 bg-white outline-none"
+          data-testid="receive-search"
+        />
         <div className="ios-card overflow-hidden divide-y divide-gray-100">
-          {stock.map(s => (
+          {visibleStock.map(s => (
             <button
               key={s.id}
               onClick={() => setStockItemId(s.id)}
@@ -140,9 +168,6 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
         <div>
           <p className="ios-label">{t.newItemName}</p>
           <div className="ios-card overflow-hidden divide-y divide-gray-100">
-            <Row label={t.newItemName}>
-              <TextInput value={newName} onChange={setNewName} placeholder="e.g. White tulips" />
-            </Row>
             <Row label={t.newItemCategory}>
               <select
                 value={newCategory}
@@ -153,13 +178,20 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               </select>
             </Row>
           </div>
-          <div className="mt-2">
+          <div className="mt-2 space-y-2">
             <NewVarietyFields
               form={newAttrs}
               onChange={setNewAttrs}
               t={t}
               stockItems={stock}
-              idPrefix="nv-florist-receive"
+            />
+            <VarietyResolveNotice
+              form={newAttrs}
+              stockItems={stock}
+              confirmed={varietyConfirmed}
+              onConfirmedChange={setVarietyConfirmed}
+              onResolve={setResolution}
+              t={t}
             />
           </div>
         </div>
