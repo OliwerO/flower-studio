@@ -28,7 +28,14 @@ export default function DeliveryPricingFields({
   t = {},
 }) {
   const debouncedAddress = useDebouncedValue(address, 500);
-  const lastQuoted = useRef(null);
+  // Seed the "already quoted this combination" ref from mount-time props, not
+  // a blank null: a fresh mount (Step3Details unmounts/remounts on Back/Next,
+  // and any order-detail panel mounts fresh on open) must NOT silently re-fire
+  // a quote and overwrite an existing/manually-overridden cost. Only seed the
+  // key when a cost already exists — with no cost yet (a fresh wizard step
+  // whose address was prefilled from a saved contact), a genuine first-time
+  // quote should still fire.
+  const lastQuoted = useRef(value?.cost != null ? `${address}::${deliveryMethod}` : null);
 
   useEffect(() => {
     if (deliveryMethod === 'Florist') {
@@ -60,8 +67,13 @@ export default function DeliveryPricingFields({
 
   const fee = value?.fee ?? null;
   const cost = value?.cost ?? null;
-  const margin = Number(fee || 0) - Number(cost || 0);
-  const belowCost = fee != null && cost != null && margin < 0;
+  // cost is legitimately null when the quote is unresolved (bad address, no
+  // ORS_API_KEY, unset studioAddress) — that must read as "unknown", never as
+  // a free 0, or the owner sees a healthy green margin at exactly the moment
+  // the system doesn't actually know the cost yet.
+  const hasMargin = fee != null && cost != null;
+  const margin = hasMargin ? Number(fee) - Number(cost) : null;
+  const belowCost = hasMargin && margin < 0;
 
   return (
     <div className="space-y-2">
@@ -102,9 +114,9 @@ export default function DeliveryPricingFields({
         <span className="text-xs text-ios-tertiary">{t.deliveryMargin}</span>
         <span
           data-testid="delivery-margin"
-          className={`text-sm font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}
+          className={`text-sm font-medium ${hasMargin ? (margin >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-ios-tertiary'}`}
         >
-          {margin.toFixed(0)} {t.zl}
+          {hasMargin ? `${margin.toFixed(0)} ${t.zl}` : '—'}
         </span>
       </div>
 

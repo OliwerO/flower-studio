@@ -99,6 +99,22 @@ describe('DeliveryPricingFields', () => {
     expect(onChange).toHaveBeenCalledWith({ cost: 45, distanceKm: null, band: null });
   });
 
+  it('shows a neutral placeholder for the margin when the cost is not yet known (e.g. an unresolved quote), and skips the below-cost warning', () => {
+    const apiClient = makeApiClient({});
+    render(
+      <DeliveryPricingFields
+        address="ul. Kwiatowa 1" deliveryMethod="Driver"
+        value={{ fee: 35, cost: null }} onChange={vi.fn()}
+        apiClient={apiClient} t={t}
+      />,
+    );
+    const margin = screen.getByTestId('delivery-margin');
+    expect(margin).toHaveTextContent('—');
+    expect(margin).not.toHaveTextContent('35');
+    expect(margin.className).not.toMatch(/text-emerald-600|text-rose-600/);
+    expect(screen.queryByTestId('delivery-fee-below-cost-warning')).not.toBeInTheDocument();
+  });
+
   it('re-fetches after a Florist detour and back, even with the address unchanged (stale lastQuoted ref)', async () => {
     const apiClient = makeApiClient({ distanceKm: 4.2, band: { upToKm: 5, price: 35 }, cost: 35, resolvedAddress: 'ul. Kwiatowa 1' });
     const onChange = vi.fn();
@@ -139,6 +155,64 @@ describe('DeliveryPricingFields', () => {
 
     await waitFor(() => expect(apiClient.post).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(onChange).toHaveBeenLastCalledWith({ cost: 35, distanceKm: 4.2, band: { upToKm: 5, price: 35 } }));
+  });
+
+  describe('mount-time quote suppression when a cost already exists', () => {
+    beforeEach(() => { vi.useFakeTimers(); });
+    afterEach(() => { vi.useRealTimers(); });
+
+    it('does not re-fetch on a fresh mount with an existing cost for the same address (Back/Next remount, detail-panel open), but still quotes once the address genuinely changes', () => {
+      const apiClient = makeApiClient({ distanceKm: 3, band: { upToKm: 5, price: 30 }, cost: 30, resolvedAddress: 'ul. Nowa 2' });
+      const onChange = vi.fn();
+
+      // Fresh mount — as if Step3Details had just remounted after Back/Next, or
+      // an order-detail panel had just opened — with a cost ALREADY set for this
+      // exact address. Must NOT fire an unsolicited quote that would silently
+      // overwrite a manual override or a stored distance/band/cost (ADR-0019).
+      const { rerender } = render(
+        <DeliveryPricingFields
+          address="ul. Kwiatowa 1" deliveryMethod="Driver"
+          value={{ fee: 50, cost: 35 }} onChange={onChange}
+          apiClient={apiClient} t={t}
+        />,
+      );
+
+      expect(apiClient.post).not.toHaveBeenCalled();
+
+      // The seed must not permanently disable quoting — once the address
+      // genuinely changes to something new, a fresh quote must still fire.
+      rerender(
+        <DeliveryPricingFields
+          address="ul. Nowa 2" deliveryMethod="Driver"
+          value={{ fee: 50, cost: 35 }} onChange={onChange}
+          apiClient={apiClient} t={t}
+        />,
+      );
+      act(() => { vi.advanceTimersByTime(500); });
+
+      expect(apiClient.post).toHaveBeenCalledTimes(1);
+      expect(apiClient.post).toHaveBeenCalledWith('/delivery-pricing/quote', {
+        address: 'ul. Nowa 2', deliveryMethod: 'Driver',
+      });
+    });
+
+    it('DOES quote on a fresh mount when no cost exists yet (genuine first-time quote, e.g. address prefilled from a saved contact)', () => {
+      const apiClient = makeApiClient({ distanceKm: 4.2, band: { upToKm: 5, price: 35 }, cost: 35, resolvedAddress: 'ul. Kwiatowa 1' });
+      const onChange = vi.fn();
+
+      render(
+        <DeliveryPricingFields
+          address="ul. Kwiatowa 1" deliveryMethod="Driver"
+          value={{ fee: null, cost: null }} onChange={onChange}
+          apiClient={apiClient} t={t}
+        />,
+      );
+
+      expect(apiClient.post).toHaveBeenCalledTimes(1);
+      expect(apiClient.post).toHaveBeenCalledWith('/delivery-pricing/quote', {
+        address: 'ul. Kwiatowa 1', deliveryMethod: 'Driver',
+      });
+    });
   });
 
   describe('debounce collapses rapid address changes', () => {
