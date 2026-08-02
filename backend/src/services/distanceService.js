@@ -35,12 +35,17 @@ export function normaliseAddressKey(address) {
 export async function resolveDistance(address, opts = {}) {
   if (!address) return null;
 
-  const key = normaliseAddressKey(address);
-  if (cache.has(key)) return cache.get(key);
-
   const fetcher = opts.fetchDistanceKm || orsFetchDistanceKm;
   const origin = opts.originAddress ?? getConfig('studioAddress');
   if (!origin) return null;
+
+  // Fold the resolved origin into the cache key — the studio address is
+  // going to become owner-editable (a later settings-editor task). If the
+  // key were destination-only, changing the studio address would leave
+  // every previously-cached destination silently returning the distance
+  // computed from the OLD origin for the rest of the process's life.
+  const key = `${normaliseAddressKey(origin)}::${normaliseAddressKey(address)}`;
+  if (cache.has(key)) return cache.get(key);
 
   try {
     const result = await fetcher(origin, address);

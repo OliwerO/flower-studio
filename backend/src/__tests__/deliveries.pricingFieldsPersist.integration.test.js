@@ -133,4 +133,53 @@ describe('PATCH /api/deliveries/:id — pricing fields persist', () => {
     expect(res.status).toBe(200);
     expect(res.body['Driver Payout']).toBe(0);
   });
+
+  it('also forces Taxi Cost to 0 when Delivery Method changes to Florist', async () => {
+    const [order] = await harness.db.insert(orders).values({
+      appOrderId: 'TEST-5', status: 'New', deliveryType: 'Delivery', customerId: 'cust-test-5',
+      orderDate: new Date().toISOString().slice(0, 10),
+    }).returning();
+    const [delivery] = await harness.db.insert(deliveries).values({ orderId: order.id }).returning();
+
+    const res = await supertest(app).patch(`/api/deliveries/${delivery.id}`)
+      .send({ 'Delivery Method': 'Florist', 'Taxi Cost': 50 });
+
+    expect(res.status).toBe(200);
+    expect(res.body['Taxi Cost']).toBe(0);
+  });
+
+  it('forces Driver Payout to 0 on a later PATCH that omits Delivery Method, when the delivery is already stored as Florist', async () => {
+    const [order] = await harness.db.insert(orders).values({
+      appOrderId: 'TEST-6', status: 'New', deliveryType: 'Delivery', customerId: 'cust-test-6',
+      orderDate: new Date().toISOString().slice(0, 10),
+    }).returning();
+    const [delivery] = await harness.db.insert(deliveries).values({ orderId: order.id }).returning();
+
+    // First PATCH sets the delivery to Florist.
+    const first = await supertest(app).patch(`/api/deliveries/${delivery.id}`)
+      .send({ 'Delivery Method': 'Florist' });
+    expect(first.status).toBe(200);
+
+    // Second PATCH touches only Driver Payout — no 'Delivery Method' in this
+    // request body. The effective method must still be read from the
+    // delivery's EXISTING stored method, not just this request's fields.
+    const second = await supertest(app).patch(`/api/deliveries/${delivery.id}`)
+      .send({ 'Driver Payout': 40 });
+
+    expect(second.status).toBe(200);
+    expect(second.body['Driver Payout']).toBe(0);
+  });
+
+  it('rejects an invalid Delivery Method', async () => {
+    const [order] = await harness.db.insert(orders).values({
+      appOrderId: 'TEST-7', status: 'New', deliveryType: 'Delivery', customerId: 'cust-test-7',
+      orderDate: new Date().toISOString().slice(0, 10),
+    }).returning();
+    const [delivery] = await harness.db.insert(deliveries).values({ orderId: order.id }).returning();
+
+    const res = await supertest(app).patch(`/api/deliveries/${delivery.id}`)
+      .send({ 'Delivery Method': 'Bogus' });
+
+    expect(res.status).toBe(400);
+  });
 });

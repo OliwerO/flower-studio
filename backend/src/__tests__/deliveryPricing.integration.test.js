@@ -31,7 +31,7 @@ describe('POST /api/delivery-pricing/quote', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
       distanceKm: 3.5,
-      band: { id: 1, upToKm: 5, price: 35 },
+      band: { upToKm: 5, price: 35 },
       cost: 35,
       resolvedAddress: 'ul. Kwiatowa 1, Kraków',
     });

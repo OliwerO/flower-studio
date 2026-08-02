@@ -3,7 +3,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import { getConfig } from '../services/configService.js';
 import { resolveDistance } from '../services/distanceService.js';
-import { bandForDistanceKm, computeDeliveryCost } from '../services/deliveryPricingService.js';
+import { bandForDistanceKm, computeDeliveryCost, toBandSnapshot } from '../services/deliveryPricingService.js';
 import { DELIVERY_METHOD } from '../constants/statuses.js';
 
 const router = Router();
@@ -31,7 +31,7 @@ router.post('/quote', async (req, res, next) => {
 
     res.json({
       distanceKm: distance.distanceKm,
-      band,
+      band: toBandSnapshot(band),
       cost,
       resolvedAddress: distance.resolvedAddress,
     });

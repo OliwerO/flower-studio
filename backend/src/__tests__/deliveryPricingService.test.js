@@ -1,6 +1,6 @@
 // backend/src/__tests__/deliveryPricingService.test.js
 import { describe, it, expect } from 'vitest';
-import { bandForDistanceKm, computeDeliveryCost, computeDeliveryMargin } from '../services/deliveryPricingService.js';
+import { bandForDistanceKm, computeDeliveryCost, computeDeliveryMargin, toBandSnapshot } from '../services/deliveryPricingService.js';
 
 const BANDS = [
   { id: 1, upToKm: 5,    price: 35 },
@@ -71,5 +71,17 @@ describe('computeDeliveryMargin', () => {
     expect(computeDeliveryMargin(null, 35)).toBe(-35);
     expect(computeDeliveryMargin(50, null)).toBe(50);
     expect(computeDeliveryMargin(null, null)).toBe(0);
+  });
+});
+
+describe('toBandSnapshot', () => {
+  it('strips a band down to {upToKm, price} — no id', () => {
+    const snapshot = toBandSnapshot({ id: 1, upToKm: 5, price: 35 });
+    expect(snapshot).toEqual({ upToKm: 5, price: 35 });
+    expect(snapshot).not.toHaveProperty('id');
+  });
+
+  it('returns null for a null band', () => {
+    expect(toBandSnapshot(null)).toBeNull();
   });
 });

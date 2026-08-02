@@ -64,4 +64,14 @@ describe('resolveDistance', () => {
 
     expect(calls).toBe(1);
   });
+
+  it('a changed studio origin busts the cache instead of reusing a stale distance', async () => {
+    let calls = 0;
+    const stub = async () => { calls++; return { distanceKm: 4.2, resolvedAddress: 'ul. Kwiatowa 1' }; };
+
+    await resolveDistance('ul. Kwiatowa 1', { fetchDistanceKm: stub, originAddress: 'studio address A' });
+    await resolveDistance('ul. Kwiatowa 1', { fetchDistanceKm: stub, originAddress: 'studio address B' });
+
+    expect(calls).toBe(2);
+  });
 });

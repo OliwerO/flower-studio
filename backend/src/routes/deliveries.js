@@ -6,9 +6,10 @@ import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
-import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS, VALID_DRIVER_PAYMENT_STATUSES, DELIVERY_METHOD } from '../constants/statuses.js';
+import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS, VALID_DRIVER_PAYMENT_STATUSES, VALID_DELIVERY_METHODS } from '../constants/statuses.js';
 import { sendDeliveryCompleteAlert } from '../services/orderService.js';
 import { notifyDeliveryAssigned, notifyDeliveryTimeChanged } from '../services/driverNotifyService.js';
+import { zeroCostFieldsForMethod } from '../services/deliveryPricingService.js';
 
 const router = Router();
 router.use(authorize('deliveries'));
@@ -158,16 +159,27 @@ router.patch('/:id', async (req, res, next) => {
       });
     }
 
-    // Florist method always costs zero — that time is already paid via
-    // Florist Hours, so paying it twice via Driver Payout would double-count
-    // (ADR-0019).
-    if (fields['Delivery Method'] === DELIVERY_METHOD.FLORIST) {
-      fields['Driver Payout'] = 0;
+    // Validate Delivery Method if provided
+    if (fields['Delivery Method'] && !VALID_DELIVERY_METHODS.includes(fields['Delivery Method'])) {
+      return res.status(400).json({
+        error: `Delivery Method must be one of: ${VALID_DELIVERY_METHODS.join(', ')}`,
+      });
     }
 
-    // Capture the prior driver so we only notify on a genuine assignment change.
+    // Capture the prior state so we only notify on a genuine assignment change,
+    // and so an effective Delivery Method can fall back to what's already
+    // stored when this PATCH doesn't touch that field.
     const before = await orderRepo.getDeliveryById(req.params.id).catch(() => null);
     const priorDriver = before?.['Assigned Driver'] || '';
+
+    // Florist method always costs zero — that time is already paid via
+    // Florist Hours, so paying it twice via Driver Payout or Taxi Cost would
+    // double-count (ADR-0019). The effective method falls back to the
+    // delivery's EXISTING stored method when this request doesn't touch
+    // 'Delivery Method' — a delivery already Florist, patched with only
+    // {'Driver Payout': 40}, must still zero out.
+    const effectiveMethod = fields['Delivery Method'] ?? before?.['Delivery Method'];
+    Object.assign(fields, zeroCostFieldsForMethod(effectiveMethod));
 
     // Self-claim: a driver advancing status stamps their own name (no notify).
     // When a driver changes status, stamp their name on the delivery.
