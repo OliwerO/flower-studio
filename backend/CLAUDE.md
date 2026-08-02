@@ -115,9 +115,15 @@ Coverage: `cd backend && npx vitest run --coverage`
 
 Two flavours under `src/__tests__/`:
 - **Unit** (`*.test.js`) — pure function tests, no I/O.
-- **Integration** (`*.integration.test.js`) — boot pglite in-process, apply migrations, exercise repos and routes against real SQL. Runs in CI via `.github/workflows/test.yml`.
+- **Integration** (`*.integration.test.js`) — boot pglite in-process, apply migrations, exercise repos and routes against real SQL.
+
+CI runs these as **two parallel jobs** (`.github/workflows/test.yml`): `unit` (`--exclude '**/*.integration.test.js'`, a glob) and `integration` (`integration.test.js`, a positional *substring*). Vitest positional filters are substring matches on the path, **not** globs — passing a glob positionally matches zero files and exits 0, i.e. a green job that tested nothing. Note the file name is not a reliable proxy for "touches the DB": 14 plain `*.test.js` files use the pglite harness too, so the `unit` job is not I/O-free.
 
 Mock external deps (Telegram, Claude API, Wix). Never make real network calls in tests. Use `vi.useFakeTimers()` for time-dependent logic.
+
+**The pglite harness is pooled per file, not per test** (changed 2026-07-26, supersedes the boot-per-test behaviour). `setupPgHarness()` still hands every test a completely empty database, but it gets there by `TRUNCATE ... RESTART IDENTITY CASCADE` (~15ms) instead of booting a second WASM Postgres (~600ms, of which the migration replay is only ~44ms — the boot was always the cost, not the migrations). `teardownPgHarness()` is therefore a no-op for the pooled instance; the process is closed by an `afterAll` inside the helper. Vitest's default per-file module isolation is what makes the pooled handle file-scoped. This took the backend suite from ~590s to ~110s in CI and is why the runtime creep stopped — **write new integration tests exactly as before and they inherit it**.
+
+The one thing pooling does not undo is **DDL**: `TRUNCATE` restores rows, not schema. A test that changes the schema — practically, one that drives a migration script — must ask for its own database with `setupPgHarness({ fresh: true })`, which is never pooled and *is* really closed on teardown. See `migrateStockYModel.integration.test.js` (drives `ALTER COLUMN ... SET NOT NULL`) and `assistantTools.ordersPack.integration.test.js` (needs a second, independent DB alongside the pooled one). Symptom of getting this wrong: the file's first test passes and later ones fail on a constraint the previous test installed.
 
 **Known pglite limitation:** `SELECT FOR UPDATE` is not supported in pglite (single-connection WASM). Integration tests that need concurrency-safe reads must use the partial unique index as the dedup guard instead of `FOR UPDATE`. In production Postgres, row-level locks on `UPDATE` provide isolation. This is documented in `appConfigRepo.js` (line with "pglite does NOT support SELECT FOR UPDATE") and in `stockRepo.js` `getOrCreateDemandEntry`. Never add `FOR UPDATE` to pglite integration tests — the query will fail with a syntax error.
 

@@ -19,7 +19,12 @@ import { runMigration } from '../../scripts/migrate-stock-y-model.js';
 const TODAY = '2026-06-29';
 
 let harness, pg;
-beforeEach(async () => { harness = await setupPgHarness(); pg = harness.pg; });
+// `fresh: true` — the script under test changes the SCHEMA (Phase 5 does
+// `ALTER COLUMN date/type_name SET NOT NULL`). The pooled harness is emptied
+// between tests with TRUNCATE, which restores rows but not DDL, so a pooled
+// instance would carry the NOT NULL from one test into the next. This suite
+// needs a genuinely re-migrated database per test.
+beforeEach(async () => { harness = await setupPgHarness({ fresh: true }); pg = harness.pg; });
 afterEach(async () => { await teardownPgHarness(harness); });
 
 async function ins(client, { name, qty = 0, date = null, type = null, deleted = false }) {

@@ -1,23 +1,27 @@
 name: Test
 
 # Runs on every pull request + every push to master.
-# Six jobs:
-#   - lint:     static guards (backend silent-catch ban, root pitfall #5).
-#   - unit:     backend vitest suite (covers stockRepo, orderRepo, services, utils).
-#   - shared:   packages/shared vitest (utils, hooks, components).
-#   - e2e:      boots the local-PG harness and runs scripts/e2e-test.js end-to-end.
-#   - ui:       Playwright drives the real React apps against that harness (#612).
-#   - lab-api:  lab factories + API integration gate against a real Postgres.
+# Seven jobs:
+#   - lint:        static guards (backend silent-catch ban, root pitfall #5).
+#   - unit:        backend vitest, everything except *.integration.test.js.
+#   - integration: backend vitest, only *.integration.test.js (pglite-backed).
+#   - shared:      packages/shared vitest (utils, hooks, components).
+#   - e2e:         boots the local-PG harness and runs scripts/e2e-test.js end-to-end.
+#   - ui:          Playwright drives the real React apps against that harness (#612).
+#   - lab-api:     lab factories + API integration gate against a real Postgres.
 #
 # Together these are CLAUDE.md's Pre-PR matrix. `ui` is item 4b, and it was the
 # one item nothing enforced until #612 — a UI spec could rot for weeks and no
 # PR check would notice. It exists because component tests and integration
 # tests both pass while the wiring between them is broken.
 #
-# Both jobs install deps from the root via `npm ci` (workspace layout) so
-# every workspace package is hoisted once. Backend devDeps include
-# @electric-sql/pglite (the harness's in-process Postgres) — no Docker, no
-# external services, no secrets needed.
+# unit + integration are two halves of one suite — see the note on the `unit`
+# job for how the split is expressed and why it can't silently drop a file.
+#
+# Every job that needs deps installs them from the root via `npm ci`
+# (workspace layout) so every workspace package is hoisted once. Backend
+# devDeps include @electric-sql/pglite (the harness's in-process Postgres) —
+# no Docker, no external services, no secrets needed.
 
 on:
   pull_request:
@@ -61,17 +65,41 @@ jobs:
             exit 1
           fi
 
+  # The backend suite runs as two jobs so a slow half can't drag the other
+  # half's feedback with it. The two filters are exact complements:
+  #
+  #   unit         --exclude '**/*.integration.test.js'   (a GLOB)
+  #   integration  integration.test.js                    (a path SUBSTRING)
+  #
+  # Those are different kinds of argument and are not interchangeable.
+  # Vitest's positional filters are substring matches on the file path, NOT
+  # globs — `vitest run '**/*.integration.test.js'` matches ZERO files and
+  # exits 0, which would look like a green job that silently tested nothing.
+  # Verified against the version this repo actually installs: backend pins
+  # vitest 4.1.0 in its own node_modules (the root hoists 3.2.4 for
+  # packages/shared), and `working-directory: backend` picks up the v4 binary.
+  #
+  # If you touch either filter, prove the halves still partition the whole —
+  # unit + integration must equal total, with nothing counted twice:
+  #   cd backend
+  #   npx vitest list --filesOnly | wc -l                                  # total
+  #   npx vitest list --filesOnly --exclude '**/*.integration.test.js' | wc -l
+  #   npx vitest list --filesOnly integration.test.js | wc -l
+  # and check the two jobs' "Tests N passed" lines sum to what `npx vitest
+  # run` reports on its own.
   unit:
-    name: Backend unit tests (vitest)
+    name: Backend tests — unit
     runs-on: ubuntu-latest
-    # Raised 10 → 20 on 2026-07-26. The suite passed in 589.75s on run
-    # 30200748052 and the job was killed by the 10-minute wall 0.07s after
-    # vitest printed "1085 passed" — a green suite reported as a red check.
-    # The pglite integration tests dominate the runtime (each boots a fresh
-    # in-process Postgres and replays every migration), so this grows with
-    # every new one. The durable fix is splitting unit vs integration into
-    # two parallel jobs; this ceiling just stops the false failures until then.
-    timeout-minutes: 20
+    # 10 → 20 on 2026-07-26 (#586, stopgap after run 30200748052 killed a
+    # green 1085-test suite 0.07s after its summary), then back to 10 the
+    # same day once the actual cause was fixed. It was never the migration
+    # replay: the pglite harness booted a fresh WASM Postgres (~562ms) per
+    # TEST, and that boot — not the ~44ms of migrations — was the runtime.
+    # The harness is now pooled per file (backend/src/__tests__/helpers/
+    # pgHarness.js), which took the suite from ~590s to ~110s. The ceiling is
+    # back to killing hangs rather than bounding normal growth; if it trips
+    # again, look for a leaked per-test boot before raising the number.
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
@@ -84,13 +112,41 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Run backend tests
-        run: npx vitest run
+      - name: Run backend unit tests
+        run: npx vitest run --exclude '**/*.integration.test.js'
         working-directory: backend
         env:
           # Vitest tests don't need real Airtable — services are mocked.
           # Setting these to dummy values just satisfies the env-var validator
           # in backend/src/index.js when any test imports it transitively.
+          AIRTABLE_API_KEY: test-mock-key
+          AIRTABLE_BASE_ID: appMockBase
+          PIN_OWNER: '1111'
+          PIN_FLORIST: '2222'
+
+  integration:
+    name: Backend tests — integration
+    runs-on: ubuntu-latest
+    # See the timeout note on `unit` above.
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Positional arg = substring match on the file path (see the note on
+      # `unit`). This is the complement of that job's --exclude glob.
+      - name: Run backend integration tests
+        run: npx vitest run integration.test.js
+        working-directory: backend
+        env:
           AIRTABLE_API_KEY: test-mock-key
           AIRTABLE_BASE_ID: appMockBase
           PIN_OWNER: '1111'
