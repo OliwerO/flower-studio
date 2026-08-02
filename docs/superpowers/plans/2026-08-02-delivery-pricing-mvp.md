@@ -434,7 +434,7 @@ git commit -m "feat(delivery): distance module — ORS adapter gated behind ORS_
 **Files:**
 - Modify: `backend/src/db/schema.js:239` (fix stale comment) and `:226-252` (add 5 columns)
 - Modify: `backend/src/constants/statuses.js` (add `DRIVER_PAYMENT_STATUS`, `DELIVERY_METHOD`)
-- Create: `backend/src/db/migrations/0025_delivery_pricing.sql`
+- Create: `backend/src/db/migrations/0026_delivery_pricing.sql`
 - Modify: `lab/factories/delivery.js` (add the 5 new columns to the factory default + header comment)
 - Test: `backend/src/__tests__/deliveries.pricingSchema.integration.test.js`
 
@@ -523,7 +523,7 @@ export const deliveries = pgTable('deliveries', {
 - [ ] **Step 3: Write the migration**
 
 ```sql
--- backend/src/db/migrations/0025_delivery_pricing.sql
+-- backend/src/db/migrations/0026_delivery_pricing.sql
 --
 -- Delivery pricing (issue #618 / ADR-0019): Delivery Cost is computed from
 -- driving distance against an editable Distance Band table, instead of both
@@ -655,7 +655,7 @@ Expected: PASS
 - [ ] **Step 7: Commit**
 
 ```bash
-git add backend/src/db/schema.js backend/src/db/migrations/0025_delivery_pricing.sql backend/src/constants/statuses.js lab/factories/delivery.js backend/src/__tests__/deliveries.pricingSchema.integration.test.js
+git add backend/src/db/schema.js backend/src/db/migrations/0026_delivery_pricing.sql backend/src/constants/statuses.js lab/factories/delivery.js backend/src/__tests__/deliveries.pricingSchema.integration.test.js
 git commit -m "feat(delivery): schema for distance/band/payment-status/taxi-cost/result (#618)"
 ```
 
