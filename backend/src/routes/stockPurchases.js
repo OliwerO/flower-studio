@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { authorize } from '../middleware/auth.js';
 import * as stockRepo from '../repos/stockRepo.js';
 import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
+import { stripDateTag } from '../utils/varietyIdentity.js';
 
 const router = Router();
 router.use(authorize('stock-purchases'));
@@ -9,7 +10,6 @@ router.use(authorize('stock-purchases'));
 // POST /api/stock-purchases — record a new supplier delivery.
 // Always creates a NEW dated batch record so each delivery is tracked separately.
 // Body: { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes }
-const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
 router.post('/', async (req, res, next) => {
   try {
     const { stockItemId, supplierName, quantityPurchased, pricePerUnit, sellPricePerUnit, notes } = req.body;
@@ -25,8 +25,8 @@ router.post('/', async (req, res, next) => {
       const d = new Date(today);
       const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
 
-      const rawName = stockItem['Display Name'] || '';
-      const baseName = (rawName.match(DATE_BATCH_RE)?.[1] || rawName).trim();
+      // Both tag forms — see stripDateTag; an ISO-tagged orig must not stack.
+      const baseName = stripDateTag(stockItem['Display Name'] || '');
 
       let batchQty = quantityPurchased;
       if (existingQty < 0) {

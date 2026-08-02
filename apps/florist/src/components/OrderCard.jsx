@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, isDatedBatchName } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
@@ -679,7 +679,7 @@ function OrderCard({
                                 const q = flowerSearch.toLowerCase();
                                 const qty = Number(s['Current Quantity']) || 0;
                                 // Hide depleted dated batches (e.g. "Rose (14.Mar.)")
-                                if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                                if (qty <= 0 && isDatedBatchName(s['Display Name'] || '')) return false;
                                 // Hide exactly-zero base rows — they're clutter
                                 // (duplicate records from earlier manual entries, etc.).
                                 // Negative stock stays: it's implicit demand for the next PO.

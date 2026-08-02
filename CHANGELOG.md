@@ -5,6 +5,23 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — fix(stock): one definition of a dated batch name
+
+**Found while surveying prod for the legacy cards the owner asked about.** A dated row is one delivery of a flower, not the flower itself — every identity check depends on telling the two apart. But the date tag is written **two ways**: the short `(24.Jul.)` the purchase-order receive paths write, and the ISO `(2026-07-23)` the Y-model writes. The short-only regex was copy-pasted into **eleven** places; only `parseBatchName` knew about the ISO form. Six ISO-tagged rows are live on prod right now.
+
+What that could do, in order of severity:
+
+- **A delivery mistaken for the flower's card.** `findVarietyMatch` skips dated rows so a new order's demand can't land on a closed delivery. It didn't skip the ISO ones — the #323 shape.
+- **Double-tagged names.** Receiving into an ISO-tagged row produced `Dahlia Coral (2026-07-23) (2.Aug.)`; both receive paths carry a strip step specifically to prevent that, and both read only the short form.
+- **Spent batches that never leave the picker.** The "hide a depleted dated batch" filter — inline in five order-editing screens — kept showing empty ISO-tagged rows.
+- **The tag rendered as part of the name.** `Dahlia Coral (2026-07-23)` displayed as the flower's name instead of name + date badge.
+
+There is now one definition per side: `DATE_BATCH_RE` / `isDatedBatchName` / `stripDateTag` in the two `varietyIdentity.js` files (pinned against each other by the parity test, which now covers both forms), and `parseBatchName` for display splitting — `stockName.jsx` delegates to it rather than carrying a fourth variant. The five inline app-level copies now import the shared helper.
+
+Also deleted: `apps/florist/src/utils/stockName.jsx` and `apps/dashboard/src/utils/stockName.jsx`, byte-near copies of the shared module with zero importers.
+
+No schema change, no env change, no API change. Nothing to re-run against existing data — every fix is read-time.
+
 ## 2026-08-02 — feat(stock): a Variety attribute is picked from a list, not typed (#610)
 
 **The other half of the owner's `DA` report.** #605 stopped the search box from naming her flowers. It did not change what the Type / Colour / Size / Cultivar fields *are* — and her actual complaint was that they are "type fields". They were: `<input list>` + `<datalist>`, which is a suggestion, not a picker. It renders as a plain text box, on her browser it never opened at all (**#587**, closed by this), and text that matched nothing was committed the moment she looked away.

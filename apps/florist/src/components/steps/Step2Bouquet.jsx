@@ -10,7 +10,7 @@ import { useToast } from '../../context/ToastContext.jsx';
 import { useAuth } from '../../context/AuthContext.jsx';
 import t from '../../translations.js';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, BouquetFlowerForm, hasAvailableStockMatch, createBouquetDemand } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, BouquetFlowerForm, hasAvailableStockMatch, createBouquetDemand, isDatedBatchName } from '@flower-studio/shared';
 
 // Isolated cart row — holds local input state so typing multi-digit numbers
 // doesn't re-render the parent and kill focus. Like a sub-assembly station
@@ -300,11 +300,10 @@ export default function Step2Bouquet({
   // Show dated batches only when they have stock — useful for choosing which batch to use.
   // Always show the base flower name even at qty 0 (for negative stock / future ordering).
   const visibleStock = useMemo(() => {
-    const dateBatchPattern = /\(\d{1,2}\.\w{3,4}\.?\)$/;
     return stock.filter(s => {
       const qty = Number(s['Current Quantity']) || 0;
       const name = s['Display Name'] || '';
-      if (qty <= 0 && dateBatchPattern.test(name)) return false;
+      if (qty <= 0 && isDatedBatchName(name)) return false;
       return true;
     });
   }, [stock]);
