@@ -712,6 +712,7 @@ export default function OrderDetailPage() {
                       onChange={deliveryPricing.onChange}
                       apiClient={client}
                       t={t}
+                      showMargin={isOwner}
                     />
                   </div>
                 </div>

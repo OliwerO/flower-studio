@@ -934,6 +934,7 @@ function OrderCard({
                           onChange={deliveryPricing.onChange}
                           apiClient={client}
                           t={t}
+                          showMargin={isOwner}
                         />
                       </div>
                     )}

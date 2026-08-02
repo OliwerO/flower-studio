@@ -99,6 +99,32 @@ describe('DeliveryPricingFields', () => {
     expect(onChange).toHaveBeenCalledWith({ cost: 45, distanceKm: null, band: null });
   });
 
+  it('hides the margin row and below-cost warning when showMargin is false, while keeping the fee/cost inputs editable', () => {
+    const apiClient = makeApiClient({});
+    const onChange = vi.fn();
+    render(
+      <DeliveryPricingFields
+        address="ul. Kwiatowa 1" deliveryMethod="Driver"
+        value={{ fee: 50, cost: 35 }} onChange={onChange}
+        apiClient={apiClient} t={t}
+        showMargin={false}
+      />,
+    );
+    expect(screen.queryByTestId('delivery-margin')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('delivery-fee-below-cost-warning')).not.toBeInTheDocument();
+
+    const feeInput = screen.getByTestId('delivery-fee-input');
+    const costInput = screen.getByTestId('delivery-cost-input');
+    expect(feeInput).toBeInTheDocument();
+    expect(costInput).toBeInTheDocument();
+
+    fireEvent.change(feeInput, { target: { value: '60' } });
+    expect(onChange).toHaveBeenCalledWith({ fee: 60 });
+
+    fireEvent.change(costInput, { target: { value: '45' } });
+    expect(onChange).toHaveBeenCalledWith({ cost: 45, distanceKm: null, band: null });
+  });
+
   it('shows a neutral placeholder for the margin when the cost is not yet known (e.g. an unresolved quote), and skips the below-cost warning', () => {
     const apiClient = makeApiClient({});
     render(

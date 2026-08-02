@@ -18,6 +18,11 @@ import useDebouncedValue from '../hooks/useDebouncedValue.js';
  * @param {function} onChange        (patch) => void
  * @param {object}   apiClient       axios-like: { post }
  * @param {object}   t               Translations.
+ * @param {boolean}  [showMargin=true]  Hide the margin row + below-cost warning
+ *   for a viewer who shouldn't see delivery profit (e.g. a non-owner florist).
+ *   The fee/cost inputs stay fully visible and editable either way — this only
+ *   hides the computed figure, never the underlying data entry. Defaults to
+ *   true so every existing caller (dashboard panel, both wizards) is unaffected.
  */
 export default function DeliveryPricingFields({
   address,
@@ -26,6 +31,7 @@ export default function DeliveryPricingFields({
   onChange,
   apiClient,
   t = {},
+  showMargin = true,
 }) {
   const debouncedAddress = useDebouncedValue(address, 500);
   // Seed the "already quoted this combination" ref from mount-time props, not
@@ -110,17 +116,19 @@ export default function DeliveryPricingFields({
         </div>
       </div>
 
-      <div className="flex justify-between items-center gap-2">
-        <span className="text-xs text-ios-tertiary">{t.deliveryMargin}</span>
-        <span
-          data-testid="delivery-margin"
-          className={`text-sm font-medium ${hasMargin ? (margin >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-ios-tertiary'}`}
-        >
-          {hasMargin ? `${margin.toFixed(0)} ${t.zl}` : '—'}
-        </span>
-      </div>
+      {showMargin && (
+        <div className="flex justify-between items-center gap-2">
+          <span className="text-xs text-ios-tertiary">{t.deliveryMargin}</span>
+          <span
+            data-testid="delivery-margin"
+            className={`text-sm font-medium ${hasMargin ? (margin >= 0 ? 'text-emerald-600' : 'text-rose-600') : 'text-ios-tertiary'}`}
+          >
+            {hasMargin ? `${margin.toFixed(0)} ${t.zl}` : '—'}
+          </span>
+        </div>
+      )}
 
-      {belowCost && (
+      {showMargin && belowCost && (
         <p data-testid="delivery-fee-below-cost-warning" className="text-xs text-rose-600">
           {t.feeBelowCostWarning}
         </p>
