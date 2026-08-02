@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared';
 import ChangeCustomerModal from '../components/ChangeCustomerModal.jsx';
 
 
@@ -262,6 +262,22 @@ export default function OrderDetailPage() {
       setSaving(false);
     }
   }
+
+  // Delivery cost/fee buffering — called unconditionally (Rules of Hooks;
+  // this component has no early return, but the hook stays with the other
+  // hooks/derived state per convention, ahead of the JSX that consumes it).
+  // Reads `order?.delivery` — `order` may still be null while loading, and
+  // the hook tolerates an all-null storedValue until the fetch resolves.
+  // `patchDelivery` is defined just above.
+  const deliveryPricing = useDeliveryPricingPatch(
+    {
+      fee: order?.delivery?.['Delivery Fee'] ?? null,
+      cost: order?.delivery?.['Driver Payout'] ?? null,
+      distanceKm: order?.delivery?.['Distance (km)'] ?? null,
+      band: order?.delivery?.['Distance Band'] ?? null,
+    },
+    fields => patchDelivery(fields),
+  );
 
   // Total = Price Override (when set, already includes delivery) OR (flowers + delivery fee).
   // Match backend cascade in routes/orders.js so list and detail show the same number.
@@ -688,21 +704,16 @@ export default function OrderDetailPage() {
                       </a>
                     </div>
                   )}
-                  <Row label={t.deliveryFee || 'Fee'} value={order.delivery['Delivery Fee'] ? `${order.delivery['Delivery Fee']} zł` : null} />
-                  {isOwner && (() => {
-                    const fee    = Number(order.delivery?.['Delivery Fee'] || 0);
-                    const payout = Number(order.delivery?.['Driver Payout'] || 0);
-                    const taxi   = Number(order.delivery?.['Taxi Cost'] || 0);
-                    const margin = fee - payout - taxi;
-                    return (
-                      <div className="flex justify-between gap-4 py-2 border-b border-gray-100 last:border-0">
-                        <span className="text-sm text-ios-tertiary shrink-0">{t.deliveryMargin}</span>
-                        <span className={`text-sm font-medium ${margin >= 0 ? 'text-ios-green' : 'text-ios-red'}`}>
-                          {margin.toFixed(0)} zł
-                        </span>
-                      </div>
-                    );
-                  })()}
+                  <div className="pt-2 border-t border-gray-100">
+                    <DeliveryPricingFields
+                      address={order.delivery['Delivery Address']}
+                      deliveryMethod={order.delivery['Delivery Method'] || 'Driver'}
+                      value={deliveryPricing.value}
+                      onChange={deliveryPricing.onChange}
+                      apiClient={client}
+                      t={t}
+                    />
+                  </div>
                 </div>
               </div>
             )}
