@@ -70,7 +70,7 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
   );
 }
 
-export default function Step3Details({ form, onChange, apiClient }) {
+export default function Step3Details({ form, onChange, apiClient, isOwner }) {
   const SOURCE_LABELS = getSourceLabels();
   const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots, slotLeadTimeMinutes } = useConfigLists();
   const smartSlots = getAvailableSlots(timeSlots, form.deliveryDate, slotLeadTimeMinutes);
@@ -210,6 +210,7 @@ export default function Step3Details({ form, onChange, apiClient }) {
                 }}
                 apiClient={apiClient}
                 t={t}
+                showMargin={isOwner}
               />
             </Row>
           </FormCard>

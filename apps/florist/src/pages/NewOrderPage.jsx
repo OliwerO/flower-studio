@@ -444,7 +444,7 @@ export default function NewOrderPage() {
             onUnlinkPremade={handleUnlinkPremade}
           />
         )}
-        {step === 2 && <Step3Details form={form} onChange={updateForm} apiClient={client} />}
+        {step === 2 && <Step3Details form={form} onChange={updateForm} apiClient={client} isOwner={isOwner} />}
         {step === 3 && (
           <Step4Review
             form={form}
