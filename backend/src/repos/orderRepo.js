@@ -130,6 +130,11 @@ export function pgDeliveryToResponse(row) {
     'Driver Instructions': row.driverInstructions ?? null,
     'Delivery Method':     row.deliveryMethod ?? null,
     'Driver Payout':       row.driverPayout != null ? Number(row.driverPayout) : null,
+    'Distance (km)':        row.distanceKm != null ? Number(row.distanceKm) : null,
+    'Distance Band':        row.distanceBand ?? null,
+    'Driver Payment Status': row.driverPaymentStatus ?? 'Unpaid',
+    'Taxi Cost':             row.taxiCost != null ? Number(row.taxiCost) : null,
+    'Delivery Result':       row.deliveryResult ?? null,
     Status:                row.status,
     'Delivered At':        row.deliveredAt ? new Date(row.deliveredAt).toISOString() : null,
   };
@@ -190,6 +195,11 @@ function deliveryResponseToPg(fields) {
   if ('Driver Instructions' in fields) out.driverInstructions = fields['Driver Instructions'] || null;
   if ('Delivery Method' in fields) out.deliveryMethod = fields['Delivery Method'] || null;
   if ('Driver Payout' in fields)   out.driverPayout = fields['Driver Payout'] != null ? String(fields['Driver Payout']) : null;
+  if ('Distance (km)' in fields)         out.distanceKm = fields['Distance (km)'] != null ? String(fields['Distance (km)']) : null;
+  if ('Distance Band' in fields)         out.distanceBand = fields['Distance Band'] ?? null;
+  if ('Driver Payment Status' in fields) out.driverPaymentStatus = fields['Driver Payment Status'];
+  if ('Taxi Cost' in fields)             out.taxiCost = fields['Taxi Cost'] != null ? String(fields['Taxi Cost']) : null;
+  if ('Delivery Result' in fields)       out.deliveryResult = fields['Delivery Result'] || null;
   if ('Status' in fields)          out.status = fields.Status;
   if ('Delivered At' in fields)    out.deliveredAt = fields['Delivered At'] ? new Date(fields['Delivered At']) : null;
   return out;

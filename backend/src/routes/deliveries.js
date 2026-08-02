@@ -6,7 +6,7 @@ import * as productRepo from '../repos/productRepo.js';
 import { actorFromReq } from '../utils/actor.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { pickAllowed } from '../utils/fields.js';
-import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS } from '../constants/statuses.js';
+import { DELIVERY_STATUS, VALID_DELIVERY_RESULTS, VALID_DRIVER_PAYMENT_STATUSES, DELIVERY_METHOD } from '../constants/statuses.js';
 import { sendDeliveryCompleteAlert } from '../services/orderService.js';
 import { notifyDeliveryAssigned, notifyDeliveryTimeChanged } from '../services/driverNotifyService.js';
 
@@ -19,6 +19,7 @@ const DELIVERIES_PATCH_ALLOWED = [
   'Driver Payment Status', 'Driver Notes', 'Driver Instructions',
   'Delivered At', 'Delivery Fee',
   'Delivery Result', 'Delivery Method', 'Driver Payout', 'Taxi Cost',
+  'Distance (km)', 'Distance Band',
 ];
 
 // GET /api/deliveries?date=2025-01-15&from=2025-01-15&status=Pending&driver=Piotr
@@ -148,6 +149,20 @@ router.patch('/:id', async (req, res, next) => {
       return res.status(400).json({
         error: `Delivery Result must be one of: ${VALID_DELIVERY_RESULTS.join(', ')}`,
       });
+    }
+
+    // Validate Driver Payment Status if provided
+    if (fields['Driver Payment Status'] && !VALID_DRIVER_PAYMENT_STATUSES.includes(fields['Driver Payment Status'])) {
+      return res.status(400).json({
+        error: `Driver Payment Status must be one of: ${VALID_DRIVER_PAYMENT_STATUSES.join(', ')}`,
+      });
+    }
+
+    // Florist method always costs zero — that time is already paid via
+    // Florist Hours, so paying it twice via Driver Payout would double-count
+    // (ADR-0019).
+    if (fields['Delivery Method'] === DELIVERY_METHOD.FLORIST) {
+      fields['Driver Payout'] = 0;
     }
 
     // Capture the prior driver so we only notify on a genuine assignment change.
