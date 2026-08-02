@@ -8,7 +8,7 @@ import { actorFromReq } from '../utils/actor.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getDriverOfDay, getConfig, generateOrderId } from '../services/configService.js';
 import { pickAllowed } from '../utils/fields.js';
-import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS, DELIVERY_METHOD } from '../constants/statuses.js';
+import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS, DELIVERY_METHOD, VALID_DELIVERY_METHODS } from '../constants/statuses.js';
 import { zeroCostFieldsForMethod } from '../services/deliveryPricingService.js';
 import {
   createOrder,
@@ -621,6 +621,14 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       address, recipientName, recipientPhone, date, time, fee, driver, driverInstructions,
       distanceKm, distanceBand, cost, method,
     } = req.body;
+
+    // Validate Delivery Method if provided (same rule as deliveries.js's PATCH route).
+    if (method && !VALID_DELIVERY_METHODS.includes(method)) {
+      return res.status(400).json({
+        error: `Delivery Method must be one of: ${VALID_DELIVERY_METHODS.join(', ')}`,
+      });
+    }
+
     const resolvedFee = fee ?? getConfig('defaultDeliveryFee');
     const deliveryMethod = method || DELIVERY_METHOD.DRIVER;
     // Distance-band cost (from the quote endpoint or an Owner override)
