@@ -635,6 +635,7 @@ export default function Step2Bouquet({
           <span className="text-ios-tertiary text-sm">🔍</span>
           <input
             type="text"
+            data-testid="flower-search"
             value={flowerQuery}
             onChange={e => setFlowerQuery(e.target.value)}
             placeholder={t.flowerSearch}
@@ -654,6 +655,7 @@ export default function Step2Bouquet({
           {flowerQuery.trim().length >= 2 && !hasAvailableStockMatch(stock, flowerQuery, pendingPO) && (
             <button
               type="button"
+              data-testid="add-new-flower"
               onClick={() => {
                 // Hand the raw query to the form as a SEED and stop there. The
                 // form decomposes it against flowers that already exist, shows
@@ -679,6 +681,7 @@ export default function Step2Bouquet({
                 <button
                   key={key}
                   type="button"
+                  data-testid="flower-row"
                   onClick={() => {
                     setYPickerStockItems(v.rows);
                     setYPickerOpen(true);

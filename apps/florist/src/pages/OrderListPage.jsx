@@ -802,6 +802,7 @@ export default function OrderListPage() {
             </button>
             {/* Manual new order option */}
             <button
+              data-testid="new-order-button"
               onClick={() => { setFabOpen(false); navigate('/orders/new'); }}
               className="flex items-center gap-2 bg-white shadow-lg rounded-full pl-4 pr-3 py-2.5 active-scale"
             >
@@ -812,6 +813,7 @@ export default function OrderListPage() {
         )}
         {/* Main FAB */}
         <button
+          data-testid="new-order-fab"
           onClick={() => setFabOpen(v => !v)}
           className={`w-14 h-14 bg-brand-600 text-white text-3xl rounded-full shadow-lg
                      flex items-center justify-center active:bg-brand-700 active-scale

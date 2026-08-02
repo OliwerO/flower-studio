@@ -456,6 +456,7 @@ export default function NewOrderPage() {
         <div className="fixed bottom-16 left-0 right-0 glass-bar px-4 py-4 pb-6 z-20">
           <div className="max-w-2xl mx-auto">
             <button
+              data-testid="wizard-next"
               onClick={handleNext}
               disabled={(step === 1 && form.orderLines.length === 0) || (step === 1 && stockError)}
               className="w-full h-14 rounded-2xl bg-brand-600 text-white text-base font-semibold
