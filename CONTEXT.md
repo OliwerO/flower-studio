@@ -36,6 +36,22 @@ _Avoid_: Purchase, transaction
 The physical act of bringing an Order to a customer's address. Linked 1:1 to a delivery-type Order. The primary entity Drivers work with — Drivers see Deliveries, not Orders.
 _Avoid_: Shipment, dispatch
 
+**Distance Band**:
+A range of driving distance from the studio with a price attached — up to 5 km, 5–7 km, 7–10 km, and so on. The bands and their prices are Owner-editable, because rates change. A Driver may carry their own band table when their terms differ from the standard; absent one, the standard bands apply. Bands are measured on **driving** distance, not straight-line, because that is what the Driver is actually paid for.
+_Avoid_: Zone (a Delivery Zone was the postcode-based model this replaced; it survives only in the Wix storefront config), tier, bracket
+
+**Delivery Cost**:
+What the studio pays to have one Delivery made. Calculated automatically at order creation by measuring the driving distance from the studio to the delivery address and looking it up against the Distance Bands, then freely overridable by the Owner — exceptions like an out-of-hours run or an unusually long trip outside the city are priced by hand. Measured **studio → destination** per Delivery, and treated as the agreed price however the Driver sequences a multi-stop run.
+_Avoid_: Driver payout (the stored column is named that for historical reasons; "Delivery Cost" is the domain term), courier cost
+
+**Delivery Fee**:
+What the Customer pays for a Delivery. The Owner sets it **on top of** the Delivery Cost — that is where the margin comes from. Lives on the Delivery record, not the Order; the Order-level column is redundant and may be stale. Adds to the Order's Final Price on top of the flowers.
+_Avoid_: Shipping cost, delivery price, delivery charge
+
+**Delivery Margin**:
+`Delivery Fee − Delivery Cost`, the studio's earnings on delivering. It is a number the Owner sets deliberately at both ends, not one she discovers: computing the Cost from distance and letting her price the Fee above it is what makes a margin possible at all. Neither number may ever be derived from the other.
+_Avoid_: Delivery profit (fine in prose; "Delivery Margin" is canonical), delivery income
+
 **Customer**:
 Any person with an order history. Created on first order; looked up by name or contact details on subsequent orders to avoid duplicates.
 _Avoid_: Client, buyer, user
@@ -135,6 +151,26 @@ _Avoid_: Alternative, replacement
 A recorded reduction of stock quantity due to waste or damage (wilted, damaged, arrived broken, overstock). Happens routinely during Stock Order evaluation and in daily operations.
 _Avoid_: Stock loss, shrinkage, wastage
 
+**Material**:
+A non-flower Stock Item consumed into bouquets but never charged separately to the customer — foam, ribbon, wrapping paper, standard boxes. A Material is a Variety like any other and lives in the same `stock` table, but it is **never placed on an Order Line**: its quantity falls only at a Recount. Flower-adjacent — the Owner thinks of Materials alongside flowers, and they are bought the same way (Stock Order or manual entry). Because a Material has no per-Order attribution by design, its cost is a period cost, not per-Order COGS.
+_Avoid_: Technical stock (the origin term for this idea; "Material" is canonical), consumable, non-floral component, supporting material
+
+**Add-on**:
+A non-flower Stock Item that is **sold** to the customer on top of the flowers — vases, decorations, premium boxes. Unlike a Material, an Add-on sits on an Order Line exactly as a flower does: exact per-Order decrement, its own cost and sell price, revenue flowing into the Order's Final Price. Appears in the order-creation picker; a Material never does.
+_Avoid_: Extra, upsell, accessory, additional product
+
+**Supply**:
+A non-flower Stock Item consumed by running the studio rather than by building bouquets — trash bags, toilet paper, washing liquid. Counted and re-bought like a Material (Recount-only, reorder threshold), but **never attributable to an Order and never sold**, so it appears in no order-related surface at all and is kept visually separate from flowers in the Stock views. Its cost is a period cost.
+_Avoid_: Consumable, household item, operating material
+
+**Recount**:
+A Florist-initiated correction that sets a Material's or Supply's counted quantity to physical reality — "I counted 40 ribbons." Run frequently (roughly weekly), it is the *only* way those quantities fall, and it is timestamped and attributed so the movement is traceable the way a flower's is. A shortfall drains the Variety's Batches FEFO, oldest first; a surplus (more found than expected) creates a new Batch dated today at cost 0, flagged as recount-origin, rather than silently inflating an existing Batch's cost basis. Distinct from **Write-off**: a Write-off names a cause (wilted, damaged), a Recount claims no cause — it records drift. Keeping them apart is what stops counter drift from polluting waste analytics.
+_Avoid_: Reconciliation, stocktake, inventory count, adjustment
+
+**Continuous Material**:
+A Material sold and stored as a roll or pack rather than as countable pieces — wrapping paper, ribbon, mesh. Its quantity is held in an integer base unit (centimetres, sheets), but a Florist can never Recount it by measuring: unrolling 50 m of paper to find 37 m left is not a real workflow. A Continuous Material is therefore Recounted as **whole packs plus a rough fraction of the open one** — "3 full rolls and about half" — which the system multiplies by the Material's Lot Size to reach base units. The fraction is an estimate by design; a half-used roll is worth knowing to the nearest quarter and no better. Contrast a **discrete Material** (boxes, ribbons cut to length, foam bricks) which is Recounted by simply counting pieces.
+_Avoid_: Bulk material, measured stock, partial roll
+
 ### Bouquets and products
 
 **Bouquet**:
@@ -207,6 +243,14 @@ _Avoid_: Receiver, delivery target
 > **Domain expert:** "Anytime — flowers wilt, things get damaged. The Florist logs a Write-off whenever stems leave inventory for a reason other than an Order or Premade Bouquet."
 
 ### Operations
+
+**Expense**:
+Money the studio spends that has **no Stock Item behind it** — tools that are bought once and used for years (scissors, knives), office supplies, rent, utilities. Recorded directly by the Owner with a date, category, and amount; nothing is counted, nothing depletes. Distinct from a Material or Supply, which are also period costs but *do* carry a quantity worth tracking. Expenses exist so the Owner's financial overview can be complete: revenue minus flower COGS, delivery payout, payroll, Material/Supply purchases, and Expenses.
+_Avoid_: Cost (Cost is the per-unit purchase price of a Stock Item), overhead, spend
+
+**Recurring Expense**:
+An Expense the Owner defines once because it arrives every month — rent, utilities, a subscription. The definition carries an amount and a category; each month it materialises a real Expense row, which the Owner can then **edit or skip** when the actual bill differs. Materialisation is lazy: the current month's rows appear the first time the financial overview is opened, so nothing depends on a background job. The definition is a default, never a claim about what was actually paid — an edited row wins, and the template is left untouched for next month.
+_Avoid_: Subscription, standing cost, fixed cost
 
 **Marketing Spend**:
 Tracks advertising costs and flowers used for marketing purposes (social media, promotions). Feature still in development — not fully in use.
