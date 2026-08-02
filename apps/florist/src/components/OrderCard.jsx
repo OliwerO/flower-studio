@@ -1294,6 +1294,7 @@ function OrderCard({
                       <span className="text-xs text-ios-tertiary block mb-1">{t.labelAddress}</span>
                       <input
                         type="text"
+                        data-testid="delivery-address-input"
                         defaultValue={detail.delivery['Delivery Address'] || ''}
                         onBlur={e => { if (e.target.value !== (detail.delivery['Delivery Address'] || '')) patchDelivery({ 'Delivery Address': e.target.value }); }}
                         placeholder="—"

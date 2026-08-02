@@ -35,6 +35,16 @@ export function normaliseAddressKey(address) {
 export async function resolveDistance(address, opts = {}) {
   if (!address) return null;
 
+  // Playwright E2E harness only — the real ORS provider is gated off
+  // (ORS_API_KEY unset) in every test environment, so a UI click-through
+  // spec needs a deterministic distance without hitting the network or
+  // requiring a configured studioAddress. Set ONLY by start-test-backend.js;
+  // vitest's setupPgHarness never sets this, so every existing integration
+  // test still observes the real null-when-unresolvable behavior.
+  if (process.env.HARNESS_STUB_DISTANCE_KM !== undefined && !opts.fetchDistanceKm) {
+    return { distanceKm: Number(process.env.HARNESS_STUB_DISTANCE_KM), resolvedAddress: address };
+  }
+
   const fetcher = opts.fetchDistanceKm || orsFetchDistanceKm;
   const origin = opts.originAddress ?? getConfig('studioAddress');
   if (!origin) return null;

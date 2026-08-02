@@ -94,4 +94,31 @@ export async function startShopping(poId, lineId) {
   return api(`/api/stock-orders/${poId}`, { method: 'GET' });
 }
 
+/**
+ * Seed a minimal Delivery Order via the real API for the delivery-pricing
+ * spec — no existing helper creates an Order (seed.js only covered Stock
+ * Orders/stock items before this spec). Creates a throwaway customer first
+ * (POST /api/orders requires an existing customer id).
+ */
+export async function seedOrder({ deliveryType = 'Delivery', address = '' } = {}) {
+  const customer = await api('/api/customers', { body: { Name: 'E2E Delivery Pricing Customer' } });
+  const body = {
+    customer: customer.id,
+    deliveryType,
+    requiredBy: '2026-12-31',
+    orderLines: [],
+  };
+  if (deliveryType === 'Delivery') {
+    body.delivery = {
+      address,
+      recipientName: 'E2E Recipient',
+      recipientPhone: '+48000000000',
+      date: '2026-12-31',
+      time: '',
+      cardText: '',
+    };
+  }
+  return api('/api/orders', { body });
+}
+
 export { api as harnessApi };
