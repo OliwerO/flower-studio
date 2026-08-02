@@ -5,7 +5,7 @@ import { useEffect } from 'react';
 import t from '../../translations.js';
 import DatePicker from '../DatePicker.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { getAvailableSlots } from '@flower-studio/shared';
+import { getAvailableSlots, DeliveryPricingFields } from '@flower-studio/shared';
 
 function getSourceLabels() {
   return { 'In-store': t.sourceWalk, Instagram: t.sourceInstagram, WhatsApp: t.sourceWhatsApp, Telegram: t.sourceTelegram, Wix: t.sourceWebsite, Flowwow: t.sourceFlowwow, Other: t.sourceOther };
@@ -76,7 +76,7 @@ function TextInput({ value, onChange, placeholder, type = 'text' }) {
   );
 }
 
-export default function Step3Details({ form, onChange }) {
+export default function Step3Details({ form, onChange, apiClient }) {
   const SOURCE_LABELS = getSourceLabels();
   const METHOD_LABELS = getMethodLabels();
   const { orderSources: SOURCES, paymentMethods: payMethods, timeSlots, slotLeadTimeMinutes } = useConfigLists();
@@ -197,11 +197,26 @@ export default function Step3Details({ form, onChange }) {
             <Row label={t.recipientPhone}>
               <TextInput type="tel" value={form.recipientPhone} onChange={setRecipientField('recipientPhone', 'keyPersonPhone')} placeholder="+48..." />
             </Row>
-            <Row label={t.deliveryFee} last>
-              <div className="flex items-center justify-end gap-1">
-                <TextInput type="number" value={form.deliveryFee} onChange={v => onChange({ deliveryFee: Number(v) })} placeholder="35" />
-                <span className="text-ios-tertiary text-sm shrink-0">zl</span>
-              </div>
+            <Row label={null} last>
+              <DeliveryPricingFields
+                address={form.deliveryAddress}
+                deliveryMethod="Driver"
+                value={{ fee: form.deliveryFee, cost: form.deliveryCost }}
+                onChange={patch => {
+                  // DeliveryPricingFields' patch keys (fee/cost/band) are its own
+                  // internal vocabulary — map them onto this wizard's form field
+                  // names (deliveryFee/deliveryCost/distanceBand) so the submit
+                  // payload assembly in NewOrderTab.jsx reads the values it expects.
+                  const mapped = {};
+                  if ('fee' in patch) mapped.deliveryFee = patch.fee;
+                  if ('cost' in patch) mapped.deliveryCost = patch.cost;
+                  if ('distanceKm' in patch) mapped.distanceKm = patch.distanceKm;
+                  if ('band' in patch) mapped.distanceBand = patch.band;
+                  onChange(mapped);
+                }}
+                apiClient={apiClient}
+                t={t}
+              />
             </Row>
           </FormCard>
 

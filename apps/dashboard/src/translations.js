@@ -426,6 +426,7 @@ const en = {
   labelRecipient:   'Recipient',
   optional:         'optional',
   deliveryFee:      'Delivery fee',
+  deliveryCost:     'Delivery cost',
   addRecipient:     'Add new recipient',
   recipientAddress: 'Recipient address',
 
@@ -891,6 +892,7 @@ const en = {
   courierPayout:            'Courier payout',
   courierSlot:              'Courier slot',
   deliveryMargin:           'Delivery margin',
+  feeBelowCostWarning:      'This fee is below the delivery cost — you would lose money on this delivery.',
   driverPayoutTotal:        'Driver costs',
   lotSize:                  'Lot Size',
   reorderThreshold:         'Reorder at',
@@ -1678,6 +1680,7 @@ const ru = {
   labelRecipient:   'Получатель',
   optional:         'необязательно',
   deliveryFee:      'Стоимость доставки',
+  deliveryCost:     'Себестоимость доставки',
   addRecipient:     'Новый получатель',
   recipientAddress: 'Адрес получателя',
 
@@ -2143,6 +2146,7 @@ const ru = {
   courierPayout:            'Оплата курьеру',
   courierSlot:              'Слот курьера',
   deliveryMargin:           'Маржа доставки',
+  feeBelowCostWarning:      'Стоимость доставки ниже, чем плата клиента — вы теряете деньги на этой доставке.',
   driverPayoutTotal:        'Расходы на водителей',
   lotSize:                  'Фасовка',
   reorderThreshold:         'Порог заказа',
