@@ -5,6 +5,16 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — feat(stock): supplier is a picker, and receiving resolves before it creates (#604)
+
+**Supplier.** She tested the new Variety pickers and reported the field they missed: supplier was still free text on the bouquet flower form, the purchase-order line form, the dashboard's alternative-supplier field and the driver's shopping screen. Prod already shows what that costs — `Pan Zbigniew` and `Pan Zbigniew Dalie` are two separate suppliers in every report, and `-` is a third. All four now pick from the suppliers actually in use, with a deliberate tap to add a genuinely new one.
+
+**Receiving.** The receive form is the screen used most often and under the most time pressure, and its whole identity check was "the name is not empty". Type was optional and silently fell back to whatever was typed as the name, so `Pink Peonies` produced a flower whose *Type* is `Pink Peonies` — five such cards are on prod. Both receive forms now show which flower the delivery goes into, and a flower that matches nothing takes an explicit confirm before it is created. The free-typed name box is gone: the name comes from the classification, so it can no longer disagree with it. The florist form also gained a search box — it listed every flower she owns, which is what made creating one feel faster than finding one.
+
+**A bug this surfaced.** Each app's `t` is a Proxy that returns the key name when a translation is missing, so `t[key] ?? t.po?.[key]` never falls through. Four keys used by the shared bouquet form existed in the florist app only inside its purchase-order block, and the badge rendered the literal text `varietyNone` on the florist app between #608 and this change. Fixed, and the key-parity test now checks that a key is defined at top level rather than merely present somewhere in the file.
+
+No schema change, no env change, no API change.
+
 ## 2026-08-02 — fix(stock): one definition of a dated batch name
 
 **Found while surveying prod for the legacy cards the owner asked about.** A dated row is one delivery of a flower, not the flower itself — every identity check depends on telling the two apart. But the date tag is written **two ways**: the short `(24.Jul.)` the purchase-order receive paths write, and the ISO `(2026-07-23)` the Y-model writes. The short-only regex was copy-pasted into **eleven** places; only `parseBatchName` knew about the ISO form. Six ISO-tagged rows are live on prod right now.
