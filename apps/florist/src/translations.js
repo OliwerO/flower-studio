@@ -331,7 +331,6 @@ const en = {
   viewNegative:     'Negative',
   viewLow:          'Low',
   viewSlowMovers:   'Slow',
-  stems:            'stems',
 
   // Stock deferred (future orders)
   useStock:              'Stock',
@@ -1298,7 +1297,6 @@ const ru = {
   viewNegative:     'Минус',
   viewLow:          'Мало',
   viewSlowMovers:   'Давно',
-  stems:            'стеблей',
 
   // Stock deferred (future orders)
   useStock:              'Со склада',
