@@ -32,6 +32,11 @@ export default function DeliveryPricingFields({
 
   useEffect(() => {
     if (deliveryMethod === 'Florist') {
+      // Reset so a later switch BACK to a non-Florist method is never mistaken
+      // for "already quoted this combination" — without this, Driver -> Florist
+      // -> Driver (same address) would skip the re-fetch and leave cost stuck
+      // at the Florist-branch's 0.
+      lastQuoted.current = null;
       onChange({ cost: 0, distanceKm: null, band: null });
       return;
     }
