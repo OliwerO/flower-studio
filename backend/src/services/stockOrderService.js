@@ -12,7 +12,6 @@ import * as stockPurchasesRepo from '../repos/stockPurchasesRepo.js';
 import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 import * as orderService from '../services/orderService.js';
 import { broadcast } from '../services/notifications.js';
-import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { stripDateTag } from '../utils/varietyIdentity.js';
 import { PO_STATUS, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 import { getConfig } from '../services/configService.js';
@@ -89,16 +88,29 @@ export async function findOrCreateSubstituteStock(altFlowerName, altSupplier, co
     throw new Error('Cannot receive substitute with empty flower name');
   }
 
-  // Try to find an existing Stock record with the exact same display name.
-  // Sanitize quotes to avoid breaking the Airtable filter formula.
-  const safe = sanitizeFormulaValue(trimmedName);
-  const existing = await stockRepo.list({
-    filterByFormula: `{Display Name} = '${safe}'`,
-    pg: { displayName: trimmedName, includeInactive: true, includeEmpty: true },
-    maxRecords: 1,
-  });
-  if (existing.length > 0) {
-    const found = existing[0];
+  // Resolve identity BEFORE creating (#606) — the same rule the create-a-flower
+  // door enforces (#603, pitfall `variety-identity-door`). This path used to
+  // look only for an exact display-name match, and the classification was used
+  // solely to stamp the new card. A substitute is almost always a flower she
+  // already stocks, and the name is whatever the person at the market typed:
+  // `Ranunkulus` and `ranunculus` became two cards, and a plainly-classified
+  // `Peony / Pink / 60` became a third under whatever words were used.
+  //
+  // The 4-tuple wins when one was captured — the classification IS the
+  // identity. Otherwise fall back to the name, which `findVarietyMatch`
+  // compares case- and whitespace-insensitively. Either way a dated Batch is
+  // never resolved onto: that is one delivery, not the Variety's card.
+  const aSizeMatch = Number(varietyAttrs?.Size);
+  const found = varietyAttrs?.Type
+    ? await stockRepo.findVarietyMatch({
+        typeName: varietyAttrs.Type,
+        colour:   varietyAttrs.Colour ?? null,
+        sizeCm:   Number.isFinite(aSizeMatch) && aSizeMatch > 0 ? aSizeMatch : null,
+        cultivar: varietyAttrs.Cultivar ?? null,
+      })
+    : await stockRepo.findVarietyMatch({ displayName: trimmedName });
+
+  if (found) {
     // Phase B: stack multiple originals onto one substitute card. If this
     // substitute was previously created for a different original flower,
     // append the current originalStockId so the reconciliation query can

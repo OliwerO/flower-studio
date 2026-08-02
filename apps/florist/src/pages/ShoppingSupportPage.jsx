@@ -11,6 +11,7 @@ import useConfigLists from '../hooks/useConfigLists.js';
 import { PoLineForm } from '@flower-studio/shared';
 import client, { getClientPin } from '../api/client.js';
 import t from '../translations.js';
+import { NewVarietyFields, VarietyResolveNotice } from '@flower-studio/shared';
 
 const DRIVER_STATUSES = ['Pending', 'Found All', 'Partial', 'Not Found'];
 
@@ -40,21 +41,8 @@ export default function ShoppingSupportPage() {
   // Variety classification options for the substitute picker (#2). Seed the
   // Type/Colour datalists from real stored Varieties so the owner picks an
   // existing Type instead of free-typing one (which once mislabelled a batch).
-  const [typeOptions, setTypeOptions] = useState([]);
-  const [colourOptions, setColourOptions] = useState([]);
   const [stock, setStock] = useState([]);
   useEffect(() => {
-    // The column name is the PG-side one — `typeName`, not `type`. Asking for
-    // `type` 400s, and the failure used to be swallowed, so this datalist has
-    // been rendering EMPTY in production: the one screen built to make the
-    // florist pick an existing Type offered no options at all (#562 survey,
-    // row 9). Surface the failure now (pitfall #5) rather than degrade silently.
-    client.get('/stock/distinct/typeName')
-      .then(r => setTypeOptions(r.data || []))
-      .catch(err => console.error('[ShoppingSupport] Type options failed to load:', err?.response?.data?.error || err.message));
-    client.get('/stock/distinct/colour')
-      .then(r => setColourOptions(r.data || []))
-      .catch(err => console.error('[ShoppingSupport] Colour options failed to load:', err?.response?.data?.error || err.message));
     // The off-plan line form is the shared PoLineForm now, which searches and
     // re-resolves Varieties against the loaded stock list (ADR-0014).
     client.get('/stock?includeEmpty=true').then(r => setStock(r.data || [])).catch(() => {});
@@ -296,8 +284,6 @@ export default function ShoppingSupportPage() {
 
       <main className="px-4 py-4 pb-32 space-y-6">
         {/* Shared Variety datalists for the substitute Type/Colour pickers (#2) */}
-        <datalist id="shop-alt-type">{typeOptions.map(o => <option key={o} value={o} />)}</datalist>
-        <datalist id="shop-alt-colour">{colourOptions.map(o => <option key={o} value={o} />)}</datalist>
         {orders.length === 0 ? (
           <div className="text-center py-16">
             <p className="text-3xl mb-2">🛒</p>
@@ -371,6 +357,7 @@ export default function ShoppingSupportPage() {
                           isSaving={saving[line.id]}
                           onFocus={() => focusedLines.current.add(line.id)}
                           onBlurLine={() => focusedLines.current.delete(line.id)}
+                          stock={stock}
                         />
                       ))}
                     </div>
@@ -448,7 +435,7 @@ export default function ShoppingSupportPage() {
 
 // ── Individual line — always-visible editable fields (no expand/collapse) ──
 // On a phone this stacks vertically: flower info → status pills → inputs
-function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLine }) {
+function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLine, stock = [] }) {
   const [local, setLocal] = useState({
     qtyFound:     line['Quantity Found'] ?? '',
     costPrice:    line['Cost Price'] ?? '',
@@ -458,6 +445,8 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
     altCost:      line['Alt Cost'] ?? '',
     altType:      line['Alt Type'] || '',
     altColour:    line['Alt Colour'] || '',
+    altSize:      line['Alt Size'] ?? '',
+    altCultivar:  line['Alt Cultivar'] || '',
     notes:        line.Notes || '',
   });
 
@@ -475,6 +464,8 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
         altCost:      line['Alt Cost'] ?? '',
         altType:      line['Alt Type'] || '',
         altColour:    line['Alt Colour'] || '',
+        altSize:      line['Alt Size'] ?? '',
+        altCultivar:  line['Alt Cultivar'] || '',
         notes:        line.Notes || '',
       });
     }
@@ -664,32 +655,45 @@ function ShoppingLineItem({ line, orderId, onUpdate, isSaving, onFocus, onBlurLi
             </div>
             {/* Substitute Variety classification (#2) — owner picks Type/Colour at
                 entry from real Varieties; evaluation pre-fills from these. */}
-            <div className="flex gap-2">
-              <div className="flex-1">
-                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altType || 'Type'}</label>
-                <input
-                  type="text"
-                  list="shop-alt-type"
-                  value={local.altType}
-                  onChange={e => handleChange('altType', e.target.value)}
-                  onFocus={onFocus}
-                  onBlur={() => handleBlur({ 'Alt Type': local.altType })}
-                  placeholder={t.shopping.altTypeHint || ''}
-                  className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
-                />
-              </div>
-              <div className="flex-1">
-                <label className="text-[10px] text-ios-tertiary uppercase mb-0.5 block">{t.shopping.altColour || 'Colour'}</label>
-                <input
-                  type="text"
-                  list="shop-alt-colour"
-                  value={local.altColour}
-                  onChange={e => handleChange('altColour', e.target.value)}
-                  onFocus={onFocus}
-                  onBlur={() => handleBlur({ 'Alt Colour': local.altColour })}
-                  className="w-full text-sm border border-indigo-200 dark:border-indigo-600 rounded-xl px-3 py-2.5 bg-white dark:bg-dark-elevated outline-none"
-                />
-              </div>
+            {/* One editor for a flower's identity, everywhere (#610/#606) — a
+                substitute is almost always something already stocked, so these
+                are pickers, and the notice says which flower it resolves to. */}
+            <div className="space-y-1.5">
+              <NewVarietyFields
+                form={{
+                  typeName: local.altType || '', colour: local.altColour || '',
+                  sizeCm: local.altSize ?? '',   cultivar: local.altCultivar || '',
+                }}
+                onChange={updater => {
+                  const next = updater({
+                    typeName: local.altType || '', colour: local.altColour || '',
+                    sizeCm: local.altSize ?? '',   cultivar: local.altCultivar || '',
+                  });
+                  setLocal(p => ({
+                    ...p, altType: next.typeName, altColour: next.colour,
+                    altSize: next.sizeCm, altCultivar: next.cultivar,
+                  }));
+                  // The pickers commit deliberately, so committing IS the save
+                  // here — there is no blur to hang it off any more.
+                  handleBlur({
+                    'Alt Type': next.typeName, 'Alt Colour': next.colour,
+                    'Alt Size': next.sizeCm === '' ? null : Number(next.sizeCm),
+                    'Alt Cultivar': next.cultivar,
+                  });
+                }}
+                t={t}
+                stockItems={stock}
+              />
+              <VarietyResolveNotice
+                form={{
+                  typeName: local.altType || '', colour: local.altColour || '',
+                  sizeCm: local.altSize ?? '',   cultivar: local.altCultivar || '',
+                }}
+                stockItems={stock}
+                confirmed
+                onConfirmedChange={() => {}}
+                t={t}
+              />
             </div>
             <div className="flex gap-2">
               <div className="flex-1">
