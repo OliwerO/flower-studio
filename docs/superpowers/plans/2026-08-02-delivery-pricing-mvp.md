@@ -1865,19 +1865,197 @@ git commit -m "feat(delivery): florist wizard shows computed cost + live margin 
 
 ---
 
-### Task 12: Mount in the dashboard detail panel — override cost/fee, properly gated
+### Task 12: Shared debounce-and-commit hook + mount in the dashboard detail panel
+
+**Revision note (added after the Tasks 6-11 phase-boundary review):** the original version of this task wired `DeliveryPricingFields`' `onChange` straight into an immediate `patchDelivery(fields)` call. That review found two compounding problems this would have shipped: (1) `DeliveryPricingFields` fires its address-triggered quote unconditionally on every mount — including when a cost/distance/band already exist — so merely *opening* this panel would silently overwrite the stored `Driver Payout`/`Distance (km)`/`Distance Band` with a fresh quote (violating ADR-0019's "distance/band/cost are stored, never recomputed"); (2) wiring a per-keystroke `onChange` to a PATCH turns typing a fee into a PATCH-per-keystroke, an audit row per keystroke, and a toast per keystroke — every other delivery-fee editor in this codebase (`EditableRow`+`InlineEdit` in this very file, the raw `onBlur` input in `OrderCard.jsx`) deliberately commits on-settle, not on-keystroke. (1) is fixed at the source in Task 9 (a phase-review fix, already applied — mount-time quote is now suppressed when a cost already exists). (2) is fixed here: a small new shared hook buffers edits locally and debounces the actual PATCH, reused by both this task and Task 14 — the same "don't reimplement in 3 places" discipline this repo already applies to `PoLineForm`/`BouquetFlowerForm`.
 
 **Files:**
+- Create: `packages/shared/hooks/useDeliveryPricingPatch.js`
+- Test: `packages/shared/test/useDeliveryPricingPatch.test.js`
+- Modify: `packages/shared/index.js` (export it)
 - Modify: `apps/dashboard/src/components/OrderDetailPanel.jsx:1124-1150`
 
 **Interfaces:**
-- Consumes: `DeliveryPricingFields` (Task 9), the panel's own local `patchDelivery(fields)` function (already defined at lines 176-190 — unchanged).
+- Consumes: `DeliveryPricingFields` (Task 9), `useDebouncedValue` (existing shared hook), the panel's own local `patchDelivery(fields)` function (already defined at lines 176-190 — unchanged).
+- Produces: `useDeliveryPricingPatch(storedValue, onCommit, delayMs = 800)` → `{ value: {fee, cost}, onChange }`. `storedValue` is `{fee, cost, distanceKm, band}` in WIRE format (i.e. whatever the host currently has stored — `o.delivery['Delivery Fee']` etc.). `onChange` is passed straight through to `DeliveryPricingFields`'s own `onChange` prop — the hook buffers every patch locally (instant display, zero network) and only calls `onCommit(wireFields)` once the buffered value has stopped changing for `delayMs` AND actually differs from what was last committed. `onCommit` receives a wire-shaped patch (`'Delivery Fee'`/`'Driver Payout'`/`'Distance (km)'`/`'Distance Band'`) ready to hand straight to `patchDelivery`.
 
-**Important fix bundled here:** the existing delivery-fields block is gated on `{o.delivery && (...)}` (line 1125) — presence of the sub-record, not the order's *current* Delivery Type. Per pitfall `cancelled-delivery-leak`, a Delivery→Pickup-converted order still has a (Cancelled) delivery sub-record, so this block would keep rendering fee/cost/margin for an order that is no longer a delivery. This task changes the gate to the already-computed `isDelivery` local var (line 273: `const isDelivery = o['Delivery Type'] === 'Delivery';`) while touching this exact block anyway.
+**Important fix also bundled here (unchanged from the original plan):** the existing delivery-fields block is gated on `{o.delivery && (...)}` (line 1125) — presence of the sub-record, not the order's *current* Delivery Type. Per pitfall `cancelled-delivery-leak`, a Delivery→Pickup-converted order still has a (Cancelled) delivery sub-record, so this block would keep rendering fee/cost/margin for an order that is no longer a delivery. This task changes the gate to the already-computed `isDelivery` local var (line 273: `const isDelivery = o['Delivery Type'] === 'Delivery';`) while touching this exact block anyway.
 
-- [ ] **Step 1: Replace the gate and the fee row with the shared component**
+- [ ] **Step 1: Write the failing test for the hook**
 
-In `apps/dashboard/src/components/OrderDetailPanel.jsx`, replace the delivery-fields block (currently lines 1124-1150 — note this range also contains the inline margin computation that gets superseded):
+```js
+// packages/shared/test/useDeliveryPricingPatch.test.js
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { renderHook, act } from '@testing-library/react';
+import useDeliveryPricingPatch from '../hooks/useDeliveryPricingPatch.js';
+
+describe('useDeliveryPricingPatch', () => {
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => vi.useRealTimers());
+
+  it('does not call onCommit on mount, even though a stored value exists', () => {
+    const onCommit = vi.fn();
+    renderHook(() => useDeliveryPricingPatch({ fee: 50, cost: 35 }, onCommit));
+    act(() => vi.advanceTimersByTime(1000));
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+
+  it('debounces edits and commits once, with the wire-shaped final value', () => {
+    const onCommit = vi.fn();
+    const { result } = renderHook(
+      ({ stored }) => useDeliveryPricingPatch(stored, onCommit),
+      { initialProps: { stored: { fee: 50, cost: 35 } } },
+    );
+
+    act(() => result.current.onChange({ fee: 60 }));
+    act(() => vi.advanceTimersByTime(300));
+    act(() => result.current.onChange({ fee: 65 }));
+    act(() => vi.advanceTimersByTime(300));
+    expect(onCommit).not.toHaveBeenCalled(); // still within the debounce window each time
+
+    act(() => vi.advanceTimersByTime(800));
+    expect(onCommit).toHaveBeenCalledTimes(1);
+    expect(onCommit).toHaveBeenCalledWith({ 'Delivery Fee': 65 });
+  });
+
+  it('commits multiple changed fields together (a cost override clears distanceKm/band)', () => {
+    const onCommit = vi.fn();
+    const { result } = renderHook(() =>
+      useDeliveryPricingPatch({ fee: 50, cost: 35, distanceKm: 4.2, band: { upToKm: 5, price: 35 } }, onCommit),
+    );
+
+    act(() => result.current.onChange({ cost: 45, distanceKm: null, band: null }));
+    act(() => vi.advanceTimersByTime(800));
+
+    expect(onCommit).toHaveBeenCalledWith({
+      'Driver Payout': 45, 'Distance (km)': null, 'Distance Band': null,
+    });
+  });
+
+  it('re-syncs the local buffer when the stored value changes externally, without committing', () => {
+    const onCommit = vi.fn();
+    const { result, rerender } = renderHook(
+      ({ stored }) => useDeliveryPricingPatch(stored, onCommit),
+      { initialProps: { stored: { fee: 50, cost: 35 } } },
+    );
+
+    rerender({ stored: { fee: 70, cost: 40 } });
+    expect(result.current.value).toEqual({ fee: 70, cost: 40 });
+    act(() => vi.advanceTimersByTime(1000));
+    expect(onCommit).not.toHaveBeenCalled();
+  });
+});
+```
+
+*(If a sibling hook test file in `packages/shared/test/` already establishes a different `renderHook`/fake-timer convention — check `useDebouncedValue`'s own test if one exists — follow that established pattern instead of introducing a new one.)*
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `cd packages/shared && ../../backend/node_modules/.bin/vitest run test/useDeliveryPricingPatch.test.js`
+Expected: FAIL — `Cannot find module '../hooks/useDeliveryPricingPatch.js'`
+
+- [ ] **Step 3: Write the hook**
+
+```js
+// packages/shared/hooks/useDeliveryPricingPatch.js
+import { useState, useEffect, useRef } from 'react';
+import useDebouncedValue from './useDebouncedValue.js';
+
+/**
+ * Bridges DeliveryPricingFields' per-keystroke onChange to a host's
+ * persist-on-settle convention — matching the InlineEdit/onBlur pattern
+ * every delivery-fee editor in this codebase already uses. Prevents the
+ * class of bug a phase review found in this feature: wiring onChange
+ * straight to an immediate PATCH turns typing a fee into a PATCH per
+ * keystroke, an audit row per keystroke, and (combined with
+ * DeliveryPricingFields' own mount-time quote) an unsolicited overwrite
+ * the moment a panel opens.
+ *
+ * Buffers edits locally (instant display, no network), debounces, and only
+ * calls onCommit with a WIRE-shaped patch once the buffered value has
+ * actually settled and differs from what was last committed.
+ *
+ * @param {{fee: number|null, cost: number|null, distanceKm?: number|null, band?: object|null}} storedValue
+ *   The delivery's current wire-format pricing state (e.g. from `o.delivery`).
+ * @param {function} onCommit  (wireFields: object) => void
+ * @param {number} [delayMs=800]
+ * @returns {{ value: {fee: number|null, cost: number|null}, onChange: (patch) => void }}
+ *   Pass `value`/`onChange` straight through to `DeliveryPricingFields`.
+ */
+export default function useDeliveryPricingPatch(storedValue, onCommit, delayMs = 800) {
+  const normalise = (v) => ({
+    fee: v.fee ?? null,
+    cost: v.cost ?? null,
+    distanceKm: v.distanceKm ?? null,
+    band: v.band ?? null,
+  });
+
+  const [pending, setPending] = useState(() => normalise(storedValue));
+  const committedRef = useRef(pending);
+  const debounced = useDebouncedValue(pending, delayMs);
+
+  // Re-sync the local buffer when the host's stored value changes from
+  // elsewhere (a fresh fetch after some other edit) — never from our own commits.
+  useEffect(() => {
+    const next = normalise(storedValue);
+    setPending(next);
+    committedRef.current = next;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storedValue.fee, storedValue.cost, storedValue.distanceKm, storedValue.band]);
+
+  useEffect(() => {
+    const prev = committedRef.current;
+    const wireFields = {};
+    if (debounced.fee !== prev.fee) wireFields['Delivery Fee'] = debounced.fee;
+    if (debounced.cost !== prev.cost) wireFields['Driver Payout'] = debounced.cost;
+    if (debounced.distanceKm !== prev.distanceKm) wireFields['Distance (km)'] = debounced.distanceKm;
+    if (JSON.stringify(debounced.band) !== JSON.stringify(prev.band)) wireFields['Distance Band'] = debounced.band;
+
+    if (Object.keys(wireFields).length === 0) return;
+
+    committedRef.current = debounced;
+    onCommit(wireFields);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debounced]);
+
+  function onChange(patch) {
+    setPending(prev => ({ ...prev, ...patch }));
+  }
+
+  return { value: { fee: pending.fee, cost: pending.cost }, onChange };
+}
+```
+
+- [ ] **Step 4: Run the test to verify it passes**
+
+Run: `cd packages/shared && ../../backend/node_modules/.bin/vitest run test/useDeliveryPricingPatch.test.js`
+Expected: PASS (4 tests)
+
+- [ ] **Step 5: Export the hook from the barrel**
+
+In `packages/shared/index.js`, add near the `DeliveryPricingFields` export (from Task 9):
+
+```js
+export { default as useDeliveryPricingPatch } from './hooks/useDeliveryPricingPatch.js';
+```
+
+- [ ] **Step 6: Mount in the dashboard detail panel, using the hook**
+
+In `apps/dashboard/src/components/OrderDetailPanel.jsx`, first add the hook call UNCONDITIONALLY near the component's other existing hooks/state (React's Rules of Hooks — it must NOT be called inside the `isDelivery && o.delivery && (...)` conditional block below; the values it reads can be conditional/optional, the call itself cannot be):
+
+```js
+  const deliveryPricing = useDeliveryPricingPatch(
+    {
+      fee: o.delivery?.['Delivery Fee'] ?? null,
+      cost: o.delivery?.['Driver Payout'] ?? null,
+      distanceKm: o.delivery?.['Distance (km)'] ?? null,
+      band: o.delivery?.['Distance Band'] ?? null,
+    },
+    fields => patchDelivery(fields),
+  );
+```
+
+Then replace the delivery-fields block (currently lines 1124-1150 — note this range also contains the inline margin computation that gets superseded):
 
 ```jsx
       {/* Delivery-specific: recipient, address, fee/cost/margin */}
@@ -1897,15 +2075,8 @@ In `apps/dashboard/src/components/OrderDetailPanel.jsx`, replace the delivery-fi
             <DeliveryPricingFields
               address={o.delivery['Delivery Address']}
               deliveryMethod={o.delivery['Delivery Method'] || 'Driver'}
-              value={{ fee: o.delivery['Delivery Fee'], cost: o.delivery['Driver Payout'] }}
-              onChange={patch => {
-                const fields = {};
-                if ('fee' in patch) fields['Delivery Fee'] = patch.fee;
-                if ('cost' in patch) fields['Driver Payout'] = patch.cost;
-                if ('distanceKm' in patch) fields['Distance (km)'] = patch.distanceKm;
-                if ('band' in patch) fields['Distance Band'] = patch.band;
-                patchDelivery(fields);
-              }}
+              value={deliveryPricing.value}
+              onChange={deliveryPricing.onChange}
               apiClient={client}
               t={t}
             />
@@ -1916,22 +2087,22 @@ In `apps/dashboard/src/components/OrderDetailPanel.jsx`, replace the delivery-fi
 
 (`client` is the axios instance already imported at the top of this file for `patchDelivery`'s own `client.patch(...)` call — reuse it, no new import needed. `isDelivery` is the existing local var at line 273 in this same file, already computed before this JSX renders since it's part of the totals calculation earlier in the component body.)
 
-Add the import:
+Add the imports:
 
 ```js
-import { DeliveryPricingFields } from '@flower-studio/shared'; // match the exact specifier this file (or a sibling) already uses for another packages/shared component
+import { DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared'; // match the exact specifier this file (or a sibling) already uses for another packages/shared component
 ```
 
-- [ ] **Step 2: Build the dashboard app to verify it compiles**
+- [ ] **Step 7: Build the dashboard app to verify it compiles**
 
 Run: `cd apps/dashboard && ./node_modules/.bin/vite build`
 Expected: build succeeds.
 
-- [ ] **Step 3: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add apps/dashboard/src/components/OrderDetailPanel.jsx
-git commit -m "feat(delivery): dashboard detail panel — editable cost/fee/margin, gated on Delivery Type"
+git add packages/shared/hooks/useDeliveryPricingPatch.js packages/shared/test/useDeliveryPricingPatch.test.js packages/shared/index.js apps/dashboard/src/components/OrderDetailPanel.jsx
+git commit -m "feat(delivery): dashboard detail panel — editable cost/fee/margin, debounced commit, gated on Delivery Type"
 ```
 
 ---
@@ -2054,18 +2225,34 @@ git commit -m "feat(delivery): reject New->Ready on a delivery order with no Del
 
 ### Task 14: Mount in the florist detail surfaces (OrderCard + OrderDetailPage), parity + Ready-gate surfacing
 
+**Revision note (added after the Tasks 6-11 phase-boundary review, same reasoning as Task 12):** both mounts below use the shared `useDeliveryPricingPatch` hook (built in Task 12, `packages/shared/hooks/useDeliveryPricingPatch.js`) instead of wiring `DeliveryPricingFields`' onChange straight to an immediate `patchDelivery` call — that naive wiring would PATCH on every keystroke and let the component's mount-time quote silently overwrite a stored cost the moment either screen opens. Do not reimplement the debounce/buffer logic inline here a second and third time — that is exactly the drift `useDeliveryPricingPatch` exists to prevent.
+
 **Files:**
 - Modify: `apps/florist/src/components/OrderCard.jsx:908-930` (replace the raw `<input onBlur>` fee edit)
 - Modify: `apps/florist/src/pages/OrderDetailPage.jsx:675-700` (replace the read-only `Row` with the editable shared component)
 
 **Interfaces:**
-- Consumes: `DeliveryPricingFields` (Task 9). `OrderCard` already has a `patchDelivery` in scope for its existing raw input (confirm its exact signature at this call site and reuse it unchanged). `OrderDetailPage` currently has no delivery-fee edit path at all (it was read-only) — add one using the same `patch`/`patchDelivery` mechanism this page already uses for its `Status` pills (`patch({...})` seen at line 847 for status; the delivery-specific PATCH goes to `/deliveries/:id`, so use whatever `patchDelivery`-shaped helper this page already has in scope, or the shared `useOrderPatching` hook's `patchDelivery(fields, deliveryId)` if this page already consumes that hook — check before assuming which one).
+- Consumes: `DeliveryPricingFields` (Task 9), `useDeliveryPricingPatch` (Task 12, exported from `packages/shared/index.js`). `OrderCard` already has a `patchDelivery` in scope for its existing raw input (confirm its exact signature at this call site and reuse it unchanged). `OrderDetailPage` currently has no delivery-fee edit path at all (it was read-only) — add one using the same `patch`/`patchDelivery` mechanism this page already uses for its `Status` pills (`patch({...})` seen at line 847 for status; the delivery-specific PATCH goes to `/deliveries/:id`, so use whatever `patchDelivery`-shaped helper this page already has in scope, or the shared `useOrderPatching` hook's `patchDelivery(fields, deliveryId)` if this page already consumes that hook — check before assuming which one).
 
 The backend Ready-gate from Task 13 already surfaces its `400` error message through the existing status-PATCH error handling in both apps (the `Pills`/`onPick` flow at `OrderDetailPage.jsx:843-848` already routes through `patch({'Status': val})`, whose failure path — check `OrderCard.jsx`'s and `OrderDetailPage.jsx`'s existing status-patch error handling — should already surface `err.response?.data?.error` as a toast per this repo's standard error-toast convention; no new UI is needed for the gate itself beyond confirming that existing toast path fires for this new 400).
 
 - [ ] **Step 1: Replace OrderCard's raw fee input**
 
-In `apps/florist/src/components/OrderCard.jsx`, replace the `isDelivery && (...)` block (currently lines 909-921, and the margin block that follows it at 928+ which this component supersedes):
+In `apps/florist/src/components/OrderCard.jsx`, first add the `useDeliveryPricingPatch` call UNCONDITIONALLY near the component's other existing hooks/state (React's Rules of Hooks — it must NOT be called inside the `isDelivery && (...)` conditional block below):
+
+```js
+  const deliveryPricing = useDeliveryPricingPatch(
+    {
+      fee: detail?.delivery?.['Delivery Fee'] ?? null,
+      cost: detail?.delivery?.['Driver Payout'] ?? null,
+      distanceKm: detail?.delivery?.['Distance (km)'] ?? null,
+      band: detail?.delivery?.['Distance Band'] ?? null,
+    },
+    fields => patchDelivery(fields),
+  );
+```
+
+Then replace the `isDelivery && (...)` block (currently lines 909-921, and the margin block that follows it at 928+ which this component supersedes):
 
 ```jsx
                     {isDelivery && (
@@ -2073,15 +2260,8 @@ In `apps/florist/src/components/OrderCard.jsx`, replace the `isDelivery && (...)
                         <DeliveryPricingFields
                           address={detail?.delivery?.['Delivery Address']}
                           deliveryMethod={detail?.delivery?.['Delivery Method'] || 'Driver'}
-                          value={{ fee: detail?.delivery?.['Delivery Fee'], cost: detail?.delivery?.['Driver Payout'] }}
-                          onChange={patch => {
-                            const fields = {};
-                            if ('fee' in patch) fields['Delivery Fee'] = patch.fee;
-                            if ('cost' in patch) fields['Driver Payout'] = patch.cost;
-                            if ('distanceKm' in patch) fields['Distance (km)'] = patch.distanceKm;
-                            if ('band' in patch) fields['Distance Band'] = patch.band;
-                            patchDelivery(fields);
-                          }}
+                          value={deliveryPricing.value}
+                          onChange={deliveryPricing.onChange}
                           apiClient={apiClient}
                           t={t}
                         />
@@ -2094,27 +2274,34 @@ In `apps/florist/src/components/OrderCard.jsx`, replace the `isDelivery && (...)
 Add the import at the top of the file:
 
 ```js
-import { DeliveryPricingFields } from '@flower-studio/shared'; // match this file's existing shared-package import specifier
+import { DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared'; // match this file's existing shared-package import specifier
 ```
 
 - [ ] **Step 2: Replace OrderDetailPage's read-only fee Row**
 
-In `apps/florist/src/pages/OrderDetailPage.jsx`, replace the read-only fee `Row` and margin block (currently lines 691-700):
+In `apps/florist/src/pages/OrderDetailPage.jsx`, first add the `useDeliveryPricingPatch` call UNCONDITIONALLY near the component's other existing hooks/state:
+
+```js
+  const deliveryPricing = useDeliveryPricingPatch(
+    {
+      fee: order.delivery?.['Delivery Fee'] ?? null,
+      cost: order.delivery?.['Driver Payout'] ?? null,
+      distanceKm: order.delivery?.['Distance (km)'] ?? null,
+      band: order.delivery?.['Distance Band'] ?? null,
+    },
+    fields => patchDelivery(fields, order.delivery?._pgId || order.delivery?.id),
+  );
+```
+
+Then replace the read-only fee `Row` and margin block (currently lines 691-700):
 
 ```jsx
                   {isOwner && (
                     <DeliveryPricingFields
                       address={order.delivery?.['Delivery Address']}
                       deliveryMethod={order.delivery?.['Delivery Method'] || 'Driver'}
-                      value={{ fee: order.delivery?.['Delivery Fee'], cost: order.delivery?.['Driver Payout'] }}
-                      onChange={patch => {
-                        const fields = {};
-                        if ('fee' in patch) fields['Delivery Fee'] = patch.fee;
-                        if ('cost' in patch) fields['Driver Payout'] = patch.cost;
-                        if ('distanceKm' in patch) fields['Distance (km)'] = patch.distanceKm;
-                        if ('band' in patch) fields['Distance Band'] = patch.band;
-                        patchDelivery(fields, order.delivery?._pgId || order.delivery?.id);
-                      }}
+                      value={deliveryPricing.value}
+                      onChange={deliveryPricing.onChange}
                       apiClient={apiClient}
                       t={t}
                     />
