@@ -15,8 +15,9 @@ import * as stockLossRepo from './stockLossRepo.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries, stock, auditLog } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
-import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS, DELIVERY_METHOD } from '../constants/statuses.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc, ilike } from 'drizzle-orm';
+import { zeroCostFieldsForMethod } from '../services/deliveryPricingService.js';
 
 // ── Backend mode stub ──
 // getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
@@ -771,6 +772,21 @@ export async function createOrder(params, config, opts = {}) {
     // 5. Create delivery if needed
     let deliveryRow = null;
     if (deliveryType === 'Delivery' && delivery) {
+      const deliveryMethod = delivery.method || DELIVERY_METHOD.DRIVER;
+      // Distance-band cost (from the quote endpoint or an Owner override)
+      // wins when supplied; otherwise fall back to the flat per-delivery
+      // constant (unresolved address). Florist Delivery Method always
+      // forces the cost to zero regardless of any supplied cost — that
+      // time is already paid via Florist Hours (ADR-0019) — via the same
+      // shared helper deliveries.js's PATCH route uses, so the rule can't
+      // drift between the two call sites.
+      const resolvedCost = delivery.cost != null
+        ? delivery.cost
+        : (getConfig('driverCostPerDelivery') || 0);
+      const zeroCostFields = zeroCostFieldsForMethod(deliveryMethod);
+      const finalCost = 'Driver Payout' in zeroCostFields
+        ? zeroCostFields['Driver Payout'] : resolvedCost;
+
       const [d] = await tx.insert(deliveries).values({
         orderId:            orderRow.id,
         deliveryAddress:    delivery.address || '',
@@ -781,8 +797,10 @@ export async function createOrder(params, config, opts = {}) {
         assignedDriver:     delivery.driver || getDriverOfDay() || null,
         deliveryFee:        delivery.fee != null ? String(delivery.fee) : String(getConfig('defaultDeliveryFee')),
         driverInstructions: delivery.driverInstructions || '',
-        deliveryMethod:     'Driver',
-        driverPayout:       String(getConfig('driverCostPerDelivery') || 0),
+        deliveryMethod:     deliveryMethod,
+        driverPayout:       String(finalCost),
+        distanceKm:         delivery.distanceKm != null ? String(delivery.distanceKm) : null,
+        distanceBand:       delivery.distanceBand || null,
         status:             DELIVERY_STATUS.PENDING,
       }).returning();
       deliveryRow = d;

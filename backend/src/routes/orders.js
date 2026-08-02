@@ -8,7 +8,8 @@ import { actorFromReq } from '../utils/actor.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
 import { getDriverOfDay, getConfig, generateOrderId } from '../services/configService.js';
 import { pickAllowed } from '../utils/fields.js';
-import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS, DELIVERY_METHOD } from '../constants/statuses.js';
+import { zeroCostFieldsForMethod } from '../services/deliveryPricingService.js';
 import {
   createOrder,
   transitionStatus,
@@ -616,10 +617,18 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       return res.status(400).json({ error: 'Delivery record already exists for this order.' });
     }
 
-    const { address, recipientName, recipientPhone, date, time, fee, driver, driverInstructions } = req.body;
+    const {
+      address, recipientName, recipientPhone, date, time, fee, driver, driverInstructions,
+      distanceKm, distanceBand, cost, method,
+    } = req.body;
     const resolvedFee = fee ?? getConfig('defaultDeliveryFee');
+    const deliveryMethod = method || DELIVERY_METHOD.DRIVER;
+    // Distance-band cost (from the quote endpoint or an Owner override)
+    // wins when supplied; otherwise fall back to the flat per-delivery
+    // constant (unresolved address).
+    const resolvedCost = cost != null ? cost : (getConfig('driverCostPerDelivery') || 0);
 
-    const delivery = await orderRepo.convertToDelivery(req.params.id, {
+    const fields = {
       'Delivery Address': address || '',
       'Recipient Name':   recipientName || '',
       'Recipient Phone':  recipientPhone || '',
@@ -628,10 +637,19 @@ router.post('/:id/convert-to-delivery', async (req, res, next) => {
       'Assigned Driver':  driver || getDriverOfDay() || null,
       'Delivery Fee':     resolvedFee,
       'Driver Instructions': driverInstructions || '',
-      'Delivery Method': 'Driver',
-      'Driver Payout':   getConfig('driverCostPerDelivery') || 0,
+      'Delivery Method': deliveryMethod,
+      'Driver Payout':   resolvedCost,
+      'Distance (km)':   distanceKm ?? null,
+      'Distance Band':   distanceBand ?? null,
       Status:             DELIVERY_STATUS.PENDING,
-    }, { actor: actorFromReq(req) });
+    };
+    // Florist Delivery Method always costs zero, regardless of any supplied
+    // cost — that time is already paid via Florist Hours (ADR-0019). Same
+    // shared helper deliveries.js's PATCH route uses, so the rule can't
+    // drift between the two call sites.
+    Object.assign(fields, zeroCostFieldsForMethod(deliveryMethod));
+
+    const delivery = await orderRepo.convertToDelivery(req.params.id, fields, { actor: actorFromReq(req) });
 
     // Notify the assigned driver — delivery already carries all needed fields.
     const assignedDriver = delivery['Assigned Driver'];
