@@ -133,6 +133,7 @@ export { varietyKey, groupByVariety, varietyDisplayName } from './utils/varietyK
 export { default as VarietyAllocationPicker } from './components/VarietyAllocationPicker.jsx';
 export { default as NewVarietyFields } from './components/NewVarietyFields.jsx';
 export { default as ValueCombobox } from './components/ValueCombobox.jsx';
+export { default as VarietyResolveNotice } from './components/VarietyResolveNotice.jsx';
 export { default as BouquetFlowerForm, BOUQUET_FLOWER_FORM_KEYS } from './components/BouquetFlowerForm.jsx';
 
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.

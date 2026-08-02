@@ -9,8 +9,12 @@
 // wizards render the English literal `'Flower name'` in the Russian interface
 // for the same reason.
 //
-// A key nested under `po:` (the florist app's Stock Order block) still counts —
-// the component's `tx` cascade reads `t[key] ?? t.po?.[key]`.
+// A key nested under `po:` does NOT count, and the earlier version of this test
+// said it did. `BouquetFlowerForm`'s cascade is `t[key] ?? t.po?.[key]`, but the
+// florist `t` is a Proxy that returns the KEY ITSELF when a translation is
+// missing — never undefined — so the `??` never reaches the nested block. The
+// badge rendered the literal string `varietyNone` in shipped UI. Hence: the key
+// must exist at TOP level (two-space indent), once per language block.
 
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -28,10 +32,10 @@ describe.each(Object.entries(APPS))('%s translations', (app, path) => {
   const source = readFileSync(path, 'utf8');
 
   it.each(BOUQUET_FLOWER_FORM_KEYS)('defines %s in both languages', (key) => {
-    // `key:` at the start of a line (any indent) — the object-literal shape both
-    // files use. Two occurrences = the EN block and the RU block.
-    const hits = source.match(new RegExp(`^\\s*${key}:`, 'gm')) || [];
-    expect(hits.length, `${app} defines "${key}" ${hits.length}× (need ≥2: en + ru)`)
+    // Exactly two spaces of indent = a top-level key in one of the two language
+    // objects. Deeper indent is a nested block the component never reads.
+    const hits = source.match(new RegExp(`^  ${key}:`, 'gm')) || [];
+    expect(hits.length, `${app} defines top-level "${key}" ${hits.length}× (need ≥2: en + ru)`)
       .toBeGreaterThanOrEqual(2);
   });
 });
