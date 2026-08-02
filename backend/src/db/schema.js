@@ -567,6 +567,11 @@ export const stockOrderLines = pgTable('stock_order_lines', {
   colour:                   text('colour'),
   sizeCm:                   integer('size_cm'),
   cultivar:                 text('cultivar'),
+  // "Yes, this really is a flower I don't have yet" (#607). The 4-tuple above
+  // says WHAT the line is; this says whether the owner was ASKED and agreed to
+  // create it. Evaluation refuses to mint a Stock Item without it, so a typo
+  // can no longer become a second card for a flower she already stocks (#562).
+  newVariety:               boolean('new_variety').notNull().default(false),
   // Stock Order termination (ADR-0015). Set only from Shopping onward — before
   // that a line is deleted outright. A cancelled line stays visible and is
   // excluded from order totals and pending arrivals.

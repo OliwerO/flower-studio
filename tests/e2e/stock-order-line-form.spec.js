@@ -186,6 +186,89 @@ test.describe('Stock Order line form', () => {
   });
 });
 
+test.describe('A PO line resolves, never invents (#607)', () => {
+  test.use({ baseURL: 'http://localhost:5173' });
+
+  async function openNewOrderForm(page) {
+    await login(page, '1111');
+    await gotoPurchaseOrders(page);
+    await page.getByRole('button', { name: /Новый заказ поставщику|New Purchase Order/i }).first().click();
+    const line = page.locator('[data-testid="po-line-form"]').first();
+    await expect(line).toBeVisible();
+    return line;
+  }
+
+  async function setVariety(line, field, value) {
+    const input = line.locator(`[data-testid="nv-${field}"]`);
+    await input.fill(value);
+    const create = line.locator(`[data-testid="nv-${field}-create"]`);
+    const isNew = await create.waitFor({ state: 'visible', timeout: 500 }).then(() => true, () => false);
+    if (isNew) await create.click();
+    else await input.blur();
+  }
+
+  const poIds = async () => (await harnessApi('/api/stock-orders', { method: 'GET' })).map(o => o.id);
+
+  /** Save the form and return the order that appeared — the fixture has its own. */
+  async function saveAndGetNewOrder(page, before) {
+    await page.getByRole('button', { name: /^(Сохранить|Save)$/i }).first().click();
+    let created;
+    await expect.poll(async () => {
+      created = (await poIds()).find(id => !before.includes(id));
+      return !!created;
+    }).toBe(true);
+    return { id: created };
+  }
+
+  test('a flower she does not stock is refused until she confirms it', async ({ page }) => {
+    // The whole point of the slice, exercised the only way that proves the
+    // wiring: the confirm has to reach the server as `newVariety`, and the
+    // server has to refuse the PO without it. A component test sees the button;
+    // an integration test sees the field; neither sees them joined up.
+    await seedPeonySizes();
+    const before = await poIds();
+    const line = await openNewOrderForm(page);
+
+    await setVariety(line, 'type', 'Peony');
+    await setVariety(line, 'colour', 'Coral');
+    await line.locator('[data-testid="po-qty"]').fill('10');
+
+    await expect(line.locator('[data-testid="po-new-variety-notice"]')).toBeVisible();
+
+    await line.locator('[data-testid="po-new-variety-notice-confirm"]').click();
+    await expect(line.locator('[data-testid="po-new-variety-confirmed"]')).toBeVisible();
+
+    const po = await saveAndGetNewOrder(page, before);
+    const detail = await harnessApi(`/api/stock-orders/${po.id}`, { method: 'GET' });
+    expect(detail.lines[0]['New Variety']).toBe(true);
+    expect(detail.lines[0]['Stock Item']).toEqual([]);
+
+    // And nothing was created in stock — a PO line is an intent to buy.
+    const stock = await harnessApi('/api/stock?includeEmpty=true', { method: 'GET' });
+    expect(stock.some(s => s.Colour === 'Coral')).toBe(false);
+  });
+
+  test('an identity that matches a flower she has links silently, with no question', async ({ page }) => {
+    const { p60 } = await seedPeonySizes();
+    const before = await poIds();
+    const line = await openNewOrderForm(page);
+
+    await setVariety(line, 'type', 'Peony');
+    await setVariety(line, 'colour', 'Pink');
+    await setVariety(line, 'size', '60');
+    await setVariety(line, 'cultivar', 'Sarah B.');
+    await line.locator('[data-testid="po-qty"]').fill('10');
+
+    await expect(line.locator('[data-testid="po-new-variety-notice"]')).toBeHidden();
+    await expect(line.locator('[data-testid="po-variety-badge"]')).toHaveText(/карточки склада|stock card/i);
+
+    const po = await saveAndGetNewOrder(page, before);
+    const detail = await harnessApi(`/api/stock-orders/${po.id}`, { method: 'GET' });
+    expect(detail.lines[0]['Stock Item']).toEqual([p60.id]);
+    expect(detail.lines[0]['New Variety']).toBe(false);
+  });
+});
+
 test.describe('Stock Order termination', () => {
   test.use({ baseURL: 'http://localhost:5173' });
 

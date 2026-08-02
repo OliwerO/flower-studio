@@ -175,6 +175,7 @@ export default function ShoppingSupportPage() {
         colour: (line.colour || '').trim() || null,
         size: line.size !== '' && line.size != null ? Number(line.size) : null,
         cultivar: (line.cultivar || '').trim() || null,
+        newVariety: !!line.isNewVariety,
       });
       // Mark the new line as Found All immediately — the owner only adds lines
       // for flowers she's already bought, and we need the florist to see them.

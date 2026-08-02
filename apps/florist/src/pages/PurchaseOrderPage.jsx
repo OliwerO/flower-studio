@@ -160,6 +160,10 @@ export default function PurchaseOrderPage() {
           colour:    (l.colour || '').trim() || null,
           size:      l.size !== '' && l.size != null ? Number(l.size) : null,
           cultivar:  (l.cultivar || '').trim() || null,
+          // Her confirmation that this flower really is one she does not stock
+          // yet (#607). Without it the server refuses the whole PO rather than
+          // minting a Variety from a typo.
+          newVariety: !!l.isNewVariety,
         })),
       });
       showToast(t.po?.created || 'PO created');
@@ -191,6 +195,7 @@ export default function PurchaseOrderPage() {
           farmer: fields.Farmer ?? merged.Farmer ?? '',
           notes: fields.Notes ?? merged.Notes ?? '',
           stockItemId: fields['Stock Item']?.[0] || '',
+          newVariety: !!(fields['New Variety'] ?? merged['New Variety']),
         };
         const created = await client.post(`/stock-orders/${orderId}/lines`, payload);
         setExpandedLines(prev => prev.map(l => l.id === lineId ? created.data : l));
@@ -243,6 +248,7 @@ export default function PurchaseOrderPage() {
         colour: (line.colour || '').trim() || null,
         size: line.size !== '' && line.size != null ? Number(line.size) : null,
         cultivar: (line.cultivar || '').trim() || null,
+        newVariety: !!line.isNewVariety,
       });
       // Lines added during Shopping are for flowers already physically bought,
       // so mark Found All and stamp Quantity Found so the florist can see them.

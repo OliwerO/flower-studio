@@ -299,7 +299,21 @@ describe('new-variety flag (ADR-0016)', () => {
     expect(canonicalDiffToApiFields(prev, unconfirmed)).not.toHaveProperty('New Variety');
   });
 
-  it('never sends the flag on an empty diff', () => {
-    expect(canonicalDiffToApiFields(prev, { ...prev, isNewVariety: true })).toEqual({});
+  it('sends a confirmation given on its own, with nothing else changed (#607)', () => {
+    // Confirming is often the LAST thing she does — every attr already
+    // flushed on blur. The server stores the answer now, so a confirm with an
+    // empty field diff still has to reach it.
+    expect(canonicalDiffToApiFields(prev, { ...prev, isNewVariety: true }))
+      .toEqual({ 'New Variety': true });
+  });
+
+  it('withdraws a stored confirmation when she un-confirms', () => {
+    const confirmedLine = { ...prev, isNewVariety: true };
+    expect(canonicalDiffToApiFields(confirmedLine, { ...confirmedLine, isNewVariety: false }))
+      .toEqual({ 'New Variety': false });
+  });
+
+  it('sends nothing at all when nothing changed', () => {
+    expect(canonicalDiffToApiFields(prev, { ...prev })).toEqual({});
   });
 });

@@ -184,6 +184,10 @@ export function lineToWire(row) {
     Colour:                row.colour   ?? null,
     Size:                  row.sizeCm   ?? null,
     Cultivar:              row.cultivar ?? null,
+    // The owner's recorded "yes, create this flower" (#607). Evaluation reads
+    // it; without it a 4-tuple that matches nothing is a line error, not a
+    // second card for a flower she already has.
+    'New Variety':         row.newVariety ?? false,
   };
 }
 
@@ -231,6 +235,9 @@ function lineToPg(fields) {
     out.sizeCm = Number.isFinite(n) && n > 0 ? n : null;
   }
   if ('Cultivar' in fields) out.cultivar = fields.Cultivar ? String(fields.Cultivar).trim() || null : null;
+  // #607 — the recorded confirmation. It travels with the identity it belongs
+  // to, so a later edit that re-links the line onto an existing card clears it.
+  if ('New Variety' in fields) out.newVariety = !!fields['New Variety'];
   if ('Stock Item' in fields) {
     const raw = Array.isArray(fields['Stock Item']) ? fields['Stock Item'][0] : null;
     out.stockId = null;

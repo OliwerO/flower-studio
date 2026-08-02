@@ -60,7 +60,7 @@ describe('PO evaluate — Found vs Accepted purchase quantity (#492)', () => {
   it('primary line: records quantity_purchased=Found, quantity_accepted=Accepted', async () => {
     const created = await agent().post('/api/stock-orders').send({
       notes: 'found-vs-accepted',
-      lines: [{ flowerName: 'Ranunculus', quantity: 20, costPrice: 5, sellPrice: 12, supplier: 'Stefan' }],
+      lines: [{ flowerName: 'Ranunculus', type: 'Ranunculus', quantity: 20, costPrice: 5, sellPrice: 12, supplier: 'Stefan', newVariety: true }],
     });
     expect(created.status).toBe(201);
     const poId = created.body.id;
@@ -92,7 +92,7 @@ describe('PO evaluate — Found vs Accepted purchase quantity (#492)', () => {
   it('substitute line: records quantity_purchased=Alt Quantity Found, quantity_accepted=altQuantityAccepted', async () => {
     const created = await agent().post('/api/stock-orders').send({
       notes: 'sub-found-vs-accepted',
-      lines: [{ flowerName: 'Peony', quantity: 10, costPrice: 8, sellPrice: 20, supplier: 'Stefan' }],
+      lines: [{ flowerName: 'Peony', type: 'Peony', quantity: 10, costPrice: 8, sellPrice: 20, supplier: 'Stefan', newVariety: true }],
     });
     const poId = created.body.id;
     const lineId = created.body.lines[0].id;

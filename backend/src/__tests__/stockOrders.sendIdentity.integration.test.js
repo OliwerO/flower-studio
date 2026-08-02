@@ -65,7 +65,7 @@ describe('PO send — new-Variety line identity (#304 regression)', () => {
   it('create composes Flower Name from Type/Colour/Size and the PO is sendable', async () => {
     const created = await agent().post('/api/stock-orders').send({
       notes: 'y-model',
-      lines: [{ flowerName: '', type: 'Peony', colour: 'Pink', size: 50, quantity: 10, costPrice: 0 }],
+      lines: [{ flowerName: '', type: 'Peony', colour: 'Pink', size: 50, quantity: 10, costPrice: 0, newVariety: true }],
     });
     expect(created.status).toBe(201);
     const poId = created.body.id;
@@ -81,13 +81,13 @@ describe('PO send — new-Variety line identity (#304 regression)', () => {
   });
 
   it('inline PATCH of Type onto a blank Draft line composes a Flower Name and stays sendable', async () => {
-    const created = await agent().post('/api/stock-orders').send({ lines: [{ flowerName: 'Seed', quantity: 1 }] });
+    const created = await agent().post('/api/stock-orders').send({ lines: [{ flowerName: 'Seed', type: 'Seed', quantity: 1, newVariety: true }] });
     const poId = created.body.id;
 
     const blank = await agent().post(`/api/stock-orders/${poId}/lines`).send({ flowerName: '', quantity: 5 });
     const lineId = blank.body.id;
 
-    await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`).send({ Type: 'Rose' });
+    await agent().patch(`/api/stock-orders/${poId}/lines/${lineId}`).send({ Type: 'Rose', 'New Variety': true });
 
     const got = await agent().get(`/api/stock-orders/${poId}`);
     const line = got.body.lines.find(l => l.id === lineId);
@@ -99,7 +99,7 @@ describe('PO send — new-Variety line identity (#304 regression)', () => {
   });
 
   it('still blocks /send on a genuinely blank line (no stock item, no name, no Type)', async () => {
-    const created = await agent().post('/api/stock-orders').send({ lines: [{ flowerName: 'Real', quantity: 1 }] });
+    const created = await agent().post('/api/stock-orders').send({ lines: [{ flowerName: 'Real', type: 'Real', quantity: 1, newVariety: true }] });
     const poId = created.body.id;
     await agent().post(`/api/stock-orders/${poId}/lines`).send({ flowerName: '', quantity: 1 });
 

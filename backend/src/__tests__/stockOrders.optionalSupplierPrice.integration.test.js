@@ -24,6 +24,7 @@ vi.mock('../services/configService.js', () => ({
 }));
 
 import { setupPgHarness, teardownPgHarness } from './helpers/pgHarness.js';
+import { stock } from '../db/schema.js';
 import express from 'express';
 import supertest from 'supertest';
 
@@ -61,10 +62,21 @@ afterEach(async () => {
   dbHolder.db = null;
 });
 
+// A PO line's flower must resolve to one she already has (#607), so these
+// fixtures stock the flowers first. That is also the real shape: an off-plan
+// line at the market is nearly always a flower already in the catalogue.
+async function seedCard(displayName, typeName, colour = null) {
+  const [row] = await harness.db.insert(stock).values({
+    displayName, purchaseName: displayName, typeName, colour,
+    currentQuantity: 0, active: true,
+  }).returning();
+  return row;
+}
+
 // Helper: Draft PO with one seed line → send to driver → returns poId + seedLineId
 async function createSentPO() {
   const created = await agent().post('/api/stock-orders').send({
-    lines: [{ flowerName: 'Seed', quantity: 1 }],
+    lines: [{ flowerName: 'Seed', type: 'Seed', quantity: 1, newVariety: true }],
   });
   const poId = created.body.id;
   await agent().post(`/api/stock-orders/${poId}/send`).send({ driverName: 'Timur' });
@@ -75,6 +87,7 @@ async function createSentPO() {
 
 describe('PO line add — supplier & cost price optional (#524)', () => {
   it('adds a line to a Sent PO with only flower name + quantity — no supplier, no cost', async () => {
+    await seedCard('Off-plan Rose', 'Rose');
     const { poId } = await createSentPO();
 
     const res = await agent().post(`/api/stock-orders/${poId}/lines`).send({
@@ -90,6 +103,7 @@ describe('PO line add — supplier & cost price optional (#524)', () => {
   });
 
   it('adds a line to a Shopping PO with only flower name + quantity — no supplier, no cost', async () => {
+    await seedCard('Off-plan Peony', 'Peony');
     const { poId, seedLineId } = await createSentPO();
 
     // Any Driver Status patch while Sent flips the PO to Shopping (mirrors
@@ -119,6 +133,7 @@ describe('PO line add — supplier & cost price optional (#524)', () => {
   });
 
   it('accepts a Sent-PO line keyed on a new-Variety Type alone (no Flower Name, no supplier, no cost)', async () => {
+    await seedCard('Ranunculus', 'Ranunculus');
     const { poId } = await createSentPO();
 
     const res = await agent().post(`/api/stock-orders/${poId}/lines`).send({

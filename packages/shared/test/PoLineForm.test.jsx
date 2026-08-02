@@ -242,3 +242,61 @@ describe('PoLineForm — confirmed new Variety takes its own name (ADR-0016)', (
     expect(last.flowerName).toBe('Peony White 60cm');
   });
 });
+
+describe('PoLineForm — a never-linked line still has to be answered (#607)', () => {
+  it('applies the edit immediately and asks alongside it, instead of blocking', () => {
+    // A line being composed from scratch cannot use the blocking prompt: asking
+    // "create Peony?" the moment a Type is picked — before a Colour exists —
+    // and restoring on Cancel would throw away what she just typed. So the edit
+    // lands and the question sits beside it.
+    const seen = [];
+    render(<Harness onLine={(l) => seen.push(l)} />);
+
+    setVarietyValue('nv-type', 'Tulip');
+
+    expect(seen.at(-1).type).toBe('Tulip');                       // applied
+    expect(screen.getByTestId('po-new-variety-notice')).toBeInTheDocument();
+    expect(screen.queryByTestId('po-new-variety-prompt')).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId('po-new-variety-notice-confirm'));
+    expect(seen.at(-1).isNewVariety).toBe(true);
+    expect(screen.getByTestId('po-new-variety-confirmed')).toBeInTheDocument();
+  });
+
+  it('withdraws the question the moment the identity resolves to a flower she has', () => {
+    render(<Harness initial={{ ...EMPTY, type: 'Tulip' }} />);
+    expect(screen.getByTestId('po-new-variety-notice')).toBeInTheDocument();
+
+    setVarietyValue('nv-type', 'Peony');
+    setVarietyValue('nv-colour', 'Pink');
+    setVarietyValue('nv-size', '60');
+
+    expect(screen.queryByTestId('po-new-variety-notice')).not.toBeInTheDocument();
+    expect(screen.getByTestId('po-variety-badge')).toHaveTextContent('from stock card');
+  });
+
+  it('takes a confirmation back when she edits the identity again', () => {
+    const seen = [];
+    render(<Harness initial={{ ...EMPTY, type: 'Tulip', isNewVariety: true }} onLine={(l) => seen.push(l)} />);
+    expect(screen.queryByTestId('po-new-variety-notice')).not.toBeInTheDocument();
+
+    setVarietyValue('nv-colour', 'Yellow');
+
+    expect(seen.at(-1).isNewVariety).toBe(false);
+    expect(screen.getByTestId('po-new-variety-notice')).toBeInTheDocument();
+  });
+
+  it('never asks with an empty catalogue — nothing to match against', () => {
+    // A failed /stock fetch would otherwise make every flower read as new and
+    // license a bypass of the server's own guard.
+    render(
+      <PoLineForm
+        value={{ ...EMPTY, type: 'Tulip' }}
+        onChange={() => {}}
+        stock={[]}
+        t={t}
+      />,
+    );
+    expect(screen.queryByTestId('po-new-variety-notice')).not.toBeInTheDocument();
+  });
+});
