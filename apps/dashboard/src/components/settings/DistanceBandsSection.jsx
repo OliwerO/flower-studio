@@ -36,6 +36,7 @@ export default function DistanceBandsSection({ config: cfg, onUpdate }) {
 
   return (
     <Section title={t.dbTitle}>
+      <p className="text-xs text-gray-400 mb-2">{t.dbFallbackHint}</p>
       <div className="space-y-1.5 mb-3">
         {bands.map((b, i) => (
           <div key={b.id} className="flex items-center gap-3 px-3 py-2 bg-gray-50 rounded-xl text-sm border border-gray-100">

@@ -871,6 +871,7 @@ const en = {
 
   // Distance bands
   dbTitle:                  'Distance Bands',
+  dbFallbackHint:           'This table sets delivery cost by distance — the flat driver cost setting elsewhere on this page is only a fallback for when an address\'s distance can\'t be resolved.',
   dbAddBand:                'Add band',
   dbUpToKm:                 'Up to (km)',
   dbUnbounded:              'and beyond',
@@ -2122,6 +2123,7 @@ const ru = {
 
   // Distance bands
   dbTitle:                  'Дистанционные зоны',
+  dbFallbackHint:           'Эта таблица задаёт стоимость доставки по расстоянию — ставка водителя в другом разделе этой страницы используется только как запасной вариант, если расстояние до адреса определить не удалось.',
   dbAddBand:                'Добавить зону',
   dbUpToKm:                 'До (км)',
   dbUnbounded:              'и далее',
