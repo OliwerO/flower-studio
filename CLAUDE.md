@@ -17,7 +17,7 @@ Operational platform for **Blossom**, a flower studio in Krakow. Each role — f
 - **Auth:** Stateless PIN via `X-Auth-PIN` header (Owner → all, Florist → orders/stock, Driver → deliveries)
 - **Real-time:** SSE via `GET /api/events` (new orders, status changes, stock alerts)
 - **Integrations:** Wix (e-commerce webhook + bidirectional product sync), Telegram (alerts), Claude AI (order intake parsing), Flowwow (email import)
-- **CI:** `.github/workflows/test.yml` runs Vitest (backend + shared) + the API E2E suite on every PR and on push to master.
+- **CI:** `.github/workflows/test.yml` runs six jobs on every PR and on push to master — static guards, backend Vitest, shared Vitest, the API E2E suite, the **Playwright UI click-through** (added #612; it was the one Pre-PR item nothing enforced), and the lab API gate. That is the Pre-PR matrix below, minus the three `vite build`s, which Vercel's preview deploys cover.
 
 ## Monorepo Layout
 ```
@@ -219,7 +219,7 @@ Before opening a PR or pushing changes that will trigger CI/Vercel builds, run t
 3. **Frontend changes** in any single app: `cd apps/<that-app> && ./node_modules/.bin/vite build`. Plus build any other app that imports a file you touched in `packages/shared/`.
 4. **Static guards** (silent-catch CI guard, etc.): the guards live in `.github/workflows/test.yml` — if you added a new `catch(...)` block to backend, scan the diff for `catch (...) {}`/`catch(() => {})` patterns yourself.
 4b. **UI click-through** (any change a person interacts with — a form, a button, an inline editor):
-   - `npm run test:ui` — Playwright drives the real React components in a real browser against the pglite harness. It boots the harness + all three Vite servers itself.
+   - `npm run test:ui` — Playwright drives the real React components in a real browser against the pglite harness. It boots the harness + all three Vite servers itself. **CI runs this as the `ui` job since #612**, so a broken spec now fails the PR instead of rotting — but run it locally anyway: the runner takes several minutes to cold-start, and a failure there costs a round-trip. On failure CI uploads `playwright-report/` + `test-results/` (traces + video) as an artifact.
    - **Write a spec for the specific behaviour you changed**, seeding only the data that behaviour needs (`tests/e2e/helpers/seed.js`) — don't widen the shared fixture. See `tests/e2e/stock-order-line-form.spec.js` as the model.
    - This layer exists because component tests and integration tests both pass while the wiring between them is broken. It has already earned its place: it caught a detached PO line keeping the previous card's name, which would have created a White peony card called "Peony Pink 60cm".
    - **Constraints that will otherwise waste an hour** (all learned the hard way, 2026-07-30):
