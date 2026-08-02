@@ -528,7 +528,6 @@ export default function OrderDetailPage() {
                           stockItems={stockItems}
                           apiClient={client}
                           dense
-                          idPrefix="bff-florist-detail"
                           t={t}
                           showToast={showToast}
                           onCreated={({ stockItem, line }) => {

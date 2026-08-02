@@ -187,7 +187,6 @@ export default function StockReceiveForm({ stock, onDone }) {
               onChange={setNewAttrs}
               t={t}
               stockItems={stock}
-              idPrefix="nv-dash-receive"
             />
           </>
         ) : (

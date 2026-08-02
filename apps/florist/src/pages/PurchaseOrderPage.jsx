@@ -395,7 +395,6 @@ export default function PurchaseOrderPage() {
                   targetMarkup={targetMarkup}
                   t={t}
                   mode="draft"
-                  idPrefix={`po-new-${idx}`}
                 />
               </div>
             ))}
@@ -792,7 +791,6 @@ function DraftLineEditor({ line, stock, onUpdate, onRemove, onCancel, poStatus, 
         targetMarkup={targetMarkup}
         t={t}
         mode="draft"
-        idPrefix={`po-line-${line.id}`}
       />
       {isBlank && (
         <p className="text-[11px] text-amber-700">
@@ -852,7 +850,6 @@ function AddLineInlineForm({ orderId, onAdd, suppliers = [], stock, targetMarkup
         targetMarkup={targetMarkup}
         t={t}
         mode="sent"
-        idPrefix={`po-add-${orderId}`}
       />
       {!ready && <p className="text-[11px] text-amber-600">{t.shopping?.fillAllFields}</p>}
       <div className="flex gap-2">

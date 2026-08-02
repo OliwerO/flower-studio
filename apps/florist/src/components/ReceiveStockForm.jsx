@@ -159,7 +159,6 @@ export default function ReceiveStockForm({ stock, onSave, onCancel }) {
               onChange={setNewAttrs}
               t={t}
               stockItems={stock}
-              idPrefix="nv-florist-receive"
             />
           </div>
         </div>
