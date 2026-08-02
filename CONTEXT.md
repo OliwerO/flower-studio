@@ -36,24 +36,20 @@ _Avoid_: Purchase, transaction
 The physical act of bringing an Order to a customer's address. Linked 1:1 to a delivery-type Order. The primary entity Drivers work with — Drivers see Deliveries, not Orders.
 _Avoid_: Shipment, dispatch
 
-**Delivery Zone**:
-A geographic band around Krakow that sets what a Delivery is worth — Central Krakow, Suburbs, Out of city. Suggested from the Recipient's address and always overridable. The Zone drives two numbers that must not be confused: the **Delivery Fee** charged to the Customer, and the **Driver Rate** paid out.
-_Avoid_: Area, region, delivery band
+**Distance Band**:
+A range of driving distance from the studio with a price attached — up to 5 km, 5–7 km, 7–10 km, and so on. The bands and their prices are Owner-editable, because rates change. A Driver may carry their own band table when their terms differ from the standard; absent one, the standard bands apply. Bands are measured on **driving** distance, not straight-line, because that is what the Driver is actually paid for.
+_Avoid_: Zone (a Delivery Zone was the postcode-based model this replaced; it survives only in the Wix storefront config), tier, bracket
+
+**Delivery Cost**:
+What the studio pays to have one Delivery made. Calculated automatically at order creation by measuring the driving distance from the studio to the delivery address and looking it up against the Distance Bands, then freely overridable by the Owner — exceptions like an out-of-hours run or an unusually long trip outside the city are priced by hand. Measured **studio → destination** per Delivery, and treated as the agreed price however the Driver sequences a multi-stop run.
+_Avoid_: Driver payout (the stored column is named that for historical reasons; "Delivery Cost" is the domain term), courier cost
 
 **Delivery Fee**:
-What the Customer pays for a Delivery. Suggested from the Delivery Zone and freely overridable by the Owner. Lives on the Delivery record, not the Order — the Order-level column is redundant and may be stale. Adds to the Order's Final Price on top of the flowers.
+What the Customer pays for a Delivery. The Owner sets it **on top of** the Delivery Cost — that is where the margin comes from. Lives on the Delivery record, not the Order; the Order-level column is redundant and may be stale. Adds to the Order's Final Price on top of the flowers.
 _Avoid_: Shipping cost, delivery price, delivery charge
 
-**Driver Rate**:
-The agreed amount a specific Driver is paid for a Delivery in a specific Delivery Zone. Belongs to the Driver, not to any one Delivery, so two Drivers can be paid differently for the same run and a rate change never rewrites history. It is the *default* for a Delivery's Driver Payout, never a constraint.
-_Avoid_: Driver fee, courier rate, driver price
-
-**Driver Payout**:
-What the studio actually pays for one Delivery. Defaults from the assigned Driver's Driver Rate for that Delivery Zone and is freely overridable per Delivery. Independent of the Delivery Fee by design — the two are separate numbers, and the gap between them is the **Delivery Margin**. When the Delivery Method is Florist the payout is zero, because the Florist's time is already captured in Florist Hours.
-_Avoid_: Driver cost, courier payment
-
 **Delivery Margin**:
-`Delivery Fee − Driver Payout`, the studio's earnings on delivering. It is a number the Owner sets deliberately at both ends, not one she discovers: pricing the Fee by Zone and the Payout by Driver Rate is what makes a margin possible at all.
+`Delivery Fee − Delivery Cost`, the studio's earnings on delivering. It is a number the Owner sets deliberately at both ends, not one she discovers: computing the Cost from distance and letting her price the Fee above it is what makes a margin possible at all. Neither number may ever be derived from the other.
 _Avoid_: Delivery profit (fine in prose; "Delivery Margin" is canonical), delivery income
 
 **Customer**:
