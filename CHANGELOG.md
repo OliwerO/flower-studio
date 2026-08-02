@@ -5,6 +5,16 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — feat(stock): a substitute resolves to a flower you have, not a new one (#606)
+
+**The last create-a-flower path that still went by name.** When a purchase order comes back with something different from what was ordered, whoever was at the market types the substitute's name by hand. The system then looked for an existing flower card by **exact name only** — the Type and Colour captured at evaluation were used to label the *new* card, never to find an existing one. So `Ranunkulus` and `ranunculus` became two flowers, and a substitute plainly classified as `Peony / Pink / 60cm` became a third under whatever words happened to be typed.
+
+Now the classification decides. A substitute resolves onto the flower she already has whenever the Type/Colour/Size/Cultivar match one — whatever the name says — and only a genuinely new combination creates a card. A dated delivery row is never resolved onto: that is one arrival, not the flower's card.
+
+**On the screens.** The classification boxes on the shopping-supervision screen and the evaluation screen are now the same pickers as everywhere else, including Cultivar (which had no list at all), and both show which flower the substitute resolves to. The evaluation screen's "these will be created as new flowers" confirmation now names the **resolved** flower instead of the typed words — its check was a name lookup, which is precisely the test the server no longer uses.
+
+No schema change, no env change, no API change.
+
 ## 2026-08-02 — chore(stock): the pre-validation duplicates are gone (owner-approved prod cleanup, RUN)
 
 **This one was run against production on 2026-08-02, with the owner's approval.** Everything above stops NEW duplicates being created; this folds the ones already stored, from before the create-a-flower door started matching.

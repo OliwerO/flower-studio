@@ -7,6 +7,7 @@ import { useNavigate } from 'react-router-dom';
 import { useToast } from '../context/ToastContext.jsx';
 import client from '../api/client.js';
 import t from '../translations.js';
+import { NewVarietyFields, VarietyResolveNotice, resolveVariety } from '@flower-studio/shared';
 
 // Broken/write-off and accept are two views of one pool of received stems
 // (received === accepted + writeOff). Editing either field recomputes the
@@ -35,34 +36,25 @@ export default function StockEvaluationPage() {
   const [evalState, setEvalState] = useState({});
   // Lowercased set of existing Stock display names — used to preview which
   // substitutes will become brand-new stock cards on submit (edge case 2).
-  const [knownStockNames, setKnownStockNames] = useState(new Set());
   const [committedMap, setCommittedMap] = useState({});
-  // Existing Variety Type/Colour values — seed the substitute classification
-  // picker so the florist selects a real Type instead of free-typing one (which
-  // is how "Dahlia Coral" once got Type="Dahlia Pink"). Datalist still allows a
-  // genuinely new value.
-  const [typeOptions, setTypeOptions] = useState([]);
-  const [colourOptions, setColourOptions] = useState([]);
+  // The whole stock catalogue — the substitute classification resolves against
+  // it (#606). It replaces two `/stock/distinct/*` fetches: `NewVarietyFields`
+  // derives Type/Colour/Size/Cultivar options from the rows itself, and
+  // `resolveVariety` needs the rows anyway to answer "does she already have
+  // this?". Matching on the typed NAME alone is what made `Ranunkulus` and
+  // `ranunculus` two cards.
+  const [stockItems, setStockItems] = useState([]);
 
   useEffect(() => {
     client.get('/stock/committed').then(r => setCommittedMap(r.data)).catch(() => {});
   }, []);
 
   useEffect(() => {
-    // Column name must match stockRepo.VARIETY_COLUMNS — it's `typeName`, not `type`
-    // (a bare `type` 400s: "column type is not allowed", #532).
-    client.get('/stock/distinct/typeName').then(r => setTypeOptions(r.data || [])).catch(() => {});
-    client.get('/stock/distinct/colour').then(r => setColourOptions(r.data || [])).catch(() => {});
+    client.get('/stock?includeEmpty=true')
+      .then(r => setStockItems(r.data || []))
+      .catch(err => console.error('Failed to load stock for substitute classification:', err));
   }, []);
 
-  useEffect(() => {
-    client.get('/stock-orders/meta/lookups')
-      .then(r => {
-        const names = (r.data.flowers || []).map(f => String(f.name || '').trim().toLowerCase());
-        setKnownStockNames(new Set(names));
-      })
-      .catch(() => {});
-  }, []);
 
   const fetchOrders = useCallback(async () => {
     try {
@@ -122,6 +114,35 @@ export default function StockEvaluationPage() {
     }
   }
 
+  // The one "is this a flower she already has?" rule for a substitute (#606).
+  // The classification decides; the typed name is only the fallback. Testing
+  // the name alone is what let `Ranunkulus` and `ranunculus` become two cards,
+  // and what let a plainly-classified `Peony / Pink` become a third under
+  // whatever words were used at the market. Mirrors the server's
+  // findOrCreateSubstituteStock exactly.
+  const resolveSubstitute = useCallback((ev, altFlowerName) => {
+    const attrs = {
+      typeName: ev?.altType || '',
+      colour:   ev?.altColour || '',
+      sizeCm:   ev?.altSize ?? '',
+      cultivar: ev?.altCultivar || '',
+    };
+    const byIdentity = String(attrs.typeName).trim()
+      ? resolveVariety(stockItems, attrs)
+      : resolveVariety(stockItems, { displayName: altFlowerName });
+    const match = byIdentity.match
+      || (byIdentity.reason === 'dated-only' ? { 'Display Name': altFlowerName } : null);
+    return {
+      isNew: !match,
+      // What the server will actually end up with, so the confirm names the
+      // flower rather than the words that were typed.
+      resolvedName: match
+        ? (match['Display Name'] || altFlowerName)
+        : [attrs.typeName, attrs.colour, attrs.sizeCm ? `${attrs.sizeCm}cm` : '', attrs.cultivar]
+            .map(x => String(x || '').trim()).filter(Boolean).join(' ') || altFlowerName,
+    };
+  }, [stockItems]);
+
   // Before submit, check which substitute flower names don't match any
   // existing stock card — those will be created as new cards by the backend.
   // Shows a confirm dialog so the florist can catch typos (edge case 2).
@@ -132,9 +153,9 @@ export default function StockEvaluationPage() {
       const ev = evalState[line.id] || {};
       const altAccepted = Number(ev.altAccepted) || 0;
       const altFlowerName = (line['Alt Flower Name'] || '').trim();
-      if (altAccepted > 0 && altFlowerName &&
-          !knownStockNames.has(altFlowerName.toLowerCase())) {
-        out.push(altFlowerName);
+      if (altAccepted > 0 && altFlowerName) {
+        const { isNew, resolvedName } = resolveSubstitute(ev, altFlowerName);
+        if (isNew) out.push(resolvedName);
       }
     }
     return out;
@@ -152,7 +173,7 @@ export default function StockEvaluationPage() {
       const ev = evalState[line.id] || {};
       const altAccepted = Number(ev.altAccepted) || 0;
       const altFlowerName = (line['Alt Flower Name'] || '').trim();
-      const isNew = altFlowerName && !knownStockNames.has(altFlowerName.toLowerCase());
+      const isNew = Boolean(altFlowerName) && resolveSubstitute(ev, altFlowerName).isNew;
       if (altAccepted > 0 && isNew && !(ev.altType || '').trim()) {
         unclassified.push(altFlowerName);
       }
@@ -226,12 +247,6 @@ export default function StockEvaluationPage() {
   return (
     <div className="min-h-screen bg-ios-bg">
       {/* Substitute Type/Colour pickers seed from existing Varieties (all lines share these). */}
-      <datalist id="sub-type-options">
-        {typeOptions.map(v => <option key={v} value={v} />)}
-      </datalist>
-      <datalist id="sub-colour-options">
-        {colourOptions.map(v => <option key={v} value={v} />)}
-      </datalist>
       <header className="glass-nav px-4 pt-3 pb-3 sticky top-0 z-10">
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           <button onClick={() => navigate('/orders')} className="text-brand-600 font-medium text-sm">
@@ -405,7 +420,7 @@ export default function StockEvaluationPage() {
                               const altCostTotal = Number(line['Alt Cost']) || 0;
                               const altCostPerStem = altFound > 0 ? (altCostTotal / altFound) : 0;
                               const isNewSubstitute = altFlowerName &&
-                                !knownStockNames.has(String(altFlowerName).trim().toLowerCase());
+                                resolveSubstitute(ev, String(altFlowerName).trim()).isNew;
                               return (
                                 <div className="bg-indigo-50/70 rounded-xl px-3 py-2.5 space-y-2 border border-indigo-100">
                                   <div>
@@ -427,32 +442,40 @@ export default function StockEvaluationPage() {
                                   {isNewSubstitute && (
                                     <div className="space-y-1.5">
                                       <p className="text-[11px] text-indigo-600">{t.substituteVarietyHint}</p>
-                                      <div className="grid grid-cols-2 gap-1.5">
-                                        <input
-                                          type="text" list="sub-type-options" value={ev.altType || ''}
-                                          onChange={e => updateEval(line.id, { altType: e.target.value })}
-                                          placeholder={t.subType}
-                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
-                                        />
-                                        <input
-                                          type="text" list="sub-colour-options" value={ev.altColour || ''}
-                                          onChange={e => updateEval(line.id, { altColour: e.target.value })}
-                                          placeholder={t.subColour}
-                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
-                                        />
-                                        <input
-                                          type="number" inputMode="numeric" value={ev.altSize || ''}
-                                          onChange={e => updateEval(line.id, { altSize: e.target.value })}
-                                          placeholder={t.subSize}
-                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
-                                        />
-                                        <input
-                                          type="text" value={ev.altCultivar || ''}
-                                          onChange={e => updateEval(line.id, { altCultivar: e.target.value })}
-                                          placeholder={t.subCultivar}
-                                          className="field-input text-sm px-2 py-1.5 rounded-lg border border-indigo-200"
-                                        />
-                                      </div>
+                                      <NewVarietyFields
+                                        form={{
+                                          typeName: ev.altType || '',
+                                          colour:   ev.altColour || '',
+                                          sizeCm:   ev.altSize ?? '',
+                                          cultivar: ev.altCultivar || '',
+                                        }}
+                                        onChange={updater => {
+                                          const next = updater({
+                                            typeName: ev.altType || '',
+                                            colour:   ev.altColour || '',
+                                            sizeCm:   ev.altSize ?? '',
+                                            cultivar: ev.altCultivar || '',
+                                          });
+                                          updateEval(line.id, {
+                                            altType: next.typeName, altColour: next.colour,
+                                            altSize: next.sizeCm,   altCultivar: next.cultivar,
+                                          });
+                                        }}
+                                        t={t}
+                                        stockItems={stockItems}
+                                      />
+                                      <VarietyResolveNotice
+                                        form={{
+                                          typeName: ev.altType || '',
+                                          colour:   ev.altColour || '',
+                                          sizeCm:   ev.altSize ?? '',
+                                          cultivar: ev.altCultivar || '',
+                                        }}
+                                        stockItems={stockItems}
+                                        confirmed
+                                        onConfirmedChange={() => {}}
+                                        t={t}
+                                      />
                                     </div>
                                   )}
                                   <AcceptWriteOffRow
