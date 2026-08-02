@@ -181,6 +181,10 @@ _Avoid_: Arrangement, composition, booklet (speech-to-text artifact)
 A bouquet listed in the Wix online store (website). Customers browse and order Products online. Not the same as a Stock Item — Products are what customers see; Stock Items are the raw stems used to build them. A Product's **name is localized** — it has an EN/PL/RU/UK version, and the live storefront shows the version matching the visitor's language. These name translations are **owned by flower-studio** (edited in the Dashboard, pushed to Wix); see ADR-0008. The English name is the canonical Product name; the others are its translations.
 _Avoid_: Wix product, catalog item, listing
 
+**Product price**:
+What a Product's variant sells for on the storefront. The Owner sets it in the Dashboard (or Florist app) and **Push** carries it to Wix; the storefront is downstream. Setting a price and pushing it are separate acts — until a Push lands, a price exists in the app but not on the website. **Pull** imports a Wix price only when Wix's own price changed since the previous Pull (ADR-0020), so a price the storefront has not taken yet is never silently reverted; the Pull result reports how many are in that state. A price changed directly in the Wix admin still flows back on the next Pull.
+_Avoid_: "synced price" (a price is either live on the storefront or not — "synced" hides which)
+
 **Premade Bouquet**:
 A bouquet a Florist assembles before any customer order exists. Under the reservation model (ADR-0005), Batch quantity is unchanged at build — the `premade_bouquet_lines` rows are the reservation ledger; the Batch is decremented only when the Premade Bouquet is sold and becomes an Order. The bouquet can be sold (an Order is created, the premade record + lines are deleted, standard Batch deduction runs) or dissolved (lines deleted; Batch quantity unchanged).
 _Avoid_: Ready-made, walk-in bouquet, pre-built

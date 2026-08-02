@@ -6,6 +6,11 @@
 // Wix owns: images, variant option names
 // flower-studio owns: product NAMES (all locales — ADR-0008), prices, lead
 //   times, stock, categories, active status
+//
+// "Owns prices" is enforced on the Pull side by ADR-0020: Pull mirrors a Wix
+// price only when Wix's own price CHANGED since the previous Pull, so a Pull
+// can never re-stamp a stale Wix value over a local edit Push has not landed
+// yet. A genuine Wix-admin price change is still imported.
 
 import PQueue from 'p-queue';
 import * as stockRepo from '../repos/stockRepo.js';
@@ -724,6 +729,10 @@ async function logSync(direction, stats) {
       deactivated:  stats.deactivated || 0,
       priceSyncs:   stats.pricesSynced || 0,
       stockSyncs:   stats.stockSynced || 0,
+      // Pull-only (#428): local prices the storefront has not taken yet.
+      // Recorded per run so the next investigation can see this from
+      // sync_log alone — the silent version went unnoticed for a month.
+      pricesNotOnWix: stats.pricesNotOnWix || 0,
       errorMessage,
     });
   } catch (err) {
@@ -733,11 +742,17 @@ async function logSync(direction, stats) {
 }
 
 /**
- * Pull from Wix → Airtable.
- * Imports products, visibility, categories, prices from the Wix storefront.
+ * Pull from Wix → Postgres (`product_config`).
+ * Imports products, visibility, categories and prices from the Wix storefront.
+ *
+ * Prices are mirrored conditionally — see the `Wix Price Seen` block below
+ * and ADR-0020. Everything else still mirrors unconditionally.
  */
 export async function runPull() {
-  const stats = { new: 0, updated: 0, deactivated: 0, errors: [] };
+  // `pricesNotOnWix`: rows whose local price differs from Wix while Wix's own
+  // price has NOT moved since the previous Pull — i.e. price edits Push has
+  // not landed on the storefront. Reported, never silently overwritten (#428).
+  const stats = { new: 0, updated: 0, deactivated: 0, pricesNotOnWix: 0, errors: [] };
 
   try {
     console.log('[PULL] Fetching products from Wix...');
@@ -807,6 +822,10 @@ export async function runPull() {
               'Wix Variant ID': variantId,
               'Image URL': imageUrl,
               'Price': Number(variantPrice) || 0,
+              // Seed the baseline the mirror guard compares against (#428) —
+              // a brand-new row's price came FROM Wix, so they agree by
+              // construction and the next Pull starts from a real observation.
+              'Wix Price Seen': Number(variantPrice) || 0,
               'Lead Time Days': 1,
               'Active': variantVisible,
               'Visible in Wix': wixVisible,
@@ -826,17 +845,49 @@ export async function runPull() {
             updates['Product Name'] = productName;
           }
           if (existing['Image URL'] !== imageUrl) updates['Image URL'] = imageUrl;
-          // Price: Pull mirrors Wix → Airtable. Owner edits prices in
-          // Wix admin OR in the dashboard/florist app — never directly
-          // in Airtable. So Pull is allowed to overwrite Airtable price
-          // with the latest Wix price. The 2026-04-22 lockout (commit
-          // a44450f) only mattered for the legacy `runSync` (pull-then-
-          // push) flow, which the UI no longer uses — Pull and Push are
-          // separate buttons and the owner picks the direction.
+          // ── Price: mirror Wix ONLY when Wix's price actually MOVED ──
+          //
+          // The owner re-prices in the Dashboard / Florist app; Push carries
+          // that to Wix. The old rule ("Pull always overwrites local price
+          // with the latest Wix price") meant any Pull taken before Wix
+          // reflected a Push re-stamped the stale Wix value over her edit —
+          // destroying the local record of what she had asked for, silently.
+          //
+          // `Wix Price Seen` is the price Wix reported the LAST time Pull
+          // looked. Comparing against it separates the two cases the old
+          // code could not tell apart:
+          //
+          //   Wix moved since we last looked  → genuine Wix-side edit → mirror
+          //   Wix unchanged since we last looked → nothing to mirror. A local
+          //       difference here is an edit Push has not landed yet — keep it.
+          //
+          // This is deliberately NOT a time-based cooldown. On prod the
+          // observed push→clobber gaps ranged from 49 seconds to 10.4 hours
+          // (7 occurrences, 2026-06-23 → 2026-07-22), so no window separates
+          // the two cases; only "did Wix's own value change" does. See
+          // docs/adr/0020-pull-mirrors-wix-price-only-on-change.md.
           const wixPriceNum = Number(variantPrice) || 0;
-          const airtablePriceNum = Number(existing['Price'] || 0);
-          if (Math.abs(airtablePriceNum - wixPriceNum) > 0.01) {
-            updates['Price'] = wixPriceNum;
+          const localPriceNum = Number(existing['Price'] || 0);
+          const seenRaw = existing['Wix Price Seen'];
+          const localDiffers = Math.abs(localPriceNum - wixPriceNum) > 0.01;
+
+          if (seenRaw == null) {
+            // No baseline yet (row predates this guard, or was never pulled
+            // since). We cannot tell a Wix edit from an echo of our own Push,
+            // so record the baseline and leave the local price alone. Costs
+            // one Pull of latency for a genuine Wix edit, once per row, ever
+            // — which is why the migration needs no data backfill.
+            updates['Wix Price Seen'] = wixPriceNum;
+            if (localDiffers) stats.pricesNotOnWix++;
+          } else if (Math.abs(Number(seenRaw) - wixPriceNum) > 0.01) {
+            // Wix's price changed since the last Pull → real news → mirror it.
+            if (localDiffers) updates['Price'] = wixPriceNum;
+            updates['Wix Price Seen'] = wixPriceNum;
+          } else if (localDiffers) {
+            // Wix has not moved, yet local disagrees: a local price Push has
+            // not landed on the storefront. Never overwrite it — just count it
+            // so the owner (and sync_log) can see the storefront is behind.
+            stats.pricesNotOnWix++;
           }
           // Active mirrors each variant's OWN storefront visibility
           // (`variant.visible`), not the product-level flag. The earlier
@@ -875,7 +926,11 @@ export async function runPull() {
           if (Object.keys(updates).length > 0) {
             try {
               await productConfigRepo.upsert({ ...updates, wixProductId: productId, wixVariantId: variantId });
-              stats.updated++;
+              // `Wix Price Seen` is internal bookkeeping, not a change the
+              // owner made or would recognise. Counting it would make the
+              // first Pull after this guard ships report every row as
+              // "updated" purely from seeding baselines (#428).
+              if (Object.keys(updates).some(k => k !== 'Wix Price Seen')) stats.updated++;
             } catch (err) {
               stats.errors.push(`Update ${productName}/${variantName}: ${err.message}`);
             }
@@ -959,6 +1014,9 @@ export async function runPull() {
       console.warn('[PULL] Category backfill error:', err.message);
     }
 
+    if (stats.pricesNotOnWix > 0) {
+      console.warn(`[PULL] ${stats.pricesNotOnWix} local price(s) not reflected on Wix — Push them again (#428 guard kept the local values)`);
+    }
     console.log('[PULL] Complete:', JSON.stringify(stats));
   } catch (err) {
     stats.errors.push(`Fatal: ${err.message}`);

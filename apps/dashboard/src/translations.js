@@ -455,6 +455,9 @@ const en = {
   prodSyncFailed:       'Sync failed',
   prodNew:              'new',
   prodUpdated:          'updated',
+  // Prices set here that the storefront has not taken yet (#428). Pull no
+  // longer silently reverts them — it reports them so they can be re-Pushed.
+  prodPricesNotOnWix:   'prices not yet on the website — press "Send to Wix"',
   prodNeedReview:       'products need review',
   prodShowReview:       'Show',
   prodFilterAll:        'All',
@@ -1696,6 +1699,7 @@ const ru = {
   prodSyncFailed:       'Ошибка синхронизации',
   prodNew:              'новых',
   prodUpdated:          'обновлено',
+  prodPricesNotOnWix:   'цен ещё не на сайте — нажмите «Отправить в Wix»',
   prodNeedReview:       'товаров ожидают настройки',
   prodShowReview:       'Показать',
   prodFilterAll:        'Все',

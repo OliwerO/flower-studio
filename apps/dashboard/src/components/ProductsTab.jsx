@@ -134,7 +134,16 @@ export default function ProductsTab() {
         showToast(s.errors.join(' · '), 'error');
         return;
       }
-      showToast(`${t.prodPullDone}: ${s.new} ${t.prodNew}, ${s.updated} ${t.prodUpdated}`, 'success');
+      // `pricesNotOnWix` (#428): prices set here that Wix has not taken yet.
+      // Pull used to silently revert those to the stale Wix value; it now
+      // keeps them and reports the count, so a Push that never landed is
+      // visible instead of looking like the edit never happened. Amber, not
+      // green — the storefront is still wrong until she Pushes again.
+      if (s.pricesNotOnWix > 0) {
+        showToast(`${t.prodPullDone}: ${s.pricesNotOnWix} ${t.prodPricesNotOnWix}`, 'warning');
+      } else {
+        showToast(`${t.prodPullDone}: ${s.new} ${t.prodNew}, ${s.updated} ${t.prodUpdated}`, 'success');
+      }
       fetchProducts();
     } catch {
       showToast(t.prodSyncFailed, 'error');
