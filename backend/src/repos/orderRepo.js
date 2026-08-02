@@ -955,6 +955,19 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
         err.statusCode = 400;
         throw err;
       }
+
+      // A delivery-type order can't be marked Ready with no Delivery Fee set
+      // — an unpriced delivery should be caught early (issue #618, story 29).
+      if (newStatus === ORDER_STATUS.READY && before.deliveryType === 'Delivery') {
+        const [linkedDelivery] = await tx.select().from(deliveries)
+          .where(and(eq(deliveries.orderId, before.id), isNull(deliveries.deletedAt)))
+          .limit(1);
+        if (linkedDelivery && linkedDelivery.deliveryFee == null) {
+          const err = new Error('Set a Delivery Fee before marking this order Ready.');
+          err.statusCode = 400;
+          throw err;
+        }
+      }
     }
 
     const orderPatch = orderResponseToPg({ Status: newStatus, ...otherFields });
