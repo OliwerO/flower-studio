@@ -1,9 +1,18 @@
 name: Test
 
 # Runs on every pull request + every push to master.
-# Two jobs:
-#   - unit:   backend vitest suite (covers stockRepo, orderRepo, services, utils).
-#   - e2e:    boots the local-PG harness and runs scripts/e2e-test.js end-to-end.
+# Six jobs:
+#   - lint:     static guards (backend silent-catch ban, root pitfall #5).
+#   - unit:     backend vitest suite (covers stockRepo, orderRepo, services, utils).
+#   - shared:   packages/shared vitest (utils, hooks, components).
+#   - e2e:      boots the local-PG harness and runs scripts/e2e-test.js end-to-end.
+#   - ui:       Playwright drives the real React apps against that harness (#612).
+#   - lab-api:  lab factories + API integration gate against a real Postgres.
+#
+# Together these are CLAUDE.md's Pre-PR matrix. `ui` is item 4b, and it was the
+# one item nothing enforced until #612 — a UI spec could rot for weeks and no
+# PR check would notice. It exists because component tests and integration
+# tests both pass while the wiring between them is broken.
 #
 # Both jobs install deps from the root via `npm ci` (workspace layout) so
 # every workspace package is hoisted once. Backend devDeps include
@@ -152,6 +161,54 @@ jobs:
 
       - name: Run E2E suite
         run: npm run test:e2e
+
+  ui:
+    name: UI click-through (Playwright)
+    runs-on: ubuntu-latest
+    # Cold start dominates: pglite boots an in-process Postgres and replays
+    # every migration, then three Vite dev servers come up. The specs
+    # themselves run in well under a minute.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Chromium only — playwright.config.js defines a single `chromium`
+      # project. `--with-deps` pulls the system libraries the headless browser
+      # needs on a bare ubuntu runner.
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+
+      # No harness boot step here: playwright.config.js owns its own
+      # `webServer` block (backend on :3002 + florist/delivery/dashboard Vite
+      # servers) and `reuseExistingServer: !process.env.CI` makes it always
+      # start fresh on CI. That is also why this cannot collide with the
+      # `e2e` job's harness — separate jobs, separate runners.
+      - name: Run UI suite
+        run: npm run test:ui
+
+      # The whole point of this job is that a broken spec must not be able to
+      # rot unnoticed (#612), so a failure has to be diagnosable from the PR
+      # without re-running anything locally. `trace: 'on-first-retry'` +
+      # `video: 'retain-on-failure'` are already configured; this is what
+      # carries them out of the runner.
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   lab-api:
     name: Lab harness — API integration tests
