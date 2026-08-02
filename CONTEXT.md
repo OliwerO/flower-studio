@@ -185,6 +185,10 @@ _Avoid_: Wix product, catalog item, listing
 A bouquet a Florist assembles before any customer order exists. Under the reservation model (ADR-0005), Batch quantity is unchanged at build — the `premade_bouquet_lines` rows are the reservation ledger; the Batch is decremented only when the Premade Bouquet is sold and becomes an Order. The bouquet can be sold (an Order is created, the premade record + lines are deleted, standard Batch deduction runs) or dissolved (lines deleted; Batch quantity unchanged).
 _Avoid_: Ready-made, walk-in bouquet, pre-built
 
+**Driver Payment Status**:
+Whether the studio has paid a Driver the Delivery Cost for one Delivery — `Unpaid` or `Paid`, defaulting to `Unpaid`. Recorded per Delivery so a week's work can be settled and verified without relying on memory. Distinct from the Order's own Payment Status (Customer → studio); this is studio → Driver.
+_Avoid_: Payout status, driver paid (adjective form is fine in prose, not as the field name)
+
 **Delivery Result**:
 The outcome logged by the Driver when completing a delivery. Success means delivered; all other results (Not Home, Wrong Address, Refused, Incomplete) indicate a failed attempt. Owner handles failed deliveries manually — currently no automated re-queue. A re-delivery attempt requires adjusting the delivery fee on the Order.
 _Avoid_: Delivery status (that is a separate field)
