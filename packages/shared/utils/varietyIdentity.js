@@ -28,8 +28,23 @@
  * "Peony Pink 60cm (24.Jul.)". Resolving onto one would attach a new order's
  * demand to a closed delivery, so identity lookups skip them entirely
  * (pitfall `batch-variety-attrs`).
+ *
+ * TWO date-tag forms exist and both are real: the short `(24.Jul.)` written by
+ * the PO receive paths, and the ISO `(2026-07-23)` the Y-model writes. Reading
+ * only the short form is how a single delivery gets mistaken for the Variety's
+ * canonical card — prod carries six ISO-tagged rows. `parseBatchName` has
+ * always read both; this is the same rule, kept in step.
  */
-export const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
+export const DATE_BATCH_RE = /^(.+?)\s*\((?:\d{1,2}\.\w{3,4}\.?|\d{4}-\d{2}-\d{2})\)$/;
+
+/**
+ * The flower's name without its date tag. `Dahlia Coral (2026-07-23)` →
+ * `Dahlia Coral`.
+ */
+export function stripDateTag(name) {
+  const raw = String(name || '').trim();
+  return (raw.match(DATE_BATCH_RE)?.[1] || raw).trim();
+}
 
 export function isDatedBatchName(name) {
   return DATE_BATCH_RE.test(String(name || '').trim());

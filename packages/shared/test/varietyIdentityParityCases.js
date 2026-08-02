@@ -50,7 +50,14 @@ export const SIZE_CASES = [
 export const BATCH_NAME_CASES = [
   ['Peony Pink 60cm (24.Jul.)', true],
   ['Dahlia Coral (4.Jul)', true],
+  // The Y-model writes ISO date tags too — `parseBatchName` has always read
+  // both forms, and prod carries six such rows (e.g. `Dahlia Coral
+  // (2026-08-02)`). A matcher that only knows the short form treats a single
+  // delivery as the Variety's canonical card.
+  ['Dahlia Coral (2026-08-02)', true],
+  ['Pink Peonies Pink Sarah Bernhardt (2026-07-23)', true],
   ['Peony Pink 60cm', false],
   ['Peony (large)', false],
+  ['Peony (2026)', false],
   ['', false],
 ];

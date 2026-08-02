@@ -5,7 +5,7 @@ import client from '../../api/client.js';
 import t from '../../translations.js';
 import { useToast } from '../../context/ToastContext.jsx';
 import useConfigLists from '../../hooks/useConfigLists.js';
-import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, BouquetFlowerForm, hasAvailableStockMatch, createBouquetDemand } from '@flower-studio/shared';
+import { VarietyAllocationPicker, VarietyAvailabilityLine, varietyDisplayName, groupByVariety, resolveStockLinePrice, resolveVarietySell, getVarietyAvailability, arrivalsForVariety, allocateLinesAgainstVariety, BouquetFlowerForm, hasAvailableStockMatch, createBouquetDemand, isDatedBatchName } from '@flower-studio/shared';
 
 // Owner-only inline override for cost/sell when a flower is out of stock.
 // Onblur commits through the parent's line mutator. Empty draft means "no
@@ -153,12 +153,11 @@ export default function Step2Bouquet({
   // onlyPhysicallyAvailable is set (premade compose flow), also hide the base
   // record when its qty is <= 0 — premade stems must exist right now.
   const visibleStock = useMemo(() => {
-    const dateBatchPattern = /\(\d{1,2}\.\w{3,4}\.?\)$/;
     return stock.filter(s => {
       const qty = Number(s['Current Quantity']) || 0;
       const name = s['Display Name'] || '';
       if (onlyPhysicallyAvailable && qty <= 0) return false;
-      if (qty <= 0 && dateBatchPattern.test(name)) return false;
+      if (qty <= 0 && isDatedBatchName(name)) return false;
       return true;
     });
   }, [stock, onlyPhysicallyAvailable]);

@@ -10,8 +10,8 @@ import { varietyDisplayName } from '../utils/varietyKey.js';
 import { resolveStockLinePrice } from '../utils/stockLinePrice.js';
 import { createBouquetDemand } from '../utils/createBouquetDemand.js';
 import { findAllMatchingVariety } from '../utils/varietyLookup.js';
+import { isDatedBatchName } from '../utils/varietyIdentity.js';
 
-const _DATE_BATCH_RE = /\(\d{1,2}\.\w{3,4}\.?\)$/;
 
 // Re-exported for back-compat — callers historically imported this from the
 // hook module (index.js still does). Lives in utils/varietyLookup.js so
@@ -24,7 +24,9 @@ export { findAllMatchingVariety };
 export function isStockItemVisible(stockItem, pendingPO = {}) {
   const qty = Number(stockItem['Current Quantity']) || 0;
   const name = stockItem['Display Name'] || '';
-  if (qty <= 0 && _DATE_BATCH_RE.test(name) && !(pendingPO[stockItem.id]?.ordered > 0)) {
+  // isDatedBatchName reads both tag forms; the private regex here read only the
+  // short one, so a spent ISO-tagged Batch stayed in the picker forever.
+  if (qty <= 0 && isDatedBatchName(name) && !(pendingPO[stockItem.id]?.ordered > 0)) {
     return false;
   }
   return true;

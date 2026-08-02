@@ -8,14 +8,9 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName } from '@flower-studio/shared';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
-// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
-function parseBatchName(displayName) {
-  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
-  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
-}
 
 const STATUSES = [
   { value: 'New',              label: t.statusNew,       activeClass: 'bg-indigo-600 text-white shadow-sm' },
@@ -773,7 +768,7 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
                         const name = (s['Display Name'] || '').toLowerCase();
                         const qty = Number(s['Current Quantity']) || 0;
                         const poQty = pendingPO[s.id]?.ordered || 0;
-                        if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                        if (qty <= 0 && isDatedBatchName(s['Display Name'] || '')) return false;
                         // Hide exactly-zero base rows with no pending PO — those
                         // are clutter (duplicates, stale records). Negative stock
                         // stays (implicit demand); qty=0 with a pending PO stays

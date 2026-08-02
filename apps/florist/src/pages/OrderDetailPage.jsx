@@ -9,14 +9,9 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName } from '@flower-studio/shared';
 import ChangeCustomerModal from '../components/ChangeCustomerModal.jsx';
 
-// Split "Rose Red (14.Mar.)" into { name: "Rose Red", batch: "14.Mar." }
-function parseBatchName(displayName) {
-  const m = (displayName || '').match(/^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/);
-  return m ? { name: m[1], batch: m[2] } : { name: displayName, batch: null };
-}
 
 // Status options (forward map + role-aware revert) come from the shared
 // getStatusOptions util — single source of truth shared with OrderCard and the
@@ -459,7 +454,7 @@ export default function OrderDetailPage() {
                             .filter(s => {
                               const name = (s['Display Name'] || '').toLowerCase();
                               const qty = Number(s['Current Quantity']) || 0;
-                              if (qty <= 0 && /\(\d{1,2}\.\w{3,4}\.?\)$/.test(s['Display Name'] || '')) return false;
+                              if (qty <= 0 && isDatedBatchName(s['Display Name'] || '')) return false;
                               // Hide exactly-zero base rows — keep negatives visible
                               // (they're unfulfilled demand for the next PO).
                               if (qty === 0) return false;

@@ -16,7 +16,21 @@
 // "Peony Pink (24.Jul.)". The canonical (undated) card is what a create should
 // resolve onto — matching a Batch would attach new stems to a closed delivery
 // and hide them from the grouped Stock view (pitfall `batch-variety-attrs`).
-export const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
+//
+// TWO date-tag forms exist and both are real: the short `(24.Jul.)` written by
+// the PO receive paths, and the ISO `(2026-07-23)` the Y-model writes. Reading
+// only the short form is how a single delivery gets mistaken for the Variety's
+// canonical card — prod carries six ISO-tagged rows. `parseBatchName` in the
+// shared package has always read both; this is the same rule, kept in step.
+export const DATE_BATCH_RE = /^(.+?)\s*\((?:\d{1,2}\.\w{3,4}\.?|\d{4}-\d{2}-\d{2})\)$/;
+
+// The flower's name without its date tag. `Dahlia Coral (2026-07-23)` →
+// `Dahlia Coral`, so a new Batch is named from the Variety rather than stacking
+// a second tag onto the first.
+export function stripDateTag(name) {
+  const raw = String(name || '').trim();
+  return (raw.match(DATE_BATCH_RE)?.[1] || raw).trim();
+}
 
 export function isDatedBatchName(name) {
   return DATE_BATCH_RE.test(String(name || '').trim());

@@ -87,6 +87,22 @@ describe('receiveIntoStock — Variety attrs propagation (#327)', () => {
     expect(newBatch.displayName).toBe('Peony Pink (20.May.)');
   });
 
+  it('strips an ISO date tag from the orig name instead of stacking a second one', async () => {
+    // Two date-tag forms are in use: the short `(20.May.)` this path writes and
+    // the ISO `(2026-07-23)` the Y-model writes — prod carries six ISO rows.
+    // Reading only the short form re-creates the very name this strip exists to
+    // prevent: `Dahlia Coral (2026-07-23) (20.May.)`.
+    const orig = await seedOrigStockItem({ displayName: 'Dahlia Coral (2026-07-23)' });
+
+    const newBatchId = await receiveIntoStock(
+      orig.id, 20, 6, 18, 'Stefan', TODAY, { Type: 'Dahlia', Colour: 'Coral' },
+    );
+    const newBatch = await harness.db
+      .select().from(stock).where(eq(stock.id, newBatchId)).then(r => r[0]);
+
+    expect(newBatch.displayName).toBe('Dahlia Coral (20.May.)');
+  });
+
   it('backfills Variety attrs onto orig when orig had NULL attrs and PO line carries them', async () => {
     const orig = await seedOrigStockItem({ currentQuantity: 0 });
     expect(orig.typeName).toBe(null);

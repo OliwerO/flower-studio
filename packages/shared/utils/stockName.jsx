@@ -1,8 +1,15 @@
 // Renders a stock Display Name with a date batch tag.
 // If the name contains a date suffix like "(14.Mar.)", it extracts that.
 // Otherwise, if lastRestocked is provided, it formats and shows that date as a tag.
+//
+// Splitting is delegated to `parseBatchName`, which reads BOTH tag forms — the
+// short `(14.Mar.)` and the ISO `(2026-07-23)` the Y-model writes, normalising
+// the latter to the short badge. This file used to carry its own short-only
+// regex, so an ISO-tagged row rendered `(2026-07-23)` as part of the flower's
+// NAME instead of as a delivery badge.
 
-const DATE_BATCH_RE = /^(.+?)\s*\((\d{1,2}\.\w{3,4}\.?)\)$/;
+import parseBatchName from './parseBatchName.js';
+
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
 function formatDateTag(d) {
@@ -11,11 +18,10 @@ function formatDateTag(d) {
 
 export function renderStockName(displayName, lastRestocked) {
   if (!displayName) return '';
-  const match = displayName.match(DATE_BATCH_RE);
-  const baseName = match ? match[1] : displayName;
+  const { name: baseName, batch } = parseBatchName(displayName);
 
   // Determine date label: from name suffix or from lastRestocked field
-  let dateLabel = match ? match[2] : null;
+  let dateLabel = batch;
   let daysAgo = null;
   if (!dateLabel && lastRestocked) {
     const d = new Date(lastRestocked);
@@ -51,8 +57,7 @@ export function renderStockName(displayName, lastRestocked) {
  */
 export function stockBaseName(displayName) {
   if (!displayName) return '';
-  const match = displayName.match(DATE_BATCH_RE);
-  return match ? match[1] : displayName;
+  return parseBatchName(displayName).name;
 }
 
 /**
@@ -60,9 +65,7 @@ export function stockBaseName(displayName) {
  */
 export function renderDateTag(displayName, lastRestocked) {
   if (!displayName) return null;
-  const match = displayName.match(DATE_BATCH_RE);
-
-  let dateLabel = match ? match[2] : null;
+  let dateLabel = parseBatchName(displayName).batch;
   let daysAgo = null;
   if (!dateLabel && lastRestocked) {
     const d = new Date(lastRestocked);

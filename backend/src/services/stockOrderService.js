@@ -13,6 +13,7 @@ import * as stockOrderRepo from '../repos/stockOrderRepo.js';
 import * as orderService from '../services/orderService.js';
 import { broadcast } from '../services/notifications.js';
 import { sanitizeFormulaValue } from '../utils/sanitize.js';
+import { stripDateTag } from '../utils/varietyIdentity.js';
 import { PO_STATUS, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 import { getConfig } from '../services/configService.js';
 
@@ -165,7 +166,6 @@ export async function findOrCreateSubstituteStock(altFlowerName, altSupplier, co
 // routing cannot compute its Variety key.
 //
 // Returns the new batch's stock item ID.
-const DATE_BATCH_RE = /^(.+?)\s*\(\d{1,2}\.\w{3,4}\.?\)$/;
 export async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, supplier, today, varietyAttrs = null) {
   const stockItem = await stockRepo.getById(stockItemId);
   const existingQty = Number(stockItem['Current Quantity']) || 0;
@@ -174,9 +174,10 @@ export async function receiveIntoStock(stockItemId, qty, costPrice, sellPrice, s
   const d = new Date(today);
   const batchLabel = `${d.getDate()}.${months[d.getMonth()]}.`;
 
-  // Strip any existing date suffix to avoid "Rose (14.Apr.) (15.Apr.)" names
-  const rawName = stockItem['Display Name'] || '';
-  const baseName = (rawName.match(DATE_BATCH_RE)?.[1] || rawName).trim();
+  // Strip any existing date suffix to avoid "Rose (14.Apr.) (15.Apr.)" names.
+  // `stripDateTag` knows BOTH tag forms — the short one this path writes and
+  // the ISO one the Y-model writes — so an ISO-tagged orig can't stack a tag.
+  const baseName = stripDateTag(stockItem['Display Name'] || '');
 
   // Effective Variety attrs: prefer values passed from the PO line, fall back
   // to whatever the orig Stock Item already carries. The new Batch needs them
