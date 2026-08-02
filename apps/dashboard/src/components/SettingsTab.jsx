@@ -5,6 +5,7 @@ import { ConfigRow, ListEditor, Section } from './settings/SettingsPrimitives.js
 import { RateTypesEditor, FloristRatesEditor } from './settings/RateEditors.jsx';
 import DriverSettingsSection from './settings/DriverSettingsSection.jsx';
 import DeliveryZonesSection from './settings/DeliveryZonesSection.jsx';
+import DistanceBandsSection from './settings/DistanceBandsSection.jsx';
 import MarketingSpendSection from './settings/MarketingSpendSection.jsx';
 import StockLossSection from './settings/StockLossSection.jsx';
 
@@ -87,6 +88,9 @@ export default function SettingsTab() {
 
       {/* Delivery Zones */}
       <DeliveryZonesSection config={config} onUpdate={updateConfig} />
+
+      {/* Distance Bands */}
+      <DistanceBandsSection config={config} onUpdate={updateConfig} />
 
       {/* Available Today */}
       <Section title={t.settingsAvailableToday}>

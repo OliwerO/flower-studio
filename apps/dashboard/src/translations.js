@@ -868,6 +868,15 @@ const en = {
   dzExpressSurchargeHint:   'Extra fee for same-day delivery (zl)',
   dzTimeSlots:              'Delivery time slots',
   dzTimeSlotsHint:          'Available time windows for customer selection',
+
+  // Distance bands
+  dbTitle:                  'Distance Bands',
+  dbAddBand:                'Add band',
+  dbUpToKm:                 'Up to (km)',
+  dbUnbounded:              'and beyond',
+  dbPrice:                  'Price (zł)',
+  dbStudioAddress:          'Studio address',
+  dbStudioAddressHint:      'Origin point for driving-distance lookups.',
   settingsAvailCutoff:      'Available Today cutoff',
   settingsAvailCutoffHint:  'Hide "Available Today" on the storefront after this time (local Krakow time)',
   settingsSlotLeadTime:     'Time slot lead time (min)',
@@ -2110,6 +2119,15 @@ const ru = {
   dzExpressSurchargeHint:   'Доплата за доставку в тот же день (zl)',
   dzTimeSlots:              'Окна доставки',
   dzTimeSlotsHint:          'Доступные временные интервалы для выбора клиентом',
+
+  // Distance bands
+  dbTitle:                  'Дистанционные зоны',
+  dbAddBand:                'Добавить зону',
+  dbUpToKm:                 'До (км)',
+  dbUnbounded:              'и далее',
+  dbPrice:                  'Цена (zł)',
+  dbStudioAddress:          'Адрес студии',
+  dbStudioAddressHint:      'Точка отсчёта для расчёта расстояния.',
   settingsAvailCutoff:      'Отсечка «Доступно сегодня»',
   settingsAvailCutoffHint:  'Скрыть «Доступно сегодня» на витрине после этого времени (время Кракова)',
   settingsSlotLeadTime:     'Запас времени для слота (мин)',
