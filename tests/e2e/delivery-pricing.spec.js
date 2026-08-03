@@ -17,11 +17,11 @@
 
 import { test, expect } from './helpers/test-base.js';
 import { login } from './helpers/login.js';
-import { seedOrder } from './helpers/seed.js';
+import { seedDeliveryOrder } from './helpers/seed.js';
 
 test.describe('Delivery pricing', () => {
   test('entering an address shows the quoted cost, and a fee above it shows a positive margin', async ({ page }) => {
-    const order = await seedOrder({ deliveryType: 'Delivery', address: '' });
+    const order = await seedDeliveryOrder({ deliveryType: 'Delivery', address: '' });
 
     await login(page, '1111');
 

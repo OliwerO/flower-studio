@@ -129,11 +129,13 @@ export async function startShopping(poId, lineId) {
 
 /**
  * Seed a minimal Delivery Order via the real API for the delivery-pricing
- * spec — no existing helper creates an Order (seed.js only covered Stock
- * Orders/stock items before this spec). Creates a throwaway customer first
- * (POST /api/orders requires an existing customer id).
+ * spec. Named distinctly from `seedOrder` above (added independently on
+ * master by #635, Pickup-only, fixed mock customer, no address support) —
+ * this one needs a controllable `address` and a fresh throwaway customer,
+ * a different enough shape that reusing the name would have meant
+ * overloading one helper with two purposes rather than picking one.
  */
-export async function seedOrder({ deliveryType = 'Delivery', address = '' } = {}) {
+export async function seedDeliveryOrder({ deliveryType = 'Delivery', address = '' } = {}) {
   const customer = await api('/api/customers', { body: { Name: 'E2E Delivery Pricing Customer' } });
   const body = {
     customer: customer.id,
