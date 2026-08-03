@@ -136,6 +136,11 @@ export { default as ValueCombobox } from './components/ValueCombobox.jsx';
 export { default as VarietyResolveNotice } from './components/VarietyResolveNotice.jsx';
 export { default as BouquetFlowerForm, BOUQUET_FLOWER_FORM_KEYS } from './components/BouquetFlowerForm.jsx';
 
+// Delivery pricing — address to cost to margin, one component for every
+// wizard + detail-panel surface (issue #618 / ADR-0019).
+export { default as DeliveryPricingFields } from './components/DeliveryPricingFields.jsx';
+export { default as useDeliveryPricingPatch } from './hooks/useDeliveryPricingPatch.js';
+
 // Shared typographic hierarchy for the 4-tuple (#311). Reused by picker + Stock list.
 export { default as VarietyIdentity } from './components/VarietyIdentity.jsx';
 export { default as PoLineIdentity } from './components/PoLineIdentity.jsx';

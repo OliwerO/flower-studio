@@ -51,7 +51,7 @@ The owner uses both apps — dashboard on desktop, florist app on mobile. **Ever
 - FinancialTab lazy-loaded (Recharts ~160KB) — only mounted on first visit
 
 ## Settings Sections (src/components/settings/)
-DeliveryZonesSection, DriverSettingsSection, MarketingSpendSection, RateEditors, StorefrontCategoriesSection, StockLossSection — each manages a specific config domain via `POST /settings`.
+DeliveryZonesSection, DistanceBandsSection, DriverSettingsSection, MarketingSpendSection, RateEditors, StorefrontCategoriesSection, StockLossSection — each manages a specific config domain via `POST /settings`. DistanceBandsSection (issue #618 / ADR-0019) — owner-editable `{upToKm, price}` tiers driving computed Delivery Cost; dashboard-only, no florist counterpart (Settings has no florist equivalent at all).
 
 ## Skill Triggers
 

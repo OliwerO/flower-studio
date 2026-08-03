@@ -236,8 +236,20 @@ export const deliveries = pgTable('deliveries', {
   assignedDriver:     text('assigned_driver'),
   deliveryFee:        numeric('delivery_fee', { precision: 10, scale: 2 }),
   driverInstructions: text('driver_instructions'),
-  deliveryMethod:     text('delivery_method'),  // 'Driver' | 'Self'
-  driverPayout:       numeric('driver_payout', { precision: 10, scale: 2 }),
+  deliveryMethod:     text('delivery_method'),  // 'Driver' | 'Taxi' | 'Florist'
+  driverPayout:       numeric('driver_payout', { precision: 10, scale: 2 }), // = Delivery Cost (ADR-0019: reused column, not renamed)
+  // Delivery pricing (issue #618 / ADR-0019). Distance + band are stored
+  // alongside the cost, not recomputed later — the band table is editable
+  // config, so a row that stored only the price would lose *why* the moment
+  // the table changes. distanceBand is a SNAPSHOT of the band that applied
+  // ({upToKm, price}), not a live reference to config.
+  distanceKm:         numeric('distance_km', { precision: 6, scale: 2 }),
+  distanceBand:       jsonb('distance_band'),
+  // Previously accepted by the PATCH allow-list and silently dropped — no
+  // column existed. Fixed here (ADR-0019 "related defects").
+  driverPaymentStatus: text('driver_payment_status').notNull().default('Unpaid'),
+  taxiCost:            numeric('taxi_cost', { precision: 10, scale: 2 }),
+  deliveryResult:      text('delivery_result'),
   status:             text('status').notNull().default('Pending'),
   // Stamped by the route layer when Status flips to Delivered. Migrated in 0004.
   deliveredAt:        timestamp('delivered_at', { withTimezone: true }),

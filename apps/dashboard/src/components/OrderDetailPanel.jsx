@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
 
@@ -236,6 +236,22 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
       }
     },
   });
+
+  // Delivery cost/fee buffering — called unconditionally (Rules of Hooks):
+  // `order` may still be null/loading here, so this reads `order?.delivery`
+  // rather than the `o` alias (which isn't defined until after the early
+  // returns below). The hook itself tolerates all-null storedValue; once
+  // `order` loads, the resync effect picks up the real values without
+  // firing a spurious commit (see useDeliveryPricingPatch's own tests).
+  const deliveryPricing = useDeliveryPricingPatch(
+    {
+      fee: order?.delivery?.['Delivery Fee'] ?? null,
+      cost: order?.delivery?.['Driver Payout'] ?? null,
+      distanceKm: order?.delivery?.['Distance (km)'] ?? null,
+      band: order?.delivery?.['Distance Band'] ?? null,
+    },
+    fields => patchDelivery(fields),
+  );
 
   if (loading) {
     return (
@@ -1126,8 +1142,13 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
         </div>
       </div>
 
-      {/* Delivery-specific: recipient, address, fee */}
-      {o.delivery && (
+      {/* Delivery-specific: recipient, address, fee/cost/margin.
+          Gated on isDelivery (the order's CURRENT Delivery Type), not merely
+          on o.delivery's presence — pitfall cancelled-delivery-leak: a
+          Delivery→Pickup-converted order still has a (Cancelled) delivery
+          sub-record, which would otherwise keep rendering a stale fee/cost
+          block for an order that is no longer a delivery. */}
+      {isDelivery && o.delivery && (
         <div>
           <p className="text-xs font-semibold text-ios-tertiary uppercase tracking-wide mb-2">
             {t.delivery}
@@ -1140,23 +1161,14 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
               trailing={<CallButton phone={o.delivery['Recipient Phone']} label={t.callRecipient} variant="subtle" />} />
             <EditableRow label={t.deliveryAddress} value={o.delivery['Delivery Address']}
               onSave={v => patchDelivery({ 'Delivery Address': v })} disabled={saving} multiline />
-            <EditableRow label={t.deliveryFee} value={o.delivery['Delivery Fee'] ? String(o.delivery['Delivery Fee']) : ''}
-              onSave={v => patchDelivery({ 'Delivery Fee': v ? Number(v) : null })} disabled={saving} type="number"
-              suffix={t.zl} />
-            {(() => {
-              const fee    = Number(o.delivery?.['Delivery Fee'] || 0);
-              const payout = Number(o.delivery?.['Driver Payout'] || 0);
-              const taxi   = Number(o.delivery?.['Taxi Cost'] || 0);
-              const margin = fee - payout - taxi;
-              return (
-                <div className="flex items-start gap-3">
-                  <span className="text-xs text-ios-tertiary w-20 shrink-0 pt-0.5">{t.deliveryMargin}</span>
-                  <span className={`text-sm font-medium ${margin >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                    {margin.toFixed(0)} {t.zl}
-                  </span>
-                </div>
-              );
-            })()}
+            <DeliveryPricingFields
+              address={o.delivery['Delivery Address']}
+              deliveryMethod={o.delivery['Delivery Method'] || 'Driver'}
+              value={deliveryPricing.value}
+              onChange={deliveryPricing.onChange}
+              apiClient={client}
+              t={t}
+            />
           </div>
         </div>
       )}

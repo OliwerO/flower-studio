@@ -15,8 +15,9 @@ import * as stockLossRepo from './stockLossRepo.js';
 import { db } from '../db/index.js';
 import { orders, orderLines, deliveries, stock, auditLog } from '../db/schema.js';
 import { recordAudit } from '../db/audit.js';
-import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS } from '../constants/statuses.js';
+import { ORDER_STATUS, DELIVERY_STATUS, PAYMENT_STATUS, DELIVERY_METHOD } from '../constants/statuses.js';
 import { and, or, eq, isNull, inArray, gte, lte, sql, desc, asc, ilike } from 'drizzle-orm';
+import { zeroCostFieldsForMethod } from '../services/deliveryPricingService.js';
 
 // ── Backend mode stub ──
 // getBackendMode is always 'postgres' post-Phase-7. Kept until Tasks 3+4
@@ -130,6 +131,11 @@ export function pgDeliveryToResponse(row) {
     'Driver Instructions': row.driverInstructions ?? null,
     'Delivery Method':     row.deliveryMethod ?? null,
     'Driver Payout':       row.driverPayout != null ? Number(row.driverPayout) : null,
+    'Distance (km)':        row.distanceKm != null ? Number(row.distanceKm) : null,
+    'Distance Band':        row.distanceBand ?? null,
+    'Driver Payment Status': row.driverPaymentStatus ?? 'Unpaid',
+    'Taxi Cost':             row.taxiCost != null ? Number(row.taxiCost) : null,
+    'Delivery Result':       row.deliveryResult ?? null,
     Status:                row.status,
     'Delivered At':        row.deliveredAt ? new Date(row.deliveredAt).toISOString() : null,
   };
@@ -190,6 +196,11 @@ function deliveryResponseToPg(fields) {
   if ('Driver Instructions' in fields) out.driverInstructions = fields['Driver Instructions'] || null;
   if ('Delivery Method' in fields) out.deliveryMethod = fields['Delivery Method'] || null;
   if ('Driver Payout' in fields)   out.driverPayout = fields['Driver Payout'] != null ? String(fields['Driver Payout']) : null;
+  if ('Distance (km)' in fields)         out.distanceKm = fields['Distance (km)'] != null ? String(fields['Distance (km)']) : null;
+  if ('Distance Band' in fields)         out.distanceBand = fields['Distance Band'] ?? null;
+  if ('Driver Payment Status' in fields) out.driverPaymentStatus = fields['Driver Payment Status'];
+  if ('Taxi Cost' in fields)             out.taxiCost = fields['Taxi Cost'] != null ? String(fields['Taxi Cost']) : null;
+  if ('Delivery Result' in fields)       out.deliveryResult = fields['Delivery Result'] || null;
   if ('Status' in fields)          out.status = fields.Status;
   if ('Delivered At' in fields)    out.deliveredAt = fields['Delivered At'] ? new Date(fields['Delivered At']) : null;
   return out;
@@ -761,6 +772,21 @@ export async function createOrder(params, config, opts = {}) {
     // 5. Create delivery if needed
     let deliveryRow = null;
     if (deliveryType === 'Delivery' && delivery) {
+      const deliveryMethod = delivery.method || DELIVERY_METHOD.DRIVER;
+      // Distance-band cost (from the quote endpoint or an Owner override)
+      // wins when supplied; otherwise fall back to the flat per-delivery
+      // constant (unresolved address). Florist Delivery Method always
+      // forces the cost to zero regardless of any supplied cost — that
+      // time is already paid via Florist Hours (ADR-0019) — via the same
+      // shared helper deliveries.js's PATCH route uses, so the rule can't
+      // drift between the two call sites.
+      const resolvedCost = delivery.cost != null
+        ? delivery.cost
+        : (getConfig('driverCostPerDelivery') || 0);
+      const zeroCostFields = zeroCostFieldsForMethod(deliveryMethod);
+      const finalCost = 'Driver Payout' in zeroCostFields
+        ? zeroCostFields['Driver Payout'] : resolvedCost;
+
       const [d] = await tx.insert(deliveries).values({
         orderId:            orderRow.id,
         deliveryAddress:    delivery.address || '',
@@ -771,8 +797,10 @@ export async function createOrder(params, config, opts = {}) {
         assignedDriver:     delivery.driver || getDriverOfDay() || null,
         deliveryFee:        delivery.fee != null ? String(delivery.fee) : String(getConfig('defaultDeliveryFee')),
         driverInstructions: delivery.driverInstructions || '',
-        deliveryMethod:     'Driver',
-        driverPayout:       String(getConfig('driverCostPerDelivery') || 0),
+        deliveryMethod:     deliveryMethod,
+        driverPayout:       String(finalCost),
+        distanceKm:         delivery.distanceKm != null ? String(delivery.distanceKm) : null,
+        distanceBand:       delivery.distanceBand || null,
         status:             DELIVERY_STATUS.PENDING,
       }).returning();
       deliveryRow = d;
@@ -926,6 +954,19 @@ export async function transitionStatus(orderId, newStatus, otherFields = {}, opt
         );
         err.statusCode = 400;
         throw err;
+      }
+
+      // A delivery-type order can't be marked Ready with no Delivery Fee set
+      // — an unpriced delivery should be caught early (issue #618, story 29).
+      if (newStatus === ORDER_STATUS.READY && before.deliveryType === 'Delivery') {
+        const [linkedDelivery] = await tx.select().from(deliveries)
+          .where(and(eq(deliveries.orderId, before.id), isNull(deliveries.deletedAt)))
+          .limit(1);
+        if (linkedDelivery && linkedDelivery.deliveryFee == null) {
+          const err = new Error('Set a Delivery Fee before marking this order Ready.');
+          err.statusCode = 400;
+          throw err;
+        }
       }
     }
 

@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, isDatedBatchName } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
@@ -280,6 +280,25 @@ function OrderCard({
       }
     },
   });
+
+  // Delivery cost/fee buffering — called unconditionally (Rules of Hooks;
+  // OrderCard has no early return, but this stays with the other hooks per
+  // convention). Reads `detail?.delivery` (not the `d` merged alias below,
+  // which isn't defined yet at this point in the function) — only `detail`
+  // (the full order fetched on expand) carries the nested delivery
+  // sub-record; the parent `order` list-row prop never does. The hook
+  // tolerates all-null storedValue before `detail` loads. `patchDelivery`
+  // is a hoisted function declaration (defined just below), so referencing
+  // it here is safe even though its call only ever fires later, on commit.
+  const deliveryPricing = useDeliveryPricingPatch(
+    {
+      fee: detail?.delivery?.['Delivery Fee'] ?? null,
+      cost: detail?.delivery?.['Driver Payout'] ?? null,
+      distanceKm: detail?.delivery?.['Distance (km)'] ?? null,
+      band: detail?.delivery?.['Distance Band'] ?? null,
+    },
+    fields => patchDelivery(fields),
+  );
 
   async function patchDelivery(fields) {
     const deliveryId = detail?.delivery?.id;
@@ -912,39 +931,17 @@ function OrderCard({
                       </div>
                     </div>
                     {isDelivery && (
-                      <>
-                        <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-                          <span className="text-xs text-ios-tertiary">{t.labelFee}</span>
-                          <div className="flex items-center gap-1">
-                            <input
-                              type="number"
-                              defaultValue={detail?.delivery?.['Delivery Fee'] || ''}
-                              onBlur={e => {
-                                const val = e.target.value === '' ? 0 : Number(e.target.value);
-                                if (val !== Number(detail?.delivery?.['Delivery Fee'] || 0)) patchDelivery({ 'Delivery Fee': val });
-                              }}
-                              placeholder="0"
-                              disabled={saving}
-                              className="w-20 text-sm text-right text-ios-label bg-gray-50 border border-gray-200 rounded-lg px-2 py-1 outline-none disabled:opacity-40"
-                            />
-                            <span className="text-xs text-ios-tertiary">zł</span>
-                          </div>
-                        </div>
-                        {isOwner && (() => {
-                          const fee    = Number(detail?.delivery?.['Delivery Fee'] || 0);
-                          const payout = Number(detail?.delivery?.['Driver Payout'] || 0);
-                          const taxi   = Number(detail?.delivery?.['Taxi Cost'] || 0);
-                          const margin = fee - payout - taxi;
-                          return (
-                            <div className="flex justify-between items-center py-1.5 border-t border-gray-100">
-                              <span className="text-xs text-ios-tertiary">{t.deliveryMargin}</span>
-                              <span className={`text-xs font-medium ${margin >= 0 ? 'text-ios-green' : 'text-ios-red'}`}>
-                                {margin.toFixed(0)} zł
-                              </span>
-                            </div>
-                          );
-                        })()}
-                      </>
+                      <div className="pt-1.5 border-t border-gray-100">
+                        <DeliveryPricingFields
+                          address={detail?.delivery?.['Delivery Address']}
+                          deliveryMethod={detail?.delivery?.['Delivery Method'] || 'Driver'}
+                          value={deliveryPricing.value}
+                          onChange={deliveryPricing.onChange}
+                          apiClient={client}
+                          t={t}
+                          showMargin={isOwner}
+                        />
+                      </div>
                     )}
                     <div className="flex justify-between py-1.5 border-t border-gray-200">
                       <span className="text-xs font-semibold text-ios-label uppercase">{t.grandTotal || 'Total'}</span>
@@ -1302,6 +1299,7 @@ function OrderCard({
                       <span className="text-xs text-ios-tertiary block mb-1">{t.labelAddress}</span>
                       <input
                         type="text"
+                        data-testid="delivery-address-input"
                         defaultValue={detail.delivery['Delivery Address'] || ''}
                         onBlur={e => { if (e.target.value !== (detail.delivery['Delivery Address'] || '')) patchDelivery({ 'Delivery Address': e.target.value }); }}
                         placeholder="—"

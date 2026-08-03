@@ -5,7 +5,9 @@
 // Schema: id, airtable_id, order_id (uuid FK → orders.id), delivery_address,
 //         recipient_name, recipient_phone, delivery_date, delivery_time,
 //         courier_time, assigned_driver, delivery_fee, driver_instructions,
-//         delivery_method ('Driver' | 'Self'), driver_payout,
+//         delivery_method ('Driver' | 'Taxi' | 'Florist'), driver_payout,
+//         distance_km, distance_band (jsonb), driver_payment_status
+//         (default 'Unpaid'), taxi_cost, delivery_result,
 //         status (default 'Pending'), delivered_at, created_at, updated_at, deleted_at
 //
 // Factory-only shaping keys (stripped from output):
@@ -36,6 +38,11 @@ export function makeDelivery(overrides = {}) {
     driver_instructions: null,
     delivery_method: 'Driver',
     driver_payout: null,
+    distance_km: null,
+    distance_band: null,
+    driver_payment_status: 'Unpaid',
+    taxi_cost: null,
+    delivery_result: null,
     status: 'Pending',
     delivered_at: null,
     created_at: new Date(),

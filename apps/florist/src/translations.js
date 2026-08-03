@@ -184,6 +184,7 @@ const en = {
   methodTransfer:   'Transfer',
   requiredBy:       'Required by (date/time)',
   deliveryFee:      'Delivery fee',
+  deliveryCost:     'Delivery cost',
 
   // Partial payment
   partial:          'Partial',
@@ -310,6 +311,7 @@ const en = {
   courierPayout:            'Courier payout',
   courierSlot:              'Courier slot',
   deliveryMargin:           'Delivery margin',
+  feeBelowCostWarning:      'This fee is below the delivery cost — you would lose money on this delivery.',
   deadStems:        'dead',
   confirm:          'Confirm',
   writeOffError:    'Failed to write off stock.',
@@ -1156,6 +1158,7 @@ const ru = {
   methodTransfer:   'Перевод',
   requiredBy:       'Нужен к (дата/время)',
   deliveryFee:      'Стоимость доставки',
+  deliveryCost:     'Себестоимость доставки',
 
   // Partial payment
   partial:          'Частично',
@@ -1279,6 +1282,7 @@ const ru = {
   courierPayout:            'Оплата курьеру',
   courierSlot:              'Слот курьера',
   deliveryMargin:           'Маржа доставки',
+  feeBelowCostWarning:      'Стоимость доставки ниже, чем плата клиента — вы теряете деньги на этой доставке.',
   deadStems:        'списано',
   confirm:          'Подтвердить',
   writeOffError:    'Не удалось списать.',

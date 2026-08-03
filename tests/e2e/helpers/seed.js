@@ -127,4 +127,33 @@ export async function startShopping(poId, lineId) {
   return api(`/api/stock-orders/${poId}`, { method: 'GET' });
 }
 
+/**
+ * Seed a minimal Delivery Order via the real API for the delivery-pricing
+ * spec. Named distinctly from `seedOrder` above (added independently on
+ * master by #635, Pickup-only, fixed mock customer, no address support) —
+ * this one needs a controllable `address` and a fresh throwaway customer,
+ * a different enough shape that reusing the name would have meant
+ * overloading one helper with two purposes rather than picking one.
+ */
+export async function seedDeliveryOrder({ deliveryType = 'Delivery', address = '' } = {}) {
+  const customer = await api('/api/customers', { body: { Name: 'E2E Delivery Pricing Customer' } });
+  const body = {
+    customer: customer.id,
+    deliveryType,
+    requiredBy: '2026-12-31',
+    orderLines: [],
+  };
+  if (deliveryType === 'Delivery') {
+    body.delivery = {
+      address,
+      recipientName: 'E2E Recipient',
+      recipientPhone: '+48000000000',
+      date: '2026-12-31',
+      time: '',
+      cardText: '',
+    };
+  }
+  return api('/api/orders', { body });
+}
+
 export { api as harnessApi };

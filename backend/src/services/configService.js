@@ -62,6 +62,17 @@ const DEFAULTS = {
   ],
   freeDeliveryThreshold: 300,
   expressSurcharge: 20,
+  // Distance Bands (issue #618 / ADR-0019) — replaces the flat
+  // driverCostPerDelivery constant as the basis for Delivery Cost. Distance
+  // rather than postcode zone, because distance is what the Driver bills on.
+  distanceBands: [
+    { id: 1, upToKm: 5,    price: 35 },
+    { id: 2, upToKm: 7,    price: 50 },
+    { id: 3, upToKm: 10,   price: 65 },
+    { id: 4, upToKm: null, price: 80 },
+  ],
+  // The studio's own address — the distance-module's fixed origin point.
+  studioAddress: '',
   deliveryTimeSlots: ['08:00-10:00', '10:00-12:00', '12:00-14:00', '14:00-16:00', '16:00-18:00', '18:00-20:00'],
   availableTodayCutoff: '18:00',
   availableTodayTimezone: 'Europe/Warsaw',

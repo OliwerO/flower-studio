@@ -101,3 +101,25 @@ export const DELIVERY_RESULT = {
 };
 
 export const VALID_DELIVERY_RESULTS = Object.values(DELIVERY_RESULT);
+
+// ── Driver payment status ──
+// Whether the studio has paid the Driver the Delivery Cost for one Delivery.
+export const DRIVER_PAYMENT_STATUS = {
+  UNPAID: 'Unpaid',
+  PAID:   'Paid',
+};
+
+export const VALID_DRIVER_PAYMENT_STATUSES = Object.values(DRIVER_PAYMENT_STATUS);
+
+// ── Delivery method ──
+// Who actually makes the drop. 'Florist' costs zero (their time is already
+// paid via Florist Hours — see ADR-0019). Matches the value already written
+// by the UI's method picker (OrderDetailPanel.jsx, DeliverySection.jsx,
+// OrderCard.jsx, OrderDetailPage.jsx) — this just gives it a shared constant.
+export const DELIVERY_METHOD = {
+  DRIVER:  'Driver',
+  TAXI:    'Taxi',
+  FLORIST: 'Florist',
+};
+
+export const VALID_DELIVERY_METHODS = Object.values(DELIVERY_METHOD);

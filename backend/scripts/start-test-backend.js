@@ -63,6 +63,12 @@ const TEST_ENV = {
   // a defensive check inside Node's fetch).
   WIX_API_KEY:                       'test-mock-wix-api-key',
   WIX_SITE_ID:                       'test-mock-wix-site-id',
+
+  // Deterministic distance for the Playwright delivery-pricing spec — see
+  // distanceService.js's HARNESS_STUB_DISTANCE_KM check. 3km lands inside
+  // configService's default first Distance Band (upToKm: 5, price: 35), so
+  // the spec can assert an exact, real cost.
+  HARNESS_STUB_DISTANCE_KM:          '3',
 };
 
 for (const [k, v] of Object.entries(TEST_ENV)) {
