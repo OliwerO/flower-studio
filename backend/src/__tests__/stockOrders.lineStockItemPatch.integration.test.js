@@ -81,7 +81,7 @@ async function makeStockItem({ displayName, typeName, colour, sizeCm }) {
   return row;
 }
 
-async function makeDraftPoWithLine(line = { flowerName: 'Seed', quantity: 1, costPrice: 1 }) {
+async function makeDraftPoWithLine(line = { flowerName: 'Seed', type: 'Seed', quantity: 1, costPrice: 1, newVariety: true }) {
   const created = await agent().post('/api/stock-orders').send({ lines: [line] });
   expect(created.status).toBe(201);
   const detail = await agent().get(`/api/stock-orders/${created.body.id}`);

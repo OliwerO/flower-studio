@@ -38,6 +38,10 @@ function toWire(row) {
     'Available From': row.availableFrom || null,
     'Available To':   row.availableTo   || null,
     Translations:     row.translations  || {},
+    // Sync-internal (#428): last price observed FROM Wix by runPull. Stays
+    // null until the first Pull records a baseline. Not owner-editable — it
+    // is deliberately absent from EDITABLE_FIELD_MAP below.
+    'Wix Price Seen': row.wixPriceSeen == null ? null : Number(row.wixPriceSeen),
   };
 }
 
@@ -67,6 +71,7 @@ function toPg(fields) {
   if ('availableFrom' in fields) col.availableFrom = fields.availableFrom;
   if ('availableTo'   in fields) col.availableTo   = fields.availableTo;
   if ('translations'  in fields) col.translations  = fields.translations;
+  if ('wixPriceSeen'  in fields) col.wixPriceSeen  = fields.wixPriceSeen == null ? null : String(fields.wixPriceSeen);
 
   // category: Airtable may pass an array — join to comma-separated text
   if ('category' in fields) {
@@ -94,6 +99,7 @@ function toPg(fields) {
   if ('Available From' in fields) col.availableFrom = fields['Available From'];
   if ('Available To'   in fields) col.availableTo   = fields['Available To'];
   if ('Translations'   in fields) col.translations  = fields['Translations'];
+  if ('Wix Price Seen' in fields) col.wixPriceSeen  = fields['Wix Price Seen'] == null ? null : String(fields['Wix Price Seen']);
 
   if ('Category' in fields) {
     col.category = Array.isArray(fields['Category'])
@@ -209,6 +215,10 @@ export async function upsert(fields) {
 /**
  * Patch a row by PG UUID. Accepts Airtable-field-name keys.
  * Only the EDITABLE_FIELDS subset is accepted (same list as routes/products.js).
+ *
+ * `Wix Price Seen` is intentionally NOT listed: it records what Wix reported,
+ * so only `runPull` may write it (#428). Letting a route set it would let the
+ * UI forge Pull's baseline and re-open the clobber this guard closes.
  * @returns Wire-format object or throws 404.
  */
 const EDITABLE_FIELD_MAP = {

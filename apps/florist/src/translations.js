@@ -333,7 +333,6 @@ const en = {
   viewNegative:     'Negative',
   viewLow:          'Low',
   viewSlowMovers:   'Slow',
-  stems:            'stems',
 
   // Stock deferred (future orders)
   useStock:              'Stock',
@@ -762,6 +761,9 @@ const en = {
   pushShort:             'Push',
   pullSuccess:           'Updated from Wix',
   pullFailed:            'Pull from Wix failed',
+  // Prices set here that the storefront has not taken yet (#428). Pull no
+  // longer silently reverts them — it reports them so they can be re-Pushed.
+  pricesNotOnWix:        'prices not yet on the website — press "Push"',
   pushing:               'Syncing…',
   changesQueued:         'changes pending',
   changeQueued:          'change pending',
@@ -1302,7 +1304,6 @@ const ru = {
   viewNegative:     'Минус',
   viewLow:          'Мало',
   viewSlowMovers:   'Давно',
-  stems:            'стеблей',
 
   // Stock deferred (future orders)
   useStock:              'Со склада',
@@ -1731,6 +1732,7 @@ const ru = {
   pushShort:             'Отправить',
   pullSuccess:           'Обновлено из Wix',
   pullFailed:            'Не удалось загрузить из Wix',
+  pricesNotOnWix:        'цен ещё не на сайте — нажмите «Отправить»',
   pushing:               'Синхронизация…',
   changesQueued:         'изменений ожидают',
   changeQueued:          'изменение ожидает',

@@ -78,7 +78,7 @@ describe('PO evaluate — fully-substituted line does not double-book the origin
   it('Driver Status "Not Found" + substitute: books only the substitute, never the original', async () => {
     const created = await agent().post('/api/stock-orders').send({
       notes: 'double-book-guard',
-      lines: [{ flowerName: 'Dahlia Pink', quantity: 10, costPrice: 5, sellPrice: 12, supplier: 'Pan Zbigniew Dalie' }],
+      lines: [{ flowerName: 'Dahlia Pink', type: 'Dahlia', colour: 'Pink', quantity: 10, costPrice: 5, sellPrice: 12, supplier: 'Pan Zbigniew Dalie', newVariety: true }],
     });
     expect(created.status).toBe(201);
     const poId = created.body.id;

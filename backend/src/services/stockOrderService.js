@@ -16,34 +16,58 @@ import { stripDateTag } from '../utils/varietyIdentity.js';
 import { PO_STATUS, PO_LINE_STATUS, LOSS_REASON } from '../constants/statuses.js';
 import { getConfig } from '../services/configService.js';
 
-// Resolve a flower name to an Airtable-safe stock item ID.
-// Uses stockRepo (Postgres) not Airtable — the stock table is frozen in AT.
-// Returns the Airtable recXXX if the item was backfilled, or null for
-// PG-only items (no recXXX means passing the UUID to AT's linked field
-// would auto-create a ghost record with the UUID as Display Name).
-// Auto-creates a Postgres stock card if none found, so the item appears
-// in the bouquet picker immediately after the PO is saved.
-export async function resolveOrCreateStockItem(flowerName, { costPrice = 0, sellPrice = 0, supplier = '' } = {}) {
-  const name = flowerName.trim();
-  const matches = await stockRepo.list({
-    maxRecords: 1,
-    pg: { displayName: name, active: true, includeEmpty: true },
-  });
-  if (matches.length > 0) {
-    return matches[0].id.startsWith('rec') ? matches[0].id : matches[0]._pgId || matches[0].id;
-  }
-  const newItem = await stockRepo.create({
-    'Display Name':       name,
-    'Purchase Name':      name,
-    'Current Quantity':   0,
-    'Current Cost Price': Number(costPrice) || 0,
-    'Current Sell Price': Number(sellPrice) || 0,
-    Supplier:             supplier || '',
-    Category:             'Other',
-    Active:               true,
-  });
-  console.log(`[STOCK-ORDER] Auto-created stock item "${name}" (${newItem.id}) from PO line`);
-  return newItem.id.startsWith('rec') ? newItem.id : newItem._pgId || newItem.id;
+// Refusal raised by every "which flower is this line?" resolution that finds
+// nothing. `VARIETY_NOT_FOUND` is ADR-0016's code — the same one both PO
+// editors already understand from the line PATCH — so a client that can offer
+// the "create it as a new variety" confirm needs no new vocabulary.
+export function varietyNotFound(message) {
+  const err = new Error(message);
+  err.statusCode = 409;
+  err.code = 'VARIETY_NOT_FOUND';
+  return err;
+}
+
+// Resolve a composed PO line onto the Stock Item it means — and REFUSE when
+// nothing matches (#607, row 11).
+//
+// This used to be `resolveOrCreateStockItem`, which matched an exact display
+// name among ACTIVE cards only and CREATED one on a miss. Two ways that bit:
+// `stockRepo.create` falls back to the display name for a missing Type, so a
+// line typed `Pink Peonies` produced a flower whose Type is literally
+// `Pink Peonies` sitting beside `Peony / Pink` (#562); and matching on an
+// exact, case-sensitive, active-only name meant `ranunculus` never found
+// `Ranunculus`, and a deactivated card was never found at all.
+//
+// A PO line is an intent to BUY, not stock — nothing needs to be created here.
+// When the flower is genuinely new the line carries the owner's confirmation
+// (`New Variety`) and the Stock Item is created at evaluation, where the stems
+// actually arrive and the Y-model identity is written in full (#327).
+//
+// Returns the resolved id, or null when there was nothing to resolve (a blank
+// Draft line). Throws `VARIETY_NOT_FOUND` when an identity WAS given and
+// matches no existing Variety.
+export async function resolveLineStockItem({ flowerName, type, colour, size, cultivar, newVariety } = {}) {
+  const name = String(flowerName || '').trim();
+  const typeName = String(type || '').trim();
+  if (!name && !typeName) return null;
+
+  const sizeNum = Number(size);
+  const match = typeName
+    ? await stockRepo.findVarietyMatch({
+        typeName,
+        colour:   colour ?? null,
+        sizeCm:   Number.isFinite(sizeNum) && sizeNum > 0 ? sizeNum : null,
+        cultivar: cultivar ?? null,
+      })
+    : await stockRepo.findVarietyMatch({ displayName: name });
+
+  if (match) return match._pgId || match.id;
+  if (newVariety) return null; // deliberate: created at evaluation, not now
+
+  throw varietyNotFound(
+    `No existing flower matches "${name || typeName}". `
+    + 'Pick one you already have, or confirm creating it as a new variety.',
+  );
 }
 
 // Idempotency helper — returns true if a STOCK_PURCHASES row with this exact
@@ -370,15 +394,28 @@ export async function evaluatePurchaseOrder(poId, lines) {
         const autoSell = sellPrice || Math.round(costPrice * markup * 100) / 100;
 
         if (lineType) {
-          // Y-model path: resolve by exact Variety 4-tuple.
-          const matches = await stockRepo.list({
-            pg: { typeName: lineType, colour: lineColour, sizeCm: lineSizeCm, cultivar: lineCultivar, includeEmpty: true },
-            maxRecords: 1,
+          // Y-model path: resolve the Variety 4-tuple through the shared
+          // identity seam (#607). It used to go through `stockRepo.list`, which
+          // matches dated Batches as readily as the canonical card — so a
+          // receive could bind to last week's delivery — and skipped
+          // deactivated cards. `findVarietyMatch` is case- and
+          // whitespace-insensitive, null-aware, and canonical-card only.
+          const match = await stockRepo.findVarietyMatch({
+            typeName: lineType, colour: lineColour, sizeCm: lineSizeCm, cultivar: lineCultivar,
           });
-          if (matches.length > 0) {
-            stockItemId = matches[0].id;
+          if (match) {
+            stockItemId = match._pgId || match.id;
             await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
             console.log(`[STOCK-ORDER] Auto-linked Y-model variety "${lineType}" → stock item ${stockItemId}`);
+          } else if (!line['New Variety']) {
+            // Nothing matches, and nobody confirmed this really is a flower we
+            // don't have. Creating it here is how a typo becomes a second card
+            // for a flower she already stocks (#562) — so the line fails and
+            // the PO goes to Eval Error for her to classify.
+            throw varietyNotFound(
+              `"${flowerName || lineType}" matches no flower you have. `
+              + 'Pick an existing one on the line, or confirm creating it as a new variety.',
+            );
           } else {
             const parts = [lineType];
             if (lineColour)  parts.push(lineColour);
@@ -405,31 +442,25 @@ export async function evaluatePurchaseOrder(poId, lines) {
             console.log(`[STOCK-ORDER] Created Y-model stock item for variety "${lineType}" (${stockItemId})`);
           }
         } else {
-          // Legacy path: resolve by Flower Name.
-          const matches = await stockRepo.list({
-            pg: { displayName: flowerName, includeEmpty: true },
-            maxRecords: 1,
-          });
-          if (matches.length > 0) {
-            stockItemId = matches[0].id;
-            await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
-            console.log(`[STOCK-ORDER] Auto-linked "${flowerName}" → stock item ${stockItemId}`);
-          } else {
-            const created = await stockRepo.create({
-              'Display Name':       flowerName,
-              'Purchase Name':      flowerName,
-              Category:             'Other',
-              'Current Quantity':   0,
-              'Current Cost Price': costPrice,
-              'Current Sell Price': autoSell,
-              Supplier:             supplier,
-              Unit:                 'Stems',
-              Active:               true,
-            });
-            stockItemId = created.id;
-            await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
-            console.log(`[STOCK-ORDER] Created & linked stock item for "${flowerName}" (${stockItemId})`);
+          // Legacy path: the line has only a typed name. Resolve it — and
+          // REFUSE on a miss, with or without a confirmation (#607, row 13).
+          // A name is not a classification: `stockRepo.create` falls back to
+          // the display name for a missing Type, so creating here turns a
+          // shopping-list phrase into a Variety ("Roses red 50" as a Type),
+          // which is invisible in the grouped Stock view and can never merge
+          // with the real Rose / Red / 50. This is exactly the state pitfall
+          // `po-line-identity` exists to prevent, so it surfaces as a line
+          // error for her to classify.
+          const match = await stockRepo.findVarietyMatch({ displayName: flowerName });
+          if (!match) {
+            throw varietyNotFound(
+              `"${flowerName}" matches no flower you have, and the line has no Type. `
+              + 'Set Type / Colour / Size on the line so the stems can be received into a real variety.',
+            );
           }
+          stockItemId = match._pgId || match.id;
+          await stockOrderRepo.updateLine(evalLine.lineId, { 'Stock Item': [stockItemId] });
+          console.log(`[STOCK-ORDER] Auto-linked "${flowerName}" → stock item ${stockItemId}`);
         }
       }
 

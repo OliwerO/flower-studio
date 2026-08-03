@@ -979,6 +979,8 @@ export default function OrdersTab({ initialFilter, onNavigate, isActive = true }
           }`}>
             {/* Compact row */}
             <div
+              data-testid="order-row"
+              data-order-id={order.id}
               onClick={() => setExpanded(isExpanded ? null : order.id)}
               className="px-4 py-3 flex items-center gap-4 cursor-pointer hover:bg-gray-50 transition-colors"
             >

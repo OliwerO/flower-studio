@@ -5,6 +5,18 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-02 — feat(stock): a purchase-order line buys a flower you have, or one you meant to add (#607)
+
+**The last three places that could invent a flower.** Everything before this closed the paths a person types into. These three were the server itself, and they were the widest: typing a flower name onto a purchase-order line and leaving the classification blank created a flower whose *type* was the whole phrase — the way `Pink Peonies` came to sit beside `Peony / Pink`. The same thing happened again at evaluation, where an unmatched line quietly created a card with no one being asked, and an older line carrying only a name (`Roses red 50`) became a flower typed `Roses red 50`, invisible in the grouped stock view and impossible to merge with the real Rose / Red / 50.
+
+**What she sees now.** Putting a flower on a purchase order works the way adding one to a bouquet already does: it finds the flower she has — whatever the spelling, including flowers she has deactivated — and when nothing matches, it asks. A line she has confirmed as new says so on the line and stays confirmed through to the day the stems arrive. If she never answered, the order will not send: "no existing flower matches" names the line, rather than letting her find out at the market. And a line that turns out to match something she already stocks quietly links itself on the way out, no question asked.
+
+**Why the confirmation is now stored.** Composing an order, sending it and receiving it happen days apart, and receiving is where the flower is actually created. Until now her "yes, this is new" lived only in the request that carried it, so by the time the stems arrived nobody knew whether a flower was deliberate or a typo. It is now recorded on the line — and dropped the moment the line resolves onto a flower she already has, so an old answer cannot linger.
+
+**One thing that will now refuse where it used to create:** receiving a line that carries only a typed name and no classification. There is nothing to file it under, so it comes back as a line error for her to classify rather than creating a flower named after the shopping list. Production had **no open purchase-order lines** at all when this shipped (checked read-only, 2026-08-02), so nothing in flight was affected.
+
+**Schema:** migration `0025_po_line_new_variety.sql` adds `stock_order_lines.new_variety boolean NOT NULL DEFAULT false`. Additive, no backfill, no env change. **API:** `POST /stock-orders` and `POST /stock-orders/:id/lines` accept `newVariety`; both, plus `POST /stock-orders/:id/send`, can now answer **409 `VARIETY_NOT_FOUND`** — the same code and shape the line PATCH has answered since #602. ADR-0016 amended.
+
 ## 2026-08-02 — feat(stock): a substitute resolves to a flower you have, not a new one (#606)
 
 **The last create-a-flower path that still went by name.** When a purchase order comes back with something different from what was ordered, whoever was at the market types the substitute's name by hand. The system then looked for an existing flower card by **exact name only** — the Type and Colour captured at evaluation were used to label the *new* card, never to find an existing one. So `Ranunkulus` and `ranunculus` became two flowers, and a substitute plainly classified as `Peony / Pink / 60cm` became a third under whatever words happened to be typed.
@@ -151,6 +163,30 @@ Three related changes to Stock Orders, from an owner testing session. Design in 
 No env change.
 
 **Verification:** backend Vitest 1104 passing (123 files) incl. three new suites — `stockOrders.termination.integration.test.js` (12 cases), `stock.pendingPoCancelled.integration.test.js` (4), `stockOrders.lineStockItemPatch.integration.test.js` (3); shared 866 passing incl. `poLineVariety` (31) and `PoLineForm` (14), with an invariant walk asserting a stock link never disagrees with the attributes shown; API E2E 253/253; lab unit 77 + lab API 18; all three apps build.
+## 2026-07-26 — chore(ci): split the backend test job in two + pool the pglite harness per file
+
+**No product change — CI and test-harness only.** On run 30200748052 the backend suite passed (1085 tests green) and was then killed by `timeout-minutes: 10` 0.07s after vitest printed its summary. #586 raised the ceiling to 20 as a stopgap; this puts it back to 10 by removing the cost instead.
+
+- **Root cause (the real fix).** `setupPgHarness()` booted a fresh pglite instance per **test**. Measured: `new PGlite()` + `waitReady` = ~562ms, replaying all 24 migrations = ~44ms, `TRUNCATE` of the whole public schema = ~15ms. The WASM boot — *not* the migration replay — was 93% of the cost, and the ~620 harness-backed tests spread over 73 files were each paying it. The harness now boots once per file and empties itself with `TRUNCATE ... RESTART IDENTITY CASCADE` between tests, so every test still starts on an empty database. Full backend suite, measured on this branch's base with only the harness swapped: **267.6s → 52.0s**, 1085/1085 green both ways; the heaviest single file (`orderRepo.integration.test.js`, 58 tests) went 32.7s → 2.8s. Because this lives in `helpers/pgHarness.js` and not in the test files, new integration tests inherit it automatically. Two suites opt out with the new `setupPgHarness({ fresh: true })`: `migrateStockYModel` (its script runs `ALTER COLUMN ... SET NOT NULL`, and TRUNCATE restores rows but not schema) and `assistantTools.ordersPack` (needs a second independent DB alongside the pooled one).
+- **Job split.** `unit` ("Backend unit tests (vitest)") is replaced by two parallel jobs, **"Backend tests — unit"** (`--exclude '**/*.integration.test.js'`, 60 files / 551 tests / 11.7s local) and **"Backend tests — integration"** (`integration.test.js`, 60 files / 534 tests / 39.7s local). The two are exact complements — 551 + 534 = the same 1085 tests the single job ran. Note the two arguments are different kinds: `--exclude` takes a glob, positional filters are path *substrings*. `vitest run '**/*.integration.test.js'` matches zero files and exits 0 — a green job that tests nothing — so don't "fix" the positional arg into a glob. Verified against vitest **4.1.0**, which is what `working-directory: backend` actually runs (backend pins v4 in its own `node_modules`; the root hoists 3.2.4 for `packages/shared`).
+- `backend/vitest.config.js` gains `hookTimeout: 30s` / `testTimeout: 15s`. Pooling clusters the remaining boots at file start, and vitest's 10s default was failing hooks on a loaded machine — the flake class behind the "just run it with `--no-file-parallelism`" folklore.
+
+**Required checks:** the old check name "Backend unit tests (vitest)" no longer exists. `master` currently has **no branch protection and no rulesets** (`gh api .../branches/master/protection` → 404, `.../rulesets` → `[]`), so nothing was un-gated by the rename — but if protection is added later it must name both new checks.
+
+No schema, env, or deployment change.
+## 2026-07-26 — fix(wix): Pull no longer reverts a price the storefront hasn't taken yet (#428)
+
+**Behavior fix.** `runPull` used to overwrite `product_config.price` with whatever Wix reported, on every Pull, with no guard — there was no equivalent of the `localNameOwned` ADR-0008 protection that Product Name has. So a Pull taken before Wix reflected a Push silently re-stamped the stale Wix price over the owner's edit. Because `product_config` has no price history and price edits are not audit-logged, that erased the only record she had asked for a different price — the same owner-visible symptom as #428 ("I set it, it says success, and it's still wrong") reached through a different mechanism than the push race PR #572 fixes.
+
+Pull now mirrors a price **only when Wix's own price changed since the previous Pull**, compared against the new `product_config.wix_price_seen` baseline (ADR-0020). A genuine Wix-admin price edit still imports; a value Wix has not touched can never overwrite a local one. This is deliberately **not** a time-based cooldown — prod `sync_log` shows 7 push→clobber events between 2026-06-23 and 2026-07-22 with gaps from 49 seconds to 10.4 hours, so no window separates the two cases.
+
+**Schema (migration `0024_wix_price_seen.sql`, additive, no backfill):**
+- `product_config.wix_price_seen NUMERIC(10,2) NULL` — price Wix reported at the previous Pull. Written by `runPull` only; deliberately absent from `productConfigRepo`'s `EDITABLE_FIELD_MAP` so no route can forge the baseline. NULL means "no baseline yet" — the next Pull records one and skips that row's price mirror once, which is why no data backfill is needed.
+- `sync_log.prices_not_on_wix INTEGER NOT NULL DEFAULT 0` — per-run count of rows where local and Wix disagree while Wix has not moved, i.e. price edits the storefront has not taken. This bug survived two months partly because `sync_log` recorded counts but never divergence.
+
+**Frontend (both apps, parity):** the Pull button now shows an amber warning toast — "N prices not yet on the website — press Push" — instead of a green success, when `stats.pricesNotOnWix > 0`. `packages/shared/components/Toast.jsx` gains a `warning` (amber) variant; unknown/absent types still render green, so every existing `showToast` call is unaffected.
+
+**Verification:** see the PR body. New regression suite `backend/src/__tests__/wixProductSync.pullPriceGuard.test.js` (8 tests, Wix HTTP mocked), each confirmed to fail against pre-fix code.
 
 ## 2026-07-26 — fix(analytics, dashboard): phantom delivery fees on converted Pickup orders (#554 follow-up)
 

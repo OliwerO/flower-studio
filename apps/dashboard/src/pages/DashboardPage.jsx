@@ -136,6 +136,7 @@ export default function DashboardPage() {
           {TABS.map(tab => (
             <button
               key={tab.key}
+              data-testid={`tab-${tab.key}`}
               onClick={() => handleTabClick(tab.key)}
               className={`px-4 py-2 rounded-full text-sm font-medium transition-colors whitespace-nowrap ${
                 activeTab === tab.key

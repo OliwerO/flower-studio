@@ -3,7 +3,7 @@ import { db } from '../db/index.js';
 import { syncLog } from '../db/schema.js';
 import { desc } from 'drizzle-orm';
 
-export async function logSync({ status, newProducts, updated, deactivated, priceSyncs, stockSyncs, errorMessage }) {
+export async function logSync({ status, newProducts, updated, deactivated, priceSyncs, stockSyncs, pricesNotOnWix, errorMessage }) {
   await db.insert(syncLog).values({
     timestamp:    new Date(),
     status,
@@ -12,6 +12,7 @@ export async function logSync({ status, newProducts, updated, deactivated, price
     deactivated:  deactivated  || 0,
     priceSyncs:   priceSyncs   || 0,
     stockSyncs:   stockSyncs   || 0,
+    pricesNotOnWix: pricesNotOnWix || 0,
     errorMessage: errorMessage || '',
   });
 }
@@ -27,6 +28,7 @@ export async function listRecent(limit = 20) {
     Deactivated:     r.deactivated,
     'Price Syncs':   r.priceSyncs,
     'Stock Syncs':   r.stockSyncs,
+    'Prices Not On Wix': r.pricesNotOnWix,
     'Error Message': r.errorMessage,
   }));
 }

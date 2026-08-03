@@ -72,7 +72,11 @@ afterEach(async () => {
   dbHolder.db = null;
 });
 
-async function createDraft(lines = [{ flowerName: 'Peony Pink', quantity: 20, costPrice: 4 }]) {
+// `newVariety: true` is what both PO editors send once the owner confirms a
+// flower she does not stock yet (#607) — without it a line naming an unknown
+// flower is refused, which is the point of that change and not what these
+// termination tests are about.
+async function createDraft(lines = [{ flowerName: 'Peony Pink', type: 'Peony', colour: 'Pink', quantity: 20, costPrice: 4, newVariety: true }]) {
   const res = await agent().post('/api/stock-orders').send({ lines });
   expect(res.status).toBe(201);
   const detail = await agent().get(`/api/stock-orders/${res.body.id}`);
@@ -151,8 +155,8 @@ describe('cancellation — from shopping onward', () => {
     // "Stop shopping, come back with what you have" — the bought stems must
     // still be received, so the order continues rather than vanishing.
     const { poId, lines } = await createShopping([
-      { flowerName: 'Peony Pink', quantity: 20, costPrice: 4 },
-      { flowerName: 'Rose Red',   quantity: 25, costPrice: 3 },
+      { flowerName: 'Peony Pink', type: 'Peony', colour: 'Pink', quantity: 20, costPrice: 4, newVariety: true },
+      { flowerName: 'Rose Red',   type: 'Rose',  colour: 'Red',  quantity: 25, costPrice: 3, newVariety: true },
     ]);
     await agent().patch(`/api/stock-orders/${poId}/lines/${lines[0].id}`)
       .send({ 'Driver Status': 'Found All', 'Quantity Found': 20 });

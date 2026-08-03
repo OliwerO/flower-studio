@@ -157,6 +157,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
             <span className="text-ios-tertiary text-lg">🔍</span>
             <input
               type="text"
+              data-testid="customer-search"
               value={query}
               onChange={e => setQuery(e.target.value)}
               placeholder={t.searchPlaceholder}
@@ -196,6 +197,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
             {results.map(c => (
               <button
                 key={c.id}
+                data-testid="customer-row"
                 onClick={() => selectCustomer(c)}
                 className="w-full text-left px-4 py-3.5 flex items-center gap-3 active:bg-ios-fill"
               >
@@ -492,6 +494,7 @@ export default function Step1Customer({ customerId, customerName, onSelect, onCh
 
         {/* Continue */}
         <button
+          data-testid="wizard-next"
           onClick={handleContinue}
           disabled={kpCreating}
           className="h-12 rounded-2xl bg-brand-600 text-white font-semibold

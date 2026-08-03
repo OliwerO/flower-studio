@@ -427,6 +427,9 @@ export const syncLog = pgTable('sync_log', {
   deactivated:  integer('deactivated').notNull().default(0),
   priceSyncs:   integer('price_syncs').notNull().default(0),
   stockSyncs:   integer('stock_syncs').notNull().default(0),
+  // Rows whose local price differs from Wix while Wix's own price has NOT
+  // moved — local edits Push has not landed on the storefront yet (#428).
+  pricesNotOnWix: integer('prices_not_on_wix').notNull().default(0),
   errorMessage: text('error_message').notNull().default(''),
   createdAt:    timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 }, (t) => ({
@@ -511,6 +514,10 @@ export const productConfig = pgTable('product_config', {
   availableFrom: date('available_from'),
   availableTo:   date('available_to'),
   translations:  jsonb('translations').notNull().default({}),
+  // Price Wix reported the last time Pull looked at this variant. Pull mirrors
+  // a Wix price only when it has MOVED since this observation (#428 follow-up).
+  // NULL = no baseline yet; the next Pull records one and skips the mirror.
+  wixPriceSeen:  numeric('wix_price_seen', { precision: 10, scale: 2 }),
   createdAt:     timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   deletedAt:     timestamp('deleted_at', { withTimezone: true }),
 }, (t) => ({
@@ -579,6 +586,11 @@ export const stockOrderLines = pgTable('stock_order_lines', {
   colour:                   text('colour'),
   sizeCm:                   integer('size_cm'),
   cultivar:                 text('cultivar'),
+  // "Yes, this really is a flower I don't have yet" (#607). The 4-tuple above
+  // says WHAT the line is; this says whether the owner was ASKED and agreed to
+  // create it. Evaluation refuses to mint a Stock Item without it, so a typo
+  // can no longer become a second card for a flower she already stocks (#562).
+  newVariety:               boolean('new_variety').notNull().default(false),
   // Stock Order termination (ADR-0015). Set only from Shopping onward — before
   // that a line is deleted outright. A cancelled line stays visible and is
   // excluded from order totals and pending arrivals.

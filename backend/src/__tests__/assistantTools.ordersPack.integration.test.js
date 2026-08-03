@@ -69,7 +69,10 @@ describe('ordersPack.breakdownOrdersHandler', () => {
 describe('ordersPack.queryOrdersHandler — adaptive cap (SOFT_ROW_CAP=50)', () => {
   let capHarness;
   beforeEach(async () => {
-    capHarness = await setupPgHarness();
+    // `fresh: true` — this block needs a database of its own. The outer
+    // beforeEach has already seeded the file's pooled harness, and reusing
+    // it here would wipe that seed out from under the outer suite.
+    capHarness = await setupPgHarness({ fresh: true });
     dbHolder.db = capHarness.db;
     // Insert 51 non-cancelled orders with no specific date range context.
     const rows = Array.from({ length: 51 }, (_, i) => ({

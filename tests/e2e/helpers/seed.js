@@ -69,6 +69,39 @@ export async function seedPeonySizes() {
   return { p60, p70, hydrangea };
 }
 
+/** Every Stock Item the owner can see, including empty + inactive rows. */
+export function listStock() {
+  return api('/api/stock?includeEmpty=true&includeInactive=true', { method: 'GET' });
+}
+
+/**
+ * Create an order dated TODAY.
+ *
+ * The canonical fixture's three orders are dated 2026-04-28, which the
+ * dashboard Orders tab filters out by default (its date range is
+ * month-start → today). A spec that needs to open an order in BOTH apps has
+ * to make its own, or it passes on the florist and finds an empty list on the
+ * dashboard.
+ */
+export async function seedOrder({
+  customer = 'recMockCust1', lines = [], deliveryType = 'Pickup',
+  customerRequest = 'UI spec order',
+} = {}) {
+  const today = new Date();
+  const requiredBy = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+  const created = await api('/api/orders', {
+    body: {
+      customer, customerRequest, source: 'In-store', deliveryType,
+      orderLines: lines, paymentStatus: 'Unpaid', requiredBy,
+    },
+  });
+  return created.order;
+}
+
 /** Create a Draft Stock Order and return it with its lines. */
 export async function seedStockOrder(lines) {
   const created = await api('/api/stock-orders', { body: { lines } });

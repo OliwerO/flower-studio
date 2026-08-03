@@ -149,7 +149,7 @@ export default function Step3Details({ form, onChange, apiClient, isOwner }) {
         <div className={`ios-card overflow-visible divide-y divide-gray-100 ${!form.deliveryDate ? 'ring-1 ring-ios-red/30' : ''}`}>
           <div className="flex items-center gap-3 px-4 py-3.5">
             <span className="text-sm text-ios-tertiary w-28 shrink-0">{t.deliveryDate} <span className="text-ios-red">*</span></span>
-            <div className="flex-1">
+            <div className="flex-1" data-testid="required-by">
               <DatePicker
                 value={form.deliveryDate}
                 onChange={handleDateChange}
