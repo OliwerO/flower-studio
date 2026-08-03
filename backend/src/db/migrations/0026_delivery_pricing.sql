@@ -1,4 +1,4 @@
--- backend/src/db/migrations/0025_delivery_pricing.sql
+-- backend/src/db/migrations/0026_delivery_pricing.sql
 --
 -- Delivery pricing (issue #618 / ADR-0019): Delivery Cost is computed from
 -- driving distance against an editable Distance Band table, instead of both
