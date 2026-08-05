@@ -10,6 +10,7 @@ import { getDriverOfDay, getConfig, generateOrderId } from '../services/configSe
 import { pickAllowed } from '../utils/fields.js';
 import { ORDER_STATUS, PAYMENT_STATUS, VALID_PAYMENT_STATUSES, DELIVERY_STATUS, DELIVERY_METHOD, VALID_DELIVERY_METHODS } from '../constants/statuses.js';
 import { zeroCostFieldsForMethod } from '../services/deliveryPricingService.js';
+import { resolveDeliveryFee } from '../utils/deliveryGate.js';
 import {
   createOrder,
   transitionStatus,
@@ -230,22 +231,24 @@ router.get('/', async (req, res, next) => {
       // converted order kept showing its old address/fee here forever —
       // even after a refresh (#554).
       const delivId = order['Deliveries']?.[0];
-      if (order['Delivery Type'] === 'Delivery' && delivId && deliveryMap[delivId]) {
-        const d = deliveryMap[delivId];
+      const delivRow = delivId ? deliveryMap[delivId] : null;
+      if (order['Delivery Type'] === 'Delivery' && delivRow) {
+        const d = delivRow;
         order['Delivery Date'] = d['Delivery Date'] || null;
         order['Delivery Time'] = d['Delivery Time'] || null;
         order['Delivery Address'] = d['Delivery Address'] || '';
         order['Assigned Driver'] = d['Assigned Driver'] || '';
         order['Delivery Method'] = d['Delivery Method'] || 'Driver';
-        order['Delivery Fee'] = Number(d['Delivery Fee'] || 0);
       }
 
       const sellTotal = order['Sell Total'] || totalByOrder[order.id] || 0;
-      // Re-gate here too (belt-and-suspenders): `order['Delivery Fee']` can
-      // also come from the order's OWN (redundant) column set by a past
-      // convertToDelivery call. This self-heals any order converted to
-      // Pickup before this fix shipped, without needing a prod backfill.
-      const delivFee = order['Delivery Type'] === 'Delivery' ? Number(order['Delivery Fee'] || 0) : 0;
+      // The delivery row wins over the order's own redundant column, and a
+      // Pickup order owes nothing — both rules live in resolveDeliveryFee
+      // (#644 / pitfall cancelled-delivery-leak). Overwriting the wire field
+      // as well keeps every client reading `order['Delivery Fee']` in step
+      // with the total computed here.
+      const delivFee = resolveDeliveryFee(order, delivRow);
+      order['Delivery Fee'] = delivFee;
       // Price Override replaces flower total only; delivery fee always added on top
       order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
     }
@@ -339,7 +342,13 @@ router.get('/:id', async (req, res, next) => {
     // Price Override replaces flower total only; delivery fee always added on top.
     const lineTotal = orderLines.reduce((s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0);
     const sellTotal = order['Sell Total'] || lineTotal || 0;
-    const delivFee  = order['Delivery Type'] === 'Delivery' ? Number(order['Delivery Fee'] || delivery?.['Delivery Fee'] || 0) : 0;
+    // #644: this used to read `order['Delivery Fee'] || delivery?.['Delivery Fee']`
+    // — the order's stale copy first. Clearing the fee on the delivery record
+    // (free delivery for the customer) therefore never changed the total here,
+    // while the list endpoint, which derived it from the delivery row, showed
+    // the corrected number. Same order, two totals.
+    const delivFee  = resolveDeliveryFee(order, delivery);
+    order['Delivery Fee'] = delivFee;
     order['Final Price'] = (order['Price Override'] || sellTotal) + delivFee;
 
     res.json(order);
@@ -525,8 +534,10 @@ router.patch('/:id', async (req, res, next) => {
           (s, l) => s + (Number(l['Sell Price Per Unit']) || 0) * (Number(l.Quantity) || 0), 0
         );
         const deliv = current?._delivery || null;
-        const delivFee = current?.['Delivery Type'] === 'Delivery'
-          ? Number(current?.['Delivery Fee'] ?? deliv?.['Delivery Fee'] ?? 0) : 0;
+        // Must match what the customer is actually shown as owing — reading
+        // the order's stale column first recorded a payment of 1035 on an
+        // order whose real total is 1000 (#644).
+        const delivFee = resolveDeliveryFee(current, deliv);
         const finalPrice = (Number(current?.['Price Override']) || flowerTotal) + delivFee;
         if (finalPrice > 0) {
           otherFields['Payment 1 Amount'] = finalPrice;

@@ -9,7 +9,7 @@ import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
 import t from '../translations.js';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared';
+import { CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch, resolveDeliveryFee } from '@flower-studio/shared';
 import ChangeCustomerModal from '../components/ChangeCustomerModal.jsx';
 
 
@@ -255,6 +255,13 @@ export default function OrderDetailPage() {
     try {
       await client.patch(`/deliveries/${deliveryId}`, fields);
       setOrder(prev => prev ? { ...prev, delivery: { ...prev.delivery, ...fields } } : prev);
+      // The server owns `Final Price`; a local merge leaves it stale as soon
+      // as the customer fee moves (#644). Refetch instead of recomputing the
+      // total here — same reasoning as OrderCard's patchDelivery.
+      if ('Delivery Fee' in fields) {
+        const fresh = await client.get(`/orders/${id}`);
+        setOrder(fresh.data);
+      }
       showToast(t.updated || 'Updated!', 'success');
     } catch (err) {
       showToast(err.response?.data?.error || t.updateError || 'Failed to update delivery.', 'error');
@@ -281,7 +288,7 @@ export default function OrderDetailPage() {
 
   // Total = Price Override (when set, already includes delivery) OR (flowers + delivery fee).
   // Match backend cascade in routes/orders.js so list and detail show the same number.
-  const _delFee    = order?.['Delivery Type'] === 'Delivery' ? Number(order?.['Delivery Fee'] || 0) : 0;
+  const _delFee    = resolveDeliveryFee(order);
   const _sellTotal = Number(order?.['Sell Total'] || 0);
   const price      = order?.['Final Price'] || order?.['Price Override'] || (_sellTotal + _delFee);
   const isPaid     = order?.['Payment Status'] === 'Paid';
