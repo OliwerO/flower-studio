@@ -8,7 +8,7 @@ import t from '../translations.js';
 import Pills from './Pills.jsx';
 import InlineEdit from './InlineEdit.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, CallButton, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, resolveStockLinePrice, shouldShowBouquetSection, isStatusAllowedForFulfillment, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, parseBatchName, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch, resolveDeliveryFee } from '@flower-studio/shared';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
 
@@ -182,6 +182,15 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
         ...prev,
         delivery: { ...prev.delivery, ...fields },
       }));
+      // `Final Price` is server-computed, so the merge above leaves it stale
+      // once the customer fee moves — the total kept showing the old number
+      // until the panel was reopened (#644). Refetch rather than recompute
+      // the total here, and refresh the Orders table row with it.
+      if ('Delivery Fee' in fields) {
+        const fresh = await client.get(`/orders/${orderId}`);
+        setOrder(fresh.data);
+        onUpdate();
+      }
       showToast(t.orderUpdated);
     } catch (err) {
       showToast(err.response?.data?.error || t.error, 'error');
@@ -287,7 +296,12 @@ export default function OrderDetailPanel({ orderId, onUpdate, onNavigate }) {
   // this gate its fee kept contributing to the total shown here). Parity
   // with florist OrderCard/OrderDetailPage, which already gate this (#554).
   const isDelivery = o['Delivery Type'] === 'Delivery';
-  const deliveryFee = isDelivery ? Number(o['Delivery Fee'] || o.delivery?.['Delivery Fee'] || 0) : 0;
+  // #644: this read the order's own `Delivery Fee` FIRST — a copy written at
+  // creation that nothing re-syncs — so clearing the customer fee on the
+  // delivery record never moved the total. Both rules (Pickup owes nothing;
+  // the delivery record wins, including when its fee is cleared) live in the
+  // shared helper, which mirrors backend `utils/deliveryGate.js`.
+  const deliveryFee = resolveDeliveryFee(o);
   // Prefer backend-enriched Final Price when NOT editing. It's the
   // authoritative order total and survives cases where o.orderLines goes
   // stale or empty (e.g. a partial-paid order that was cancelled and then

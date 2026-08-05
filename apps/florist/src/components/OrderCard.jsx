@@ -11,7 +11,7 @@ import t from '../translations.js';
 import fmtDate from '../utils/formatDate.js';
 import DatePicker from './DatePicker.jsx';
 import useConfigLists from '../hooks/useConfigLists.js';
-import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch } from '@flower-studio/shared';
+import { DissolvePremadesDialog, computePremadeShortfalls, BouquetImageEditor, useOrderTerminationFlow, OrderTerminationConfirm, getStatusOptions, resolveStockLinePrice, shouldShowBouquetSection, getCourierSlots, BouquetFlowerForm, hasAvailableStockMatch, isDatedBatchName, DeliveryPricingFields, useDeliveryPricingPatch, resolveDeliveryFee } from '@flower-studio/shared';
 import ExpandableTextarea from './ExpandableTextarea.jsx';
 import ChangeCustomerModal from './ChangeCustomerModal.jsx';
 
@@ -154,7 +154,7 @@ function OrderCard({
   const isTerminal = ['Delivered', 'Picked Up', 'Cancelled'].includes(status);
   const request    = order['Customer Request'] || '';
   // Price Override replaces flower total only; delivery fee always added on top
-  const _delFee    = isDelivery ? Number(order['Delivery Fee'] || 0) : 0;
+  const _delFee    = resolveDeliveryFee(order);
   const _sellTotal = Number(order['Sell Total'] || 0);
   const price      = order['Final Price'] || ((order['Price Override'] || _sellTotal) + _delFee) || '';
   const isPaid     = order['Payment Status'] === 'Paid';
@@ -315,6 +315,19 @@ function OrderCard({
         'Delivery Date': fields['Delivery Date'] ?? detail.delivery['Delivery Date'],
         'Delivery Time': fields['Delivery Time'] ?? detail.delivery['Delivery Time'],
       });
+      // `Final Price` is computed by the server, so the merge above leaves it
+      // stale the moment the customer fee moves — the owner cleared the fee
+      // and the total kept reading 1035 until she reloaded (#644). Refetch
+      // rather than recompute the total here: the formula belongs to the
+      // backend, and the fee editor commits on settle, not per keystroke.
+      if ('Delivery Fee' in fields) {
+        const fresh = await client.get(`/orders/${order.id}`);
+        setDetail(fresh.data);
+        onOrderUpdated?.(order.id, {
+          'Delivery Fee': fresh.data['Delivery Fee'],
+          'Final Price':  fresh.data['Final Price'],
+        });
+      }
       showToast(t.updated, 'success');
     } catch (err) {
       showToast(err.response?.data?.error || t.updateError, 'error');
@@ -425,7 +438,10 @@ function OrderCard({
       }, 0)
     : null;
   const detailLineTotal = editingLineTotal != null ? editingLineTotal : savedLineTotal;
-  const detailDeliveryFee = Number(detail?.delivery?.['Delivery Fee'] || d['Delivery Fee'] || 0);
+  // Shared rule (#644): the delivery sub-record wins over the order's own
+  // never-re-synced copy, and a cleared fee means free delivery rather than
+  // "fall back to the old value". `d` is `detail || order` (pitfall #1).
+  const detailDeliveryFee = resolveDeliveryFee(d, detail?.delivery ?? d.delivery);
   const flowerTotal = detailLineTotal > 0 ? detailLineTotal : (Number(d['Sell Total']) || 0);
   // Prefer backend-enriched Final Price when NOT editing. Matches the summary
   // view at line 115 and survives cases where d.orderLines + d['Sell Total']
@@ -484,7 +500,7 @@ function OrderCard({
           )}
         </div>
         {currentPrice > 0 && (
-          <span className={`text-sm font-bold shrink-0 px-3 py-1 rounded-full ${
+          <span data-testid="order-total" className={`text-sm font-bold shrink-0 px-3 py-1 rounded-full ${
             currentPaid
               ? 'bg-green-100 text-green-700 border border-green-200'
               : 'bg-red-50 text-red-600 border border-red-200'

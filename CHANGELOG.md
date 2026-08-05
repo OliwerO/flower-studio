@@ -5,6 +5,18 @@ Review this entire file before flipping to production.
 
 ---
 
+## 2026-08-05 — fix(orders): free delivery actually makes the order cheaper (#644)
+
+**What went wrong.** An order for 1000 zł with free delivery for the customer kept totalling 1035 zł. Clearing the delivery charge changed nothing, and reopening the order changed nothing either — the 35 zł came back every time. Meanwhile the order list showed 1000 zł for the same order, so the two screens disagreed about what the customer owed.
+
+**Why.** The delivery charge is stored in two places: on the delivery itself, and as a copy on the order that is written when the order is created and never updated again. Editing the charge only ever touches the first one — so the copy went stale the moment she changed it, and five different places were reading the stale copy first. One of them decided how much to record as paid when an order is marked Paid, so a Paid order could be stamped with an amount the customer never owed.
+
+**What she sees now.** The delivery charge she can see and edit is the one that counts, everywhere: the order card, the full order page, the dashboard panel, the Today tab and the unpaid totals. Clearing it means free delivery and the total drops immediately — no reload, no reopening. A charge of zero stays zero instead of quietly reverting to the old number.
+
+**Delivery cost vs delivery charge.** These are two different numbers and only one of them is the customer's. *Себестоимость доставки* is what the studio pays the courier; it feeds the delivery margin and has never been part of the order total. *Стоимость доставки* is what the customer is charged. Paying a courier 35 zł does not make the customer's order 35 zł bigger.
+
+No schema change, no env change, no API change. Existing orders are corrected on read — nothing needed fixing in the database.
+
 ## 2026-08-02 — feat(stock): a purchase-order line buys a flower you have, or one you meant to add (#607)
 
 **The last three places that could invent a flower.** Everything before this closed the paths a person types into. These three were the server itself, and they were the widest: typing a flower name onto a purchase-order line and leaving the classification blank created a flower whose *type* was the whole phrase — the way `Pink Peonies` came to sit beside `Peony / Pink`. The same thing happened again at evaluation, where an unmatched line quietly created a card with no one being asked, and an older line carrying only a name (`Roses red 50`) became a flower typed `Roses red 50`, invisible in the grouped stock view and impossible to merge with the real Rose / Red / 50.
