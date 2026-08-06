@@ -183,8 +183,8 @@ const en = {
   methodCard:       'Card',
   methodTransfer:   'Transfer',
   requiredBy:       'Required by (date/time)',
-  deliveryFee:      'Delivery fee',
-  deliveryCost:     'Delivery cost',
+  deliveryFee:      'Customer delivery charge',
+  deliveryCost:     'Our delivery cost',
 
   // Partial payment
   partial:          'Partial',
@@ -311,7 +311,7 @@ const en = {
   courierPayout:            'Courier payout',
   courierSlot:              'Courier slot',
   deliveryMargin:           'Delivery margin',
-  feeBelowCostWarning:      'This fee is below the delivery cost — you would lose money on this delivery.',
+  feeBelowCostWarning:      'The customer charge is below our delivery cost — you would lose money on this delivery.',
   deadStems:        'dead',
   confirm:          'Confirm',
   writeOffError:    'Failed to write off stock.',
@@ -1157,8 +1157,8 @@ const ru = {
   methodCard:       'Карта',
   methodTransfer:   'Перевод',
   requiredBy:       'Нужен к (дата/время)',
-  deliveryFee:      'Стоимость доставки',
-  deliveryCost:     'Себестоимость доставки',
+  deliveryFee:      'Доставка для клиента',
+  deliveryCost:     'Расходы на доставку',
 
   // Partial payment
   partial:          'Частично',
@@ -1282,7 +1282,7 @@ const ru = {
   courierPayout:            'Оплата курьеру',
   courierSlot:              'Слот курьера',
   deliveryMargin:           'Маржа доставки',
-  feeBelowCostWarning:      'Стоимость доставки ниже, чем плата клиента — вы теряете деньги на этой доставке.',
+  feeBelowCostWarning:      'Плата клиента ниже наших расходов на доставку — вы теряете деньги на этой доставке.',
   deadStems:        'списано',
   confirm:          'Подтвердить',
   writeOffError:    'Не удалось списать.',
