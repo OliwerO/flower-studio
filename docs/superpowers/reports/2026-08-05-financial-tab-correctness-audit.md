@@ -294,20 +294,22 @@ Parity tests already pin each assistant tool to its canonical source, so fixing 
 
 ---
 
-## Proposed issues
+## Issues filed
 
-| Proposed | Findings | Notes |
-|---|---|---|
-| Waste block reads one stock row — drive `waste` from `stockLossRepo` | F1, F8, F13 | Highest value. Fixes a green "Healthy 0 %" that is hiding 989 written-off stems |
-| Inventory turnover is undefined under the Y-model — redefine or remove | F2 | Needs a product decision first |
-| `revenueGap` and per-source margin mix delivery money into flower metrics | F4, F6 | One seam, two call sites |
-| `Partial` payment booked at 100 % | F5 | Needs a product decision (capture the amount vs. own bucket) |
-| `topProducts.revenue` is gross — apportion `Price Override` per line | F7 | Pairs with #628; do not fix F3 twice |
-| Collapse the four delivery-fee/total implementations onto `resolveDeliveryFee`; delete the `Final Price` / `Sell Total` dead branches | F9, F10 | Pure consolidation, no behaviour change on today's data |
-| Weekly rhythm: pick one date basis | F11 | Small |
-| Supplier waste: define the attribution period | F12 | Definition first |
-| Surface order lines with no cost price | D1 | Data-quality signal, not a formula change |
-| Decide `driver_payout` semantics before #641 activates | D2 | Time-boxed by the feature going live |
-| Analytics invariant suite | all | The durable half of this audit |
+| Issue | Findings | Priority | State |
+|---|---|---|---|
+| [#650](https://github.com/OliwerO/flower-studio/issues/650) Waste block reads one stock row — drive `waste` from `stockLossRepo` | F1, F8, F13 | high | ready-for-agent |
+| [#651](https://github.com/OliwerO/flower-studio/issues/651) Inventory turnover is undefined under the Y-model — redefine or remove | F2 | medium | needs-triage — decision first |
+| [#652](https://github.com/OliwerO/flower-studio/issues/652) `revenueGap` + per-source margin mix delivery money into flower metrics | F4, F6 | high | ready-for-agent |
+| [#653](https://github.com/OliwerO/flower-studio/issues/653) `Partial` payment booked at 100 % | F5 | medium | needs-triage — decision first |
+| [#654](https://github.com/OliwerO/flower-studio/issues/654) `topProducts.revenue` is gross — apportion `Price Override` per line | F7 | medium | ready-for-agent |
+| [#655](https://github.com/OliwerO/flower-studio/issues/655) Collapse the 4th delivery-fee implementation; delete dead `Final Price`/`Sell Total` | F9, F10 | low | ready-for-agent |
+| [#656](https://github.com/OliwerO/flower-studio/issues/656) Weekly rhythm: pick one date basis | F11 | low | needs-triage |
+| [#657](https://github.com/OliwerO/flower-studio/issues/657) Define what supplier `wastePercent` means | F12 | low | needs-triage — definition first |
+| [#658](https://github.com/OliwerO/flower-studio/issues/658) Surface order lines with no cost price | D1 | medium | ready-for-agent |
+| [#659](https://github.com/OliwerO/flower-studio/issues/659) Decide `driver_payout` semantics before #641 goes live | D2 | high | needs-triage — time-boxed |
+| [#660](https://github.com/OliwerO/flower-studio/issues/660) Analytics invariant suite | all | medium | ready-for-agent |
+
+**F3 is not in this list** — it is owned by [#628](https://github.com/OliwerO/flower-studio/issues/628)/P1. The magnitude measured above is attached to that issue as a comment.
 
 **F3 is not in this list** — it is owned by [#628](https://github.com/OliwerO/flower-studio/issues/628)/P1. The magnitude measured above should be attached to that issue as a comment.
