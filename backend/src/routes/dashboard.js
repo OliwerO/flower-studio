@@ -7,7 +7,7 @@ import { db as pgDb } from '../db/index.js';
 import { orderLines as orderLinesTable, orders as ordersTable } from '../db/schema.js';
 import { and, or, eq, isNull, inArray, gte, lte, asc } from 'drizzle-orm';
 import { ORDER_STATUS, PAYMENT_STATUS, DELIVERY_STATUS } from '../constants/statuses.js';
-import { isDeliveryOrder } from '../utils/deliveryGate.js';
+import { resolveDeliveryFee } from '../utils/deliveryGate.js';
 
 const router = Router();
 router.use(authorize('dashboard'));
@@ -74,10 +74,10 @@ router.get('/', async (req, res, next) => {
       // Gate on the order's CURRENT Delivery Type — a Delivery → Pickup
       // conversion only cancels the linked delivery, so both the order's own
       // column (on pre-#554 rows) and `_delivery` can still hold a stale fee
-      // (CLAUDE.md pitfall cancelled-delivery-leak).
-      const deliveryFee = isDeliveryOrder(order)
-        ? Number(order['Delivery Fee'] || order._delivery?.['Delivery Fee'] || 0)
-        : 0;
+      // (CLAUDE.md pitfall cancelled-delivery-leak). Within a genuine
+      // Delivery order the live delivery row wins over the order's own
+      // never-re-synced copy (#644).
+      const deliveryFee = resolveDeliveryFee(order, order._delivery);
       order['Effective Price'] = order['Final Price']
         ?? ((order['Price Override'] || order['Sell Total'] || 0) + deliveryFee);
     }
@@ -141,9 +141,10 @@ router.get('/', async (req, res, next) => {
       const orderDateMs = o['Order Date'] ? new Date(o['Order Date']).getTime() : todayMs;
       const daysOld = Math.floor((todayMs - orderDateMs) / DAY_MS);
       const sellTotal = unpaidTotalByOrder[o.id] || 0;
-      // Same gate as enrichOrder — a Pickup order owes no delivery fee, even
-      // if its own column still carries one from a pre-#554 conversion.
-      const delFee = isDeliveryOrder(o) ? Number(o['Delivery Fee'] || 0) : 0;
+      // Same rule as enrichOrder — a Pickup order owes no delivery fee, and
+      // within a Delivery order the live delivery row beats the order's own
+      // stale column (#644).
+      const delFee = resolveDeliveryFee(o, o._delivery);
       const effectivePrice = o['Final Price'] ?? ((o['Price Override'] || sellTotal) + delFee);
       const amt = Number(effectivePrice) || 0;
 

@@ -135,7 +135,9 @@ export async function startShopping(poId, lineId) {
  * a different enough shape that reusing the name would have meant
  * overloading one helper with two purposes rather than picking one.
  */
-export async function seedDeliveryOrder({ deliveryType = 'Delivery', address = '' } = {}) {
+export async function seedDeliveryOrder({
+  deliveryType = 'Delivery', address = '', fee, priceOverride,
+} = {}) {
   const customer = await api('/api/customers', { body: { Name: 'E2E Delivery Pricing Customer' } });
   const body = {
     customer: customer.id,
@@ -143,6 +145,7 @@ export async function seedDeliveryOrder({ deliveryType = 'Delivery', address = '
     requiredBy: '2026-12-31',
     orderLines: [],
   };
+  if (priceOverride != null) body.priceOverride = priceOverride;
   if (deliveryType === 'Delivery') {
     body.delivery = {
       address,
@@ -151,6 +154,7 @@ export async function seedDeliveryOrder({ deliveryType = 'Delivery', address = '
       date: '2026-12-31',
       time: '',
       cardText: '',
+      ...(fee != null ? { fee } : {}),
     };
   }
   return api('/api/orders', { body });
